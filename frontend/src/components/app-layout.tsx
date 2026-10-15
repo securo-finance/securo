@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { CollectionSelector } from '@/components/collection-selector'
 import { auth as authApi, admin as adminApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
@@ -66,8 +67,6 @@ import { formatCurrency } from '@/lib/format'
 
 const QuickAddTransaction = lazy(() => import('@/components/quick-add-transaction'))
 
-const SIDEBAR_COLLAPSED_STORAGE_KEY = 'securo.sidebar.collapsed'
-
 /** Placeholder rows shown while the workspace's module list is in flight. */
 function NavSkeleton() {
   return (
@@ -99,9 +98,7 @@ export function AppLayout() {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
-  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(
-    () => localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true',
-  )
+  const { collapsed: desktopSidebarCollapsed, toggleCollapsed: toggleDesktopSidebar } = useSidebarState()
   const [accountsExpanded, setAccountsExpanded] = useState(true)
   const [accountsShowAll, setAccountsShowAll] = useState(false)
   const { privacyMode, togglePrivacyMode, mask } = usePrivacyMode()
@@ -186,13 +183,6 @@ export function AppLayout() {
     : typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-color-scheme: dark)').matches
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark')
-  const toggleDesktopSidebar = () => {
-    setDesktopSidebarCollapsed((collapsed) => {
-      const next = !collapsed
-      localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next))
-      return next
-    })
-  }
 
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
@@ -205,14 +195,7 @@ export function AppLayout() {
   const visibleAccounts = activeAccountIds
     ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
     : allAccounts
-  const sharedBalanceGroups = new Set<string>()
-  const totalBalance = visibleAccounts.reduce((sum, a) => {
-    if (a.shared_balance_group) {
-      if (sharedBalanceGroups.has(a.shared_balance_group)) return sum
-      sharedBalanceGroups.add(a.shared_balance_group)
-    }
-    return sum + Number(a.balance_primary ?? a.current_balance)
-  }, 0)
+  const totalBalance = sumAccountBalances(visibleAccounts)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
@@ -530,8 +513,9 @@ export function AppLayout() {
               </button>
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
-                  {[...visibleAccounts].sort((a, b) => Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance))).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
-                    const balance = Number(acc.current_balance) || 0
+                  {sortAccountsByAbsoluteBalance(visibleAccounts, (a) => a.balance_primary ?? a.current_balance).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
+                    const balance = Number(acc.balance_primary ?? acc.current_balance) || 0
+                    const balanceCurrency = acc.balance_primary != null ? userCurrency : acc.currency
                     const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
 
                     return (
@@ -550,7 +534,7 @@ export function AppLayout() {
                         </div>
                         <div className="text-right shrink-0 ml-2">
                           <span className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}>
-                            {mask(formatCurrency(balance, acc.currency, locale))}
+                            {mask(formatCurrency(balance, balanceCurrency, locale))}
                           </span>
                         </div>
                       </Link>
@@ -883,11 +867,29 @@ function UserMenu({
                 )}
               </DropdownMenuItem>
               <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('cs')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">Čeština</span>
+                {currentLang === 'cs' && (
+                  <Check size={13} className="text-primary" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('sk')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Slovenčina</span>
                 {currentLang === 'sk' && (
+                  <Check size={13} className="text-primary" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('hu')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">Magyar</span>
+                {currentLang === 'hu' && (
                   <Check size={13} className="text-primary" />
                 )}
               </DropdownMenuItem>

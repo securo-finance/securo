@@ -45,6 +45,7 @@ setattr(_pgv, "Vector", _VectorJSON)
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 from sqlalchemy.dialects.postgresql import UUID  # noqa: E402
 from sqlalchemy.ext.compiler import compiles  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker  # noqa: E402
@@ -124,6 +125,31 @@ async def session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture
+async def postgres_sessions():
+    """Give each PostgreSQL test its own schema, including under xdist."""
+    url = os.environ.get("POSTGRES_TEST_URL")
+    if not url:
+        if os.environ.get("CI"):
+            pytest.fail("CI must supply POSTGRES_TEST_URL for PostgreSQL tests")
+        pytest.skip("isolated PostgreSQL not configured")
+    schema = f"postgres_test_{uuid.uuid4().hex}"
+    pg_engine = create_async_engine(url)
+    scoped = pg_engine.execution_options(schema_translate_map={None: schema})
+    try:
+        async with pg_engine.begin() as conn:
+            await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        async with scoped.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        yield async_sessionmaker(scoped, expire_on_commit=False)
+    finally:
+        try:
+            async with pg_engine.begin() as conn:
+                await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        finally:
+            await pg_engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def clean_db(session: AsyncSession):
     """Clean all data between tests."""
     import aiosqlite
@@ -174,8 +200,11 @@ def _fast_password_hashes():
 
 
 async def override_get_async_session() -> AsyncGenerator[AsyncSession, None]:
+    from app.core.app_clock import use_timezone
+
     async with TestSessionLocal() as session:
-        yield session
+        async with use_timezone(session):
+            yield session
 
 
 # Override the dependency
@@ -594,6 +623,16 @@ async def test_user_with_2fa(session: AsyncSession, clean_db) -> User:
     await session.commit()
     await session.refresh(user)
     return user
+
+
+@pytest.fixture(autouse=True)
+def _fresh_timezone_cache():
+    """One test's saved timezone must never leak into the next through the cache."""
+    from app.core.app_clock import invalidate_timezone_cache
+
+    invalidate_timezone_cache()
+    yield
+    invalidate_timezone_cache()
 
 
 @pytest.fixture(autouse=True)

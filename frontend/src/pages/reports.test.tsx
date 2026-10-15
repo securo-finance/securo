@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { cleanup, screen, waitFor } from '@testing-library/react'
 
 import ReportsPage from '@/pages/reports'
 import { renderWithProviders, t } from '@/test/utils'
@@ -11,9 +11,13 @@ const api = vi.hoisted(() => ({
     incomeExpenses: vi.fn(),
     cashFlow: vi.fn(),
   },
+  // The page reads the workspace timezone to tell a balance that is already
+  // negative from one that crosses later. Unresolved here, which lands on the
+  // browser's own day.
+  timezones: { list: vi.fn().mockResolvedValue({ timezones: [], default: null }) },
 }))
 
-vi.mock('@/lib/api', () => ({ reports: api.reports }))
+vi.mock('@/lib/api', () => ({ reports: api.reports, timezones: api.timezones }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
@@ -236,5 +240,97 @@ describe('Reports page — query failure', () => {
     await user.click(screen.getByRole('button', { name: t('reports.range6m') }))
     await waitFor(() => expect(screen.queryByText('end_date must be on or before today')).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: t('reports.range6m') })).toHaveClass('bg-primary')
+  })
+})
+
+describe('Reports page, cash-flow runway', () => {
+  async function openCashFlow(meta: Partial<ReportResponse['meta']>) {
+    const report = emptyReport('cash_flow')
+    api.reports.cashFlow.mockResolvedValue({ ...report, meta: { ...report.meta, ...meta } })
+    const { user } = renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalled())
+    await user.click(screen.getByRole('button', { name: t('reports.cashFlow') }))
+    return screen.findByTestId('cash-flow-runway')
+  }
+
+  it('names the day the balance goes negative and its lowest point', async () => {
+    const callout = await openCashFlow({
+      runway_date: '2099-10-05',
+      lowest_balance: -500,
+      lowest_balance_date: '2099-12-20',
+    })
+
+    expect(callout).toHaveTextContent(t('reports.runwayNegativeOn', { date: 'Oct 5, 2099' }))
+    expect(callout).toHaveTextContent('-$500.00')
+    // Only the crossing date is shown: a second date next to the amount reads
+    // as part of the same sentence rather than as the bottom of the dip.
+    expect(callout).not.toHaveTextContent('Dec 20')
+  })
+
+  it('reads today in the workspace timezone, not the browser one', async () => {
+    // 23:30 UTC on the 13th is already the 14th fourteen hours ahead, so the
+    // same crossing date is "already negative" there and still ahead in UTC.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-10-13T23:30:00Z'))
+    try {
+      api.timezones.list.mockResolvedValue({ timezones: [], default: 'Pacific/Kiritimati' })
+      const ahead = await openCashFlow({
+        runway_date: '2026-10-14',
+        lowest_balance: -10,
+        lowest_balance_date: '2026-10-14',
+      })
+      await waitFor(() => expect(ahead).toHaveTextContent(t('reports.runwayAlreadyNegative')))
+
+      cleanup()
+      api.timezones.list.mockResolvedValue({ timezones: [], default: 'UTC' })
+      const behind = await openCashFlow({
+        runway_date: '2026-10-14',
+        lowest_balance: -10,
+        lowest_balance_date: '2026-10-14',
+      })
+      await waitFor(() =>
+        expect(behind).toHaveTextContent(t('reports.runwayNegativeOn', { date: 'Oct 14' })),
+      )
+    } finally {
+      vi.useRealTimers()
+      api.timezones.list.mockResolvedValue({ timezones: [], default: null })
+    }
+  })
+
+  it('says the balance is already negative rather than naming today', async () => {
+    const callout = await openCashFlow({
+      runway_date: '2020-01-02',
+      lowest_balance: -500,
+      lowest_balance_date: '2020-01-31',
+    })
+
+    expect(callout).toHaveTextContent(t('reports.runwayAlreadyNegative'))
+    expect(callout).not.toHaveTextContent(t('reports.runwayNegativeOn', { date: 'Jan 2' }))
+  })
+
+  it.each([
+    [400, '$400.00'],
+    [0, '$0.00'],
+  ])('reports a lowest balance of %d as never going below zero', async (lowest, amount) => {
+    const callout = await openCashFlow({
+      runway_date: null,
+      lowest_balance: lowest,
+      lowest_balance_date: '2026-12-01',
+    })
+
+    expect(callout).toHaveTextContent(t('reports.lowestBalance'))
+    expect(callout).toHaveTextContent(amount)
+    expect(callout).toHaveTextContent('Dec 1')
+  })
+
+  it('is not shown on the other tabs', async () => {
+    api.reports.netWorth.mockResolvedValue({
+      ...emptyReport('net_worth'),
+      meta: { ...emptyReport('net_worth').meta, lowest_balance: 1, lowest_balance_date: '2026-10-01' },
+    })
+    renderWithProviders(<ReportsPage />)
+    await screen.findAllByText('$1,000.00')
+
+    expect(screen.queryByTestId('cash-flow-runway')).not.toBeInTheDocument()
   })
 })

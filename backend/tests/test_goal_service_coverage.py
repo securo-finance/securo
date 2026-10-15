@@ -157,8 +157,7 @@ def test_monthly_contribution_normal():
 def test_monthly_contribution_months_clamped_to_one():
     # Target date in the same calendar month but a later day -> months == 0,
     # clamped to 1 (line 111). today < target_date so we don't hit the past branch.
-    with patch("app.services.goal_service.date", wraps=date) as clock:
-        clock.today.return_value = date(2026, 1, 15)
+    with patch("app.services.goal_service.app_today", return_value=date(2026, 1, 15)):
         val = _compute_monthly_contribution(Decimal("0"), Decimal("500"), date(2026, 1, 28))
     assert val == 500.0  # remaining / 1 month
 

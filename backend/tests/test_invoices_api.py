@@ -10,7 +10,7 @@ Two things these tests exist to pin down, beyond the usual CRUD:
      UI does, computed from allocations and the due date.
 """
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -27,9 +27,9 @@ from app.models.transaction import Transaction
 @pytest.fixture
 def invoice_today():
     """Pin the service clock so UTC/local midnight cannot change expectations."""
-    with patch("app.services.invoice_service.datetime", wraps=datetime) as clock:
-        clock.now.return_value = datetime(2026, 1, 15, tzinfo=timezone.utc)
-        yield clock.now.return_value.date()
+    today = date(2026, 1, 15)
+    with patch("app.services.invoice_service.app_today", return_value=today):
+        yield today
 
 
 @pytest_asyncio.fixture

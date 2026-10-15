@@ -13,6 +13,9 @@
     "locale": "Language",
     "taxJurisdiction": "Tax jurisdiction",
     "taxJurisdictionHint": "Decides which fiscal documents this workspace is offered. Separate from the interface language.",
+    "timezone": "Timezone",
+    "timezoneDefault": "Application default ({{zone}})",
+    "timezoneHint": "The calendar this workspace keeps its books in. Balances, budgets and due dates turn over at midnight there.",
     "members": "Members",
     "addMember": "Add member",
     "addMemberTitle": "Add member",
@@ -233,7 +236,8 @@
       "downloadPdf": "Download PDF",
       "share": "Share link",
       "revokeLink": "Revoke link",
-      "saveDraft": "Save as draft"
+      "saveDraft": "Save as draft",
+      "downloadStatement": "Download statement"
     },
     "settings": {
       "title": "Invoice settings",
@@ -326,7 +330,25 @@
       "negative_discount": "A discount cannot be negative.",
       "first_term": "The price in force from the start cannot be moved or removed. Change it, or add a new price from a later date.",
       "not_receivable": "Only an invoice you issued can belong to an agreement.",
-      "period_already_issued": "This period was just issued. Refresh to see it."
+      "period_already_issued": "This period was just issued. Refresh to see it.",
+      "product_not_found": "Product not found.",
+      "price_not_found": "Price not found on this product.",
+      "product_in_use": "Invoices name this product. Archive it instead of deleting it.",
+      "price_in_use": "Invoices were billed at this price. Archive it instead of deleting it.",
+      "invalid_kind": "Unknown product kind.",
+      "invalid_billing": "Unknown billing kind.",
+      "interval_required": "A recurring price needs a cadence.",
+      "currency_required": "A price needs a currency.",
+      "unit_price_required": "A price needs an amount.",
+      "negative_price": "A price cannot be negative.",
+      "invalid_fiscal_refs": "Fiscal references must be short text values under simple keys (letters, digits, underscore).",
+      "price_key_taken": "Another price already uses this lookup key or external id.",
+      "installments_mismatch": "The installments do not add up to the invoice total.",
+      "installments_too_few": "A schedule needs at least two installments.",
+      "installment_amount_not_positive": "Every installment must be worth something.",
+      "installment_due_required": "Every installment needs a due date.",
+      "invalid_deduction_kind": "Unknown deduction kind.",
+      "deduction_not_found": "Deduction not found."
     },
     "comingNext": "Bill your clients and keep track of what has been paid and what is still open. This is the next thing being built.",
     "document": {
@@ -561,6 +583,128 @@
         "empty": "No invoice under this agreement yet.",
         "emptyNext": "No invoice yet. The first one is written on {{date}}."
       }
+    },
+    "products": {
+      "title": "Products",
+      "new": "New product",
+      "newDescription": "Something you sell, with a price per currency. Picking it fills an invoice line; the line is yours to change after.",
+      "editTitle": "Edit product",
+      "empty": "No products yet. Add what you sell, and every invoice line is one click from it.",
+      "emptyArchived": "Nothing archived.",
+      "emptyPicker": "No products yet. Add them under Products.",
+      "noneFound": "No product matches.",
+      "searchPlaceholder": "Search products",
+      "pick": "Pick from the catalog",
+      "fromCatalog": "From the catalog",
+      "noPrice": "No price",
+      "noPriceIn": "no price in {{currency}}",
+      "perUnit": "per {{unit}}",
+      "created": "Product created",
+      "saved": "Product saved",
+      "archived": "Product archived. Invoices that name it are unchanged.",
+      "restored": "Product restored",
+      "deleted": "Product deleted",
+      "filter": {
+        "active": "Active",
+        "archived": "Archived"
+      },
+      "kind": {
+        "service": "Service",
+        "product": "Product"
+      },
+      "billing": {
+        "one_time": "One-time",
+        "every": "Every {{interval}}"
+      },
+      "per": {
+        "weekly": "week",
+        "biweekly": "2 weeks",
+        "monthly": "month",
+        "quarterly": "quarter",
+        "semiannual": "6 months",
+        "yearly": "year"
+      },
+      "column": {
+        "name": "Name",
+        "kind": "Kind",
+        "prices": "Prices",
+        "invoices": "Invoices"
+      },
+      "field": {
+        "name": "Name",
+        "namePlaceholder": "Consulting hour, Pro plan, Logo design",
+        "kind": "Kind",
+        "description": "Description",
+        "prices": "Prices",
+        "pricesHint": "One per currency. A recurring price says how often; it is a hint for recurring invoices, nothing is charged by itself.",
+        "addPrice": "Add price",
+        "noPrices": "No prices. The name still fills a line; the amount is typed.",
+        "nickname": "Label (optional)",
+        "fiscalRefs": "Fiscal references",
+        "fiscalRefsHint": "What a fiscal document needs per line. Suggested by your jurisdiction; add any other key you need.",
+        "customRefKey": "other key (e.g. hs_code)",
+        "addRef": "Add",
+        "fiscalRefsNone": "Nothing suggested for this kind here. Add any key your fiscal documents need."
+      },
+      "action": {
+        "archive": "Archive",
+        "restore": "Restore"
+      }
+    },
+    "installments": {
+      "title": "Split into installments",
+      "splitIn": "Split in",
+      "splitHint": "equal parts, a month apart, from the due date",
+      "add": "Add installment",
+      "label": "Label",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "Adds up to {{total}}.",
+      "mismatch": "The installments add up to {{scheduled}}, the invoice to {{total}}.",
+      "schedule": "Payment schedule",
+      "nextDue": "Next due",
+      "dueDerived": "Set by the last installment.",
+      "count_one": "{{count}} installment",
+      "count_other": "{{count}} installments",
+      "state": {
+        "open": "Open",
+        "partial": "Partial",
+        "paid": "Paid",
+        "overdue": "Overdue",
+        "draft": "Draft",
+        "void": "Void",
+        "uncollectible": "Uncollectible"
+      }
+    },
+    "deductions": {
+      "title": "Record a deduction",
+      "description": "Close part of what is owed without money arriving: the client withheld tax, the processor kept its fee, the conversion landed short. It counts as settled, never as received.",
+      "action": "Record deduction",
+      "recorded": "Deduction recorded",
+      "removed": "Deduction removed",
+      "amount": "Amount",
+      "amountHint": "Up to the balance: {{balance}}.",
+      "kindLabel": "Reason",
+      "taxKind": "Which tax (optional)",
+      "taxKindPlaceholder": "IRRF, ISS, IRPF...",
+      "note": "Note (optional)",
+      "settledWithout": "Settled without payment",
+      "kind": {
+        "withholding_tax": "Tax withheld by the client",
+        "gateway_fee": "Fee kept by the processor",
+        "fx_difference": "Currency conversion difference",
+        "other": "Other"
+      },
+      "differenceTitle": "The payment is {{difference}} short",
+      "differenceHint": "Record the difference so the invoice closes",
+      "differenceNone": "Do not record",
+      "figure": "Deducted"
+    },
+    "statement": {
+      "asIssued": "Invoice as issued",
+      "asIssuedHint": "The document sent to the client",
+      "hint": "Payments and deductions since issue, and the balance",
+      "banner": "This PDF is the invoice as issued. Since then {{paid}} was received and {{deducted}} deducted: the statement of account shows each one and the balance.",
+      "title": "Statement of account"
     }
   },
   "collections": {
@@ -573,7 +717,8 @@
     "add": "New collection",
     "edit": "Edit collection",
     "empty": "No collections yet. Create one to group your accounts.",
-    "accountCount": "{{count}} accounts",
+    "accountCount_one": "{{count}} account",
+    "accountCount_other": "{{count}} accounts",
     "name": "Name",
     "namePlaceholder": "e.g. Business, Long-term, Emergency fund",
     "color": "Color",
@@ -581,7 +726,8 @@
     "accountsHint": "{{count}} selected",
     "wallets": "Wallets",
     "walletsHint": "{{count}} selected",
-    "walletCount": "{{count}} wallets",
+    "walletCount_one": "{{count}} wallet",
+    "walletCount_other": "{{count}} wallets",
     "noAccounts": "No accounts yet.",
     "created": "Collection created",
     "updated": "Collection updated",
@@ -741,6 +887,7 @@
     "monthNext": "Next month",
     "description": "Description",
     "originalDescription": "Original description",
+    "restoreOriginalDescription": "Restore original",
     "amount": "Amount",
     "status": "Status",
     "date": "Date",
@@ -824,7 +971,7 @@
     "statusCleared": "Cleared",
     "sortAsc": "Sort ascending",
     "sortDesc": "Sort descending",
-    "syncedInfo": "Bank-synced transaction — only category and notes can be edited",
+    "syncedInfo": "Bank-synced transaction: amount, date and account can't be edited",
     "uncategorized": "Uncategorized",
     "selected": "selected",
     "summaryCount": "{{count}} transactions",
@@ -1025,6 +1172,7 @@
     "noManualAccounts": "No manual accounts yet",
     "noBankConnections": "No bank connections",
     "noAccountsFound": "No accounts found",
+    "emptyFiltered": "Nothing matches this filter.",
     "accountName": "Account name",
     "displayName": "Display name",
     "displayNameHint": "Overrides the default provider name everywhere in the app.",
@@ -1439,8 +1587,12 @@
     "updated": "Category updated",
     "deleted": "Category deleted",
     "confirmDeleteTitle": "Delete category?",
-    "confirmDeleteDescription": "The category \"{{name}}\" will be permanently deleted. It cannot be deleted while transactions or other records still reference it; remove those references first. This action cannot be undone.",
-    "deleteInUse": "This category is still in use. Remove the records that reference it first.",
+    "confirmDeleteDescription": "The category \"{{name}}\" will be permanently deleted. This action cannot be undone.",
+    "deleteInUse": "This category is still in use. Choose another category to move its entries to.",
+    "deleteInUseTitle": "Delete {{name}}?",
+    "deleteInUseDescription": "This category is still in use. Pick another one to take it all over: nothing is lost, it just moves.",
+    "deleteTransferLabel": "Move everything to",
+    "deleteAndTransfer": "Delete and move",
     "expandAll": "Expand all",
     "collapseAll": "Collapse all",
     "treatAsTransfer": "Treat as transfer",
@@ -1567,7 +1719,8 @@
       "invalid_date": "Invalid Date Format",
       "no_amount": "No Inflow or Outflow Amount",
       "invalid_amount": "Invalid Amount Format"
-    }
+    },
+    "selectAll": "Select all"
   },
   "assetImport": {
     "title": "Import investment orders",
@@ -1787,6 +1940,9 @@
     "inflowOutflow": "Inflow vs Outflow",
     "startingBalance": "Starting Balance",
     "endingBalance": "Projected Balance",
+    "runwayNegativeOn": "Balance goes negative on {{date}}",
+    "runwayAlreadyNegative": "Already negative",
+    "lowestBalance": "Lowest balance",
     "projectedIncome": "Projected Income",
     "projectedExpenses": "Projected Expenses",
     "incomeExpenses": "Income vs Expenses",
@@ -1916,6 +2072,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -1940,9 +2097,23 @@
       "uscc": "USCC"
     },
     "otherCountries": "Other countries",
-    "anyCountry": "Anywhere else"
+    "anyCountry": "Anywhere else",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / barcode",
+      "service_code": "Service code (LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "Municipal service code",
+      "hs_code": "HS code",
+      "sat_product_code": "SAT product/service code",
+      "sat_unit_code": "SAT unit code"
+    }
   },
   "common": {
+    "selectTimezone": "Select timezone",
+    "searchTimezone": "Search timezone...",
+    "noTimezoneFound": "No timezone found.",
     "createNamed": "Create \"{{name}}\"",
     "view": "View",
     "add": "Add",
@@ -1976,6 +2147,8 @@
     "remove": "Remove"
   },
   "splitGroups": {
+    "searchPlaceholder": "Search groups...",
+    "clearSearch": "Clear search",
     "title": "Groups",
     "section": "Setup",
     "add": "Add group",
@@ -2209,6 +2382,11 @@
       "dateFormatMdyDesc": "Month first, e.g. 06/04/2026.",
       "dateFormatYmd": "Year / Month / Day",
       "dateFormatYmdDesc": "ISO order, e.g. 2026-06-04.",
+      "timezoneTitle": "Date and time",
+      "timezone": "Application timezone",
+      "timezoneHelp": "Calendar dates, recurring transactions, scheduled work and AI context use this timezone. Changes apply to new requests and jobs.",
+      "timezoneServerDefault": "Server default ({{zone}})",
+      "timezoneSavedInvalid": "The saved value {{value}} is not a timezone this server knows. {{zone}} is in use until it is changed.",
       "updated": "Setting updated"
     }
   },

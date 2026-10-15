@@ -13,6 +13,9 @@
     "locale": "Taal",
     "taxJurisdiction": "Belastingjurisdictie",
     "taxJurisdictionHint": "Bepaalt welke fiscale documenten deze workspace wordt aangeboden. Los van de interfacetaal.",
+    "timezone": "Tijdzone",
+    "timezoneDefault": "Standaard van de applicatie ({{zone}})",
+    "timezoneHint": "De kalender waarin deze workspace zijn boeken bijhoudt. Saldi, budgetten en vervaldata wisselen daar om middernacht.",
     "members": "Leden",
     "addMember": "Lid toevoegen",
     "addMemberTitle": "Lid toevoegen",
@@ -233,7 +236,8 @@
       "downloadPdf": "Download PDF",
       "share": "Share link",
       "revokeLink": "Revoke link",
-      "saveDraft": "Opslaan als concept"
+      "saveDraft": "Opslaan als concept",
+      "downloadStatement": "Rekeningoverzicht downloaden"
     },
     "settings": {
       "title": "Invoice settings",
@@ -326,7 +330,25 @@
       "negative_discount": "Een korting kan niet negatief zijn.",
       "first_term": "De prijs die vanaf het begin geldt, kan niet worden verplaatst of verwijderd. Wijzig hem, of voeg een nieuwe prijs toe vanaf een latere datum.",
       "not_receivable": "Alleen een factuur die u hebt uitgegeven kan bij een afspraak horen.",
-      "period_already_issued": "Deze periode is zojuist uitgegeven. Vernieuw om hem te zien."
+      "period_already_issued": "Deze periode is zojuist uitgegeven. Vernieuw om hem te zien.",
+      "product_not_found": "Product niet gevonden.",
+      "price_not_found": "Prijs niet gevonden bij dit product.",
+      "product_in_use": "Er zijn facturen die dit product noemen. Archiveer het in plaats van het te verwijderen.",
+      "price_in_use": "Er zijn facturen gemaakt met deze prijs. Archiveer hem in plaats van hem te verwijderen.",
+      "invalid_kind": "Onbekend productsoort.",
+      "invalid_billing": "Onbekend factureringstype.",
+      "interval_required": "Een terugkerende prijs heeft een frequentie nodig.",
+      "currency_required": "Een prijs heeft een valuta nodig.",
+      "unit_price_required": "Een prijs heeft een bedrag nodig.",
+      "negative_price": "Een prijs kan niet negatief zijn.",
+      "invalid_fiscal_refs": "Fiscale referenties moeten korte tekstwaarden zijn onder eenvoudige sleutels (letters, cijfers, underscore).",
+      "price_key_taken": "Een andere prijs gebruikt deze zoeksleutel of externe id al.",
+      "installments_mismatch": "De termijnen tellen niet op tot het factuurtotaal.",
+      "installments_too_few": "Een schema heeft minstens twee termijnen nodig.",
+      "installment_amount_not_positive": "Elke termijn moet een bedrag hebben.",
+      "installment_due_required": "Elke termijn heeft een vervaldatum nodig.",
+      "invalid_deduction_kind": "Onbekende soort aftrek.",
+      "deduction_not_found": "Aftrek niet gevonden."
     },
     "comingNext": "Factureer uw klanten en houd bij wat er is betaald en wat er nog open staat. Dit is het volgende dat gebouwd wordt.",
     "document": {
@@ -561,6 +583,128 @@
         "empty": "Nog geen factuur onder deze afspraak.",
         "emptyNext": "Nog geen factuur. De eerste wordt opgesteld op {{date}}."
       }
+    },
+    "products": {
+      "title": "Producten",
+      "new": "Nieuw product",
+      "newDescription": "Iets wat je verkoopt, met een prijs per valuta. Kies je het, dan vult het een factuurregel in; de regel blijft daarna van jou om aan te passen.",
+      "editTitle": "Product bewerken",
+      "empty": "Nog geen producten. Voeg toe wat je verkoopt, en elke factuurregel is één klik verwijderd.",
+      "emptyArchived": "Niets gearchiveerd.",
+      "emptyPicker": "Nog geen producten. Voeg ze toe onder Producten.",
+      "noneFound": "Geen product komt overeen.",
+      "searchPlaceholder": "Producten zoeken",
+      "pick": "Kies uit de catalogus",
+      "fromCatalog": "Uit de catalogus",
+      "noPrice": "Geen prijs",
+      "noPriceIn": "geen prijs in {{currency}}",
+      "perUnit": "per {{unit}}",
+      "created": "Product aangemaakt",
+      "saved": "Product opgeslagen",
+      "archived": "Product gearchiveerd. Facturen die het noemen blijven ongewijzigd.",
+      "restored": "Product hersteld",
+      "deleted": "Product verwijderd",
+      "filter": {
+        "active": "Actief",
+        "archived": "Gearchiveerd"
+      },
+      "kind": {
+        "service": "Dienst",
+        "product": "Product"
+      },
+      "billing": {
+        "one_time": "Eenmalig",
+        "every": "Elke {{interval}}"
+      },
+      "per": {
+        "weekly": "week",
+        "biweekly": "2 weken",
+        "monthly": "maand",
+        "quarterly": "kwartaal",
+        "semiannual": "6 maanden",
+        "yearly": "jaar"
+      },
+      "column": {
+        "name": "Naam",
+        "kind": "Soort",
+        "prices": "Prijzen",
+        "invoices": "Facturen"
+      },
+      "field": {
+        "name": "Naam",
+        "namePlaceholder": "Adviesuur, Pro-abonnement, Logo-ontwerp",
+        "kind": "Soort",
+        "description": "Omschrijving",
+        "prices": "Prijzen",
+        "pricesHint": "Eén per valuta. Een terugkerende prijs geeft aan hoe vaak; het is een hint voor terugkerende facturen, er wordt uit zichzelf niets in rekening gebracht.",
+        "addPrice": "Prijs toevoegen",
+        "noPrices": "Geen prijzen. De naam vult de regel toch in; het bedrag typ je zelf.",
+        "nickname": "Label (optioneel)",
+        "fiscalRefs": "Fiscale referenties",
+        "fiscalRefsHint": "Wat een fiscaal document per regel nodig heeft. Voorgesteld op basis van uw jurisdictie; voeg elke andere sleutel toe die u nodig heeft.",
+        "customRefKey": "andere sleutel (bijv. hs_code)",
+        "addRef": "Toevoegen",
+        "fiscalRefsNone": "Niets voorgesteld voor dit type hier. Voeg elke sleutel toe die uw fiscale documenten nodig hebben."
+      },
+      "action": {
+        "archive": "Archiveren",
+        "restore": "Herstellen"
+      }
+    },
+    "installments": {
+      "title": "In termijnen splitsen",
+      "splitIn": "Splitsen in",
+      "splitHint": "gelijke delen, een maand uit elkaar, vanaf de vervaldatum",
+      "add": "Termijn toevoegen",
+      "label": "Label",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "Telt op tot {{total}}.",
+      "mismatch": "De termijnen tellen op tot {{scheduled}}, de factuur tot {{total}}.",
+      "schedule": "Betalingsschema",
+      "nextDue": "Volgende vervaldatum",
+      "dueDerived": "Bepaald door de laatste termijn.",
+      "count_one": "{{count}} termijn",
+      "count_other": "{{count}} termijnen",
+      "state": {
+        "open": "Open",
+        "partial": "Gedeeltelijk",
+        "paid": "Betaald",
+        "overdue": "Verlopen",
+        "draft": "Concept",
+        "void": "Geannuleerd",
+        "uncollectible": "Oninbaar"
+      }
+    },
+    "deductions": {
+      "title": "Aftrek vastleggen",
+      "description": "Sluit een deel van het verschuldigde bedrag af zonder dat er geld binnenkomt: de klant heeft belasting ingehouden, de betaalprovider heeft zijn kosten ingehouden, de valutaomrekening viel lager uit. Het telt als vereffend, nooit als ontvangen.",
+      "action": "Aftrek vastleggen",
+      "recorded": "Aftrek vastgelegd",
+      "removed": "Aftrek verwijderd",
+      "amount": "Bedrag",
+      "amountHint": "Tot het saldo: {{balance}}.",
+      "kindLabel": "Reden",
+      "taxKind": "Welke belasting (optioneel)",
+      "taxKindPlaceholder": "Loonheffing, btw...",
+      "note": "Notitie (optioneel)",
+      "settledWithout": "Vereffend zonder betaling",
+      "kind": {
+        "withholding_tax": "Belasting ingehouden door de klant",
+        "gateway_fee": "Kosten ingehouden door de betaalprovider",
+        "fx_difference": "Valutaomrekeningsverschil",
+        "other": "Overig"
+      },
+      "differenceTitle": "De betaling is {{difference}} te laag",
+      "differenceHint": "Leg het verschil vast zodat de factuur wordt afgesloten",
+      "differenceNone": "Niet vastleggen",
+      "figure": "Ingehouden"
+    },
+    "statement": {
+      "asIssued": "Factuur zoals uitgegeven",
+      "asIssuedHint": "Het document dat naar de klant is gestuurd",
+      "hint": "Betalingen en inhoudingen sinds uitgifte, en het saldo",
+      "banner": "Deze PDF is de factuur zoals uitgegeven. Sindsdien is {{paid}} ontvangen en {{deducted}} ingehouden: het rekeningoverzicht toont elke post en het saldo.",
+      "title": "Rekeningoverzicht"
     }
   },
   "collections": {
@@ -573,7 +717,8 @@
     "add": "Nieuwe collectie",
     "edit": "Verzameling bewerken",
     "empty": "Nog geen collecties. Maak er een om uw accounts te groeperen.",
-    "accountCount": "{{count}} accounts",
+    "accountCount_one": "{{count}} account",
+    "accountCount_other": "{{count}} accounts",
     "name": "Naam",
     "namePlaceholder": "bijv. Zakelijk, Lange termijn, Noodfonds",
     "color": "Kleur",
@@ -581,7 +726,8 @@
     "accountsHint": "{{count}} geselecteerd",
     "wallets": "Portefeuilles",
     "walletsHint": "{{count}} geselecteerd",
-    "walletCount": "{{count}} portefeuilles",
+    "walletCount_one": "{{count}} portefeuille",
+    "walletCount_other": "{{count}} portefeuilles",
     "noAccounts": "Nog geen accounts.",
     "created": "Collectie gemaakt",
     "updated": "Collectie bijgewerkt",
@@ -741,6 +887,7 @@
     "monthNext": "Volgende maand",
     "description": "Beschrijving",
     "originalDescription": "Originele beschrijving",
+    "restoreOriginalDescription": "Origineel herstellen",
     "amount": "Bedrag",
     "status": "Status",
     "date": "Datum",
@@ -824,7 +971,7 @@
     "statusCleared": "Gewist",
     "sortAsc": "Sorteer oplopend",
     "sortDesc": "Sorteer aflopend",
-    "syncedInfo": "Bankgesynchroniseerde transactie: alleen categorie en notities kunnen worden bewerkt",
+    "syncedInfo": "Bankgesynchroniseerde transactie: bedrag, datum en rekening kunnen niet worden bewerkt",
     "uncategorized": "Niet gecategoriseerd",
     "selected": "geselecteerd",
     "summaryCount": "{{count}} transacties",
@@ -1026,6 +1173,7 @@
     "noManualAccounts": "Nog geen handmatige accounts",
     "noBankConnections": "Geen bankverbindingen",
     "noAccountsFound": "Geen accounts gevonden",
+    "emptyFiltered": "Niets komt overeen met dit filter.",
     "accountName": "Accountnaam",
     "displayName": "Weergavenaam",
     "displayNameHint": "Overschrijft overal in de app de standaardprovidernaam.",
@@ -1449,8 +1597,12 @@
     "ignoreTransferDesc": "Genegeerde transacties worden niet weergegeven in inkomsten- of uitgavenrapporten.",
     "ignoreTransferBadge": "Negeer",
     "confirmDeleteTitle": "Categorie verwijderen?",
-    "confirmDeleteDescription": "De categorie \"{{name}}\" wordt permanent verwijderd. De categorie kan niet worden verwijderd zolang transacties of andere records ernaar verwijzen; verwijder die verwijzingen eerst. Deze actie kan niet ongedaan worden gemaakt.",
-    "deleteInUse": "Deze categorie is nog in gebruik. Verwijder eerst de records die ernaar verwijzen.",
+    "confirmDeleteDescription": "De categorie \"{{name}}\" wordt permanent verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
+    "deleteInUse": "Deze categorie is nog in gebruik. Kies een andere categorie om de items naartoe te verplaatsen.",
+    "deleteInUseTitle": "{{name}} verwijderen?",
+    "deleteInUseDescription": "Deze categorie is nog in gebruik. Kies een andere die alles overneemt: er gaat niets verloren, het verhuist alleen.",
+    "deleteTransferLabel": "Alles verplaatsen naar",
+    "deleteAndTransfer": "Verwijderen en verplaatsen",
     "hiddenBadge": "Verborgen",
     "hiddenScopeDescription": "Verborgen standaardcategorieën worden uit de categoriekiezers gehaald en worden niet meer door regels toegewezen. Bestaande transacties, budgetten, dashboards en rapporten blijven ze gebruiken.",
     "hideAndTurnOffRules": "Verbergen en de regels uitschakelen",
@@ -1569,7 +1721,8 @@
       "invalid_date": "Ongeldige datumformaat",
       "no_amount": "Geen in- of uitstroombedrag",
       "invalid_amount": "Ongeldig bedragformaat"
-    }
+    },
+    "selectAll": "Alles selecteren"
   },
   "assetImport": {
     "title": "Investeringsorders importeren",
@@ -1789,6 +1942,9 @@
     "inflowOutflow": "Instroom versus uitstroom",
     "startingBalance": "Beginsaldo",
     "endingBalance": "Geprojecteerd saldo",
+    "runwayNegativeOn": "Het saldo wordt negatief op {{date}}",
+    "runwayAlreadyNegative": "Al negatief",
+    "lowestBalance": "Laagste saldo",
     "projectedIncome": "Geprojecteerd inkomen",
     "projectedExpenses": "Geprojecteerde uitgaven",
     "incomeExpenses": "Inkomsten versus uitgaven",
@@ -1918,6 +2074,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "herberg",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -1942,9 +2099,23 @@
       "uscc": "USCC"
     },
     "otherCountries": "Andere landen",
-    "anyCountry": "Ergens anders"
+    "anyCountry": "Ergens anders",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / barcode",
+      "service_code": "Dienstcode (LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "Gemeentelijke dienstcode",
+      "hs_code": "HS-code",
+      "sat_product_code": "SAT product-/dienstcode",
+      "sat_unit_code": "SAT eenheidscode"
+    }
   },
   "common": {
+    "selectTimezone": "Tijdzone kiezen",
+    "searchTimezone": "Tijdzone zoeken...",
+    "noTimezoneFound": "Geen tijdzone gevonden.",
     "createNamed": "\"{{name}}\" aanmaken",
     "view": "Bekijk",
     "add": "Toevoegen",
@@ -1978,6 +2149,8 @@
     "remove": "Verwijderen"
   },
   "splitGroups": {
+    "searchPlaceholder": "Groepen zoeken...",
+    "clearSearch": "Zoekopdracht wissen",
     "title": "Groepen",
     "section": "Instellen",
     "add": "Groep toevoegen",
@@ -2211,6 +2384,11 @@
       "dateFormatMdyDesc": "Maand eerst, b.v. 06/04/2026.",
       "dateFormatYmd": "Jaar / Maand / Dag",
       "dateFormatYmdDesc": "ISO-volgorde, b.v. 04-06-2026.",
+      "timezoneTitle": "Datum en tijd",
+      "timezone": "Tijdzone van de applicatie",
+      "timezoneHelp": "Datums, terugkerende transacties, geplande taken en de AI-context gebruiken deze tijdzone. Wijzigingen gelden voor nieuwe verzoeken en taken.",
+      "timezoneServerDefault": "Serverstandaard ({{zone}})",
+      "timezoneSavedInvalid": "De opgeslagen waarde {{value}} is geen tijdzone die deze server kent. {{zone}} wordt gebruikt totdat dit wordt gewijzigd.",
       "updated": "Instelling bijgewerkt"
     }
   },

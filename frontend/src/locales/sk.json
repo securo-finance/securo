@@ -13,6 +13,9 @@
     "locale": "Jazyk",
     "taxJurisdiction": "Daňová jurisdikcia",
     "taxJurisdictionHint": "Určuje, ktoré fiškálne dokumenty sa tomuto pracovnému priestoru ponúkajú. Nesúvisí s jazykom rozhrania.",
+    "timezone": "Časové pásmo",
+    "timezoneDefault": "Predvolené aplikácie ({{zone}})",
+    "timezoneHint": "Kalendár, v ktorom tento workspace vedie účty. Zostatky, rozpočty a splatnosti sa tam menia o polnoci.",
     "members": "Členovia",
     "addMember": "Pridať člena",
     "addMemberTitle": "Pridať člena",
@@ -233,7 +236,8 @@
       "downloadPdf": "Stiahnuť PDF",
       "share": "Zdieľať odkaz",
       "revokeLink": "Zrušiť odkaz",
-      "saveDraft": "Uložiť ako koncept"
+      "saveDraft": "Uložiť ako koncept",
+      "downloadStatement": "Stiahnuť výpis"
     },
     "settings": {
       "title": "Nastavenia faktúr",
@@ -326,7 +330,25 @@
       "negative_discount": "Zľava nemôže byť záporná.",
       "first_term": "Cenu platnú od začiatku nemožno presunúť ani odstrániť. Zmeňte ju alebo pridajte novú cenu od neskoršieho dátumu.",
       "not_receivable": "K dohode môže patriť iba faktúra, ktorú ste vystavili vy.",
-      "period_already_issued": "Toto obdobie bolo práve vystavené. Obnovte stránku, aby ste ho videli."
+      "period_already_issued": "Toto obdobie bolo práve vystavené. Obnovte stránku, aby ste ho videli.",
+      "product_not_found": "Produkt sa nenašiel.",
+      "price_not_found": "Cena sa pri tomto produkte nenašla.",
+      "product_in_use": "Tento produkt je uvedený vo faktúrach. Namiesto zmazania ho archivujte.",
+      "price_in_use": "Za túto cenu už boli vystavené faktúry. Namiesto zmazania ju archivujte.",
+      "invalid_kind": "Neznámy druh produktu.",
+      "invalid_billing": "Neznámy druh účtovania.",
+      "interval_required": "Opakovaná cena potrebuje frekvenciu.",
+      "currency_required": "Cena potrebuje menu.",
+      "unit_price_required": "Cena potrebuje sumu.",
+      "negative_price": "Cena nemôže byť záporná.",
+      "invalid_fiscal_refs": "Daňové referencie musia byť krátke textové hodnoty pod jednoduchými kľúčmi (písmená, číslice, podčiarknutie).",
+      "price_key_taken": "Iná cena už používa tento vyhľadávací kľúč alebo externé id.",
+      "installments_mismatch": "Splátky nedávajú spolu sumu faktúry.",
+      "installments_too_few": "Splátkový kalendár potrebuje aspoň dve splátky.",
+      "installment_amount_not_positive": "Každá splátka musí mať sumu.",
+      "installment_due_required": "Každá splátka potrebuje dátum splatnosti.",
+      "invalid_deduction_kind": "Neznámy typ zrážky.",
+      "deduction_not_found": "Zrážka sa nenašla."
     },
     "comingNext": "Fakturujte klientom a majte prehľad o tom, čo je zaplatené a čo ešte otvorené. Toto sa práve stavia.",
     "document": {
@@ -565,6 +587,128 @@
         "empty": "V tejto dohode zatiaľ nie je žiadna faktúra.",
         "emptyNext": "Zatiaľ žiadna faktúra. Prvá sa vystaví {{date}}."
       }
+    },
+    "products": {
+      "title": "Produkty",
+      "new": "Nový produkt",
+      "newDescription": "Niečo, čo predávate, s cenou pre každú menu. Výber vyplní položku faktúry; položku môžete potom ľubovoľne upraviť.",
+      "editTitle": "Upraviť produkt",
+      "empty": "Zatiaľ žiadne produkty. Pridajte, čo predávate, a každá položka faktúry bude na jedno kliknutie.",
+      "emptyArchived": "Nič nie je archivované.",
+      "emptyPicker": "Zatiaľ žiadne produkty. Pridajte ich v sekcii Produkty.",
+      "noneFound": "Žiadny produkt nezodpovedá.",
+      "searchPlaceholder": "Hľadať produkty",
+      "pick": "Vybrať z katalógu",
+      "fromCatalog": "Z katalógu",
+      "noPrice": "Bez ceny",
+      "noPriceIn": "bez ceny v {{currency}}",
+      "perUnit": "za {{unit}}",
+      "created": "Produkt vytvorený",
+      "saved": "Produkt uložený",
+      "archived": "Produkt archivovaný. Faktúry, ktoré ho uvádzajú, sa nemenia.",
+      "restored": "Produkt obnovený",
+      "deleted": "Produkt zmazaný",
+      "filter": {
+        "active": "Aktívne",
+        "archived": "Archivované"
+      },
+      "kind": {
+        "service": "Služba",
+        "product": "Produkt"
+      },
+      "billing": {
+        "one_time": "Jednorazovo",
+        "every": "Každý {{interval}}"
+      },
+      "per": {
+        "weekly": "týždeň",
+        "biweekly": "2 týždne",
+        "monthly": "mesiac",
+        "quarterly": "štvrťrok",
+        "semiannual": "6 mesiacov",
+        "yearly": "rok"
+      },
+      "column": {
+        "name": "Názov",
+        "kind": "Druh",
+        "prices": "Ceny",
+        "invoices": "Faktúry"
+      },
+      "field": {
+        "name": "Názov",
+        "namePlaceholder": "Hodina konzultácie, Plán Pro, Návrh loga",
+        "kind": "Druh",
+        "description": "Popis",
+        "prices": "Ceny",
+        "pricesHint": "Jedna na menu. Opakovaná cena určuje, ako často; je to nápoveda pre opakované faktúry, nič sa neúčtuje samo od seba.",
+        "addPrice": "Pridať cenu",
+        "noPrices": "Žiadne ceny. Názov aj tak vyplní položku; suma sa zadáva ručne.",
+        "nickname": "Označenie (voliteľné)",
+        "fiscalRefs": "Daňové referencie",
+        "fiscalRefsHint": "Čo daňový doklad potrebuje pre každú položku. Navrhnuté podľa vašej jurisdikcie; pridajte akýkoľvek ďalší kľúč, ktorý potrebujete.",
+        "customRefKey": "iný kľúč (napr. hs_code)",
+        "addRef": "Pridať",
+        "fiscalRefsNone": "Pre tento druh tu nie je nič navrhnuté. Pridajte akýkoľvek kľúč, ktorý vaše daňové doklady potrebujú."
+      },
+      "action": {
+        "archive": "Archivovať",
+        "restore": "Obnoviť"
+      }
+    },
+    "installments": {
+      "title": "Rozdeliť na splátky",
+      "splitIn": "Rozdeliť na",
+      "splitHint": "rovnakých častí, s mesačným odstupom, od dátumu splatnosti",
+      "add": "Pridať splátku",
+      "label": "Označenie",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "Spolu {{total}}.",
+      "mismatch": "Splátky dávajú spolu {{scheduled}}, faktúra {{total}}.",
+      "schedule": "Splátkový kalendár",
+      "nextDue": "Najbližšia splatnosť",
+      "dueDerived": "Určená poslednou splátkou.",
+      "count_one": "{{count}} splátka",
+      "count_other": "Splátky: {{count}}",
+      "state": {
+        "open": "Otvorená",
+        "partial": "Čiastočná",
+        "paid": "Uhradená",
+        "overdue": "Po splatnosti",
+        "draft": "Koncept",
+        "void": "Stornovaná",
+        "uncollectible": "Nevymožiteľná"
+      }
+    },
+    "deductions": {
+      "title": "Zaznamenať zrážku",
+      "description": "Uzavrie časť pohľadávky bez toho, aby prišli peniaze: klient zrazil daň, platobná brána si nechala poplatok, prepočet meny vyšiel nižšie. Počíta sa ako vyrovnané, nikdy ako prijaté.",
+      "action": "Zaznamenať zrážku",
+      "recorded": "Zrážka zaznamenaná",
+      "removed": "Zrážka odstránená",
+      "amount": "Suma",
+      "amountHint": "Najviac do výšky zostatku: {{balance}}.",
+      "kindLabel": "Dôvod",
+      "taxKind": "Ktorá daň (voliteľné)",
+      "taxKindPlaceholder": "Zrážková daň, DPH...",
+      "note": "Poznámka (voliteľné)",
+      "settledWithout": "Vyrovnané bez platby",
+      "kind": {
+        "withholding_tax": "Daň zrazená klientom",
+        "gateway_fee": "Poplatok, ktorý si nechala platobná brána",
+        "fx_difference": "Kurzový rozdiel",
+        "other": "Iné"
+      },
+      "differenceTitle": "Platba je o {{difference}} nižšia",
+      "differenceHint": "Zaznamenajte rozdiel, aby sa faktúra uzavrela",
+      "differenceNone": "Nezaznamenať",
+      "figure": "Zrazené"
+    },
+    "statement": {
+      "asIssued": "Faktúra v vystavenej podobe",
+      "asIssuedHint": "Dokument odoslaný klientovi",
+      "hint": "Platby a zrážky od vystavenia a zostatok",
+      "banner": "Toto PDF je faktúra vo vystavenej podobe. Odvtedy bolo prijatých {{paid}} a zrazených {{deducted}}: výpis ukazuje každú položku a zostatok.",
+      "title": "Výpis z účtu"
     }
   },
   "collections": {
@@ -577,7 +721,10 @@
     "add": "Nová zbierka",
     "edit": "Upraviť zbierku",
     "empty": "Zatiaľ žiadne zbierky. Vytvor si jednu a zoskup svoje účty.",
-    "accountCount": "{{count}} účtov",
+    "accountCount_one": "{{count}} účet",
+    "accountCount_few": "{{count}} účty",
+    "accountCount_many": "{{count}} účtu",
+    "accountCount_other": "{{count}} účtov",
     "name": "Názov",
     "namePlaceholder": "napr. Firma, Dlhodobé, Rezerva",
     "color": "Farba",
@@ -585,7 +732,10 @@
     "accountsHint": "{{count}} vybraných",
     "wallets": "Peňaženky",
     "walletsHint": "{{count}} vybraných",
-    "walletCount": "{{count}} peňaženiek",
+    "walletCount_one": "{{count}} peňaženka",
+    "walletCount_few": "{{count}} peňaženky",
+    "walletCount_many": "{{count}} peňaženky",
+    "walletCount_other": "{{count}} peňaženiek",
     "noAccounts": "Zatiaľ žiadne účty.",
     "created": "Zbierka vytvorená",
     "updated": "Zbierka aktualizovaná",
@@ -753,6 +903,7 @@
     "monthNext": "Ďalší mesiac",
     "description": "Popis",
     "originalDescription": "Pôvodný popis",
+    "restoreOriginalDescription": "Obnoviť pôvodný",
     "amount": "Suma",
     "status": "Stav",
     "date": "Dátum",
@@ -840,7 +991,7 @@
     "statusCleared": "Zaúčtovaná",
     "sortAsc": "Zoradiť vzostupne",
     "sortDesc": "Zoradiť zostupne",
-    "syncedInfo": "Transakcia synchronizovaná z banky — upraviť sa dá len kategória a poznámka",
+    "syncedInfo": "Transakcia synchronizovaná z banky: sumu, dátum a účet nemožno upraviť",
     "uncategorized": "Bez kategórie",
     "selected": "vybraných",
     "summaryCount": "{{count}} transakcií",
@@ -1077,6 +1228,7 @@
     "noManualAccounts": "Zatiaľ žiadne manuálne účty",
     "noBankConnections": "Žiadne prepojenia bánk",
     "noAccountsFound": "Nenašli sa žiadne účty",
+    "emptyFiltered": "Tomuto filtru nič nezodpovedá.",
     "accountName": "Názov účtu",
     "displayName": "Zobrazovaný názov",
     "displayNameHint": "Nahradí predvolený názov od poskytovateľa všade v aplikácii.",
@@ -1527,8 +1679,12 @@
     "updated": "Kategória aktualizovaná",
     "deleted": "Kategória vymazaná",
     "confirmDeleteTitle": "Vymazať kategóriu?",
-    "confirmDeleteDescription": "Kategória „{{name}}“ bude natrvalo vymazaná. Nedá sa vymazať, kým na ňu odkazujú transakcie alebo iné záznamy; najprv tieto odkazy odstráň. Túto akciu nie je možné vrátiť späť.",
-    "deleteInUse": "Táto kategória sa stále používa. Najprv odstráň záznamy, ktoré na ňu odkazujú.",
+    "confirmDeleteDescription": "Kategória „{{name}}“ bude natrvalo vymazaná. Túto akciu nie je možné vrátiť späť.",
+    "deleteInUse": "Táto kategória sa stále používa. Vyber inú kategóriu, do ktorej sa jej záznamy presunú.",
+    "deleteInUseTitle": "Vymazať {{name}}?",
+    "deleteInUseDescription": "Táto kategória sa stále používa. Vyber inú, ktorá všetko prevezme: nič sa nestratí, len sa presunie.",
+    "deleteTransferLabel": "Presunúť všetko do",
+    "deleteAndTransfer": "Vymazať a presunúť",
     "expandAll": "Rozbaliť všetko",
     "collapseAll": "Zbaliť všetko",
     "treatAsTransfer": "Považovať za prevod",
@@ -1679,7 +1835,8 @@
       "invalid_date": "Neplatný formát dátumu",
       "no_amount": "Chýba suma príjmu alebo výdaja",
       "invalid_amount": "Neplatný formát sumy"
-    }
+    },
+    "selectAll": "Vybrať všetko"
   },
   "assetImport": {
     "title": "Import investičných pokynov",
@@ -1899,6 +2056,9 @@
     "inflowOutflow": "Prítok vs odtok",
     "startingBalance": "Počiatočný zostatok",
     "endingBalance": "Predpokladaný zostatok",
+    "runwayNegativeOn": "Zostatok bude záporný {{date}}",
+    "runwayAlreadyNegative": "Už v mínuse",
+    "lowestBalance": "Najnižší zostatok",
     "projectedIncome": "Predpokladaný príjem",
     "projectedExpenses": "Predpokladané výdavky",
     "incomeExpenses": "Príjmy vs výdavky",
@@ -2036,6 +2196,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2060,9 +2221,23 @@
       "uscc": "USCC"
     },
     "otherCountries": "Ostatné krajiny",
-    "anyCountry": "Kdekoľvek inde"
+    "anyCountry": "Kdekoľvek inde",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / čiarový kód",
+      "service_code": "Kód služby (LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "Obecný kód služby",
+      "hs_code": "Kód HS",
+      "sat_product_code": "Kód produktu/služby SAT",
+      "sat_unit_code": "Kód jednotky SAT"
+    }
   },
   "common": {
+    "selectTimezone": "Vyberte časové pásmo",
+    "searchTimezone": "Hľadať časové pásmo...",
+    "noTimezoneFound": "Nenašlo sa žiadne časové pásmo.",
     "createNamed": "Vytvoriť „{{name}}“",
     "view": "Zobraziť",
     "add": "Pridať",
@@ -2100,6 +2275,8 @@
     "remove": "Odstrániť"
   },
   "splitGroups": {
+    "searchPlaceholder": "Hľadať skupiny...",
+    "clearSearch": "Vymazať vyhľadávanie",
     "title": "Skupiny",
     "section": "Nastavenie",
     "add": "Pridať skupinu",
@@ -2341,6 +2518,11 @@
       "dateFormatMdyDesc": "Najprv mesiac, napr. 06/04/2026.",
       "dateFormatYmd": "Rok / Mesiac / Deň",
       "dateFormatYmdDesc": "Poradie ISO, napr. 2026-06-04.",
+      "timezoneTitle": "Dátum a čas",
+      "timezone": "Časové pásmo aplikácie",
+      "timezoneHelp": "Dátumy, opakované transakcie, naplánované úlohy a kontext AI používajú toto časové pásmo. Zmeny platia pre nové požiadavky a úlohy.",
+      "timezoneServerDefault": "Predvolené servera ({{zone}})",
+      "timezoneSavedInvalid": "Uložená hodnota {{value}} nie je časové pásmo, ktoré tento server pozná. Kým sa nezmení, používa sa {{zone}}.",
       "updated": "Nastavenie aktualizované"
     }
   },

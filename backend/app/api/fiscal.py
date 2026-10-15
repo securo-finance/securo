@@ -45,6 +45,25 @@ async def list_jurisdictions():
     return {"jurisdictions": available_jurisdictions()}
 
 
+@router.get("/product-fields")
+async def list_product_fields(ctx: WorkspaceContext = Depends(current_workspace)):
+    """Fiscal references this jurisdiction asks for on a catalog item.
+
+    Suggestions for the product form: which keys to offer, under which
+    label, for which kind of product. A workspace may store any key it
+    likes on top of these; an empty list is a valid answer for a country
+    whose pack has no opinion yet.
+    """
+    pack = pack_for(ctx.workspace.tax_jurisdiction)
+    return {
+        "jurisdiction": pack.code or None,
+        "fields": [
+            {"key": f.key, "label_key": f.label_key, "kinds": list(f.kinds)}
+            for f in pack.product_fields
+        ],
+    }
+
+
 @router.get("/tax-id-kinds")
 async def list_tax_id_kinds(ctx: WorkspaceContext = Depends(current_workspace)):
     """Document kinds for the active workspace, plus which country uses what.

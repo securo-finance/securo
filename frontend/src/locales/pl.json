@@ -13,6 +13,9 @@
     "locale": "Język",
     "taxJurisdiction": "Jurysdykcja podatkowa",
     "taxJurisdictionHint": "Decyduje, jakie dokumenty podatkowe oferuje ten obszar roboczy. Niezależnie od języka interfejsu.",
+    "timezone": "Strefa czasowa",
+    "timezoneDefault": "Domyślna aplikacji ({{zone}})",
+    "timezoneHint": "Kalendarz, w którym ten workspace prowadzi księgi. Salda, budżety i terminy zmieniają się tam o północy.",
     "members": "Członkowie",
     "addMember": "Dodaj członka",
     "addMemberTitle": "Dodaj członka",
@@ -233,7 +236,8 @@
       "downloadPdf": "Download PDF",
       "share": "Share link",
       "revokeLink": "Revoke link",
-      "saveDraft": "Zapisz szkic"
+      "saveDraft": "Zapisz szkic",
+      "downloadStatement": "Pobierz wyciąg"
     },
     "settings": {
       "title": "Invoice settings",
@@ -326,7 +330,25 @@
       "negative_discount": "Rabat nie może być ujemny.",
       "first_term": "Ceny obowiązującej od początku nie można przesunąć ani usunąć. Zmień ją lub dodaj nową cenę od późniejszej daty.",
       "not_receivable": "Do umowy może należeć tylko faktura wystawiona przez Ciebie.",
-      "period_already_issued": "Ten okres został właśnie wystawiony. Odśwież, aby go zobaczyć."
+      "period_already_issued": "Ten okres został właśnie wystawiony. Odśwież, aby go zobaczyć.",
+      "product_not_found": "Nie znaleziono produktu.",
+      "price_not_found": "Nie znaleziono ceny w tym produkcie.",
+      "product_in_use": "Faktury wymieniają ten produkt. Zarchiwizuj go zamiast usuwać.",
+      "price_in_use": "Faktury zostały wystawione po tej cenie. Zarchiwizuj ją zamiast usuwać.",
+      "invalid_kind": "Nieznany rodzaj produktu.",
+      "invalid_billing": "Nieznany rodzaj rozliczenia.",
+      "interval_required": "Cena cykliczna wymaga częstotliwości.",
+      "currency_required": "Cena wymaga waluty.",
+      "unit_price_required": "Cena wymaga kwoty.",
+      "negative_price": "Cena nie może być ujemna.",
+      "invalid_fiscal_refs": "Odniesienia podatkowe muszą być krótkimi wartościami tekstowymi pod prostymi kluczami (litery, cyfry, podkreślenie).",
+      "price_key_taken": "Inna cena już używa tego klucza wyszukiwania lub zewnętrznego identyfikatora.",
+      "installments_mismatch": "Raty nie sumują się do kwoty faktury.",
+      "installments_too_few": "Harmonogram wymaga co najmniej dwóch rat.",
+      "installment_amount_not_positive": "Każda rata musi mieć kwotę.",
+      "installment_due_required": "Każda rata wymaga terminu płatności.",
+      "invalid_deduction_kind": "Nieznany rodzaj potrącenia.",
+      "deduction_not_found": "Nie znaleziono potrącenia."
     },
     "comingNext": "Wystawiaj faktury klientom i śledź, co zostało zapłacone, a co wciąż jest otwarte. To następna rzecz w budowie.",
     "document": {
@@ -565,6 +587,128 @@
         "empty": "W tej umowie nie ma jeszcze faktury.",
         "emptyNext": "Nie ma jeszcze faktury. Pierwsza zostanie wystawiona {{date}}."
       }
+    },
+    "products": {
+      "title": "Produkty",
+      "new": "Nowy produkt",
+      "newDescription": "Coś, co sprzedajesz, z ceną dla każdej waluty. Wybranie go wypełnia pozycję faktury; pozycję można potem dowolnie zmienić.",
+      "editTitle": "Edytuj produkt",
+      "empty": "Nie ma jeszcze produktów. Dodaj to, co sprzedajesz, a każda pozycja faktury będzie o jedno kliknięcie.",
+      "emptyArchived": "Nic nie zarchiwizowano.",
+      "emptyPicker": "Nie ma jeszcze produktów. Dodaj je w sekcji Produkty.",
+      "noneFound": "Żaden produkt nie pasuje.",
+      "searchPlaceholder": "Szukaj produktów",
+      "pick": "Wybierz z katalogu",
+      "fromCatalog": "Z katalogu",
+      "noPrice": "Brak ceny",
+      "noPriceIn": "brak ceny w {{currency}}",
+      "perUnit": "za {{unit}}",
+      "created": "Produkt utworzony",
+      "saved": "Produkt zapisany",
+      "archived": "Produkt zarchiwizowany. Faktury, które go wymieniają, pozostają bez zmian.",
+      "restored": "Produkt przywrócony",
+      "deleted": "Produkt usunięty",
+      "filter": {
+        "active": "Aktywne",
+        "archived": "Zarchiwizowane"
+      },
+      "kind": {
+        "service": "Usługa",
+        "product": "Produkt"
+      },
+      "billing": {
+        "one_time": "Jednorazowo",
+        "every": "Co {{interval}}"
+      },
+      "per": {
+        "weekly": "tydzień",
+        "biweekly": "2 tygodnie",
+        "monthly": "miesiąc",
+        "quarterly": "kwartał",
+        "semiannual": "6 miesięcy",
+        "yearly": "rok"
+      },
+      "column": {
+        "name": "Nazwa",
+        "kind": "Rodzaj",
+        "prices": "Ceny",
+        "invoices": "Faktury"
+      },
+      "field": {
+        "name": "Nazwa",
+        "namePlaceholder": "Godzina konsultacji, Plan Pro, Projekt logo",
+        "kind": "Rodzaj",
+        "description": "Opis",
+        "prices": "Ceny",
+        "pricesHint": "Jedna na walutę. Cena cykliczna określa, jak często; to podpowiedź dla faktur cyklicznych, nic nie jest naliczane samo z siebie.",
+        "addPrice": "Dodaj cenę",
+        "noPrices": "Brak cen. Nazwa i tak wypełni pozycję; kwotę wpisuje się ręcznie.",
+        "nickname": "Etykieta (opcjonalnie)",
+        "fiscalRefs": "Odniesienia podatkowe",
+        "fiscalRefsHint": "Czego dokument podatkowy wymaga w każdej pozycji. Sugerowane przez Twoją jurysdykcję; dodaj dowolny inny potrzebny klucz.",
+        "customRefKey": "inny klucz (np. hs_code)",
+        "addRef": "Dodaj",
+        "fiscalRefsNone": "Brak sugestii dla tego rodzaju. Dodaj dowolny klucz, którego potrzebują Twoje dokumenty podatkowe."
+      },
+      "action": {
+        "archive": "Archiwizuj",
+        "restore": "Przywróć"
+      }
+    },
+    "installments": {
+      "title": "Podziel na raty",
+      "splitIn": "Podziel na",
+      "splitHint": "równych części, co miesiąc, od terminu płatności",
+      "add": "Dodaj ratę",
+      "label": "Etykieta",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "Suma: {{total}}.",
+      "mismatch": "Raty sumują się do {{scheduled}}, faktura do {{total}}.",
+      "schedule": "Harmonogram płatności",
+      "nextDue": "Najbliższy termin",
+      "dueDerived": "Ustalany przez ostatnią ratę.",
+      "count_one": "{{count}} rata",
+      "count_other": "Raty: {{count}}",
+      "state": {
+        "open": "Otwarta",
+        "partial": "Częściowa",
+        "paid": "Opłacona",
+        "overdue": "Przeterminowana",
+        "draft": "Szkic",
+        "void": "Anulowana",
+        "uncollectible": "Nieściągalna"
+      }
+    },
+    "deductions": {
+      "title": "Zarejestruj potrącenie",
+      "description": "Zamyka część należności bez wpływu pieniędzy: klient potrącił podatek, operator płatności zatrzymał prowizję, przewalutowanie wyszło niżej. Liczy się jako rozliczone, nigdy jako otrzymane.",
+      "action": "Zarejestruj potrącenie",
+      "recorded": "Potrącenie zarejestrowane",
+      "removed": "Potrącenie usunięte",
+      "amount": "Kwota",
+      "amountHint": "Do wysokości salda: {{balance}}.",
+      "kindLabel": "Powód",
+      "taxKind": "Jaki podatek (opcjonalnie)",
+      "taxKindPlaceholder": "PIT, VAT, podatek u źródła...",
+      "note": "Notatka (opcjonalnie)",
+      "settledWithout": "Rozliczone bez płatności",
+      "kind": {
+        "withholding_tax": "Podatek potrącony przez klienta",
+        "gateway_fee": "Prowizja zatrzymana przez operatora płatności",
+        "fx_difference": "Różnica kursowa",
+        "other": "Inne"
+      },
+      "differenceTitle": "Płatność jest niższa o {{difference}}",
+      "differenceHint": "Zarejestruj różnicę, aby zamknąć fakturę",
+      "differenceNone": "Nie rejestruj",
+      "figure": "Potrącono"
+    },
+    "statement": {
+      "asIssued": "Faktura w wystawionej postaci",
+      "asIssuedHint": "Dokument wysłany do klienta",
+      "hint": "Płatności i potrącenia od wystawienia oraz saldo",
+      "banner": "Ten PDF to faktura w wystawionej postaci. Od tego czasu otrzymano {{paid}} i potrącono {{deducted}}: wyciąg pokazuje każdą pozycję i saldo.",
+      "title": "Wyciąg z konta"
     }
   },
   "collections": {
@@ -577,7 +721,10 @@
     "add": "Nowa kolekcja",
     "edit": "Edytuj kolekcję",
     "empty": "Brak kolekcji. Utwórz jedną, aby pogrupować konta.",
-    "accountCount": "{{count}} kont",
+    "accountCount_one": "{{count}} konto",
+    "accountCount_few": "{{count}} konta",
+    "accountCount_many": "{{count}} kont",
+    "accountCount_other": "{{count}} konta",
     "name": "Nazwa",
     "namePlaceholder": "np. Firma, Długoterminowe, Fundusz awaryjny",
     "color": "Kolor",
@@ -585,7 +732,10 @@
     "accountsHint": "Wybrano: {{count}}",
     "wallets": "Portfele",
     "walletsHint": "Wybrano: {{count}}",
-    "walletCount": "{{count}} portfeli",
+    "walletCount_one": "{{count}} portfel",
+    "walletCount_few": "{{count}} portfele",
+    "walletCount_many": "{{count}} portfeli",
+    "walletCount_other": "{{count}} portfela",
     "noAccounts": "Brak kont.",
     "created": "Utworzono kolekcję",
     "updated": "Zaktualizowano kolekcję",
@@ -751,6 +901,7 @@
     "monthNext": "Następny miesiąc",
     "description": "Opis",
     "originalDescription": "Oryginalny opis",
+    "restoreOriginalDescription": "Przywróć oryginał",
     "amount": "Kwota",
     "status": "Status",
     "date": "Data",
@@ -837,7 +988,7 @@
     "statusCleared": "Rozliczona",
     "sortAsc": "Sortuj rosnąco",
     "sortDesc": "Sortuj malejąco",
-    "syncedInfo": "Transakcja zsynchronizowana z bankiem — edytować można tylko kategorię i notatki",
+    "syncedInfo": "Transakcja zsynchronizowana z bankiem: kwoty, daty i konta nie można edytować",
     "uncategorized": "Nieskategoryzowane",
     "selected": "zaznaczono",
     "summaryCount_one": "{{count}} transakcja",
@@ -1065,6 +1216,7 @@
     "noManualAccounts": "Brak kont ręcznych",
     "noBankConnections": "Brak połączeń bankowych",
     "noAccountsFound": "Nie znaleziono kont",
+    "emptyFiltered": "Nic nie pasuje do tego filtra.",
     "accountName": "Nazwa konta",
     "displayName": "Nazwa wyświetlana",
     "displayNameHint": "Zastępuje domyślną nazwę dostawcy wszędzie w aplikacji.",
@@ -1506,8 +1658,12 @@
     "updated": "Zaktualizowano kategorię",
     "deleted": "Usunięto kategorię",
     "confirmDeleteTitle": "Usunąć kategorię?",
-    "confirmDeleteDescription": "Kategoria „{{name}}” zostanie trwale usunięta. Nie można jej usunąć, dopóki transakcje lub inne rekordy nadal się do niej odwołują; najpierw usuń te powiązania. Tej operacji nie można cofnąć.",
-    "deleteInUse": "Ta kategoria jest nadal używana. Najpierw usuń rekordy, które się do niej odwołują.",
+    "confirmDeleteDescription": "Kategoria „{{name}}” zostanie trwale usunięta. Tej operacji nie można cofnąć.",
+    "deleteInUse": "Ta kategoria jest nadal używana. Wybierz inną kategorię, do której trafią jej wpisy.",
+    "deleteInUseTitle": "Usunąć {{name}}?",
+    "deleteInUseDescription": "Ta kategoria jest nadal używana. Wybierz inną, która przejmie wszystko: nic nie ginie, tylko zmienia miejsce.",
+    "deleteTransferLabel": "Przenieś wszystko do",
+    "deleteAndTransfer": "Usuń i przenieś",
     "expandAll": "Rozwiń wszystkie",
     "collapseAll": "Zwiń wszystkie",
     "treatAsTransfer": "Traktuj jako transfer",
@@ -1652,7 +1808,8 @@
       "invalid_date": "Nieprawidłowy format daty",
       "no_amount": "Brak kwoty wpływu lub wypływu",
       "invalid_amount": "Nieprawidłowy format kwoty"
-    }
+    },
+    "selectAll": "Zaznacz wszystko"
   },
   "assetImport": {
     "title": "Importuj zlecenia inwestycyjne",
@@ -1872,6 +2029,9 @@
     "inflowOutflow": "Wpływy a wypływy",
     "startingBalance": "Saldo początkowe",
     "endingBalance": "Saldo prognozowane",
+    "runwayNegativeOn": "Saldo spadnie poniżej zera {{date}}",
+    "runwayAlreadyNegative": "Już na minusie",
+    "lowestBalance": "Najniższe saldo",
     "projectedIncome": "Prognozowane przychody",
     "projectedExpenses": "Prognozowane wydatki",
     "incomeExpenses": "Przychody a wydatki",
@@ -2007,6 +2167,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2031,9 +2192,23 @@
       "uscc": "USCC"
     },
     "otherCountries": "Inne kraje",
-    "anyCountry": "Gdziekolwiek indziej"
+    "anyCountry": "Gdziekolwiek indziej",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / kod kreskowy",
+      "service_code": "Kod usługi (LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "Gminny kod usługi",
+      "hs_code": "Kod HS",
+      "sat_product_code": "Kod produktu/usługi SAT",
+      "sat_unit_code": "Kod jednostki SAT"
+    }
   },
   "common": {
+    "selectTimezone": "Wybierz strefę czasową",
+    "searchTimezone": "Szukaj strefy czasowej...",
+    "noTimezoneFound": "Nie znaleziono strefy czasowej.",
     "createNamed": "Utwórz „{{name}}”",
     "view": "Zobacz",
     "add": "Dodaj",
@@ -2070,6 +2245,8 @@
     "remove": "Usuń"
   },
   "splitGroups": {
+    "searchPlaceholder": "Szukaj grup...",
+    "clearSearch": "Wyczyść wyszukiwanie",
     "title": "Grupy",
     "section": "Konfiguracja",
     "add": "Dodaj grupę",
@@ -2309,6 +2486,11 @@
       "dateFormatMdyDesc": "Najpierw miesiąc, np. 06/04/2026.",
       "dateFormatYmd": "Rok / Miesiąc / Dzień",
       "dateFormatYmdDesc": "Kolejność ISO, np. 2026-06-04.",
+      "timezoneTitle": "Data i godzina",
+      "timezone": "Strefa czasowa aplikacji",
+      "timezoneHelp": "Daty, transakcje cykliczne, zaplanowane zadania i kontekst AI korzystają z tej strefy czasowej. Zmiany dotyczą nowych żądań i zadań.",
+      "timezoneServerDefault": "Domyślna serwera ({{zone}})",
+      "timezoneSavedInvalid": "Zapisana wartość {{value}} nie jest strefą czasową znaną temu serwerowi. Do czasu zmiany używana jest {{zone}}.",
       "updated": "Zaktualizowano ustawienie"
     }
   },

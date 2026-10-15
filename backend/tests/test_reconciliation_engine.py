@@ -418,3 +418,100 @@ def test_the_winning_strategy_is_named():
 def test_an_unknown_node_is_refused_rather_than_silently_empty():
     with pytest.raises(ValueError, match="Unknown reconciliation node"):
         policy_module.default_policy("reconciliation.does_not_exist")
+
+
+# ---------------------------------------------------------------------------
+# Installments: the promise is the next part, not the whole
+# ---------------------------------------------------------------------------
+def an_installment_invoice(
+    *, stops: tuple[Decimal, ...], when: date = TODAY, payee_id: uuid.UUID | None = CLIENT
+) -> Expectation:
+    """3000 in installments: `stops` are the amounts at which one, two or
+    all of the remaining installments close, the last being the balance."""
+    return Expectation(
+        kind="invoice",
+        id=uuid.uuid4(),
+        amount=stops[-1],
+        currency="BRL",
+        direction="credit",
+        when=when,
+        issued=TODAY - timedelta(days=30),
+        description="Consultoria",
+        payee_id=payee_id,
+        stops=stops,
+    )
+
+
+class TestInstallments:
+    def test_exactly_the_next_installment_links(self):
+        invoice = an_installment_invoice(stops=(Decimal("1000.00"), Decimal("2000.00"), Decimal("3000.00")))
+        decision = evaluate(an_inflow(amount=Decimal("1000.00")), [invoice], receivable())
+        assert decision.port == "linked"
+        assert decision.strategy == "same_client_exact"
+        assert decision.settlements[0].amount == Decimal("1000.00")
+        # The queue and the history read the installment, not the balance.
+        assert decision.settlements[0].target == Decimal("1000.00")
+
+    def test_two_installments_at_once_link(self):
+        invoice = an_installment_invoice(stops=(Decimal("1000.00"), Decimal("2000.00"), Decimal("3000.00")))
+        decision = evaluate(an_inflow(amount=Decimal("2000.00")), [invoice], receivable())
+        assert decision.port == "linked"
+        assert decision.settlements[0].amount == Decimal("2000.00")
+        assert decision.settlements[0].target == Decimal("2000.00")
+
+    def test_the_whole_balance_still_links_and_names_no_part(self):
+        invoice = an_installment_invoice(stops=(Decimal("1000.00"), Decimal("2000.00"), Decimal("3000.00")))
+        decision = evaluate(an_inflow(amount=Decimal("3000.00")), [invoice], receivable())
+        assert decision.port == "linked"
+        assert decision.settlements[0].amount == Decimal("3000.00")
+        assert decision.settlements[0].target is None
+
+    def test_an_amount_between_installments_is_not_taken_as_exact(self):
+        """1500 against 1000 / 2000 / 3000 closes no installment. At most
+        it is offered as a part payment for a person to confirm."""
+        invoice = an_installment_invoice(stops=(Decimal("1000.00"), Decimal("2000.00"), Decimal("3000.00")))
+        decision = evaluate(an_inflow(amount=Decimal("1500.00")), [invoice], receivable())
+        assert decision.port != "linked"
+
+    def test_less_than_the_next_installment_is_a_part_of_it(self):
+        """The difference a part payment reports is what is left of the
+        installment, not of the whole invoice."""
+        invoice = an_installment_invoice(stops=(Decimal("1000.00"), Decimal("2000.00"), Decimal("3000.00")))
+        decision = evaluate(an_inflow(amount=Decimal("600.00")), [invoice], receivable())
+        assert decision.port == "suggested"
+        assert decision.difference_kind == "part_payment"
+        assert decision.difference == Decimal("400.00")
+
+    def test_a_payment_net_of_withholding_on_one_installment_links(self):
+        ratio = Decimal("0.985")  # as the existing withholding tests use
+        installment = Decimal("1000.00")
+        net = (installment * ratio).quantize(Decimal("0.01"))
+        invoice = an_installment_invoice(stops=(installment, Decimal("3000.00")))
+        decision = evaluate(
+            an_inflow(amount=net), [invoice], receivable(), withholding_ratios=[ratio]
+        )
+        assert decision.port == "linked"
+        assert decision.difference == installment - net
+
+    def test_without_stops_nothing_changes(self):
+        """An invoice that is one amount on one date reads exactly as it
+        always did: half of it is not an exact match."""
+        decision = evaluate(an_inflow(amount=Decimal("1500.00")), [an_invoice()], receivable())
+        assert decision.port != "linked"
+
+
+def test_the_queue_shows_the_installment_as_what_was_expected():
+    """A suggestion against an installment says "expected 1000", not
+    "expected 3000, got 1000": the second reads as a short payment."""
+    from app.services.reconciliation_suggestion_service import _signal_scores
+
+    policy = receivable()
+    for strategy in policy["strategies"]:
+        strategy["outcome"] = "suggest"
+    invoice = an_installment_invoice(stops=(Decimal("1000.00"), Decimal("3000.00")))
+    movement = an_inflow(amount=Decimal("1000.00"))
+    decision = evaluate(movement, [invoice], policy)
+
+    scores = _signal_scores(decision, movement, decision.settlements[0])
+    assert scores["amount_expected"] == "1000.00"
+    assert scores["amount_exact"] is True

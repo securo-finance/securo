@@ -89,7 +89,7 @@ SCHEDULE_FREQUENCIES = ("weekly", "biweekly", "monthly", "quarterly", "semiannua
 SCHEDULE_END_TYPES = ("never", "on_date", "after_count")
 
 #: Who authored the agreement. An `imported` schedule mirrors one a
-#: gateway holds (a Stripe subscription): that system owns the terms and
+#: gateway holds (a subscription on its side): that system owns the terms and
 #: emits the invoices, Securo groups them and owns the cash. The job
 #: never generates for an imported schedule.
 SCHEDULE_ORIGINS = ("local", "imported")

@@ -67,6 +67,10 @@ class Workspace(Base):
     # `default_currency` etc. from here.
     default_currency: Mapped[str] = mapped_column(String(3), default="USD", server_default="USD")
     locale: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    # The calendar this workspace keeps its books in, as an IANA name. Null
+    # means "follow the application timezone", which is what every workspace
+    # did before the column existed. See `core.app_clock`.
+    timezone: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # Where this workspace operates fiscally. Selects the jurisdiction pack
     # that names and validates fiscal documents, and the axis any future
     # threshold or tax date keys on.

@@ -21,6 +21,8 @@ from app.core.module_gate import require_module, require_module_write
 from app.core.workspace_context import WorkspaceContext
 from app.schemas.invoice import (
     AllocationCreate,
+    DeductionCreate,
+    InstallmentRead,
     InvoiceCreate,
     InvoiceDirection,
     InvoiceFacets,
@@ -44,6 +46,7 @@ from app.services import (
     invoice_service,
     reconciliation_history_service,
     reconciliation_service,
+    reconciliation_suggestion_service,
 )
 from app.services.invoice_service import InvoiceError
 from app.services.module_service import ModuleId
@@ -70,8 +73,13 @@ def _serialize(invoice, today: Optional[_date] = None) -> InvoiceRead:
     payload = InvoiceRead.model_validate(invoice, from_attributes=True)
     payload.state = invoice_service.derive_state(invoice, today)
     payload.amount_paid = invoice_service.allocated_total(invoice)
+    payload.amount_deducted = invoice_service.deducted_total(invoice)
     payload.balance = invoice_service.balance(invoice)
     payload.days_overdue = invoice_service.days_overdue(invoice, today)
+    payload.next_due_date = invoice_service.first_unpaid_due(invoice)
+    payload.installments = [
+        InstallmentRead(**row) for row in invoice_service.installment_states(invoice, today)
+    ]
     return payload
 
 
@@ -253,6 +261,8 @@ async def create_invoice(
     data = payload.model_dump(exclude_unset=True)
     if data.get("lines") is not None:
         data["lines"] = [dict(line) for line in data["lines"]]
+    if data.get("installments") is not None:
+        data["installments"] = [dict(row) for row in data["installments"]]
     try:
         invoice = await invoice_service.create_invoice(
             session, ctx.workspace.id, ctx.user_id, data
@@ -292,6 +302,8 @@ async def update_invoice(
     data = payload.model_dump(exclude_unset=True)
     if data.get("lines") is not None:
         data["lines"] = [dict(line) for line in data["lines"]]
+    if data.get("installments") is not None:
+        data["installments"] = [dict(row) for row in data["installments"]]
     try:
         invoice = await invoice_service.update_invoice(session, invoice, data)
     except InvoiceError as exc:
@@ -454,6 +466,51 @@ async def create_allocation(
         strategy_id=allocation.method,
         user_id=ctx.user_id,
     )
+    if payload.transaction_id is not None:
+        await reconciliation_suggestion_service.settled_by_hand(
+            session, ctx.workspace.id, payload.transaction_id, invoice.id, ctx.user_id
+        )
+    await session.commit()
+    return _serialize(await _load(session, invoice_id, ctx.workspace.id))
+
+
+@router.post("/{invoice_id}/deductions", response_model=InvoiceRead, status_code=status.HTTP_201_CREATED)
+async def create_deduction(
+    invoice_id: uuid.UUID,
+    payload: DeductionCreate,
+    ctx: WorkspaceContext = Depends(write_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Close part of the debt without money: tax withheld, a fee kept."""
+    invoice = await _load(session, invoice_id, ctx.workspace.id)
+    try:
+        await invoice_service.deduct(
+            session,
+            invoice,
+            payload.kind,
+            payload.amount,
+            tax_kind=payload.tax_kind,
+            note=payload.note,
+            transaction_id=payload.transaction_id,
+        )
+    except InvoiceError as exc:
+        raise _http(exc)
+    await session.commit()
+    return _serialize(await _load(session, invoice_id, ctx.workspace.id))
+
+
+@router.delete("/{invoice_id}/deductions/{deduction_id}", response_model=InvoiceRead)
+async def remove_deduction(
+    invoice_id: uuid.UUID,
+    deduction_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(write_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    invoice = await _load(session, invoice_id, ctx.workspace.id)
+    try:
+        await invoice_service.undeduct(session, invoice, deduction_id)
+    except InvoiceError as exc:
+        raise _http(exc)
     await session.commit()
     return _serialize(await _load(session, invoice_id, ctx.workspace.id))
 
@@ -642,6 +699,44 @@ async def download_pdf(
     )
     pdf = invoice_pdf.render_pdf(document, logo_bytes)
     filename = f"{document.number or 'draft'}.pdf".replace("/", "-")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{invoice_id}/statement")
+async def download_statement(
+    invoice_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(read_ctx),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The statement of account: what was paid and deducted since the
+    invoice was issued, and how that arrives at the balance.
+
+    Rendered live on purpose, unlike `/pdf`: the invoice as issued is
+    frozen, and this is the document that is supposed to change.
+
+    Only for what we issued. A draft has been sent to nobody, and a bill
+    we received is the supplier's to state; a page in their name drawn by
+    us would be the invention `/pdf` refuses too.
+    """
+    invoice = await _load(session, invoice_id, ctx.workspace.id)
+    if invoice.status == "draft":
+        raise _http(InvoiceError("statement_of_draft", "A draft has nothing to state yet", status_code=status.HTTP_409_CONFLICT))
+    if invoice.direction != "receivable" or invoice.origin == "imported":
+        raise _http(InvoiceError("statement_not_ours", "Only an invoice we issued has a statement", status_code=status.HTTP_409_CONFLICT))
+
+    settings = await invoice_service.get_settings(session, ctx.workspace.id)
+    document = await invoice_document.build_statement(session, invoice, settings, ctx.workspace)
+    logo_bytes = (
+        await invoice_logo_service.read(ctx.workspace.id, uuid.UUID(document.logo_id))
+        if document.logo_id
+        else None
+    )
+    pdf = invoice_pdf.render_pdf(document, logo_bytes)
+    filename = f"{document.number or 'invoice'}-statement.pdf".replace("/", "-")
     return Response(
         content=pdf,
         media_type="application/pdf",

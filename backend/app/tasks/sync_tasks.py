@@ -6,6 +6,12 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.app_clock import (
+    get_timezone,
+    get_workspace_timezone,
+    use_resolved_timezone,
+    use_timezone,
+)
 from app.worker import celery_app
 from app.core.config import get_settings
 from app.models.bank_connection import BankConnection
@@ -45,6 +51,7 @@ async def _sync_all() -> int:
         synced = 0
 
         async with session_maker() as session:
+            operation_timezone = await get_timezone(session, fresh=True)
             result = await session.execute(
                 select(
                     BankConnection.id,
@@ -65,24 +72,25 @@ async def _sync_all() -> int:
             cutoff.isoformat(),
         )
 
-        for conn_id, user_id, last_sync, settings in connections:
-            try:
-                logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
-                await _sync_one(
-                    session_maker,
-                    conn_id,
-                    user_id,
-                    trigger_provider_refresh=_should_trigger_provider_refresh(
-                        settings, datetime.now(timezone.utc)
-                    ),
-                )
-                synced += 1
-            except ProviderNotConfiguredError as exc:
-                # Actionable one-liner instead of a buried traceback: this
-                # means THIS process is missing the provider's configuration.
-                logger.error("Skipping connection %s: %s", conn_id, exc)
-            except Exception:
-                logger.exception("Background sync failed for connection %s", conn_id)
+        with use_resolved_timezone(operation_timezone):
+            for conn_id, user_id, last_sync, settings in connections:
+                try:
+                    logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
+                    await _sync_one(
+                        session_maker,
+                        conn_id,
+                        user_id,
+                        trigger_provider_refresh=_should_trigger_provider_refresh(
+                            settings, datetime.now(timezone.utc)
+                        ),
+                    )
+                    synced += 1
+                except ProviderNotConfiguredError as exc:
+                    # Actionable one-liner instead of a buried traceback: this
+                    # means THIS process is missing the provider's configuration.
+                    logger.error("Skipping connection %s: %s", conn_id, exc)
+                except Exception:
+                    logger.exception("Background sync failed for connection %s", conn_id)
 
         return synced
     finally:
@@ -104,13 +112,14 @@ async def _sync_one(
         if workspace_id is None:
             logger.warning("Connection %s has no workspace; skipping sync", connection_id)
             return
-        await connection_service.sync_connection(
-            session,
-            connection_id,
-            workspace_id,
-            user_id,
-            trigger_provider_refresh=trigger_provider_refresh,
-        )
+        with use_resolved_timezone(await get_workspace_timezone(session, workspace_id)):
+            await connection_service.sync_connection(
+                session,
+                connection_id,
+                workspace_id,
+                user_id,
+                trigger_provider_refresh=trigger_provider_refresh,
+            )
 
 
 @celery_app.task(name="app.tasks.sync_tasks.sync_all_connections")
@@ -143,8 +152,9 @@ async def _sync_one_celery(connection_id: str, user_id: str) -> None:
             if workspace_id is None:
                 logger.warning("Connection %s has no workspace; skipping sync", connection_id)
                 return
-            await connection_service.sync_connection(
-                session, conn_uuid, workspace_id, uuid.UUID(user_id)
-            )
+            async with use_timezone(session, workspace_id, fresh=True):
+                await connection_service.sync_connection(
+                    session, conn_uuid, workspace_id, uuid.UUID(user_id)
+                )
     finally:
         await engine.dispose()

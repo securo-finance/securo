@@ -1,9 +1,8 @@
-from datetime import date
-
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.core.auth import current_active_user
 from app.core.config import get_settings
 from app.core.database import get_async_session
@@ -20,8 +19,9 @@ async def refresh_rates(
     user: User = Depends(current_active_user),
 ):
     """Trigger immediate FX rate sync."""
-    count = await sync_rates(session, date.today())
-    return {"synced": True, "rates_count": count, "date": date.today().isoformat()}
+    today = app_today()
+    count = await sync_rates(session, today)
+    return {"synced": True, "rates_count": count, "date": today.isoformat()}
 
 
 @router.get("/status")

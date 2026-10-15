@@ -13,6 +13,9 @@
     "locale": "Idioma",
     "taxJurisdiction": "Jurisdição fiscal",
     "taxJurisdictionHint": "Define quais documentos fiscais este espaço de trabalho oferece. Independente do idioma da interface.",
+    "timezone": "Fuso horário",
+    "timezoneDefault": "Predefinição da aplicação ({{zone}})",
+    "timezoneHint": "O calendário em que este workspace mantém as contas. Saldos, orçamentos e vencimentos mudam à meia-noite nesse fuso.",
     "members": "Membros",
     "addMember": "Adicionar membro",
     "addMemberTitle": "Adicionar membro",
@@ -233,7 +236,8 @@
       "downloadPdf": "Baixar PDF",
       "share": "Compartilhar",
       "revokeLink": "Revogar link",
-      "saveDraft": "Guardar rascunho"
+      "saveDraft": "Guardar rascunho",
+      "downloadStatement": "Descarregar extrato"
     },
     "settings": {
       "title": "Configurações de cobrança",
@@ -326,7 +330,25 @@
       "negative_discount": "Um desconto não pode ser negativo.",
       "first_term": "O preço em vigor desde o início não pode ser movido nem removido. Altere-o ou adicione um novo preço a partir de uma data posterior.",
       "not_receivable": "Só uma cobrança emitida por si pode pertencer a um acordo.",
-      "period_already_issued": "Este período acabou de ser emitido. Atualize a página para o ver."
+      "period_already_issued": "Este período acabou de ser emitido. Atualize a página para o ver.",
+      "product_not_found": "Produto não encontrado.",
+      "price_not_found": "Preço não encontrado neste produto.",
+      "product_in_use": "Há cobranças que mencionam este produto. Arquive-o em vez de o excluir.",
+      "price_in_use": "Há cobranças emitidas com este preço. Arquive-o em vez de o excluir.",
+      "invalid_kind": "Tipo de produto desconhecido.",
+      "invalid_billing": "Tipo de cobrança desconhecido.",
+      "interval_required": "Um preço recorrente precisa de uma frequência.",
+      "currency_required": "Um preço precisa de uma moeda.",
+      "unit_price_required": "Um preço precisa de um valor.",
+      "negative_price": "Um preço não pode ser negativo.",
+      "invalid_fiscal_refs": "As referências fiscais devem ser textos curtos sob chaves simples (letras, dígitos, sublinhado).",
+      "price_key_taken": "Outro preço já usa esta chave de pesquisa ou id externo.",
+      "installments_mismatch": "As prestações não somam o total da cobrança.",
+      "installments_too_few": "Um plano precisa de pelo menos duas prestações.",
+      "installment_amount_not_positive": "Cada prestação precisa de ter um valor.",
+      "installment_due_required": "Cada prestação precisa de um vencimento.",
+      "invalid_deduction_kind": "Tipo de dedução desconhecido.",
+      "deduction_not_found": "Dedução não encontrada."
     },
     "comingNext": "Cobra os teus clientes e acompanha o que já foi pago e o que continua em aberto. É a próxima coisa a ser construída.",
     "document": {
@@ -561,6 +583,128 @@
         "empty": "Ainda não há cobranças neste acordo.",
         "emptyNext": "Ainda não há cobranças. A primeira será gerada a {{date}}."
       }
+    },
+    "products": {
+      "title": "Produtos",
+      "new": "Novo produto",
+      "newDescription": "Algo que você vende, com um preço por moeda. Escolhê-lo preenche uma linha da cobrança; a linha continua sua para alterar depois.",
+      "editTitle": "Editar produto",
+      "empty": "Ainda não há produtos. Adicione o que você vende, e cada linha de cobrança fica a um clique.",
+      "emptyArchived": "Nada arquivado.",
+      "emptyPicker": "Ainda não há produtos. Adicione-os em Produtos.",
+      "noneFound": "Nenhum produto corresponde.",
+      "searchPlaceholder": "Pesquisar produtos",
+      "pick": "Escolher do catálogo",
+      "fromCatalog": "Do catálogo",
+      "noPrice": "Sem preço",
+      "noPriceIn": "sem preço em {{currency}}",
+      "perUnit": "por {{unit}}",
+      "created": "Produto criado",
+      "saved": "Produto guardado",
+      "archived": "Produto arquivado. As cobranças que o mencionam não mudam.",
+      "restored": "Produto restaurado",
+      "deleted": "Produto excluído",
+      "filter": {
+        "active": "Ativos",
+        "archived": "Arquivados"
+      },
+      "kind": {
+        "service": "Serviço",
+        "product": "Produto"
+      },
+      "billing": {
+        "one_time": "Pontual",
+        "every": "A cada {{interval}}"
+      },
+      "per": {
+        "weekly": "semana",
+        "biweekly": "2 semanas",
+        "monthly": "mês",
+        "quarterly": "trimestre",
+        "semiannual": "6 meses",
+        "yearly": "ano"
+      },
+      "column": {
+        "name": "Nome",
+        "kind": "Tipo",
+        "prices": "Preços",
+        "invoices": "Cobranças"
+      },
+      "field": {
+        "name": "Nome",
+        "namePlaceholder": "Hora de consultoria, Plano Pro, Criação de logótipo",
+        "kind": "Tipo",
+        "description": "Descrição",
+        "prices": "Preços",
+        "pricesHint": "Um por moeda. Um preço recorrente indica a frequência; é uma sugestão para cobranças recorrentes, nada é cobrado por si só.",
+        "addPrice": "Adicionar preço",
+        "noPrices": "Sem preços. O nome preenche a linha na mesma; o valor é escrito à mão.",
+        "nickname": "Rótulo (opcional)",
+        "fiscalRefs": "Referências fiscais",
+        "fiscalRefsHint": "O que um documento fiscal precisa por linha. Sugerido pela sua jurisdição; adicione qualquer outra chave de que precise.",
+        "customRefKey": "outra chave (ex.: hs_code)",
+        "addRef": "Adicionar",
+        "fiscalRefsNone": "Nada sugerido para este tipo aqui. Adicione qualquer chave de que os seus documentos fiscais precisem."
+      },
+      "action": {
+        "archive": "Arquivar",
+        "restore": "Restaurar"
+      }
+    },
+    "installments": {
+      "title": "Dividir em prestações",
+      "splitIn": "Dividir em",
+      "splitHint": "partes iguais, uma por mês, a partir do vencimento",
+      "add": "Adicionar prestação",
+      "label": "Rótulo",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "Soma {{total}}.",
+      "mismatch": "As prestações somam {{scheduled}}, a cobrança {{total}}.",
+      "schedule": "Plano de pagamento",
+      "nextDue": "Próximo vencimento",
+      "dueDerived": "Definido pela última prestação.",
+      "count_one": "{{count}} prestação",
+      "count_other": "{{count}} prestações",
+      "state": {
+        "open": "Em aberto",
+        "partial": "Parcial",
+        "paid": "Recebida",
+        "overdue": "Vencida",
+        "draft": "Rascunho",
+        "void": "Cancelada",
+        "uncollectible": "Incobrável"
+      }
+    },
+    "deductions": {
+      "title": "Registar dedução",
+      "description": "Fecha parte do que é devido sem entrar dinheiro: o cliente reteve imposto, o processador ficou com a comissão, a conversão cambial veio abaixo. Conta como liquidado, nunca como recebido.",
+      "action": "Registar dedução",
+      "recorded": "Dedução registada",
+      "removed": "Dedução removida",
+      "amount": "Valor",
+      "amountHint": "Até ao saldo: {{balance}}.",
+      "kindLabel": "Motivo",
+      "taxKind": "Qual imposto (opcional)",
+      "taxKindPlaceholder": "IRS, IRC, IVA...",
+      "note": "Nota (opcional)",
+      "settledWithout": "Liquidado sem pagamento",
+      "kind": {
+        "withholding_tax": "Imposto retido pelo cliente",
+        "gateway_fee": "Comissão retida pelo processador",
+        "fx_difference": "Diferença cambial",
+        "other": "Outro"
+      },
+      "differenceTitle": "O pagamento veio {{difference}} abaixo",
+      "differenceHint": "Registe a diferença para a cobrança fechar",
+      "differenceNone": "Não registar",
+      "figure": "Deduzido"
+    },
+    "statement": {
+      "asIssued": "Fatura como emitida",
+      "asIssuedHint": "O documento enviado ao cliente",
+      "hint": "Pagamentos e deduções desde a emissão, e o saldo",
+      "banner": "Este PDF é a fatura como foi emitida. Desde então foram recebidos {{paid}} e deduzidos {{deducted}}: o extrato mostra cada um e o saldo.",
+      "title": "Extrato da fatura"
     }
   },
   "collections": {
@@ -573,7 +717,9 @@
     "add": "Nova coleção",
     "edit": "Editar coleção",
     "empty": "Ainda não existem coleções. Cria uma para agrupar as tuas contas.",
-    "accountCount": "{{count}} contas",
+    "accountCount_one": "{{count}} conta",
+    "accountCount_many": "{{count}} contas",
+    "accountCount_other": "{{count}} contas",
     "name": "Nome",
     "namePlaceholder": "ex.: Empresa, Longo prazo, Reserva",
     "color": "Cor",
@@ -581,7 +727,9 @@
     "accountsHint": "{{count}} selecionada(s)",
     "wallets": "Carteiras",
     "walletsHint": "{{count}} selecionada(s)",
-    "walletCount": "{{count}} carteiras",
+    "walletCount_one": "{{count}} carteira",
+    "walletCount_many": "{{count}} carteiras",
+    "walletCount_other": "{{count}} carteiras",
     "noAccounts": "Ainda não existem contas.",
     "created": "Coleção criada",
     "updated": "Coleção atualizada",
@@ -741,6 +889,7 @@
     "monthNext": "Próximo mês",
     "description": "Descrição",
     "originalDescription": "Descrição original",
+    "restoreOriginalDescription": "Repor original",
     "amount": "Valor",
     "status": "Estado",
     "date": "Data",
@@ -824,7 +973,7 @@
     "statusCleared": "Compensada",
     "sortAsc": "Ordem crescente",
     "sortDesc": "Ordem decrescente",
-    "syncedInfo": "Transação sincronizada — apenas categoria e notas podem ser editadas",
+    "syncedInfo": "Transação sincronizada: valor, data e conta não podem ser editados",
     "uncategorized": "Sem categoria",
     "selected": "selecionadas",
     "summaryCount": "{{count}} transações",
@@ -1016,6 +1165,7 @@
     "balanceDate": "Data do saldo",
     "lastSync": "Última sincronização",
     "multiInstitutionLink_one": "{{provider}} · {{count}} instituição",
+    "multiInstitutionLink_many": "{{provider}} · {{count}} instituições",
     "multiInstitutionLink_other": "{{provider}} · {{count}} instituições",
     "sync": "Sincronizar",
     "disconnect": "Desconectar",
@@ -1026,6 +1176,7 @@
     "noManualAccounts": "Nenhuma conta manual ainda",
     "noBankConnections": "Nenhuma ligação bancária",
     "noAccountsFound": "Nenhuma conta encontrada",
+    "emptyFiltered": "Nada corresponde a este filtro.",
     "accountName": "Nome da conta",
     "displayName": "Nome a apresentar",
     "displayNameHint": "Substitui o nome padrão do fornecedor em todo o sistema.",
@@ -1440,8 +1591,12 @@
     "updated": "Categoria atualizada",
     "deleted": "Categoria eliminada",
     "confirmDeleteTitle": "Eliminar categoria?",
-    "confirmDeleteDescription": "A categoria \"{{name}}\" será eliminada permanentemente. Não pode ser eliminada enquanto transações ou outros registos ainda fizerem referência a ela; remove primeiro essas referências. Esta ação não pode ser desfeita.",
-    "deleteInUse": "Esta categoria ainda está em uso. Remova primeiro os registos que fazem referência a ela.",
+    "confirmDeleteDescription": "A categoria \"{{name}}\" será eliminada permanentemente. Esta ação não pode ser desfeita.",
+    "deleteInUse": "Esta categoria ainda está em uso. Escolhe outra categoria para receber os registos dela.",
+    "deleteInUseTitle": "Eliminar {{name}}?",
+    "deleteInUseDescription": "Esta categoria ainda está em uso. Escolhe outra para receber tudo: nada se perde, apenas muda de sítio.",
+    "deleteTransferLabel": "Mover tudo para",
+    "deleteAndTransfer": "Eliminar e mover",
     "expandAll": "Expandir tudo",
     "collapseAll": "Recolher tudo",
     "treatAsTransfer": "Tratar como transferência",
@@ -1568,7 +1723,8 @@
       "invalid_date": "Formato de data inválido",
       "no_amount": "Nenhum valor de entrada ou saída",
       "invalid_amount": "Formato de valor inválido"
-    }
+    },
+    "selectAll": "Selecionar todos"
   },
   "assetImport": {
     "title": "Importar ordens de investimento",
@@ -1788,6 +1944,9 @@
     "inflowOutflow": "Entradas vs Saídas",
     "startingBalance": "Saldo Atual",
     "endingBalance": "Saldo Projetado",
+    "runwayNegativeOn": "O saldo fica negativo a {{date}}",
+    "runwayAlreadyNegative": "Já está negativo",
+    "lowestBalance": "Saldo mínimo",
     "projectedIncome": "Receita Projetada",
     "projectedExpenses": "Despesa Projetada",
     "incomeExpenses": "Receitas vs Despesas",
@@ -1917,6 +2076,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -1941,9 +2101,23 @@
       "uscc": "USCC"
     },
     "otherCountries": "Outros países",
-    "anyCountry": "Qualquer outro lugar"
+    "anyCountry": "Qualquer outro lugar",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / código de barras",
+      "service_code": "Código de serviço (LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "Código de serviço municipal",
+      "hs_code": "Código HS",
+      "sat_product_code": "Código de produto/serviço SAT",
+      "sat_unit_code": "Código de unidade SAT"
+    }
   },
   "common": {
+    "selectTimezone": "Selecionar fuso horário",
+    "searchTimezone": "Procurar fuso horário...",
+    "noTimezoneFound": "Nenhum fuso horário encontrado.",
     "createNamed": "Criar \"{{name}}\"",
     "view": "Ver",
     "add": "Adicionar",
@@ -1977,6 +2151,8 @@
     "remove": "Remover"
   },
   "splitGroups": {
+    "searchPlaceholder": "Pesquisar grupos...",
+    "clearSearch": "Limpar pesquisa",
     "title": "Grupos",
     "section": "Configuração",
     "add": "Adicionar grupo",
@@ -2210,6 +2386,11 @@
       "dateFormatMdyDesc": "Mês primeiro, ex.: 06/04/2026.",
       "dateFormatYmd": "Ano / Mês / Dia",
       "dateFormatYmdDesc": "Ordem ISO, ex.: 2026-06-04.",
+      "timezoneTitle": "Data e hora",
+      "timezone": "Fuso horário da aplicação",
+      "timezoneHelp": "Datas, transações recorrentes, tarefas agendadas e o contexto da IA usam este fuso horário. As alterações aplicam-se a novos pedidos e tarefas.",
+      "timezoneServerDefault": "Predefinição do servidor ({{zone}})",
+      "timezoneSavedInvalid": "O valor guardado {{value}} não é um fuso horário que este servidor conhece. {{zone}} está em uso até ser alterado.",
       "updated": "Configuração atualizada"
     }
   },

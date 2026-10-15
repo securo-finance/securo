@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, Ban, Check, CheckCircle2, CircleSlash, Copy, Download, Link2,
-  MoreHorizontal, Pencil, Repeat, RotateCcw, Send, Share2, Trash2, Unlink,
+  ArrowLeft, Ban, Check, CheckCircle2, CircleSlash, Copy, Download, FileText, Link2,
+  MinusCircle, MoreHorizontal, Pencil, Repeat, RotateCcw, Send, Share2, Trash2, Unlink,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -45,9 +45,13 @@ import {
 import { InvoiceDocumentView } from '@/components/invoice-document'
 import { InvoiceDocumentBrowser } from '@/components/invoice-documents'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
+import { InvoiceInstallmentsEditor } from '@/components/invoice-installments-editor'
+import { DEDUCTION_KINDS, displayDue, installmentsTotal } from '@/lib/installment-utils'
 import { EndConditionFields, SchedulePeriodChip } from '@/components/invoice-schedule-ui'
 import { FREQUENCIES, endPayload } from '@/lib/invoice-schedule-utils'
 import type {
+  DeductionKind,
+  InstallmentInput,
   Invoice,
   InvoiceDirection,
   InvoiceLineInput,
@@ -99,6 +103,7 @@ export default function InvoiceDetailPage() {
   const [linkOpen, setLinkOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [recurringOpen, setRecurringOpen] = useState(false)
+  const [deductionOpen, setDeductionOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('details')
   const [copied, setCopied] = useState(false)
 
@@ -182,6 +187,14 @@ export default function InvoiceDetailPage() {
     },
     onError,
   })
+  const undeductMutation = useMutation({
+    mutationFn: (deductionId: string) => invoicesApi.undeduct(id, deductionId),
+    onSuccess: () => {
+      toast.success(t('invoices.deductions.removed'))
+      refresh()
+    },
+    onError,
+  })
   const unlinkMutation = useMutation({
     mutationFn: (allocationId: string) => invoicesApi.unallocate(id, allocationId),
     onSuccess: () => {
@@ -201,6 +214,22 @@ export default function InvoiceDetailPage() {
       const anchor = window.document.createElement('a')
       anchor.href = url
       anchor.download = `${invoice?.number ?? 'invoice'}.pdf`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    },
+    onError,
+  })
+
+  // The statement of account: what was paid and deducted since issue,
+  // and how that arrives at the balance. The invoice PDF is the document
+  // as issued and never shows it.
+  const statementMutation = useMutation({
+    mutationFn: async () => {
+      const blob = await invoicesApi.statement(id)
+      const url = URL.createObjectURL(blob)
+      const anchor = window.document.createElement('a')
+      anchor.href = url
+      anchor.download = `${invoice?.number ?? 'invoice'}-statement.pdf`
       anchor.click()
       URL.revokeObjectURL(url)
     },
@@ -263,6 +292,17 @@ export default function InvoiceDetailPage() {
     invoice.status !== 'draft' &&
     invoice.status !== 'void' &&
     !invoice.schedule_id
+  // Only for what we issued: a draft was sent to nobody, and a bill we
+  // received is the supplier's to state.
+  const canStatement =
+    invoice.direction === 'receivable' &&
+    invoice.status !== 'draft' &&
+    invoice.origin !== 'imported'
+  const hasDeductions = Number(invoice.amount_deducted) > 0
+  // Once money has moved, the invoice PDF (frozen at issue) no longer says
+  // everything: what was paid and deducted since is on the statement, and
+  // the page offers both instead of letting the first pass for the whole.
+  const offerStatement = canStatement && (Number(invoice.amount_paid) > 0 || hasDeductions)
 
   return (
     <div>
@@ -313,7 +353,39 @@ export default function InvoiceDetailPage() {
                       somebody else issued — the same invention the
                       Document tab refuses to make. Nothing to download
                       until the real file arrives. */}
-                  {(invoice.origin !== 'imported' || hasFiledDocument) && (
+                  {offerStatement ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" data-testid="invoice-download-pdf">
+                          <Download className="h-4 w-4 mr-1.5" />
+                          {t('invoices.action.downloadPdf')}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="w-[260px] p-1 bg-card border border-border rounded-xl shadow-md"
+                      >
+                        <DropdownMenuItem
+                          onClick={() => downloadMutation.mutate()}
+                          disabled={downloadMutation.isPending}
+                          data-testid="invoice-download-issued"
+                          className="flex-col items-start gap-0.5 text-sm"
+                        >
+                          <span>{t('invoices.statement.asIssued')}</span>
+                          <span className="text-[11px] text-muted-foreground">{t('invoices.statement.asIssuedHint')}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => statementMutation.mutate()}
+                          disabled={statementMutation.isPending}
+                          data-testid="invoice-download-statement"
+                          className="flex-col items-start gap-0.5 text-sm"
+                        >
+                          <span>{t('invoices.statement.title')}</span>
+                          <span className="text-[11px] text-muted-foreground">{t('invoices.statement.hint')}</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (invoice.origin !== 'imported' || hasFiledDocument) && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -464,6 +536,31 @@ export default function InvoiceDetailPage() {
 
       {tab === 'document' ? (
         <div className="space-y-4">
+          {offerStatement && (
+            <SectionCard>
+              <div
+                className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-3 text-sm"
+                data-testid="invoice-statement-banner"
+              >
+                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                <p className="flex-1 min-w-[16rem] text-muted-foreground">
+                  {t('invoices.statement.banner', {
+                    paid: money(invoice.amount_paid),
+                    deducted: money(invoice.amount_deducted),
+                  })}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => statementMutation.mutate()}
+                  disabled={statementMutation.isPending}
+                >
+                  <Download className="h-4 w-4 mr-1.5" />
+                  {t('invoices.action.downloadStatement')}
+                </Button>
+              </div>
+            </SectionCard>
+          )}
           {shareUrl && (
             <SectionCard>
               <div
@@ -509,7 +606,15 @@ export default function InvoiceDetailPage() {
       ) : (
         <div className="space-y-5">
           <SectionCard>
-            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-border">
+            {/* Total, then what reduced it, then what is left: read left
+                to right it is the arithmetic. Deductions only when there
+                are any, so an ordinary invoice keeps its four figures. */}
+            <div
+              className={cn(
+                'grid grid-cols-2 divide-x divide-border',
+                hasDeductions ? 'sm:grid-cols-5' : 'sm:grid-cols-4',
+              )}
+            >
               {[
                 { label: t('invoices.column.total'), value: money(invoice.total) },
                 {
@@ -519,6 +624,13 @@ export default function InvoiceDetailPage() {
                       : t('invoices.field.paid'),
                   value: money(invoice.amount_paid),
                 },
+                ...(hasDeductions
+                  ? [{
+                      label: t('invoices.deductions.figure'),
+                      value: money(invoice.amount_deducted),
+                      testId: 'invoice-deducted',
+                    }]
+                  : []),
                 {
                   label: t('invoices.column.balance'),
                   value: money(invoice.balance),
@@ -528,7 +640,11 @@ export default function InvoiceDetailPage() {
                       : 'text-emerald-600',
                   testId: 'invoice-balance',
                 },
-                { label: t('invoices.column.due'), value: showDate(invoice.due_date) },
+                {
+                  label: invoice.installments.length ? t('invoices.installments.nextDue') : t('invoices.column.due'),
+                  value: showDate(displayDue(invoice)),
+                  testId: 'invoice-due-figure',
+                },
               ].map((figure) => (
                 <div key={figure.label} className="px-4 sm:px-5 py-4" data-testid={figure.testId}>
                   <p className="text-xs font-medium text-muted-foreground mb-0.5">{figure.label}</p>
@@ -544,6 +660,49 @@ export default function InvoiceDetailPage() {
               ))}
             </div>
           </SectionCard>
+
+          {invoice.installments.length > 0 && (
+            <SectionCard>
+              <SectionHeader
+                title={t('invoices.installments.schedule')}
+                description={t('invoices.installments.count', { count: invoice.installments.length })}
+              />
+              <table className="w-full" data-testid="invoice-installments">
+                <tbody>
+                  {invoice.installments.map((row, index) => (
+                    <tr key={row.id} className="border-b border-border last:border-0" data-testid="invoice-installment-row">
+                      <td className="py-2.5 pl-4 sm:pl-5 text-sm">
+                        {row.label ?? `${index + 1}/${invoice.installments.length}`}
+                      </td>
+                      <td className="py-2.5 text-xs text-muted-foreground tabular-nums">{showDate(row.due_date)}</td>
+                      <td className="py-2.5 text-right text-sm tabular-nums">
+                        {money(row.amount)}
+                        {Number(row.settled) > 0 && Number(row.settled) < Number(row.amount) && (
+                          <span className="ml-1.5 text-[11px] text-muted-foreground">
+                            {t('invoices.field.paid').toLowerCase()} {money(row.settled)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-4 sm:pr-5 text-right w-28">
+                        <span
+                          data-testid={`installment-state-${row.state}`}
+                          className={cn(
+                            'text-[11px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap',
+                            row.state === 'paid' && 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20',
+                            row.state === 'overdue' && 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20',
+                            row.state === 'partial' && 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20',
+                            !['paid', 'overdue', 'partial'].includes(row.state) && 'bg-muted text-muted-foreground border-border',
+                          )}
+                        >
+                          {t(`invoices.installments.state.${row.state}`)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </SectionCard>
+          )}
 
           {(invoice.lines.length > 0 || invoice.notes || customFields.length > 0) && (
             <SectionCard>
@@ -611,13 +770,57 @@ export default function InvoiceDetailPage() {
               title={t('invoices.payments')}
               action={
                 actions.canAllocate && canWrite ? (
-                  <Button size="sm" variant="outline" onClick={() => setLinkOpen(true)}>
-                    <Link2 className="h-3.5 w-3.5 mr-1.5" />
-                    {t('invoices.action.link')}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {/* The other way a debt closes: without money. Quieter
+                        than the payment button, because it is the exception. */}
+                    <Button size="sm" variant="ghost" onClick={() => setDeductionOpen(true)} data-testid="invoice-record-deduction">
+                      <MinusCircle className="h-3.5 w-3.5 mr-1.5" />
+                      {t('invoices.deductions.action')}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setLinkOpen(true)}>
+                      <Link2 className="h-3.5 w-3.5 mr-1.5" />
+                      {t('invoices.action.link')}
+                    </Button>
+                  </div>
                 ) : undefined
               }
             />
+            {invoice.deductions.length > 0 && (
+              <table className="w-full border-b border-border" data-testid="invoice-deductions">
+                <tbody>
+                  {invoice.deductions.map((deduction) => (
+                    <tr key={deduction.id} data-testid="invoice-deduction" className="border-b border-border last:border-0 bg-muted/20">
+                      <td className="py-3 pl-4 sm:pl-5">
+                        <div className="text-sm font-medium text-foreground truncate">
+                          {t(`invoices.deductions.kind.${deduction.kind}`)}
+                          {deduction.tax_kind && (
+                            <span className="ml-1.5 text-xs uppercase text-muted-foreground">{deduction.tax_kind}</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {t('invoices.deductions.settledWithout')}
+                          {deduction.note ? ` · ${deduction.note}` : ''}
+                        </div>
+                      </td>
+                      <td className="py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">
+                        {money(deduction.amount)}
+                      </td>
+                      <td className="py-3 pr-4 sm:pr-5 text-right w-16">
+                        {canWrite && invoice.status === 'open' && (
+                          <IconAction
+                            onClick={() => undeductMutation.mutate(deduction.id)}
+                            label={t('common.delete')}
+                            destructive
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </IconAction>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
             {invoice.allocations.length === 0 ? (
               <p
                 className="px-4 sm:px-5 py-8 text-center text-sm text-muted-foreground"
@@ -716,19 +919,134 @@ export default function InvoiceDetailPage() {
         invoiceId={id}
         direction={invoice.direction}
         balance={invoice.balance}
+        // With a schedule, a short payment is short of the installment
+        // being paid, not of the whole invoice.
+        settleTarget={(() => {
+          const next = invoice.installments.find((row) => Number(row.settled) < Number(row.amount))
+          return next ? (Number(next.amount) - Number(next.settled)).toFixed(2) : invoice.balance
+        })()}
         currency={currency}
         onLinked={refresh}
+      />
+      <RecordDeductionDialog
+        key={deductionOpen ? 'deduction-open' : 'deduction-closed'}
+        open={deductionOpen}
+        onOpenChange={setDeductionOpen}
+        invoiceId={id}
+        balance={invoice.balance}
+        currency={currency}
+        onRecorded={refresh}
       />
     </div>
   )
 }
 
-function LinkPaymentDialog({
+/**
+ * Closing part of the debt without money. The exception to the payment
+ * flow, kept as its own small dialog: a reason, an amount defaulting to
+ * whatever is left, and a note the accountant will thank you for.
+ */
+function RecordDeductionDialog({
+  open,
+  onOpenChange,
+  invoiceId,
+  balance,
+  currency,
+  onRecorded,
+  initialAmount,
+  transactionId,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  invoiceId: string
+  balance: string
+  currency: string
+  onRecorded: () => void
+  initialAmount?: string
+  transactionId?: string | null
+}) {
+  const { t } = useTranslation()
+  const locale = useDisplayLocale()
+  const [kind, setKind] = useState<DeductionKind>('withholding_tax')
+  const [amount, setAmount] = useState(initialAmount ?? balance)
+  const [taxKind, setTaxKind] = useState('')
+  const [note, setNote] = useState('')
+  const mutation = useMutation({
+    mutationFn: () =>
+      invoicesApi.deduct(invoiceId, {
+        kind,
+        amount,
+        tax_kind: kind === 'withholding_tax' ? taxKind || null : null,
+        note: note || null,
+        transaction_id: transactionId ?? null,
+      }),
+    onSuccess: () => {
+      toast.success(t('invoices.deductions.recorded'))
+      onOpenChange(false)
+      onRecorded()
+    },
+    onError: (error) => {
+      const key = invoiceErrorKey(error)
+      toast.error(key ? t(key, t('invoices.errors.generic')) : t('invoices.errors.generic'))
+    },
+  })
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t('invoices.deductions.title')}</DialogTitle>
+          <DialogDescription>{t('invoices.deductions.description')}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>{t('invoices.deductions.kindLabel')}</Label>
+            <Select value={kind} onValueChange={(v) => setKind(v as DeductionKind)}>
+              <SelectTrigger data-testid="deduction-kind"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {DEDUCTION_KINDS.map((k) => (
+                  <SelectItem key={k} value={k}>{t(`invoices.deductions.kind.${k}`)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="deduction-amount">{t('invoices.deductions.amount')}</Label>
+              <Input id="deduction-amount" data-testid="deduction-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">
+                {t('invoices.deductions.amountHint', { balance: formatCurrency(Number(balance), currency, locale) })}
+              </p>
+            </div>
+            {kind === 'withholding_tax' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="deduction-tax-kind">{t('invoices.deductions.taxKind')}</Label>
+                <Input id="deduction-tax-kind" data-testid="deduction-tax-kind" value={taxKind} onChange={(e) => setTaxKind(e.target.value)} placeholder={t('invoices.deductions.taxKindPlaceholder')} maxLength={30} />
+              </div>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="deduction-note">{t('invoices.deductions.note')}</Label>
+            <Input id="deduction-note" data-testid="deduction-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+          <Button onClick={() => mutation.mutate()} disabled={!(Number(amount) > 0) || mutation.isPending} data-testid="deduction-submit">
+            {t('invoices.deductions.action')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function LinkPaymentDialog({
   open,
   onOpenChange,
   invoiceId,
   direction,
   balance,
+  settleTarget,
   currency,
   onLinked,
 }: {
@@ -737,12 +1055,20 @@ function LinkPaymentDialog({
   invoiceId: string
   direction: InvoiceDirection
   balance: string
+  /** What this payment is expected to cover: the next installment's
+   *  remainder, or the balance. The "short by" reading uses it. */
+  settleTarget?: string
   currency: string
   onLinked: () => void
 }) {
   const { t } = useTranslation()
+  const locale = useDisplayLocale()
   const [selected, setSelected] = useState<string>('')
   const [amount, setAmount] = useState('')
+  // When the payment is short of the balance: what the difference is,
+  // or nothing. Answered once, here, instead of leaving the invoice
+  // partial and sending the person to find another button.
+  const [differenceKind, setDifferenceKind] = useState<DeductionKind | 'none'>('none')
 
   // Money moving the way this invoice is settled: a receivable by money
   // coming in, a payable by money going out. Asking for credits either
@@ -759,23 +1085,64 @@ function LinkPaymentDialog({
   // Same currency only — the server refuses a cross-currency allocation
   // rather than inventing a rate, so offering one here would only be
   // offering an error.
+  //
+  // And only money with something left to give: a payment already linked
+  // to this invoice, or spent in full on others, was offered here too, and
+  // picking it could only fail.
   const candidates = useMemo(
-    () => (data?.items ?? []).filter((tx) => (tx.currency ?? currency) === currency),
-    [data, currency],
+    () =>
+      (data?.items ?? []).filter((tx) => {
+        if ((tx.currency ?? currency) !== currency) return false
+        const links = tx.invoice_links ?? []
+        if (links.some((link) => link.invoice_id === invoiceId)) return false
+        const used = links.reduce((sum, link) => sum + Number(link.amount), 0)
+        return Math.abs(Number(tx.amount)) - used > 0.005
+      }),
+    [data, currency, invoiceId],
   )
 
+  const selectedTx = candidates.find((tx) => tx.id === selected)
+  const target = Number(settleTarget ?? balance)
+  const applied = amount ? Number(amount) : Math.min(Number(balance), Math.abs(Number(selectedTx?.amount ?? 0)))
+  const difference = selectedTx ? Math.round((target - applied) * 100) / 100 : 0
+
+  // Linking and deducting are two requests. Once the first has landed
+  // the invoice is already different, so if the second fails the dialog
+  // still closes and refreshes: left open, "try again" would link the
+  // same payment a second time.
+  const linked = useRef(false)
+  const close = () => {
+    onOpenChange(false)
+    setSelected('')
+    setAmount('')
+    setDifferenceKind('none')
+    onLinked()
+  }
   const mutation = useMutation({
-    mutationFn: () => invoicesApi.allocate(invoiceId, selected, amount || undefined),
+    mutationFn: async () => {
+      linked.current = false
+      const after = await invoicesApi.allocate(invoiceId, selected, amount || undefined)
+      linked.current = true
+      if (differenceKind !== 'none' && difference > 0) {
+        await invoicesApi.deduct(invoiceId, {
+          kind: differenceKind,
+          amount: difference.toFixed(2),
+          transaction_id: selected,
+        })
+      }
+      return after
+    },
     onSuccess: () => {
       toast.success(t('invoices.linked'))
-      onOpenChange(false)
-      setSelected('')
-      setAmount('')
-      onLinked()
+      close()
     },
     onError: (error) => {
       const key = invoiceErrorKey(error)
       toast.error(key ? t(key, t('invoices.errors.generic')) : t('invoices.errors.generic'))
+      if (linked.current) {
+        toast.success(t('invoices.linked'))
+        close()
+      }
     },
   })
 
@@ -829,6 +1196,24 @@ function LinkPaymentDialog({
               invoice should not require typing the number twice. */}
           <p className="text-[11px] text-muted-foreground">{t('invoices.field.amountHint')}</p>
         </div>
+
+        {selectedTx && difference > 0 && (
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 space-y-2" data-testid="invoice-difference">
+            <p className="text-sm font-medium">
+              {t('invoices.deductions.differenceTitle', { difference: formatCurrency(difference, currency, locale) })}
+            </p>
+            <p className="text-[11px] text-muted-foreground">{t('invoices.deductions.differenceHint')}</p>
+            <Select value={differenceKind} onValueChange={(v) => setDifferenceKind(v as DeductionKind | 'none')}>
+              <SelectTrigger data-testid="invoice-difference-kind"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">{t('invoices.deductions.differenceNone')}</SelectItem>
+                {DEDUCTION_KINDS.map((k) => (
+                  <SelectItem key={k} value={k}>{t(`invoices.deductions.kind.${k}`)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -886,6 +1271,11 @@ function EditDraftDialog({
   const [total, setTotal] = useState(invoice.total)
   const [dueDate, setDueDate] = useState(invoice.due_date)
   const [notes, setNotes] = useState(invoice.notes ?? '')
+  const [installments, setInstallments] = useState<InstallmentInput[] | null>(() =>
+    invoice.installments.length
+      ? invoice.installments.map((row) => ({ due_date: row.due_date, amount: row.amount, label: row.label }))
+      : null,
+  )
   const [lines, setLines] = useState<InvoiceLineInput[]>(() =>
     invoice.lines.map((line) => ({
       description: line.description,
@@ -901,6 +1291,9 @@ function EditDraftDialog({
         payee_id: payeeId || null,
         due_date: dueDate,
         notes: notes || null,
+        // Always sent: the server takes an omitted key as "leave the
+        // schedule alone" and an empty list as "clear it".
+        installments: installments ?? [],
         // Lines are the source of truth once they exist: the server
         // recomputes the total from them and ignores what was typed.
         //
@@ -976,8 +1369,9 @@ function EditDraftDialog({
                 id="edit-due"
                 data-testid="edit-due-input"
                 type="date"
-                value={dueDate}
+                value={installments ? installments[installments.length - 1]?.due_date ?? '' : dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
+                disabled={installments !== null}
               />
             </div>
           </div>
@@ -987,6 +1381,15 @@ function EditDraftDialog({
             onChange={setLines}
             currency={currency}
             showTax={showTax}
+          />
+
+          <InvoiceInstallmentsEditor
+            value={installments}
+            onChange={setInstallments}
+            total={lines.length ? linesTotal(lines) : Number(total || 0)}
+            currency={currency}
+            firstDueDate={dueDate}
+            minDate={invoice.issue_date}
           />
 
           <div className="space-y-1.5">
@@ -1006,7 +1409,7 @@ function EditDraftDialog({
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending}
+            disabled={mutation.isPending || (installments !== null && Math.abs(installmentsTotal(installments) - (lines.length ? linesTotal(lines) : Number(total || 0))) >= 0.005)}
             data-testid="edit-submit"
           >
             {t('common.save')}

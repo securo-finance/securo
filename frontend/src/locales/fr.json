@@ -13,6 +13,9 @@
     "locale": "Langue",
     "taxJurisdiction": "Juridiction fiscale",
     "taxJurisdictionHint": "Détermine les documents fiscaux proposés dans cet espace de travail. Indépendant de la langue de l'interface.",
+    "timezone": "Fuseau horaire",
+    "timezoneDefault": "Valeur par défaut de l'application ({{zone}})",
+    "timezoneHint": "Le calendrier dans lequel ce workspace tient ses comptes. Soldes, budgets et échéances basculent à minuit dans ce fuseau.",
     "members": "Membres",
     "addMember": "Ajouter un membre",
     "addMemberTitle": "Ajouter un membre",
@@ -233,7 +236,8 @@
       "downloadPdf": "Download PDF",
       "share": "Share link",
       "revokeLink": "Revoke link",
-      "saveDraft": "Enregistrer le brouillon"
+      "saveDraft": "Enregistrer le brouillon",
+      "downloadStatement": "Télécharger le relevé"
     },
     "settings": {
       "title": "Invoice settings",
@@ -326,7 +330,25 @@
       "negative_discount": "Une remise ne peut pas être négative.",
       "first_term": "Le prix en vigueur depuis le début ne peut être ni déplacé ni supprimé. Modifiez-le, ou ajoutez un nouveau prix à partir d'une date ultérieure.",
       "not_receivable": "Seule une facture que vous avez émise peut appartenir à un accord.",
-      "period_already_issued": "Cette période vient d'être émise. Actualisez pour la voir."
+      "period_already_issued": "Cette période vient d'être émise. Actualisez pour la voir.",
+      "product_not_found": "Produit introuvable.",
+      "price_not_found": "Prix introuvable sur ce produit.",
+      "product_in_use": "Des factures mentionnent ce produit. Archivez-le plutôt que de le supprimer.",
+      "price_in_use": "Des factures ont été émises à ce prix. Archivez-le plutôt que de le supprimer.",
+      "invalid_kind": "Type de produit inconnu.",
+      "invalid_billing": "Type de facturation inconnu.",
+      "interval_required": "Un prix récurrent a besoin d'une fréquence.",
+      "currency_required": "Un prix a besoin d'une devise.",
+      "unit_price_required": "Un prix a besoin d'un montant.",
+      "negative_price": "Un prix ne peut pas être négatif.",
+      "invalid_fiscal_refs": "Les références fiscales doivent être de courtes valeurs texte sous des clés simples (lettres, chiffres, tiret bas).",
+      "price_key_taken": "Un autre prix utilise déjà cette clé de recherche ou cet identifiant externe.",
+      "installments_mismatch": "Les échéances ne totalisent pas le montant de la facture.",
+      "installments_too_few": "Un échéancier nécessite au moins deux échéances.",
+      "installment_amount_not_positive": "Chaque échéance doit avoir un montant.",
+      "installment_due_required": "Chaque échéance nécessite une date d'échéance.",
+      "invalid_deduction_kind": "Type de déduction inconnu.",
+      "deduction_not_found": "Déduction introuvable."
     },
     "comingNext": "Facturez vos clients et suivez ce qui a été payé et ce qui reste ouvert. C'est la prochaine chose en construction.",
     "document": {
@@ -561,6 +583,128 @@
         "empty": "Aucune facture sous cet accord pour l'instant.",
         "emptyNext": "Aucune facture pour l'instant. La première sera rédigée le {{date}}."
       }
+    },
+    "products": {
+      "title": "Produits",
+      "new": "Nouveau produit",
+      "newDescription": "Quelque chose que vous vendez, avec un prix par devise. Le choisir remplit une ligne de facture ; la ligne reste à vous pour la modifier ensuite.",
+      "editTitle": "Modifier le produit",
+      "empty": "Aucun produit pour l'instant. Ajoutez ce que vous vendez, et chaque ligne de facture sera à un clic.",
+      "emptyArchived": "Rien d'archivé.",
+      "emptyPicker": "Aucun produit pour l'instant. Ajoutez-les dans Produits.",
+      "noneFound": "Aucun produit ne correspond.",
+      "searchPlaceholder": "Rechercher des produits",
+      "pick": "Choisir dans le catalogue",
+      "fromCatalog": "Depuis le catalogue",
+      "noPrice": "Aucun prix",
+      "noPriceIn": "aucun prix en {{currency}}",
+      "perUnit": "par {{unit}}",
+      "created": "Produit créé",
+      "saved": "Produit enregistré",
+      "archived": "Produit archivé. Les factures qui le mentionnent restent inchangées.",
+      "restored": "Produit restauré",
+      "deleted": "Produit supprimé",
+      "filter": {
+        "active": "Actifs",
+        "archived": "Archivés"
+      },
+      "kind": {
+        "service": "Service",
+        "product": "Produit"
+      },
+      "billing": {
+        "one_time": "Ponctuel",
+        "every": "Chaque {{interval}}"
+      },
+      "per": {
+        "weekly": "semaine",
+        "biweekly": "2 semaines",
+        "monthly": "mois",
+        "quarterly": "trimestre",
+        "semiannual": "6 mois",
+        "yearly": "an"
+      },
+      "column": {
+        "name": "Nom",
+        "kind": "Type",
+        "prices": "Prix",
+        "invoices": "Factures"
+      },
+      "field": {
+        "name": "Nom",
+        "namePlaceholder": "Heure de conseil, Forfait Pro, Création de logo",
+        "kind": "Type",
+        "description": "Description",
+        "prices": "Prix",
+        "pricesHint": "Un par devise. Un prix récurrent indique la fréquence ; c'est une indication pour les factures récurrentes, rien n'est facturé tout seul.",
+        "addPrice": "Ajouter un prix",
+        "noPrices": "Aucun prix. Le nom remplit quand même la ligne ; le montant est saisi à la main.",
+        "nickname": "Libellé (facultatif)",
+        "fiscalRefs": "Références fiscales",
+        "fiscalRefsHint": "Ce qu'un document fiscal exige par ligne. Suggéré par votre juridiction ; ajoutez toute autre clé dont vous avez besoin.",
+        "customRefKey": "autre clé (ex. hs_code)",
+        "addRef": "Ajouter",
+        "fiscalRefsNone": "Rien n'est suggéré pour ce type ici. Ajoutez toute clé dont vos documents fiscaux ont besoin."
+      },
+      "action": {
+        "archive": "Archiver",
+        "restore": "Restaurer"
+      }
+    },
+    "installments": {
+      "title": "Fractionner en échéances",
+      "splitIn": "Fractionner en",
+      "splitHint": "parts égales, à un mois d'intervalle, à partir de la date d'échéance",
+      "add": "Ajouter une échéance",
+      "label": "Libellé",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "Total : {{total}}.",
+      "mismatch": "Les échéances totalisent {{scheduled}}, la facture {{total}}.",
+      "schedule": "Échéancier de paiement",
+      "nextDue": "Prochaine échéance",
+      "dueDerived": "Définie par la dernière échéance.",
+      "count_one": "{{count}} échéance",
+      "count_other": "{{count}} échéances",
+      "state": {
+        "open": "En attente",
+        "partial": "Partielle",
+        "paid": "Payée",
+        "overdue": "En retard",
+        "draft": "Brouillon",
+        "void": "Annulée",
+        "uncollectible": "Irrécouvrable"
+      }
+    },
+    "deductions": {
+      "title": "Enregistrer une déduction",
+      "description": "Solde une partie du montant dû sans qu'aucun argent n'arrive : le client a retenu un impôt, le prestataire de paiement a gardé ses frais, la conversion est arrivée en dessous. Elle compte comme réglée, jamais comme encaissée.",
+      "action": "Enregistrer la déduction",
+      "recorded": "Déduction enregistrée",
+      "removed": "Déduction supprimée",
+      "amount": "Montant",
+      "amountHint": "Jusqu'au solde : {{balance}}.",
+      "kindLabel": "Motif",
+      "taxKind": "Quel impôt (facultatif)",
+      "taxKindPlaceholder": "Retenue à la source, TVA...",
+      "note": "Note (facultatif)",
+      "settledWithout": "Réglé sans paiement",
+      "kind": {
+        "withholding_tax": "Impôt retenu par le client",
+        "gateway_fee": "Frais retenus par le prestataire de paiement",
+        "fx_difference": "Écart de conversion de devise",
+        "other": "Autre"
+      },
+      "differenceTitle": "Il manque {{difference}} au paiement",
+      "differenceHint": "Enregistrez la différence pour que la facture soit soldée",
+      "differenceNone": "Ne pas enregistrer",
+      "figure": "Déduit"
+    },
+    "statement": {
+      "asIssued": "Facture telle qu'émise",
+      "asIssuedHint": "Le document envoyé au client",
+      "hint": "Paiements et déductions depuis l'émission, et le solde",
+      "banner": "Ce PDF est la facture telle qu'émise. Depuis, {{paid}} ont été reçus et {{deducted}} déduits : le relevé de compte détaille chacun et le solde.",
+      "title": "Relevé de compte"
     }
   },
   "collections": {
@@ -573,7 +717,9 @@
     "add": "Nouvelle collection",
     "edit": "Modifier la collection",
     "empty": "Aucune collection pour l'instant. Créez-en une pour regrouper vos comptes.",
-    "accountCount": "{{count}} comptes",
+    "accountCount_one": "{{count}} compte",
+    "accountCount_many": "{{count}} comptes",
+    "accountCount_other": "{{count}} comptes",
     "name": "Nom",
     "namePlaceholder": "ex. Professionnel, Long terme, Fonds d'urgence",
     "color": "Couleur",
@@ -581,7 +727,9 @@
     "accountsHint": "{{count}} sélectionné(s)",
     "wallets": "Portefeuilles",
     "walletsHint": "{{count}} sélectionné(s)",
-    "walletCount": "{{count}} portefeuilles",
+    "walletCount_one": "{{count}} portefeuille",
+    "walletCount_many": "{{count}} portefeuilles",
+    "walletCount_other": "{{count}} portefeuilles",
     "noAccounts": "Aucun compte pour l'instant.",
     "created": "Collection créée",
     "updated": "Collection mise à jour",
@@ -741,6 +889,7 @@
     "monthNext": "Mois suivant",
     "description": "Description",
     "originalDescription": "Description d'origine",
+    "restoreOriginalDescription": "Restaurer l'original",
     "amount": "Montant",
     "status": "Statut",
     "date": "Date",
@@ -824,7 +973,7 @@
     "statusCleared": "Rapprochée",
     "sortAsc": "Trier par ordre croissant",
     "sortDesc": "Trier par ordre décroissant",
-    "syncedInfo": "Transaction synchronisée depuis la banque — seules la catégorie et les notes peuvent être modifiées",
+    "syncedInfo": "Transaction synchronisée depuis la banque : le montant, la date et le compte ne peuvent pas être modifiés",
     "uncategorized": "Non catégorisée",
     "selected": "sélectionnée(s)",
     "summaryCount": "{{count}} transactions",
@@ -1016,6 +1165,7 @@
     "balanceDate": "Date du solde",
     "lastSync": "Dernière synchronisation",
     "multiInstitutionLink_one": "{{provider}} · {{count}} établissement",
+    "multiInstitutionLink_many": "{{provider}} · {{count}} établissements",
     "multiInstitutionLink_other": "{{provider}} · {{count}} établissements",
     "sync": "Synchroniser",
     "disconnect": "Déconnecter",
@@ -1026,6 +1176,7 @@
     "noManualAccounts": "Aucun compte manuel pour l'instant",
     "noBankConnections": "Aucune connexion bancaire",
     "noAccountsFound": "Aucun compte trouvé",
+    "emptyFiltered": "Rien ne correspond à ce filtre.",
     "accountName": "Nom du compte",
     "displayName": "Nom d'affichage",
     "displayNameHint": "Remplace le nom du fournisseur par défaut partout dans l'application.",
@@ -1440,8 +1591,12 @@
     "updated": "Catégorie mise à jour",
     "deleted": "Catégorie supprimée",
     "confirmDeleteTitle": "Supprimer la catégorie ?",
-    "confirmDeleteDescription": "La catégorie « {{name}} » sera définitivement supprimée. Elle ne peut pas être supprimée tant que des transactions ou d'autres enregistrements y font encore référence ; supprimez d'abord ces références. Cette action est irréversible.",
-    "deleteInUse": "Cette catégorie est encore utilisée. Supprimez d'abord les enregistrements qui y font référence.",
+    "confirmDeleteDescription": "La catégorie « {{name}} » sera définitivement supprimée. Cette action est irréversible.",
+    "deleteInUse": "Cette catégorie est encore utilisée. Choisissez une autre catégorie où déplacer ses entrées.",
+    "deleteInUseTitle": "Supprimer {{name}} ?",
+    "deleteInUseDescription": "Cette catégorie est encore utilisée. Choisissez-en une autre qui reprend tout : rien n’est perdu, tout est simplement déplacé.",
+    "deleteTransferLabel": "Tout déplacer vers",
+    "deleteAndTransfer": "Supprimer et déplacer",
     "expandAll": "Tout développer",
     "collapseAll": "Tout réduire",
     "treatAsTransfer": "Traiter comme un virement",
@@ -1568,7 +1723,8 @@
       "invalid_date": "Format de date invalide",
       "no_amount": "Aucun montant d'entrée ou de sortie",
       "invalid_amount": "Format de montant invalide"
-    }
+    },
+    "selectAll": "Tout sélectionner"
   },
   "assetImport": {
     "title": "Importer des ordres d'investissement",
@@ -1788,6 +1944,9 @@
     "inflowOutflow": "Entrées vs sorties",
     "startingBalance": "Solde de départ",
     "endingBalance": "Solde projeté",
+    "runwayNegativeOn": "Le solde devient négatif le {{date}}",
+    "runwayAlreadyNegative": "Déjà négatif",
+    "lowestBalance": "Solde le plus bas",
     "projectedIncome": "Revenus projetés",
     "projectedExpenses": "Dépenses projetées",
     "incomeExpenses": "Revenus vs dépenses",
@@ -1917,6 +2076,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -1941,9 +2101,23 @@
       "uscc": "USCC"
     },
     "otherCountries": "Autres pays",
-    "anyCountry": "Ailleurs"
+    "anyCountry": "Ailleurs",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / code-barres",
+      "service_code": "Code de service (LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "Code de service municipal",
+      "hs_code": "Code SH (HS)",
+      "sat_product_code": "Code produit/service SAT",
+      "sat_unit_code": "Code d'unité SAT"
+    }
   },
   "common": {
+    "selectTimezone": "Choisir un fuseau horaire",
+    "searchTimezone": "Rechercher un fuseau horaire...",
+    "noTimezoneFound": "Aucun fuseau horaire trouvé.",
     "createNamed": "Créer « {{name}} »",
     "view": "Voir",
     "add": "Ajouter",
@@ -1977,6 +2151,8 @@
     "remove": "Supprimer"
   },
   "splitGroups": {
+    "searchPlaceholder": "Rechercher des groupes...",
+    "clearSearch": "Effacer la recherche",
     "title": "Groupes",
     "section": "Configuration",
     "add": "Ajouter un groupe",
@@ -2210,6 +2386,11 @@
       "dateFormatMdyDesc": "Mois en premier, ex. 06/04/2026.",
       "dateFormatYmd": "Année / Mois / Jour",
       "dateFormatYmdDesc": "Ordre ISO, ex. 2026-06-04.",
+      "timezoneTitle": "Date et heure",
+      "timezone": "Fuseau horaire de l’application",
+      "timezoneHelp": "Les dates, les transactions récurrentes, les tâches planifiées et le contexte de l’IA utilisent ce fuseau horaire. Les changements s’appliquent aux nouvelles requêtes et tâches.",
+      "timezoneServerDefault": "Valeur par défaut du serveur ({{zone}})",
+      "timezoneSavedInvalid": "La valeur enregistrée {{value}} n'est pas un fuseau horaire connu de ce serveur. {{zone}} est utilisé jusqu'à ce qu'elle soit modifiée.",
       "updated": "Paramètre mis à jour"
     }
   },

@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today, get_workspace_timezone, today_in
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.recurring_transaction import RecurringTransaction
@@ -270,7 +271,30 @@ async def generate_pending(
     If up_to is None, defaults to today. This allows the dashboard to pre-generate
     transactions for future months when the user navigates ahead.
     Returns the count of transactions generated."""
-    cutoff = up_to or date.today()
+    # A person's recurring rows may live in several workspaces, and each
+    # workspace keeps its own calendar, so "today" is resolved per workspace.
+    # The query is bounded by the latest of those days and the loop below
+    # applies each row's own cutoff.
+    cutoffs: dict[uuid.UUID, date] = {}
+    if up_to is None:
+        workspace_ids = (
+            await session.execute(
+                select(RecurringTransaction.workspace_id)
+                .where(
+                    RecurringTransaction.user_id == user_id,
+                    RecurringTransaction.is_active == True,
+                    RecurringTransaction.auto_generate == True,
+                )
+                .distinct()
+            )
+        ).scalars().all()
+        for ws_id in workspace_ids:
+            cutoffs[ws_id] = today_in(await get_workspace_timezone(session, ws_id))
+        if not cutoffs:
+            return 0
+        latest_cutoff = max(cutoffs.values())
+    else:
+        latest_cutoff = up_to
 
     result = await session.execute(
         select(RecurringTransaction)
@@ -281,11 +305,11 @@ async def generate_pending(
             or_(
                 and_(
                     RecurringTransaction.weekend_adjustment == "previous_friday",
-                    RecurringTransaction.next_occurrence <= cutoff + timedelta(days=2),
+                    RecurringTransaction.next_occurrence <= latest_cutoff + timedelta(days=2),
                 ),
                 and_(
                     RecurringTransaction.weekend_adjustment != "previous_friday",
-                    RecurringTransaction.next_occurrence <= cutoff,
+                    RecurringTransaction.next_occurrence <= latest_cutoff,
                 ),
             ),
         )
@@ -299,6 +323,7 @@ async def generate_pending(
         # constraint — the user should edit the recurring to fix it.
         if recurring.account_id is None:
             continue
+        cutoff = up_to or cutoffs.get(recurring.workspace_id) or app_today()
         # Generate while the effective date is due. The nominal pointer remains
         # authoritative and is the only date used for schedule advancement and
         # end-date evaluation.

@@ -10,12 +10,12 @@ Goals:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_timezone, app_today
 from app.models.user import User
 
 
@@ -56,9 +56,8 @@ async def build_context_primer(
     prefs = getattr(user, "preferences", None) or {}
     primary_currency = prefs.get("currency_display") or "USD"
     language = prefs.get("language") or "en"
-    timezone_label = prefs.get("timezone") or "UTC"
-
-    today_utc = datetime.now(timezone.utc).date().isoformat()
+    timezone_label = str(app_timezone())
+    today = app_today().isoformat()
 
     lines: list[str] = []
     lines.append("# Context for this conversation")
@@ -68,7 +67,7 @@ async def build_context_primer(
     lines.append(f"- Primary currency: {primary_currency}")
     lines.append(f"- Preferred language: {language}")
     lines.append(f"- Timezone: {timezone_label}")
-    lines.append(f"- Today is {today_utc} (UTC)")
+    lines.append(f"- Today is {today} ({timezone_label})")
     lines.append("")
 
     rows: list[dict] = []

@@ -13,6 +13,9 @@
     "locale": "言語",
     "taxJurisdiction": "税務管轄",
     "taxJurisdictionHint": "このワークスペースで提供される会計書類を決定します。UIの言語とは別の設定です。",
+    "timezone": "タイムゾーン",
+    "timezoneDefault": "アプリケーションの既定 ({{zone}})",
+    "timezoneHint": "このワークスペースが帳簿を管理するカレンダーです。残高、予算、支払期日はこのタイムゾーンの深夜に切り替わります。",
     "members": "メンバー",
     "addMember": "メンバーを追加",
     "addMemberTitle": "メンバーを追加",
@@ -233,7 +236,8 @@
       "downloadPdf": "PDFをダウンロード",
       "share": "リンクを共有",
       "revokeLink": "リンクを失効",
-      "saveDraft": "下書き保存"
+      "saveDraft": "下書き保存",
+      "downloadStatement": "明細書をダウンロード"
     },
     "settings": {
       "title": "請求書設定",
@@ -326,7 +330,25 @@
       "negative_discount": "割引を負の値にすることはできません。",
       "first_term": "開始時から有効な料金は移動も削除もできません。変更するか、より後の日付から新しい料金を追加してください。",
       "not_receivable": "契約に含められるのは、あなたが発行した請求書のみです。",
-      "period_already_issued": "この期間はたった今発行されました。更新して確認してください。"
+      "period_already_issued": "この期間はたった今発行されました。更新して確認してください。",
+      "product_not_found": "商品が見つかりません。",
+      "price_not_found": "この商品にその価格はありません。",
+      "product_in_use": "この商品を含む請求書があります。削除する代わりにアーカイブしてください。",
+      "price_in_use": "この価格で発行された請求書があります。削除する代わりにアーカイブしてください。",
+      "invalid_kind": "不明な商品の種類です。",
+      "invalid_billing": "不明な請求の種類です。",
+      "interval_required": "定期価格には頻度が必要です。",
+      "currency_required": "価格には通貨が必要です。",
+      "unit_price_required": "価格には金額が必要です。",
+      "negative_price": "価格をマイナスにはできません。",
+      "invalid_fiscal_refs": "税務参照コードは、シンプルなキー(英字、数字、アンダースコア)の下にある短いテキスト値である必要があります。",
+      "price_key_taken": "別の価格がすでにこの検索キーまたは外部IDを使用しています。",
+      "installments_mismatch": "分割の合計が請求書の合計と一致しません。",
+      "installments_too_few": "分割払いには2回以上の分割が必要です。",
+      "installment_amount_not_positive": "各分割には金額が必要です。",
+      "installment_due_required": "各分割には期日が必要です。",
+      "invalid_deduction_kind": "不明な控除の種類です。",
+      "deduction_not_found": "控除が見つかりません。"
     },
     "comingNext": "クライアントに請求し、支払い済みのものと未払いのものを管理します。現在開発中の次の機能です。",
     "document": {
@@ -561,6 +583,128 @@
         "empty": "この契約の請求書はまだありません。",
         "emptyNext": "請求書はまだありません。最初の請求書は{{date}}に作成されます。"
       }
+    },
+    "products": {
+      "title": "商品",
+      "new": "新しい商品",
+      "newDescription": "販売しているもので、通貨ごとに価格を持ちます。選ぶと請求書の明細行が埋まり、その後は自由に変更できます。",
+      "editTitle": "商品を編集",
+      "empty": "まだ商品がありません。販売しているものを登録すると、請求書の明細行はワンクリックで入力できます。",
+      "emptyArchived": "アーカイブはありません。",
+      "emptyPicker": "まだ商品がありません。「商品」で登録してください。",
+      "noneFound": "一致する商品がありません。",
+      "searchPlaceholder": "商品を検索",
+      "pick": "カタログから選ぶ",
+      "fromCatalog": "カタログから",
+      "noPrice": "価格なし",
+      "noPriceIn": "{{currency}}の価格なし",
+      "perUnit": "{{unit}}あたり",
+      "created": "商品を作成しました",
+      "saved": "商品を保存しました",
+      "archived": "商品をアーカイブしました。この商品を含む請求書は変わりません。",
+      "restored": "商品を復元しました",
+      "deleted": "商品を削除しました",
+      "filter": {
+        "active": "有効",
+        "archived": "アーカイブ済み"
+      },
+      "kind": {
+        "service": "サービス",
+        "product": "商品"
+      },
+      "billing": {
+        "one_time": "単発",
+        "every": "{{interval}}ごと"
+      },
+      "per": {
+        "weekly": "週",
+        "biweekly": "2週間",
+        "monthly": "月",
+        "quarterly": "四半期",
+        "semiannual": "6か月",
+        "yearly": "年"
+      },
+      "column": {
+        "name": "名前",
+        "kind": "種類",
+        "prices": "価格",
+        "invoices": "請求書"
+      },
+      "field": {
+        "name": "名前",
+        "namePlaceholder": "コンサルティング1時間、Proプラン、ロゴデザイン",
+        "kind": "種類",
+        "description": "説明",
+        "prices": "価格",
+        "pricesHint": "通貨ごとに1つ。定期価格は頻度を示します。定期請求書のためのヒントであり、それだけで請求されることはありません。",
+        "addPrice": "価格を追加",
+        "noPrices": "価格がありません。名前は明細行に入りますが、金額は手入力になります。",
+        "nickname": "ラベル(任意)",
+        "fiscalRefs": "税務参照コード",
+        "fiscalRefsHint": "税務書類が明細ごとに必要とする項目です。お住まいの管轄区域に基づいて提案されます。必要な他のキーも追加できます。",
+        "customRefKey": "その他のキー(例: hs_code)",
+        "addRef": "追加",
+        "fiscalRefsNone": "この種類にはここでの提案はありません。税務書類に必要なキーを追加してください。"
+      },
+      "action": {
+        "archive": "アーカイブ",
+        "restore": "復元"
+      }
+    },
+    "installments": {
+      "title": "分割払いにする",
+      "splitIn": "分割数",
+      "splitHint": "回に均等分割、1か月間隔、支払期日から",
+      "add": "分割を追加",
+      "label": "ラベル",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "合計 {{total}}。",
+      "mismatch": "分割の合計は {{scheduled}}、請求書は {{total}} です。",
+      "schedule": "支払いスケジュール",
+      "nextDue": "次回期日",
+      "dueDerived": "最後の分割で決まります。",
+      "count_one": "{{count}} 回払い",
+      "count_other": "{{count}} 回払い",
+      "state": {
+        "open": "未回収",
+        "partial": "一部入金",
+        "paid": "入金済み",
+        "overdue": "延滞",
+        "draft": "下書き",
+        "void": "無効",
+        "uncollectible": "回収不能"
+      }
+    },
+    "deductions": {
+      "title": "控除を記録",
+      "description": "入金なしで債権の一部を消し込みます。取引先が源泉徴収した、決済業者が手数料を差し引いた、為替換算で目減りした、といった場合です。回収済みではなく、精算済みとして扱われます。",
+      "action": "控除を記録",
+      "recorded": "控除を記録しました",
+      "removed": "控除を削除しました",
+      "amount": "金額",
+      "amountHint": "残高まで: {{balance}}。",
+      "kindLabel": "理由",
+      "taxKind": "税の種類(任意)",
+      "taxKindPlaceholder": "源泉所得税、消費税...",
+      "note": "メモ(任意)",
+      "settledWithout": "入金なしで精算",
+      "kind": {
+        "withholding_tax": "取引先による源泉徴収",
+        "gateway_fee": "決済業者が差し引いた手数料",
+        "fx_difference": "為替換算差額",
+        "other": "その他"
+      },
+      "differenceTitle": "入金が {{difference}} 不足しています",
+      "differenceHint": "差額を記録すると請求書が完了します",
+      "differenceNone": "記録しない",
+      "figure": "控除額"
+    },
+    "statement": {
+      "asIssued": "発行時の請求書",
+      "asIssuedHint": "顧客に送付した書類",
+      "hint": "発行後の入金と控除、および残高",
+      "banner": "このPDFは発行時の請求書です。その後 {{paid}} が入金され、{{deducted}} が控除されました。明細書で各項目と残高を確認できます。",
+      "title": "取引明細書"
     }
   },
   "collections": {
@@ -573,7 +717,8 @@
     "add": "新規コレクション",
     "edit": "コレクションを編集",
     "empty": "コレクションはまだありません。作成して口座をまとめましょう。",
-    "accountCount": "{{count}}口座",
+    "accountCount_one": "{{count}}口座",
+    "accountCount_other": "{{count}}口座",
     "name": "名前",
     "namePlaceholder": "例: ビジネス、長期、緊急予備金",
     "color": "色",
@@ -581,7 +726,8 @@
     "accountsHint": "{{count}}件選択中",
     "wallets": "ウォレット",
     "walletsHint": "{{count}}件選択中",
-    "walletCount": "{{count}}ウォレット",
+    "walletCount_one": "{{count}}ウォレット",
+    "walletCount_other": "{{count}}ウォレット",
     "noAccounts": "口座はまだありません。",
     "created": "コレクションを作成しました",
     "updated": "コレクションを更新しました",
@@ -741,6 +887,7 @@
     "monthNext": "翌月",
     "description": "摘要",
     "originalDescription": "元の摘要",
+    "restoreOriginalDescription": "元に戻す",
     "amount": "金額",
     "status": "ステータス",
     "date": "日付",
@@ -824,7 +971,7 @@
     "statusCleared": "清算済み",
     "sortAsc": "昇順で並べ替え",
     "sortDesc": "降順で並べ替え",
-    "syncedInfo": "銀行同期の取引 — 編集できるのはカテゴリとメモのみです",
+    "syncedInfo": "銀行同期の取引：金額、日付、口座は編集できません",
     "uncategorized": "未分類",
     "selected": "件選択中",
     "summaryCount": "{{count}}件",
@@ -1025,6 +1172,7 @@
     "noManualAccounts": "手動の口座はまだありません",
     "noBankConnections": "銀行接続はありません",
     "noAccountsFound": "口座が見つかりません",
+    "emptyFiltered": "このフィルタに一致するものはありません。",
     "accountName": "口座名",
     "displayName": "表示名",
     "displayNameHint": "アプリ全体でプロバイダーの既定名を上書きします。",
@@ -1439,8 +1587,12 @@
     "updated": "カテゴリを更新しました",
     "deleted": "カテゴリを削除しました",
     "confirmDeleteTitle": "カテゴリを削除しますか?",
-    "confirmDeleteDescription": "カテゴリ「{{name}}」を完全に削除します。取引などのレコードがまだ参照している間は削除できません。先にそれらの参照を取り除いてください。この操作は取り消せません。",
-    "deleteInUse": "このカテゴリは使用中です。参照しているレコードを先に取り除いてください。",
+    "confirmDeleteDescription": "カテゴリ「{{name}}」を完全に削除します。この操作は取り消せません。",
+    "deleteInUse": "このカテゴリはまだ使われています。記録の移動先となるカテゴリを選んでください。",
+    "deleteInUseTitle": "「{{name}}」を削除しますか？",
+    "deleteInUseDescription": "このカテゴリはまだ使われています。すべてを引き継ぐカテゴリを選んでください。失われるものはなく、移動するだけです。",
+    "deleteTransferLabel": "すべての移動先",
+    "deleteAndTransfer": "削除して移動",
     "expandAll": "すべて展開",
     "collapseAll": "すべて折りたたむ",
     "treatAsTransfer": "振替として扱う",
@@ -1567,7 +1719,8 @@
       "invalid_date": "無効な日付形式",
       "no_amount": "入金/出金金額なし",
       "invalid_amount": "無効な金額形式"
-    }
+    },
+    "selectAll": "すべて選択"
   },
   "assetImport": {
     "title": "投資注文をインポート",
@@ -1787,6 +1940,9 @@
     "inflowOutflow": "流入と流出",
     "startingBalance": "期首残高",
     "endingBalance": "予測残高",
+    "runwayNegativeOn": "{{date}}に残高がマイナスになります",
+    "runwayAlreadyNegative": "すでにマイナス",
+    "lowestBalance": "最低残高",
     "projectedIncome": "予測収入",
     "projectedExpenses": "予測支出",
     "incomeExpenses": "収入と支出",
@@ -1916,6 +2072,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -1940,9 +2097,23 @@
       "uscc": "USCC"
     },
     "otherCountries": "その他の国",
-    "anyCountry": "その他すべての国"
+    "anyCountry": "その他すべての国",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / バーコード",
+      "service_code": "サービスコード(LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "市町村サービスコード",
+      "hs_code": "HSコード",
+      "sat_product_code": "SAT製品/サービスコード",
+      "sat_unit_code": "SAT単位コード"
+    }
   },
   "common": {
+    "selectTimezone": "タイムゾーンを選択",
+    "searchTimezone": "タイムゾーンを検索...",
+    "noTimezoneFound": "タイムゾーンが見つかりません。",
     "createNamed": "「{{name}}」を作成",
     "view": "表示",
     "add": "追加",
@@ -1976,6 +2147,8 @@
     "remove": "削除"
   },
   "splitGroups": {
+    "searchPlaceholder": "グループを検索...",
+    "clearSearch": "検索をクリア",
     "title": "グループ",
     "section": "設定",
     "add": "グループを追加",
@@ -2209,6 +2382,11 @@
       "dateFormatMdyDesc": "月が先。例: 06/04/2026。",
       "dateFormatYmd": "年 / 月 / 日",
       "dateFormatYmdDesc": "ISO順。例: 2026-06-04。",
+      "timezoneTitle": "日付と時刻",
+      "timezone": "アプリケーションのタイムゾーン",
+      "timezoneHelp": "日付、定期取引、スケジュールされたタスク、AIのコンテキストにこのタイムゾーンを使用します。変更は新しいリクエストとジョブに適用されます。",
+      "timezoneServerDefault": "サーバーの既定 ({{zone}})",
+      "timezoneSavedInvalid": "保存された値 {{value}} はこのサーバーが認識するタイムゾーンではありません。変更されるまで {{zone}} が使用されます。",
       "updated": "設定を更新しました"
     }
   },

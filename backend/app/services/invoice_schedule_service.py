@@ -14,9 +14,8 @@ the frequency, day of month clamped in shorter months and recovered
 afterwards, and ends the day before period `n + 1` starts. That is all
 the calendar there is: no separate "next run" date to drift, no
 timezone column to disagree with the anchor. The job compares period
-starts against the UTC date; a retainer due on the 1st is emitted on
-the 1st UTC, which is the same day everywhere that matters for a
-document dated by the day.
+starts against the workspace's calendar, using the same timezone as
+invoice dates and the rest of its books.
 
 ## Terms
 
@@ -49,7 +48,14 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.invoice import Invoice, InvoiceAllocation, InvoiceSettings
+from app.core.app_clock import app_today
+from app.models.invoice import (
+    Invoice,
+    InvoiceAllocation,
+    InvoiceDeduction,
+    InvoiceInstallment,
+    InvoiceSettings,
+)
 from app.models.invoice_schedule import (
     MAX_CONSECUTIVE_FAILURES,
     PERIODS_PER_YEAR,
@@ -81,7 +87,7 @@ _MAX_WALK = 1000
 
 
 def _today() -> _date:
-    return datetime.now(timezone.utc).date()
+    return app_today()
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +207,16 @@ def _term_totals(lines: list[dict[str, Any]], discount: Decimal) -> tuple[Decima
 
 
 def _normalise_lines(lines: Any) -> list[dict[str, Any]]:
-    """Lines as they will be stored: plain JSON, decimals as strings."""
+    """Lines as they will be stored: plain JSON, decimals as strings.
+
+    Fiscal references are cleaned here, when a person can fix them, and
+    not only at emission: a bad key stored on a term would fail every
+    period until the job paused the agreement.
+    """
+    # Lazy: the catalog reads this module's neighbours, and a top-level
+    # import each way would be a cycle.
+    from app.services.product_service import clean_fiscal_refs
+
     if not lines:
         raise InvoiceError("term_lines_required", "A term needs at least one line")
     out: list[dict[str, Any]] = []
@@ -218,6 +233,12 @@ def _normalise_lines(lines: Any) -> list[dict[str, Any]]:
                 "tax_rate": (
                     str(Decimal(str(line["tax_rate"]))) if line.get("tax_rate") is not None else None
                 ),
+                # Catalog provenance, kept as text. Checked when the
+                # period is emitted, not here: a product archived or
+                # deleted later must not stop the agreement from billing.
+                "product_id": str(line["product_id"]) if line.get("product_id") else None,
+                "price_id": str(line["price_id"]) if line.get("price_id") else None,
+                "fiscal_refs": clean_fiscal_refs(line.get("fiscal_refs")),
             }
         )
     return out
@@ -404,17 +425,40 @@ class ScheduleFigures:
     past_due_count: int
 
 
+def _first_unpaid_due(
+    installments: Optional[list[tuple[_date, Decimal]]],
+    settled: Decimal,
+    total: Decimal,
+    due_date: _date,
+) -> Optional[_date]:
+    """`invoice_service.first_unpaid_due` over plain rows instead of a
+    loaded invoice: settled money covers the schedule first to last, and
+    the first installment it does not cover is the one that can be late."""
+    if not installments:
+        return due_date if settled < total else None
+    running = ZERO
+    for due, amount in installments:
+        running += amount
+        if running > settled:
+            return due
+    return None
+
+
 async def figures_for(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     schedule_ids: list[uuid.UUID],
     today: Optional[_date] = None,
 ) -> dict[uuid.UUID, ScheduleFigures]:
-    """The derived money facts for many schedules in two queries.
+    """The derived money facts for many schedules in three queries.
 
     Void and uncollectible invoices count towards nothing here, for the
     same reason they read as zero everywhere else. Drafts are counted as
     invoices but not as money, since nothing is owed yet.
+
+    Past due follows the invoice's own reading: with installments, the
+    first one the settled money does not cover is the one that can be
+    late, not the invoice's due date (which is the last of them).
     """
     today = today or _today()
     empty = ScheduleFigures(0, ZERO, ZERO, 0)
@@ -429,22 +473,44 @@ async def figures_for(
         .group_by(InvoiceAllocation.invoice_id)
         .subquery()
     )
+    deducted = (
+        select(
+            InvoiceDeduction.invoice_id.label("invoice_id"),
+            func.coalesce(func.sum(InvoiceDeduction.amount), 0).label("deducted"),
+        )
+        .group_by(InvoiceDeduction.invoice_id)
+        .subquery()
+    )
     rows = (
         await session.execute(
             select(
+                Invoice.id,
                 Invoice.schedule_id,
                 Invoice.status,
                 Invoice.due_date,
                 Invoice.total,
                 func.coalesce(allocated.c.paid, 0).label("paid"),
+                func.coalesce(deducted.c.deducted, 0).label("deducted"),
             )
             .outerjoin(allocated, allocated.c.invoice_id == Invoice.id)
+            .outerjoin(deducted, deducted.c.invoice_id == Invoice.id)
             .where(
                 Invoice.workspace_id == workspace_id,
                 Invoice.schedule_id.in_(schedule_ids),
             )
         )
     ).all()
+
+    # The schedules of the open invoices, in one query, first to last.
+    open_ids = [row.id for row in rows if row.status == "open"]
+    installments: dict[uuid.UUID, list[tuple[_date, Decimal]]] = {}
+    if open_ids:
+        for invoice_id, due_date, amount in await session.execute(
+            select(InvoiceInstallment.invoice_id, InvoiceInstallment.due_date, InvoiceInstallment.amount)
+            .where(InvoiceInstallment.invoice_id.in_(open_ids))
+            .order_by(InvoiceInstallment.invoice_id, InvoiceInstallment.position)
+        ):
+            installments.setdefault(invoice_id, []).append((due_date, Decimal(str(amount))))
 
     counts: dict[uuid.UUID, dict[str, Any]] = {}
     for row in rows:
@@ -457,9 +523,11 @@ async def figures_for(
             continue
         total = Decimal(str(row.total))
         paid = Decimal(str(row.paid))
+        settled = paid + Decimal(str(row.deducted))
         acc["invoiced"] += total
         acc["paid"] += min(paid, total)
-        if row.due_date < today and paid < total:
+        unpaid_due = _first_unpaid_due(installments.get(row.id), settled, total, row.due_date)
+        if unpaid_due is not None and unpaid_due < today:
             acc["past_due"] += 1
 
     return {
@@ -815,7 +883,7 @@ async def link_invoice(
 
     The retroactive door: someone who billed a retainer by hand from
     March to August and only now created the schedule gets their
-    history, and a Stripe import lands its invoices the same way. The
+    history, and a gateway import lands its invoices the same way. The
     date has to be a real period boundary, the period has to be free,
     and the invoice has to be the same money (currency, and client when
     both say one).
@@ -880,6 +948,9 @@ def _lines_from_invoice(invoice: Invoice, fallback_description: str) -> list[dic
                 "unit": line.unit,
                 "unit_price": line.unit_price,
                 "tax_rate": line.tax_rate,
+                "product_id": line.product_id,
+                "price_id": line.price_id,
+                "fiscal_refs": line.fiscal_refs,
             }
             for line in invoice.lines
         ]
@@ -983,6 +1054,13 @@ async def _emit(
     if term is None:
         raise InvoiceError("no_term", "No term is in force for this period")
     terms_days = await _payment_terms(session, schedule)
+    # The term may name a product that has since been deleted. The line
+    # has its own values, so the id is dropped and the period is billed.
+    from app.services import product_service
+
+    lines = await product_service.resolve_lines(
+        session, schedule.workspace_id, [dict(line) for line in term.lines], strict=False
+    )
     if schedule.user_id is None:
         # The ledger stamps who created each invoice. An agreement whose
         # author left the workspace keeps emitting, and the invoice is
@@ -999,7 +1077,7 @@ async def _emit(
             "competence_date": start,
             "currency": schedule.currency,
             "discount": Decimal(term.discount),
-            "lines": [dict(line) for line in term.lines],
+            "lines": lines,
             "notes": schedule.notes,
             "custom_fields": schedule.custom_fields,
         },

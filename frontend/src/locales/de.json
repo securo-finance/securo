@@ -13,6 +13,9 @@
     "locale": "Sprache",
     "taxJurisdiction": "Steuerjurisdiktion",
     "taxJurisdictionHint": "Bestimmt, welche steuerlichen Dokumente dieser Workspace anbietet. Unabhängig von der Sprache der Oberfläche.",
+    "timezone": "Zeitzone",
+    "timezoneDefault": "Anwendungsstandard ({{zone}})",
+    "timezoneHint": "Der Kalender, in dem dieser Workspace seine Bücher führt. Salden, Budgets und Fälligkeiten wechseln dort um Mitternacht.",
     "members": "Mitglieder",
     "addMember": "Mitglied hinzufügen",
     "addMemberTitle": "Mitglied hinzufügen",
@@ -233,7 +236,8 @@
       "downloadPdf": "Download PDF",
       "share": "Share link",
       "revokeLink": "Revoke link",
-      "saveDraft": "Als Entwurf speichern"
+      "saveDraft": "Als Entwurf speichern",
+      "downloadStatement": "Kontoauszug herunterladen"
     },
     "settings": {
       "title": "Invoice settings",
@@ -326,7 +330,25 @@
       "negative_discount": "Ein Rabatt kann nicht negativ sein.",
       "first_term": "Der Preis, der ab Beginn gilt, kann weder verschoben noch entfernt werden. Ändern Sie ihn oder fügen Sie einen neuen Preis ab einem späteren Datum hinzu.",
       "not_receivable": "Nur eine von Ihnen ausgestellte Rechnung kann zu einer Vereinbarung gehören.",
-      "period_already_issued": "Dieser Zeitraum wurde gerade ausgestellt. Aktualisieren Sie die Seite, um ihn zu sehen."
+      "period_already_issued": "Dieser Zeitraum wurde gerade ausgestellt. Aktualisieren Sie die Seite, um ihn zu sehen.",
+      "product_not_found": "Produkt nicht gefunden.",
+      "price_not_found": "Preis bei diesem Produkt nicht gefunden.",
+      "product_in_use": "Rechnungen nennen dieses Produkt. Archivieren Sie es, statt es zu löschen.",
+      "price_in_use": "Rechnungen wurden zu diesem Preis gestellt. Archivieren Sie ihn, statt ihn zu löschen.",
+      "invalid_kind": "Unbekannte Produktart.",
+      "invalid_billing": "Unbekannte Abrechnungsart.",
+      "interval_required": "Ein wiederkehrender Preis braucht einen Rhythmus.",
+      "currency_required": "Ein Preis braucht eine Währung.",
+      "unit_price_required": "Ein Preis braucht einen Betrag.",
+      "negative_price": "Ein Preis kann nicht negativ sein.",
+      "invalid_fiscal_refs": "Steuerliche Referenzen müssen kurze Textwerte unter einfachen Schlüsseln sein (Buchstaben, Ziffern, Unterstrich).",
+      "price_key_taken": "Ein anderer Preis verwendet diesen Suchschlüssel oder diese externe ID bereits.",
+      "installments_mismatch": "Die Raten ergeben nicht den Rechnungsbetrag.",
+      "installments_too_few": "Ein Zahlungsplan braucht mindestens zwei Raten.",
+      "installment_amount_not_positive": "Jede Rate muss einen Betrag haben.",
+      "installment_due_required": "Jede Rate braucht ein Fälligkeitsdatum.",
+      "invalid_deduction_kind": "Unbekannte Abzugsart.",
+      "deduction_not_found": "Abzug nicht gefunden."
     },
     "comingNext": "Stelle deinen Kunden Rechnungen und behalte im Blick, was bezahlt ist und was offen bleibt. Das ist das Nächste, was gebaut wird.",
     "document": {
@@ -561,6 +583,128 @@
         "empty": "Noch keine Rechnung unter dieser Vereinbarung.",
         "emptyNext": "Noch keine Rechnung. Die erste wird am {{date}} erstellt."
       }
+    },
+    "products": {
+      "title": "Produkte",
+      "new": "Neues Produkt",
+      "newDescription": "Etwas, das Sie verkaufen, mit einem Preis pro Währung. Die Auswahl füllt eine Rechnungsposition aus; die Position können Sie danach frei ändern.",
+      "editTitle": "Produkt bearbeiten",
+      "empty": "Noch keine Produkte. Legen Sie an, was Sie verkaufen, und jede Rechnungsposition ist nur einen Klick entfernt.",
+      "emptyArchived": "Nichts archiviert.",
+      "emptyPicker": "Noch keine Produkte. Legen Sie sie unter Produkte an.",
+      "noneFound": "Kein Produkt passt.",
+      "searchPlaceholder": "Produkte suchen",
+      "pick": "Aus dem Katalog wählen",
+      "fromCatalog": "Aus dem Katalog",
+      "noPrice": "Kein Preis",
+      "noPriceIn": "kein Preis in {{currency}}",
+      "perUnit": "pro {{unit}}",
+      "created": "Produkt erstellt",
+      "saved": "Produkt gespeichert",
+      "archived": "Produkt archiviert. Rechnungen, die es nennen, bleiben unverändert.",
+      "restored": "Produkt wiederhergestellt",
+      "deleted": "Produkt gelöscht",
+      "filter": {
+        "active": "Aktiv",
+        "archived": "Archiviert"
+      },
+      "kind": {
+        "service": "Dienstleistung",
+        "product": "Produkt"
+      },
+      "billing": {
+        "one_time": "Einmalig",
+        "every": "Pro {{interval}}"
+      },
+      "per": {
+        "weekly": "Woche",
+        "biweekly": "2 Wochen",
+        "monthly": "Monat",
+        "quarterly": "Quartal",
+        "semiannual": "6 Monate",
+        "yearly": "Jahr"
+      },
+      "column": {
+        "name": "Name",
+        "kind": "Art",
+        "prices": "Preise",
+        "invoices": "Rechnungen"
+      },
+      "field": {
+        "name": "Name",
+        "namePlaceholder": "Beratungsstunde, Pro-Tarif, Logo-Design",
+        "kind": "Art",
+        "description": "Beschreibung",
+        "prices": "Preise",
+        "pricesHint": "Einer pro Währung. Ein wiederkehrender Preis gibt an, wie oft; er ist ein Hinweis für wiederkehrende Rechnungen, von selbst wird nichts berechnet.",
+        "addPrice": "Preis hinzufügen",
+        "noPrices": "Keine Preise. Der Name füllt die Position trotzdem aus; der Betrag wird eingetippt.",
+        "nickname": "Bezeichnung (optional)",
+        "fiscalRefs": "Steuerliche Referenzen",
+        "fiscalRefsHint": "Was ein Steuerbeleg pro Position braucht. Von Ihrer Steuerzone vorgeschlagen; fügen Sie jeden weiteren Schlüssel hinzu, den Sie brauchen.",
+        "customRefKey": "anderer Schlüssel (z. B. hs_code)",
+        "addRef": "Hinzufügen",
+        "fiscalRefsNone": "Für diese Art wird hier nichts vorgeschlagen. Fügen Sie jeden Schlüssel hinzu, den Ihre Steuerbelege benötigen."
+      },
+      "action": {
+        "archive": "Archivieren",
+        "restore": "Wiederherstellen"
+      }
+    },
+    "installments": {
+      "title": "In Raten aufteilen",
+      "splitIn": "Aufteilen in",
+      "splitHint": "gleiche Teile, im Monatsabstand, ab dem Fälligkeitsdatum",
+      "add": "Rate hinzufügen",
+      "label": "Bezeichnung",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "Ergibt {{total}}.",
+      "mismatch": "Die Raten ergeben {{scheduled}}, die Rechnung {{total}}.",
+      "schedule": "Zahlungsplan",
+      "nextDue": "Nächste Fälligkeit",
+      "dueDerived": "Wird von der letzten Rate bestimmt.",
+      "count_one": "{{count}} Rate",
+      "count_other": "{{count}} Raten",
+      "state": {
+        "open": "Offen",
+        "partial": "Teilweise",
+        "paid": "Bezahlt",
+        "overdue": "Überfällig",
+        "draft": "Entwurf",
+        "void": "Storniert",
+        "uncollectible": "Uneinbringlich"
+      }
+    },
+    "deductions": {
+      "title": "Abzug erfassen",
+      "description": "Schließt einen Teil der Forderung, ohne dass Geld eingeht: der Kunde hat Steuern einbehalten, der Zahlungsdienstleister seine Gebühr, die Umrechnung fiel geringer aus. Es zählt als beglichen, nie als erhalten.",
+      "action": "Abzug erfassen",
+      "recorded": "Abzug erfasst",
+      "removed": "Abzug entfernt",
+      "amount": "Betrag",
+      "amountHint": "Bis zum offenen Saldo: {{balance}}.",
+      "kindLabel": "Grund",
+      "taxKind": "Welche Steuer (optional)",
+      "taxKindPlaceholder": "Quellensteuer, Bauabzugsteuer...",
+      "note": "Notiz (optional)",
+      "settledWithout": "Ohne Zahlung beglichen",
+      "kind": {
+        "withholding_tax": "Vom Kunden einbehaltene Steuer",
+        "gateway_fee": "Vom Zahlungsdienstleister einbehaltene Gebühr",
+        "fx_difference": "Währungsumrechnungsdifferenz",
+        "other": "Sonstiges"
+      },
+      "differenceTitle": "Die Zahlung ist {{difference}} zu niedrig",
+      "differenceHint": "Erfassen Sie die Differenz, damit die Rechnung geschlossen wird",
+      "differenceNone": "Nicht erfassen",
+      "figure": "Abgezogen"
+    },
+    "statement": {
+      "asIssued": "Rechnung wie ausgestellt",
+      "asIssuedHint": "Das an den Kunden gesendete Dokument",
+      "hint": "Zahlungen und Abzüge seit Ausstellung, und der Saldo",
+      "banner": "Dieses PDF ist die Rechnung wie ausgestellt. Seitdem wurden {{paid}} erhalten und {{deducted}} abgezogen: der Kontoauszug zeigt jeden Posten und den Saldo.",
+      "title": "Kontoauszug"
     }
   },
   "collections": {
@@ -573,7 +717,8 @@
     "add": "Neue Sammlung",
     "edit": "Sammlung bearbeiten",
     "empty": "Noch keine Sammlungen. Erstelle eine, um deine Konten zu gruppieren.",
-    "accountCount": "{{count}} Konten",
+    "accountCount_one": "{{count}} Konto",
+    "accountCount_other": "{{count}} Konten",
     "name": "Name",
     "namePlaceholder": "z.B. Geschäftlich, Langfristig, Notgroschen",
     "color": "Farbe",
@@ -581,7 +726,8 @@
     "accountsHint": "{{count}} ausgewählt",
     "wallets": "Portfolios",
     "walletsHint": "{{count}} ausgewählt",
-    "walletCount": "{{count}} Portfolios",
+    "walletCount_one": "{{count}} Portfolio",
+    "walletCount_other": "{{count}} Portfolios",
     "noAccounts": "Noch keine Konten.",
     "created": "Sammlung erstellt",
     "updated": "Sammlung aktualisiert",
@@ -741,6 +887,7 @@
     "monthNext": "Nächster Monat",
     "description": "Beschreibung",
     "originalDescription": "Ursprüngliche Beschreibung",
+    "restoreOriginalDescription": "Original wiederherstellen",
     "amount": "Betrag",
     "status": "Status",
     "date": "Datum",
@@ -824,7 +971,7 @@
     "statusCleared": "Abgewickelt",
     "sortAsc": "Aufsteigend sortieren",
     "sortDesc": "Absteigend sortieren",
-    "syncedInfo": "Bank-synchronisierte Transaktion — nur Kategorie und Notizen können bearbeitet werden",
+    "syncedInfo": "Bank-synchronisierte Transaktion: Betrag, Datum und Konto können nicht bearbeitet werden",
     "uncategorized": "Nicht kategorisiert",
     "selected": "ausgewählt",
     "summaryCount": "{{count}} Transaktionen",
@@ -1026,6 +1173,7 @@
     "noManualAccounts": "Noch keine manuellen Konten",
     "noBankConnections": "Keine Bankverbindungen",
     "noAccountsFound": "Keine Konten gefunden",
+    "emptyFiltered": "Zu diesem Filter passt nichts.",
     "accountName": "Kontoname",
     "displayName": "Anzeigename",
     "displayNameHint": "Überschreibt den Standardnamen des Anbieters überall in der App.",
@@ -1440,8 +1588,12 @@
     "updated": "Kategorie aktualisiert",
     "deleted": "Kategorie gelöscht",
     "confirmDeleteTitle": "Kategorie löschen?",
-    "confirmDeleteDescription": "Die Kategorie \"{{name}}\" wird dauerhaft gelöscht. Sie kann nicht gelöscht werden, solange Transaktionen oder andere Einträge noch darauf verweisen; entferne diese Verweise zuerst. Diese Aktion kann nicht rückgängig gemacht werden.",
-    "deleteInUse": "Diese Kategorie wird noch verwendet. Entferne zuerst die Einträge, die auf sie verweisen.",
+    "confirmDeleteDescription": "Die Kategorie \"{{name}}\" wird dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "deleteInUse": "Diese Kategorie ist noch in Gebrauch. Wähle eine andere Kategorie, in die ihre Einträge wandern.",
+    "deleteInUseTitle": "{{name}} löschen?",
+    "deleteInUseDescription": "Diese Kategorie ist noch in Gebrauch. Wähle eine andere, die alles übernimmt: nichts geht verloren, es zieht nur um.",
+    "deleteTransferLabel": "Alles verschieben nach",
+    "deleteAndTransfer": "Löschen und verschieben",
     "expandAll": "Alle ausklappen",
     "collapseAll": "Alle einklappen",
     "treatAsTransfer": "Als Umbuchung behandeln",
@@ -1568,7 +1720,8 @@
       "invalid_date": "Ungültiges Datumsformat",
       "no_amount": "Kein Zu- oder Abflussbetrag",
       "invalid_amount": "Ungültiges Betragsformat"
-    }
+    },
+    "selectAll": "Alle auswählen"
   },
   "assetImport": {
     "title": "Wertpapierorders importieren",
@@ -1788,6 +1941,9 @@
     "inflowOutflow": "Einnahmen vs. Ausgaben",
     "startingBalance": "Anfangssaldo",
     "endingBalance": "Prognostizierter Saldo",
+    "runwayNegativeOn": "Der Saldo wird am {{date}} negativ",
+    "runwayAlreadyNegative": "Bereits im Minus",
+    "lowestBalance": "Niedrigster Stand",
     "projectedIncome": "Prognostizierte Einnahmen",
     "projectedExpenses": "Prognostizierte Ausgaben",
     "incomeExpenses": "Einnahmen vs. Ausgaben",
@@ -1917,6 +2073,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -1941,9 +2098,23 @@
       "uscc": "USCC"
     },
     "otherCountries": "Andere Länder",
-    "anyCountry": "Anderswo"
+    "anyCountry": "Anderswo",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / Barcode",
+      "service_code": "Dienstleistungscode (LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "Kommunaler Dienstleistungscode",
+      "hs_code": "HS-Code",
+      "sat_product_code": "SAT-Produkt-/Dienstleistungscode",
+      "sat_unit_code": "SAT-Einheitencode"
+    }
   },
   "common": {
+    "selectTimezone": "Zeitzone wählen",
+    "searchTimezone": "Zeitzone suchen...",
+    "noTimezoneFound": "Keine Zeitzone gefunden.",
     "createNamed": "„{{name}}“ erstellen",
     "view": "Ansehen",
     "add": "Hinzufügen",
@@ -1977,6 +2148,8 @@
     "remove": "Entfernen"
   },
   "splitGroups": {
+    "searchPlaceholder": "Gruppen suchen...",
+    "clearSearch": "Suche löschen",
     "title": "Gruppen",
     "section": "Einrichtung",
     "add": "Gruppe hinzufügen",
@@ -2210,6 +2383,11 @@
       "dateFormatMdyDesc": "Monat zuerst, z.B. 06/04/2026.",
       "dateFormatYmd": "Jahr / Monat / Tag",
       "dateFormatYmdDesc": "ISO-Reihenfolge, z.B. 2026-06-04.",
+      "timezoneTitle": "Datum und Uhrzeit",
+      "timezone": "Anwendungszeitzone",
+      "timezoneHelp": "Kalenderdaten, wiederkehrende Transaktionen, geplante Aufgaben und der KI-Kontext verwenden diese Zeitzone. Änderungen gelten für neue Anfragen und Aufgaben.",
+      "timezoneServerDefault": "Serverstandard ({{zone}})",
+      "timezoneSavedInvalid": "Der gespeicherte Wert {{value}} ist keine Zeitzone, die dieser Server kennt. Bis zur Änderung wird {{zone}} verwendet.",
       "updated": "Einstellung aktualisiert"
     }
   },

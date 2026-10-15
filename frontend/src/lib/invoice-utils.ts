@@ -198,7 +198,7 @@ export const ISSUED_BY_US = 'issued'
 
 /** Where a filed document came from, as a person reads it.
  *
- *  A source id is a machine name (`stripe`, `nfe`, `email`), so it is
+ *  A source id is a machine name (`gateway`, `nfe`, `email`), so it is
  *  shown as it is rather than translated — renaming somebody's system in
  *  our own words helps nobody trying to work out which integration
  *  delivered which file. Two sources are our word rather than theirs: a

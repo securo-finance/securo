@@ -2,3 +2,10 @@
 # being what distinguishes two taxpayers with the same name and birth date.
 code = "MX"
 kinds = ["rfc"]
+
+# The SAT catalog keys every CFDI line: a product or service code and a
+# unit code, both from the official lists.
+[[product_fields]]
+key = "sat_product_code"
+[[product_fields]]
+key = "sat_unit_code"

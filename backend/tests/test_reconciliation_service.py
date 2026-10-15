@@ -107,6 +107,7 @@ async def an_invoice(
     payee_id: uuid.UUID | None = None,
     direction: str = "receivable",
     as_draft: bool = False,
+    installments: list[tuple[date, str]] | None = None,
 ) -> dict:
     payload: dict = {
         "total": total,
@@ -114,6 +115,10 @@ async def an_invoice(
         "direction": direction,
         "as_draft": as_draft,
     }
+    if installments:
+        payload["installments"] = [
+            {"due_date": str(when), "amount": amount} for when, amount in installments
+        ]
     if payee_id:
         payload["payee_id"] = str(payee_id)
     resp = await client.post("/api/invoices", headers=headers, json=payload)
@@ -434,3 +439,137 @@ async def test_a_draft_looks_back_at_nothing(
     assert loaded.status == "draft"
 
     assert await reconciliation_service.match_for_invoice(session, loaded) is None
+
+
+# ---------------------------------------------------------------------------
+# Installments: each one is a promise of its own amount and date
+# ---------------------------------------------------------------------------
+THREE_PARTS = [
+    (TODAY, "1000.00"),
+    (TODAY + timedelta(days=60), "1000.00"),
+    (TODAY + timedelta(days=120), "1000.00"),
+]
+
+
+@pytest.mark.asyncio
+async def test_each_installment_settles_as_it_arrives(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee, test_user
+):
+    """The regression this exists for: an installment used to be compared
+    with the whole balance, so 1000 against 3000 was never exact and
+    every installment waited for a person."""
+    invoice = await an_invoice(
+        client, biz_headers, payee_id=client_payee.id, installments=THREE_PARTS
+    )
+    for n in (1, 2):
+        tx = await a_transaction(
+            session, account, test_user, amount=Decimal("1000.00"), payee_id=client_payee.id,
+            when=TODAY + timedelta(days=60 * (n - 1)),
+        )
+        applied = await reconciliation_service.match_incoming(session, account.workspace_id, [tx])
+        await session.commit()
+        assert len(applied) == 1, f"installment {n} was not matched"
+
+    settled = await _load(session, invoice["id"])
+    assert sum(a.amount for a in settled.allocations) == Decimal("2000.00")
+    assert invoice_service.first_unpaid_due(settled) == TODAY + timedelta(days=120)
+
+
+@pytest.mark.asyncio
+async def test_two_installments_paid_at_once_settle_both(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee, test_user
+):
+    invoice = await an_invoice(
+        client, biz_headers, payee_id=client_payee.id, installments=THREE_PARTS
+    )
+    tx = await a_transaction(
+        session, account, test_user, amount=Decimal("2000.00"), payee_id=client_payee.id
+    )
+    applied = await reconciliation_service.match_incoming(session, account.workspace_id, [tx])
+    await session.commit()
+
+    assert len(applied) == 1
+    assert applied[0].amount == Decimal("2000.00")
+    settled = await _load(session, invoice["id"])
+    assert invoice_service.first_unpaid_due(settled) == TODAY + timedelta(days=120)
+
+
+@pytest.mark.asyncio
+async def test_an_amount_that_closes_no_installment_is_not_taken(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee, test_user
+):
+    invoice = await an_invoice(
+        client, biz_headers, payee_id=client_payee.id, installments=THREE_PARTS
+    )
+    tx = await a_transaction(
+        session, account, test_user, amount=Decimal("1500.00"), payee_id=client_payee.id
+    )
+    applied = await reconciliation_service.match_incoming(session, account.workspace_id, [tx])
+    await session.commit()
+
+    assert applied == []
+    assert (await _load(session, invoice["id"])).allocations == []
+
+
+@pytest.mark.asyncio
+async def test_an_upfront_paid_before_the_invoice_is_found(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee, test_user
+):
+    """The client pays the first installment, the invoice is written
+    afterwards. Its due date is the last installment, four months out;
+    looking back from there used to start the window after the payment."""
+    paid = await a_transaction(
+        session, account, test_user, amount=Decimal("1000.00"),
+        when=TODAY - timedelta(days=6), payee_id=client_payee.id,
+    )
+    invoice = await an_invoice(
+        client, biz_headers, payee_id=client_payee.id, installments=THREE_PARTS
+    )
+    settled = await _load(session, invoice["id"])
+
+    assert len(settled.allocations) == 1
+    assert settled.allocations[0].transaction_id == paid.id
+    assert settled.allocations[0].amount == Decimal("1000.00")
+
+
+@pytest.mark.asyncio
+async def test_linking_by_hand_answers_the_pending_suggestion(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee, test_user
+):
+    """A short installment payment is offered as a suggestion. When the
+    person links it themselves (the "mark as paid" dialog, recording the
+    difference), the suggestion used to stay pending, still offering a
+    link that already existed."""
+    from app.models.reconciliation import ReconciliationSuggestion
+
+    invoice = await an_invoice(
+        client, biz_headers, payee_id=client_payee.id, installments=THREE_PARTS
+    )
+    short = await a_transaction(
+        session, account, test_user, amount=Decimal("985.00"), payee_id=client_payee.id
+    )
+    applied = await reconciliation_service.match_incoming(session, account.workspace_id, [short])
+    await session.commit()
+    assert applied == []
+
+    short_id = short.id
+
+    def pending():
+        return select(ReconciliationSuggestion.status).where(
+            ReconciliationSuggestion.transaction_id == short_id,
+            ReconciliationSuggestion.expectation_id == uuid.UUID(invoice["id"]),
+        )
+
+    assert list((await session.execute(pending())).scalars().all()) == ["pending"]
+
+    resp = await client.post(
+        f"/api/invoices/{invoice['id']}/allocations", headers=biz_headers,
+        json={"transaction_id": str(short_id)},
+    )
+    assert resp.status_code == 201, resp.text
+
+    session.expire_all()
+    assert list((await session.execute(pending())).scalars().all()) == ["accepted"]
+    queue = await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    assert queue.status_code == 200, queue.text
+    assert all(str(short_id) not in str(item) for item in queue.json())

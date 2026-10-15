@@ -44,3 +44,13 @@ class AppSettingRead(BaseModel):
 
 class AppSettingUpdate(BaseModel):
     value: str
+
+
+class TimezoneSettingRead(BaseModel):
+    #: The timezone in use, after fallbacks.
+    timezone: str
+    #: What an administrator saved, valid or not; None when nothing is saved.
+    saved: Optional[str] = None
+    #: Where the application lands without a saved value (TZ, host, UTC).
+    fallback: str
+    available: list[str]
