@@ -25,6 +25,7 @@ interface TokenConnectDialogProps {
 
 const PROVIDER_BRIDGE_URLS: Record<string, string> = {
   simplefin: 'https://bridge.simplefin.org/simplefin/create',
+  akahu: 'https://my.akahu.nz/developers',
 }
 
 export function TokenConnectDialog({
@@ -99,7 +100,7 @@ export function TokenConnectDialog({
         {bridgeUrl && (
           <Button asChild variant="outline" className="w-full justify-between">
             <a href={bridgeUrl} target="_blank" rel="noreferrer">
-              <span>{t('accounts.tokenConnect.openBridge')}</span>
+              <span>{t(`${i18nKey}.openBridge`, t('accounts.tokenConnect.openBridge'))}</span>
               <ExternalLink size={14} />
             </a>
           </Button>

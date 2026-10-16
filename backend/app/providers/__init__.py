@@ -41,6 +41,14 @@ KNOWN_PROVIDERS = [
         "requires_institution_select": False,
         "supports_asset_sync": True,
     },
+    {
+        "name": "akahu",
+        "display_name": "Akahu",
+        "description": "New Zealand banks via Akahu open finance",
+        "flow_type": "token",
+        "requires_institution_select": False,
+        "supports_asset_sync": False,
+    },
 ]
 
 
@@ -93,6 +101,10 @@ def _auto_register_providers() -> None:
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
         register_provider("simplefin", SimpleFinProvider)
+
+    if settings.akahu_enabled:
+        from app.providers.akahu import AkahuProvider
+        register_provider("akahu", AkahuProvider)
 
 
 _auto_register_providers()
