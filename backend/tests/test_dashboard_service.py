@@ -12,16 +12,19 @@ from app.models.transaction import Transaction
 from app.models.bank_connection import BankConnection
 from app.services.dashboard_service import (
     _balance_at,
+    _baseline_from_deltas,
     _get_recurring_projections,
     _month_range,
     _get_open_accounts,
     _account_balance_at,
     _total_balance_by_currency,
     get_balance_history,
+    get_balance_history_months,
     get_summary,
     get_spending_by_category,
     get_projected_transactions,
 )
+
 from app.services.transaction_service import get_transactions
 
 
@@ -943,7 +946,185 @@ async def test_balance_history_basic(session, test_user, test_workspace):
 
     history = await get_balance_history(session, test_workspace.id, test_user.id)
     assert len(history.current) > 0
-    assert len(history.previous) > 0
+    assert 28 <= len(history.baseline) <= 31
+
+
+@pytest.mark.asyncio
+async def test_balance_history_single_comparison_reuses_month_daily_balances(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = await _make_account(session, test_user.id, "Single comparison")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit", date(2026, 1, 1),
+        source="opening_balance",
+    )
+    await _add_txn(session, test_user.id, account.id, 50, "credit", date(2026, 2, 5))
+    await _add_txn(session, test_user.id, account.id, 5, "debit", date(2026, 2, 20))
+
+    history = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 4, 1),
+        account_ids=[account.id],
+        comparison_months=[date(2026, 2, 1)],
+    )
+
+    assert history.comparison_month == "2026-02"
+    assert history.comparison_opening_balance == 1000.0
+    assert history.comparison is not None
+    assert len(history.comparison) == 28
+    assert history.comparison[0].balance == 1000.0
+    assert history.comparison[4].balance == 1050.0
+    assert history.comparison[5].balance == 1050.0
+    assert history.comparison[19].balance == 1045.0
+    assert history.baseline == []
+
+
+@pytest.mark.asyncio
+async def test_balance_history_sparse_month_selection_excludes_gap_month(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = await _make_account(session, test_user.id, "Sparse comparisons")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(session, test_user.id, account.id, 10, "credit", date(2026, 1, 1))
+    await _add_txn(session, test_user.id, account.id, 1000, "credit", date(2026, 2, 1))
+    await _add_txn(session, test_user.id, account.id, 30, "credit", date(2026, 3, 1))
+
+    history = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 4, 1),
+        account_ids=[account.id],
+        comparison_months=[date(2026, 3, 1), date(2026, 1, 1)],
+    )
+
+    assert history.comparison is None
+    assert history.baseline[0].median == 20.0
+    assert history.baseline[0].lower_quartile is None
+    assert history.baseline[0].upper_quartile is None
+
+
+@pytest.mark.asyncio
+async def test_balance_history_month_options_are_scoped_and_exclude_openings(
+    session: AsyncSession, test_user, test_workspace
+):
+    first = await _make_account(session, test_user.id, "Month options one")
+    second = await _make_account(session, test_user.id, "Month options two")
+    first.workspace_id = test_workspace.id
+    second.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(
+        session, test_user.id, first.id, 500, "credit", date(2026, 1, 1),
+        source="opening_balance",
+    )
+    await _add_txn(session, test_user.id, first.id, 25, "credit", date(2026, 2, 1))
+    await _add_txn(session, test_user.id, second.id, 75, "credit", date(2026, 3, 1))
+
+    all_months = await get_balance_history_months(session, test_workspace.id)
+    first_account_months = await get_balance_history_months(
+        session, test_workspace.id, [first.id]
+    )
+
+    assert all_months == ["2026-02", "2026-03"]
+    assert first_account_months == ["2026-02"]
+
+
+def test_baseline_from_deltas_median_and_quartiles():
+
+    # Four months; day-1 changes are -10, -20, -30, -40.
+    deltas = {
+        date(2026, 1, 1): -10.0,
+        date(2026, 2, 1): -20.0,
+        date(2026, 3, 1): -30.0,
+        date(2026, 4, 1): -40.0,
+    }
+    month_starts = [date(2026, month, 1) for month in range(1, 5)]
+    baseline = _baseline_from_deltas(deltas, month_starts, 31)
+    assert len(baseline) == 31
+    day1 = baseline[0]
+    assert day1.median == -25.0
+    assert day1.lower_quartile == -32.5
+    assert day1.upper_quartile == -17.5
+    assert baseline[1].median == -25.0
+
+
+def test_baseline_three_contributors_include_quartiles():
+    deltas = {
+        date(2026, 1, 1): 10.0,
+        date(2026, 2, 1): 20.0,
+        date(2026, 3, 1): 30.0,
+    }
+
+    baseline = _baseline_from_deltas(
+        deltas,
+        [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)],
+        30,
+    )
+
+    assert baseline[0].median == 20.0
+    assert baseline[0].lower_quartile == 15.0
+    assert baseline[0].upper_quartile == 25.0
+
+
+def test_normalize_comparison_months_defaults_and_deduplicates():
+    from app.services.dashboard_service import _normalize_comparison_months
+
+    default = _normalize_comparison_months(None, date(2026, 10, 1))
+    selected = _normalize_comparison_months(
+        [date(2026, 3, 15), date(2026, 1, 1), date(2026, 3, 1)],
+        date(2026, 10, 1),
+    )
+
+    assert len(default) == 12
+    assert selected == [date(2026, 1, 1), date(2026, 3, 1)]
+
+
+@pytest.mark.parametrize(
+    "months",
+    [
+        pytest.param([], id="empty"),
+        pytest.param([date(2026, 10, 1)], id="not-before-viewed-month"),
+        pytest.param(
+            [date(2024 + index // 12, index % 12 + 1, 1) for index in range(25)],
+            id="more-than-24-months",
+        ),
+    ],
+)
+def test_normalize_comparison_months_rejects_invalid_selections(months):
+    from app.services.dashboard_service import _normalize_comparison_months
+
+    with pytest.raises(ValueError):
+        _normalize_comparison_months(months, date(2026, 10, 1))
+
+
+def test_baseline_aligns_month_end_income():
+    # Salary of +100 on the last day of Jan (31), Feb (28), Mar (31), Apr (30).
+    deltas = {
+        date(2026, 1, 31): 100.0,
+        date(2026, 2, 28): 100.0,
+        date(2026, 3, 31): 100.0,
+        date(2026, 4, 30): 100.0,
+    }
+    for target_days in (28, 30, 31):
+        month_starts = [date(2026, month, 1) for month in range(1, 5)]
+        baseline = _baseline_from_deltas(deltas, month_starts, target_days)
+        assert len(baseline) == target_days
+        assert baseline[-1].median == 100.0
+        assert baseline[0].median == 0.0
+
+
+def test_baseline_two_months_has_median_without_quartiles():
+    deltas = {date(2026, 1, 5): 10.0, date(2026, 2, 5): 20.0}
+    month_starts = [date(2026, month, 1) for month in range(1, 13)]
+    baseline = _baseline_from_deltas(deltas, month_starts, 30)
+    assert baseline[4].median == 15.0
+    assert baseline[4].lower_quartile is None
+    assert baseline[4].upper_quartile is None
 
 
 @pytest.mark.asyncio
