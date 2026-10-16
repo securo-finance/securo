@@ -497,7 +497,9 @@ class EnableBankingProvider(BankProvider):
                 return inst.logo
         return None
 
-    async def _build_account(self, raw: dict) -> AccountData:
+    async def _build_account(
+        self, raw: dict, stable_external_id: Optional[str] = None
+    ) -> AccountData:
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
         # EB doesn't include balances in the session payload; fetch separately.
@@ -524,6 +526,9 @@ class EnableBankingProvider(BankProvider):
             balance=balance,
             currency=currency,
             masked_number=mask_last4(_account_identifier(raw)),
+            # From the session payload: `uid` is scoped to one session, this
+            # hash is what lets a later session find the same account again.
+            stable_external_id=stable_external_id,
         )
 
     # ----- account / transaction fetches -----
@@ -563,19 +568,31 @@ class EnableBankingProvider(BankProvider):
         if not session_id:
             raise SessionExpiredError("Enable Banking session_id missing")
         data = await self._request("GET", f"/sessions/{session_id}")
+        uids = self._account_uids(data)
+        # EB keys each account by a uid scoped to this session; the
+        # identification_hash is the id that survives a reauthorisation. It comes
+        # in the same payload we just fetched, so carry it through — otherwise a
+        # reconnect re-keys every account and the sync duplicates them all.
+        stable_external_ids = {
+            entry.get("uid"): entry.get("identification_hash")
+            for entry in (data.get("accounts_data") or [])
+            if isinstance(entry, dict) and entry.get("uid")
+        }
         result: list[AccountData] = []
-        for uid in self._account_uids(data):
+        for uid in uids:
             try:
                 details = await self._request("GET", f"/accounts/{uid}/details")
-            except (httpx.HTTPError, SessionExpiredError) as exc:
-                # Without details we can't safely name/type the account, and a
-                # bare-uid AccountData would overwrite the stored name with a
-                # placeholder. Skip this account for this run (non-destructive:
-                # the existing row and its transactions are left intact and the
-                # next sync retries) rather than corrupt it.
+            except httpx.HTTPError as exc:
+                # A *transient* per-account failure. Without details we can't
+                # safely name/type the account, and a bare-uid AccountData would
+                # overwrite the stored name with a placeholder. Skip this account
+                # for this run (non-destructive: the existing row and its
+                # transactions are left intact and the next sync retries) rather
+                # than corrupt it. SessionExpiredError is deliberately NOT caught
+                # here: a dead consent is global, never per-account.
                 logger.warning("Failed to fetch details for account %s: %s", uid, exc)
                 continue
-            result.append(await self._build_account(details))
+            result.append(await self._build_account(details, stable_external_ids.get(uid)))
         return result
 
     async def get_transactions(
