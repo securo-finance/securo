@@ -184,6 +184,45 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     return digest[:32]
 
 
+def _canonical_amount(amount_obj: Any) -> str:
+    """Canonical string for an EB amount.
+    e.g. "12.0" is the same as "12.00"
+    So we need to prase it as decimal to get the same result/externa ids
+    """
+    if not isinstance(amount_obj, dict):
+        return ""
+    raw = amount_obj.get("amount")
+    if raw is None or raw == "":
+        return ""
+    try:
+        return format(Decimal(str(raw)).normalize(), "f")
+    except InvalidOperation:
+        return str(raw)
+
+
+def _entry_reference_external_id(entry_ref: str, amount_obj: dict, raw: dict) -> str:
+    """Disambiguate a non-empty ``entry_reference`` with amount + date.
+
+    EB's `entry_reference` is not guaranteed unique per transaction: some
+    institutions reuse it across a batch/settlement (multiple ledger lines
+    clearing under one shared reference) or across follow-on charges against
+    the same card authorization (see #753). Folding in the amount and the
+    available date fields keeps a truly-unique reference stable across
+    re-fetches while separating genuinely distinct transactions that happen
+    to share one.
+    """
+    parts = [
+        entry_ref,
+        _canonical_amount(amount_obj),
+        str(amount_obj.get("currency") or "") if isinstance(amount_obj, dict) else "",
+        str(raw.get("booking_date") or ""),
+        str(raw.get("value_date") or ""),
+        str(raw.get("transaction_date") or ""),
+    ]
+    digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    return digest[:32]
+
+
 def _extract_payee(raw: dict, indicator: str, source: str) -> Optional[str]:
     """Pick a payee name from EB transaction payload.
 
@@ -716,7 +755,9 @@ class EnableBankingProvider(BankProvider):
         description = description.strip()[:500] or "Transaction"
         entry_ref = (raw.get("entry_reference") or "").strip()
         external_id = (
-            entry_ref if entry_ref and entry_ref != "0" else _txn_fingerprint(account_uid, raw)
+            _entry_reference_external_id(entry_ref, amount_obj, raw)
+            if entry_ref and entry_ref != "0"
+            else _txn_fingerprint(account_uid, raw)
         )
         return TransactionData(
             external_id=external_id,
