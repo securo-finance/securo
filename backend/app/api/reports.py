@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
-from app.schemas.report import ReportResponse
-from app.services import report_service
+from app.core.app_clock import app_today
+from app.schemas.report import CategoryStatementResponse, ReportResponse
+from app.services import category_statement_service, report_service
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -153,4 +154,23 @@ async def get_cash_flow(
     return await report_service.get_cash_flow_report(
         session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
         baseline=baseline, account_ids=account_ids,
+    )
+
+
+@router.get("/category-statement", response_model=CategoryStatementResponse)
+async def get_category_statement(
+    month: str | None = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    months: int = Query(3, ge=1, le=12),
+    account_ids: Optional[list[uuid.UUID]] = Query(None),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Net income and expenses per category group for `month` (YYYY-MM,
+    default the current month) and the `months - 1` months before it."""
+    selected = (
+        date.fromisoformat(f"{month}-01") if month else app_today().replace(day=1)
+    )
+    return await category_statement_service.get_category_statement(
+        session, ctx.workspace.id, ctx.user_id, selected, months,
+        primary_currency=ctx.user.primary_currency, account_ids=account_ids,
     )
