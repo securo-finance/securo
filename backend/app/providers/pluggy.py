@@ -551,6 +551,33 @@ class PluggyProvider(BankProvider):
         self, credentials: dict, account_external_id: str,
         since: Optional[date] = None, payee_source: str = "auto",
     ) -> list[TransactionData]:
+        params: dict = {"accountId": account_external_id}
+        if since:
+            # Filter by Pluggy ingestion time, NOT transaction date.
+            # `dateFrom`/`dateTo` filter on `date` (when the txn
+            # happened), which silently drops transactions Pluggy
+            # ingests later but backdates — e.g. credit card bill
+            # payments dated to the bill close, or merchants that
+            # settle weeks late. `createdAtFrom` filters on Pluggy's
+            # row creation time, so any newly-ingested row is fetched
+            # regardless of date. v2 still supports it.
+            params["createdAtFrom"] = since.isoformat()
+        return await self._list_transactions(params, payee_source)
+
+    async def get_transactions_by_date(
+        self, credentials: dict, account_external_id: str,
+        date_from: date, payee_source: str = "auto",
+    ) -> list[TransactionData]:
+        # Rows keep their createdAt when they post, and v2 rejects updatedAtFrom,
+        # so the transaction date is the only way to find them again.
+        return await self._list_transactions(
+            {"accountId": account_external_id, "dateFrom": date_from.isoformat()},
+            payee_source,
+        )
+
+    async def _list_transactions(
+        self, base_params: dict, payee_source: str,
+    ) -> list[TransactionData]:
         headers = await self._headers()
         all_transactions: list[TransactionData] = []
         after: Optional[str] = None
@@ -562,17 +589,7 @@ class PluggyProvider(BankProvider):
                 # API keys (rolled out per key). /v2/transactions pages via an
                 # opaque `after` cursor (returned in `next`) instead of
                 # page/pageSize.
-                params: dict = {"accountId": account_external_id}
-                if since:
-                    # Filter by Pluggy ingestion time, NOT transaction date.
-                    # `dateFrom`/`dateTo` filter on `date` (when the txn
-                    # happened), which silently drops transactions Pluggy
-                    # ingests later but backdates — e.g. credit card bill
-                    # payments dated to the bill close, or merchants that
-                    # settle weeks late. `createdAtFrom` filters on Pluggy's
-                    # row creation time, so any newly-ingested row is fetched
-                    # regardless of date. v2 still supports it.
-                    params["createdAtFrom"] = since.isoformat()
+                params = dict(base_params)
                 if after:
                     params["after"] = after
 
