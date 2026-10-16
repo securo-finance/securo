@@ -119,6 +119,7 @@ export function AssetImportPanel() {
       )
       queryClient.invalidateQueries({ queryKey: ['assets'] })
       queryClient.invalidateQueries({ queryKey: ['asset-groups'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       queryClient.invalidateQueries({ queryKey: ['import-logs'] })
       toast.success(t('assetImport.imported', { count: result.imported }))
       navigate('/assets')

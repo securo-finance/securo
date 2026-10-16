@@ -138,6 +138,13 @@ class Settings(BaseSettings):
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
 
+    # Market indices for the Performance tab: Yahoo Finance, and the B3
+    # Índice DI from the Central Bank of Brazil with Ipeadata as a fallback.
+    # They are only contacted when someone searches for or compares against
+    # an index. Set PERFORMANCE_BENCHMARKS_ENABLED=false to avoid those
+    # external hosts; portfolio returns keep working without them.
+    performance_benchmarks_enabled: bool = True
+
     @property
     def oidc_login_available(self) -> bool:
         return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)

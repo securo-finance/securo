@@ -43,6 +43,7 @@ x-backend-env: &backend-env
   OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
   FX_SYNC_MODE: ${FX_SYNC_MODE:-on_demand}
   TESOURO_DIRETO_ENABLED: ${TESOURO_DIRETO_ENABLED:-true}
+  PERFORMANCE_BENCHMARKS_ENABLED: ${PERFORMANCE_BENCHMARKS_ENABLED:-true}
   STORAGE_LOCAL_PATH: /app/data/attachments
   AGENTS_KNOWLEDGE_STORAGE_PATH: /app/data/agent_knowledge
   # Agents/LLM feature — opt-in. Off by default so existing users pay

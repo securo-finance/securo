@@ -20,6 +20,12 @@ class AssetValue(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=6))
+    # Optional pre-tax/pre-fee value reported by a connected investment
+    # provider. ``amount`` remains the withdrawable/net value used everywhere
+    # outside benchmark performance.
+    gross_amount: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(precision=15, scale=6), nullable=True
+    )
     # Per-share price on `date` for market-priced holdings (quantity-independent).
     # The value chart is rebuilt as ledger_quantity(date) × price(date) so that
     # entering past buys/sells correctly reshapes the whole history (issue:
