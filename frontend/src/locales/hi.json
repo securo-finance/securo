@@ -1351,7 +1351,11 @@
     "confirmDeleteDescription": "\"{{name}}\" का बजट स्थायी रूप से हट जाएगा। मौजूदा लेन-देन पर कोई असर नहीं पड़ता। यह कार्रवाई पूर्ववत नहीं की जा सकती।",
     "confirmDeleteRecurringDescription": "\"{{name}}\" का आवर्ती बजट स्थायी रूप से हट जाएगा। यह परिभाषा आगे के महीनों पर लागू नहीं होगी। मौजूदा लेन-देन पर कोई असर नहीं पड़ता। यह कार्रवाई पूर्ववत नहीं की जा सकती।",
     "repeatEveryMonth": "हर महीने दोहराएँ",
-    "recurringLabel": "आवर्ती"
+    "recurringLabel": "आवर्ती",
+    "monthTotal": "माह का कुल",
+    "remaining": "{{amount}} शेष",
+    "overBy": "बजट से {{amount}} अधिक",
+    "spendingUnavailable": "इस महीने का खर्च लोड नहीं हो सका।"
   },
   "goals": {
     "title": "लक्ष्य",

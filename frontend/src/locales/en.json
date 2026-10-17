@@ -1351,7 +1351,11 @@
     "confirmDeleteDescription": "The budget for \"{{name}}\" will be permanently deleted. Existing transactions are not affected. This action cannot be undone.",
     "confirmDeleteRecurringDescription": "The recurring budget for \"{{name}}\" will be permanently deleted. This definition will no longer apply to later months. Existing transactions are not affected. This action cannot be undone.",
     "repeatEveryMonth": "Repeat every month",
-    "recurringLabel": "Recurring"
+    "recurringLabel": "Recurring",
+    "monthTotal": "Month total",
+    "remaining": "{{amount}} left",
+    "overBy": "{{amount}} over budget",
+    "spendingUnavailable": "Couldn't load spending for this month."
   },
   "goals": {
     "title": "Goals",

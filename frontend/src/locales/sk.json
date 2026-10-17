@@ -1419,7 +1419,11 @@
     "confirmDeleteDescription": "Rozpočet pre „{{name}}“ bude natrvalo vymazaný. Existujúce transakcie to neovplyvní. Túto akciu nie je možné vrátiť späť.",
     "confirmDeleteRecurringDescription": "Opakovaný rozpočet pre „{{name}}“ bude natrvalo vymazaný. Táto definícia sa už nebude vzťahovať na ďalšie mesiace. Existujúce transakcie to neovplyvní. Túto akciu nie je možné vrátiť späť.",
     "repeatEveryMonth": "Opakovať každý mesiac",
-    "recurringLabel": "Opakovaný"
+    "recurringLabel": "Opakovaný",
+    "monthTotal": "Súčet za mesiac",
+    "remaining": "Zostáva {{amount}}",
+    "overBy": "{{amount}} nad rozpočet",
+    "spendingUnavailable": "Výdavky za tento mesiac sa nepodarilo načítať."
   },
   "goals": {
     "title": "Ciele",

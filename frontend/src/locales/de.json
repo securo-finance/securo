@@ -1352,7 +1352,11 @@
     "confirmDeleteDescription": "Das Budget für \"{{name}}\" wird dauerhaft gelöscht. Bestehende Transaktionen bleiben unverändert. Diese Aktion kann nicht rückgängig gemacht werden.",
     "confirmDeleteRecurringDescription": "Das wiederkehrende Budget für \"{{name}}\" wird dauerhaft gelöscht. Diese Definition gilt nicht mehr für zukünftige Monate. Bestehende Transaktionen bleiben unverändert. Diese Aktion kann nicht rückgängig gemacht werden.",
     "repeatEveryMonth": "Jeden Monat wiederholen",
-    "recurringLabel": "Wiederkehrend"
+    "recurringLabel": "Wiederkehrend",
+    "monthTotal": "Monatssumme",
+    "remaining": "{{amount}} übrig",
+    "overBy": "{{amount}} über Budget",
+    "spendingUnavailable": "Ausgaben für diesen Monat konnten nicht geladen werden."
   },
   "goals": {
     "title": "Ziele",
