@@ -756,3 +756,219 @@ def test_txn_fingerprint_includes_transaction_date():
     assert fp1 != fp2
 
 
+
+
+# ----- session status on sync -----
+
+
+def _session_payload(status: str) -> dict:
+    """GET /sessions/{id} as Enable Banking returns it (account uids only).
+
+    `valid_until` is always in the future: the status alone must decide."""
+    valid_until = (
+        (datetime.now(timezone.utc) + timedelta(days=180))
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+    return {
+        "status": status,
+        "accounts": ["acc-uid-1"],
+        "accounts_data": [{"uid": "acc-uid-1", "identification_hash": "hash-1"}],
+        "aspsp": {"name": "Openbank", "country": "ES"},
+        "access": {"valid_until": valid_until},
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_raises_when_session_expired_at_bank(eb_keys):
+    """The bank can end consent long before `valid_until`. EB then still
+    answers GET /sessions with 200 but `status: EXPIRED`, and every account
+    call fails with a 400 ASPSP_ERROR. That must surface as an expired
+    session, not as a sync that silently finds no accounts."""
+    provider = EnableBankingProvider()
+    details_calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-1":
+            return httpx.Response(200, json=_session_payload("EXPIRED"))
+        details_calls.append(request.url.path)
+        return httpx.Response(
+            400,
+            json={
+                "code": 400,
+                "message": "Error interacting with ASPSP",
+                "detail": {"message": "Unauthorized, authentication failure"},
+                "error": "ASPSP_ERROR",
+            },
+        )
+
+    with _patch_client(provider, handler):
+        with pytest.raises(SessionExpiredError):
+            await provider.get_accounts({"session_id": "sess-1"})
+    assert details_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["REVOKED", "CLOSED", "CANCELLED", "INVALID"])
+async def test_get_accounts_raises_for_other_terminal_session_states(eb_keys, status):
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_session_payload(status))
+
+    with _patch_client(provider, handler):
+        with pytest.raises(SessionExpiredError):
+            await provider.get_accounts({"session_id": "sess-1"})
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_authorized_session_returns_accounts(eb_keys):
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-1":
+            return httpx.Response(200, json=_session_payload("AUTHORIZED"))
+        if path == "/accounts/acc-uid-1/details":
+            return httpx.Response(
+                200,
+                json={
+                    "uid": "acc-uid-1",
+                    "name": "CUENTA CORRIENTE",
+                    "currency": "EUR",
+                    "cash_account_type": "CACC",
+                    "account_id": {"iban": "ES0000000000000000001172"},
+                },
+            )
+        if path == "/accounts/acc-uid-1/balances":
+            return httpx.Response(
+                200,
+                json={"balances": [{
+                    "balance_type": "CLBD",
+                    "balance_amount": {"amount": "859.43", "currency": "EUR"},
+                }]},
+            )
+        return httpx.Response(404)
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts({"session_id": "sess-1"})
+    assert [a.external_id for a in accounts] == ["acc-uid-1"]
+    assert accounts[0].balance == Decimal("859.43")
+
+
+_ASPSP_AUTH_FAILURE = {
+    "code": 400,
+    "message": "Error interacting with ASPSP",
+    "detail": {
+        "message": "Unauthorized, authentication failure",
+        "error_name": "HttpException",
+        "error_data": {},
+    },
+    "error": "ASPSP_ERROR",
+}
+
+
+def _two_account_session(status: str = "AUTHORIZED") -> dict:
+    payload = _session_payload(status)
+    payload["accounts"] = ["acc-uid-1", "acc-uid-2"]
+    payload["accounts_data"] = [
+        {"uid": "acc-uid-1", "identification_hash": "hash-1"},
+        {"uid": "acc-uid-2", "identification_hash": "hash-2"},
+    ]
+    return payload
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_raises_when_bank_refuses_every_account(eb_keys):
+    """Openbank ES ends consent while EB still reports the session as
+    AUTHORIZED; only the per-account calls reveal it. Every account refused
+    by the bank must surface as an expired session so the UI offers
+    Reconnect, instead of a sync that silently finds no accounts."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-1":
+            return httpx.Response(200, json=_two_account_session())
+        return httpx.Response(400, json=_ASPSP_AUTH_FAILURE)
+
+    with _patch_client(provider, handler):
+        with pytest.raises(SessionExpiredError):
+            await provider.get_accounts({"session_id": "sess-1"})
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_raises_when_details_returns_401(eb_keys):
+    """EB answers the account calls with 401 EXPIRED_SESSION once the session
+    is dead. That is not a per-account failure to skip: it must propagate so
+    the connection is marked expired."""
+    provider = EnableBankingProvider()
+    details_calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-1":
+            return httpx.Response(200, json=_two_account_session())
+        details_calls.append(request.url.path)
+        return httpx.Response(
+            401, json={"message": "Session is expired", "error": "EXPIRED_SESSION"}
+        )
+
+    with _patch_client(provider, handler):
+        with pytest.raises(SessionExpiredError):
+            await provider.get_accounts({"session_id": "sess-1"})
+    assert details_calls == ["/accounts/acc-uid-1/details"]
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_skips_single_refused_account(eb_keys):
+    """One refused account out of several is not a dead consent: keep the
+    existing skip-and-retry behaviour and return the readable accounts."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-1":
+            return httpx.Response(200, json=_two_account_session())
+        if path == "/accounts/acc-uid-2/details":
+            return httpx.Response(400, json=_ASPSP_AUTH_FAILURE)
+        if path == "/accounts/acc-uid-1/details":
+            return httpx.Response(
+                200,
+                json={
+                    "uid": "acc-uid-1",
+                    "name": "CUENTA CORRIENTE",
+                    "currency": "EUR",
+                    "cash_account_type": "CACC",
+                },
+            )
+        if path == "/accounts/acc-uid-1/balances":
+            return httpx.Response(200, json={"balances": []})
+        return httpx.Response(404)
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts({"session_id": "sess-1"})
+    assert [a.external_id for a in accounts] == ["acc-uid-1"]
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_other_errors_on_every_account_do_not_expire(eb_keys):
+    """A bank outage (non-auth ASPSP error) on every account is transient:
+    the connection must not be flagged expired for it."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-1":
+            return httpx.Response(200, json=_two_account_session())
+        return httpx.Response(
+            400,
+            json={
+                "code": 400,
+                "message": "Error interacting with ASPSP",
+                "detail": {"message": "Service unavailable"},
+                "error": "ASPSP_ERROR",
+            },
+        )
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts({"session_id": "sess-1"})
+    assert accounts == []

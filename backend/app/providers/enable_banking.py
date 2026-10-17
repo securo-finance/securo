@@ -54,6 +54,10 @@ DEFAULT_HISTORY_DAYS = 90
 # Shorter window retried when a bank rejects the default one as out of bounds.
 FALLBACK_HISTORY_DAYS = 30
 TRANSACTION_PAGE_LIMIT = 50  # safety cap
+# Session states after which no data can be read until the user re-authorizes.
+TERMINAL_SESSION_STATUSES = frozenset(
+    {"EXPIRED", "REVOKED", "CLOSED", "CANCELLED", "INVALID"}
+)
 
 
 def _map_cash_account_type(eb_type: Optional[str]) -> str:
@@ -215,6 +219,26 @@ def _is_wrong_period_error(resp: httpx.Response) -> bool:
     except ValueError:
         return False
     return isinstance(body, dict) and body.get("error") == "WRONG_TRANSACTIONS_PERIOD"
+
+
+def _is_aspsp_auth_failure(exc: Exception) -> bool:
+    """True when the bank itself refused our access (consent no longer valid).
+
+    EB wraps it as a 400 ASPSP_ERROR whose detail reads e.g. "Unauthorized,
+    authentication failure", so it never reaches the 401 → expired path.
+    """
+    if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 400:
+        return False
+    try:
+        body = exc.response.json()
+    except ValueError:
+        return False
+    if not isinstance(body, dict) or body.get("error") != "ASPSP_ERROR":
+        return False
+    detail = body.get("detail")
+    message = (detail.get("message") or "") if isinstance(detail, dict) else ""
+    message = message.lower()
+    return "unauthorized" in message or "authentication" in message
 
 
 class EnableBankingProvider(BankProvider):
@@ -563,19 +587,39 @@ class EnableBankingProvider(BankProvider):
         if not session_id:
             raise SessionExpiredError("Enable Banking session_id missing")
         data = await self._request("GET", f"/sessions/{session_id}")
+        # The bank can end consent well before `valid_until`; EB still answers
+        # 200 here but flags the session, and every account call then fails.
+        # Raise so the connection is marked expired instead of "syncing" zero
+        # accounts forever.
+        status = (data.get("status") or "").upper()
+        if status in TERMINAL_SESSION_STATUSES:
+            raise SessionExpiredError(f"Enable Banking session is {status}")
         result: list[AccountData] = []
-        for uid in self._account_uids(data):
+        uids = self._account_uids(data)
+        auth_failures = 0
+        for uid in uids:
             try:
                 details = await self._request("GET", f"/accounts/{uid}/details")
-            except (httpx.HTTPError, SessionExpiredError) as exc:
+            except httpx.HTTPError as exc:
+                if _is_aspsp_auth_failure(exc):
+                    auth_failures += 1
                 # Without details we can't safely name/type the account, and a
                 # bare-uid AccountData would overwrite the stored name with a
                 # placeholder. Skip this account for this run (non-destructive:
                 # the existing row and its transactions are left intact and the
-                # next sync retries) rather than corrupt it.
+                # next sync retries) rather than corrupt it. SessionExpiredError
+                # (401/410) is not caught: an expired session covers every
+                # account, so it must reach sync and mark the connection expired.
                 logger.warning("Failed to fetch details for account %s: %s", uid, exc)
                 continue
             result.append(await self._build_account(details))
+        # Some banks (Openbank ES) end consent while EB still reports the
+        # session as AUTHORIZED. When the bank refuses every account, the
+        # consent is gone: raise so the user is prompted to reconnect.
+        if uids and auth_failures == len(uids):
+            raise SessionExpiredError(
+                "Enable Banking: bank refused access to every account in the session"
+            )
         return result
 
     async def get_transactions(
