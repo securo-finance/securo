@@ -1,0 +1,27 @@
+# Build context for Dockerfile.aio is the repo root, which has no
+# .dockerignore of its own. Without this the daemon would receive the whole
+# tree — around 500 MB, most of it backend/.venv.
+#
+# BuildKit prefers <dockerfile>.dockerignore over the context root's, so this
+# is scoped to the all-in-one build and changes nothing for the existing
+# backend/ and frontend/ builds.
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.coverage
+**/htmlcov
+.git
+.github
+frontend/dist
+backend/data
+# backend/.dockerignore omits these, so a locally built backend image bakes in
+# whatever beat state the developer happened to have.
+backend/celerybeat-schedule*
+secrets
+docs
+charts
+tmp
+**/.env

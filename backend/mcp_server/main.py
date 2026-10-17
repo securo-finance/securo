@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.core.database import async_session_maker
@@ -19,7 +19,13 @@ from mcp_server.registry import REGISTRY, call_tool, list_tools
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Securo MCP Server", openapi_url=None, docs_url=None)
+# The routes live on a router, not directly on an app, so an all-in-one
+# deployment can include them in the main API process while the dedicated
+# mcp-server container keeps running `uvicorn mcp_server.main:app` unchanged.
+# Paths stay absolute — `POST /mcp` is the contract the Helm ingress and the
+# agent runtime depend on, and mounting this as a sub-app would have made it
+# /mcp/mcp.
+router = APIRouter()
 
 
 SERVER_INFO = {
@@ -40,12 +46,12 @@ def _ok(req_id: Any, result: Any) -> dict:
     return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
 
-@app.get("/health")
+@router.get("/health", include_in_schema=False)
 async def health():
     return {"status": "ok", "tools": len(REGISTRY)}
 
 
-@app.post("/mcp")
+@router.post("/mcp", include_in_schema=False)
 async def mcp(request: Request) -> JSONResponse:
     # Auth first — never accept unauthenticated calls.
     try:
@@ -118,3 +124,9 @@ def _safe_json(obj: Any) -> str:
         return json.dumps(obj, default=str)
     except Exception:
         return str(obj)
+
+
+# Standalone app for the dedicated mcp-server container and the Railway
+# service. `uvicorn mcp_server.main:app` is unaffected by the refactor above.
+app = FastAPI(title="Securo MCP Server", openapi_url=None, docs_url=None)
+app.include_router(router)

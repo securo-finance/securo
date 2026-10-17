@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1
+#
+# All-in-one image: the built SPA plus the backend, run by
+# docker-entrypoint.aio.sh as uvicorn + a Celery worker with embedded beat.
+# Aimed at single-user and family self-hosting, where the multi-service split
+# buys nothing and costs a shared-volume requirement.
+#
+# The build context is the REPO ROOT, not backend/, because it needs both
+# trees:
+#   docker build -f backend/Dockerfile.aio -t securo-aio .
+# or just `docker compose -f docker-compose.aio.yml build`.
+
+# ---- stage 1: the SPA -------------------------------------------------------
+FROM node:22-slim AS frontend
+
+WORKDIR /build
+
+ARG VITE_APP_VERSION
+ENV VITE_APP_VERSION=$VITE_APP_VERSION
+
+# .npmrc carries the supply-chain hardening (ignore-scripts, min-release-age),
+# so it has to be in place before npm ci.
+COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+# ---- stage 2: the runtime ---------------------------------------------------
+FROM python:3.14-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    FRONTEND_DIST_PATH=/app/frontend_dist
+
+# The three blocks below are copied from backend/Dockerfile and must be kept
+# in sync with it. Notably the `# renovate:` comment: without it Renovate
+# stops bumping the uv pin here.
+
+# --- keep in sync with backend/Dockerfile (1/3): system deps for asyncpg
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- keep in sync with backend/Dockerfile (2/3): locked, hash-checked deps
+COPY backend/pyproject.toml backend/uv.lock ./
+# renovate: datasource=pypi depName=uv
+RUN pip install --no-cache-dir uv==0.12.5 \
+    && uv export --frozen --no-emit-project -o /tmp/requirements.txt \
+    && pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt \
+    && pip uninstall -y uv \
+    && rm /tmp/requirements.txt
+
+# --- keep in sync with backend/Dockerfile (3/3): the project itself
+COPY backend/ ./
+RUN pip install --no-cache-dir --no-deps -e .
+
+COPY --from=frontend /build/dist /app/frontend_dist
+
+RUN chmod +x /app/docker-entrypoint.aio.sh
+
+EXPOSE 8000
+
+ENTRYPOINT ["/app/docker-entrypoint.aio.sh"]
