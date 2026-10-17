@@ -1243,7 +1243,7 @@ export function LinkPaymentDialog({
  * Notes stay editable after issuance through the detail view, since they
  * are the seller's own record and never left the building.
  */
-function EditDraftDialog({
+export function EditDraftDialog({
   open,
   onOpenChange,
   invoice,
@@ -1280,8 +1280,13 @@ function EditDraftDialog({
     invoice.lines.map((line) => ({
       description: line.description,
       quantity: String(Number(line.quantity)),
+      unit: line.unit,
       unit_price: line.unit_price,
       tax_rate: line.tax_rate,
+      // Every save resends the lines, including when only notes changed.
+      product_id: line.product_id,
+      price_id: line.price_id,
+      fiscal_refs: line.fiscal_refs,
     })),
   )
 

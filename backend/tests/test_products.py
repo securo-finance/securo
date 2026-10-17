@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.invoice import Invoice
+from app.models.invoice_schedule import InvoiceScheduleTerm
 from app.models.product import Product
 from app.models.workspace import WorkspaceMember
 from app.services import invoice_schedule_service as schedules
@@ -630,3 +631,215 @@ async def test_fiscal_refs_over_http(client: AsyncClient, biz_headers):
     assert resp.status_code == 201 and resp.json()["lines"][0]["fiscal_refs"] == {"service_code": "1.05"}
     resp = await client.patch(f"/api/products/{pid}", headers=biz_headers, json={"fiscal_refs": None})
     assert resp.status_code == 200 and resp.json()["fiscal_refs"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("catalog_refs", [None, {"service_code": "catalog-code"}])
+async def test_invoice_fiscal_refs_preserve_omission_and_explicit_values_over_http(
+    client: AsyncClient, biz_headers, catalog_refs,
+):
+    response = await client.post(
+        "/api/products", headers=biz_headers,
+        json={"name": "Design", "fiscal_refs": catalog_refs},
+    )
+    assert response.status_code == 201, response.text
+    product_id = response.json()["id"]
+    line = {
+        "description": "Design", "quantity": "2", "unit": "h", "unit_price": "100",
+        "tax_rate": "10", "product_id": product_id,
+    }
+    response = await client.post(
+        "/api/invoices", headers=biz_headers,
+        json={
+            "as_draft": True, "currency": "USD",
+            "lines": [
+                line,
+                {**line, "fiscal_refs": None},
+                {**line, "fiscal_refs": {}},
+                {**line, "fiscal_refs": {"service_code": "line-code"}},
+            ],
+        },
+    )
+    assert response.status_code == 201, response.text
+    invoice = response.json()
+    expected_refs = [catalog_refs, None, None, {"service_code": "line-code"}]
+    assert [row["fiscal_refs"] for row in invoice["lines"]] == expected_refs
+
+    response = await client.patch(
+        f"/api/products/{product_id}", headers=biz_headers,
+        json={"fiscal_refs": {"service_code": "updated-catalog-code"}},
+    )
+    assert response.status_code == 200, response.text
+    # EditDraftDialog resends all line metadata even for a notes-only change.
+    fields = (
+        "description", "quantity", "unit", "unit_price", "tax_rate",
+        "product_id", "price_id", "fiscal_refs",
+    )
+    lines = [{key: row[key] for key in fields} for row in invoice["lines"]]
+    response = await client.patch(
+        f"/api/invoices/{invoice['id']}", headers=biz_headers,
+        json={"notes": "Updated notes", "lines": lines},
+    )
+    assert response.status_code == 200, response.text
+    updated = response.json()
+    assert updated["notes"] == "Updated notes"
+    assert [{key: row[key] for key in fields} for row in updated["lines"]] == lines
+
+
+@pytest.mark.asyncio
+async def test_schedule_fiscal_ref_inheritance_survives_term_writes_over_http(
+    client: AsyncClient, biz_headers,
+):
+    catalog_refs = {"service_code": "catalog-code"}
+    response = await client.post(
+        "/api/products", headers=biz_headers,
+        json={"name": "Design", "fiscal_refs": catalog_refs},
+    )
+    assert response.status_code == 201, response.text
+    line = {
+        "description": "Design", "unit_price": "100", "product_id": response.json()["id"],
+    }
+    lines = [
+        line,
+        {**line, "fiscal_refs": None},
+        {**line, "fiscal_refs": {}},
+        {**line, "fiscal_refs": {"service_code": "line-code"}},
+    ]
+    start = date(date.today().year + 1, 1, 1)
+    response = await client.post(
+        "/api/invoice-schedules", headers=biz_headers,
+        json={
+            "name": "Design retainer", "frequency": "monthly", "currency": "USD",
+            "start_date": start.isoformat(), "lines": lines,
+        },
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    response = await client.post(
+        f"/api/invoice-schedules/{schedule_id}/terms", headers=biz_headers,
+        json={"effective_from": start.replace(month=2).isoformat(), "lines": lines},
+    )
+    assert response.status_code == 201, response.text
+    terms = response.json()["terms"]
+    for term in terms:
+        assert "fiscal_refs" not in term["lines"][0]
+        assert [row["fiscal_refs"] for row in term["lines"][1:]] == [
+            {}, {}, {"service_code": "line-code"},
+        ]
+    response = await client.patch(
+        f"/api/invoice-schedules/{schedule_id}/terms/{terms[-1]['id']}", headers=biz_headers,
+        json={"lines": lines},
+    )
+    assert response.status_code == 200, response.text
+    assert "fiscal_refs" not in response.json()["terms"][-1]["lines"][0]
+
+    # Force the first two future periods: create, add and update all preserve
+    # omission until emission, while explicit emptiness never inherits.
+    for _ in range(2):
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/generate", headers=biz_headers,
+        )
+        assert response.status_code == 201, response.text
+        [invoice] = response.json()
+        assert [row["fiscal_refs"] for row in invoice["lines"]] == [
+            catalog_refs, None, None, {"service_code": "line-code"},
+        ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("edit", [None, "read_resave", "discount", "effective_from"])
+async def test_legacy_schedule_fiscal_refs_survive_emission_and_edits(
+    client: AsyncClient, biz_headers, session, monkeypatch, edit,
+):
+    monkeypatch.setattr(schedules, "_today", lambda: TODAY)
+    refs = {"service_code": "catalog-code"}
+    response = await client.post(
+        "/api/products", headers=biz_headers,
+        json={"name": "Design", "fiscal_refs": refs},
+    )
+    assert response.status_code == 201, response.text
+    line = {"description": "Design", "unit_price": "100", "product_id": response.json()["id"]}
+    response = await client.post(
+        "/api/invoice-schedules", headers=biz_headers,
+        json={"name": "Legacy agreement", "frequency": "monthly", "currency": "USD", "lines": [line]},
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    response = await client.post(
+        f"/api/invoice-schedules/{schedule_id}/terms", headers=biz_headers,
+        json={"effective_from": TODAY.replace(month=10).isoformat(), "lines": [line]},
+    )
+    assert response.status_code == 201, response.text
+    terms = (await session.scalars(
+        select(InvoiceScheduleTerm)
+        .where(InvoiceScheduleTerm.schedule_id == uuid.UUID(schedule_id))
+        .order_by(InvoiceScheduleTerm.effective_from)
+    )).all()
+    # Before this fix, omitted references were persisted as null and inherited
+    # from the catalog. Keep that exact stored shape across the upgrade.
+    for term in terms:
+        term.lines = [{**row, "fiscal_refs": None} for row in term.lines]
+    await session.commit()
+
+    response = await client.get(f"/api/invoice-schedules/{schedule_id}", headers=biz_headers)
+    assert response.status_code == 200, response.text
+    if edit is not None:
+        changes = {
+            "read_resave": {"lines": response.json()["terms"][-1]["lines"]},
+            "discount": {"discount": "1"},
+            "effective_from": {"effective_from": TODAY.replace(month=11).isoformat()},
+        }[edit]
+        response = await client.patch(
+            f"/api/invoice-schedules/{schedule_id}/terms/{terms[-1].id}",
+            headers=biz_headers, json=changes,
+        )
+        assert response.status_code == 200, response.text
+
+    for _ in range(3 if edit == "effective_from" else 2):
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/generate", headers=biz_headers,
+        )
+        assert response.status_code == 201, response.text
+        [invoice] = response.json()
+        assert invoice["lines"][0]["fiscal_refs"] == refs
+    await session.refresh(terms[0])
+    assert terms[0].lines[0]["fiscal_refs"] is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_schedule_reads_preserve_inheritance_without_mutating_terms(
+    client: AsyncClient, biz_headers, session, monkeypatch,
+):
+    monkeypatch.setattr(schedules, "_today", lambda: TODAY)
+    response = await client.post(
+        "/api/invoice-schedules", headers=biz_headers,
+        json={
+            "name": "Legacy agreement", "frequency": "monthly", "currency": "USD",
+            "lines": [{"description": "Design", "unit_price": "100"}],
+        },
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    term = await session.scalar(select(InvoiceScheduleTerm).where(
+        InvoiceScheduleTerm.schedule_id == uuid.UUID(schedule_id),
+    ))
+    line = term.lines[0]
+    term.lines = [
+        {**line, "fiscal_refs": None},
+        {**line, "fiscal_refs": {}},
+        {**line, "fiscal_refs": {"service_code": "fixed-code"}},
+    ]
+    await session.commit()
+    response = await client.get(f"/api/invoice-schedules/{schedule_id}", headers=biz_headers)
+    assert response.status_code == 200, response.text
+    agreement = response.json()
+    for read in [*agreement["terms"], agreement["current_term"], agreement["next_term"]]:
+        assert "fiscal_refs" not in read["lines"][0]
+        assert read["lines"][1]["fiscal_refs"] == {}
+        assert read["lines"][2]["fiscal_refs"] == {"service_code": "fixed-code"}
+    # Serialization is a read: neither the identity-map object nor its stored
+    # JSON should be changed as a side effect of building the response.
+    assert term.lines[0]["fiscal_refs"] is None
+    assert term not in session.dirty
+    await session.refresh(term)
+    assert term.lines[0]["fiscal_refs"] is None
