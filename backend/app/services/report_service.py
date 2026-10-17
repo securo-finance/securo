@@ -153,6 +153,12 @@ async def _net_worth_at(
     liabilities_total = 0.0
     composition: list[ReportCompositionItem] = []
 
+    # Collect connection_ids of accounts whose balances were added to
+    # accounts_total (i.e. non-credit-card, non-negative-balance accounts).
+    # Assets synced by the same connection are already baked into those
+    # balances — counting them again would double-count (issue #1083).
+    _synced_connection_ids: set[uuid.UUID] = set()
+
     for account in accounts:
         bal = await _account_balance_at(session, account, cutoff)
         converted, _ = await convert(
@@ -179,6 +185,12 @@ async def _net_worth_at(
                     color=_ACCOUNT_TYPE_COLORS.get(account.type, "#6B7280"),
                     group="accounts",
                 ))
+            if account.connection_id is not None:
+                # Only track investment/brokerage accounts — their balance
+                # includes holdings. Checking/savings/credit_card balances
+                # are cash-only, so their assets must NOT be excluded.
+                if account.type not in {"checking", "savings", "credit_card"}:
+                    _synced_connection_ids.add(account.connection_id)
 
     # Per-asset composition at the cutoff date
     filtered = account_ids is not None
@@ -192,6 +204,12 @@ async def _net_worth_at(
     asset_result = await session.execute(asset_stmt)
     assets_total = 0.0
     for asset in asset_result.scalars().all():
+        # Skip assets synced via the same provider connection that also has
+        # an account — the account balance already includes these holdings,
+        # so counting the asset again double-counts them (issue #1083).
+        if asset.connection_id and asset.connection_id in _synced_connection_ids:
+            continue
+
         val_result = await session.execute(
             select(AssetValue.amount)
             .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
