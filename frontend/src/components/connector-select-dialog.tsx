@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useAuth } from '@/contexts/auth-context'
 import { connections } from '@/lib/api'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Building2 } from 'lucide-react'
+import { Building2, Settings2 } from 'lucide-react'
 
 export interface Provider {
   name: string
@@ -31,6 +34,7 @@ export function ConnectorSelectDialog(props: ConnectorSelectDialogProps) {
 
 function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDialogProps) {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -53,7 +57,7 @@ function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDial
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t('accounts.selectConnector')}</DialogTitle>
-          <p className="text-sm text-muted-foreground">{t('accounts.selectConnectorDesc')}</p>
+          <DialogDescription>{t('accounts.selectConnectorDesc')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-2 pt-2">
           {loading ? (
@@ -65,34 +69,50 @@ function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDial
               {t('accounts.noConnectorsAvailable')}
             </p>
           ) : (
-            providers.map((p) => (
-              <button
-                key={p.name}
-                disabled={!p.configured}
-                onClick={() => {
-                  onSelect(p)
-                  onClose()
-                }}
-                className={`w-full flex items-start gap-3 rounded-lg border p-4 text-left transition-colors ${
-                  p.configured
-                    ? 'border-border hover:border-primary hover:bg-muted/50 cursor-pointer'
-                    : 'border-border/50 opacity-60 cursor-not-allowed'
-                }`}
-              >
-                <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                  <Building2 size={16} className="text-muted-foreground" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">{p.display_name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{t(`accounts.providers.${p.name}.description`, p.description)}</p>
-                  {!p.configured && (
-                    <p className="text-xs text-amber-600 mt-1.5">
-                      {t('accounts.connectorNotConfigured')}
-                    </p>
+            providers.map((p) => {
+              const content = (
+                <>
+                  <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5" aria-hidden="true">
+                    <Building2 size={16} className="text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">{p.display_name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t(`accounts.providers.${p.name}.description`, p.description)}</p>
+                    {!p.configured && (
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1.5">
+                        {user?.is_superuser ? t('accounts.connectorNotConfigured') : t('accounts.connectorAskAdmin')}
+                      </p>
+                    )}
+                  </div>
+                </>
+              )
+
+              return p.configured ? (
+                <button
+                  key={p.name}
+                  type="button"
+                  onClick={() => { onSelect(p); onClose() }}
+                  className="w-full flex items-start gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:border-primary hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {content}
+                </button>
+              ) : (
+                <div key={p.name} className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/20 p-4">
+                  {content}
+                  {user?.is_superuser && (
+                    <Link
+                      to="/admin#provider-connections"
+                      onClick={onClose}
+                      title={t('providerSettings.catalog.configureProvider', { provider: p.display_name })}
+                      aria-label={t('providerSettings.catalog.configureProvider', { provider: p.display_name })}
+                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Settings2 className="size-4" aria-hidden="true" />
+                    </Link>
                   )}
                 </div>
-              </button>
-            ))
+              )
+            })
           )}
         </div>
       </DialogContent>
