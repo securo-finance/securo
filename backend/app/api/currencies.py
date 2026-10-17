@@ -52,6 +52,8 @@ CURRENCY_META = {
     "JMD": {"symbol": "J$", "name": "Jamaican Dollar", "flag": "\U0001F1EF\U0001F1F2"},
     "RSD": {"symbol": "RSD", "name": "Serbian Dinar", "flag": "\U0001F1F7\U0001F1F8"},
     "MKD": {"symbol": "ден", "name": "Macedonian Denar", "flag": "\U0001F1F2\U0001F1F0"},
+    "HKD": {"symbol": "HK$", "name": "Hong Kong Dollar", "flag": "\U0001F1ED\U0001F1F0"},
+    "TWD": {"symbol": "NT$", "name": "New Taiwan Dollar", "flag": "\U0001F1F9\U0001F1FC"},
 }
 
 

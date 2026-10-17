@@ -251,3 +251,27 @@ async def test_currencies_include_mkd_with_metadata(client: AsyncClient):
     assert mkd["symbol"] == "ден"
     assert mkd["name"] == "Macedonian Denar"
     assert mkd["flag"] == "🇲🇰"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_hkd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    hkd = next((currency for currency in data if currency["code"] == "HKD"), None)
+
+    assert hkd is not None
+    assert hkd["symbol"] == "HK$"
+    assert hkd["name"] == "Hong Kong Dollar"
+    assert hkd["flag"] == "🇭🇰"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_twd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    twd = next((currency for currency in data if currency["code"] == "TWD"), None)
+
+    assert twd is not None
+    assert twd["symbol"] == "NT$"
+    assert twd["name"] == "New Taiwan Dollar"
+    assert twd["flag"] == "🇹🇼"
