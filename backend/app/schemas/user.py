@@ -9,6 +9,9 @@ class UserPreferences(BaseModel):
     language: str = "en"
     date_format: str = "MM/DD/YYYY"
     currency_display: str = "USD"
+    # Shortlist backing the dashboard quick-switch; empty means "not chosen
+    # yet" and falls back to [currency_display].
+    quick_currencies: list[str] = []
     onboarding_completed: bool = False
 
 
