@@ -30,6 +30,7 @@ from app.providers.base import (
     ConnectionData,
     InstitutionData,
     InstitutionListData,
+    ProviderDataUnavailable,
     ProviderRateLimited,
     ProviderUserActionRequired,
     SessionExpiredError,
@@ -497,7 +498,9 @@ class EnableBankingProvider(BankProvider):
                 return inst.logo
         return None
 
-    async def _build_account(self, raw: dict) -> AccountData:
+    async def _build_account(
+        self, raw: dict, stable_id: Optional[str] = None
+    ) -> AccountData:
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
         # EB doesn't include balances in the session payload; fetch separately.
@@ -524,6 +527,9 @@ class EnableBankingProvider(BankProvider):
             balance=balance,
             currency=currency,
             masked_number=mask_last4(_account_identifier(raw)),
+            # From the session payload: `uid` is scoped to one session, this
+            # hash is what lets a later session find the same account again.
+            stable_id=stable_id,
         )
 
     # ----- account / transaction fetches -----
@@ -563,19 +569,42 @@ class EnableBankingProvider(BankProvider):
         if not session_id:
             raise SessionExpiredError("Enable Banking session_id missing")
         data = await self._request("GET", f"/sessions/{session_id}")
+        uids = self._account_uids(data)
+        # EB keys each account by a uid scoped to this session; the
+        # identification_hash is the id that survives a reauthorisation. It comes
+        # in the same payload we just fetched, so carry it through — otherwise a
+        # reconnect re-keys every account and the sync duplicates them all.
+        stable_ids = {
+            entry.get("uid"): entry.get("identification_hash")
+            for entry in (data.get("accounts_data") or [])
+            if isinstance(entry, dict) and entry.get("uid")
+        }
         result: list[AccountData] = []
-        for uid in self._account_uids(data):
+        for uid in uids:
             try:
                 details = await self._request("GET", f"/accounts/{uid}/details")
-            except (httpx.HTTPError, SessionExpiredError) as exc:
-                # Without details we can't safely name/type the account, and a
-                # bare-uid AccountData would overwrite the stored name with a
-                # placeholder. Skip this account for this run (non-destructive:
-                # the existing row and its transactions are left intact and the
-                # next sync retries) rather than corrupt it.
+            except httpx.HTTPError as exc:
+                # A *transient* per-account failure. Without details we can't
+                # safely name/type the account, and a bare-uid AccountData would
+                # overwrite the stored name with a placeholder. Skip this account
+                # for this run (non-destructive: the existing row and its
+                # transactions are left intact and the next sync retries) rather
+                # than corrupt it. SessionExpiredError is deliberately NOT caught
+                # here: a dead consent is global, never per-account.
                 logger.warning("Failed to fetch details for account %s: %s", uid, exc)
                 continue
-            result.append(await self._build_account(details))
+            result.append(await self._build_account(details, stable_ids.get(uid)))
+        if uids and not result:
+            # EB listed accounts but not one could be read. Returning [] would
+            # make sync store "0 accounts" and leave the connection "active" —
+            # a silent false success. EB's FAQ treats ASPSP_ERROR (which is
+            # exactly what this looks like) as a bank-side failure to retry with
+            # backoff, so surface it as transient and let the sync layer decide
+            # when to stop retrying.
+            raise ProviderDataUnavailable(
+                f"Enable Banking returned no usable data for any of the "
+                f"{len(uids)} account(s) on session {session_id}"
+            )
         return result
 
     async def get_transactions(

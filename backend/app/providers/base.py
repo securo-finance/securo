@@ -71,6 +71,12 @@ class AccountData:
     # identical name (issue #408). Never the full identifier — see mask_last4.
     masked_number: Optional[str] = None
     shared_balance_group: Optional[str] = None
+    # Provider's stable, cross-session identifier for this account, when it has
+    # one. Enable Banking's `external_id` is a uid scoped to a single session,
+    # so reauthorising re-keys it; `stable_id` (EB's identification_hash) is what
+    # survives, and the sync uses it to rebind the existing row to the new uid
+    # instead of inserting a duplicate account.
+    stable_id: Optional[str] = None
     # Per-account institution override (SimpleFIN — issue #345). None = same
     # as connection. The external id is the provider's stable org id
     # (SimpleFIN conn_id) so a renamed bank updates its row instead of
@@ -220,6 +226,17 @@ class ProviderRateLimited(Exception):
     access (commonly ~4/day per resource), so a burst of syncs returns HTTP
     429. The connection is healthy; callers should skip this run and retry
     later rather than flag it as errored.
+    """
+
+
+class ProviderDataUnavailable(Exception):
+    """Raised when a provider could not fetch any usable data for a connection.
+
+    The session may still be valid: Enable Banking keeps the consent
+    ``AUTHORIZED`` and answers ``400 ASPSP_ERROR`` on every account, which its
+    own FAQ classifies as a bank-side failure to retry with backoff. So this is
+    not "reauth now" — callers retry a few cycles and only escalate to a
+    user-visible error once the failures persist.
     """
 
 

@@ -1053,6 +1053,140 @@ async def test_simplefin_rekey_respects_institution_and_closed_account(
 
 
 @pytest.mark.asyncio
+async def test_find_existing_connected_account_refuses_ambiguous_masked_number(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A shared last-4 must never merge two different accounts.
+
+    Four digits collide (two accounts at one bank can both end 5531). When more
+    than one legacy row matches we refuse to guess: a duplicate is recoverable,
+    but transactions attached to the wrong account are not.
+    """
+    conn = await _make_connection(session, test_user.id, "AmbiguousBank")
+    for suffix in ("a", "b"):
+        session.add(Account(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            connection_id=conn.id,
+            external_id=f"old-{suffix}",
+            masked_number="5531",
+            name=f"Cuenta {suffix}",
+            type="checking",
+            balance=Decimal("0"),
+            currency="EUR",
+        ))
+    await session.flush()
+
+    matched = await _find_existing_connected_account(
+        session,
+        conn,
+        AccountData(
+            external_id="new-uid",
+            name="Cuenta a",
+            type="checking",
+            balance=Decimal("0"),
+            currency="EUR",
+            masked_number="5531",
+        ),
+        None,
+        {"new-uid"},
+    )
+
+    assert matched is None
+
+
+@pytest.mark.asyncio
+async def test_find_existing_connected_account_does_not_rebind_a_claimed_stable_id(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A stable id already claimed in this run must not be adopted twice.
+
+    Enable Banking does not guarantee `identification_hash` is unique. If two
+    incoming accounts carry the same hash, the first can claim a row by
+    external_id and the second would then rebind that same row, storing both
+    transaction feeds against one account.id.
+    """
+    conn = await _make_connection(session, test_user.id, "SharedHashBank")
+    claimed = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn.id,
+        external_id="uid-b1",
+        stable_id="hash-shared",
+        name="A",
+        type="checking",
+        balance=Decimal("0"),
+        currency="EUR",
+    )
+    session.add(claimed)
+    await session.flush()
+
+    matched = await _find_existing_connected_account(
+        session,
+        conn,
+        AccountData(
+            external_id="uid-b2",
+            name="B",
+            type="checking",
+            balance=Decimal("0"),
+            currency="EUR",
+            stable_id="hash-shared",
+        ),
+        None,
+        {"uid-b1", "uid-b2"},
+    )
+
+    assert matched is None
+
+
+@pytest.mark.asyncio
+async def test_find_existing_connected_account_masked_fallback_skips_rows_with_a_stable_id(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The masked fallback is for legacy rows only, never for identified ones.
+
+    When a persisted account's details request is skipped (partial provider
+    failure) and a *different* account surfaces with the same masked number and
+    currency, the fallback would rebind the skipped row and overwrite its stable
+    id — mixing two account histories. Rows that already carry a stable id are
+    identified, so they must be out of scope for the fallback.
+    """
+    conn = await _make_connection(session, test_user.id, "MaskedBank")
+    identified = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn.id,
+        external_id="old-uid",
+        stable_id="hash-old",
+        masked_number="5531",
+        name="Cuenta vieja",
+        type="checking",
+        balance=Decimal("0"),
+        currency="EUR",
+    )
+    session.add(identified)
+    await session.flush()
+
+    matched = await _find_existing_connected_account(
+        session,
+        conn,
+        AccountData(
+            external_id="new-uid",
+            name="Cuenta nueva",
+            type="checking",
+            balance=Decimal("0"),
+            currency="EUR",
+            masked_number="5531",
+            stable_id="hash-new",
+        ),
+        None,
+        {"new-uid"},
+    )
+
+    assert matched is None
+
+
+@pytest.mark.asyncio
 async def test_simplefin_rekey_reserves_ids_from_later_accounts(
     session: AsyncSession, test_user, test_workspace,
 ):

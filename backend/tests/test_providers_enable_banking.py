@@ -6,6 +6,7 @@ HTTP is mocked end-to-end via httpx.MockTransport.
 """
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import patch
@@ -17,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import jwt
 
 from app.providers.base import (
+    ProviderDataUnavailable,
     ProviderUserActionRequired,
     SessionExpiredError,
     mask_last4,
@@ -552,6 +554,135 @@ async def test_refresh_credentials_valid_passes(eb_keys):
     creds = {"valid_until": future, "session_id_enc": "enc"}
     out = await provider.refresh_credentials(creds)
     assert out is creds
+
+@pytest.mark.asyncio
+async def test_get_accounts_raises_data_unavailable_when_every_account_fails(eb_keys):
+    """EB lists accounts but every /details call 400s with ASPSP_ERROR.
+
+    EB's FAQ classifies ASPSP_ERROR as a bank-side failure and says to retry
+    with backoff — it does not mean the consent died. What must NOT happen is
+    returning an empty list: sync would store nothing and leave the connection
+    "active", a silent false success. The provider surfaces the failure, and
+    the retry-vs-escalate decision belongs to the sync layer.
+    """
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-x":
+            return httpx.Response(200, json={
+                "session_id": "sess-x",
+                "accounts_data": [{"uid": "acc-1"}, {"uid": "acc-2"}],
+            })
+        if re.fullmatch(r"/accounts/[^/]+/details", request.url.path):
+            return httpx.Response(400, json={
+                "code": 400,
+                "message": "Error interacting with ASPSP",
+                "detail": {
+                    "message": "Unauthorized, authentication failure",
+                    "error_name": "HttpException",
+                    "error_data": {},
+                },
+                "error": "ASPSP_ERROR",
+            })
+        raise AssertionError(f"unexpected path {request.url.path}")
+
+    with _patch_client(provider, handler):
+        with pytest.raises(ProviderDataUnavailable):
+            await provider.get_accounts(_CREDENTIALS)
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_returns_empty_when_session_reports_no_accounts(eb_keys):
+    """A session with no linked accounts is a legitimate empty result."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-x":
+            return httpx.Response(200, json={"session_id": "sess-x", "accounts_data": []})
+        raise AssertionError(f"unexpected path {request.url.path}")
+
+    with _patch_client(provider, handler):
+        assert await provider.get_accounts(_CREDENTIALS) == []
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_keeps_working_accounts_when_one_fails(eb_keys):
+    """One failing account must not discard the accounts that did resolve."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-x":
+            return httpx.Response(200, json={
+                "session_id": "sess-x",
+                "accounts_data": [{"uid": "acc-1"}, {"uid": "acc-2"}],
+            })
+        if path == "/accounts/acc-2/details":
+            return httpx.Response(200, json={
+                "uid": "acc-2",
+                "display_name": "Good account",
+                "currency": "EUR",
+                "cash_account_type": "CACC",
+            })
+        if path == "/accounts/acc-2/balances":
+            return httpx.Response(200, json={"balances": []})
+        if re.fullmatch(r"/accounts/[^/]+/details", path):
+            return httpx.Response(400, json={
+                "code": 400,
+                "message": "Error interacting with ASPSP",
+                "error": "ASPSP_ERROR",
+                "detail": None,
+            })
+        raise AssertionError(f"unexpected path {path}")
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_CREDENTIALS)
+
+    assert [a.external_id for a in accounts] == ["acc-2"]
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_exposes_stable_identification_hash(eb_keys):
+    """EB's `uid` is session-scoped; `identification_hash` is the stable key.
+
+    Reauthorising mints a new session, so the same real account comes back with
+    a new uid. The hash is what survives that, and it already rides in the
+    /sessions payload this method fetches — carry it out on AccountData so the
+    sync can re-match the existing row instead of creating a duplicate.
+    """
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-x":
+            return httpx.Response(200, json={
+                "session_id": "sess-x",
+                "accounts_data": [
+                    {
+                        "uid": "acc-1",
+                        "identification_hash": "hash-1",
+                        "identification_hashes": ["hash-1"],
+                    },
+                ],
+            })
+        if path == "/accounts/acc-1/details":
+            return httpx.Response(200, json={
+                "uid": "acc-1",
+                "display_name": "Main",
+                "currency": "EUR",
+                "cash_account_type": "CACC",
+            })
+        if path == "/accounts/acc-1/balances":
+            return httpx.Response(200, json={"balances": []})
+        raise AssertionError(f"unexpected path {path}")
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_CREDENTIALS)
+
+    assert len(accounts) == 1
+    assert accounts[0].external_id == "acc-1"
+    assert accounts[0].stable_id == "hash-1"
+
 
 
 # ----- account identifier / masking (issue #408) -----

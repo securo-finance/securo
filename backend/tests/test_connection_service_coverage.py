@@ -31,12 +31,14 @@ from app.providers.base import (
     HoldingData,
     InstitutionData,
     InstitutionListData,
+    ProviderDataUnavailable,
     ProviderNotConfiguredError,
     ProviderUserActionRequired,
     SessionExpiredError,
     TransactionData,
 )
 from app.services.connection_service import (
+    SYNC_FAILURE_ESCALATION_THRESHOLD,
     _sync_holdings,
     get_oauth_url,
     get_reauth_url,
@@ -580,6 +582,98 @@ async def test_sync_fuzzy_matches_manual_transaction(session: AsyncSession, test
     assert manual.payee == "Starbucks"
 
 
+@pytest.mark.asyncio
+async def test_sync_rematches_rekeyed_account_by_stable_id(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Reauthorising a provider re-keys its accounts; reuse the row, don't duplicate.
+
+    Enable Banking's `uid` is scoped to a single session, so reauth hands back a
+    new uid for the same real account. Matching only on external_id inserted a
+    second account row and left the original (with its transactions) behind.
+    `identification_hash` survives the reauth, so the sync must rebind the
+    existing row to the new uid.
+    """
+    conn = await _make_connection(session, test_user.id, "ReauthBank")
+    conn_id, workspace_id, user_id = conn.id, test_workspace.id, test_user.id
+    existing = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
+        connection_id=conn_id, external_id="old-uid", stable_id="hash-1",
+        name="Checking", type="checking", balance=Decimal("10"), currency="EUR",
+    )
+    session.add(existing)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(external_id="new-uid", stable_id="hash-1", name="Checking",
+                    type="checking", balance=Decimal("25"), currency="EUR"),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn_id, workspace_id, user_id)
+
+    rows = (await session.execute(
+        select(Account).where(Account.connection_id == conn_id)
+    )).scalars().all()
+    assert len(rows) == 1, f"re-keyed account was duplicated: {len(rows)} rows"
+    assert rows[0].id == existing.id
+    assert rows[0].external_id == "new-uid"
+    assert rows[0].stable_id == "hash-1"
+
+
+@pytest.mark.asyncio
+async def test_sync_rematches_legacy_account_by_masked_number(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Rows predating `stable_id` must survive a reauth too.
+
+    A user whose bank was failing never had a stable_id backfilled — the sync
+    that would have done it is the one that was failing. When the bank recovers
+    after a reconnect the uid is new and the hash is unknown to us, so the
+    masked identifier is the last thing that still identifies the account.
+    Match on it rather than insert a duplicate.
+    """
+    conn = await _make_connection(session, test_user.id, "LegacyBank")
+    conn_id, workspace_id, user_id = conn.id, test_workspace.id, test_user.id
+    existing = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
+        connection_id=conn_id, external_id="old-uid", stable_id=None,
+        masked_number="5531", name="CUENTA CORRIENTE", type="checking",
+        balance=Decimal("10"), currency="EUR",
+    )
+    session.add(existing)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(external_id="new-uid", stable_id="hash-1", masked_number="5531",
+                    name="CUENTA CORRIENTE", type="checking",
+                    balance=Decimal("25"), currency="EUR"),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn_id, workspace_id, user_id)
+
+    rows = (await session.execute(
+        select(Account).where(Account.connection_id == conn_id)
+    )).scalars().all()
+    assert len(rows) == 1, f"legacy account was duplicated: {len(rows)} rows"
+    assert rows[0].id == existing.id
+    assert rows[0].external_id == "new-uid"
+    # The sync also backfills the hash it just learned, so the next reauth
+    # matches on the exact id instead of falling back to the mask.
+    assert rows[0].stable_id == "hash-1"
+
+
 # ---------------------------------------------------------------------------
 # sync_connection: SessionExpired / ProviderUserActionRequired
 # ---------------------------------------------------------------------------
@@ -641,6 +735,92 @@ async def test_sync_user_action_required_marks_error_status(
         select(BankConnection).where(BankConnection.id == conn_id)
     )).scalar_one()
     assert refreshed.status == "error"
+
+
+@pytest.mark.asyncio
+async def test_sync_data_unavailable_retries_before_flagging(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A bank-side data failure is retried, not escalated on first sight.
+
+    EB's FAQ says ASPSP_ERROR should be retried with backoff — the consent is
+    intact. So the connection stays "active", ``last_sync_at`` is left
+    untouched (the same window is retried) and the failure is counted.
+    """
+    conn = await _make_connection(session, test_user.id, "FlakyBank")
+    conn_id = conn.id
+    previous_sync = conn.last_sync_at
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(side_effect=ProviderDataUnavailable("no accounts"))
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        _, merged = await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+
+    refreshed = (await session.execute(
+        select(BankConnection).where(BankConnection.id == conn_id)
+    )).scalar_one()
+    assert merged == 0
+    assert refreshed.status == "active"
+    assert refreshed.last_sync_at == previous_sync
+    assert (refreshed.settings or {}).get("sync_failures") == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_data_unavailable_escalates_after_repeated_failures(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """After the retry budget is spent the user gets the reconnect banner.
+
+    Retrying forever would hide a bank that is genuinely broken, so the Nth
+    consecutive failure flips the connection to "error" — the frontend shows
+    reconnect/reauth for any non-active status — and raises a typed error.
+    """
+    conn = await _make_connection(session, test_user.id, "DeadBank")
+    # Capture the ids up front: sync_connection rolls the session back on the
+    # failure path, which expires every object in it, and re-reading an expired
+    # fixture attribute later would trigger an async lazy-load from sync code
+    # (sqlalchemy.exc.MissingGreenlet).
+    conn_id, workspace_id, user_id = conn.id, test_workspace.id, test_user.id
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(side_effect=ProviderDataUnavailable("no accounts"))
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        for _ in range(SYNC_FAILURE_ESCALATION_THRESHOLD - 1):
+            await sync_connection(session, conn_id, workspace_id, user_id)
+        with pytest.raises(ProviderUserActionRequired):
+            await sync_connection(session, conn_id, workspace_id, user_id)
+
+    refreshed = (await session.execute(
+        select(BankConnection).where(BankConnection.id == conn_id)
+    )).scalar_one()
+    assert refreshed.status == "error"
+
+
+@pytest.mark.asyncio
+async def test_sync_success_resets_the_failure_counter(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A good sync clears the streak so an old failure can't escalate later."""
+    conn = await _make_connection(
+        session, test_user.id, "RecoveredBank", settings={"sync_failures": 2},
+    )
+    conn_id = conn.id
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        result, _ = await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+
+    assert result.status == "active"
+    refreshed = (await session.execute(
+        select(BankConnection).where(BankConnection.id == conn_id)
+    )).scalar_one()
+    assert (refreshed.settings or {}).get("sync_failures") == 0
 
 
 # ---------------------------------------------------------------------------
