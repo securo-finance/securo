@@ -14,7 +14,10 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { ArrowRight, Info } from 'lucide-react'
-import type { Account } from '@/types'
+import { PocketAllocator } from '@/components/pocket-allocator'
+import { pocketAllocationsAreValid } from '@/lib/pocket-allocation-utils'
+import type { Account, GoalAllocationInput } from '@/types'
+import { toast } from 'sonner'
 
 export function TransferDialog({
   open,
@@ -35,6 +38,8 @@ export function TransferDialog({
     description: string
     notes?: string
     destination_amount?: number
+    from_goal_allocations?: GoalAllocationInput[]
+    to_goal_allocations?: GoalAllocationInput[]
   }) => void
   loading: boolean
   defaultFromAccountId?: string
@@ -49,6 +54,8 @@ export function TransferDialog({
   const [description, setDescription] = useState('')
   const [notes, setNotes] = useState('')
   const [destinationAmount, setDestinationAmount] = useState('')
+  const [fromGoalAllocations, setFromGoalAllocations] = useState<GoalAllocationInput[]>([])
+  const [toGoalAllocations, setToGoalAllocations] = useState<GoalAllocationInput[]>([])
 
   const [formSource, setFormSource] = useState<{ open: boolean; defaultFromAccountId?: string; firstAccountId: string } | null>(null)
   if (!formSource || formSource.open !== open || formSource.defaultFromAccountId !== defaultFromAccountId || formSource.firstAccountId !== firstAccountId) {
@@ -61,6 +68,8 @@ export function TransferDialog({
       setDescription('')
       setNotes('')
       setDestinationAmount('')
+      setFromGoalAllocations([])
+      setToGoalAllocations([])
     }
   }
 
@@ -80,6 +89,17 @@ export function TransferDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault()
+            const parsedAmount = parseFloat(amount)
+            const parsedDestination = isCrossCurrency
+              ? parseFloat(destinationAmount)
+              : parsedAmount
+            if (
+              !pocketAllocationsAreValid(fromGoalAllocations, parsedAmount)
+              || !pocketAllocationsAreValid(toGoalAllocations, parsedDestination)
+            ) {
+              toast.error(t('goals.allocationExceedsTransaction'))
+              return
+            }
             onSave({
               from_account_id: fromAccountId,
               to_account_id: toAccountId,
@@ -90,6 +110,8 @@ export function TransferDialog({
               destination_amount: isCrossCurrency && destinationAmount
                 ? parseFloat(destinationAmount)
                 : undefined,
+              from_goal_allocations: fromGoalAllocations,
+              to_goal_allocations: toGoalAllocations,
             })
           }}
           className="space-y-4"
@@ -104,6 +126,7 @@ export function TransferDialog({
                   setFromAccountId(e.target.value)
                   if (e.target.value === toAccountId) setToAccountId('')
                   setDestinationAmount('')
+                  setFromGoalAllocations([])
                 }}
                 required
               >
@@ -126,6 +149,7 @@ export function TransferDialog({
                 onChange={(e) => {
                   setToAccountId(e.target.value)
                   setDestinationAmount('')
+                  setToGoalAllocations([])
                 }}
                 required
               >
@@ -192,6 +216,24 @@ export function TransferDialog({
               />
             </div>
           )}
+
+          <PocketAllocator
+            accountId={fromAccountId}
+            transactionType="debit"
+            transactionAmount={parseFloat(amount) || 0}
+            transactionStatus="posted"
+            value={fromGoalAllocations}
+            onChange={setFromGoalAllocations}
+          />
+
+          <PocketAllocator
+            accountId={toAccountId}
+            transactionType="credit"
+            transactionAmount={isCrossCurrency ? (parseFloat(destinationAmount) || 0) : (parseFloat(amount) || 0)}
+            transactionStatus="posted"
+            value={toGoalAllocations}
+            onChange={setToGoalAllocations}
+          />
 
           <div className="space-y-2">
             <Label>{t('transactions.transferDescription')}</Label>
