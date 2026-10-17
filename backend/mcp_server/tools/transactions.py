@@ -9,7 +9,14 @@ from app.models.group import GroupMember
 from app.services import transaction_service
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
-from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
+from mcp_server.tools._helpers import (
+    num,
+    parse_date,
+    parse_uuid,
+    parse_uuid_list,
+    resolve_categories,
+    resolve_workspace_id,
+)
 
 
 @tool(
@@ -44,6 +51,7 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_li
                 "description": "Filter by account type — e.g. ['credit_card'] for 'all my credit-card transactions'",
             },
             "category_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}, "description": "Filter to specific categories"},
+            "category_names": {"type": "array", "items": {"type": "string"}, "description": "Category names (case-insensitive) when you don't have ids yet; unknown names return did_you_mean suggestions"},
             "payee_id": {"type": "string", "format": "uuid", "description": "Filter to a single payee"},
             "group_id": {"type": "string", "format": "uuid", "description": "Filter to transactions split with this expense-sharing group (Splitwise-style). The id comes from `list_groups`. Use this — NOT a `search:'group_id:...'` hack — to ask 'show all transactions in group X'."},
             "from_date": {"type": "string", "format": "date", "description": "Inclusive lower bound (YYYY-MM-DD)"},
@@ -100,6 +108,7 @@ async def list_transactions(
     account_ids: list[str] | None = None,
     account_types: list[str] | None = None,
     category_ids: list[str] | None = None,
+    category_names: list[str] | None = None,
     payee_id: str | None = None,
     group_id: str | None = None,
     from_date: str | None = None,
@@ -123,13 +132,16 @@ async def list_transactions(
     # not every provider enforces additionalProperties / maximum.
     limit = max(1, min(int(limit), 50))
     ws_id = await resolve_workspace_id(session, ctx)
+    cat_ids, cat_error = await resolve_categories(session, ws_id, ids=category_ids, names=category_names)
+    if cat_error:
+        return cat_error
     txs, total, _ = await transaction_service.get_transactions(
         session,
         ws_id,
         ctx.user_id,
         account_ids=parse_uuid_list(account_ids),
         account_types=account_types or None,
-        category_ids=parse_uuid_list(category_ids),
+        category_ids=cat_ids or None,
         payee_id=parse_uuid(payee_id) if payee_id else None,
         group_id=parse_uuid(group_id) if group_id else None,
         from_date=parse_date(from_date),

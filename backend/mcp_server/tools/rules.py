@@ -20,9 +20,21 @@ from mcp_server.tools.proposals import _APPLY_FIELD, _PROPOSAL_PREFACE, _can_app
 _RULE_CAPABILITIES = (
     " Conditions combine with AND/OR and filter description, payee, notes, "
     "amount, type, account_id, payee_id, date, or status (pending/posted). "
+    "Each condition is {field, op, value} where op is one of contains, "
+    "not_contains, equals, not_equals, starts_with, ends_with, regex, gt, "
+    "gte, lt, lte (status only accepts equals/not_equals with pending|posted). "
     "Actions can set category, payee, or description, append notes, or ignore "
     "the transaction."
 )
+
+
+def _invalid_rule(exc: Exception) -> dict[str, Any]:
+    """A rejected rule comes back with the vocabulary the model needs to fix it."""
+    return {
+        "error": str(exc) or "invalid rule",
+        "allowed": rule_service.condition_vocabulary(),
+        "hint": "Every condition is {field, op, value}; use one of the allowed fields and ops.",
+    }
 
 
 def _proposal_schema(
@@ -98,18 +110,21 @@ async def preview_rule(
             "offset": offset,
         }
     )
-    result = await rule_service.preview_rule(
-        session,
-        workspace_id,
-        draft.conditions_op,
-        [condition.model_dump() for condition in draft.conditions],
-        [action.model_dump() for action in draft.actions],
-        is_active=draft.is_active,
-        apply_to_existing=draft.apply_to_existing,
-        overwrite_existing_categories=draft.overwrite_existing_categories,
-        limit=draft.limit,
-        offset=draft.offset,
-    )
+    try:
+        result = await rule_service.preview_rule(
+            session,
+            workspace_id,
+            draft.conditions_op,
+            [condition.model_dump() for condition in draft.conditions],
+            [action.model_dump() for action in draft.actions],
+            is_active=draft.is_active,
+            apply_to_existing=draft.apply_to_existing,
+            overwrite_existing_categories=draft.overwrite_existing_categories,
+            limit=draft.limit,
+            offset=draft.offset,
+        )
+    except ValueError as exc:
+        return _invalid_rule(exc)
     return result.model_dump(mode="json")
 
 
@@ -141,28 +156,31 @@ async def propose_create_rule(
     apply: bool = False,
 ) -> dict[str, Any]:
     workspace_id = await resolve_workspace_id(session, ctx)
-    draft = RuleCreate.model_validate(
-        {
-            "name": name,
-            "conditions_op": conditions_op,
-            "conditions": conditions,
-            "actions": actions,
-            "priority": priority,
-            "is_active": is_active,
-            "apply_to_existing": apply_to_existing,
-            "overwrite_existing_categories": overwrite_existing_categories,
-        }
-    )
-    preview = await rule_service.preview_rule(
-        session,
-        workspace_id,
-        draft.conditions_op,
-        [condition.model_dump() for condition in draft.conditions],
-        [action.model_dump() for action in draft.actions],
-        is_active=draft.is_active,
-        apply_to_existing=draft.apply_to_existing,
-        overwrite_existing_categories=draft.overwrite_existing_categories,
-    )
+    try:
+        draft = RuleCreate.model_validate(
+            {
+                "name": name,
+                "conditions_op": conditions_op,
+                "conditions": conditions,
+                "actions": actions,
+                "priority": priority,
+                "is_active": is_active,
+                "apply_to_existing": apply_to_existing,
+                "overwrite_existing_categories": overwrite_existing_categories,
+            }
+        )
+        preview = await rule_service.preview_rule(
+            session,
+            workspace_id,
+            draft.conditions_op,
+            [condition.model_dump() for condition in draft.conditions],
+            [action.model_dump() for action in draft.actions],
+            is_active=draft.is_active,
+            apply_to_existing=draft.apply_to_existing,
+            overwrite_existing_categories=draft.overwrite_existing_categories,
+        )
+    except ValueError as exc:
+        return _invalid_rule(exc)
     proposal = {
         "kind": "create_rule",
         "proposed": draft.model_dump(mode="json"),
@@ -247,20 +265,23 @@ async def propose_update_rule(
         if update.apply_to_existing is not None
         else _rule_match_definition_changed(current, update)
     )
-    preview = await rule_service.preview_rule(
-        session,
-        workspace_id,
-        update.conditions_op or current.conditions_op,
-        [condition.model_dump() for condition in update.conditions]
-        if update.conditions is not None
-        else current.conditions,
-        [action.model_dump() for action in update.actions]
-        if update.actions is not None
-        else current.actions,
-        is_active=update.is_active if update.is_active is not None else current.is_active,
-        apply_to_existing=should_apply,
-        overwrite_existing_categories=update.overwrite_existing_categories,
-    )
+    try:
+        preview = await rule_service.preview_rule(
+            session,
+            workspace_id,
+            update.conditions_op or current.conditions_op,
+            [condition.model_dump() for condition in update.conditions]
+            if update.conditions is not None
+            else current.conditions,
+            [action.model_dump() for action in update.actions]
+            if update.actions is not None
+            else current.actions,
+            is_active=update.is_active if update.is_active is not None else current.is_active,
+            apply_to_existing=should_apply,
+            overwrite_existing_categories=update.overwrite_existing_categories,
+        )
+    except ValueError as exc:
+        return _invalid_rule(exc)
     proposal = {
         "kind": "update_rule",
         "target": current.model_dump(mode="json", exclude={"user_id"}),
