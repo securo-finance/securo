@@ -22,7 +22,7 @@ from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.account import Account
 from app.models.user import User
-from app.services import category_service
+from app.services import budget_service, category_service
 
 
 Row = TypeVar("Row")
@@ -315,7 +315,7 @@ async def test_a_recurring_budget_does_not_absorb_a_one_off_one(
     test_workspace,
     test_categories: list[Category],
 ):
-    """The two kinds live side by side on the same month, so they stay apart."""
+    """The one-off includes both limits without changing the recurring default."""
     source, destination = test_categories[0], test_categories[1]
     month = date.today().replace(day=1)
     moving = await _make_budget(
@@ -337,7 +337,99 @@ async def test_a_recurring_budget_does_not_absorb_a_one_off_one(
     assert response.status_code == 204
     session.expire_all()
     assert (await _reload(session, Budget, moving_id)).category_id == destination_id
-    assert (await _reload(session, Budget, standing_id)).amount == Decimal("500.00")
+    assert (await _reload(session, Budget, moving_id)).amount == Decimal("300.00")
+    assert (await _reload(session, Budget, standing_id)).amount == Decimal("800.00")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("different_authors", [False, True], ids=["one-author", "two-authors"])
+@pytest.mark.parametrize(
+    ("source_rows", "destination_rows", "expected"),
+    [
+        pytest.param(
+            [(1, "100", True)], [(3, "200", True)],
+            [(1, "100", True), (2, "100", True), (3, "300", True), (4, "300", True)],
+            id="source-starts-first",
+        ),
+        pytest.param(
+            [(3, "100", True)], [(1, "200", True)],
+            [(1, "200", True), (2, "200", True), (3, "300", True), (4, "300", True)],
+            id="destination-starts-first",
+        ),
+        pytest.param(
+            [(1, "100", True)], [(1, "200", True)],
+            [(1, "300", True), (2, "300", True)],
+            id="same-start-month",
+        ),
+        pytest.param(
+            [(1, "100", True), (2, "50", False)], [(1, "200", True)],
+            [(1, "300", True), (2, "250", False), (3, "300", True)],
+            id="source-monthly-override",
+        ),
+        pytest.param(
+            [(1, "100", True)], [(1, "200", True), (2, "50", False)],
+            [(1, "300", True), (2, "150", False), (3, "300", True)],
+            id="destination-monthly-override",
+        ),
+        pytest.param(
+            [(1, "100", True), (2, "50", False)],
+            [(1, "200", True), (2, "80", False)],
+            [(1, "300", True), (2, "130", False), (3, "300", True)],
+            id="both-monthly-overrides",
+        ),
+        pytest.param(
+            [(1, "100", True), (7, "150", True)],
+            [(3, "200", True), (9, "300", True)],
+            [
+                (1, "100", True), (3, "300", True), (6, "300", True),
+                (7, "350", True), (9, "450", True), (10, "450", True),
+            ],
+            id="future-changes-on-both-sides",
+        ),
+    ],
+)
+async def test_category_transfer_preserves_effective_budget_schedule(
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    test_categories: list[Category],
+    source_rows: list[tuple[int, str, bool]],
+    destination_rows: list[tuple[int, str, bool]],
+    expected: list[tuple[int, str, bool]],
+    different_authors: bool,
+):
+    source, destination = test_categories[:2]
+    destination_author = test_user
+    if different_authors:
+        destination_author = User(
+            id=uuid.uuid4(), email="budget-author@example.com", hashed_password="synthetic",
+        )
+        session.add(destination_author)
+        await session.commit()
+    destination_budget_ids: list[uuid.UUID] = []
+    for category, rows in ((source, source_rows), (destination, destination_rows)):
+        for month, amount, recurring in rows:
+            budget = await _make_budget(
+                session, destination_author if category is destination else test_user,
+                test_workspace, category.id,
+                amount=amount, month=date(2025, month, 1), is_recurring=recurring,
+            )
+            if category is destination:
+                destination_budget_ids.append(budget.id)
+
+    assert await category_service.delete_category(
+        session, source.id, test_workspace.id, transfer_to_id=destination.id
+    )
+
+    for month, amount, recurring in expected:
+        budgets = await budget_service.get_budgets(
+            session, test_workspace.id, month=date(2025, month, 1)
+        )
+        assert [(b.category_id, b.amount, b.is_recurring) for b in budgets] == [
+            (destination.id, Decimal(amount), recurring)
+        ]
+    for budget_id in destination_budget_ids:
+        assert (await _reload(session, Budget, budget_id)).user_id == destination_author.id
 
 
 @pytest.mark.asyncio
