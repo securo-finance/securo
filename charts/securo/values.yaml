@@ -13,6 +13,10 @@ global:
 
 # If existingSecret is NOT set, this secret will be created with the values below
 secret:
+  # S3 credentials; omit both to use the SDK credential chain (e.g. IAM roles).
+  storageS3AccessKey: ""
+  storageS3SecretKey: ""
+  storageS3SessionToken: ""
   # MUST change in production
   secretKey: "dev-secret-change-in-production"
   # If postgresql.enabled is true, the internal database will be deployed.
@@ -75,7 +79,12 @@ config:
   celeryBrokerUrl: 'redis://{{ include "securo.fullname" . }}-redis-master:6379/0'
   celeryResultBackend: 'redis://{{ include "securo.fullname" . }}-redis-master:6379/0'
 
+  storageProvider: "local"
   storageLocalPath: "/app/data/attachments"
+  storageS3Bucket: ""
+  storageS3Region: ""
+  storageS3EndpointUrl: ""
+  storageS3AddressingStyle: "auto" # use path for Garage/MinIO
   agentsKnowledgeStoragePath: "/app/data/agent_knowledge"
 
   # Agents feature
@@ -179,6 +188,7 @@ mcpServer:
 # `ReadWriteOnce` will only work if you restrict all pods to a single node.
 persistence:
   attachments:
+    # Set false when using S3; migrate existing files before disabling this PVC.
     enabled: true
     size: 5Gi
     storageClass: ""

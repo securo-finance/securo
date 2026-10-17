@@ -18,6 +18,12 @@
 - Persistent Volume (PV) provisioner support in the underlying infrastructure
 
 ### Persistent Storage Requirements
+
+The following shared-file requirement applies to **local storage**. With
+`config.storageProvider: s3`, attachments and invoice logos use object storage;
+you can disable `persistence.attachments.enabled` after migrating existing files.
+AI knowledge documents and embedding caches still need their configured volumes.
+
 Since the Backend, Celery Worker, and MCP Server all share the same files (like uploaded attachments and AI knowledge bases), they all mount the same Persistent Volume Claims concurrently.
 **If your cluster spans multiple nodes, you MUST use a StorageClass that supports `ReadWriteMany` (RWX) access mode (e.g., NFS, CephFS, or Longhorn RWX).**
 If your storage only supports `ReadWriteOnce` (RWO), you must restrict all Securo pods to run on a single node (using `nodeSelector` or `podAffinity`) but that is an antipattern in Kubernetes.
@@ -52,7 +58,37 @@ global:
   existingSecret: "my-securo-secrets"
 ```
 
-The secret must contain the corresponding keys (e.g., `secretKey`, `databaseUrl`, `agentsOpenaiApiKey`).
+The existing Secret must contain environment-variable keys (e.g., `SECRET_KEY`,
+`DATABASE_URL`, `AGENTS_OPENAI_API_KEY`). The camelCase names in `values.yaml`
+are converted to these names only when the chart creates the Secret itself.
+
+### S3 attachment storage
+
+```yaml
+config:
+  storageProvider: s3
+  storageS3Bucket: securo-attachments
+  storageS3Region: garage
+  storageS3EndpointUrl: https://s3.example.com
+  storageS3AddressingStyle: path
+persistence:
+  attachments:
+    enabled: false
+global:
+  existingSecret: securo-secrets
+```
+
+In addition to the usual application secrets, provide `STORAGE_S3_ACCESS_KEY`
+and `STORAGE_S3_SECRET_KEY` in `securo-secrets` (optionally
+`STORAGE_S3_SESSION_TOKEN`). Alternatively, use `secret.storageS3AccessKey`,
+`secret.storageS3SecretKey`, and `secret.storageS3SessionToken` when letting Helm
+create the Secret. Leave credentials unset when using an SDK-supported workload
+identity. For AWS S3, omit the endpoint and use addressing style `auto`.
+
+Create a private bucket before deployment and migrate existing attachments
+before disabling their PVC. Consult the repository README's Attachment Storage
+section for permissions, migration, and integration testing. S3 mode does not
+move AI knowledge files to object storage.
 
 ## Uninstalling the Chart
 

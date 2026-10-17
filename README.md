@@ -96,6 +96,75 @@ SIMPLEFIN_API_URL=https://beta-bridge.simplefin.org   # sandbox; use bridge.simp
 
 Then in Securo: **Accounts → Connect Bank → SimpleFIN**, and paste the token. The [developer page](https://beta-bridge.simplefin.org/info/developers) gives out free demo tokens if you want to try it without a real bank.
 
+## Attachment Storage
+
+Attachments and invoice logos use local disk by default. Set `STORAGE_PROVIDER=s3`
+to store them in a private Amazon S3 or S3-compatible bucket (including Garage
+and MinIO). Create the bucket first; Securo does not create buckets or change
+their access policies. Downloads continue through Securo's existing authorized
+API routes, so no public bucket, browser S3 credentials, or bucket CORS policy
+is needed.
+
+Example for Garage in the root `.env` (Compose) or `backend/.env` (direct install):
+
+```dotenv
+STORAGE_PROVIDER=s3
+STORAGE_S3_BUCKET=securo-attachments
+STORAGE_S3_REGION=garage
+STORAGE_S3_ENDPOINT_URL=https://s3.example.com
+STORAGE_S3_ADDRESSING_STYLE=path
+STORAGE_S3_ACCESS_KEY=your-access-key
+STORAGE_S3_SECRET_KEY=your-secret-key
+```
+
+Use the region configured on your Garage server. For Amazon S3, omit
+`STORAGE_S3_ENDPOINT_URL`, use the bucket's AWS region, and leave
+`STORAGE_S3_ADDRESSING_STYLE=auto` (the default). `virtual` is also supported.
+Temporary credentials can include `STORAGE_S3_SESSION_TOKEN`. Omit both access
+and secret keys to use the SDK's credential chain, such as an IAM role; the
+container must actually have access to that identity. Standard AWS credential
+environment variables are not automatically forwarded by the bundled Compose
+files. HTTPS certificate verification remains enabled; HTTP endpoints are
+accepted for local development.
+
+Grant the application only read/write/delete access to its bucket objects
+(`s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on AWS). Garage uses its own
+bucket permissions: grant the dedicated application key read and write; owner
+permissions are not needed. Configure the same storage settings for all backend,
+worker, and MCP processes. Restart/recreate the containers after changing `.env`.
+Local attachment volumes are unused in S3 mode. AI knowledge documents and
+embedding caches still use their separate local storage settings.
+
+### Moving existing attachments
+
+The storage setting applies to every attachment; individual records do not
+remember their previous provider. Stop the backend and any worker/MCP processes
+that can write files, then copy the **contents** of the existing attachments
+directory into the bucket, preserving relative paths as object keys. This also
+copies invoice attachments and logos. Verify file counts and contents before
+switching the setting and restarting. No database migration is needed. Keep the
+original copy until verification is complete; reverting after new S3 uploads
+requires copying those objects back to local storage too.
+
+Back up both PostgreSQL and the bucket. Bucket replication does not replace
+backups and a database-only restore does not recover attachment contents.
+
+### Testing an S3-compatible server
+
+Unit tests run without an S3 server. An optional integration test exercises the
+real SDK over HTTP(S), including bytes, content type, and idempotent deletion.
+Use a **dedicated test bucket** and provide these variables only to the test
+process (it writes and deletes randomly prefixed test objects):
+
+```bash
+SECURO_S3_TEST_ENDPOINT=https://s3.example.com \
+SECURO_S3_TEST_REGION=garage \
+SECURO_S3_TEST_BUCKET=securo-storage-tests \
+SECURO_S3_TEST_ACCESS_KEY=test-key \
+SECURO_S3_TEST_SECRET_KEY=test-secret \
+uv run --directory backend pytest tests/test_s3_storage_integration.py -v
+```
+
 ## OIDC Login (Optional)
 
 Securo can delegate login to any standard OIDC provider, including Authentik and Pocket ID. Create a confidential/web application in your provider and register this redirect URI:
