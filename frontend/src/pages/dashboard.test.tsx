@@ -135,4 +135,25 @@ describe('Dashboard net worth breakdown', () => {
     const cardRow = within(tooltip).getByText(t('dashboard.creditCardBalance')).parentElement!
     expect(cardRow).toHaveTextContent(formatCurrency(-500, 'USD', 'en-US'))
   })
+
+  it('lists mortgage debt as its own row instead of available balance', async () => {
+    api.accounts.list.mockResolvedValue([
+      ...accounts,
+      account({ id: 'mortgage', name: 'Mortgage', type: 'loan', current_balance: -40000 }),
+    ])
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+
+    const tooltip = await screen.findByRole('tooltip')
+    const availableRow = within(tooltip).getByText(t('dashboard.availableBalance')).parentElement!
+    expect(availableRow).toHaveTextContent(formatCurrency(1000, 'USD', 'en-US'))
+    const loanRow = within(tooltip).getByText(t('dashboard.loanBalance')).parentElement!
+    expect(loanRow).toHaveTextContent(formatCurrency(-40000, 'USD', 'en-US'))
+  })
 })

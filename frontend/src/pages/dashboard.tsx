@@ -414,11 +414,15 @@ export default function DashboardPage() {
   const accountsUnavailable = accountsLoading || accountsError
   const creditCardBalance = sumAccountBalances((accountsList ?? [])
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card'))
-  // Net worth's "Available balance" breakdown row: every non-card account
-  // (unlike the headline `availableBalance`, which is checking/savings only),
-  // so it reconciles with `totalBalance` — which sums all account types.
+  const loanBalance = (accountsList ?? [])
+    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'loan')
+    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
+  // Net worth's "Available balance" breakdown row: every account that is not
+  // a card or loan (unlike the headline `availableBalance`, which is
+  // checking/savings only), so with the card and loan rows it reconciles with
+  // `totalBalance` — which sums all account types.
   const nonCardAccountsBalance = (accountsList ?? [])
-    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type !== 'credit_card')
+    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type !== 'credit_card' && a.type !== 'loan')
     .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
 
   // Savings rate & projection
@@ -817,6 +821,12 @@ export default function DashboardPage() {
                       <div className="flex justify-between gap-3">
                         <span>{t('dashboard.creditCardBalance')}</span>
                         <span>{mask(formatCurrency(creditCardBalance, primaryCurrency, locale))}</span>
+                      </div>
+                    )}
+                    {loanBalance !== 0 && (
+                      <div className="flex justify-between gap-3">
+                        <span>{t('dashboard.loanBalance')}</span>
+                        <span>{mask(formatCurrency(loanBalance, primaryCurrency, locale))}</span>
                       </div>
                     )}
                     {hasProjectedBalance && (
