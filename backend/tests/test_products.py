@@ -372,6 +372,19 @@ class TestSchedules:
         s = await schedules.make_recurring(session, inv, test_user.id, {"frequency": "monthly", "name": "R"}, today=TODAY)
         assert s.terms[0].lines[0]["product_id"] == str(p.id)
 
+    @pytest.mark.asyncio
+    async def test_make_recurring_inherits_refs_the_product_gains_later(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id)
+        inv = await an_invoice(session, ws_id, test_user.id, [{"description": "Hour", "unit_price": "200", "product_id": p.id}])
+        assert inv.lines[0].fiscal_refs is None
+        s = await schedules.make_recurring(session, inv, test_user.id, {"frequency": "monthly", "name": "R"}, today=TODAY)
+        await session.commit()
+        assert "fiscal_refs" not in s.terms[0].lines[0]
+        await svc.update_product(session, p, {"fiscal_refs": {"service_code": "1.05"}})
+        await session.commit()
+        [later] = await schedules.generate_due(session, s, today=date(2026, 10, 23))
+        assert later.lines[0].fiscal_refs == {"service_code": "1.05"}
+
 
 # ---------------------------------------------------------------------------
 # Over HTTP
@@ -744,6 +757,45 @@ async def test_schedule_fiscal_ref_inheritance_survives_term_writes_over_http(
         assert [row["fiscal_refs"] for row in invoice["lines"]] == [
             catalog_refs, None, None, {"service_code": "line-code"},
         ]
+
+
+@pytest.mark.asyncio
+async def test_new_term_inherits_refs_the_product_gains_later_over_http(
+    client: AsyncClient, biz_headers,
+):
+    response = await client.post("/api/products", headers=biz_headers, json={"name": "Design"})
+    assert response.status_code == 201, response.text
+    product_id = response.json()["id"]
+    # The shape InvoiceLineEditor sends after a product with no refs is picked.
+    line = {"description": "Design", "quantity": "1", "unit_price": "100", "product_id": product_id, "price_id": None}
+    start = date(date.today().year + 1, 1, 1)
+    response = await client.post(
+        "/api/invoice-schedules", headers=biz_headers,
+        json={
+            "name": "Design retainer", "frequency": "monthly", "currency": "USD",
+            "start_date": start.isoformat(), "lines": [line],
+        },
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    response = await client.post(
+        f"/api/invoice-schedules/{schedule_id}/terms", headers=biz_headers,
+        json={"effective_from": start.replace(month=2).isoformat(), "lines": [line]},
+    )
+    assert response.status_code == 201, response.text
+
+    refs = {"service_code": "added-later"}
+    response = await client.patch(
+        f"/api/products/{product_id}", headers=biz_headers, json={"fiscal_refs": refs},
+    )
+    assert response.status_code == 200, response.text
+    for _ in range(2):
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/generate", headers=biz_headers,
+        )
+        assert response.status_code == 201, response.text
+        [invoice] = response.json()
+        assert invoice["lines"][0]["fiscal_refs"] == refs
 
 
 @pytest.mark.asyncio

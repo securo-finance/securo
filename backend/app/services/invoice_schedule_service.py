@@ -955,7 +955,9 @@ def _lines_from_invoice(invoice: Invoice, fallback_description: str) -> list[dic
                 "tax_rate": line.tax_rate,
                 "product_id": line.product_id,
                 "price_id": line.price_id,
-                "fiscal_refs": line.fiscal_refs,
+                # An invoice line without refs leaves the term inheriting
+                # from its product; sending None would store an explicit clear.
+                **({"fiscal_refs": line.fiscal_refs} if line.fiscal_refs else {}),
             }
             for line in invoice.lines
         ]
