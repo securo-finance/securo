@@ -400,3 +400,56 @@ async def test_receiver_credit_lands_on_owner_when_self_member_unlinked(
     assert receiver_tx.account_id == owner_account.id
     assert receiver_tx.type == "credit"
     assert receiver_tx.amount == Decimal("20.00")
+
+
+@pytest.mark.asyncio
+async def test_receiver_credit_prefers_account_in_group_workspace(
+    session: AsyncSession, test_user, test_workspace
+):
+    """An owner with several workspaces gets the settlement credit in the
+    group's workspace, not in whichever workspace has the alphabetically
+    first account (#1143)."""
+    other_ws = await workspace_service.create_workspace(
+        session, name="Business", creator=test_user, self_membership=True
+    )
+    other_account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other_ws.id,
+        name="AAA Business", type="checking", balance=Decimal("0"), currency="USD",
+    )
+    group_ws_account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="ZZZ Personal", type="checking", balance=Decimal("0"), currency="USD",
+    )
+    session.add_all([other_account, group_ws_account])
+    await session.flush()
+
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="TwoWorkspaces")
+    )
+    owner_self = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="Me", is_self=True)
+    )
+    friend = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="Friend")
+    )
+    assert owner_self is not None
+    assert friend is not None
+
+    s = await settlement_service.create_settlement(
+        session,
+        group.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementCreate(
+            from_member_id=friend.id,
+            to_member_id=owner_self.id,
+            amount=Decimal("20.00"),
+            currency="USD",
+            date=date.today(),
+        ),
+    )
+    assert s is not None
+    receiver_tx = await session.get(Transaction, s.receiver_transaction_id)
+    assert receiver_tx is not None
+    assert receiver_tx.account_id == group_ws_account.id
+    assert receiver_tx.workspace_id == test_workspace.id

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -110,12 +110,19 @@ async def _create_payment_transaction(
 
 
 async def _pick_default_account_for_user(
-    session: AsyncSession, user_id: uuid.UUID
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    preferred_workspace_id: Optional[uuid.UUID] = None,
 ) -> Optional[Account]:
     """Return the user's first non-archived checking/savings account
     across any workspace they belong to. Used as the auto-target for
     receiver-side settlement credits — the receiver may sit in a
-    different workspace than where the settlement was recorded."""
+    different workspace than where the settlement was recorded.
+
+    Accounts in `preferred_workspace_id` (the group's workspace) come
+    first, so a user with several workspaces is credited where the group
+    lives rather than wherever the alphabetically first account is (#1143).
+    """
     from app.models.workspace import WorkspaceMember
 
     # Resolve the workspaces the user can write to. Pick the first
@@ -130,7 +137,10 @@ async def _pick_default_account_for_user(
             Account.is_closed.is_(False),
             Account.type.in_(("checking", "savings")),
         )
-        .order_by(Account.name)
+        .order_by(
+            case((Account.workspace_id == preferred_workspace_id, 0), else_=1),
+            Account.name,
+        )
     )
     return result.scalars().first()
 
@@ -142,15 +152,18 @@ async def _create_receiver_credit(
     currency: str,
     when,
     description: str,
+    preferred_workspace_id: Optional[uuid.UUID] = None,
 ) -> Optional[Transaction]:
     """Mirror a settlement credit on the receiver's side.
 
-    Picks the receiver's first checking/savings account from any
-    workspace they belong to and stamps the credit there. Returns None
+    Picks the receiver's first checking/savings account, preferring the
+    group's workspace, and stamps the credit there. Returns None
     silently when the receiver has no suitable account — they can do
     it manually or the next time they reconcile from their bank sync.
     """
-    account = await _pick_default_account_for_user(session, receiver_user_id)
+    account = await _pick_default_account_for_user(
+        session, receiver_user_id, preferred_workspace_id
+    )
     if account is None:
         return None
     tx = Transaction(
@@ -305,6 +318,7 @@ async def create_settlement(
             data.currency,
             data.date,
             receiver_desc,
+            preferred_workspace_id=group.workspace_id,
         )
         if receiver_tx is not None:
             receiver_tx_id = receiver_tx.id
