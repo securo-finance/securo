@@ -58,6 +58,9 @@ class AccountRead(AccountBase):
     current_balance: float = 0.0
     previous_balance: Optional[float] = None
     balance_primary: Optional[float] = None
+    # True when the account is in a foreign currency and no real FX rate is
+    # available, so balance_primary is left unset rather than a 1:1 guess.
+    fx_fallback: bool = False
     credit_limit: Optional[float] = None
     available_credit: Optional[float] = None
     statement_close_day: Optional[int] = None

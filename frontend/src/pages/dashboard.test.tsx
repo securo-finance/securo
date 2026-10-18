@@ -136,3 +136,30 @@ describe('Dashboard net worth breakdown', () => {
     expect(cardRow).toHaveTextContent(formatCurrency(-500, 'USD', 'en-US'))
   })
 })
+
+describe('Dashboard available balance without an FX rate', () => {
+  const renderDashboard = () => renderWithProviders(
+    <TooltipProvider delayDuration={0}>
+      <DashboardPage />
+    </TooltipProvider>,
+  )
+
+  it('shows an unconverted account in its own currency and flags the total', async () => {
+    api.accounts.list.mockResolvedValue([
+      account({ id: 'checking', name: 'Checking', current_balance: 1000 }),
+      account({ id: 'eur', name: 'Euro Savings', type: 'savings', currency: 'EUR', current_balance: 100, fx_fallback: true }),
+    ])
+    renderDashboard()
+
+    const chip = (await screen.findByText('Euro Savings')).closest('a')!
+    expect(chip).toHaveTextContent(formatCurrency(100, 'EUR', 'en-US'))
+    expect(screen.getByLabelText(t('transactions.fxFallbackBanner'))).toBeInTheDocument()
+  })
+
+  it('does not flag the total when every account is converted', async () => {
+    renderDashboard()
+
+    await screen.findByText('Checking')
+    expect(screen.queryByLabelText(t('transactions.fxFallbackBanner'))).not.toBeInTheDocument()
+  })
+})

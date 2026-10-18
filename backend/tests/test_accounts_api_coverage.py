@@ -5,10 +5,15 @@ balance-history and bills endpoints, plus 404/400 error branches and the
 non-primary-currency conversion path.
 """
 
+from decimal import Decimal
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.fx_rate import FxRate
 
 
 NONEXISTENT = "00000000-0000-0000-0000-000000000000"
@@ -40,9 +45,14 @@ async def test_list_accounts_include_closed(client: AsyncClient, auth_headers):
 
 @pytest.mark.asyncio
 async def test_list_accounts_foreign_currency_conversion(
-    client: AsyncClient, auth_headers
+    client: AsyncClient, auth_headers, session: AsyncSession
 ):
-    """A non-primary-currency account triggers the convert() balance_primary path."""
+    """A non-primary-currency account is converted with the stored rate."""
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=app_today(),
+        rate=Decimal("5.0"), source="test",
+    ))
+    await session.commit()
     await client.post(
         "/api/accounts", headers=auth_headers,
         json={"name": "USD Wallet", "type": "checking", "balance": "100.00", "currency": "USD"},
@@ -50,7 +60,39 @@ async def test_list_accounts_foreign_currency_conversion(
     resp = await client.get("/api/accounts", headers=auth_headers)
     assert resp.status_code == 200
     usd = next(a for a in resp.json() if a["name"] == "USD Wallet")
-    assert "balance_primary" in usd
+    assert usd["balance_primary"] == pytest.approx(500.0)
+    assert usd["fx_fallback"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_accounts_foreign_currency_without_rate(
+    client: AsyncClient, auth_headers
+):
+    """Without a real rate the balance is not presented as converted (#1165).
+
+    The 1:1 fallback used to come back as balance_primary, so the dashboard
+    showed a EUR balance with the primary currency's symbol and summed it as
+    if it were already converted.
+    """
+    await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "EUR Wallet", "type": "checking", "balance": "100.00", "currency": "EUR"},
+    )
+    resp = await client.get("/api/accounts", headers=auth_headers)
+    assert resp.status_code == 200
+    eur = next(a for a in resp.json() if a["name"] == "EUR Wallet")
+    assert eur["balance_primary"] is None
+    assert eur["fx_fallback"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_accounts_primary_currency_has_no_fallback_flag(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    resp = await client.get("/api/accounts", headers=auth_headers)
+    brl = next(a for a in resp.json() if a["id"] == str(test_account.id))
+    assert brl["balance_primary"] is None
+    assert brl["fx_fallback"] is False
 
 
 # ---------------------------------------------------------------------------

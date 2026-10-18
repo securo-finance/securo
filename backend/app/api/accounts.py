@@ -20,7 +20,7 @@ from app.schemas.account import (
     CreditCardBillRead,
 )
 from app.services import account_service
-from app.services.fx_rate_service import convert
+from app.services.fx_rate_service import _resolve_rate, convert
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -35,10 +35,15 @@ async def list_accounts(
     primary_currency = ctx.user.primary_currency
     for acc in accounts:
         if acc["currency"] != primary_currency:
-            converted, _ = await convert(
-                session, Decimal(str(acc["current_balance"])), acc["currency"], primary_currency,
-            )
-            acc["balance_primary"] = float(converted)
+            # Use the real rate only: the 1:1 fallback would present a foreign
+            # balance as already converted (issue #1165). Leaving it unset makes
+            # the UI show the native currency and flag the missing rate.
+            rate = await _resolve_rate(session, acc["currency"], primary_currency)
+            if rate is None:
+                acc["fx_fallback"] = True
+            else:
+                converted = Decimal(str(acc["current_balance"])) * rate
+                acc["balance_primary"] = float(converted.quantize(Decimal("0.01")))
     return accounts
 
 
