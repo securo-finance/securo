@@ -155,10 +155,12 @@ async def _net_worth_at(
 
     # Cards on one consolidated credit line (same shared_balance_group) each
     # carry the whole line's debt, so they are summed as one item, the same way
-    # the dashboard's _total_balance_by_currency does.
+    # the dashboard's _total_balance_by_currency does. Only credit cards: an
+    # account retyped to checking keeps its group but no longer shares the debt.
     grouped: dict[str, list[Account]] = {}
     for account in accounts:
-        grouped.setdefault(account.shared_balance_group or str(account.id), []).append(account)
+        shared = account.shared_balance_group if account.type == "credit_card" else None
+        grouped.setdefault(shared or str(account.id), []).append(account)
 
     for key, group in grouped.items():
         account = group[0]

@@ -1007,6 +1007,23 @@ async def test_net_worth_backtracks_shared_credit_line_across_all_cards(
 
 
 @pytest.mark.asyncio
+async def test_net_worth_does_not_merge_a_retyped_shared_card(
+    session: AsyncSession, test_user, test_workspace: User,
+):
+    first, second = await _make_shared_credit_cards(
+        session, test_user.id, test_workspace.id, "500"
+    )
+    second.type = "checking"
+    await session.commit()
+
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "BRL")
+
+    # The card owes 500; the retyped account reads as +500 checking.
+    assert dp.breakdowns["liabilities"] == 500.0
+    assert dp.breakdowns["accounts"] == 500.0
+
+
+@pytest.mark.asyncio
 async def test_net_worth_with_assets(session: AsyncSession, test_user, test_workspace: User):
     checking = await _make_manual_account(session, test_user.id, "NW Assets Check")
     await _add_txn(session, test_user.id, checking.id, 3000, "credit", date.today())

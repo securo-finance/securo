@@ -101,7 +101,7 @@ async def _resolve_current_amount(
         for acc in accounts:
             # Cards on one consolidated credit line each carry the whole
             # line's debt; count it once.
-            if acc.shared_balance_group:
+            if acc.shared_balance_group and acc.type == "credit_card":
                 if acc.shared_balance_group in seen_shared:
                     continue
                 seen_shared.add(acc.shared_balance_group)
