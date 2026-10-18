@@ -14,6 +14,9 @@ export function isGatewayTimeout(err: unknown): boolean {
 // can outlast a proxy's timeout while the import itself succeeds (issue
 // #1148). Poll the connection list until a connection for `provider` that
 // wasn't in `knownIds` appears; null once `timeoutMs` passes without one.
+// The client can't tell which connection its own request created, so when
+// more than one new connection for `provider` shows up (another connect ran
+// at the same time) it gives up with null rather than claim one of them.
 export async function waitForNewConnection(
   provider: string,
   knownIds: ReadonlySet<string>,
@@ -27,8 +30,9 @@ export async function waitForNewConnection(
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
     try {
-      const found = (await list()).find((c) => c.provider === provider && !knownIds.has(c.id))
-      if (found) return found
+      const added = (await list()).filter((c) => c.provider === provider && !knownIds.has(c.id))
+      if (added.length === 1) return added[0]
+      if (added.length > 1) return null
     } catch {
       // The list can fail for the same reason the callback did; keep trying.
     }

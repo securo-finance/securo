@@ -48,6 +48,19 @@ describe('waitForNewConnection', () => {
     expect(list).toHaveBeenCalledTimes(3)
   })
 
+  it('gives up with null when two new connections make it ambiguous', async () => {
+    const list = vi.fn().mockResolvedValue([conn('old'), conn('mine'), conn('theirs')])
+
+    const found = await waitForNewConnection('simplefin', new Set(['old']), {
+      intervalMs: 1,
+      timeoutMs: 1000,
+      list,
+    })
+
+    expect(found).toBeNull()
+    expect(list).toHaveBeenCalledTimes(1)
+  })
+
   it('gives up with null when nothing new appears', async () => {
     const list = vi.fn().mockResolvedValue([conn('old'), conn('other', 'pluggy')])
 
