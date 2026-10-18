@@ -1818,17 +1818,20 @@ async def _find_synced_duplicate(
                     else _txn_fingerprint(account_uid, raw, legacy=True)
                 )
                 if old_id not in incoming_external_ids:
-                    candidate = await session.scalar(select(Transaction).where(
+                    # The old key omitted counterparty names, so it can be
+                    # shared by rows that are not this transaction.
+                    legacy_rows = await session.scalars(select(Transaction).where(
                         Transaction.account_id == account_id,
                         Transaction.source == "sync",
                         Transaction.external_id == old_id,
                     ))
-                    if (
-                        candidate is not None
-                        and isinstance(candidate.raw_data, dict)
-                        and _txn_fingerprint(account_uid, candidate.raw_data) == txn_data.external_id
-                    ):
-                        return candidate
+                    for candidate in legacy_rows:
+                        if (
+                            isinstance(candidate.raw_data, dict)
+                            and _txn_fingerprint(account_uid, candidate.raw_data)
+                            == txn_data.external_id
+                        ):
+                            return candidate
 
     # Path 1: installment fingerprint. Highly specific, so we don't require a
     # description match on top.
@@ -1892,8 +1895,12 @@ async def _find_synced_duplicate(
                 booked[key] = raw.get(key)
             if _txn_fingerprint(eb_account_uid, booked) == txn_data.external_id:
                 matches.append(candidate)
+        # Every match re-derives this exact bank identity, so several are
+        # copies of one transaction (external_id is not unique). Claim one:
+        # the token-overlap pass below cannot, since legacy rows often only
+        # carry the old "Transaction" description.
         if matches:
-            return matches[0] if len(matches) == 1 else None
+            return matches[0]
     for candidate in candidates:
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
             continue

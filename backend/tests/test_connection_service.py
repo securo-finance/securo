@@ -7245,3 +7245,81 @@ async def test_enable_banking_rekeys_legacy_fingerprint_without_merging_counterp
     assert preserved.category_id == test_categories[0].id
     assert preserved.notes == "Keep my note"
     assert {row.external_id for row in rows} == {incoming.external_id, distinct.external_id}
+
+
+@pytest.mark.parametrize("legacy_pending", [False, True])
+@pytest.mark.parametrize("first_creditor", ["Coffee Shop", "Bakery"])
+async def test_enable_banking_claims_one_of_several_legacy_rows(
+    session, test_user, test_workspace, legacy_pending, first_creditor,
+):
+    from app.providers.enable_banking import EnableBankingProvider
+
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "BRL"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "value_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    incoming = EnableBankingProvider()._build_transaction("acc-uid-1", raw, "posted", "auto")
+    assert incoming is not None
+
+    connection = await _make_connection(
+        session, test_user.id, "Synthetic Enable Banking", settings={"sync_assets": False},
+    )
+    connection.provider = "enable_banking"
+    account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, connection_id=connection.id,
+        external_id="acc-uid-1", name="Checking", type="checking",
+        balance=Decimal("1000"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    # external_id has no unique constraint, so a sync race can leave two rows
+    # under one v0.16.1 fingerprint, which never included counterparty names.
+    legacy_id = (
+        "8884d2776e1305036056d5f6bcd20ec4" if legacy_pending
+        else "92da8ed1d8d86daf9bf06b802eda90f7"
+    )
+    for creditor in (first_creditor, "Coffee Shop"):
+        stored_raw = deepcopy(raw)
+        stored_raw["creditor"] = {"name": creditor}
+        if legacy_pending:
+            stored_raw.pop("booking_date")
+        session.add(Transaction(
+            user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+            external_id=legacy_id, description="Transaction", original_description="Transaction",
+            amount=incoming.amount, date=incoming.date, type="debit", currency="BRL",
+            status="pending" if legacy_pending else "posted", source="sync",
+            raw_data=stored_raw,
+        ))
+        await session.flush()
+    await session.commit()
+    account_id = account.id
+
+    provider = AsyncMock()
+    provider.refresh_credentials.return_value = {"token": "synthetic"}
+    provider.get_institution_logo.return_value = None
+    provider.get_accounts.return_value = [AccountData(
+        external_id="acc-uid-1", name="Checking", type="checking",
+        balance=Decimal("1000"), currency="BRL",
+    )]
+    provider.get_transactions.return_value = [incoming]
+    with patch("app.services.connection_service.get_provider", return_value=provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, connection.id, test_workspace.id, test_user.id)
+
+    rows = (await session.scalars(select(Transaction).where(
+        Transaction.account_id == account_id, Transaction.source == "sync",
+    ))).all()
+    assert len(rows) == 2
+    claimed = [row for row in rows if row.external_id == incoming.external_id]
+    assert len(claimed) == 1
+    assert claimed[0].status == "posted"
+    assert claimed[0].raw_data["creditor"] == {"name": "Coffee Shop"}
+    unclaimed = next(row for row in rows if row.id != claimed[0].id)
+    assert unclaimed.external_id == legacy_id
+    assert unclaimed.raw_data["creditor"] == {"name": first_creditor}
