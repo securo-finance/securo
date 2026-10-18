@@ -949,6 +949,80 @@ async def test_net_worth_with_credit_card(session: AsyncSession, test_user, test
     assert dp.value == 4000.0
 
 
+async def _make_shared_credit_cards(session, user_id, workspace_id, balance):
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=user_id, provider="pluggy",
+        external_id="ext-shared-line", institution_name="Shared line",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    cards = []
+    for name in ("Shared Visa", "Shared Mastercard"):
+        card = Account(
+            id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id, connection_id=conn.id,
+            name=name, type="credit_card", balance=Decimal(balance), currency="BRL",
+            shared_balance_group=f"{conn.id}:shared-credit",
+        )
+        session.add(card)
+        cards.append(card)
+    await session.commit()
+    return cards
+
+
+@pytest.mark.asyncio
+async def test_net_worth_counts_shared_credit_line_once(
+    session: AsyncSession, test_user, test_workspace: User,
+):
+    checking = await _make_manual_account(session, test_user.id, "NW Shared Check")
+    await _add_txn(session, test_user.id, checking.id, 5000, "credit", date.today())
+    await _make_shared_credit_cards(session, test_user.id, test_workspace.id, "1000")
+
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "BRL")
+
+    assert dp.breakdowns["liabilities"] == 1000.0
+    assert dp.value == 4000.0
+    liabilities = [c for c in dp.composition if c.group == "liabilities"]
+    assert len(liabilities) == 1
+    assert liabilities[0].value == 1000.0
+    assert liabilities[0].label == "Shared Visa + Shared Mastercard"
+
+
+@pytest.mark.asyncio
+async def test_net_worth_backtracks_shared_credit_line_across_all_cards(
+    session: AsyncSession, test_user, test_workspace: User,
+):
+    first, second = await _make_shared_credit_cards(
+        session, test_user.id, test_workspace.id, "300"
+    )
+    # The line's debt today (300) includes 50 + 25 charged today on the two cards.
+    await _add_txn(session, test_user.id, first.id, 50, "debit", date.today())
+    await _add_txn(session, test_user.id, second.id, 25, "debit", date.today())
+
+    dp = await _net_worth_at(session, test_workspace.id, date.today() - timedelta(days=1), "BRL")
+
+    assert dp.breakdowns["liabilities"] == 225.0
+
+
+@pytest.mark.asyncio
+async def test_net_worth_does_not_merge_a_retyped_shared_card(
+    session: AsyncSession, test_user, test_workspace: User,
+):
+    first, second = await _make_shared_credit_cards(
+        session, test_user.id, test_workspace.id, "500"
+    )
+    second.type = "checking"
+    await session.commit()
+
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "BRL")
+
+    # The card owes 500; the retyped account reads as +500 checking.
+    assert dp.breakdowns["liabilities"] == 500.0
+    assert dp.breakdowns["accounts"] == 500.0
+
+
 @pytest.mark.asyncio
 async def test_net_worth_with_assets(session: AsyncSession, test_user, test_workspace: User):
     checking = await _make_manual_account(session, test_user.id, "NW Assets Check")
