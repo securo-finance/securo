@@ -675,12 +675,14 @@ export default function DashboardPage() {
                   when it does appear. */}
               <p className={`text-3xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
                 {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
-                {availableBalanceHasFxFallback && (
-                  <span title={t('transactions.fxFallbackBanner')} aria-label={t('transactions.fxFallbackBanner')} className="inline-flex align-middle ml-2">
-                    <AlertCircle size={16} className="text-amber-500" />
-                  </span>
-                )}
               </p>
+              {/* Visible text, not a hover title, so touch users can read it. */}
+              {availableBalanceHasFxFallback && (
+                <p className="flex items-start gap-1.5 mt-1 text-xs text-amber-700 dark:text-amber-400">
+                  <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                  <span>{t('transactions.fxFallbackBanner')}</span>
+                </p>
+              )}
               {sortedAvailableBalanceAccounts.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {sortedAvailableBalanceAccounts.map((acc) => {

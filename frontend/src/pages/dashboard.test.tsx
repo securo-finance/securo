@@ -153,13 +153,13 @@ describe('Dashboard available balance without an FX rate', () => {
 
     const chip = (await screen.findByText('Euro Savings')).closest('a')!
     expect(chip).toHaveTextContent(formatCurrency(100, 'EUR', 'en-US'))
-    expect(screen.getByLabelText(t('transactions.fxFallbackBanner'))).toBeInTheDocument()
+    expect(screen.getByText(t('transactions.fxFallbackBanner'))).toBeInTheDocument()
   })
 
   it('does not flag the total when every account is converted', async () => {
     renderDashboard()
 
     await screen.findByText('Checking')
-    expect(screen.queryByLabelText(t('transactions.fxFallbackBanner'))).not.toBeInTheDocument()
+    expect(screen.queryByText(t('transactions.fxFallbackBanner'))).not.toBeInTheDocument()
   })
 })
