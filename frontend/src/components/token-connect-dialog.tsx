@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { connections } from '@/lib/api'
+import { isGatewayTimeout, waitForNewConnection } from '@/lib/await-new-connection'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import {
   Dialog,
@@ -55,6 +56,20 @@ export function TokenConnectDialog({
   const handleSubmit = async () => {
     if (!token.trim()) return
     setSubmitting(true)
+    const onConnected = () => {
+      invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      toast.success(t(isReconnect ? 'accounts.reconnected' : 'accounts.connected'))
+      onClose()
+    }
+    // Connections that already exist, so a slow import that outlasts a proxy
+    // timeout can still be recognised when it lands.
+    const knownIds = isReconnect
+      ? null
+      : await connections.list().then(
+          (list) => new Set(list.map((c) => c.id)),
+          () => null,
+        )
     try {
       await connections.handleCallback(
         token.trim(),
@@ -63,11 +78,12 @@ export function TokenConnectDialog({
         supportsAssetSync && !isReconnect ? { sync_assets: syncAssets } : undefined,
         reconnectConnectionId,
       )
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
-      toast.success(t(isReconnect ? 'accounts.reconnected' : 'accounts.connected'))
-      onClose()
+      onConnected()
     } catch (err) {
+      if (knownIds && isGatewayTimeout(err) && (await waitForNewConnection(provider, knownIds))) {
+        onConnected()
+        return
+      }
       const detail =
         axios.isAxiosError(err) && err.response?.data?.detail
           ? typeof err.response.data.detail === 'string'
@@ -139,7 +155,9 @@ export function TokenConnectDialog({
             disabled={submitting}
           />
           <p className="text-xs text-muted-foreground">
-            {t('accounts.tokenConnect.tokenHelp')}
+            {submitting && !isReconnect
+              ? t('accounts.oauthCallback.linking')
+              : t('accounts.tokenConnect.tokenHelp')}
           </p>
         </div>
 
