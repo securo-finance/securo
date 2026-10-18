@@ -52,6 +52,9 @@ class Settings(BaseSettings):
 
     # Frontend
     frontend_url: str = "http://localhost:5173"
+    # Docker Compose passes FRONTEND_URL empty when it is not set, plus the
+    # published port; an empty FRONTEND_URL becomes http://localhost:<port>.
+    frontend_port: int = 3000
 
     # WebAuthn / passkeys
     webauthn_rp_name: str = "Securo"
@@ -141,6 +144,12 @@ class Settings(BaseSettings):
     @property
     def oidc_login_available(self) -> bool:
         return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)
+
+    @model_validator(mode="after")
+    def default_frontend_url(self) -> "Settings":
+        if not self.frontend_url:
+            self.frontend_url = f"http://localhost:{self.frontend_port}"
+        return self
 
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":

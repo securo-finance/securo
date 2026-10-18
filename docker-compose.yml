@@ -11,7 +11,11 @@ x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
   SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
   DEBUG: ${DEBUG:-true}
-  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+  # Not nested (${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}):
+  # podman-compose before 1.6.0 leaves a stray "}" on such values (#1162).
+  # Empty FRONTEND_URL makes the backend use http://localhost:$FRONTEND_PORT.
+  FRONTEND_URL: ${FRONTEND_URL:-}
+  FRONTEND_PORT: ${FRONTEND_PORT:-3000}
   WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Securo}
   WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
   WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
@@ -136,7 +140,7 @@ services:
     environment:
       BACKEND_URL: http://backend:8000
       # Also drives Vite's allowedHosts, so a proxied domain is not blocked.
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+      FRONTEND_URL: ${FRONTEND_URL:-}
       APP_VERSION_ROOT: /workspace
     depends_on:
       - backend

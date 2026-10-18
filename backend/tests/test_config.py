@@ -161,3 +161,19 @@ def test_local_auth_disabled_requires_complete_oidc_configuration(
             local_auth_enabled=False,
             _secrets_dir=str(secrets),
         )
+
+
+def test_empty_frontend_url_uses_frontend_port(monkeypatch):
+    """docker-compose.yml passes FRONTEND_URL empty when unset (no nested
+    default, which podman-compose < 1.6.0 mangles: #1162) plus FRONTEND_PORT."""
+    monkeypatch.setenv("FRONTEND_URL", "")
+    monkeypatch.setenv("FRONTEND_PORT", "3132")
+
+    assert Settings(_env_file=None).frontend_url == "http://localhost:3132"
+
+
+def test_set_frontend_url_is_used_as_is(monkeypatch):
+    monkeypatch.setenv("FRONTEND_URL", "https://securo.example.com")
+    monkeypatch.setenv("FRONTEND_PORT", "3132")
+
+    assert Settings(_env_file=None).frontend_url == "https://securo.example.com"
