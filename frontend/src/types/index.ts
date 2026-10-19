@@ -228,6 +228,7 @@ export interface AccountSummary {
   projected_expenses?: number
   projected_income_primary?: number | null
   projected_expenses_primary?: number | null
+  fx_fallback?: boolean
 }
 
 /** Set when this transaction settles an invoice. Absent in workspaces

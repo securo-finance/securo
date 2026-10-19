@@ -634,8 +634,12 @@ export default function AccountDetailPage() {
   // Whether to use primary currency amounts (for foreign-currency accounts with toggle, or domestic accounts with foreign txs)
   const isCreditCard = account?.type === 'credit_card'
   const isForeignCurrency = account ? account.currency !== userCurrency : false
-  const usePrimary = !isForeignCurrency || showPrimary
-  const displayCurrency = (isForeignCurrency && !showPrimary) ? (account?.currency || userCurrency) : userCurrency
+  // No real FX rate: the summary leaves the *_primary fields unset, so stay on
+  // the account's own currency instead of labelling native amounts as converted.
+  const fxFallback = summary?.fx_fallback === true
+  const primaryShown = showPrimary && !fxFallback
+  const usePrimary = !isForeignCurrency || primaryShown
+  const displayCurrency = (isForeignCurrency && !primaryShown) ? (account?.currency || userCurrency) : userCurrency
 
   // Pseudo-transaction rows for non-materialized recurring projections.
   // Virtual: rendered with a "Previsão" badge, non-clickable, and merged
@@ -1049,13 +1053,15 @@ export default function AccountDetailPage() {
             <div className="ml-auto inline-flex rounded-lg border border-border bg-muted p-0.5 text-xs font-medium">
               <button
                 onClick={() => setShowPrimary(false)}
-                className={`px-3 py-1.5 rounded-md transition-colors ${!showPrimary ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`px-3 py-1.5 rounded-md transition-colors ${!primaryShown ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {account.currency}
               </button>
               <button
                 onClick={() => setShowPrimary(true)}
-                className={`px-3 py-1.5 rounded-md transition-colors ${showPrimary ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                disabled={fxFallback}
+                title={fxFallback ? t('transactions.fxFallbackBanner') : undefined}
+                className={`px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${primaryShown ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {userCurrency}
               </button>
@@ -1151,7 +1157,7 @@ export default function AccountDetailPage() {
         // can lag any charges added since the last sync). Otherwise use the
         // summary endpoint's monthly_expenses now nets refund credits against
         // debits for CC accounts (matches the bank's bill total).
-        const billTotal = (showPrimary ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? summary?.monthly_expenses ?? 0
+        const billTotal = (primaryShown ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? summary?.monthly_expenses ?? 0
         // "Default cycle" = the bill the user is here to pay (next due). The
         // AGORA tag on Limite disponível only shows when viewing a different cycle.
         const isDefaultCycle =
@@ -1312,7 +1318,7 @@ export default function AccountDetailPage() {
         // currently being viewed. For the current cycle this matches the "current
         // open balance" since nothing has been paid yet; for past cycles it shows
         // that month's burn rate against the (current) limit.
-        const cycleBillTotal = (showPrimary ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? summary?.monthly_expenses ?? 0
+        const cycleBillTotal = (primaryShown ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? summary?.monthly_expenses ?? 0
         const utilized = limit != null ? cycleBillTotal : null
         const rawPct = limit != null && limit > 0 && utilized != null ? (utilized / limit) * 100 : null
         const pct = rawPct != null ? Math.min(100, rawPct) : null

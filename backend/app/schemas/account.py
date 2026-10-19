@@ -109,3 +109,6 @@ class AccountSummary(BaseModel):
     monthly_expenses_primary: Optional[float] = None
     projected_income_primary: Optional[float] = None
     projected_expenses_primary: Optional[float] = None
+    # True when no real FX rate is available, so the *_primary fields are
+    # left unset rather than a 1:1 guess.
+    fx_fallback: bool = False

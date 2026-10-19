@@ -267,6 +267,53 @@ async def test_account_summary_not_found(client: AsyncClient, auth_headers, test
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_account_summary_foreign_currency_conversion(
+    client: AsyncClient, auth_headers, session: AsyncSession
+):
+    """The summary converts a foreign account with the stored rate."""
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=app_today(),
+        rate=Decimal("5.0"), source="test",
+    ))
+    await session.commit()
+    created = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "USD Wallet", "type": "checking", "balance": "100.00", "currency": "USD"},
+    )
+    resp = await client.get(
+        f"/api/accounts/{created.json()['id']}/summary", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["current_balance_primary"] == pytest.approx(500.0)
+    assert data["fx_fallback"] is False
+
+
+@pytest.mark.asyncio
+async def test_account_summary_foreign_currency_without_rate(
+    client: AsyncClient, auth_headers
+):
+    """Without a real rate the summary does not return 1:1 values (#1165).
+
+    Otherwise the detail page would show a converted balance for an account
+    the accounts list shows in its native currency.
+    """
+    created = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "EUR Wallet", "type": "checking", "balance": "100.00", "currency": "EUR"},
+    )
+    resp = await client.get(
+        f"/api/accounts/{created.json()['id']}/summary", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["current_balance"] == pytest.approx(100.0)
+    assert data["current_balance_primary"] is None
+    assert data["opening_balance_primary"] is None
+    assert data["fx_fallback"] is True
+
+
 # ---------------------------------------------------------------------------
 # balance-history
 # ---------------------------------------------------------------------------
@@ -288,6 +335,51 @@ async def test_balance_history_not_found(client: AsyncClient, auth_headers, test
         f"/api/accounts/{NONEXISTENT}/balance-history", headers=auth_headers
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_balance_history_foreign_currency_conversion(
+    client: AsyncClient, auth_headers, session: AsyncSession
+):
+    """Each history point is converted with the stored rate."""
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=app_today(),
+        rate=Decimal("5.0"), source="test",
+    ))
+    await session.commit()
+    created = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "USD Wallet", "type": "checking", "balance": "100.00", "currency": "USD"},
+    )
+    resp = await client.get(
+        f"/api/accounts/{created.json()['id']}/balance-history", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    points = resp.json()
+    assert points
+    for point in points:
+        assert point["balance_primary"] == pytest.approx(point["balance"] * 5)
+        assert "fx_fallback" not in point
+
+
+@pytest.mark.asyncio
+async def test_balance_history_foreign_currency_without_rate(
+    client: AsyncClient, auth_headers
+):
+    """Without a real rate no point carries a 1:1 balance_primary (#1165)."""
+    created = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "EUR Wallet", "type": "checking", "balance": "100.00", "currency": "EUR"},
+    )
+    resp = await client.get(
+        f"/api/accounts/{created.json()['id']}/balance-history", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    points = resp.json()
+    assert points
+    for point in points:
+        assert "balance_primary" not in point
+        assert point["fx_fallback"] is True
 
 
 # ---------------------------------------------------------------------------

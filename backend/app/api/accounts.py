@@ -20,7 +20,7 @@ from app.schemas.account import (
     CreditCardBillRead,
 )
 from app.services import account_service
-from app.services.fx_rate_service import _resolve_rate, convert
+from app.services.fx_rate_service import _resolve_rate
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -69,18 +69,18 @@ async def get_account_summary(
     account = await account_service.get_account(session, account_id, ctx.workspace.id)
     primary_currency = ctx.user.primary_currency
     if account and account.currency != primary_currency:
-        bal, _ = await convert(session, Decimal(str(summary["current_balance"])), account.currency, primary_currency)
-        opening, _ = await convert(session, Decimal(str(summary["opening_balance"])), account.currency, primary_currency)
-        inc, _ = await convert(session, Decimal(str(summary["monthly_income"])), account.currency, primary_currency)
-        exp, _ = await convert(session, Decimal(str(summary["monthly_expenses"])), account.currency, primary_currency)
-        projected_inc, _ = await convert(session, Decimal(str(summary["projected_income"])), account.currency, primary_currency)
-        projected_exp, _ = await convert(session, Decimal(str(summary["projected_expenses"])), account.currency, primary_currency)
-        summary["current_balance_primary"] = float(bal)
-        summary["opening_balance_primary"] = float(opening)
-        summary["monthly_income_primary"] = float(inc)
-        summary["monthly_expenses_primary"] = float(exp)
-        summary["projected_income_primary"] = float(projected_inc)
-        summary["projected_expenses_primary"] = float(projected_exp)
+        # Same rule as list_accounts: without a real rate, leave the *_primary
+        # fields unset instead of returning 1:1 values as if converted (#1165).
+        rate = await _resolve_rate(session, account.currency, primary_currency)
+        if rate is None:
+            summary["fx_fallback"] = True
+        else:
+            for field in (
+                "current_balance", "opening_balance", "monthly_income",
+                "monthly_expenses", "projected_income", "projected_expenses",
+            ):
+                converted = Decimal(str(summary[field])) * rate
+                summary[f"{field}_primary"] = float(converted.quantize(Decimal("0.01")))
 
     return summary
 
@@ -106,10 +106,12 @@ async def get_account_balance_history(
     if account and account.currency != primary_currency:
         for point in history:
             point_date = date.fromisoformat(point["date"])
-            converted, _ = await convert(
-                session, Decimal(str(point["balance"])), account.currency, primary_currency, target_date=point_date,
-            )
-            point["balance_primary"] = float(converted)
+            rate = await _resolve_rate(session, account.currency, primary_currency, point_date)
+            if rate is None:
+                point["fx_fallback"] = True
+            else:
+                converted = Decimal(str(point["balance"])) * rate
+                point["balance_primary"] = float(converted.quantize(Decimal("0.01")))
 
     return history
 

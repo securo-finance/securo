@@ -483,7 +483,7 @@ export const accounts = {
     const { data } = await api.get(`/accounts/${id}/summary`, { params: { from, to, bill_id: billId, unbilled_only: unbilledOnly || undefined } })
     return data
   },
-  balanceHistory: async (id: string, from?: string, to?: string): Promise<{ date: string; balance: number; balance_primary?: number }[]> => {
+  balanceHistory: async (id: string, from?: string, to?: string): Promise<{ date: string; balance: number; balance_primary?: number; fx_fallback?: boolean }[]> => {
     const { data } = await api.get(`/accounts/${id}/balance-history`, { params: { from, to } })
     return data
   },
