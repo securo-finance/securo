@@ -116,3 +116,40 @@ it('keeps preselecting the account the form was opened from', () => {
   expect(accountSelect).toHaveValue('acc-z')
   expect(screen.queryByText(t('transactions.createCounterpartSelectAccount'))).not.toBeInTheDocument()
 })
+
+it('forgets a save variant the browser blocked, so a later plain Save just saves', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const onSave = vi.fn()
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={null}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={onSave}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  // "Save and new" with no account: the browser blocks the submit.
+  await user.click(screen.getByRole('button', { name: t('transactions.moreSaveOptions') }))
+  await user.click(await screen.findByRole('menuitem', { name: t('transactions.saveAndNew') }))
+  expect(onSave).not.toHaveBeenCalled()
+
+  // Complete the form and use the plain Save button.
+  const accountSelect = screen.getByRole('option', { name: 'Zeta Bank' }).closest('select') as HTMLSelectElement
+  const form = accountSelect.closest('form') as HTMLFormElement
+  const [description, amount] = Array.from(form.querySelectorAll<HTMLInputElement>('input[required]'))
+  await user.type(description, 'Groceries')
+  await user.type(amount, '12')
+  await user.selectOptions(accountSelect, 'acc-z')
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  expect(onSave).toHaveBeenCalledTimes(1)
+  expect(onSave.mock.calls[0][4]).toBe('save')
+})

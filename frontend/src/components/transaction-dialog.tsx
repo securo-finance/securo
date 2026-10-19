@@ -658,7 +658,14 @@ function TransactionForm({
 
   const triggerSubmit = (action: SaveAction) => {
     pendingActionRef.current = action
-    formRef.current?.requestSubmit()
+    try {
+      // The submit handler runs synchronously inside requestSubmit() and reads
+      // the action first. If validation blocks the submit, the handler never
+      // runs, so reset here or a later plain Save would reuse this action.
+      formRef.current?.requestSubmit()
+    } finally {
+      pendingActionRef.current = 'save'
+    }
   }
   const showSaveVariants = isCreating && !isSynced
 
