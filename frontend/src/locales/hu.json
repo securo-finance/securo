@@ -1437,7 +1437,6 @@
     "endDate": "Záró dátum (nem kötelező)",
     "category": "Kategória",
     "account": "Számla",
-    "noAccount": "Nincs",
     "nextOccurrence": "Következő",
     "status": "Állapot",
     "actions": "Műveletek",
