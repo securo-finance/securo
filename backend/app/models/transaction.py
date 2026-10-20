@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.models.recurring_transaction import RecurringTransaction
     from app.models.transaction_attachment import TransactionAttachment
     from app.models.transaction_split import TransactionSplit
+    from app.models.goal import GoalAllocation
 
 
 class Transaction(Base):
@@ -130,6 +131,9 @@ class Transaction(Base):
     )
     splits: Mapped[list["TransactionSplit"]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan"
+    )
+    goal_allocations: Mapped[list["GoalAllocation"]] = relationship(
+        back_populates="transaction", passive_deletes="all", lazy="selectin"
     )
 
     # Populated dynamically by the service (not DB columns).

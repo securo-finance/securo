@@ -85,7 +85,9 @@ async def create_rule(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        rule = await rule_service.create_rule(session, ctx.workspace.id, ctx.user_id, data)
+        rule = await rule_service.create_rule(
+            session, ctx.workspace.id, ctx.user_id, data, commit=False
+        )
     except DuplicateRuleError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -95,16 +97,21 @@ async def create_rule(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     # Apply the new rule to existing transactions so it takes effect on history
     # immediately, and report how many were touched for a transparent toast.
-    applied_count = (
-        await rule_service.apply_single_rule(
-            session,
-            ctx.workspace.id,
-            rule,
-            overwrite_existing_categories=data.overwrite_existing_categories,
+    try:
+        applied_count = (
+            await rule_service.apply_single_rule(
+                session,
+                ctx.workspace.id,
+                rule,
+                overwrite_existing_categories=data.overwrite_existing_categories,
+                commit=False,
+            )
+            if data.apply_to_existing
+            else 0
         )
-        if data.apply_to_existing
-        else 0
-    )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await session.commit()
     response = RuleCreateResponse.model_validate(rule)
     response.applied_count = applied_count
     return response
@@ -188,7 +195,9 @@ async def update_rule(
         should_apply = data.apply_to_existing
 
     try:
-        rule = await rule_service.update_rule(session, rule_id, ctx.workspace.id, data)
+        rule = await rule_service.update_rule(
+            session, rule_id, ctx.workspace.id, data, commit=False
+        )
     except DuplicateRuleError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -198,16 +207,21 @@ async def update_rule(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
-    applied_count = (
-        await rule_service.apply_single_rule(
-            session,
-            ctx.workspace.id,
-            rule,
-            overwrite_existing_categories=data.overwrite_existing_categories,
+    try:
+        applied_count = (
+            await rule_service.apply_single_rule(
+                session,
+                ctx.workspace.id,
+                rule,
+                overwrite_existing_categories=data.overwrite_existing_categories,
+                commit=False,
+            )
+            if should_apply
+            else 0
         )
-        if should_apply
-        else 0
-    )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await session.commit()
     response = RuleMutationResponse.model_validate(rule)
     response.applied_count = applied_count
     return response
@@ -281,5 +295,8 @@ async def apply_all_rules(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Re-apply all active rules to all existing transactions."""
-    count = await rule_service.apply_all_rules(session, ctx.workspace.id)
+    try:
+        count = await rule_service.apply_all_rules(session, ctx.workspace.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return {"applied": count}
