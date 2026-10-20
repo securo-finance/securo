@@ -13,7 +13,8 @@ import {
   PartyPopper, TreePine, Umbrella, Globe, Sparkles,
   HeartHandshake, Brain, HandCoins, Ticket, Sofa, SprayCan, Package,
   BedDouble, Luggage, School, Trophy, Camera, Newspaper, Laptop, Monitor,
-  Trees, Croissant, Cake, IceCreamCone, Apple, Beef, Fish
+  Trees, Croissant, Cake, IceCreamCone, Apple, Beef, Fish,
+  Motorbike, CarTaxiFront, PencilRuler, Refrigerator, PawPrint
 } from 'lucide-react'
 
 export interface CategoryIconEntry {
@@ -30,6 +31,7 @@ export const CATEGORY_ICONS: CategoryIconEntry[] = [
   { name: 'flame', label: 'Gás', icon: Flame },
   { name: 'wifi', label: 'Internet / Wi-Fi', icon: Wifi },
   { name: 'tv', label: 'TV / Streaming', icon: Tv },
+  { name: 'refrigerator', label: 'Eletrodomésticos', icon: Refrigerator },
   { name: 'sofa', label: 'Móveis / Decoração', icon: Sofa },
   { name: 'spray-can', label: 'Limpeza / Diarista', icon: SprayCan },
   // Alimentação
@@ -51,6 +53,8 @@ export const CATEGORY_ICONS: CategoryIconEntry[] = [
   { name: 'train', label: 'Trem / Metrô', icon: Train },
   { name: 'plane', label: 'Avião / Viagem', icon: Plane },
   { name: 'bike', label: 'Bicicleta', icon: Bike },
+  { name: 'motorbike', label: 'Moto', icon: Motorbike },
+  { name: 'car-taxi-front', label: 'Táxi / App de corrida', icon: CarTaxiFront },
   { name: 'bed-double', label: 'Hospedagem / Hotel', icon: BedDouble },
   { name: 'luggage', label: 'Bagagem / Mala', icon: Luggage },
   // Compras
@@ -85,6 +89,7 @@ export const CATEGORY_ICONS: CategoryIconEntry[] = [
   { name: 'book-open', label: 'Livro / Leitura', icon: BookOpen },
   { name: 'graduation-cap', label: 'Educação / Curso', icon: GraduationCap },
   { name: 'school', label: 'Escola / Mensalidade escolar', icon: School },
+  { name: 'pencil-ruler', label: 'Papelaria / Material escolar', icon: PencilRuler },
   // Trabalho & Negócios
   { name: 'briefcase', label: 'Trabalho / Negócios', icon: Briefcase },
   { name: 'building-2', label: 'Empresa / Escritório', icon: Building2 },
@@ -103,6 +108,7 @@ export const CATEGORY_ICONS: CategoryIconEntry[] = [
   { name: 'baby', label: 'Bebê / Criança', icon: Baby },
   { name: 'dog', label: 'Pet / Cachorro', icon: Dog },
   { name: 'cat', label: 'Pet / Gato', icon: Cat },
+  { name: 'paw-print', label: 'Pet / Geral', icon: PawPrint },
   // Serviços & Manutenção
   { name: 'scissors', label: 'Cabelo / Beleza', icon: Scissors },
   { name: 'wrench', label: 'Manutenção / Reparo', icon: Wrench },
