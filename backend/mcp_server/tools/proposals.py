@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import ValidationError
 from sqlalchemy import String, func, select
@@ -37,7 +37,7 @@ from app.schemas.budget import BudgetCreate, BudgetUpdate
 from app.schemas.category import CategoryCreate
 from app.schemas.category_group import CategoryGroupCreate
 from app.schemas.goal import GoalCreate, GoalUpdate
-from app.schemas.payee import PayeeUpdate, TaxIdInput
+from app.schemas.payee import PayeeCreate, PayeeUpdate, TaxIdInput
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
@@ -1758,6 +1758,128 @@ def _normalise_tax_ids(
             return None, f"invalid_tax_id:{kind.value}:{error}"
         normalised.append({"kind": kind.value, "value": value})
     return normalised, None
+
+
+@tool(
+    name="propose_create_payee",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for adding a payee (counterparty) that does not "
+        "exist yet. Returns any payee that already uses the same name, "
+        "because the workspace refuses duplicates. `tax_ids` are validated "
+        "on preview, so an invalid document is refused before anything is "
+        "written."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "type": {"type": "string", "enum": ["person", "company"]},
+            "notes": {"type": "string", "maxLength": 1000},
+            "email": {"type": "string", "maxLength": 255},
+            "phone": {"type": "string", "maxLength": 50},
+            "address": {"type": "string", "maxLength": 500},
+            "website": {"type": "string", "maxLength": 255},
+            "tax_ids": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": [kind.value for kind in TaxIdKind],
+                        },
+                        "value": {"type": "string", "maxLength": 120},
+                    },
+                    "required": ["kind", "value"],
+                    "additionalProperties": False,
+                },
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "payees"],
+)
+async def propose_create_payee(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    name: str,
+    type: Literal["person", "company"] | None = None,
+    notes: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
+    website: str | None = None,
+    tax_ids: list[dict[str, Any]] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    cleaned = name.strip()
+    if not cleaned:
+        return {"error": "payee name cannot be empty"}
+
+    proposed: dict[str, Any] = {"name": cleaned}
+    for field, value in (
+        ("type", type),
+        ("notes", notes),
+        ("email", email),
+        ("phone", phone),
+        ("address", address),
+        ("website", website),
+    ):
+        if value is not None:
+            proposed[field] = value
+
+    normalised_tax_ids: list[dict[str, str]] = []
+    if tax_ids is not None:
+        normalised, error = _normalise_tax_ids(tax_ids)
+        if error:
+            return {"error": error}
+        if normalised is not None:
+            normalised_tax_ids = normalised
+            proposed["tax_ids"] = normalised
+
+    existing = await payee_service.find_payee_by_name(session, ws_id, cleaned)
+    preview = {
+        "kind": "create_payee",
+        "proposed": proposed,
+        "existing": _payee_snapshot(existing) if existing is not None else None,
+        "apply_endpoint": "POST /api/payees",
+    }
+    if existing is not None:
+        # The service refuses this on apply; surface it in the preview so the
+        # caller learns before anything is written.
+        return {**preview, "applied": False, "error": "duplicate_payee_name"}
+
+    if _can_apply(ctx, apply):
+        data = PayeeCreate(
+            name=cleaned,
+            type=type,
+            notes=notes,
+            email=email,
+            phone=phone,
+            address=address,
+            website=website,
+            tax_ids=[TaxIdInput(**item) for item in normalised_tax_ids],
+        )
+        try:
+            created = await payee_service.create_payee(
+                session, ws_id, ctx.user_id, data
+            )
+        except ValueError as exc:
+            return {**preview, "applied": False, "error": str(exc)}
+        fresh = await payee_service.get_payee(session, created.id, ws_id)
+        return {
+            **preview,
+            "applied": True,
+            "payee": _payee_snapshot(fresh or created),
+        }
+
+    return preview
 
 
 @tool(

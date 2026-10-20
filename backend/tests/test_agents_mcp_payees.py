@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import mcp_server.tools  # noqa: F401
@@ -76,8 +76,10 @@ async def _account_id(session: AsyncSession, workspace_id: uuid.UUID) -> uuid.UU
 async def test_payee_tools_are_registered():
     assert "propose_update_payee" in REGISTRY
     assert "propose_merge_payees" in REGISTRY
+    assert "propose_create_payee" in REGISTRY
     assert REGISTRY["propose_update_payee"].is_proposal
     assert REGISTRY["propose_merge_payees"].is_proposal
+    assert REGISTRY["propose_create_payee"].is_proposal
 
 
 async def test_preview_update_payee_does_not_write(
@@ -272,3 +274,127 @@ async def test_merge_refuses_target_as_source(
     )
 
     assert result["error"] == "target payee cannot also be a source"
+
+
+async def test_preview_create_payee_does_not_write(
+    session: AsyncSession, external_ctx: CallContext
+):
+    handler = REGISTRY["propose_create_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        name="Alex Example",
+        type="person",
+    )
+
+    assert result["kind"] == "create_payee"
+    assert result["proposed"]["name"] == "Alex Example"
+    assert result["proposed"]["type"] == "person"
+    assert result["existing"] is None
+    assert "applied" not in result
+
+    session.expire_all()
+    found = (
+        await session.execute(
+            select(Payee).where(Payee.name == "Alex Example")
+        )
+    ).scalar_one_or_none()
+    assert found is None
+
+
+async def test_apply_create_payee_writes_payee_and_cpf(
+    session: AsyncSession, external_ctx: CallContext
+):
+    handler = REGISTRY["propose_create_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        name="Alex Example",
+        type="person",
+        tax_ids=[{"kind": "cpf", "value": "111.444.777-35"}],
+        apply=True,
+    )
+
+    assert result["applied"] is True
+    assert result["payee"]["name"] == "Alex Example"
+    assert result["payee"]["source"] == "manual"
+    assert result["payee"]["type"] == "person"
+    assert result["payee"]["tax_ids"] == [{"kind": "cpf", "value": "11144477735"}]
+
+    session.expire_all()
+    fresh = (
+        await session.execute(
+            select(Payee).where(Payee.id == uuid.UUID(result["payee"]["id"]))
+        )
+    ).scalar_one()
+    tax_rows = (
+        await session.execute(
+            select(PayeeTaxId).where(PayeeTaxId.payee_id == fresh.id)
+        )
+    ).scalars().all()
+    assert fresh.name == "Alex Example"
+    assert [(row.kind, row.value) for row in tax_rows] == [("cpf", "11144477735")]
+
+
+async def test_create_payee_refuses_duplicate_name(
+    session: AsyncSession, external_ctx: CallContext, target_payee: dict
+):
+    handler = REGISTRY["propose_create_payee"].handler
+    result = await handler(
+        session=session, ctx=external_ctx, name="  alex example  "
+    )
+
+    assert result["error"] == "duplicate_payee_name"
+    assert result["existing"]["id"] == str(target_payee["id"])
+    assert result["applied"] is False
+
+    session.expire_all()
+    count = await session.scalar(
+        select(func.count())
+        .select_from(Payee)
+        .where(Payee.workspace_id == target_payee["workspace_id"])
+    )
+    assert count == 1
+
+
+async def test_create_payee_refuses_invalid_cpf_before_write(
+    session: AsyncSession, external_ctx: CallContext
+):
+    handler = REGISTRY["propose_create_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        name="Alex Example",
+        tax_ids=[{"kind": "cpf", "value": "123.456.789-00"}],
+    )
+
+    assert result["error"].startswith("invalid_tax_id:cpf")
+    session.expire_all()
+    found = (
+        await session.execute(
+            select(Payee).where(Payee.name == "Alex Example")
+        )
+    ).scalar_one_or_none()
+    assert found is None
+
+
+async def test_internal_ctx_cannot_apply_create_payee(
+    session: AsyncSession, test_user
+):
+    internal_ctx = CallContext(user_id=test_user.id, conversation_id=uuid.uuid4())
+    handler = REGISTRY["propose_create_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=internal_ctx,
+        name="Alex Example",
+        apply=True,
+    )
+
+    assert "applied" not in result
+    session.expire_all()
+    found = (
+        await session.execute(
+            select(Payee).where(Payee.name == "Alex Example")
+        )
+    ).scalar_one_or_none()
+    assert found is None

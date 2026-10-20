@@ -57,6 +57,7 @@ def test_registry_contains_v1_tools():
         "propose_create_goal",
         "propose_update_payee",
         "propose_merge_payees",
+        "propose_create_payee",
         "search_knowledge_base",
         "list_recurring_transactions",
         "list_assets",
@@ -75,6 +76,7 @@ def test_proposal_tools_marked_is_proposal():
         "propose_create_payee_rule",
         "propose_update_payee",
         "propose_merge_payees",
+        "propose_create_payee",
     ):
         spec = REGISTRY[name]
         assert spec.is_proposal, f"{name} should have is_proposal=True"

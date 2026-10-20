@@ -83,6 +83,24 @@ def _same_name_as(name: str):
     """
     return func.lower(func.trim(Payee.name)) == func.lower(func.trim(literal(name)))
 
+
+async def find_payee_by_name(
+    session: AsyncSession, workspace_id: uuid.UUID, name: str
+) -> Optional[Payee]:
+    """Find the payee that the workspace unique index would consider the same.
+
+    Read-only counterpart of the duplicate check `create_payee` performs, for
+    callers that need to report a collision before writing anything.
+    """
+    result = await session.execute(
+        select(Payee).where(
+            Payee.workspace_id == workspace_id,
+            _same_name_as(name),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_or_create_payee(
     session: AsyncSession,
     user_id: uuid.UUID,
