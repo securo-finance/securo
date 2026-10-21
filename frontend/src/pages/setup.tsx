@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select'
 import { AuthBrandPanel } from '@/components/auth-brand-panel'
 import { cn } from '@/lib/utils'
-import { Sun, Moon, Globe } from 'lucide-react'
+import { Sun, Moon, Monitor, Globe } from 'lucide-react'
 import { ShellLogo } from '@/components/shell-logo'
 
 export default function SetupPage() {
@@ -150,6 +150,19 @@ export default function SetupPage() {
                     )}
                   >
                     <Moon size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTheme('system')}
+                    title={t('settings.themeSystem')}
+                    className={cn(
+                      'p-1.5 rounded transition-colors',
+                      theme === 'system'
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <Monitor size={14} />
                   </button>
                 </div>
               </div>
