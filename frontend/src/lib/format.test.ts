@@ -36,6 +36,7 @@ describe('resolveDisplayLocale', () => {
     expect(resolveDisplayLocale('auto', 'MKD')).toBe('mk-MK')
     expect(resolveDisplayLocale('auto', 'HKD')).toBe('zh-HK')
     expect(resolveDisplayLocale('auto', 'TWD')).toBe('zh-TW')
+    expect(resolveDisplayLocale('auto', 'ZAR')).toBe('en-ZA')
   })
 
   it('treats a missing number format like auto', () => {

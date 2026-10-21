@@ -54,6 +54,7 @@ CURRENCY_META = {
     "MKD": {"symbol": "ден", "name": "Macedonian Denar", "flag": "\U0001F1F2\U0001F1F0"},
     "HKD": {"symbol": "HK$", "name": "Hong Kong Dollar", "flag": "\U0001F1ED\U0001F1F0"},
     "TWD": {"symbol": "NT$", "name": "New Taiwan Dollar", "flag": "\U0001F1F9\U0001F1FC"},
+    "ZAR": {"symbol": "R", "name": "South African Rand", "flag": "\U0001F1FF\U0001F1E6"},
 }
 
 
