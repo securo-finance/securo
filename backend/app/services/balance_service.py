@@ -10,7 +10,8 @@ That gives one pairwise ledger per group, the same for everyone. The
 response projects it onto the caller (`self_member`, the caller's own
 member): for each other member M, per currency, a positive amount means M
 owes the caller and a negative amount means the caller owes M. Pairs that
-don't involve the caller are left out.
+don't involve the caller are left out, and so are a member's pairs with
+an owner who isn't a member of the group.
 
 Mixed currencies are kept as separate lines (each line also carries its
 amount in the group's default currency).
@@ -117,6 +118,10 @@ async def compute_balances(
     )
     caller = self_member.id if self_member is not None else _GROUP_OWNER
     for (debtor, creditor), by_currency in owed.items():
+        # A member can't be shown a debt to or from an owner who has no
+        # member row: there is no name or GroupMember id to show it under.
+        if self_member is not None and _GROUP_OWNER in (debtor, creditor):
+            continue
         for currency, amount in by_currency.items():
             if creditor == caller:
                 totals[debtor][currency] += amount

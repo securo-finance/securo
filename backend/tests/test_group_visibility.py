@@ -416,3 +416,36 @@ async def test_balances_net_expenses_paid_by_both_sides(
         b.id: Decimal("10.00")
     }
     assert await _ledger(session, group.id, other_ws.id, other.id) == {me.id: Decimal("-10.00")}
+
+
+@pytest.mark.asyncio
+async def test_owner_without_member_row_is_not_shown_to_members(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The owner isn't a member of the group and pays 30.00 split between B
+    and C; B then pays 20.00 split the same way. The owner sees both debts
+    to them. B sees only C's debt: the owner has no member row, so there is
+    no name or id to show B's debt to them under."""
+    other, other_ws = await _make_user_with_workspace(session, "b@example.com")
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="Trip")
+    )
+    b = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="B", email="b@example.com")
+    )
+    c = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="C")
+    )
+    assert b is not None and c is not None
+
+    await _record_split_expense(session, test_user, test_workspace, [b, c], "30.00")
+    await _record_split_expense(session, other, other_ws, [b, c], "20.00")
+
+    assert await _ledger(session, group.id, test_workspace.id, test_user.id) == {
+        b.id: Decimal("15.00"),
+        c.id: Decimal("15.00"),
+    }
+    b_view = await balance_service.compute_balances(session, group.id, other_ws.id, other.id)
+    assert b_view is not None
+    assert b_view["self_member_id"] == b.id
+    assert {ln["member_id"]: ln["amount"] for ln in b_view["lines"]} == {c.id: Decimal("10.00")}
