@@ -15,6 +15,7 @@ vi.mock('@/lib/await-new-connection', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/await-new-connection')>()),
   waitForNewConnection: api.waitForNewConnection,
 }))
+vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { id: 'me' } }) }))
 vi.mock('sonner', () => ({ toast: { success: api.toastSuccess, error: api.toastError } }))
 
 import { TokenConnectDialog } from './token-connect-dialog'
@@ -45,7 +46,7 @@ it('reports success when a slow import outlasts the proxy and then lands (#1148)
   const onClose = submit()
 
   await waitFor(() => expect(onClose).toHaveBeenCalled())
-  expect(api.waitForNewConnection).toHaveBeenCalledWith('simplefin', new Set(['existing']))
+  expect(api.waitForNewConnection).toHaveBeenCalledWith('simplefin', new Set(['existing']), 'me')
   expect(api.toastSuccess).toHaveBeenCalledWith(t('accounts.connected'))
   expect(api.toastError).not.toHaveBeenCalled()
 })

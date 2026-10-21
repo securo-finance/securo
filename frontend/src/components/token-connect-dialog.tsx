@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
+import { useAuth } from '@/contexts/auth-context'
 import { connections } from '@/lib/api'
 import { isGatewayTimeout, waitForNewConnection } from '@/lib/await-new-connection'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
@@ -36,6 +37,7 @@ export function TokenConnectDialog({
   reconnectConnectionId,
 }: TokenConnectDialogProps) {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const queryClient = useQueryClient()
   const [token, setToken] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -64,7 +66,8 @@ export function TokenConnectDialog({
     }
     // Connections that already exist, so a slow import that outlasts a proxy
     // timeout can still be recognised when it lands.
-    const knownIds = isReconnect
+    const userId = user?.id
+    const knownIds = isReconnect || !userId
       ? null
       : await connections.list().then(
           (list) => new Set(list.map((c) => c.id)),
@@ -80,7 +83,7 @@ export function TokenConnectDialog({
       )
       onConnected()
     } catch (err) {
-      if (knownIds && isGatewayTimeout(err) && (await waitForNewConnection(provider, knownIds))) {
+      if (knownIds && isGatewayTimeout(err) && userId && (await waitForNewConnection(provider, knownIds, userId))) {
         onConnected()
         return
       }

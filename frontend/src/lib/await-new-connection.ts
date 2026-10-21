@@ -13,13 +13,15 @@ export function isGatewayTimeout(err: unknown): boolean {
 // Connecting a bank imports its history inside the callback request, which
 // can outlast a proxy's timeout while the import itself succeeds (issue
 // #1148). Poll the connection list until a connection for `provider` that
-// wasn't in `knownIds` appears; null once `timeoutMs` passes without one.
-// The client can't tell which connection its own request created, so when
-// more than one new connection for `provider` shows up (another connect ran
-// at the same time) it gives up with null rather than claim one of them.
+// `userId` owns and that wasn't in `knownIds` appears; null once `timeoutMs`
+// passes without one. Connections other workspace members add in the
+// meantime don't count. The client can't tell which connection its own
+// request created, so when more than one new one shows up (the same user
+// connected twice at once) it gives up with null rather than claim one.
 export async function waitForNewConnection(
   provider: string,
   knownIds: ReadonlySet<string>,
+  userId: string,
   {
     intervalMs = 5000,
     timeoutMs = 180_000,
@@ -30,7 +32,9 @@ export async function waitForNewConnection(
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
     try {
-      const added = (await list()).filter((c) => c.provider === provider && !knownIds.has(c.id))
+      const added = (await list()).filter(
+        (c) => c.provider === provider && c.user_id === userId && !knownIds.has(c.id),
+      )
       if (added.length === 1) return added[0]
       if (added.length > 1) return null
     } catch {
