@@ -152,6 +152,16 @@ def _accounts_with_balances_query(
             func.coalesce(balance_sq.c.current_balance, 0).label("current_balance"),
             func.coalesce(prev_balance_sq.c.previous_balance, 0).label("previous_balance"),
             func.coalesce(future_charges_sq.c.future_charges, 0).label("future_charges"),
+            # The opening balance's date, so the edit form can show it and
+            # leave it alone (issue #1204).
+            select(func.min(Transaction.date))
+            .where(
+                Transaction.account_id == Account.id,
+                Transaction.source == "opening_balance",
+            )
+            .correlate(Account)
+            .scalar_subquery()
+            .label("balance_date"),
         )
         .outerjoin(BankConnection)
         .outerjoin(balance_sq, Account.id == balance_sq.c.account_id)
@@ -174,9 +184,21 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     result = await session.execute(query)
     return [
             serialize_account(
-                acc, current_balance, previous_balance, connection, future_charges=future_charges
+                acc,
+                current_balance,
+                previous_balance,
+                connection,
+                future_charges=future_charges,
+                balance_date=balance_date,
             )
-            for acc, connection, current_balance, previous_balance, future_charges in result.all()
+            for (
+                acc,
+                connection,
+                current_balance,
+                previous_balance,
+                future_charges,
+                balance_date,
+            ) in result.all()
         ]
 
 
@@ -190,9 +212,14 @@ async def get_account_with_balances(
     row = (await session.execute(query)).first()
     if row is None:
         return None
-    acc, connection, current_balance, previous_balance, future_charges = row
+    acc, connection, current_balance, previous_balance, future_charges, balance_date = row
     return serialize_account(
-        acc, current_balance, previous_balance, connection, future_charges=future_charges
+        acc,
+        current_balance,
+        previous_balance,
+        connection,
+        future_charges=future_charges,
+        balance_date=balance_date,
     )
 
 
@@ -225,6 +252,7 @@ def serialize_account(
     connection: Optional[BankConnection] = None,
     *,
     future_charges: Optional[Decimal] = None,
+    balance_date: Optional[_Date] = None,
 ) -> dict:
     # Connected CC: provider stores positive for debt → negate.
     # Manual accounts: transaction math already gives correct sign.
@@ -258,6 +286,7 @@ def serialize_account(
         "shared_balance_group": acc.shared_balance_group,
         "institution_name": institution_name,
         "institution_logo_url": institution_logo_url,
+        "balance_date": balance_date,
         "available_credit": None,
         "next_close_date": None,
         "next_due_date": None,

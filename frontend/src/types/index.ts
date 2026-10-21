@@ -181,6 +181,8 @@ export interface Account {
   balance: number
   current_balance: number
   previous_balance: number | null
+  // Date of the opening-balance transaction; null when there is none.
+  balance_date?: string | null
   balance_primary: number | null
   // No real FX rate: balance_primary is unset and totals use the native amount.
   fx_fallback?: boolean

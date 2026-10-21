@@ -914,3 +914,51 @@ async def test_available_credit_of_connected_card_ignores_future_rows(
     detail = (await client.get(f"/api/accounts/{card.id}", headers=auth_headers)).json()
 
     assert detail["available_credit"] == pytest.approx(700.0)
+
+
+@pytest.mark.asyncio
+async def test_account_reports_its_opening_balance_date(client: AsyncClient, auth_headers):
+    """Issue #1204: the payload carries the opening balance's date, and an
+    edit that leaves `balance_date` out keeps it."""
+    created = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={
+            "name": "Checking",
+            "type": "checking",
+            "balance": "1000.00",
+            "balance_date": "2026-08-01",
+            "currency": "USD",
+        },
+    )
+    assert created.status_code == 201
+    account_id = created.json()["id"]
+
+    listed = await client.get("/api/accounts", headers=auth_headers)
+    assert [a["balance_date"] for a in listed.json()] == ["2026-08-01"]
+
+    renamed = await client.patch(
+        f"/api/accounts/{account_id}",
+        headers=auth_headers,
+        json={"name": "Main checking", "balance": "1000.00", "currency": "USD"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["balance_date"] == "2026-08-01"
+
+    moved = await client.patch(
+        f"/api/accounts/{account_id}", headers=auth_headers, json={"balance_date": "2026-07-15"}
+    )
+    assert moved.json()["balance_date"] == "2026-07-15"
+
+
+@pytest.mark.asyncio
+async def test_account_without_opening_balance_has_no_balance_date(
+    client: AsyncClient, auth_headers
+):
+    created = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={"name": "Empty", "type": "checking", "balance": "0", "currency": "USD"},
+    )
+    fetched = await client.get(f"/api/accounts/{created.json()['id']}", headers=auth_headers)
+    assert fetched.json()["balance_date"] is None
