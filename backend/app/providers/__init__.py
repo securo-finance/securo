@@ -41,6 +41,14 @@ KNOWN_PROVIDERS = [
         "requires_institution_select": False,
         "supports_asset_sync": True,
     },
+    {
+        "name": "wealthreader",
+        "display_name": "Wealth Reader",
+        "description": "European banks via Wealth Reader AIS",
+        "flow_type": "oauth",
+        "requires_institution_select": True,
+        "supports_asset_sync": False,
+    },
 ]
 
 
@@ -93,6 +101,10 @@ def _auto_register_providers() -> None:
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
         register_provider("simplefin", SimpleFinProvider)
+
+    if settings.wealthreader_api_key:
+        from app.providers.wealthreader import WealthreaderProvider
+        register_provider("wealthreader", WealthreaderProvider)
 
 
 _auto_register_providers()

@@ -17,8 +17,14 @@ class _FakeRedis:
     async def set(self, key: str, value: str, ex: int | None = None) -> None:
         self.store[key] = value
 
+    async def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
     async def getdel(self, key: str) -> str | None:
         return self.store.pop(key, None)
+
+    async def delete(self, key: str) -> None:
+        self.store.pop(key, None)
 
 
 @pytest.fixture
@@ -63,3 +69,38 @@ async def test_consume_unknown_state_returns_none(fake_redis):
 @pytest.mark.asyncio
 async def test_consume_empty_state_returns_none(fake_redis):
     assert await oauth_state.consume_state("") is None
+
+
+@pytest.mark.asyncio
+async def test_alias_state_lets_nonce_consume_the_same_payload(fake_redis):
+    """Wealth Reader may return nonce instead of Securo's state."""
+    state = await oauth_state.store_state({"user_id": "u", "provider": "wealthreader"})
+    await oauth_state.alias_state(state, "wr-nonce")
+    consumed = await oauth_state.consume_state("wr-nonce")
+    assert consumed is not None
+    assert consumed["provider"] == "wealthreader"
+    assert "_oauth_siblings" not in consumed
+    assert await oauth_state.consume_state(state) is None
+
+
+@pytest.mark.asyncio
+async def test_consume_canonical_invalidates_nonce_alias(fake_redis):
+    state = await oauth_state.store_state({"user_id": "u", "provider": "wealthreader"})
+    await oauth_state.alias_state(state, "wr-nonce")
+    consumed = await oauth_state.consume_state(state)
+    assert consumed is not None
+    assert await oauth_state.consume_state("wr-nonce") is None
+
+
+@pytest.mark.asyncio
+async def test_alias_state_noops_on_empty_identical_or_missing(fake_redis):
+    state = await oauth_state.store_state({"user_id": "u"})
+    await oauth_state.alias_state(state, "")
+    await oauth_state.alias_state("", "alias")
+    await oauth_state.alias_state(state, state)
+    await oauth_state.alias_state("does-not-exist", "ghost")
+    assert await oauth_state.consume_state("ghost") is None
+    assert await oauth_state.consume_state("") is None
+    leftover = await oauth_state.consume_state(state)
+    assert leftover is not None
+    assert leftover["user_id"] == "u"
