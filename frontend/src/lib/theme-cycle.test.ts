@@ -11,5 +11,7 @@ describe('nextTheme', () => {
   it('treats an unknown or missing theme as the dark default', () => {
     expect(nextTheme(undefined)).toBe('system')
     expect(nextTheme('sepia')).toBe('system')
+    expect(nextTheme('__proto__')).toBe('system')
+    expect(nextTheme('toString')).toBe('system')
   })
 })

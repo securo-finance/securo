@@ -8,8 +8,12 @@ const NEXT: Record<ThemeChoice, ThemeChoice> = {
   system: 'light',
 }
 
+function isThemeChoice(theme: string | undefined): theme is ThemeChoice {
+  return theme !== undefined && Object.hasOwn(NEXT, theme)
+}
+
 export function nextTheme(theme: string | undefined): ThemeChoice {
-  return NEXT[(theme as ThemeChoice) in NEXT ? (theme as ThemeChoice) : 'dark']
+  return NEXT[isThemeChoice(theme) ? theme : 'dark']
 }
 
 export const THEME_LABEL_KEY: Record<ThemeChoice, string> = {
