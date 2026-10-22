@@ -141,6 +141,7 @@ async def _get_recurring_projections(
             if (rec.id, occ_date) in materialized_occurrences:
                 continue
             projections.append({
+                "account_id": rec.account_id,
                 "category_id": rec.category_id,
                 "amount": float(rec.amount),
                 "type": rec.type,
@@ -1579,24 +1580,38 @@ async def get_balance_history(
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
 
+    # Loans are long-term debt: they count in net worth, not in the money this
+    # curve tracks, so it leaves them out (like the sidebar accounts total).
+    loan_ids = set((await session.execute(
+        select(Account.id).where(Account.workspace_id == workspace_id, Account.type == "loan")
+    )).scalars())
+    balance_account_ids = account_ids
+    if loan_ids:
+        if account_ids is None:
+            balance_account_ids = list((await session.execute(
+                select(Account.id).where(Account.workspace_id == workspace_id, Account.type != "loan")
+            )).scalars())
+        else:
+            balance_account_ids = [i for i in account_ids if i not in loan_ids]
+
     # Starting balances
     current_start = await _balance_at(
         session, workspace_id, month_start - timedelta(days=1),
-        primary_currency_hint=primary_currency, account_ids=account_ids,
+        primary_currency_hint=primary_currency, account_ids=balance_account_ids,
     )
     prev_start = await _balance_at(
         session, workspace_id, prev_month_start - timedelta(days=1),
-        primary_currency_hint=primary_currency, account_ids=account_ids,
+        primary_currency_hint=primary_currency, account_ids=balance_account_ids,
     )
 
     # Daily deltas from real transactions
     current_deltas = await _daily_deltas(
         session, workspace_id, month_start, month_end,
-        primary_currency_hint=primary_currency, account_ids=account_ids,
+        primary_currency_hint=primary_currency, account_ids=balance_account_ids,
     )
     prev_deltas = await _daily_deltas(
         session, workspace_id, prev_month_start, prev_month_end,
-        primary_currency_hint=primary_currency, account_ids=account_ids,
+        primary_currency_hint=primary_currency, account_ids=balance_account_ids,
     )
 
     # Recurring projections for future days of current month (converted to primary currency)
@@ -1609,7 +1624,7 @@ async def get_balance_history(
         # rows dated today or earlier.
         if month_start > today:
             carried_forecasts = await _get_forecast_transactions(
-                session, workspace_id, date.min, month_start, account_ids
+                session, workspace_id, date.min, month_start, balance_account_ids
             )
             for tx in carried_forecasts:
                 if tx.is_ignored or (tx.category and tx.category.is_ignored):
@@ -1626,7 +1641,7 @@ async def get_balance_history(
             workspace_id,
             proj_start,
             month_end,
-            account_ids,
+            balance_account_ids,
         )
         for tx in forecast_transactions:
             if tx.is_ignored or (tx.category and tx.category.is_ignored):
@@ -1646,6 +1661,8 @@ async def get_balance_history(
             session, workspace_id, proj_start, month_end, account_ids
         )
         for proj in projections:
+            if proj["account_id"] in loan_ids:
+                continue
             day = proj["date"].day
             proj_converted, _ = await convert(
                 session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,

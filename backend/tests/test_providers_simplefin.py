@@ -156,6 +156,62 @@ async def test_handle_oauth_callback_403_signals_reused_token():
     assert exc.value.code == "setup_token_used"
 
 
+@pytest.mark.asyncio
+async def test_claim_auth_errlist_soft_warning_keeps_healthy_accounts(caplog):
+    """A con.auth warning for one institution must not sink a claim whose
+    payload still carries usable accounts from the other institutions. The
+    second half pins the other direction: with no accounts at all the same
+    warning still hard-fails the claim."""
+    import logging as stdlogging
+
+    def make_handler(accounts: list):
+        state = {"step": "claim"}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if state["step"] == "claim":
+                state["step"] = "accounts"
+                return httpx.Response(200, text="https://u:p@bridge.example/simplefin")
+            return httpx.Response(
+                200,
+                json={
+                    "errlist": [
+                        {"code": "con.auth", "msg": "Institution A auth required", "conn_id": "INST-A"}
+                    ],
+                    "connections": [
+                        {"conn_id": "INST-A", "name": "Institution A"},
+                        {"conn_id": "INST-B", "name": "Institution B"},
+                    ],
+                    "accounts": accounts,
+                },
+            )
+
+        return handler
+
+    healthy_account = {
+        "id": "acc-healthy",
+        "name": "Healthy Checking",
+        "currency": "USD",
+        "balance": "42.00",
+        "conn_id": "INST-B",
+        "transactions": [],
+        "holdings": [],
+    }
+
+    provider = SimpleFinProvider()
+    token = _encode_token("https://bridge.example/simplefin/claim/demo")
+    with caplog.at_level(stdlogging.WARNING, logger="app.providers.simplefin"), _patched_client(make_handler([healthy_account])):
+        conn = await provider.handle_oauth_callback(token)
+    assert [acc.external_id for acc in conn.accounts] == ["acc-healthy"]
+    assert any("con.auth" in rec.getMessage() for rec in caplog.records)
+
+    provider = SimpleFinProvider()
+    token = _encode_token("https://bridge.example/simplefin/claim/demo")
+    with _patched_client(make_handler([])):
+        with pytest.raises(ProviderUserActionRequired) as exc:
+            await provider.handle_oauth_callback(token)
+    assert exc.value.code == "credentials_invalid"
+
+
 # ----- error mapping ----------------------------------------------------------
 
 

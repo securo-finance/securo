@@ -275,3 +275,15 @@ async def test_currencies_include_twd_with_metadata(client: AsyncClient):
     assert twd["symbol"] == "NT$"
     assert twd["name"] == "New Taiwan Dollar"
     assert twd["flag"] == "🇹🇼"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_zar_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    zar = next((currency for currency in data if currency["code"] == "ZAR"), None)
+
+    assert zar is not None
+    assert zar["symbol"] == "R"
+    assert zar["name"] == "South African Rand"
+    assert zar["flag"] == "🇿🇦"

@@ -303,10 +303,17 @@ class SimpleFinProvider(BankProvider):
         }
 
         # Pull the account list once so we can return an institution name and
-        # the initial AccountData list. Filter out transactions here — they're
-        # fetched per-account by ``get_transactions``.
+        # the initial AccountData list. Transactions are filtered out here;
+        # they're fetched per-account by ``get_transactions``.
         payload = await self._fetch_accounts(credentials, pending=False)
-        _surface_errors(payload.get("errlist") or [], context="claim")
+        # A multi-institution bridge can carry a con.auth warning for one
+        # institution while still returning usable accounts from the others;
+        # in that case keep the claim moving instead of failing it outright.
+        _surface_errors(
+            payload.get("errlist") or [],
+            context="claim",
+            has_usable_data=bool(payload.get("accounts") or []),
+        )
         institution_name, accounts = self._parse_accounts(payload)
         return ConnectionData(
             external_id=self._stable_external_id(payload, claim_url),

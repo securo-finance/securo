@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sortAccountsByAbsoluteBalance, sortAccountsByDisplayName } from './account-utils'
+import { sortAccountsByAbsoluteBalance, sortAccountsByDisplayName, sumAccountsTotal } from './account-utils'
 
 describe('sortAccountsByDisplayName', () => {
   it('orders accounts by display name when present and falls back to name', () => {
@@ -76,5 +76,17 @@ describe('sortAccountsByAbsoluteBalance', () => {
     sortAccountsByAbsoluteBalance(accounts)
 
     expect(accounts.map((account) => account.id)).toEqual(['small', 'large'])
+  })
+})
+
+describe('sumAccountsTotal', () => {
+  it('leaves loans out of the accounts total', () => {
+    const accounts = [
+      { type: 'checking', current_balance: 4000, balance_primary: null, shared_balance_group: null },
+      { type: 'credit_card', current_balance: -500, balance_primary: null, shared_balance_group: null },
+      { type: 'loan', current_balance: -200000, balance_primary: null, shared_balance_group: null },
+    ]
+
+    expect(sumAccountsTotal(accounts)).toBe(3500)
   })
 })

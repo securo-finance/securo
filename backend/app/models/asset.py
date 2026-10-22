@@ -15,6 +15,10 @@ if TYPE_CHECKING:
     from app.models.asset_value import AssetValue
 
 
+
+# Asset types a loan can be secured against (a mortgage, a car financing).
+LOAN_COLLATERAL_TYPES = frozenset({"real_estate", "vehicle"})
+
 class Asset(Base):
     __tablename__ = "assets"
     __table_args__ = (

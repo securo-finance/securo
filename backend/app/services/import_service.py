@@ -1158,6 +1158,16 @@ async def import_transactions(
             # wins, the charge only fills what is still empty, and only its
             # provenance is recorded outright.
             placeholder.original_description = txn_data.description
+            if placeholder.amount != txn_data.amount or txn_data.fx_rate:
+                # Matched under a tolerance, or the file says what the charge
+                # cost in the primary currency: the row now stands for what was
+                # actually charged, not for what the bill expected.
+                placeholder.amount = txn_data.amount
+                if txn_data.fx_rate:
+                    placeholder.fx_rate_used = txn_data.fx_rate
+                    placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                else:
+                    await stamp_primary_amount(session, user_id, placeholder)
             if placeholder.category_id is None:
                 placeholder.category_id = preview.category_id
             if import_payee_raw and not placeholder.payee:

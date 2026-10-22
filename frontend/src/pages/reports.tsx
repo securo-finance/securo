@@ -34,6 +34,11 @@ import type { ReportResponse, CategoryTrendItem } from '@/types'
 import { formatCurrency } from '@/lib/format'
 import { localDateString, todayInTimezone } from '@/lib/date-utils'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
+import {
+  formatNetWorthAxisTick,
+  getNetWorthDomain,
+  shouldFillNetWorthArea,
+} from '@/lib/net-worth-chart-utils'
 
 // A small qualitative palette of well-separated hues for the composition
 // detail ring. Capped to a handful of slices, distinct colours make each
@@ -341,6 +346,11 @@ export default function ReportsPage() {
       ...breakdowns,
     } as Record<string, string | number | null>
   })
+  const netWorthDomain = getNetWorthDomain(
+    chartData
+      .map((point) => point.value)
+      .filter((value): value is number => typeof value === 'number'),
+  )
 
   // Cash-flow runway: the first projected day below zero and the lowest
   // point of the horizon, both computed day by day on the backend.
@@ -1084,15 +1094,15 @@ export default function ReportsPage() {
                   interval="preserveStartEnd"
                 />
                 <YAxis
+                  domain={netWorthDomain}
                   tickFormatter={(v) => {
                     if (privacyMode) return ''
-                    if (v === 0) return '0'
-                    return formatCompact(v, userCurrency, locale)
+                    return formatNetWorthAxisTick(v, netWorthDomain, userCurrency, locale)
                   }}
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                   axisLine={false}
                   tickLine={false}
-                  width={64}
+                  width={88}
                   tickCount={5}
                 />
                 <Tooltip
@@ -1125,7 +1135,7 @@ export default function ReportsPage() {
                   dataKey="value"
                   stroke="#6366F1"
                   strokeWidth={2.5}
-                  fill="url(#netWorthGrad)"
+                  fill={shouldFillNetWorthArea(netWorthDomain) ? 'url(#netWorthGrad)' : 'none'}
                   dot={false}
                   activeDot={{ r: 4, fill: '#6366F1' }}
                 />

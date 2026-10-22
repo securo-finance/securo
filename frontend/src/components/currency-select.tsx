@@ -57,6 +57,7 @@ export const CURRENCIES = [
   { code: 'MKD', flag: '\u{1F1F2}\u{1F1F0}', symbol: 'ден' },
   { code: 'HKD', flag: '\u{1F1ED}\u{1F1F0}', symbol: 'HK$' },
   { code: 'TWD', flag: '\u{1F1F9}\u{1F1FC}', symbol: 'NT$' },
+  { code: 'ZAR', flag: '\u{1F1FF}\u{1F1E6}', symbol: 'R' },
 ] as const
 
 interface CurrencySelectProps {

@@ -41,7 +41,11 @@ class Account(Base):
     # duplicating the account after a reconnect. Refreshed alongside `name`,
     # never blanked by a missing value.
     stable_external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    type: Mapped[str] = mapped_column(String(50))  # checking, savings, credit_card
+    type: Mapped[str] = mapped_column(String(50))  # checking, savings, credit_card, loan
+    # Loan accounts only: the property or vehicle this loan is secured against.
+    secured_asset_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     balance: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0.00"))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     balance_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)

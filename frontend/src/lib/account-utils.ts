@@ -23,6 +23,16 @@ export function sumAccountBalances(
 }
 
 /**
+ * The accounts total the sidebar shows. Loans are long-term debt that the
+ * net worth already counts, so they stay out of this money-on-hand total.
+ */
+export function sumAccountsTotal(
+  accounts: readonly Pick<Account, 'type' | 'balance_primary' | 'current_balance' | 'shared_balance_group'>[],
+): number {
+  return sumAccountBalances(accounts.filter((account) => account.type !== 'loan'))
+}
+
+/**
  * Return a presentation-only copy ordered by the name users see.
  * The input is never mutated, which keeps React Query's cached account list intact.
  */

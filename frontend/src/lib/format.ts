@@ -79,6 +79,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   MKD: 'mk-MK',
   HKD: 'zh-HK',
   TWD: 'zh-TW',
+  ZAR: 'en-ZA',
 }
 
 /**
