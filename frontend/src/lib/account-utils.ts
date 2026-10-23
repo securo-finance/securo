@@ -23,6 +23,14 @@ export function sumAccountBalances(
 }
 
 /**
+ * The accounts the sidebar lists. Loans and financing are long-term debt, not
+ * money to move day to day: they live on the Accounts page and in net worth.
+ */
+export function sidebarAccounts<T extends Pick<Account, 'type'>>(accounts: readonly T[]): T[] {
+  return accounts.filter((account) => account.type !== 'loan')
+}
+
+/**
  * The accounts total the sidebar shows. Loans are long-term debt that the
  * net worth already counts, so they stay out of this money-on-hand total.
  */

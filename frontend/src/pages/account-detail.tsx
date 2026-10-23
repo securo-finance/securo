@@ -35,6 +35,7 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { useCreateTransaction } from '@/hooks/use-create-transaction'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { formatCurrency } from '@/lib/format'
+import { LoanScheduleCard } from '@/components/loan-schedule-card'
 import {
   AreaChart,
   Area,
@@ -1450,6 +1451,10 @@ export default function AccountDetailPage() {
           </div>
         )
       })()}
+
+      {account.type === 'loan' && (
+        <LoanScheduleCard accountId={account.id} locale={locale} dateLocale={dateLocale} mask={mask} canWrite={canWrite} />
+      )}
 
       {/* Balance / Cycle spending chart */}
       {(() => {

@@ -179,6 +179,14 @@ export interface Account {
   institution_logo_url: string | null
   type: string
   secured_asset_id?: string | null
+  // Loan accounts only: contract terms the payment schedule is computed from.
+  loan_kind?: LoanKind | null
+  loan_original_amount?: number | null
+  loan_interest_rate?: number | null
+  loan_rate_period?: LoanRatePeriod | null
+  loan_term_months?: number | null
+  loan_first_payment_date?: string | null
+  loan_amortization?: LoanAmortization | null
   balance: number
   current_balance: number
   previous_balance: number | null
@@ -1804,4 +1812,53 @@ export interface ReconciliationHistoryEvent {
   user_id?: string | null
   transaction_id?: string | null
   transaction_description?: string | null
+}
+
+export type LoanKind = 'mortgage' | 'auto' | 'personal' | 'student' | 'other'
+export type LoanRatePeriod = 'monthly' | 'yearly_effective' | 'yearly_nominal'
+export type LoanAmortization = 'price' | 'sac'
+
+export interface LoanInstallment {
+  number: number
+  due_date: string
+  payment: number
+  interest: number
+  principal: number
+  balance: number
+}
+
+/** The lender's balance on a date, sent to bring a loan's ledger in line. */
+export interface LoanBalanceUpdate {
+  balance: number
+  date: string
+  description: string
+  category_id?: string | null
+}
+
+/** What the backend recorded: positive when the debt grew, 0 when it already matched. */
+export interface LoanBalanceAdjustment {
+  adjustment: number
+  current_debt: number
+  transaction_id: string | null
+}
+
+/** A loan's payment schedule, computed by the backend from its contract terms. */
+export interface LoanSchedule {
+  account_id: string
+  currency: string
+  current_debt: number
+  configured: boolean
+  missing: string[]
+  monthly_payment: number | null
+  payments_due: number | null
+  remaining_payments: number | null
+  next_payment: LoanInstallment | null
+  scheduled_balance: number | null
+  ahead_by: number | null
+  total_interest: number | null
+  total_paid: number | null
+  payoff_date: string | null
+  projected_payoff_date: string | null
+  paid_off: boolean
+  installments: LoanInstallment[]
 }

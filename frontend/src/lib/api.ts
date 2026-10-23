@@ -21,6 +21,9 @@ import type {
   AccountRunningBalancePoint,
   Collection,
   CreditCardBill,
+  LoanBalanceAdjustment,
+  LoanBalanceUpdate,
+  LoanSchedule,
   DescriptionSuggestion,
   Transaction,
   Payee,
@@ -521,6 +524,14 @@ export const accounts = {
   },
   runningBalance: async (id: string, from?: string, to?: string): Promise<AccountRunningBalancePoint[]> => {
     const { data } = await api.get(`/accounts/${id}/running-balance`, { params: { from, to } })
+    return data
+  },
+  loanSchedule: async (id: string): Promise<LoanSchedule> => {
+    const { data } = await api.get(`/accounts/${id}/loan-schedule`)
+    return data
+  },
+  adjustLoanBalance: async (id: string, body: LoanBalanceUpdate): Promise<LoanBalanceAdjustment> => {
+    const { data } = await api.post(`/accounts/${id}/loan-balance`, body)
     return data
   },
   bills: async (id: string, limit = 24): Promise<CreditCardBill[]> => {

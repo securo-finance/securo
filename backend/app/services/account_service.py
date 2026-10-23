@@ -13,7 +13,7 @@ from app.models.asset import LOAN_COLLATERAL_TYPES, Asset
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
-from app.schemas.account import AccountCreate, AccountUpdate
+from app.schemas.account import AccountCreate, AccountUpdate, LoanBalanceUpdate
 from app.services._query_filters import (
     counts_as_pnl,
     counts_in_current_balance,
@@ -24,9 +24,21 @@ from app.services._query_filters import (
     is_not_ignored,
     reporting_date_col,
 )
+from app.services import loan_schedule
 from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
-from app.services.fx_rate_service import _resolve_rate
+from app.services.fx_rate_service import _resolve_rate, stamp_primary_amount
 from app.models.category import Category
+
+# Loan accounts only: contract terms the payment schedule is computed from.
+LOAN_TERM_FIELDS = (
+    "loan_kind",
+    "loan_original_amount",
+    "loan_interest_rate",
+    "loan_rate_period",
+    "loan_term_months",
+    "loan_first_payment_date",
+    "loan_amortization",
+)
 
 
 def get_account_name(account: Account) -> str:
@@ -286,6 +298,13 @@ def serialize_account(
         "minimum_payment": float(acc.minimum_payment) if acc.minimum_payment is not None else None,
         "card_brand": acc.card_brand,
         "card_level": acc.card_level,
+        "loan_kind": acc.loan_kind,
+        "loan_original_amount": float(acc.loan_original_amount) if acc.loan_original_amount is not None else None,
+        "loan_interest_rate": float(acc.loan_interest_rate) if acc.loan_interest_rate is not None else None,
+        "loan_rate_period": acc.loan_rate_period,
+        "loan_term_months": acc.loan_term_months,
+        "loan_first_payment_date": acc.loan_first_payment_date,
+        "loan_amortization": acc.loan_amortization,
         "shared_balance_group": acc.shared_balance_group,
         "institution_name": institution_name,
         "institution_logo_url": institution_logo_url,
@@ -377,6 +396,7 @@ async def create_account(
         minimum_payment=data.minimum_payment if is_cc else None,
         card_brand=data.card_brand if is_cc else None,
         card_level=data.card_level if is_cc else None,
+        **{field: getattr(data, field) if data.type == "loan" else None for field in LOAN_TERM_FIELDS},
     )
     session.add(account)
     await session.flush()  # get account.id without committing
@@ -519,6 +539,8 @@ async def update_account(
         account.card_level = None
     if account.type != "loan":
         account.secured_asset_id = None
+        for field in LOAN_TERM_FIELDS:
+            setattr(account, field, None)
 
     opening_balance_type_changed = old_type != account.type and "loan" in {old_type, account.type}
     # When balance changes, sync the opening_balance transaction
@@ -1411,3 +1433,145 @@ async def get_account_running_balance(
         })
         current += timedelta(days=1)
     return series
+
+
+async def get_loan_schedule(
+    session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[dict]:
+    """The loan's contract schedule next to what its ledger says is owed.
+
+    None when the account does not exist in this workspace or is not a loan.
+    """
+    account = await get_account_with_balances(session, account_id, workspace_id)
+    if not account or account["type"] != "loan":
+        return None
+    current_debt = max(Decimal("0"), -Decimal(str(account["current_balance"])))
+    payload: dict = {
+        "account_id": account["id"],
+        "currency": account["currency"],
+        "current_debt": float(current_debt),
+        "configured": False,
+    }
+    required = (
+        "loan_original_amount",
+        "loan_interest_rate",
+        "loan_rate_period",
+        "loan_term_months",
+        "loan_first_payment_date",
+        "loan_amortization",
+    )
+    missing = [field for field in required if account.get(field) is None]
+    if missing:
+        payload["missing"] = missing
+        return payload
+
+    method = account["loan_amortization"]
+    schedule = loan_schedule.build_schedule(
+        principal=Decimal(str(account["loan_original_amount"])),
+        rate_percent=Decimal(str(account["loan_interest_rate"])),
+        rate_period=account["loan_rate_period"],
+        term_months=account["loan_term_months"],
+        first_payment_date=account["loan_first_payment_date"],
+        method=method,
+    )
+    summary = loan_schedule.summarize(
+        schedule,
+        actual_balance=current_debt,
+        today=app_today(),
+        method=method,
+        rate=loan_schedule.monthly_rate(
+            Decimal(str(account["loan_interest_rate"])), account["loan_rate_period"]
+        ),
+    )
+
+    def installment(row: loan_schedule.Installment) -> dict:
+        return {
+            "number": row.number,
+            "due_date": row.due_date,
+            "payment": float(row.payment),
+            "interest": float(row.interest),
+            "principal": float(row.principal),
+            "balance": float(row.balance),
+        }
+
+    payload.update(
+        configured=True,
+        monthly_payment=float((summary.next_payment or schedule[0]).payment),
+        payments_due=summary.payments_due,
+        remaining_payments=summary.remaining_payments,
+        next_payment=installment(summary.next_payment) if summary.next_payment else None,
+        scheduled_balance=float(summary.scheduled_balance),
+        ahead_by=float(summary.ahead_by),
+        total_interest=float(summary.total_interest),
+        total_paid=float(summary.total_paid),
+        payoff_date=summary.payoff_date,
+        projected_payoff_date=summary.projected_payoff_date,
+        paid_off=summary.paid_off,
+        installments=[installment(row) for row in schedule],
+    )
+    return payload
+
+
+async def adjust_loan_balance(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    data: LoanBalanceUpdate,
+) -> Optional[dict]:
+    """Record the gap between the lender's balance and the ledger's.
+
+    Indexed or renegotiated contracts move in ways the schedule cannot
+    compute, so the lender's statement wins: the difference becomes one
+    ordinary transaction on the loan. A debt that grew is a cost of the loan
+    (indexation, interest, fees) and counts as an expense. A debt that fell
+    without a recorded payment is most often a payment missing from the
+    ledger, so it moves the balance but stays out of income.
+
+    None when the account does not exist in this workspace or is not a loan.
+    """
+    account = await get_account(session, account_id, workspace_id)
+    if not account or account.type != "loan":
+        return None
+    if data.date > app_today():
+        raise ValueError("The statement date cannot be in the future")
+
+    owed = -Decimal(str(await _account_balance_at(session, account.id, data.date, account.currency)))
+    difference = (data.balance - owed).quantize(Decimal("0.01"))
+    transaction = None
+    if difference != 0:
+        grew = difference > 0
+        category_id = data.category_id if grew else None
+        if category_id is not None:
+            found = await session.execute(
+                select(Category.id).where(Category.id == category_id, Category.workspace_id == workspace_id)
+            )
+            if found.scalar_one_or_none() is None:
+                raise ValueError("Category not found")
+        transaction = Transaction(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            account_id=account.id,
+            category_id=category_id,
+            description=data.description,
+            amount=abs(difference),
+            currency=account.currency,
+            date=data.date,
+            type="debit" if grew else "credit",
+            source="manual",
+            status="posted",
+            exclude_from_pnl=not grew,
+        )
+        apply_effective_date(transaction, account)
+        session.add(transaction)
+        await session.flush()
+        await stamp_primary_amount(session, user_id, transaction)
+        await session.commit()
+
+    refreshed = await get_account_with_balances(session, account.id, workspace_id)
+    assert refreshed is not None
+    return {
+        "adjustment": float(difference),
+        "current_debt": float(max(Decimal("0"), -Decimal(str(refreshed["current_balance"])))),
+        "transaction_id": transaction.id if transaction else None,
+    }
