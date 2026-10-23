@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ShellLogo } from '@/components/shell-logo'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Loader2, Send, Sparkles, AlertCircle } from 'lucide-react'
+import { Loader2, Send, Sparkles, AlertCircle, Square, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { agents } from '@/lib/api'
 import type { Agent, AgentMessage } from '@/lib/api'
@@ -46,6 +46,13 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
   // Last error from a chat round, kept after streaming ends so the user
   // can actually see what went wrong. Cleared when they send a new message.
   const [lastError, setLastError] = useState<string | null>(null)
+  // Seconds since the current round started — a 60s silent spinner reads
+  // as "hung"; a ticking counter reads as "working".
+  const [elapsed, setElapsed] = useState(0)
+  // The in-flight fetch, so Stop can cancel it; the last text sent, so
+  // Retry can resend it after a failed round.
+  const abortRef = useRef<AbortController | null>(null)
+  const lastSentRef = useRef<string>('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   // Whether the user is "pinned" to the bottom of the scroll area. We
@@ -105,6 +112,25 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
     }
   }, [history, draft, pendingUser])
 
+  useEffect(() => {
+    if (!streaming) {
+      setElapsed(0)
+      return
+    }
+    const startedAt = Date.now()
+    const id = window.setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000)
+    return () => window.clearInterval(id)
+  }, [streaming])
+
+  const stop = () => abortRef.current?.abort()
+
+  const friendlyError = (code: string | undefined, message: string | undefined) => {
+    const known = ['auth', 'rate_limit', 'unavailable', 'max_iterations', 'empty_response', 'config']
+    const key = code && known.includes(code) ? code : 'generic'
+    const headline = t(`agents.chat.errors.${key}`)
+    return message ? `${headline} (${message})` : headline
+  }
+
   const handleScroll = () => {
     const el = scrollRef.current
     if (!el) return
@@ -113,9 +139,12 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
     isAtBottomRef.current = distance < 80
   }
 
-  const send = async () => {
-    const trimmed = input.trim()
+  const send = async (textOverride?: string) => {
+    const trimmed = (textOverride ?? input).trim()
     if (!trimmed || streaming) return
+    lastSentRef.current = trimmed
+    const controller = new AbortController()
+    abortRef.current = controller
     setInput('')
     setLastError(null)
     setStreaming(true)
@@ -140,6 +169,7 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
         content: trimmed,
         conversationId,
         pageContext: getPageContext?.() ?? null,
+        signal: controller.signal,
         onEvent: (ev: AgentStreamEvent) => {
           if (ev.kind === 'conversation') {
             activeConvId = ev.conversation_id
@@ -160,7 +190,7 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
               return { ...d, tools: copy }
             })
           } else if (ev.kind === 'error') {
-            errorThisTurn = `${ev.error_code || 'error'}: ${ev.error_message || ''}`
+            errorThisTurn = friendlyError(ev.error_code, ev.error_message)
             setDraft((d) => (d ? { ...d, error: errorThisTurn || undefined } : d))
           } else if (ev.kind === 'done') {
             setDraft((d) => (d ? { ...d, pending: false } : d))
@@ -168,9 +198,16 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
         },
       })
     } catch (err) {
-      errorThisTurn = String(err)
-      setDraft((d) => (d ? { ...d, error: String(err) } : d))
+      if (controller.signal.aborted) {
+        // The user pressed Stop. Whatever streamed so far is kept (the
+        // backend persists the partial turn); it is not an error.
+        setDraft((d) => (d ? { ...d, pending: false } : d))
+      } else {
+        errorThisTurn = friendlyError(undefined, String(err))
+        setDraft((d) => (d ? { ...d, error: errorThisTurn || undefined } : d))
+      }
     } finally {
+      abortRef.current = null
       setStreaming(false)
       // Pull the persisted turn for the conversation we actually wrote
       // to. refetchQueries waits for the data to come back; only THEN do
@@ -273,6 +310,11 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
                 ) : (
                   <Loader2 className="inline h-3.5 w-3.5 animate-spin text-muted-foreground" />
                 )}
+                {draft.pending && elapsed >= 3 && (
+                  <div className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                    {t('agents.chat.elapsed', { seconds: elapsed })}
+                  </div>
+                )}
               </div>
             )}
             {draft.error && (
@@ -287,6 +329,15 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
           <div className="rounded-lg px-3 py-2 bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-200 text-sm flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <div className="min-w-0 flex-1 break-words">{lastError}</div>
+            {lastSentRef.current && (
+              <button
+                type="button"
+                onClick={() => send(lastSentRef.current)}
+                className="inline-flex items-center gap-1 text-xs uppercase tracking-wider text-rose-700 hover:text-rose-900 dark:text-rose-200 dark:hover:text-rose-50"
+              >
+                <RotateCcw className="h-3 w-3" /> {t('agents.chat.retry')}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setLastError(null)}
@@ -323,9 +374,15 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
             }
           }}
         />
-        <Button onClick={send} disabled={streaming || !input.trim()} className="shrink-0">
-          {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </Button>
+        {streaming ? (
+          <Button onClick={stop} variant="outline" className="shrink-0" aria-label={t('agents.chat.stop')} title={t('agents.chat.stop')}>
+            <Square className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button onClick={() => send()} disabled={!input.trim()} className="shrink-0" aria-label={t('agents.chat.send')} title={t('agents.chat.send')}>
+            <Send className="h-4 w-4" />
+          </Button>
+        )}
       </div>
     </div>
   )

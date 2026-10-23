@@ -17,7 +17,9 @@ interface Props {
  */
 export function ToolDebugChip({ name, args, result, pending, defaultOpen = false }: Props) {
   const [open, setOpen] = useState(defaultOpen)
-  const status = pending ? 'pending' : result?.ok === false ? 'error' : result ? 'ok' : 'pending'
+  const failed = result?.ok === false
+    || (!!result?.data && typeof result.data === 'object' && 'error' in (result.data as Record<string, unknown>))
+  const status = pending ? 'pending' : failed ? 'error' : result ? 'ok' : 'pending'
   const summary = result?.text || (result?.data && typeof result.data === 'object'
     ? summarizeData(result.data as Record<string, unknown>)
     : null)
