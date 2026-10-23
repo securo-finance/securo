@@ -339,7 +339,7 @@ function RecurringTab() {
                     </span>
                   </td>
                   <td className="py-3 text-xs text-muted-foreground tabular-nums hidden md:table-cell">
-                    {new Date(rt.next_occurrence + 'T00:00:00').toLocaleDateString(dateLocale)}
+                    {new Date((rt.next_due_date ?? rt.next_occurrence) + 'T00:00:00').toLocaleDateString(dateLocale)}
                   </td>
                   <td className="py-3 hidden sm:table-cell">
                     <span className={cn(
@@ -626,6 +626,17 @@ function RecurringFormFields({
   const [dayOfMonth, setDayOfMonth] = useState(
     recurring?.day_of_month?.toString() ?? initial?.day_of_month?.toString() ?? ''
   )
+  const [dayRule, setDayRule] = useState<'calendar' | 'business'>(recurring?.business_day ? 'business' : 'calendar')
+  const [businessDay, setBusinessDay] = useState(recurring?.business_day?.toString() ?? '5')
+  const [countSaturdays, setCountSaturdays] = useState(recurring?.count_saturdays ?? false)
+  const [holidayCalendar, setHolidayCalendar] = useState<RecurringTransaction['holiday_calendar']>(
+    recurring?.holiday_calendar ?? null
+  )
+  const [graceDays, setGraceDays] = useState(recurring?.grace_days?.toString() ?? '0')
+  const [amountTolerance, setAmountTolerance] = useState(recurring?.amount_tolerance_percent?.toString() ?? '0')
+  const [matchKeywords, setMatchKeywords] = useState(recurring?.match_keywords ?? '')
+  const monthBased = frequency === 'monthly' || frequency === 'quarterly' || frequency === 'semiannual'
+  const useBusinessDay = monthBased && dayRule === 'business'
   const [startDate, setStartDate] = useState(recurring?.start_date ?? initial?.start_date ?? localDateString())
   const [endDate, setEndDate] = useState(recurring?.end_date ?? initial?.end_date ?? '')
   const [categoryId, setCategoryId] = useState(recurring?.category_id ?? initial?.category_id ?? '')
@@ -678,6 +689,12 @@ function RecurringFormFields({
           frequency,
           weekend_adjustment: weekendAdjustment,
           day_of_month: dayOfMonth ? parseInt(dayOfMonth) : null,
+          business_day: useBusinessDay && businessDay ? parseInt(businessDay) : null,
+          count_saturdays: useBusinessDay && countSaturdays,
+          holiday_calendar: holidayCalendar,
+          grace_days: graceDays ? parseInt(graceDays) : 0,
+          amount_tolerance_percent: amountTolerance ? parseFloat(amountTolerance) : 0,
+          match_keywords: matchKeywords.trim() || null,
           start_date: startDate,
           end_date: endDate || null,
           category_id: lineRows ? null : categoryId || null,
@@ -744,13 +761,56 @@ function RecurringFormFields({
             <option value="yearly">{t('recurring.yearly')}</option>
           </select>
         </div>
-        {(frequency === 'monthly' || frequency === 'quarterly' || frequency === 'semiannual') && (
+        {monthBased && (
           <div className="space-y-2">
-            <Label>{t('recurring.dayOfMonth')}</Label>
-            <Input type="number" min="1" max="31" value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} />
+            <Label>{t('recurring.dayRule')}</Label>
+            <select className={selectClass} value={dayRule} onChange={(e) => setDayRule(e.target.value as 'calendar' | 'business')}>
+              <option value="calendar">{t('recurring.dayRuleCalendar')}</option>
+              <option value="business">{t('recurring.dayRuleBusiness')}</option>
+            </select>
           </div>
         )}
       </div>
+      {monthBased && (
+        <div className="grid grid-cols-2 gap-4">
+          {useBusinessDay ? (
+            <div className="space-y-2">
+              <Label>{t('recurring.businessDay')}</Label>
+              <Input type="number" min="1" max="23" value={businessDay} onChange={(e) => setBusinessDay(e.target.value)} required />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>{t('recurring.dayOfMonth')}</Label>
+              <Input type="number" min="1" max="31" value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label>{t('recurring.holidayCalendar')}</Label>
+            <select
+              className={selectClass}
+              value={holidayCalendar ?? ''}
+              onChange={(e) => setHolidayCalendar((e.target.value || null) as RecurringTransaction['holiday_calendar'])}
+            >
+              <option value="">{t('recurring.holidayCalendarNone')}</option>
+              <option value="BR">{t('recurring.holidayCalendarBR')}</option>
+            </select>
+          </div>
+        </div>
+      )}
+      {useBusinessDay && (
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={countSaturdays}
+            onChange={(e) => setCountSaturdays(e.target.checked)}
+            className="h-4 w-4 mt-0.5 rounded border-border"
+          />
+          <span className="text-sm text-foreground">
+            {t('recurring.countSaturdays')}
+            <span className="block text-xs text-muted-foreground">{t('recurring.countSaturdaysHelp')}</span>
+          </span>
+        </label>
+      )}
       <div className="space-y-2">
         <Label>{t('recurring.weekendAdjustment')}</Label>
         <select
@@ -839,6 +899,32 @@ function RecurringFormFields({
           groups={categoryGroups}
         />
       )}
+      <div className="space-y-3 rounded-lg border border-border p-3">
+        <div>
+          <p className="text-sm font-medium text-foreground">{t('recurring.matching')}</p>
+          <p className="text-xs text-muted-foreground">{t('recurring.matchingHelp')}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>{t('recurring.graceDays')}</Label>
+            <Input type="number" min="0" max="15" value={graceDays} onChange={(e) => setGraceDays(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>{t('recurring.amountTolerance')}</Label>
+            <Input type="number" min="0" max="50" step="0.5" value={amountTolerance} onChange={(e) => setAmountTolerance(e.target.value)} />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label>{t('recurring.matchKeywords')}</Label>
+          <Input
+            value={matchKeywords}
+            onChange={(e) => setMatchKeywords(e.target.value)}
+            placeholder={t('recurring.matchKeywordsPlaceholder')}
+            maxLength={500}
+          />
+          <p className="text-xs text-muted-foreground">{t('recurring.matchKeywordsHelp')}</p>
+        </div>
+      </div>
       <label className="flex items-start gap-2 cursor-pointer">
         <input
           type="checkbox"

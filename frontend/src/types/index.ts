@@ -1351,11 +1351,18 @@ export interface RecurringTransaction {
   frequency: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
   weekend_adjustment: 'none' | 'previous_friday' | 'next_monday'
   day_of_month: number | null
+  business_day: number | null
+  count_saturdays: boolean
+  holiday_calendar: 'BR' | null
+  grace_days: number
+  match_keywords: string | null
+  amount_tolerance_percent: number
   start_date: string
   end_date: string | null
   is_active: boolean
   auto_generate: boolean
   next_occurrence: string
+  next_due_date?: string
   amount_primary: number | null
   fx_rate_used: number | null
   /** Split across categories: every occurrence starts with these parts. */
