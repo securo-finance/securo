@@ -323,6 +323,11 @@ async def update_recurring_transaction(
         update_data.get("business_day", recurring.business_day),
     )
 
+    money_changed = any(
+        key in update_data and update_data[key] != getattr(recurring, key)
+        for key in ("amount", "currency")
+    )
+
     if unsplitting:
         await category_line_service.replace_template_lines(session, recurring, lines_payload)
     for key, value in update_data.items():
@@ -338,6 +343,16 @@ async def update_recurring_transaction(
         # statement cannot drop.
         await session.flush()
         await category_line_service.validate_template_lines(session, recurring)
+
+    if money_changed:
+        # The stamped primary amount converts the old figure; keeping it would
+        # project the old value. Cleared first so a currency with no rate yet
+        # falls back to the native amount instead of the stale conversion.
+        recurring.amount_primary = None
+        recurring.fx_rate_used = None
+        await stamp_primary_amount(
+            session, recurring.user_id, recurring, date_field="start_date",
+        )
 
     if schedule_changed:
         intended_day = recurring.day_of_month or recurring.start_date.day

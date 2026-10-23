@@ -553,3 +553,21 @@ async def test_api_round_trips_the_rules_and_reports_the_due_date(
         headers=auth_headers,
     )
     assert response.status_code in (400, 422)
+
+
+@pytest.mark.asyncio
+async def test_editing_the_amount_restamps_the_primary_amount(
+    session, test_user, test_workspace, account
+):
+    """A primary amount stamped for the old figure must not survive an edit."""
+    bill = await _make_bill(
+        session, test_workspace, test_user, account,
+        description="Streaming", amount=Decimal("50.00"), type="debit",
+    )
+    bill.amount_primary = Decimal("50.00")
+    await session.commit()
+    updated = await update_recurring_transaction(
+        session, bill.id, test_workspace.id,
+        RecurringTransactionUpdate(amount=Decimal("21.69")),
+    )
+    assert updated.amount_primary != Decimal("50.00")
