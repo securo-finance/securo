@@ -55,16 +55,16 @@ async def account(session: AsyncSession, test_user, test_workspace) -> Account:
 
 
 async def _make_bill(session, test_workspace, test_user, account, **overrides):
-    data = RecurringTransactionCreate(
-        description=overrides.pop("description", "Salário"),
-        amount=overrides.pop("amount", Decimal("3000.00")),
-        currency="BRL",
-        type=overrides.pop("type", "credit"),
-        frequency=overrides.pop("frequency", "monthly"),
-        start_date=overrides.pop("start_date", date(2026, 8, 1)),
-        account_id=account.id,
+    data = RecurringTransactionCreate.model_validate({
+        "description": "Salário",
+        "amount": Decimal("3000.00"),
+        "currency": "BRL",
+        "type": "credit",
+        "frequency": "monthly",
+        "start_date": date(2026, 8, 1),
+        "account_id": account.id,
         **overrides,
-    )
+    })
     return await create_recurring_transaction(session, test_workspace.id, test_user.id, data)
 
 
@@ -132,12 +132,12 @@ def test_other_countries_use_their_own_calendar():
 def test_holiday_calendar_codes_are_normalized_and_checked():
     base = dict(description="x", amount=1, type="debit", frequency="monthly",
                 start_date=date(2026, 1, 1), account_id=uuid.uuid4())
-    assert RecurringTransactionCreate(**base, holiday_calendar=" br-sp ").holiday_calendar == "BR-SP"
-    assert RecurringTransactionCreate(**base, holiday_calendar="pt").holiday_calendar == "PT"
-    assert RecurringTransactionCreate(**base, holiday_calendar="").holiday_calendar is None
+    assert RecurringTransactionCreate.model_validate({**base, "holiday_calendar": " br-sp "}).holiday_calendar == "BR-SP"
+    assert RecurringTransactionCreate.model_validate({**base, "holiday_calendar": "pt"}).holiday_calendar == "PT"
+    assert RecurringTransactionCreate.model_validate({**base, "holiday_calendar": ""}).holiday_calendar is None
     for bad in ("XX", "BR-ZZ", "Brazil"):
         with pytest.raises(ValidationError):
-            RecurringTransactionCreate(**base, holiday_calendar=bad)
+            RecurringTransactionCreate.model_validate({**base, "holiday_calendar": bad})
 
 
 def test_nth_business_day_skips_weekends_and_holidays():
@@ -226,16 +226,16 @@ def test_type_aliases_are_normalized():
         "start_date": "2026-09-01",
         "account_id": str(uuid.uuid4()),
     }
-    assert RecurringTransactionCreate(**base, type="expense").type == "debit"
-    assert RecurringTransactionCreate(**base, type="Income").type == "credit"
+    assert RecurringTransactionCreate.model_validate({**base, "type": "expense"}).type == "debit"
+    assert RecurringTransactionCreate.model_validate({**base, "type": "Income"}).type == "credit"
     with pytest.raises(ValidationError):
-        RecurringTransactionCreate(**base, type="refund")
+        RecurringTransactionCreate.model_validate({**base, "type": "refund"})
 
 
 def test_match_keywords_are_cleaned():
     assert RecurringTransactionUpdate(match_keywords=" a , ,b ").match_keywords == "a, b"
     assert RecurringTransactionUpdate(match_keywords="  ").match_keywords is None
-    assert RecurringTransactionUpdate(match_keywords=["x", "y"]).match_keywords == "x, y"
+    assert RecurringTransactionUpdate.model_validate({"match_keywords": ["x", "y"]}).match_keywords == "x, y"
 
 
 # ---------------------------------------------------------------------------
@@ -297,8 +297,9 @@ async def test_switching_to_business_day_keeps_the_pointer_from_going_back(
     bill.next_occurrence = date(2026, 10, 5)
     await session.commit()
     updated = await update_recurring_transaction(
-        session, bill.id, test_workspace.id, RecurringTransactionUpdate(**_SALARY),
+        session, bill.id, test_workspace.id, RecurringTransactionUpdate.model_validate(_SALARY),
     )
+    assert updated is not None
     assert updated.business_day == 5
     assert updated.match_keywords == "Transferência Recebida"
     assert effective_date_for(updated, updated.next_occurrence) == date(2026, 10, 6)
@@ -605,4 +606,5 @@ async def test_editing_the_amount_restamps_the_primary_amount(
         session, bill.id, test_workspace.id,
         RecurringTransactionUpdate(amount=Decimal("21.69")),
     )
+    assert updated is not None
     assert updated.amount_primary != Decimal("50.00")
