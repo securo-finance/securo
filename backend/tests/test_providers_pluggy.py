@@ -426,6 +426,38 @@ async def test_get_transactions_follows_cursor_until_next_is_null():
     assert client.get.await_args_list[1].kwargs["params"]["after"] == "CUR2"
 
 
+@pytest.mark.asyncio
+async def test_get_transactions_by_date_filters_on_transaction_date():
+    """The pending re-read (#844) lists by `dateFrom`, never `createdAtFrom`,
+    and pages like the regular listing."""
+    page1 = MagicMock(raise_for_status=MagicMock())
+    page1.json = MagicMock(return_value={
+        "results": [_txn("t1")],
+        "next": "https://api.pluggy.ai/v2/transactions?accountId=a&after=CUR2",
+    })
+    page2 = MagicMock(raise_for_status=MagicMock())
+    page2.json = MagicMock(return_value={"results": [_txn("t2")], "next": None})
+
+    client = MagicMock()
+    client.get = AsyncMock(side_effect=[page1, page2])
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+
+    provider = PluggyProvider()
+    with patch.object(
+        PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="k")
+    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=client):
+        txns = await provider.get_transactions_by_date(
+            {"item_id": "i"}, "acc", date(2026, 3, 5)
+        )
+
+    assert [t.external_id for t in txns] == ["t1", "t2"]
+    first = client.get.await_args_list[0].kwargs["params"]
+    assert first == {"accountId": "acc", "dateFrom": "2026-03-05"}
+    second = client.get.await_args_list[1].kwargs["params"]
+    assert second == {"accountId": "acc", "dateFrom": "2026-03-05", "after": "CUR2"}
+
+
 # ----- masked account number (issue #408) -----
 
 
