@@ -336,12 +336,12 @@ async def propose_create_budget(
     description=_PROPOSAL_PREFACE
     + (
         "Build a preview for adding a one-off transaction (e.g. 'add a "
-        "R$50 lunch today'). Validates the account/category exist; "
+        "lunch for 50 today'). Validates the account/category exist; "
         "leaves currency to the account's default when not provided.\n\n"
         "Group splits: pass `group_id` + `splits` to attach a Splitwise-"
         "style breakdown. `splits.share_type='equal'` divides the amount "
-        "evenly across the listed `member_ids` — perfect for 'crie no "
-        "grupo dos Amigos e divida igualmente'. Use `'exact'` with a "
+        "evenly across the listed `member_ids` — perfect for 'add it to "
+        "the Friends group and split it equally'. Use `'exact'` with a "
         "`share_amount` per member, or `'percent'` with `share_pct` per "
         "member, for custom shares. All members must belong to the same "
         "group as `group_id`. Call `list_groups` first to fetch IDs."
@@ -611,7 +611,7 @@ async def propose_create_transaction(
     description=_PROPOSAL_PREFACE
     + (
         "Build a preview for adding a recurring transaction / subscription "
-        "(e.g. 'Netflix R$55 every month on the 10th'). Frequency is one "
+        "(e.g. 'Netflix, 55 every month on the 10th'). Frequency is one "
         "of weekly/biweekly/monthly/quarterly/semiannual/yearly. For monthly, "
         "quarterly, or semiannual use day_of_month (1-31)."
     ),
@@ -734,7 +734,7 @@ async def propose_create_recurring_transaction(
     description=_PROPOSAL_PREFACE
     + (
         "Build a preview for editing an existing recurring transaction "
-        "(e.g. 'update my salary to R$8,000', 'change Netflix to R$60'). "
+        "(e.g. 'update my salary to 8,000', 'change Netflix to 60'). "
         "Pass the recurring_id and only the fields you want to change. "
         "Returns the current values alongside the proposed changes so the "
         "user can compare before confirming."
@@ -954,7 +954,7 @@ async def propose_cancel_recurring_transaction(
     description=_PROPOSAL_PREFACE
     + (
         "Build a preview for creating a savings/financial goal (e.g. "
-        "'set a R$10k goal for travel')."
+        "'set a 10k goal for travel')."
     ),
     parameters={
         "type": "object",
@@ -991,7 +991,15 @@ async def propose_create_goal(
     color: str | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
-    resolved_currency = (currency or "BRL").upper()
+    if currency:
+        resolved_currency = currency.upper()
+    else:
+        # The schema promises "defaults to user's primary currency" — honour it
+        # instead of hardcoding one locale's currency.
+        from app.models.user import User
+
+        user = await session.get(User, ctx.user_id)
+        resolved_currency = (user.primary_currency if user else "USD").upper()
     resolved_deadline = parse_date(deadline) if deadline else None
     resolved_initial = float(initial_amount) if initial_amount is not None else 0.0
     preview = {

@@ -20,7 +20,7 @@ from mcp_server.tools._helpers import num, parse_uuid, resolve_workspace_id
 @tool(
     name="list_groups",
     description=(
-        "List the user's expense-sharing groups (Splitwise-style: 'Amigos', "
+        "List the user's expense-sharing groups (Splitwise-style: 'Friends', "
         "'Roommates', etc.) along with their members. Returns each group "
         "with `members: [{id, name, is_self}]` so a single call gives the "
         "model everything it needs to propose a transaction with equal/"
@@ -76,8 +76,8 @@ async def list_groups(
         "user owes them. `amount_in_default_currency` is the value "
         "converted to the group's default currency for a single bottom "
         "line. Already accounts for past `group_settlements` (payments "
-        "that closed previous balances). Use this for 'quem ainda me "
-        "deve?', 'estamos quites?', 'qual o saldo do grupo Amigos?'."
+        "that closed previous balances). Use this for 'who still owes "
+        "me?', 'are we settled up?', 'what's the balance of the Friends group?'."
     ),
     parameters={
         "type": "object",
@@ -140,8 +140,8 @@ async def get_group_balances(
         "List the recorded settlements (payments between members that "
         "close out balances) for one group, newest first. Each row has "
         "{from_member_id, to_member_id, amount, currency, date, notes}. "
-        "Pair with `get_group_balances` when the user asks 'quem já me "
-        "pagou?' or 'qual o histórico de acertos?'."
+        "Pair with `get_group_balances` when the user asks 'who has already "
+        "paid me?' or 'what's the settlement history?'."
     ),
     parameters={
         "type": "object",
