@@ -52,10 +52,6 @@ class RecurringTransaction(Base):
             name="ck_recurring_transactions_grace_days",
         ),
         CheckConstraint(
-            "holiday_calendar IS NULL OR holiday_calendar IN ('BR')",
-            name="ck_recurring_transactions_holiday_calendar",
-        ),
-        CheckConstraint(
             "amount_tolerance_percent >= 0 AND amount_tolerance_percent <= 50",
             name="ck_recurring_transactions_amount_tolerance",
         ),
@@ -91,9 +87,12 @@ class RecurringTransaction(Base):
     # An occurrence that lands on a Saturday is then moved by
     # weekend_adjustment, since no money moves on it.
     count_saturdays: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    # National holiday calendar (e.g. "BR"). Holidays are not business days,
-    # and weekend_adjustment moves an occurrence off them too.
-    holiday_calendar: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    # Holiday calendar: a country code with an optional subdivision ("BR",
+    # "BR-SP", "US-NY"). Holidays are not business days, and
+    # weekend_adjustment moves an occurrence off them too. The schema checks
+    # the code against app.services.business_days; the list is too long and
+    # changes too often to hold in a CHECK constraint.
+    holiday_calendar: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     # How many days late the charge may arrive and still be this occurrence
     # (rent due on the 5th that may be paid on the 6th). Widens the matching
     # window after the due date; the due date itself does not move.

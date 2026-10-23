@@ -5,10 +5,17 @@ cannot be written as a calendar day: the fifth business day is the 5th one
 month and the 9th the next. This module answers the one question those rules
 need, *is this a day money moves?*, and the two that follow from it.
 
-Holiday calendars are national only. A city's own holiday is real, but banks
-clear on the national calendar, and a list of every municipality is a list
-nobody can keep right. Only ``BR`` ships; a schedule without a calendar treats
-every weekday as a business day, which is what it did before this module.
+A holiday calendar is a country code, optionally with a subdivision after a
+hyphen: ``BR``, ``BR-SP``, ``US-NY``, ``PT-30``. The days themselves come from
+the ``holidays`` package, which computes them offline for every country it
+supports, so a self-hosted install never calls out to a holiday API. Only a
+country's public holidays count; the optional and observance categories are
+days the banks still open.
+
+Brazil adds its bank calendar on top: FEBRABAN closes the clearing system on
+days that are not public holidays in law. A schedule without a calendar
+treats every weekday as a business day, which is what it did before this
+module.
 """
 from __future__ import annotations
 
@@ -17,7 +24,7 @@ from datetime import date, timedelta
 from functools import lru_cache
 from typing import Optional
 
-HOLIDAY_CALENDARS = ("BR",)
+import holidays
 
 
 def _easter(year: int) -> date:
@@ -36,7 +43,7 @@ def _easter(year: int) -> date:
 
 
 @lru_cache(maxsize=64)
-def _br_holidays(year: int) -> frozenset[date]:
+def _br_bank_holidays(year: int) -> frozenset[date]:
     """Days Brazilian banks do not clear.
 
     Carnival Monday and Tuesday and Corpus Christi are not national holidays
@@ -63,12 +70,51 @@ def _br_holidays(year: int) -> frozenset[date]:
     return frozenset(days)
 
 
+def _split_calendar(holiday_calendar: str) -> tuple[str, Optional[str]]:
+    country, _, subdivision = holiday_calendar.partition("-")
+    return country, subdivision or None
+
+
+@lru_cache(maxsize=1)
+def supported_holiday_calendars() -> dict[str, dict[str, str]]:
+    """Every country the ``holidays`` package covers, with its subdivisions.
+
+    Maps a country code to ``{subdivision code: name}``. The package names
+    subdivisions only for some countries; the rest are listed by their code.
+    """
+    result: dict[str, dict[str, str]] = {}
+    for country, subdivisions in holidays.list_supported_countries(include_aliases=False).items():
+        names = {
+            code: name
+            for name, code in getattr(holidays.country_holidays(country), "subdivisions_aliases", {}).items()
+        }
+        result[country] = {code: names.get(code, code) for code in subdivisions}
+    return result
+
+
+def is_supported_holiday_calendar(holiday_calendar: str) -> bool:
+    country, subdivision = _split_calendar(holiday_calendar)
+    subdivisions = supported_holiday_calendars().get(country)
+    if subdivisions is None:
+        return False
+    return subdivision is None or subdivision in subdivisions
+
+
+@lru_cache(maxsize=256)
+def _holidays(holiday_calendar: str, year: int) -> frozenset[date]:
+    if not is_supported_holiday_calendar(holiday_calendar):
+        raise ValueError(f"Unsupported holiday calendar: {holiday_calendar}")
+    country, subdivision = _split_calendar(holiday_calendar)
+    days = set(holidays.country_holidays(country, subdiv=subdivision, years=year).keys())
+    if country == "BR":
+        days |= _br_bank_holidays(year)
+    return frozenset(days)
+
+
 def is_holiday(day: date, holiday_calendar: Optional[str]) -> bool:
     if holiday_calendar is None:
         return False
-    if holiday_calendar == "BR":
-        return day in _br_holidays(day.year)
-    raise ValueError(f"Unsupported holiday calendar: {holiday_calendar}")
+    return day in _holidays(holiday_calendar, day.year)
 
 
 def is_business_day(

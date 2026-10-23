@@ -51,6 +51,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
+import { countryName } from '@/lib/country-name'
 
 const TH = 'text-xs font-medium text-muted-foreground py-3'
 
@@ -475,7 +476,9 @@ function RecurringTab() {
       </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={() => { setDialogOpen(false); setEditing(null) }}>
-        <DialogContent>
+        {/* Bounded to the viewport as a flex column, so the form body scrolls
+            and the footer stays reachable however many rules are shown. */}
+        <DialogContent className="flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editing ? t('recurring.edit') : t('recurring.add')}</DialogTitle>
           </DialogHeader>
@@ -581,7 +584,7 @@ function RecurringFormFields({
   onCancel,
   loading,
 }: RecurringFormProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
@@ -629,9 +632,34 @@ function RecurringFormFields({
   const [dayRule, setDayRule] = useState<'calendar' | 'business'>(recurring?.business_day ? 'business' : 'calendar')
   const [businessDay, setBusinessDay] = useState(recurring?.business_day?.toString() ?? '5')
   const [countSaturdays, setCountSaturdays] = useState(recurring?.count_saturdays ?? false)
-  const [holidayCalendar, setHolidayCalendar] = useState<RecurringTransaction['holiday_calendar']>(
-    recurring?.holiday_calendar ?? null
+  // holiday_calendar is "BR" or "BR-SP": the country, then an optional subdivision.
+  const [holidayCountry, setHolidayCountry] = useState(recurring?.holiday_calendar?.split('-')[0] ?? '')
+  const [holidayRegion, setHolidayRegion] = useState(
+    recurring?.holiday_calendar?.split('-').slice(1).join('-') ?? ''
   )
+  // Country names follow the UI language, not the currency-derived display
+  // locale: a Hindi UI with BRL amounts should still read "ब्राज़ील".
+  const uiLocale = i18n.language
+  const { data: holidayCalendars } = useQuery({
+    queryKey: ['holiday-calendars'],
+    queryFn: recurringApi.holidayCalendars,
+    staleTime: Infinity,
+  })
+  const holidayCountries = useMemo(
+    () =>
+      (holidayCalendars ?? [])
+        .map((c) => ({ ...c, name: countryName(c.country, uiLocale) }))
+        .sort((a, b) => a.name.localeCompare(b.name, uiLocale)),
+    [holidayCalendars, uiLocale]
+  )
+  const holidayRegions = useMemo(
+    () =>
+      [...(holidayCountries.find((c) => c.country === holidayCountry)?.subdivisions ?? [])].sort((a, b) =>
+        a.name.localeCompare(b.name, uiLocale)
+      ),
+    [holidayCountries, holidayCountry, uiLocale]
+  )
+  const holidayCalendar = holidayCountry ? (holidayRegion ? `${holidayCountry}-${holidayRegion}` : holidayCountry) : null
   const [graceDays, setGraceDays] = useState(recurring?.grace_days?.toString() ?? '0')
   const [amountTolerance, setAmountTolerance] = useState(recurring?.amount_tolerance_percent?.toString() ?? '0')
   const [matchKeywords, setMatchKeywords] = useState(recurring?.match_keywords ?? '')
@@ -708,13 +736,14 @@ function RecurringFormFields({
               : {}),
         } as Partial<RecurringTransaction>)
       }}
-      className="space-y-4"
+      className="flex flex-col flex-1 min-h-0"
     >
+      <div className="space-y-4 overflow-y-auto overscroll-contain flex-1 min-h-0 -mx-1 px-1 pb-2">
       <div className="space-y-2">
         <Label htmlFor="recurring-description">{t('recurring.description')}</Label>
         <Input id="recurring-description" value={description} onChange={(e) => setDescription(e.target.value)} required />
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="recurring-amount">{t('recurring.amount')}</Label>
           <Input
@@ -749,7 +778,7 @@ function RecurringFormFields({
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>{t('recurring.frequency')}</Label>
           <select className={selectClass} value={frequency} onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}>
@@ -770,32 +799,67 @@ function RecurringFormFields({
             </select>
           </div>
         )}
-      </div>
-      {monthBased && (
-        <div className="grid grid-cols-2 gap-4">
-          {useBusinessDay ? (
-            <div className="space-y-2">
-              <Label>{t('recurring.businessDay')}</Label>
-              <Input type="number" min="1" max="23" value={businessDay} onChange={(e) => setBusinessDay(e.target.value)} required />
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label>{t('recurring.dayOfMonth')}</Label>
-              <Input type="number" min="1" max="31" value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} />
-            </div>
-          )}
+        {monthBased && (useBusinessDay ? (
+          <div className="space-y-2">
+            <Label>{t('recurring.businessDay')}</Label>
+            <Input type="number" min="1" max="23" value={businessDay} onChange={(e) => setBusinessDay(e.target.value)} required />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label>{t('recurring.dayOfMonth')}</Label>
+            <Input type="number" min="1" max="31" value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} />
+          </div>
+        ))}
+        <div className="space-y-2">
+          <Label>{t('recurring.weekendAdjustment')}</Label>
+          <select
+            className={selectClass}
+            value={weekendAdjustment}
+            onChange={(e) => setWeekendAdjustment(e.target.value as RecurringTransaction['weekend_adjustment'])}
+          >
+            <option value="none">{t('recurring.weekendAdjustmentNone')}</option>
+            <option value="previous_friday">{t('recurring.weekendAdjustmentPreviousFriday')}</option>
+            <option value="next_monday">{t('recurring.weekendAdjustmentNextMonday')}</option>
+          </select>
+        </div>
+        {monthBased && (
           <div className="space-y-2">
             <Label>{t('recurring.holidayCalendar')}</Label>
             <select
               className={selectClass}
-              value={holidayCalendar ?? ''}
-              onChange={(e) => setHolidayCalendar((e.target.value || null) as RecurringTransaction['holiday_calendar'])}
+              value={holidayCountry}
+              onChange={(e) => { setHolidayCountry(e.target.value); setHolidayRegion('') }}
             >
               <option value="">{t('recurring.holidayCalendarNone')}</option>
-              <option value="BR">{t('recurring.holidayCalendarBR')}</option>
+              {/* Keep a saved calendar selectable while the list loads. */}
+              {holidayCountry && !holidayCountries.some((c) => c.country === holidayCountry) && (
+                <option value={holidayCountry}>{countryName(holidayCountry, uiLocale)}</option>
+              )}
+              {holidayCountries.map((c) => (
+                <option key={c.country} value={c.country}>{c.name}</option>
+              ))}
             </select>
           </div>
-        </div>
+        )}
+        {monthBased && holidayCountry && (holidayRegions.length > 0 || holidayRegion) && (
+          <div className="space-y-2">
+            <Label>{t('recurring.holidayRegion')}</Label>
+            <select className={selectClass} value={holidayRegion} onChange={(e) => setHolidayRegion(e.target.value)}>
+              <option value="">{t('recurring.holidayRegionNational')}</option>
+              {holidayRegion && !holidayRegions.some((r) => r.code === holidayRegion) && (
+                <option value={holidayRegion}>{holidayRegion}</option>
+              )}
+              {holidayRegions.map((r) => (
+                <option key={r.code} value={r.code}>
+                  {r.name === r.code ? r.code : `${r.name} (${r.code})`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+      {monthBased && holidayCountry === 'BR' && (
+        <p className="text-xs text-muted-foreground -mt-2">{t('recurring.holidayCalendarBRHelp')}</p>
       )}
       {useBusinessDay && (
         <label className="flex items-start gap-2 cursor-pointer">
@@ -811,19 +875,7 @@ function RecurringFormFields({
           </span>
         </label>
       )}
-      <div className="space-y-2">
-        <Label>{t('recurring.weekendAdjustment')}</Label>
-        <select
-          className={selectClass}
-          value={weekendAdjustment}
-          onChange={(e) => setWeekendAdjustment(e.target.value as RecurringTransaction['weekend_adjustment'])}
-        >
-          <option value="none">{t('recurring.weekendAdjustmentNone')}</option>
-          <option value="previous_friday">{t('recurring.weekendAdjustmentPreviousFriday')}</option>
-          <option value="next_monday">{t('recurring.weekendAdjustmentNextMonday')}</option>
-        </select>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>{t('recurring.startDate')}</Label>
           <DatePickerInput value={startDate} onChange={setStartDate} className="w-full justify-start" />
@@ -833,7 +885,7 @@ function RecurringFormFields({
           <DatePickerInput value={endDate} onChange={setEndDate} placeholder={t('recurring.endDate')} className="w-full justify-start" />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between min-h-5">
             <Label>{t('recurring.category')}</Label>
@@ -904,7 +956,7 @@ function RecurringFormFields({
           <p className="text-sm font-medium text-foreground">{t('recurring.matching')}</p>
           <p className="text-xs text-muted-foreground">{t('recurring.matchingHelp')}</p>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>{t('recurring.graceDays')}</Label>
             <Input type="number" min="0" max="15" value={graceDays} onChange={(e) => setGraceDays(e.target.value)} />
@@ -948,7 +1000,8 @@ function RecurringFormFields({
           <span className="text-sm text-foreground">{t('recurring.active')}</span>
         </label>
       )}
-      <DialogFooter>
+      </div>
+      <DialogFooter className="pt-4 border-t border-border">
         <Button type="button" variant="outline" onClick={onCancel}>{t('common.cancel')}</Button>
         <Button type="submit" disabled={loading || !linesValid}>
           {loading ? t('common.loading') : t('common.save')}

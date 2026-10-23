@@ -114,6 +114,32 @@ def test_brazilian_holidays_are_not_business_days():
     assert not is_business_day(date(2026, 8, 2), "BR", count_saturdays=True)  # Sunday
 
 
+def test_subdivision_adds_its_own_holidays_to_the_national_ones():
+    # 9 Jul 2026 (Thursday), Revolução Constitucionalista: São Paulo only.
+    assert not is_business_day(date(2026, 7, 9), "BR-SP")
+    assert is_business_day(date(2026, 7, 9), "BR")
+    # The bank calendar still applies with a subdivision.
+    assert not is_business_day(date(2026, 2, 16), "BR-SP")  # Carnaval
+
+
+def test_other_countries_use_their_own_calendar():
+    assert not is_business_day(date(2026, 7, 3), "US")  # Independence Day, observed
+    assert is_business_day(date(2026, 9, 7), "US-NY") is False  # Labor Day
+    assert is_business_day(date(2026, 9, 7), "PT")  # a Monday in Portugal
+    assert not is_business_day(date(2026, 7, 1), "PT-30")  # Dia da Madeira
+
+
+def test_holiday_calendar_codes_are_normalized_and_checked():
+    base = dict(description="x", amount=1, type="debit", frequency="monthly",
+                start_date=date(2026, 1, 1), account_id=uuid.uuid4())
+    assert RecurringTransactionCreate(**base, holiday_calendar=" br-sp ").holiday_calendar == "BR-SP"
+    assert RecurringTransactionCreate(**base, holiday_calendar="pt").holiday_calendar == "PT"
+    assert RecurringTransactionCreate(**base, holiday_calendar="").holiday_calendar is None
+    for bad in ("XX", "BR-ZZ", "Brazil"):
+        with pytest.raises(ValidationError):
+            RecurringTransactionCreate(**base, holiday_calendar=bad)
+
+
 def test_nth_business_day_skips_weekends_and_holidays():
     # September 2026: 1-4 Tue-Fri, 5-6 weekend, 7 holiday, so the 5th is the 8th.
     assert nth_business_day(2026, 9, 5, "BR") == date(2026, 9, 8)
@@ -553,6 +579,15 @@ async def test_api_round_trips_the_rules_and_reports_the_due_date(
         headers=auth_headers,
     )
     assert response.status_code in (400, 422)
+
+
+@pytest.mark.asyncio
+async def test_api_lists_holiday_calendars_with_subdivision_names(client, auth_headers):
+    response = await client.get("/api/recurring-transactions/holiday-calendars", headers=auth_headers)
+    assert response.status_code == 200, response.text
+    by_country = {row["country"]: row["subdivisions"] for row in response.json()}
+    assert {"code": "SP", "name": "São Paulo"} in by_country["BR"]
+    assert "US" in by_country and "PT" in by_country
 
 
 @pytest.mark.asyncio

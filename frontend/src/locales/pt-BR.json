@@ -1712,7 +1712,11 @@
     "countSaturdaysHelp": "Como a CLT faz para o salário. Se o dia cair num sábado, use o ajuste de fim de semana para pagar na sexta anterior.",
     "holidayCalendar": "Feriados",
     "holidayCalendarNone": "Não considerar feriados",
-    "holidayCalendarBR": "Brasil (feriados bancários nacionais)",
+    "holidayCalendarBRHelp": "No Brasil também contam os dias em que a FEBRABAN fecha a compensação (Carnaval, Corpus Christi), mesmo onde não são feriados oficiais.",
+
+    "holidayRegion": "Estado ou região",
+
+    "holidayRegionNational": "Apenas feriados nacionais",
     "matching": "Conciliação com o extrato",
     "matchingHelp": "Como uma transação real é reconhecida como esta recorrente, para não contar o valor em dobro.",
     "graceDays": "Dias de atraso tolerados",

@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Annotated, Literal, Optional
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -26,7 +27,31 @@ DayOfMonth = Annotated[int, Field(ge=1, le=31)]
 BusinessDay = Annotated[int, Field(ge=1, le=23)]
 GraceDays = Annotated[int, Field(ge=0, le=15)]
 AmountTolerance = Annotated[Decimal, Field(ge=0, le=50)]
-HolidayCalendar = Literal["BR"]
+
+
+def _validate_holiday_calendar(value):
+    """``BR``, ``br-sp`` and `` BR-SP `` all mean ``BR-SP``; blank means none."""
+    if value is None:
+        return None
+    from app.services.business_days import is_supported_holiday_calendar
+
+    country, _, subdivision = str(value).strip().partition("-")
+    if not country:
+        return None
+    code = country.upper() + (f"-{subdivision}" if subdivision else "")
+    if not is_supported_holiday_calendar(code):
+        # Subdivision codes are mostly upper case (SP, NY) but not all of
+        # them are, so retry upper-cased before refusing.
+        upper = code.upper()
+        if not is_supported_holiday_calendar(upper):
+            raise ValueError(f"Unsupported holiday calendar: {value}")
+        code = upper
+    return code
+
+
+HolidayCalendar = Annotated[
+    Annotated[str, Field(max_length=32)], AfterValidator(_validate_holiday_calendar)
+]
 
 # Callers (the agent tools among them) say "expense" and "income" as often as
 # "debit" and "credit". Rows stored with those words were left out of every
@@ -123,6 +148,16 @@ class RecurringTransactionUpdate(BaseModel):
         if value is None:
             raise ValueError("amount cannot be null")
         return bounded_money(value)
+
+
+class HolidaySubdivision(BaseModel):
+    code: str
+    name: str
+
+
+class HolidayCalendarCountry(BaseModel):
+    country: str
+    subdivisions: list[HolidaySubdivision]
 
 
 class RecurringTransactionRead(BaseModel):

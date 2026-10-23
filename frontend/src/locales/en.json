@@ -1706,7 +1706,11 @@
     "countSaturdaysHelp": "As Brazilian labour law does for salaries. If the day lands on a Saturday, use the weekend adjustment to pay on the Friday before.",
     "holidayCalendar": "Holidays",
     "holidayCalendarNone": "Do not consider holidays",
-    "holidayCalendarBR": "Brazil (national bank holidays)",
+    "holidayCalendarBRHelp": "Brazil also counts the days FEBRABAN closes the clearing system (Carnival, Corpus Christi), even where they are not public holidays.",
+
+    "holidayRegion": "State or region",
+
+    "holidayRegionNational": "National holidays only",
     "matching": "Matching with bank transactions",
     "matchingHelp": "How a real transaction is recognized as this recurring one, so it is not counted twice.",
     "graceDays": "Days it may be late",
