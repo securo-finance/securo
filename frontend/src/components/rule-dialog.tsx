@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useInfiniteQuery } from '@tanstack/react-query'
-import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
+import { getAccountName } from '@/lib/account-utils'
 import { isInvalidDescriptionAction, parseRulePriority, previewableActions } from '@/lib/rule-form-utils'
 import { rules as rulesApi } from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
@@ -440,7 +440,6 @@ export function RuleDialog({
   initialData?: RuleDialogInitialData
 }) {
   const { t } = useTranslation()
-  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
 
   const defaultConditions: RuleConditionNode[] = initialData?.conditions ?? rule?.conditions ?? [newCondition()]
   const defaultActions: RuleAction[] = initialData?.actions ?? rule?.actions as RuleAction[] ?? [{ op: 'set_category', value: '' }]
@@ -624,7 +623,7 @@ export function RuleDialog({
                       <ConditionRow
                         key={j}
                         condition={cond}
-                        accounts={sortedAccounts}
+                        accounts={accounts}
                         payees={payees}
                         onChange={(field, val) => updateGroupCondition(i, j, field, val)}
                         onRemove={() => removeGroupCondition(i, j)}
@@ -642,7 +641,7 @@ export function RuleDialog({
                   <ConditionRow
                     key={i}
                     condition={node}
-                    accounts={sortedAccounts}
+                    accounts={accounts}
                     payees={payees}
                     onChange={(field, val) => updateCondition(i, field, val)}
                     onRemove={() => removeCondition(i)}

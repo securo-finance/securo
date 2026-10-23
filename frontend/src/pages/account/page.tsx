@@ -1,0 +1,837 @@
+import { useMemo, useState } from 'react'
+import { getConnectionName } from '@/lib/connection-utils'
+import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { useDateLocale } from '@/hooks/use-display-locale'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import axios from 'axios'
+import { accounts, assets, connections, currencies } from '@/lib/api'
+import { localDateString } from '@/lib/date-utils'
+import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { DatePickerInput } from '@/components/ui/date-picker-input'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import type { Account, BankConnection } from '@/types'
+import { RefreshCw, TriangleAlert, Unlink, Settings } from 'lucide-react'
+import { ConnectionLogo } from '@/components/account-icon'
+import { AccountPageActions } from '@/components/account-page-actions'
+import AccountSection from './account_section'
+import AccountSectionDnd from './account_section_dnd'
+import { PageHeader } from '@/components/page-header'
+import { BankConnectDialog } from '@/components/bank-connect-dialog'
+import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
+import { OAuthConnectDialog } from '@/components/oauth-connect-dialog'
+import { TokenConnectDialog } from '@/components/token-connect-dialog'
+import { ConnectionSettingsDialog } from '@/components/connection-settings-dialog'
+import { useAuth } from '@/contexts/auth-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
+import { useWorkspace } from '@/contexts/workspace-context'
+import { LOAN_COLLATERAL_TYPES } from '@/lib/property-equity'
+
+// Account types offered in the create/edit dialog. Shared between the manual
+// type selector and the connected-account override selector so the list stays
+// in one place.
+const ACCOUNT_TYPE_OPTIONS = [
+  { value: 'checking', labelKey: 'accounts.typeChecking' },
+  { value: 'savings', labelKey: 'accounts.typeSavings' },
+  { value: 'credit_card', labelKey: 'accounts.typeCreditCard' },
+  { value: 'loan', labelKey: 'accounts.typeLoan' },
+  { value: 'investment', labelKey: 'accounts.typeInvestment' },
+  { value: 'wallet', labelKey: 'accounts.typeWallet' },
+] as const
+
+export default function AccountsPage() {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const dateLocale = useDateLocale()
+  const { activeAccountIds } = useCollectionFilter()
+  const { canWrite } = useWorkspace()
+  // The "Viewing" bar sits directly above this page, so its scope has to reach
+  // the lists too — the sidebar was already filtered, this page was not.
+  // null = no active collection = every account.
+  const inActiveCollection = (a: Account) => !activeAccountIds || activeAccountIds.includes(a.id)
+  const queryClient = useQueryClient()
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [connectorSelectOpen, setConnectorSelectOpen] = useState(false)
+  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null)
+  const [settingsConnection, setSettingsConnection] = useState<BankConnection | null>(null)
+  const [disconnectingConnection, setDisconnectingConnection] = useState<BankConnection | null>(null)
+  const [closingAccountId, setClosingAccountId] = useState<string | null>(null)
+  const [reconnectConnId, setReconnectConnId] = useState<string | null>(null)
+  const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
+  const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
+
+  const { data: accountsList, isLoading: accountsLoading, isError: accountsError } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => accounts.list(),
+  })
+
+  const { data: connectionsList, isLoading: connectionsLoading } = useQuery({
+    queryKey: ['connections'],
+    queryFn: connections.list,
+  })
+
+  const { data: providersList } = useQuery({
+    queryKey: ['connections', 'providers'],
+    queryFn: connections.getProviders,
+    staleTime: 1000 * 60 * 10,
+  })
+
+  const providersByName = useMemo(() => {
+    const map = new Map<string, Provider>()
+    for (const p of providersList ?? []) map.set(p.name, p as Provider)
+    return map
+  }, [providersList])
+
+  const handleReconnectClick = async (conn: BankConnection) => {
+    const providerInfo = providersByName.get(conn.provider)
+    if (providerInfo?.flow_type === 'oauth') {
+      try {
+        const url = await connections.getReauthUrl(conn.id)
+        window.location.assign(url)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        toast.error(message || t('accounts.connectError'))
+      }
+      return
+    }
+    if (providerInfo?.flow_type === 'token') {
+      setTokenReconnectConnection(conn)
+      return
+    }
+    // Widget flow (Pluggy): re-open the widget with the existing item_id.
+    setReconnectConnId(conn.id)
+    setReconnectItemId(conn.external_id)
+  }
+
+  const { data: closedAccountsList } = useQuery({
+    queryKey: ['accounts', 'closed'],
+    queryFn: () => accounts.list(true),
+  })
+  const closedAccounts = closedAccountsList?.filter((a) => a.is_closed && inActiveCollection(a)) ?? []
+
+  const syncMutation = useMutation({
+    mutationFn: (id: string) => connections.sync(id),
+    onSuccess: (result) => {
+      invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      // The provider can throttle the sync (429) and still return success
+      // without pulling anything: say so instead of a false "Sync completed".
+      if (result.sync_outcome === 'rate_limited') {
+        toast.warning(t('accounts.syncRateLimited'))
+      } else {
+        toast.success(t('accounts.syncDone'))
+      }
+      const merged = result?.merged_count
+      if (merged && merged > 0) {
+        toast.info(t('accounts.mergedCount', { count: merged }))
+      }
+    },
+    onError: (err) => {
+      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      const detail = axios.isAxiosError(err)
+        ? err.response?.data?.detail
+        : null
+      const message = typeof detail === 'string' ? detail : detail?.message
+      toast.error(message || t('accounts.syncError'))
+    },
+  })
+
+  const disconnectMutation = useMutation({
+    mutationFn: (id: string) => connections.delete(id),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-groups'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-trend'] })
+      setDisconnectingConnection(null)
+      toast.success(t('accounts.disconnected'))
+    },
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (data: { name: string; type: string; balance?: number; currency?: string, order: number }) =>
+      accounts.create(data),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      setDialogOpen(false)
+      toast.success(t('accounts.created'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...data }: Partial<Account> & { id: string }) =>
+      accounts.update(id, data),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      setDialogOpen(false)
+      setEditingAccount(null)
+      toast.success(t('accounts.updated'))
+    },
+    onError: (_err, variables) => {
+      const original = editingAccount?.type
+      const crossesLoan = !!original && !!variables.type && variables.type !== original
+        && (variables.type === 'loan' || original === 'loan')
+      toast.error(crossesLoan ? t('accounts.loanRetypeBlocked') : t('common.error'))
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => accounts.delete(id),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['import-logs'] })
+      setDeletingId(null)
+      toast.success(t('accounts.deleted'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const closeMutation = useMutation({
+    mutationFn: (id: string) => accounts.close(id),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      setClosingAccountId(null)
+      toast.success(t('accounts.accountClosed'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const reopenMutation = useMutation({
+    mutationFn: (id: string) => accounts.reopen(id),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      toast.success(t('accounts.accountReopened'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const isLoading = accountsLoading || connectionsLoading
+  const manualAccounts = accountsList?.filter((a) => a.connection_id === null && inActiveCollection(a)) ?? []
+  const bankAccounts = accountsList?.filter((a) => a.connection_id !== null && inActiveCollection(a)) ?? []
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        section={t('accounts.title')}
+        title={t('accounts.title')}
+        action={
+          <AccountPageActions
+            canWrite={canWrite}
+            onAddAccount={() => { setEditingAccount(null); setDialogOpen(true) }}
+            onConnectBank={() => setConnectorSelectOpen(true)}
+            onOpenCollections={() => navigate('/collections')}
+          />
+        }
+      />
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Manual Accounts */}
+          <AccountSection
+            title={t('accounts.manualAccounts')}
+            accounts={manualAccounts}
+            onEdit={(acc) => { setEditingAccount(acc); setDialogOpen(true) }}
+            onClose={(acc) => setClosingAccountId(acc.id)}
+            onDelete={(acc) => setDeletingId(acc.id)}
+            deletePending={deleteMutation.isPending}
+            emptyMessage={t(activeAccountIds ? 'accounts.emptyFiltered' : 'accounts.noManualAccounts')}
+            centeredEmpty
+          />
+
+          {/* Bank Connections */}
+          {connectionsList && connectionsList.length > 0 ? (
+            <div className="space-y-3">
+              {connectionsList.map((conn) => {
+                const connAccounts = bankAccounts.filter((a) => a.connection_id === conn.id)
+                const needsReconnect = conn.status !== 'active'
+                // An error state does not always mean the token is dead: an
+                // upstream auth issue can be fixed without re-pasting, so the
+                // row offers a plain retry next to the reconnect action.
+                const canRetrySync = conn.status === 'error'
+                const syncPending = syncMutation.isPending && syncMutation.variables === conn.id
+                return (
+                  <AccountSection
+                    key={conn.id}
+                    accounts={connAccounts}
+                    onEdit={(acc) => { setEditingAccount(acc); setDialogOpen(true) }}
+                    onClose={(acc) => setClosingAccountId(acc.id)}
+                    deletePending={deleteMutation.isPending}
+                    emptyMessage={t(activeAccountIds ? 'accounts.emptyFiltered' : 'accounts.noAccountsFound')}
+                    header={
+                      <>
+                        <div className="flex items-center gap-3">
+                          {/* One bank's favicon would misrepresent a multi-
+                              institution link — fall back to the generic icon. */}
+                          <ConnectionLogo
+                            logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
+                          />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-foreground">{getConnectionName(conn, t)}</p>
+                              <Badge
+                                variant={conn.status === 'active' ? 'default' : 'secondary'}
+                                className={
+                                  conn.status === 'active'
+                                    ? 'text-[10px] px-1.5 py-0 h-4'
+                                    : 'text-[10px] px-1.5 py-0 h-4 border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                }
+                              >
+                                {t(`accounts.connectionStatus.${conn.status}`, conn.status)}
+                              </Badge>
+                            </div>
+                            {conn.last_sync_at && (
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                {t('accounts.lastSync')}: {new Date(conn.last_sync_at).toLocaleString(dateLocale)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        {canWrite && (
+                          <div className="flex items-center gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                            onClick={() => setSettingsConnection(conn)}
+                            title={t('connections.settings')}
+                          >
+                            <Settings size={14} />
+                          </Button>
+                          {canRetrySync && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => syncMutation.mutate(conn.id)}
+                              disabled={syncPending}
+                              title={t('accounts.retrySync')}
+                              aria-label={t('accounts.retrySync')}
+                            >
+                              <RefreshCw size={14} className={syncPending ? 'animate-spin' : ''} />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={needsReconnect
+                              ? 'relative h-8 w-8 p-0 text-amber-500 hover:bg-amber-500/10 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300'
+                              : 'h-8 w-8 p-0 text-muted-foreground hover:text-foreground'}
+                            onClick={() => needsReconnect ? handleReconnectClick(conn) : syncMutation.mutate(conn.id)}
+                            disabled={syncPending}
+                            title={needsReconnect
+                              ? conn.status === 'expired'
+                                ? t('accounts.connectionExpired')
+                                : t('accounts.connectionError')
+                              : t('accounts.sync')}
+                            aria-label={needsReconnect ? t('accounts.reconnect') : t('accounts.sync')}
+                          >
+                            <RefreshCw size={14} className={syncPending ? 'animate-spin' : ''} />
+                            {needsReconnect && (
+                              <TriangleAlert
+                                size={10}
+                                className="absolute -right-0.5 -top-0.5 rounded-full bg-card text-amber-500"
+                              />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500"
+                            onClick={() => setDisconnectingConnection(conn)}
+                            disabled={disconnectMutation.isPending}
+                            title={t('accounts.disconnect')}
+                          >
+                            <Unlink size={14} />
+                          </Button>
+                          </div>
+                        )}
+                      </>
+                    }
+                  />
+                )
+              })}
+            </div>
+          ) : (
+            <div className="bg-card rounded-xl border border-dashed border-border p-8 text-center">
+              <p className="text-sm text-muted-foreground">{t('accounts.noBankConnections')}</p>
+            </div>
+          )}
+
+          {!accountsError && accountsList && <AccountSectionDnd accounts={accountsList} />}
+
+          {/* Closed Accounts */}
+          {closedAccounts.length > 0 && (
+            <AccountSection
+              variant="closed"
+              title={t('accounts.closedAccounts')}
+              accounts={closedAccounts}
+              onReopen={(acc) => reopenMutation.mutate(acc.id)}
+              reopenPending={reopenMutation.isPending}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Confirm delete dialog */}
+      <Dialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('accounts.confirmDeleteTitle')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t('accounts.confirmDeleteDesc')}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingId(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deletingId && deleteMutation.mutate(deletingId)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? t('common.loading') : t('common.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm disconnect dialog */}
+      <Dialog open={!!disconnectingConnection} onOpenChange={() => setDisconnectingConnection(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('accounts.confirmDisconnectTitle')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t('accounts.confirmDisconnectDesc', { institution: disconnectingConnection ? getConnectionName(disconnectingConnection, t) : '' })}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDisconnectingConnection(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => disconnectingConnection && disconnectMutation.mutate(disconnectingConnection.id)}
+              disabled={disconnectMutation.isPending}
+            >
+              {disconnectMutation.isPending ? t('common.loading') : t('accounts.disconnect')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm close dialog */}
+      <Dialog open={!!closingAccountId} onOpenChange={() => setClosingAccountId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('accounts.close')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t('accounts.confirmClose')}
+          </p>
+          {accountsList?.find(a => a.id === closingAccountId)?.connection_id && (
+            <p className="text-sm text-amber-600 font-medium">
+              {t('accounts.confirmCloseBank')}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClosingAccountId(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => closingAccountId && closeMutation.mutate(closingAccountId)}
+              disabled={closeMutation.isPending}
+            >
+              {closeMutation.isPending ? t('common.loading') : t('accounts.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Connector Select Dialog */}
+      <ConnectorSelectDialog
+        open={connectorSelectOpen}
+        onClose={() => setConnectorSelectOpen(false)}
+        onSelect={(provider) => setSelectedProvider(provider)}
+      />
+
+      {/* Bank Connect Dialog — widget-based (Pluggy) */}
+      <BankConnectDialog
+        open={!!selectedProvider && selectedProvider.flow_type === 'widget'}
+        onClose={() => setSelectedProvider(null)}
+        provider={selectedProvider?.name}
+        supportsAssetSync={selectedProvider?.supports_asset_sync ?? false}
+      />
+
+      {/* OAuth Connect Dialog — institution-pickers (Enable Banking) */}
+      <OAuthConnectDialog
+        open={!!selectedProvider && selectedProvider.flow_type === 'oauth'}
+        onClose={() => setSelectedProvider(null)}
+        provider={selectedProvider?.name ?? ''}
+        supportsAssetSync={selectedProvider?.supports_asset_sync ?? false}
+      />
+
+      {/* Token Connect Dialog — paste-a-token flow (SimpleFIN) */}
+      <TokenConnectDialog
+        open={!!selectedProvider && selectedProvider.flow_type === 'token'}
+        onClose={() => setSelectedProvider(null)}
+        provider={selectedProvider?.name ?? ''}
+        supportsAssetSync={selectedProvider?.supports_asset_sync ?? false}
+      />
+
+      {/* Reconnect Dialog — widget-based (Pluggy) */}
+      <BankConnectDialog
+        open={!!reconnectConnId}
+        onClose={() => { setReconnectConnId(null); setReconnectItemId(null) }}
+        reconnectConnectionId={reconnectConnId ?? undefined}
+        updateItemId={reconnectItemId ?? undefined}
+      />
+
+      {/* Reconnect Dialog — paste-a-token flow (SimpleFIN) */}
+      <TokenConnectDialog
+        open={!!tokenReconnectConnection}
+        onClose={() => setTokenReconnectConnection(null)}
+        provider={tokenReconnectConnection?.provider ?? ''}
+        reconnectConnectionId={tokenReconnectConnection?.id}
+      />
+
+      {/* Connection Settings Dialog */}
+      <ConnectionSettingsDialog
+        open={!!settingsConnection}
+        onClose={() => setSettingsConnection(null)}
+        connection={settingsConnection}
+        supportsAssetSync={
+          settingsConnection
+            ? providersByName.get(settingsConnection.provider)?.supports_asset_sync ?? false
+            : false
+        }
+      />
+
+      {/* Account Dialog */}
+      <AccountDialog
+        open={dialogOpen}
+        onClose={() => { setDialogOpen(false); setEditingAccount(null) }}
+        account={editingAccount}
+        onSave={(data) => {
+          if (editingAccount) {
+            updateMutation.mutate({ id: editingAccount.id, ...data })
+          } else {
+            createMutation.mutate(data as { name: string; type: string; balance?: number; balance_date?: string; currency?: string, order: number })
+          }
+        }}
+        loading={createMutation.isPending || updateMutation.isPending}
+      />
+    </div>
+  )
+}
+
+export function AccountDialog({
+  open,
+  onClose,
+  account,
+  onSave,
+  loading,
+}: {
+  open: boolean
+  onClose: () => void
+  account: Account | null
+  onSave: (data: {
+    name?: string
+    display_name?: string | null
+    order?: number
+    type?: string
+    balance?: number
+    balance_date?: string
+    currency?: string
+    secured_asset_id?: string | null
+    credit_limit?: number | null
+    statement_close_day?: number | null
+    payment_due_day?: number | null
+  }) => void
+  loading: boolean
+}) {
+  const { t } = useTranslation()
+  const { user } = useAuth()
+  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { data: supportedCurrencies } = useQuery({
+    queryKey: ['currencies'],
+    queryFn: currencies.list,
+    staleTime: Infinity,
+  })
+  const { data: assetsList } = useQuery({
+    queryKey: ['assets'],
+    queryFn: () => assets.list(),
+    enabled: open,
+  })
+  const [name, setName] = useState(account?.name ?? '')
+  const [displayName, setDisplayName] = useState(account?.display_name ?? '')
+  const [type, setType] = useState(account?.type ?? 'checking')
+  const [balance, setBalance] = useState(account?.balance?.toString() ?? '0')
+  const [order, setOrder] = useState(account?.order?.toString())
+  const [currency, setCurrency] = useState(account?.currency ?? userCurrency)
+  // The opening balance's own date (issue #1204); today for a new account
+  // or one without an opening balance.
+  const initialBalanceDate = () => account?.balance_date ?? localDateString()
+  const [balanceDate, setBalanceDate] = useState(initialBalanceDate)
+  const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
+  const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
+  const [paymentDueDay, setPaymentDueDay] = useState(account?.payment_due_day?.toString() ?? '')
+  const [securedAssetId, setSecuredAssetId] = useState(account?.secured_asset_id ?? '')
+
+  const properties = (assetsList ?? []).filter((asset) => LOAN_COLLATERAL_TYPES.includes(asset.type))
+  // Send the link the select shows: a saved id that is no longer a listed
+  // property (it changed type) would otherwise be resent and rejected.
+  const securedAssetIsListed = !!securedAssetId && (!assetsList || properties.some((asset) => asset.id === securedAssetId))
+  const [formSource, setFormSource] = useState<{
+    account: typeof account
+    balanceDate: string
+  } | null>(null)
+  if (!formSource || formSource.account !== account) {
+    const date = initialBalanceDate()
+    setFormSource({ account, balanceDate: date })
+    setName(account?.name ?? '')
+    setDisplayName(account?.display_name ?? '')
+    setType(account?.type ?? 'checking')
+    setBalance(account?.balance?.toString() ?? '0')
+    setCurrency(account?.currency ?? userCurrency)
+    setBalanceDate(date)
+    setCreditLimit(account?.credit_limit?.toString() ?? '')
+    setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
+    setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
+    setOrder(account?.order?.toString())
+    setSecuredAssetId(account?.secured_asset_id ?? '')
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {account ? t('accounts.editAccount') : t('accounts.addManual')}
+          </DialogTitle>
+        </DialogHeader>
+        <form
+          key={account?.id ?? 'new'}
+          onSubmit={(e) => {
+            e.preventDefault()
+            const isCC = type === 'credit_card'
+            const parseDay = (v: string) => {
+              const n = parseInt(v, 10)
+              return Number.isFinite(n) && n >= 1 && n <= 31 ? n : null
+            }
+            const isConnected = !!account?.connection_id
+            // Editing: only move the opening balance when the date was changed.
+            const dateChanged = !account || balanceDate !== formSource?.balanceDate
+            onSave({
+              ...(!isConnected && {
+                name,
+                balance: parseFloat(balance),
+                ...(dateChanged && { balance_date: balanceDate }),
+                currency,
+              }),
+              type,
+              ...(type === 'loan' && { secured_asset_id: securedAssetIsListed ? securedAssetId : null }),
+              display_name: displayName.trim() || null,
+              order: +(order || '0'),
+              ...(isCC && {
+                credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
+                statement_close_day: parseDay(statementCloseDay),
+                payment_due_day: parseDay(paymentDueDay),
+              }),
+            })
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-2">
+            <Label>{t('accounts.accountName')}</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!!account?.connection_id} />
+          </div>
+          {account?.connection_id && (
+            <div className="space-y-2">
+              <Label>{t('accounts.displayName')}</Label>
+              <Input
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder={name}
+              />
+              <p className="text-xs text-muted-foreground">{t('accounts.displayNameHint')}</p>
+            </div>
+          )}
+          {account?.connection_id && (
+            <div className="space-y-2">
+              <Label>{t('accounts.accountType')}</Label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+              >
+                {/* A bank-connected account cannot be a loan yet. */}
+                {ACCOUNT_TYPE_OPTIONS.filter((o) => o.value !== 'loan').map((o) => (
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">{t('accounts.typeOverrideHint')}</p>
+            </div>
+          )}
+          {!account?.connection_id && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('accounts.accountType')}</Label>
+                  <select
+                    className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    value={type}
+                    onChange={(e) => setType(e.target.value)}
+                  >
+                    {ACCOUNT_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+                    ))}
+                  </select>
+                  {account && type !== account.type && (type === 'loan' || account.type === 'loan') && (
+                    <p className="text-xs text-muted-foreground">{t('accounts.loanRetypeHint')}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('accounts.currency')}</Label>
+                  <select
+                    className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                  >
+                    {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map((c) => (
+                      <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>
+                    {type === 'credit_card'
+                      ? t('accounts.balanceCreditCard')
+                      : type === 'loan'
+                        ? t('accounts.balanceLoan')
+                        : t('accounts.balance')}
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={type === 'credit_card' || type === 'loan' ? '0' : undefined}
+                    value={balance}
+                    onChange={(e) => setBalance(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('accounts.balanceDate')}</Label>
+                  <DatePickerInput
+                    value={balanceDate}
+                    onChange={setBalanceDate}
+                    className="w-full justify-start"
+                  />
+                </div>
+              </div>
+              {type === 'credit_card' && (
+                <p className="text-xs text-muted-foreground -mt-2">
+                  {t('accounts.balanceCreditCardHint')}
+                </p>
+              )}
+            </>
+          )}
+          <div className="space-y-2">
+            <Label>{t('accounts.order')}</Label>
+            <Input
+              type="number"
+              step="1"
+              min={0}
+              value={order}
+              onChange={(e) => setOrder(e.target.value)}
+            />
+          </div>
+          {type === 'loan' && (
+            <div className="space-y-2">
+              <Label>{t('accounts.securedProperty')}</Label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                value={securedAssetId}
+                onChange={(e) => setSecuredAssetId(e.target.value)}
+              >
+                <option value="">{t('accounts.noSecuredProperty')}</option>
+                {properties.map((asset) => (
+                  <option key={asset.id} value={asset.id}>{asset.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {type === 'credit_card' && (
+            <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
+              <div className="space-y-2">
+                <Label>{t('accounts.creditLimit')}</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={creditLimit}
+                  onChange={(e) => setCreditLimit(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('accounts.statementCloseDay')}</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={statementCloseDay}
+                    onChange={(e) => setStatementCloseDay(e.target.value)}
+                    placeholder={t('accounts.dayOfMonthHint')}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('accounts.paymentDueDay')}</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={paymentDueDay}
+                    onChange={(e) => setPaymentDueDay(e.target.value)}
+                    placeholder={t('accounts.dayOfMonthHint')}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? t('common.loading') : t('common.save')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
