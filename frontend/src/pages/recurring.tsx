@@ -719,7 +719,9 @@ function RecurringFormFields({
           day_of_month: dayOfMonth ? parseInt(dayOfMonth) : null,
           business_day: useBusinessDay && businessDay ? parseInt(businessDay) : null,
           count_saturdays: useBusinessDay && countSaturdays,
-          holiday_calendar: holidayCalendar,
+          // The selector only shows for month-based frequencies; a calendar
+          // left over from before a frequency change must not be saved unseen.
+          holiday_calendar: monthBased ? holidayCalendar : null,
           grace_days: graceDays ? parseInt(graceDays) : 0,
           amount_tolerance_percent: amountTolerance ? parseFloat(amountTolerance) : 0,
           match_keywords: matchKeywords.trim() || null,

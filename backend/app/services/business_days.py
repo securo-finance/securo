@@ -20,11 +20,14 @@ module.
 from __future__ import annotations
 
 import calendar
+import logging
 from datetime import date, timedelta
 from functools import lru_cache
 from typing import Optional
 
 import holidays
+
+logger = logging.getLogger(__name__)
 
 
 def _easter(year: int) -> date:
@@ -103,7 +106,12 @@ def is_supported_holiday_calendar(holiday_calendar: str) -> bool:
 @lru_cache(maxsize=256)
 def _holidays(holiday_calendar: str, year: int) -> frozenset[date]:
     if not is_supported_holiday_calendar(holiday_calendar):
-        raise ValueError(f"Unsupported holiday calendar: {holiday_calendar}")
+        # The API only stores supported codes, so this is a row saved before a
+        # `holidays` upgrade dropped or renamed its code. One stale row must
+        # not fail every list and generation run: it is scheduled without
+        # holidays until someone picks its calendar again.
+        logger.warning("Unsupported holiday calendar %r; ignoring its holidays", holiday_calendar)
+        return frozenset()
     country, subdivision = _split_calendar(holiday_calendar)
     days = set(holidays.country_holidays(country, subdiv=subdivision, years=year).keys())
     if country == "BR":

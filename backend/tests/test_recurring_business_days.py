@@ -608,3 +608,47 @@ async def test_editing_the_amount_restamps_the_primary_amount(
     )
     assert updated is not None
     assert updated.amount_primary != Decimal("50.00")
+
+
+def test_an_unsupported_stored_calendar_is_ignored_rather_than_raised():
+    # A code a later `holidays` release dropped: reads must not fail.
+    assert is_business_day(date(2026, 9, 7), "XX")
+    assert nth_business_day(2026, 9, 5, "XX") == date(2026, 9, 7)
+
+
+@pytest.mark.asyncio
+async def test_a_charge_late_within_grace_pays_its_own_occurrence(
+    session, test_user, test_workspace, account
+):
+    """Due 1 Feb with fifteen days of grace: a charge on 16 Feb is February's,
+    even though 1 Mar is closer."""
+    bill = await _make_bill(
+        session, test_workspace, test_user, account,
+        description="Aluguel", amount=Decimal("1200.00"), type="debit",
+        start_date=date(2027, 2, 1), day_of_month=1, grace_days=15,
+    )
+    match = await rms.find_bill_for_incoming(
+        session, test_user.id, account.id, Decimal("1200.00"), "BRL", "debit",
+        date(2027, 2, 16), "Aluguel",
+    )
+    assert match is not None and match.id == bill.id
+    rms.advance_past(bill, date(2027, 2, 16))
+    assert bill.next_occurrence == date(2027, 3, 1)
+
+
+@pytest.mark.asyncio
+async def test_amount_tolerance_refuses_to_pick_between_two_bills(
+    session, test_user, test_workspace, account
+):
+    """Two tolerant bills both fit the charge: neither may take it on its own."""
+    for name, amount in (("Aluguel", "1200.00"), ("Garagem", "1210.00")):
+        await _make_bill(
+            session, test_workspace, test_user, account,
+            description=name, amount=Decimal(amount), type="debit",
+            start_date=date(2026, 10, 5), day_of_month=5,
+            match_keywords="Proprietaria", amount_tolerance_percent=Decimal("3"),
+        )
+    assert await rms.find_bill_for_incoming(
+        session, test_user.id, account.id, Decimal("1205.00"), "BRL", "debit",
+        date(2026, 10, 5), "Pix|Proprietaria",
+    ) is None

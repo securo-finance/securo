@@ -479,9 +479,19 @@ def nearest_occurrence(recurring, when: date) -> tuple[date, date]:
 
     Returns ``(nominal, effective)``. On a tie the earlier occurrence wins: a
     charge exactly between two is more likely the late one than the early
-    one. Occurrences past ``end_date`` are not considered; when none is left
-    the pointer's own occurrence is returned.
+    one. Lateness within ``grace_days`` does not count toward the distance,
+    because the bill says a charge that late is still that occurrence: with
+    fifteen days of grace, a charge on 16 Feb pays the bill due 1 Feb, not the
+    one due 1 Mar that is two days closer. Occurrences past ``end_date`` are
+    not considered; when none is left the pointer's own occurrence is
+    returned.
     """
+    grace = int(recurring.grace_days or 0)
+
+    def distance(effective: date) -> int:
+        late = (when - effective).days
+        return max(0, late - grace) if late > 0 else -late
+
     intended_day = recurring.day_of_month or recurring.start_date.day
     pointer = recurring.next_occurrence
     best = (pointer, effective_date_for(recurring, pointer))
@@ -489,7 +499,7 @@ def nearest_occurrence(recurring, when: date) -> tuple[date, date]:
         if recurring.end_date and pointer > recurring.end_date:
             break
         effective = effective_date_for(recurring, pointer)
-        if abs((effective - when).days) < abs((best[1] - when).days):
+        if distance(effective) < distance(best[1]):
             best = (pointer, effective)
         if effective >= when:
             break
