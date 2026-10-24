@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import current_active_user
+from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.workspace_context import (
     WorkspaceContext,
@@ -19,6 +20,11 @@ from app.models.user import User
 from app.providers.market_price import (
     MarketPriceRateLimitedError,
     get_market_price_provider,
+)
+from app.providers.benchmark import (
+    BenchmarkProviderError,
+    BenchmarkRateLimitedError,
+    get_benchmark_provider,
 )
 from app.schemas.asset_import import (
     AssetImportPreview,
@@ -35,10 +41,19 @@ from app.schemas.asset import (
     AssetUpdate,
     AssetValueCreate,
     AssetValueRead,
+    BenchmarkMatch,
+    HoldingTradeImportRead,
     MarketSymbolMatch,
     MarketSymbolQuote,
+    PortfolioPerformanceRead,
 )
-from app.services import asset_import_service, asset_service, asset_transaction_service
+from app.services import (
+    asset_import_service,
+    asset_service,
+    asset_transaction_service,
+    connection_service,
+    portfolio_performance_service,
+)
 from app.services.fx_rate_service import convert_or_none
 
 logger = logging.getLogger(__name__)
@@ -105,6 +120,116 @@ async def market_quote(
     return quote
 
 
+# ----------------------------------------------------------------------------
+# Lazy benchmark comparison
+# ----------------------------------------------------------------------------
+
+
+@router.get("/benchmarks/search", response_model=list[BenchmarkMatch])
+async def benchmark_search(
+    q: str = Query(..., min_length=2, max_length=64),
+    limit: int = Query(15, ge=1, le=30),
+    _: User = Depends(current_active_user),
+) -> list[BenchmarkMatch]:
+    """Search index catalogs only when the Performance tab asks for it."""
+    if not get_settings().performance_benchmarks_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Benchmark comparison is disabled on this server.",
+        )
+    try:
+        return await get_benchmark_provider().search(q, limit=limit)
+    except BenchmarkRateLimitedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Benchmark providers are currently rate-limiting requests.",
+        ) from exc
+    except BenchmarkProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Benchmark search is temporarily unavailable.",
+        ) from exc
+
+
+async def _trade_import_read(session: AsyncSession, workspace_id: uuid.UUID) -> HoldingTradeImportRead:
+    available, enabled = await connection_service.holding_trade_import_status(
+        session, workspace_id
+    )
+    return HoldingTradeImportRead(available=available, enabled=enabled)
+
+
+@router.get("/performance/trade-import", response_model=HoldingTradeImportRead)
+async def holding_trade_import(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+) -> HoldingTradeImportRead:
+    return await _trade_import_read(session, ctx.workspace.id)
+
+
+@router.post("/performance/trade-import", response_model=HoldingTradeImportRead)
+async def enable_holding_trade_import(
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+) -> HoldingTradeImportRead:
+    """Import the trades behind connected holdings on every later sync.
+
+    Owner only: each import costs provider requests on the owner's
+    connections.
+    """
+    ctx.require_owner()
+    await connection_service.enable_holding_trades(session, ctx.workspace.id)
+    return await _trade_import_read(session, ctx.workspace.id)
+
+
+@router.get("/performance", response_model=PortfolioPerformanceRead)
+async def portfolio_performance(
+    provider: list[str] | None = Query(None),
+    benchmark: list[str] | None = Query(None),
+    period: str = Query("1y", pattern="^(3m|6m|ytd|1y|3y|5y)$"),
+    asset_group_ids: list[uuid.UUID] | None = Query(None),
+    selected_asset_group_ids: list[uuid.UUID] | None = Query(None),
+    asset_ids: list[uuid.UUID] | None = Query(None),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+) -> PortfolioPerformanceRead:
+    providers = [item.strip().casefold() for item in (provider or [])]
+    symbols = [item.strip() for item in (benchmark or [])]
+    if len(providers) != len(symbols):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="provider and benchmark must contain the same number of values",
+        )
+    if len(providers) > 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="A maximum of five benchmarks can be compared",
+        )
+    if any(item not in {"yahoo", "b3"} for item in providers):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Unknown benchmark provider",
+        )
+    if any(not symbol or len(symbol) > 64 for symbol in symbols):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid benchmark symbol",
+        )
+    comparisons = list(dict.fromkeys(zip(providers, symbols, strict=True)))
+    if not get_settings().performance_benchmarks_enabled:
+        # The portfolio's own return needs no external data; a stale client
+        # still asking for indices just gets it without them.
+        comparisons = []
+    return await portfolio_performance_service.get_portfolio_performance_multi(
+        session,
+        ctx.workspace.id,
+        ctx.user_id,
+        ctx.workspace.default_currency,
+        comparisons,
+        period,
+        asset_group_ids,
+        selected_asset_group_ids=selected_asset_group_ids,
+        asset_ids=asset_ids,
+    )
 
 
 @router.post("/{asset_id}/refresh-price", response_model=AssetRead)

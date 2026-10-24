@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
+from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
@@ -249,7 +250,8 @@ async def test_sync_holdings_creates_asset(session: AsyncSession, test_user):
     mock_provider.get_holdings = AsyncMock(return_value=[
         HoldingData(
             external_id="hold-1", name="VWCE ETF", currency="EUR",
-            current_value=Decimal("1200.00"), quantity=Decimal("10"),
+            current_value=Decimal("1200.00"), gross_value=Decimal("1250.00"),
+            quantity=Decimal("10"),
             purchase_price=Decimal("1000.00"), purchase_date=date(2026, 1, 1),
         ),
     ])
@@ -264,6 +266,17 @@ async def test_sync_holdings_creates_asset(session: AsyncSession, test_user):
     assert asset.type == "investment"
     assert asset.connection_id == conn.id
     assert asset.workspace_id == conn.workspace_id
+    values = list(
+        (
+            await session.execute(
+                select(AssetValue)
+                .where(AssetValue.asset_id == asset.id)
+                .order_by(AssetValue.date)
+            )
+        ).scalars().all()
+    )
+    assert values[0].gross_amount == Decimal("1000.00")
+    assert values[-1].gross_amount == Decimal("1250.00")
 
 
 @pytest.mark.asyncio
