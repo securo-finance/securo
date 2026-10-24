@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { extractApiError } from './api-errors'
+import { extractApiError, extractApiErrorAsync } from './api-errors'
 
 const legacyFallback = 'An unexpected error occurred'
 
@@ -45,6 +45,34 @@ describe('extractApiError', () => {
 
   it('uses an explicit fallback when no detail is available', () => {
     expect(extractApiError(new Error('network failure'), 'Localized fallback')).toBe(
+      'Localized fallback',
+    )
+  })
+})
+
+describe('extractApiErrorAsync', () => {
+  it('decodes FastAPI JSON returned as a Blob', async () => {
+    const error = {
+      response: {
+        data: new Blob([
+          JSON.stringify({ detail: [{ loc: ['body', 'file'], msg: 'Invalid ZIP' }] }),
+        ]),
+      },
+    }
+    await expect(extractApiErrorAsync(error, 'Fallback')).resolves.toBe(
+      'file: Invalid ZIP',
+    )
+  })
+
+  it('preserves locally-thrown error messages', async () => {
+    await expect(
+      extractApiErrorAsync(new Error('Choose a backup ZIP first.'), 'Fallback'),
+    ).resolves.toBe('Choose a backup ZIP first.')
+  })
+
+  it('uses the translated fallback for Axios transport failures', async () => {
+    const error = Object.assign(new Error('Network Error'), { isAxiosError: true })
+    await expect(extractApiErrorAsync(error, 'Localized fallback')).resolves.toBe(
       'Localized fallback',
     )
   })

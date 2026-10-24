@@ -202,6 +202,23 @@ describe('i18n locale files', () => {
     }
   })
 
+  it('contains every locale plural form used by backup count summaries', () => {
+    const entities = ['accounts', 'transactions', 'categories', 'rules', 'budgets', 'goals']
+
+    for (const locale of LOCALES) {
+      const data = JSON.parse(readRaw(locale)) as {
+        backup: { counts: Record<string, string> }
+      }
+      const categories = new Intl.PluralRules(locale).resolvedOptions().pluralCategories
+      const missing = entities.flatMap((entity) =>
+        categories
+          .map((category) => `${entity}_${category}`)
+          .filter((key) => !data.backup.counts[key]?.includes('{{count}}')),
+      )
+      expect(missing, `Backup count plural forms missing in ${locale}:`).toEqual([])
+    }
+  })
+
   // Every screen that offers a language picker reads SUPPORTED_LANGS, so a
   // translation that ships a bundle without landing in that list is offered
   // nowhere. Read the source rather than importing it: the module initialises

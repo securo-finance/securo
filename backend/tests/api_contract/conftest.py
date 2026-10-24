@@ -7,6 +7,7 @@
   baseline.json at the end of the run (serial runs only). Add
   API_CONTRACT_DETAILS=<file> to also dump why `ok` cases missed a 2xx.
 """
+
 import json
 import os
 import socket
@@ -100,6 +101,10 @@ def _contract_environment(monkeypatch, tmp_path, _mock_redis):
 
     monkeypatch.setattr("app.api.oidc_auth.get_redis", _fake_get_redis)
     monkeypatch.setattr(get_agent_settings(), "knowledge_storage_path", str(tmp_path / "knowledge"))
+    monkeypatch.setattr(
+        "app.services.backup_service.BACKUP_STORAGE_PATH",
+        tmp_path / "backups",
+    )
 
 
 @pytest.fixture(autouse=True)
