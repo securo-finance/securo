@@ -648,7 +648,8 @@ class EnableBankingProvider(BankProvider):
         transactions: list[TransactionData] = []
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
-        seen_transaction_ids: set[str] = set()
+        # external_id -> fingerprint of the transaction that claimed it.
+        seen_transaction_ids: dict[str, str] = {}
         for _ in range(TRANSACTION_PAGE_LIMIT):
             params: dict[str, Any] = {"date_from": date_from, "date_to": date_to}
             if continuation_key:
@@ -662,12 +663,24 @@ class EnableBankingProvider(BankProvider):
                 parsed = self._build_transaction(
                     account_external_id, raw_txn, status, payee_source
                 )
-                # A broken pagination cursor can make Enable Banking return a
-                # page we have already consumed. Keep the result idempotent
-                # even before the repeated cursor is detected below.
-                if parsed and parsed.external_id not in seen_transaction_ids:
-                    transactions.append(parsed)
-                    seen_transaction_ids.add(parsed.external_id)
+                if not parsed:
+                    continue
+                fingerprint = _txn_fingerprint(account_external_id, raw_txn)
+                claimed_by = seen_transaction_ids.get(parsed.external_id)
+                if claimed_by == fingerprint:
+                    # A broken pagination cursor can make Enable Banking return
+                    # a page we have already consumed. Keep the result
+                    # idempotent even before the repeated cursor is detected.
+                    continue
+                if claimed_by is not None:
+                    # A different transaction reusing an entry_reference (a
+                    # settlement batch, issue #1063): keep it under its own
+                    # fingerprint instead of dropping it.
+                    if fingerprint in seen_transaction_ids:
+                        continue
+                    parsed.external_id = fingerprint
+                transactions.append(parsed)
+                seen_transaction_ids[parsed.external_id] = fingerprint
 
             next_continuation_key = page.get("continuation_key") or None
             if not next_continuation_key:
@@ -731,6 +744,9 @@ class EnableBankingProvider(BankProvider):
             else:
                 description = debtor or creditor or ""
         description = description.strip()[:500] or "Transaction"
+        # entry_reference stays the id so rows already synced keep matching.
+        # get_transactions() moves a second, different transaction that
+        # shares it onto its fingerprint (issue #1063).
         entry_ref = (raw.get("entry_reference") or "").strip()
         external_id = (
             entry_ref if entry_ref and entry_ref != "0" else _txn_fingerprint(account_uid, raw)

@@ -463,7 +463,8 @@ async def test_get_transactions_default_window_is_90_days_inclusive(eb_keys):
         await provider.get_transactions(_CREDENTIALS, "acc-1")
 
     assert len(requests) == 1
-    assert requests[0].url.params["date_to"] == date.today().isoformat()
+    # The provider asks for "today" in UTC, not the host's local date.
+    assert requests[0].url.params["date_to"] == datetime.now(timezone.utc).date().isoformat()
     assert _span_days(requests[0]) == DEFAULT_HISTORY_DAYS == 90
 
 
@@ -829,3 +830,45 @@ def test_txn_fingerprint_includes_transaction_date():
     assert fp1 != fp2
 
 
+
+
+async def test_get_transactions_keeps_distinct_transactions_sharing_entry_reference(eb_keys):
+    """Issue #1063: a settlement batch can reuse one entry_reference for
+    different ledger lines. Both must come through; the first keeps the
+    reference as its id so rows synced before stay matched."""
+    provider = EnableBankingProvider()
+    shared = "205062608292ALB-0068XWUO2NW7"
+    page = {
+        "transactions": {
+            "booked": [
+                {
+                    "entry_reference": shared,
+                    "transaction_amount": {"amount": "0.55", "currency": "EUR"},
+                    "credit_debit_indicator": "DBIT",
+                    "booking_date": "2026-08-31",
+                    "value_date": "2026-08-31",
+                    "remittance_information": ["Round up"],
+                },
+                {
+                    "entry_reference": shared,
+                    "transaction_amount": {"amount": "1006.45", "currency": "EUR"},
+                    "credit_debit_indicator": "DBIT",
+                    "booking_date": "2026-08-31",
+                    "value_date": "2026-08-29",
+                    "remittance_information": ["Card payment"],
+                },
+            ],
+        },
+        "continuation_key": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    credentials = {"session_id_enc": None, "session_id": "sess-x", "valid_until": "2099-01-01T00:00:00Z"}
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(credentials, "acc-1", date(2026, 8, 1))
+
+    assert sorted(t.amount for t in txns) == [Decimal("0.55"), Decimal("1006.45")]
+    assert txns[0].external_id == shared
+    assert txns[1].external_id != shared
