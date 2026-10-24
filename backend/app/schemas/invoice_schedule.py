@@ -3,8 +3,9 @@ from datetime import date as _Date, datetime
 from decimal import Decimal
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.invoice_schedule import read_term_lines
 from app.schemas.invoice import InvoiceLineInput, InvoicePayee
 
 #: Decisions a human took about an agreement. Never PATCHed as a string:
@@ -40,6 +41,11 @@ class ScheduleTermRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("lines")
+    @classmethod
+    def preserve_legacy_inheritance(cls, lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return read_term_lines(lines)
 
 
 class ScheduleCreate(BaseModel):
