@@ -4,9 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { auth as authApi, currencies as currenciesApi, fiscal as fiscalApi, workspaces as workspacesApi } from '@/lib/api'
+import { auth as authApi, currencies as currenciesApi, fiscal as fiscalApi, settings as settingsApi, workspaces as workspacesApi } from '@/lib/api'
 import { useTimezones } from '@/hooks/use-timezone'
 import { TimezoneSelect } from '@/components/timezone-select'
+
+// Mirrors MAX_QUICK_CURRENCIES in backend/app/api/settings.py
+const MAX_QUICK_CURRENCIES = 6
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
@@ -156,6 +159,40 @@ export default function WorkspaceSettingsPage() {
     queryFn: () => (current ? workspacesApi.stats(current.id) : Promise.resolve({ members: 0, accounts: 0, transactions: 0 })),
     enabled: !!current,
   })
+
+  const currencyPrefsQuery = useQuery({
+    queryKey: ['currency-preferences'],
+    queryFn: settingsApi.currencyPreferences,
+  })
+  const quickCurrencies = currencyPrefsQuery.data?.quick_currencies ?? []
+
+  const quickMutation = useMutation({
+    mutationFn: (codes: string[]) => settingsApi.setQuickCurrencies(codes),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['currency-preferences'], data)
+    },
+    onError: (e: unknown) => {
+      const detail =
+        (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (e instanceof Error ? e.message : t('workspace.saveError'))
+      toast.error(detail)
+    },
+  })
+
+  const toggleQuickCurrency = (code: string) => {
+    // The active display currency must stay reachable, otherwise the switcher
+    // could leave you on a currency it no longer offers a way back from.
+    if (quickCurrencies.includes(code) && code === currencyPrefsQuery.data?.currency_display) {
+      toast.error(
+        t('workspace.quickCurrenciesActive', 'This is the active display currency.'),
+      )
+      return
+    }
+    const next = quickCurrencies.includes(code)
+      ? quickCurrencies.filter((c) => c !== code)
+      : [...quickCurrencies, code]
+    quickMutation.mutate(next)
+  }
 
   const updateMutation = useMutation({
     mutationFn: () => {
@@ -501,6 +538,44 @@ export default function WorkspaceSettingsPage() {
                 {t('workspace.timezoneHint')}
               </p>
             </div>
+          </div>
+
+          {/* Quick-switch shortlist. A personal preference, not a workspace
+              field, so it saves on toggle instead of waiting for Save, and
+              stays editable for members who cannot manage the workspace. */}
+          <div className="space-y-1.5">
+            <Label className="text-[13px]">
+              {t('workspace.quickCurrencies', 'Quick-switch currencies')}
+            </Label>
+            <div className="flex flex-wrap gap-1.5">
+              {(supportedCurrencies ?? []).map((c) => {
+                const selected = quickCurrencies.includes(c.code)
+                const atLimit = !selected && quickCurrencies.length >= MAX_QUICK_CURRENCIES
+                return (
+                  <button
+                    key={c.code}
+                    type="button"
+                    aria-pressed={selected}
+                    disabled={atLimit || quickMutation.isPending}
+                    onClick={() => toggleQuickCurrency(c.code)}
+                    className={`h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors disabled:opacity-40 ${
+                      selected
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <span className="mr-1">{c.flag}</span>
+                    {c.code}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              {t(
+                'workspace.quickCurrenciesHint',
+                'Shown as a switcher on the dashboard. Pick at least two, up to six. Amounts are converted, not just relabelled.',
+              )}
+            </p>
           </div>
         </div>
       </section>
