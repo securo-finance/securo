@@ -10,11 +10,13 @@ from app.core.workspace_context import (
     current_writable_workspace,
 )
 from app.schemas.recurring_transaction import (
+    HolidayCalendarCountry,
     RecurringTransactionCreate,
     RecurringTransactionRead,
     RecurringTransactionUpdate,
 )
 from app.services import recurring_transaction_service
+from app.services.business_days import supported_holiday_calendars
 
 router = APIRouter(prefix="/api/recurring-transactions", tags=["recurring-transactions"])
 
@@ -25,6 +27,19 @@ async def list_recurring_transactions(
     session: AsyncSession = Depends(get_async_session),
 ):
     return await recurring_transaction_service.get_recurring_transactions(session, ctx.workspace.id)
+
+
+@router.get("/holiday-calendars", response_model=list[HolidayCalendarCountry])
+async def list_holiday_calendars(
+    ctx: WorkspaceContext = Depends(current_workspace),
+):
+    return [
+        HolidayCalendarCountry(
+            country=country,
+            subdivisions=[{"code": code, "name": name} for code, name in subdivisions.items()],
+        )
+        for country, subdivisions in supported_holiday_calendars().items()
+    ]
 
 
 @router.post("", response_model=RecurringTransactionRead, status_code=status.HTTP_201_CREATED)

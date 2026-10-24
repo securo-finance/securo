@@ -49,6 +49,7 @@ import type {
   InvoiceSettings,
   InvoiceSummary,
   RecurringTransaction,
+  HolidayCalendarCountry,
   ProjectedTransaction,
   TransactionCalendarResponse,
   Budget,
@@ -1263,6 +1264,10 @@ export const recurring = {
   },
   generate: async (): Promise<{ generated: number }> => {
     const { data } = await api.post('/recurring-transactions/generate')
+    return data
+  },
+  holidayCalendars: async (): Promise<HolidayCalendarCountry[]> => {
+    const { data } = await api.get('/recurring-transactions/holiday-calendars')
     return data
   },
 }

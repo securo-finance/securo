@@ -42,10 +42,12 @@ a promise with nothing outstanding is not a candidate. Nothing reaches it:
 banks do not post charges of zero, but it is a difference rather than an
 identity.
 """
+import copy
+import unicodedata
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,6 +78,96 @@ def _date_reach(policy: dict[str, Any]) -> tuple[int, int]:
         before = max(before, int(window.get("before_days", 0)))
         after = max(after, int(window.get("after_days", 0)))
     return before, after
+
+
+def _fold(text: str) -> str:
+    """Lower-cased, accents dropped, whitespace collapsed: how keywords compare."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return " ".join(stripped.lower().split())
+
+
+def keyword_hit(recurring: RecurringTransaction, description: Optional[str]) -> bool:
+    """Whether a bank description names this bill through its match keywords.
+
+    A bank prints what it prints: a salary arrives as "Transferência
+    Recebida", nothing like the "Salário" the bill is called, and description
+    similarity can never link the two. The keywords are the person telling us
+    what their bank writes, so a hit stands in for the similarity check.
+    """
+    if not recurring.match_keywords or not description:
+        return False
+    text = _fold(description)
+    return any(
+        _fold(keyword) in text
+        for keyword in recurring.match_keywords.split(",")
+        if keyword.strip()
+    )
+
+
+def _bill_policy(
+    policy: dict[str, Any],
+    recurring: RecurringTransaction,
+    description: Optional[str] = None,
+    late_side: str = "after_days",
+) -> dict[str, Any]:
+    """The policy as it applies to one bill.
+
+    ``grace_days`` widens the side of the window on which a late charge sits,
+    which is ``after_days`` when the charge is the movement and the occurrence
+    the expectation, and ``before_days`` the other way round. A keyword hit on
+    ``description`` drops the description check. ``amount_tolerance_percent``
+    lets the amount differ by that much (a rent that carries the month's
+    utilities), and because an approximate amount can fit more than one
+    charge, the rule then asks for a single candidate. Returned unchanged (not
+    copied) when none applies.
+    """
+    grace = int(recurring.grace_days or 0)
+    tolerance = Decimal(recurring.amount_tolerance_percent or 0)
+    hit = keyword_hit(recurring, description)
+    if not grace and not hit and not tolerance:
+        return policy
+    policy = copy.deepcopy(policy)
+    for strategy in policy.get("strategies", []):
+        when = strategy.get("when", {})
+        window = when.get("date")
+        if grace and window is not None:
+            when["date"] = {**window, late_side: int(window.get(late_side, 0)) + grace}
+        if hit:
+            when.pop("description_similarity", None)
+        amount = when.get("amount") or {"match": "exact"}
+        if tolerance and amount.get("match", "exact") in ("exact", "tolerance"):
+            current = Decimal(str(amount.get("percent", "0")))
+            when["amount"] = {"match": "tolerance", "percent": str(max(current, tolerance))}
+            when["unique_candidate"] = True
+    return policy
+
+
+def _pick_across_bills(
+    linked: list[tuple[Any, Any, dict[str, Any]]], composed: dict[str, Any]
+) -> Any:
+    """``pick_linked`` for candidates that each belong to a different bill.
+
+    Each bill was judged under its own ``_bill_policy``, which asks for a
+    single candidate when the bill matches on an approximate amount, and
+    ``composed`` knows nothing of that. So when several bills linked under the
+    winning rule and any of them did so under such a policy, none wins: the
+    charge goes to a person, as it would for one bill with two close charges.
+    """
+    winner, rivals = reconciliation_rule_service.pick_linked(
+        [(candidate, decision) for candidate, decision, _ in linked], composed
+    )
+    if winner is None or len(rivals) < 2:
+        return winner
+    policies = {id(candidate): policy for candidate, _, policy in linked}
+    for candidate, decision in rivals:
+        strategy = next(
+            (s for s in policies[id(candidate)].get("strategies", []) if s["id"] == decision.strategy),
+            {},
+        )
+        if strategy.get("when", {}).get("unique_candidate", False):
+            return None
+    return winner
 
 
 def _as_movement(transaction: Transaction) -> Movement:
@@ -116,6 +208,7 @@ def _best_movement(
     candidates,
     expectation: Expectation,
     policy: dict,
+    policy_for: Optional[Callable[[Transaction], dict]] = None,
 ) -> Optional[Transaction]:
     """The charge that best answers one expected occurrence.
 
@@ -131,7 +224,11 @@ def _best_movement(
     for candidate in candidates:
         if candidate.is_ignored:
             continue
-        decision = evaluate(_as_movement(candidate), [expectation], policy)
+        decision = evaluate(
+            _as_movement(candidate),
+            [expectation],
+            policy_for(candidate) if policy_for else policy,
+        )
         if decision.port == "linked":
             linked.append((candidate, decision))
     return reconciliation_rule_service.pick_linked(linked, policy)[0]
@@ -147,8 +244,11 @@ async def find_real_tx_for_occurrence(
     Used by generate_pending: instead of writing a duplicate placeholder for an
     occurrence a real charge already covers, link that charge to the bill.
     """
-    policy = await reconciliation_rule_service.resolve_recurring(
-        session, recurring.workspace_id, recurring.frequency
+    policy = _bill_policy(
+        await reconciliation_rule_service.resolve_recurring(
+            session, recurring.workspace_id, recurring.frequency
+        ),
+        recurring,
     )
     # The charge is the movement and the occurrence the expectation, so the
     # charge may be up to `before` days earlier than the occurrence, or `after`
@@ -174,7 +274,14 @@ async def find_real_tx_for_occurrence(
         result.scalars(),
         key=lambda tx: (abs((tx.date - occurrence_date).days), tx.date, tx.id),
     )
-    return _best_movement(nearest, _as_occurrence(recurring, occurrence_date), policy)
+    return _best_movement(
+        nearest,
+        _as_occurrence(recurring, occurrence_date),
+        policy,
+        policy_for=lambda tx: _bill_policy(policy, recurring, tx.description)
+        if keyword_hit(recurring, tx.description)
+        else policy,
+    )
 
 
 async def find_placeholder_for_incoming(
@@ -225,8 +332,9 @@ async def find_placeholder_for_incoming(
     # rule is an upper bound for the query.
     p_before, p_after = _date_reach(policy)
     r_before, r_after = _date_reach(composed)
+    max_grace = 15  # the most grace_days a bill may carry
     result = await session.execute(
-        select(Transaction, RecurringTransaction.frequency)
+        select(Transaction, RecurringTransaction)
         .join(
             RecurringTransaction,
             RecurringTransaction.id == Transaction.recurring_transaction_id,
@@ -238,7 +346,7 @@ async def find_placeholder_for_incoming(
             Transaction.external_id.is_(None),
             Transaction.currency == currency,
             Transaction.type == tx_type,
-            Transaction.date >= tx_date - timedelta(days=max(p_before, r_after)),
+            Transaction.date >= tx_date - timedelta(days=max(p_before, r_after) + max_grace),
             Transaction.date <= tx_date + timedelta(days=max(p_after, r_before)),
         )
     )
@@ -259,7 +367,17 @@ async def find_placeholder_for_incoming(
         description=description,
         account_id=account_id,
     )
-    found = _best_movement([row[0] for row in rows], incoming, policy)
+    bills = {row[0].id: row[1] for row in rows}
+    # Here the placeholder is the movement and the charge the expectation, so
+    # a charge that arrives late leaves the placeholder *before* it.
+    found = _best_movement(
+        [row[0] for row in rows],
+        incoming,
+        policy,
+        policy_for=lambda placeholder: _bill_policy(
+            policy, bills[placeholder.id], description, late_side="before_days"
+        ),
+    )
     if found is not None or not rows:
         return found
 
@@ -272,9 +390,14 @@ async def find_placeholder_for_incoming(
         account_id=account_id,
     )
     linked = []
-    for placeholder, frequency in rows:
+    for placeholder, bill in rows:
         if placeholder.is_ignored:
             continue
+        policy = _bill_policy(
+            reconciliation_rule_service.narrow_for_frequency(composed, bill.frequency),
+            bill,
+            description,
+        )
         decision = evaluate(
             charge,
             [
@@ -289,11 +412,11 @@ async def find_placeholder_for_incoming(
                     account_id=placeholder.account_id,
                 )
             ],
-            reconciliation_rule_service.narrow_for_frequency(composed, frequency),
+            policy,
         )
         if decision.port == "linked":
-            linked.append((placeholder, decision))
-    return reconciliation_rule_service.pick_linked(linked, composed)[0]
+            linked.append((placeholder, decision, policy))
+    return _pick_across_bills(linked, composed)
 
 
 async def find_bill_for_incoming(
@@ -306,7 +429,7 @@ async def find_bill_for_incoming(
     tx_date: date,
     description: Optional[str],
 ) -> Optional[RecurringTransaction]:
-    """Find an active bill whose next expected occurrence this charge fulfills.
+    """Find an active bill whose expected occurrence this charge fulfills.
 
     Used when a real charge arrives before any placeholder was generated. The
     caller stamps the charge with the bill and advances the bill past the
@@ -316,7 +439,7 @@ async def find_bill_for_incoming(
     promises), except that each bill carries its own window, so each is asked
     under its own policy rather than all of them under one.
     """
-    from app.services.recurring_transaction_service import adjust_weekend_date
+    from app.services.recurring_transaction_service import nearest_occurrence
 
     result = await session.execute(
         select(RecurringTransaction).where(
@@ -349,40 +472,45 @@ async def find_bill_for_incoming(
                 recurring.workspace_id,
                 reconciliation_policy.MATCH_RECURRING["node"],
             )
-        occurrence = adjust_weekend_date(
-            recurring.next_occurrence, recurring.weekend_adjustment
-        )
-        decision = evaluate(
-            charge,
-            [_as_occurrence(recurring, occurrence)],
+        # The occurrence nearest the charge, not only the one the pointer is
+        # on: a pointer that fell behind (a month nothing matched) would
+        # otherwise never meet a charge again, and every later month would
+        # be projected next to the charge that paid it.
+        _, occurrence = nearest_occurrence(recurring, tx_date)
+        policy = _bill_policy(
             reconciliation_rule_service.narrow_for_frequency(
                 composed, recurring.frequency
             ),
+            recurring,
+            description,
         )
+        decision = evaluate(charge, [_as_occurrence(recurring, occurrence)], policy)
         if decision.port == "linked":
-            linked.append((recurring, decision))
+            linked.append((recurring, decision, policy))
     if composed is None:
         return None
-    return reconciliation_rule_service.pick_linked(linked, composed)[0]
+    return _pick_across_bills(linked, composed)
 
 
 def advance_past(recurring: RecurringTransaction, fulfilled_date: date) -> None:
     """Advance a bill's next_occurrence past the occurrence a charge fulfilled.
 
-    The target is floored at the bill's current next_occurrence: the matched
-    occurrence, so an *early-posted* charge (one that lands inside the
-    before-window, i.e. before next_occurrence) still moves the pointer forward.
-    Advancing only past the posting date would leave next_occurrence unchanged
-    for early charges (e.g. a Jan 8 charge for a Jan 10 occurrence), and
-    generate_pending would then re-create that occurrence as a duplicate.
+    The fulfilled occurrence is the one nearest the charge, the same one
+    find_bill_for_incoming judged it against, so an *early-posted* charge (a
+    Jan 8 charge for a Jan 10 occurrence) still moves the pointer past Jan 10,
+    and a charge for a later occurrence than the pointer's (the pointer fell
+    behind) moves it past that one rather than one period at a time.
 
     Deactivates the bill if it advances beyond its end_date. Lazy-imports the
     date helper to avoid a circular import with recurring_transaction_service.
     """
-    from app.services.recurring_transaction_service import _advance_date
+    from app.services.recurring_transaction_service import (
+        _advance_date,
+        nearest_occurrence,
+    )
 
     intended_day = recurring.day_of_month or recurring.start_date.day
-    target = max(fulfilled_date, recurring.next_occurrence)
+    target, _ = nearest_occurrence(recurring, fulfilled_date)
     guard = 0
     while recurring.next_occurrence <= target and guard < 500:
         recurring.next_occurrence = _advance_date(

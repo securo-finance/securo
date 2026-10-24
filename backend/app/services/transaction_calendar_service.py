@@ -26,8 +26,9 @@ from app.services.dashboard_service import (
 )
 from app.services.fx_rate_service import convert as fx_convert
 from app.services.recurring_transaction_service import (
-    adjust_weekend_date,
+    effective_date_for,
     get_occurrences_in_range,
+    occurrence_rules,
 )
 
 
@@ -405,15 +406,11 @@ def _forecast_item(
 def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int:
     """Count still-virtual effective occurrences before ``end`` without truncating."""
     nominal_start = recurring.next_occurrence
-    first_effective = adjust_weekend_date(
-        nominal_start, recurring.weekend_adjustment
-    )
+    first_effective = effective_date_for(recurring, nominal_start)
     range_start = min(nominal_start, first_effective)
     range_end = end
     if recurring.end_date is not None:
-        final_effective = adjust_weekend_date(
-            recurring.end_date, recurring.weekend_adjustment
-        )
+        final_effective = effective_date_for(recurring, recurring.end_date)
         range_end = min(range_end, final_effective + timedelta(days=1))
 
     count = 0
@@ -429,7 +426,7 @@ def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int
             range_start=range_start,
             range_end=chunk_end,
             intended_day=recurring.day_of_month or recurring.start_date.day,
-            weekend_adjustment=recurring.weekend_adjustment,
+            **occurrence_rules(recurring),
         )
         count += len(occurrences)
         range_start = chunk_end
@@ -477,7 +474,7 @@ async def _project_recurring_items(
             range_start=start,
             range_end=end,
             intended_day=rec.day_of_month or rec.start_date.day,
-            weekend_adjustment=rec.weekend_adjustment,
+            **occurrence_rules(rec),
         )
         category = rec.category
         account = rec.account
