@@ -1367,7 +1367,11 @@
     "confirmDeleteDescription": "O orçamento para \"{{name}}\" será excluído permanentemente. As transações existentes não são afetadas. Esta ação não pode ser desfeita.",
     "confirmDeleteRecurringDescription": "O orçamento recorrente para \"{{name}}\" será excluído permanentemente. Esta definição não será mais aplicada nos meses seguintes. As transações existentes não são afetadas. Esta ação não pode ser desfeita.",
     "repeatEveryMonth": "Repetir todo mês",
-    "recurringLabel": "Recorrente"
+    "recurringLabel": "Recorrente",
+    "monthTotal": "Total do mês",
+    "remaining": "Restam {{amount}}",
+    "overBy": "{{amount}} acima do orçamento",
+    "spendingUnavailable": "Não foi possível carregar os gastos deste mês."
   },
   "goals": {
     "title": "Metas",

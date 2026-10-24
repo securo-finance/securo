@@ -1367,7 +1367,11 @@
     "confirmDeleteDescription": "El presupuesto para \"{{name}}\" se eliminará permanentemente. Las transacciones existentes no se ven afectadas. Esta acción no se puede deshacer.",
     "confirmDeleteRecurringDescription": "El presupuesto recurrente para \"{{name}}\" se eliminará permanentemente. Esta definición dejará de aplicarse en los meses posteriores. Las transacciones existentes no se ven afectadas. Esta acción no se puede deshacer.",
     "repeatEveryMonth": "Repetir cada mes",
-    "recurringLabel": "Recurrente"
+    "recurringLabel": "Recurrente",
+    "monthTotal": "Total del mes",
+    "remaining": "Quedan {{amount}}",
+    "overBy": "{{amount}} por encima del presupuesto",
+    "spendingUnavailable": "No se pudieron cargar los gastos de este mes."
   },
   "goals": {
     "title": "Objetivos",

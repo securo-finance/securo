@@ -1363,7 +1363,11 @@
     "confirmDeleteDescription": "「{{name}}」の予算を完全に削除します。既存の取引には影響しません。この操作は取り消せません。",
     "confirmDeleteRecurringDescription": "「{{name}}」の定期的な予算を完全に削除します。この定義は以降の月には適用されなくなります。既存の取引には影響しません。この操作は取り消せません。",
     "repeatEveryMonth": "毎月繰り返す",
-    "recurringLabel": "定期的"
+    "recurringLabel": "定期的",
+    "monthTotal": "今月の合計",
+    "remaining": "残り {{amount}}",
+    "overBy": "予算超過 {{amount}}",
+    "spendingUnavailable": "今月の支出を読み込めませんでした。"
   },
   "goals": {
     "title": "目標",

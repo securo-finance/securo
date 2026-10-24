@@ -1363,6 +1363,10 @@
     "deleted": "Budget verwijderd",
     "repeatEveryMonth": "Herhaal elke maand",
     "recurringLabel": "Terugkerend",
+    "monthTotal": "Maandtotaal",
+    "remaining": "{{amount}} over",
+    "overBy": "{{amount}} boven budget",
+    "spendingUnavailable": "Uitgaven voor deze maand konden niet worden geladen.",
     "confirmDeleteTitle": "Budget verwijderen?",
     "confirmDeleteDescription": "Het budget voor \"{{name}}\" wordt permanent verwijderd. Bestaande transacties worden niet beïnvloed. Deze actie kan niet ongedaan worden gemaakt.",
     "confirmDeleteRecurringDescription": "Het terugkerende budget voor \"{{name}}\" wordt permanent verwijderd. Deze definitie geldt niet meer voor latere maanden. Bestaande transacties worden niet beïnvloed. Deze actie kan niet ongedaan worden gemaakt."
