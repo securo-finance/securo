@@ -135,7 +135,7 @@ export function AppLayout() {
     adminApi.defaultColors().then(({ light, dark }) => {
       setThemeBasedOnSystem(light, dark, resolvedTheme)
     }).catch(() => {})
-    
+
     if (!chatAvailable) return
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey
@@ -441,9 +441,9 @@ export function AppLayout() {
                   className={cn(
                     'flex items-center gap-3 text-[13px] font-medium transition-all rounded-lg px-3 py-2',
                     isActive
-                      ? 'bg-primary/[0.08] text-primary border-l-[3px] border-primary pl-[9px]'
+                      ? 'bg-primary/[0.08] text-primary'
                       : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                    desktopSidebarCollapsed && 'lg:h-10 lg:w-10 lg:justify-center lg:border-l-0 lg:px-0 lg:pl-0',
+                    desktopSidebarCollapsed && 'lg:h-10 lg:w-10 lg:justify-center lg:px-0 lg:pl-0',
                   )}
                 >
                   <Icon
