@@ -111,6 +111,20 @@ async def _load_txs(session: AsyncSession, asset_id: uuid.UUID) -> list[AssetTra
     return list(result.scalars().all())
 
 
+# Sources whose rows the user owns. Any other source is a connected
+# provider: its sync rewrites those rows from what the provider reports, so
+# an edit there would be silently undone.
+_USER_SOURCES = frozenset({"manual", "import"})
+
+
+def _raise_if_synced(tx: AssetTransaction) -> None:
+    if tx.source not in _USER_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This trade comes from a connected bank and its sync keeps it up to date.",
+        )
+
+
 def _raise_if_oversell(transactions: list[AssetTransaction]) -> None:
     """Reject a ledger that would drive the position negative (no shorting).
 
@@ -294,6 +308,7 @@ async def update_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
+    _raise_if_synced(tx)
     fields = data.model_dump(exclude_unset=True)
     # Validate the prospective ledger before mutating the row — editing a buy
     # down or a sell up could drive the position negative.
@@ -335,6 +350,7 @@ async def delete_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
+    _raise_if_synced(tx)
     asset = await _load_asset(session, tx.asset_id, workspace_id)
     if asset is None:
         return None

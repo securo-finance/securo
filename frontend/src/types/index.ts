@@ -87,6 +87,15 @@ export interface UserPreferences {
   currency_display?: string
   display_name?: string
   onboarding_completed?: boolean
+  /** Saved portfolio-performance selections, keyed by workspace id. */
+  performance_views?: Record<string, SavedPerformanceView[]>
+}
+
+export interface SavedPerformanceView {
+  id: string
+  name: string
+  wallet_ids: string[]
+  asset_ids: string[]
 }
 
 export interface Category {
@@ -937,6 +946,62 @@ export interface MarketSymbolQuote {
   currency: string
   price: number
   quote_type: string | null
+}
+
+export interface BenchmarkMatch {
+  symbol: string
+  name: string
+  exchange: string | null
+  provider: 'yahoo' | 'b3'
+}
+
+export type PortfolioPerformancePeriod = '3m' | '6m' | 'ytd' | '1y' | '3y' | '5y'
+
+/** Time-weighted (how the holdings did) or money-weighted (how your money did). */
+export type PerformanceMethod = 'twr' | 'mwr'
+
+/** Per-point values and money moved, aligned with `points`, for range IRRs. */
+export interface MoneyWeightedSeries {
+  values: number[]
+  flows: number[]
+  benchmark_values: Record<string, number[]>
+  benchmark_flows: Record<string, number[]>
+}
+
+export interface PortfolioPerformancePoint {
+  date: string
+  portfolio: number
+  benchmark: number
+  benchmarks: Record<string, number>
+}
+
+export interface BenchmarkPerformance {
+  key: string
+  symbol: string
+  provider: 'yahoo' | 'b3'
+  benchmark_return: number | null
+  excess_return: number | null
+  source_error?: 'unavailable' | 'rate_limited' | 'no_data' | 'no_fx_rate' | null
+}
+
+export interface HoldingTradeImport {
+  available: boolean
+  enabled: boolean
+}
+
+export interface PortfolioPerformance {
+  benchmark_symbol: string | null
+  benchmark_provider: string | null
+  method: PerformanceMethod
+  period: PortfolioPerformancePeriod
+  start_date: string
+  end_date: string
+  portfolio_return: number | null
+  benchmark_return: number | null
+  excess_return: number | null
+  benchmarks: BenchmarkPerformance[]
+  points: PortfolioPerformancePoint[]
+  money_weighted?: MoneyWeightedSeries | null
 }
 
 export interface AssetGroup {

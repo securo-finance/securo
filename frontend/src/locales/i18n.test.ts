@@ -246,4 +246,40 @@ describe('i18n locale files', () => {
       ).toEqual([])
     }
   })
+
+  it('contains portfolio performance labels in every locale', () => {
+    const required = [
+      'assets.tabPerformance',
+      'assets.performanceTitle',
+      'assets.performanceDescription',
+      'assets.performanceScope',
+      'assets.performanceAllAssets',
+      'assets.performanceCustomAssets',
+      'assets.performanceSelectAssets',
+      'assets.performanceBenchmarks',
+      'assets.performanceAddBenchmark',
+      'assets.performanceBenchmarkLimit',
+      'assets.performanceNoSelection',
+      'assets.performanceExcessVs',
+      'assets.benchmarkSearchPlaceholder',
+      'assets.benchmarkSearchHint',
+      'assets.benchmarkNoResults',
+      'assets.changeBenchmark',
+      'assets.portfolioReturn',
+      'assets.benchmarkReturn',
+      'assets.excessReturn',
+      'assets.performanceNoData',
+      'assets.performanceNoPortfolio',
+      'assets.performanceLoadError',
+      'assets.performanceCashFlowHint',
+    ]
+
+    for (const locale of LOCALES) {
+      const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
+      expect(
+        required.filter((key) => !keys.has(key)),
+        `Portfolio performance labels missing in ${locale}:`,
+      ).toEqual([])
+    }
+  })
 })
