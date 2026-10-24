@@ -61,6 +61,23 @@ class AgentSettings(BaseSettings):
     embedding_openai_api_key: str = ""
 
     # Where uploaded knowledge files live on disk (per-instance).
+    # --- Runtime budgets (AGENTS_* env) ---
+    # Tool-calling rounds allowed per user message before the agent gives up.
+    # Real work ("categorize this month") needs ~8-10: paging transactions,
+    # listing categories/rules, then proposing. Raise for local models that
+    # take smaller steps.
+    max_tool_iterations: int = 12
+    # Rough token budget for the replayed conversation history. Rows older
+    # than the budget are dropped (newest kept); the window always opens on
+    # a user message. ~4 chars per token.
+    history_token_budget: int = 24000
+    # Tool results from turns before the newest completed one are compacted
+    # to this many characters on replay. The current turn's results are
+    # always passed in full. 0 disables compaction.
+    history_tool_result_chars: int = 2000
+    # Read timeout for a single streaming provider call. Slow local models
+    # with long tool payloads can exceed the old fixed 120s.
+    provider_timeout_seconds: float = 120.0
     knowledge_storage_path: str = "/app/data/agent_knowledge"
     knowledge_max_file_size_mb: int = 25
 
