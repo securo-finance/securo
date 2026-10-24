@@ -78,9 +78,13 @@ x-backend-base: &backend-base
   # resolves the name on its own; this makes it work on Linux too.
   extra_hosts:
     - "host.docker.internal:host-gateway"
+  # podman-compose up to 1.6.0 ignores `migrate`'s exit code, so each service
+  # also refuses to start until the schema is at head.
+  entrypoint: ["sh", "-c", 'alembic current --check-heads && exec "$$@"', "sh"]
   depends_on:
     db: { condition: service_healthy }
     redis: { condition: service_healthy }
+    migrate: { condition: service_completed_successfully }
   volumes:
     - ./secrets:/app/secrets:ro
     - attachments:/app/data/attachments
@@ -116,9 +120,29 @@ services:
       timeout: 3s
       retries: 5
 
+  # One-shot migration job. Everything that touches the schema waits for it
+  # to exit 0, so workers never race `alembic upgrade head`, and a failed
+  # migration stops the stack instead of serving a half-migrated database.
+  migrate:
+    <<: *backend-base
+    restart: "no"
+    # Replaces the anchor's schema check and migrate gate, which would make
+    # migrate wait on itself. YAML merge is shallow, so db/redis are restated.
+    entrypoint: ["alembic"]
+    command: upgrade head
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
   backend:
     <<: *backend-base
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 5s
+      timeout: 6s
+      start_period: 30s
+      retries: 12
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     ports:
       - "${BACKEND_PORT:-8000}:8000"
 
@@ -130,7 +154,7 @@ services:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000
     depends_on:
-      - backend
+      backend: { condition: service_healthy }
     restart: unless-stopped
     labels:
       # Static Traefik routing labels for reverse proxies (e.g. Coolify)
