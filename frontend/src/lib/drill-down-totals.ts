@@ -9,10 +9,13 @@ export type DrillDownTotalsItem = {
   currency: string
   isPending: boolean
   isProjected: boolean
+  type?: 'debit' | 'credit'
 }
 
 export type DrillDownTotals = {
   absTotal: number
+  /** Credits minus debits, for panels that open a net figure. */
+  netTotal: number
   postedTotal: number
   pendingTotal: number
   projectedTotal: number
@@ -47,11 +50,12 @@ export function sumDrillDownTotals(
           : 0
 
       totals.absTotal += amount
+      totals.netTotal += item.type === 'credit' ? amount : -amount
       if (item.isProjected) totals.projectedTotal += amount
       else if (item.isPending) totals.pendingTotal += amount
       else totals.postedTotal += amount
       return totals
     },
-    { absTotal: 0, postedTotal: 0, pendingTotal: 0, projectedTotal: 0 },
+    { absTotal: 0, netTotal: 0, postedTotal: 0, pendingTotal: 0, projectedTotal: 0 },
   )
 }

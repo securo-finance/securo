@@ -520,9 +520,13 @@ async def viewer_shared_spending_by_category(
     month_end: date,
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
+    exclude_workspace_id: Optional[uuid.UUID] = None,
 ) -> dict:
     """Return {category_id (uuid|None): total_share_expense_float} for
     transactions where the viewer participates via a group split.
+
+    `exclude_workspace_id` leaves out transactions of that workspace, for
+    callers that already count them there.
 
     With `primary_currency`, totals are FX-converted; otherwise raw
     nominal sums (single-currency only)."""
@@ -559,6 +563,11 @@ async def viewer_shared_spending_by_category(
             date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_pnl(),
+            *(
+                [Transaction.workspace_id != exclude_workspace_id]
+                if exclude_workspace_id is not None
+                else []
+            ),
         )
         .group_by(Transaction.category_id, Transaction.currency)
     )

@@ -17,13 +17,27 @@ import { formatCurrency } from '@/lib/format'
 export type DrillDownFilter = {
   title: string
   category_id?: string
+  // Any of several categories (e.g. every category of a group).
+  category_ids?: string[]
   uncategorized?: boolean
+  // With `uncategorized`, also list the viewer's shares of expenses from
+  // other workspaces: their categories live there, so reports count them
+  // as uncategorized here.
+  sharedAsUncategorized?: boolean
   account_id?: string
   // Scope to a set of accounts (e.g. the active collection's accounts).
   account_ids?: string[]
   type?: 'credit' | 'debit'
   from?: string
   to?: string
+  // Leave out the recurring projections, for views that only count what
+  // already happened.
+  realizedOnly?: boolean
+  // Count only the viewer's share of a split expense, as budgets and the
+  // statement do, instead of the full amount that hit the account.
+  ownShare?: boolean
+  // Total the panel as credits minus debits, for rows that show a net amount.
+  netTotal?: boolean
 }
 
 type DisplayItem = {
@@ -65,12 +79,15 @@ export function TransactionDrillDown({
     queryFn: () =>
       transactionsApi.list({
         category_id: filter?.category_id,
+        category_ids: filter?.category_ids,
         uncategorized: filter?.uncategorized,
+        shared_as_uncategorized: filter?.sharedAsUncategorized,
         account_id: filter?.account_id,
         account_ids: filter?.account_ids,
         type: filter?.type,
         from: filter?.from,
         to: filter?.to,
+        status: filter?.realizedOnly ? 'posted' : undefined,
         limit: 200,
         user_pnl_only: true,
       }),
@@ -83,7 +100,7 @@ export function TransactionDrillDown({
   const { data: projectedTxs } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
-    enabled: !!filter && !!monthParam,
+    enabled: !!filter && !!monthParam && !filter.realizedOnly,
   })
 
   const { data: accountingModeData } = useQuery({
@@ -98,13 +115,29 @@ export function TransactionDrillDown({
     const items: DisplayItem[] = []
 
     for (const tx of data?.items ?? []) {
+      const amount = Number(tx.amount)
+      const amountPrimary = tx.amount_primary != null ? Number(tx.amount_primary) : null
+      // A split expense counts only the viewer's part, the way the backend
+      // does it: a member in the split keeps their own share, the owner the
+      // amount less everyone else's shares, and anyone else the full amount.
+      // Shares are in the row's own currency, so the primary amount scales
+      // by the same ratio.
+      const splits = tx.splits ?? []
+      const share = !filter?.ownShare || tx.type !== 'debit'
+        ? null
+        : tx.is_shared
+          ? Number(tx.viewer_share ?? 0)
+          : splits.length > 0 && tx.user_id === user?.id
+            ? amount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0))
+            : null
+      const ratio = share != null && amount !== 0 ? share / amount : 1
       items.push({
         key: tx.id,
         description: tx.description,
         date: tx.date,
         type: tx.type as 'debit' | 'credit',
-        amount: Number(tx.amount),
-        amountPrimary: tx.amount_primary != null ? Number(tx.amount_primary) : null,
+        amount: amount * ratio,
+        amountPrimary: amountPrimary != null ? amountPrimary * ratio : null,
         currency: tx.currency,
         categoryIcon: tx.category?.icon ?? null,
         categoryName: tx.category?.name ?? null,
@@ -116,10 +149,12 @@ export function TransactionDrillDown({
       })
     }
 
-    for (const pt of projectedTxs ?? []) {
+    // A disabled query can still hand back what the dashboard cached.
+    for (const pt of filter?.realizedOnly ? [] : projectedTxs ?? []) {
       // Filter projected txs by drill-down criteria
       if (filter?.type && pt.type !== filter.type) continue
       if (filter?.category_id && String(pt.category_id) !== filter.category_id) continue
+      if (filter?.category_ids && !filter.category_ids.includes(String(pt.category_id))) continue
       if (filter?.uncategorized && pt.category_id != null) continue
       if (filter?.from && pt.date < filter.from) continue
       if (filter?.to && pt.date > filter.to) continue
@@ -144,7 +179,7 @@ export function TransactionDrillDown({
 
     items.sort((a, b) => a.date.localeCompare(b.date))
     return items
-  }, [data, projectedTxs, filter])
+  }, [data, projectedTxs, filter, user?.id])
 
   // Close on Escape, unless the key belongs to a dialog opened from the
   // panel (Radix marks the Escape it handled as defaultPrevented).
@@ -182,8 +217,9 @@ export function TransactionDrillDown({
   // amount_primary; if it's missing we can't convert, so skip the row
   // instead of adding a raw foreign amount as if it were primary. This
   // matches how get_summary computes monthly_*_primary on the backend.
-  const { absTotal, postedTotal, pendingTotal, projectedTotal } =
+  const { absTotal, netTotal, postedTotal, pendingTotal, projectedTotal } =
     sumDrillDownTotals(displayItems, userCurrency)
+  const shownTotal = filter?.netTotal ? netTotal : absTotal
 
   // Break the total down whenever some of it is money that has not settled,
   // whether it is pending or still only projected. Gating on pending alone
@@ -329,7 +365,7 @@ export function TransactionDrillDown({
                 )}
                 <div className="flex items-center justify-between gap-4 border-t border-border pt-2 mt-2">
                   <span className="text-xs font-medium text-muted-foreground">{t('dashboard.drillDownShownTotal')}</span>
-                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(absTotal, userCurrency, locale))}</span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(shownTotal, userCurrency, locale))}</span>
                 </div>
               </div>
             ) : (
@@ -337,11 +373,11 @@ export function TransactionDrillDown({
                 <span className="text-xs text-muted-foreground">
                   {t('dashboard.drillDownTotal', {
                     count: displayItems.length,
-                    total: mask(formatCurrency(absTotal, userCurrency, locale)),
+                    total: mask(formatCurrency(shownTotal, userCurrency, locale)),
                   })}
                 </span>
                 <span className="text-sm font-bold tabular-nums text-foreground">
-                  {mask(formatCurrency(absTotal, userCurrency, locale))}
+                  {mask(formatCurrency(shownTotal, userCurrency, locale))}
                 </span>
               </div>
             )}

@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, case, delete, select, func, or_, not_, update
+from sqlalchemy import CursorResult, and_, case, delete, select, func, or_, not_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -113,6 +113,7 @@ async def get_transactions(
     include_opening_balance: bool = False,
     search: Optional[str] = None,
     uncategorized: bool = False,
+    shared_as_uncategorized: bool = False,
     txn_type: Optional[str] = None,
     skip_pagination: bool = False,
     exclude_transfers: bool = False,
@@ -266,7 +267,18 @@ async def get_transactions(
         base_query = base_query.where(Transaction.category_id == category_id)
     if payee_id:
         base_query = base_query.where(Transaction.payee_id == payee_id)
-    if uncategorized:
+    if uncategorized and shared_as_uncategorized:
+        # The reports' view of uncategorized: this workspace's rows without
+        # a category, plus the viewer's shares of expenses from other
+        # workspaces, whose categories this workspace can't show.
+        base_query = base_query.where(
+            or_(
+                and_(Transaction.workspace_id == workspace_id, Transaction.category_id.is_(None)),
+                and_(Transaction.workspace_id != workspace_id, Transaction.type == "debit"),
+            ),
+            Transaction.transfer_pair_id.is_(None),
+        )
+    elif uncategorized:
         base_query = base_query.where(
             Transaction.category_id == None,
             Transaction.transfer_pair_id.is_(None),
@@ -695,7 +707,12 @@ async def _tag_shared_view(
                 if owner_group_id is not None
                 else None
             )
-            owner_split = (
+            # In someone else's group the payer is a linked member, and the
+            # is_self member is the group's creator, not them.
+            owner_split = next(
+                (s for s in tx.splits or [] if s.group_member_id in member_to_group),
+                None,
+            ) or (
                 next(
                     (s for s in tx.splits or [] if s.group_member_id == self_mid),
                     None,
