@@ -206,7 +206,7 @@ export function AppLayout() {
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh bg-background">
       {/* Mobile header */}
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 bg-sidebar border-b border-sidebar-border px-4 lg:hidden">
         <button
@@ -597,7 +597,7 @@ export function AppLayout() {
 
         {/* Main content */}
         <main className={cn(
-          'flex-1 min-h-screen overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
+          'flex-1 min-h-dvh overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
           desktopSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60',
         )}>
           <div className="p-6 max-w-7xl mx-auto">
