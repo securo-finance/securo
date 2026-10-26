@@ -1416,7 +1416,11 @@
     "confirmDeleteDescription": "Budżet dla „{{name}}” zostanie trwale usunięty. Istniejące transakcje nie zostaną zmienione. Tej operacji nie można cofnąć.",
     "confirmDeleteRecurringDescription": "Cykliczny budżet dla „{{name}}” zostanie trwale usunięty. Ta definicja nie będzie już stosowana w kolejnych miesiącach. Istniejące transakcje nie zostaną zmienione. Tej operacji nie można cofnąć.",
     "repeatEveryMonth": "Powtarzaj co miesiąc",
-    "recurringLabel": "Cykliczny"
+    "recurringLabel": "Cykliczny",
+    "monthTotal": "Suma miesiąca",
+    "remaining": "Pozostało {{amount}}",
+    "overBy": "{{amount}} ponad budżet",
+    "spendingUnavailable": "Nie udało się wczytać wydatków za ten miesiąc."
   },
   "goals": {
     "title": "Cele",
