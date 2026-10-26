@@ -290,11 +290,9 @@ async def _load_actual_transactions(
 ) -> list[Transaction]:
     stmt = (
         select(Transaction)
-        .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
             Transaction.date >= start,
             Transaction.date < end,
             Transaction.date <= app_today(),

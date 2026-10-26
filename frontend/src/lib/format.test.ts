@@ -33,6 +33,11 @@ describe('resolveDisplayLocale', () => {
     expect(resolveDisplayLocale('auto', 'JPY')).toBe('ja-JP')
     expect(resolveDisplayLocale('auto', 'INR')).toBe('en-IN')
     expect(resolveDisplayLocale('auto', 'RSD')).toBe('sr-RS')
+    expect(resolveDisplayLocale('auto', 'MKD')).toBe('mk-MK')
+    expect(resolveDisplayLocale('auto', 'HKD')).toBe('zh-HK')
+    expect(resolveDisplayLocale('auto', 'TWD')).toBe('zh-TW')
+    expect(resolveDisplayLocale('auto', 'ZAR')).toBe('en-ZA')
+    expect(resolveDisplayLocale('auto', 'GEL')).toBe('en-GE')
   })
 
   it('treats a missing number format like auto', () => {

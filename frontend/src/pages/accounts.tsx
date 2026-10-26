@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { accounts, connections, currencies } from '@/lib/api'
+import { accounts, assets, connections, currencies } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -30,6 +30,7 @@ import { getAccountTypeConfig } from '@/lib/account-type-config'
 import { AccountPageActions } from '@/components/account-page-actions'
 import { AccountRowActions } from '@/components/account-row-actions'
 import { PageHeader } from '@/components/page-header'
+import { PageRefreshButton } from '@/components/page-refresh-button'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
 import { OAuthConnectDialog } from '@/components/oauth-connect-dialog'
@@ -40,6 +41,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
+import { LOAN_COLLATERAL_TYPES } from '@/lib/property-equity'
 
 // Account types offered in the create/edit dialog. Shared between the manual
 // type selector and the connected-account override selector so the list stays
@@ -48,6 +50,7 @@ const ACCOUNT_TYPE_OPTIONS = [
   { value: 'checking', labelKey: 'accounts.typeChecking' },
   { value: 'savings', labelKey: 'accounts.typeSavings' },
   { value: 'credit_card', labelKey: 'accounts.typeCreditCard' },
+  { value: 'loan', labelKey: 'accounts.typeLoan' },
   { value: 'investment', labelKey: 'accounts.typeInvestment' },
   { value: 'wallet', labelKey: 'accounts.typeWallet' },
 ] as const
@@ -87,7 +90,7 @@ export default function AccountsPage() {
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
   const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
 
-  const { data: accountsList, isLoading: accountsLoading } = useQuery({
+  const { data: accountsList, isLoading: accountsLoading, isFetching: accountsFetching } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accounts.list(),
   })
@@ -141,8 +144,14 @@ export default function AccountsPage() {
     onSuccess: (result) => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['connections'] })
-      toast.success(t('accounts.syncDone'))
-      const merged = (result as BankConnection & { merged_count?: number })?.merged_count
+      // The provider can throttle the sync (429) and still return success
+      // without pulling anything: say so instead of a false "Sync completed".
+      if (result.sync_outcome === 'rate_limited') {
+        toast.warning(t('accounts.syncRateLimited'))
+      } else {
+        toast.success(t('accounts.syncDone'))
+      }
+      const merged = result?.merged_count
       if (merged && merged > 0) {
         toast.info(t('accounts.mergedCount', { count: merged }))
       }
@@ -190,7 +199,12 @@ export default function AccountsPage() {
       setEditingAccount(null)
       toast.success(t('accounts.updated'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (_err, variables) => {
+      const original = editingAccount?.type
+      const crossesLoan = !!original && !!variables.type && variables.type !== original
+        && (variables.type === 'loan' || original === 'loan')
+      toast.error(crossesLoan ? t('accounts.loanRetypeBlocked') : t('common.error'))
+    },
   })
 
   const deleteMutation = useMutation({
@@ -233,12 +247,18 @@ export default function AccountsPage() {
         section={t('accounts.title')}
         title={t('accounts.title')}
         action={
-          <AccountPageActions
-            canWrite={canWrite}
-            onAddAccount={() => { setEditingAccount(null); setDialogOpen(true) }}
-            onConnectBank={() => setConnectorSelectOpen(true)}
-            onOpenCollections={() => navigate('/collections')}
-          />
+          <div className="flex items-center gap-2">
+            <PageRefreshButton
+              onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
+              refreshing={accountsFetching}
+            />
+            <AccountPageActions
+              canWrite={canWrite}
+              onAddAccount={() => { setEditingAccount(null); setDialogOpen(true) }}
+              onConnectBank={() => setConnectorSelectOpen(true)}
+              onOpenCollections={() => navigate('/collections')}
+            />
+          </div>
         }
       />
 
@@ -323,6 +343,10 @@ export default function AccountsPage() {
               {connectionsList.map((conn) => {
                 const connAccounts = bankAccounts.filter((a) => a.connection_id === conn.id)
                 const needsReconnect = conn.status !== 'active'
+                // An error state does not always mean the token is dead: an
+                // upstream auth issue can be fixed without re-pasting, so the
+                // row offers a plain retry next to the reconnect action.
+                const canRetrySync = conn.status === 'error'
                 const syncPending = syncMutation.isPending && syncMutation.variables === conn.id
                 return (
                   <div key={conn.id} className="bg-card rounded-xl border border-border shadow-sm">
@@ -366,6 +390,19 @@ export default function AccountsPage() {
                           >
                             <Settings size={14} />
                           </Button>
+                          {canRetrySync && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => syncMutation.mutate(conn.id)}
+                              disabled={syncPending}
+                              title={t('accounts.retrySync')}
+                              aria-label={t('accounts.retrySync')}
+                            >
+                              <RefreshCw size={14} className={syncPending ? 'animate-spin' : ''} />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -665,7 +702,7 @@ export default function AccountsPage() {
   )
 }
 
-function AccountDialog({
+export function AccountDialog({
   open,
   onClose,
   account,
@@ -682,6 +719,7 @@ function AccountDialog({
     balance?: number
     balance_date?: string
     currency?: string
+    secured_asset_id?: string | null
     credit_limit?: number | null
     statement_close_day?: number | null
     payment_due_day?: number | null
@@ -696,28 +734,46 @@ function AccountDialog({
     queryFn: currencies.list,
     staleTime: Infinity,
   })
+  const { data: assetsList } = useQuery({
+    queryKey: ['assets'],
+    queryFn: () => assets.list(),
+    enabled: open,
+  })
   const [name, setName] = useState(account?.name ?? '')
   const [displayName, setDisplayName] = useState(account?.display_name ?? '')
   const [type, setType] = useState(account?.type ?? 'checking')
   const [balance, setBalance] = useState(account?.balance?.toString() ?? '0')
   const [currency, setCurrency] = useState(account?.currency ?? userCurrency)
-  const [balanceDate, setBalanceDate] = useState(localDateString)
+  // The opening balance's own date (issue #1204); today for a new account
+  // or one without an opening balance.
+  const initialBalanceDate = () => account?.balance_date ?? localDateString()
+  const [balanceDate, setBalanceDate] = useState(initialBalanceDate)
   const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
   const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
   const [paymentDueDay, setPaymentDueDay] = useState(account?.payment_due_day?.toString() ?? '')
+  const [securedAssetId, setSecuredAssetId] = useState(account?.secured_asset_id ?? '')
 
-  const [formSource, setFormSource] = useState<{ account: typeof account } | null>(null)
+  const properties = (assetsList ?? []).filter((asset) => LOAN_COLLATERAL_TYPES.includes(asset.type))
+  // Send the link the select shows: a saved id that is no longer a listed
+  // property (it changed type) would otherwise be resent and rejected.
+  const securedAssetIsListed = !!securedAssetId && (!assetsList || properties.some((asset) => asset.id === securedAssetId))
+  const [formSource, setFormSource] = useState<{
+    account: typeof account
+    balanceDate: string
+  } | null>(null)
   if (!formSource || formSource.account !== account) {
-    setFormSource({ account })
+    const date = initialBalanceDate()
+    setFormSource({ account, balanceDate: date })
     setName(account?.name ?? '')
     setDisplayName(account?.display_name ?? '')
     setType(account?.type ?? 'checking')
     setBalance(account?.balance?.toString() ?? '0')
     setCurrency(account?.currency ?? userCurrency)
-    setBalanceDate(localDateString())
+    setBalanceDate(date)
     setCreditLimit(account?.credit_limit?.toString() ?? '')
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
+    setSecuredAssetId(account?.secured_asset_id ?? '')
   }
 
   return (
@@ -738,9 +794,17 @@ function AccountDialog({
               return Number.isFinite(n) && n >= 1 && n <= 31 ? n : null
             }
             const isConnected = !!account?.connection_id
+            // Editing: only move the opening balance when the date was changed.
+            const dateChanged = !account || balanceDate !== formSource?.balanceDate
             onSave({
-              ...(!isConnected && { name, balance: parseFloat(balance), balance_date: balanceDate, currency }),
+              ...(!isConnected && {
+                name,
+                balance: parseFloat(balance),
+                ...(dateChanged && { balance_date: balanceDate }),
+                currency,
+              }),
               type,
+              ...(type === 'loan' && { secured_asset_id: securedAssetIsListed ? securedAssetId : null }),
               display_name: displayName.trim() || null,
               ...(isCC && {
                 credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
@@ -774,7 +838,8 @@ function AccountDialog({
                 value={type}
                 onChange={(e) => setType(e.target.value)}
               >
-                {ACCOUNT_TYPE_OPTIONS.map((o) => (
+                {/* A bank-connected account cannot be a loan yet. */}
+                {ACCOUNT_TYPE_OPTIONS.filter((o) => o.value !== 'loan').map((o) => (
                   <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                 ))}
               </select>
@@ -795,6 +860,9 @@ function AccountDialog({
                       <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                     ))}
                   </select>
+                  {account && type !== account.type && (type === 'loan' || account.type === 'loan') && (
+                    <p className="text-xs text-muted-foreground">{t('accounts.loanRetypeHint')}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>{t('accounts.currency')}</Label>
@@ -814,12 +882,14 @@ function AccountDialog({
                   <Label>
                     {type === 'credit_card'
                       ? t('accounts.balanceCreditCard')
-                      : t('accounts.balance')}
+                      : type === 'loan'
+                        ? t('accounts.balanceLoan')
+                        : t('accounts.balance')}
                   </Label>
                   <Input
                     type="number"
                     step="0.01"
-                    min={type === 'credit_card' ? '0' : undefined}
+                    min={type === 'credit_card' || type === 'loan' ? '0' : undefined}
                     value={balance}
                     onChange={(e) => setBalance(e.target.value)}
                   />
@@ -839,6 +909,21 @@ function AccountDialog({
                 </p>
               )}
             </>
+          )}
+          {type === 'loan' && (
+            <div className="space-y-2">
+              <Label>{t('accounts.securedProperty')}</Label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                value={securedAssetId}
+                onChange={(e) => setSecuredAssetId(e.target.value)}
+              >
+                <option value="">{t('accounts.noSecuredProperty')}</option>
+                {properties.map((asset) => (
+                  <option key={asset.id} value={asset.id}>{asset.name}</option>
+                ))}
+              </select>
+            </div>
           )}
           {type === 'credit_card' && (
             <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">

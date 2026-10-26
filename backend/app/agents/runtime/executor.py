@@ -431,6 +431,9 @@ class AgentExecutor:
             logger.exception("provider resolution failed; falling back to legacy path")
             provider = _provider_for(agent)
             model = _model_for(agent)
+        # Some OpenAI-compatible backends route on a per-conversation
+        # session id; providers that support it read this as a header.
+        provider.session_id = str(conversation_id)
         if not model:
             yield ExecutorEvent(
                 type="error",

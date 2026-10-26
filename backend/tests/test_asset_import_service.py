@@ -540,3 +540,63 @@ async def test_a_ticker_neither_call_knows_is_still_refused(
 
     assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "unknown_ticker")]
     assert summary["imported"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Fee and explicit date-format validation (issue #850)
+# ---------------------------------------------------------------------------
+
+
+def test_malformed_fee_is_reported():
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker,date,quantity,price,fee",
+        "AAPL,2026-01-15,10,150.00,abc",
+    ))
+    assert orders == []
+    assert [(e.row, e.reason) for e in errors] == [(2, "invalid_fee")]
+
+
+def test_negative_fee_is_reported():
+    """A negative fee would push the cost basis down, so it fails the row."""
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker,date,quantity,price,fee",
+        "AAPL,2026-01-15,10,150.00,-1.50",
+    ))
+    assert orders == []
+    assert [(e.row, e.reason) for e in errors] == [(2, "invalid_fee")]
+
+
+def test_empty_fee_stays_zero():
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker,date,quantity,price,fee",
+        "AAPL,2026-01-15,10,150.00,",
+    ))
+    assert errors == []
+    assert orders[0].fee == Decimal("0")
+
+
+def test_explicit_date_format_is_strict():
+    """A format the user chose is the only format tried: 13/02 is not a
+    valid month/day, so the row fails instead of silently becoming
+    February 13."""
+    orders, errors, _ = asset_import_service.parse_orders_csv(
+        _csv(
+            "ticker,date,quantity,price",
+            "AAPL,13/02/2026,10,150.00",
+        ),
+        date_format="MM/DD/YYYY",
+    )
+    assert orders == []
+    assert [(e.row, e.reason) for e in errors] == [(2, "invalid_date")]
+
+
+def test_explicit_date_format_parses_when_it_fits():
+    orders, errors, _ = asset_import_service.parse_orders_csv(
+        _csv(
+            "ticker,date,quantity,price",
+            "AAPL,13/02/2026,10,150.00",
+        ),
+        date_format="DD/MM/YYYY",
+    )
+    assert errors == []
+    assert orders[0].date == date(2026, 2, 13)

@@ -28,7 +28,9 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
+from app.services import reconciliation_policy, reconciliation_rule_service
 from app.services.connection_service import sync_connection
+from app.services.fx_rate_service import stamp_primary_amount
 from app.services.text_similarity import token_overlap
 from app.services.recurring_transaction_service import (
     create_recurring_transaction,
@@ -87,6 +89,7 @@ async def _run_sync(
     provider,
     *,
     mock_rules=True,
+    stamp=None,
 ):
     patches = [
         patch("app.services.connection_service.get_provider", return_value=provider),
@@ -96,7 +99,7 @@ async def _run_sync(
         ),
         patch(
             "app.services.connection_service.stamp_primary_amount",
-            new_callable=AsyncMock,
+            new=stamp if stamp is not None else AsyncMock(),
         ),
     ]
     if mock_rules:
@@ -140,6 +143,20 @@ async def _all_txs(session, account_id):
         )
     )
     return list(r.scalars().all())
+
+
+async def _usd_placeholder(session, test_workspace, test_user, account, bill_id):
+    placeholder = Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Netflix Subscription",
+        amount=Decimal("18.43"), currency="USD", date=date(2025, 1, 10),
+        amount_primary=Decimal("90.00"), fx_rate_used=Decimal("4.8833"),
+        type="debit", source="recurring", status="posted",
+        recurring_transaction_id=bill_id,
+    )
+    session.add(placeholder)
+    await session.commit()
+    return placeholder.id
 
 
 # ---------------------------------------------------------------------------
@@ -704,3 +721,166 @@ async def test_resync_is_idempotent(session, test_user, test_workspace, conn_acc
     assert txs[0].recurring_transaction_id == bill_id
     refreshed = await session.get(RecurringTransaction, bill_id)
     assert refreshed.next_occurrence == date(2025, 2, 10)  # advanced once, not twice
+
+
+@pytest.mark.asyncio
+async def test_sync_merges_a_tolerated_amount_into_placeholder(
+    session, test_user, test_workspace, conn_account
+):
+    """Issue #1073: a charge a few cents off the bill still replaces the
+    placeholder when the workspace allows a tolerance; the amount and the
+    primary-currency amount become the charge's."""
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    await reconciliation_rule_service.upsert_override(
+        session, test_workspace.id, test_user.id,
+        reconciliation_policy.MATCH_RECURRING["node"], "same_account_exact",
+        {"when": {"amount": {"match": "tolerance", "percent": "5"},
+                  "unique_candidate": True}},
+    )
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            amount=Decimal("18.43"), start_date=date(2025, 1, 10))
+    bill_id = bill.id
+    bill.next_occurrence = date(2025, 2, 10)
+    placeholder = Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account_id, description="Netflix Subscription",
+        amount=Decimal("18.43"), currency="BRL", date=date(2025, 1, 10),
+        type="debit", source="recurring", status="posted",
+        recurring_transaction_id=bill_id,
+        amount_primary=Decimal("18.43"), fx_rate_used=Decimal("1"),
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
+                              amount=Decimal("18.71"), date=date(2025, 1, 11))])
+
+    stamp = AsyncMock(wraps=stamp_primary_amount)
+
+    await _run_sync(
+        session, conn_id, test_workspace, test_user, provider, stamp=stamp
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].amount == Decimal("18.71")
+    assert txs[0].amount_primary == Decimal("18.71")
+    assert txs[0].fx_rate_used == Decimal("1")
+    assert txs[0].source == "sync"
+    assert txs[0].external_id == "s1"
+    assert txs[0].recurring_transaction_id == bill_id
+    stamp.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_placeholder_keeps_the_banks_conversion(
+    session, test_user, test_workspace, conn_account
+):
+    """A USD bill on a BRL account: the placeholder takes the bank's own BRL
+    figure for the charge, not the estimate made when it was generated."""
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            amount=Decimal("18.43"), currency="USD",
+                            start_date=date(2025, 1, 10))
+    bill_id = bill.id
+    bill.next_occurrence = date(2025, 2, 10)
+    placeholder_id = await _usd_placeholder(
+        session, test_workspace, test_user, account, bill_id
+    )
+    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
+                              amount=Decimal("18.43"), currency="USD",
+                              amount_in_account_currency=Decimal("97.30"),
+                              date=date(2025, 1, 11))])
+
+    stamp = AsyncMock()
+
+    await _run_sync(
+        session, conn_id, test_workspace, test_user, provider, stamp=stamp
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].amount == Decimal("18.43")
+    assert txs[0].amount_primary == Decimal("97.30")
+    assert txs[0].fx_rate_used == pytest.approx(Decimal("97.30") / Decimal("18.43"))
+    stamp.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sync_tolerated_placeholder_keeps_the_banks_conversion(
+    session, test_user, test_workspace, conn_account
+):
+    """A USD charge a few cents off the bill, merged under the tolerance,
+    keeps its own amount and the bank's BRL conversion of it."""
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    await reconciliation_rule_service.upsert_override(
+        session, test_workspace.id, test_user.id,
+        reconciliation_policy.MATCH_RECURRING["node"], "same_account_exact",
+        {"when": {"amount": {"match": "tolerance", "percent": "5"},
+                  "unique_candidate": True}},
+    )
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            amount=Decimal("18.43"), currency="USD",
+                            start_date=date(2025, 1, 10))
+    bill_id = bill.id
+    bill.next_occurrence = date(2025, 2, 10)
+    placeholder_id = await _usd_placeholder(
+        session, test_workspace, test_user, account, bill_id
+    )
+    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
+                              amount=Decimal("18.71"), currency="USD",
+                              amount_in_account_currency=Decimal("97.30"),
+                              date=date(2025, 1, 11))])
+
+    stamp = AsyncMock()
+
+    await _run_sync(
+        session, conn_id, test_workspace, test_user, provider, stamp=stamp
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].amount == Decimal("18.71")
+    assert txs[0].amount_primary == Decimal("97.30")
+    assert txs[0].fx_rate_used == pytest.approx(Decimal("97.30") / Decimal("18.71"))
+    stamp.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sync_placeholder_without_a_conversion_is_not_restamped(
+    session, test_user, test_workspace, conn_account
+):
+    """Without a bank conversion and with the same amount, the placeholder's
+    stamped primary amount is left alone."""
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            amount=Decimal("18.43"), currency="USD",
+                            start_date=date(2025, 1, 10))
+    bill_id = bill.id
+    bill.next_occurrence = date(2025, 2, 10)
+    placeholder_id = await _usd_placeholder(
+        session, test_workspace, test_user, account, bill_id
+    )
+    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
+                              amount=Decimal("18.43"), currency="USD",
+                              date=date(2025, 1, 11))])
+
+    stamp = AsyncMock()
+
+    await _run_sync(
+        session, conn_id, test_workspace, test_user, provider, stamp=stamp
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].amount_primary == Decimal("90.00")
+    assert txs[0].fx_rate_used == Decimal("4.8833")
+    stamp.assert_not_awaited()

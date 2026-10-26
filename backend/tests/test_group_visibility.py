@@ -10,14 +10,18 @@ import bcrypt
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
+from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.group_settlement import GroupSettlementCreate
+from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import (
     balance_service,
     group_service,
     settlement_service,
+    split_service,
     workspace_service,
 )
 
@@ -105,6 +109,11 @@ async def test_linked_member_sees_group_in_list(
     # Linked member sees is_owner=False; the original owner sees True.
     assert visible[0].is_owner is False
 
+    searched = await group_service.list_groups(
+        session, other_ws.id, other.id, q="SHARED", status="all"
+    )
+    assert {g.id for g in searched} == {group.id}
+
     owners_view = await group_service.list_groups(
         session, test_workspace.id, test_user.id
     )
@@ -124,6 +133,11 @@ async def test_unrelated_user_does_not_see_group(
 
     visible = await group_service.list_groups(session, stranger_ws.id, stranger.id)
     assert visible == []
+
+    searched = await group_service.list_groups(
+        session, stranger_ws.id, stranger.id, q="Private", status="all"
+    )
+    assert searched == []
 
 
 @pytest.mark.asyncio
@@ -292,3 +306,146 @@ async def test_linked_member_cannot_settle_someone_elses_debt(
                 date=date.today(),
             ),
         )
+
+
+async def _record_split_expense(session, user, workspace, members, amount):
+    """`user` pays `amount` from an account in `workspace`, split equally."""
+    account = Account(
+        id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id, name="Wallet",
+        type="checking", balance=Decimal("0"), currency="USD",
+    )
+    session.add(account)
+    await session.flush()
+    tx = Transaction(
+        id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id, account_id=account.id,
+        description="Dinner", amount=Decimal(amount), currency="USD", date=date.today(),
+        type="debit", source="manual",
+    )
+    session.add(tx)
+    await session.flush()
+    await split_service.replace_splits(
+        session,
+        tx,
+        TransactionSplitsInput(
+            share_type="equal",
+            splits=[TransactionSplitInput(group_member_id=m.id) for m in members],
+        ),
+        user.id,
+    )
+    await session.commit()
+
+
+async def _ledger(session, group_id, workspace_id, user_id):
+    balances = await balance_service.compute_balances(session, group_id, workspace_id, user_id)
+    assert balances is not None
+    return {ln["member_id"]: ln["amount"] for ln in balances["lines"]}
+
+
+@pytest.mark.asyncio
+async def test_balances_follow_the_member_who_paid(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Issue #1062: B, linked from their own workspace, pays two split
+    expenses. A owes B 15.00 in both views; before, each saw the other as
+    the debtor."""
+    other, other_ws = await _make_user_with_workspace(session, "b@example.com")
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="Flat")
+    )
+    a = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="A", email=test_user.email)
+    )
+    b = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="B", email="b@example.com")
+    )
+    assert a is not None and b is not None
+    assert a.linked_user_id == test_user.id and b.linked_user_id == other.id
+
+    await _record_split_expense(session, other, other_ws, [a, b], "10.00")
+    await _record_split_expense(session, other, other_ws, [a, b], "20.00")
+
+    # B's view: A owes B.
+    assert await _ledger(session, group.id, other_ws.id, other.id) == {a.id: Decimal("15.00")}
+    # A's view: A owes B (negative), not the mirror image.
+    assert await _ledger(session, group.id, test_workspace.id, test_user.id) == {
+        b.id: Decimal("-15.00")
+    }
+
+
+@pytest.mark.asyncio
+async def test_balances_net_expenses_paid_by_both_sides(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The owner's own member is the stored, unlinked `is_self` row. The
+    owner pays 40.00 and B pays 10.00, both split equally: B owes 15.00
+    net, seen the same way from both sides, and a settlement from B to the
+    owner reduces it for both."""
+    other, other_ws = await _make_user_with_workspace(session, "b@example.com")
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="Trip")
+    )
+    me = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="Me", is_self=True)
+    )
+    b = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="B", email="b@example.com")
+    )
+    assert me is not None and b is not None
+
+    await _record_split_expense(session, test_user, test_workspace, [me, b], "40.00")
+    await _record_split_expense(session, other, other_ws, [me, b], "10.00")
+
+    assert await _ledger(session, group.id, test_workspace.id, test_user.id) == {
+        b.id: Decimal("15.00")
+    }
+    assert await _ledger(session, group.id, other_ws.id, other.id) == {me.id: Decimal("-15.00")}
+
+    await settlement_service.create_settlement(
+        session,
+        group.id,
+        other_ws.id,
+        other.id,
+        GroupSettlementCreate(
+            from_member_id=b.id, to_member_id=me.id, amount=Decimal("5.00"),
+            currency="USD", date=date.today(),
+        ),
+    )
+    await session.commit()
+
+    assert await _ledger(session, group.id, test_workspace.id, test_user.id) == {
+        b.id: Decimal("10.00")
+    }
+    assert await _ledger(session, group.id, other_ws.id, other.id) == {me.id: Decimal("-10.00")}
+
+
+@pytest.mark.asyncio
+async def test_owner_without_member_row_is_not_shown_to_members(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The owner isn't a member of the group and pays 30.00 split between B
+    and C; B then pays 20.00 split the same way. The owner sees both debts
+    to them. B sees only C's debt: the owner has no member row, so there is
+    no name or id to show B's debt to them under."""
+    other, other_ws = await _make_user_with_workspace(session, "b@example.com")
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="Trip")
+    )
+    b = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="B", email="b@example.com")
+    )
+    c = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="C")
+    )
+    assert b is not None and c is not None
+
+    await _record_split_expense(session, test_user, test_workspace, [b, c], "30.00")
+    await _record_split_expense(session, other, other_ws, [b, c], "20.00")
+
+    assert await _ledger(session, group.id, test_workspace.id, test_user.id) == {
+        b.id: Decimal("15.00"),
+        c.id: Decimal("15.00"),
+    }
+    b_view = await balance_service.compute_balances(session, group.id, other_ws.id, other.id)
+    assert b_view is not None
+    assert b_view["self_member_id"] == b.id
+    assert {ln["member_id"]: ln["amount"] for ln in b_view["lines"]} == {c.id: Decimal("10.00")}

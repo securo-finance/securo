@@ -89,6 +89,13 @@ async def create_agent(
         auto_context=data.auto_context,
     )
     session.add(agent)
+    if data.tools is not None:
+        await session.flush()
+        for item in data.tools:
+            session.add(AgentTool(
+                agent_id=agent.id, server=item.server,
+                tool_name=item.tool_name, enabled=item.enabled,
+            ))
     await session.commit()
     await session.refresh(agent)
     return agent

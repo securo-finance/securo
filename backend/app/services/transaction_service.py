@@ -4,10 +4,11 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, delete, select, func, or_, not_, update
+from sqlalchemy import CursorResult, case, delete, select, func, or_, not_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.app_clock import app_today
 from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.account import Account
@@ -16,6 +17,7 @@ from app.models.category import Category
 from app.models.group import Group, GroupMember
 from app.models.payee import Payee
 from app.schemas.transaction import (
+    DescriptionSuggestion,
     InstallmentSeriesCreate,
     TransactionCreate,
     TransactionUpdate,
@@ -23,7 +25,8 @@ from app.schemas.transaction import (
 )
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import reconciliation_service, split_service
-from app.services.credit_card_service import apply_effective_date
+from app.services.account_service import get_account, get_running_balances
+from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
 from app.services._query_filters import (
@@ -131,12 +134,19 @@ async def get_transactions(
     include_summary: bool = False,
     user_pnl_only: bool = False,
     exclude_ignored: bool = False,
+    include_running_balance: bool = False,
+    primary_currency: Optional[str] = None,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
     """List transactions for a workspace.
 
     `workspace_id` scopes the tenant (which transactions are visible). `user_id`
     is the *viewer* — used for Splitwise projection (linked-member visibility,
     is-shared tagging) which is identity-based, not tenancy-based.
+
+    `include_running_balance` fills `running_balance` (and, for an account in a
+    currency other than `primary_currency`, `running_balance_primary`) when the
+    list is one non-credit-card account's ledger from `from_date` in the default
+    order; see `_running_balance_account`.
     """
     # In "accrual" mode, bucket/order by effective_date so list filters
     # line up with the cash-flow view used by the dashboard and reports.
@@ -264,7 +274,9 @@ async def get_transactions(
     if exclude_transfers:
         base_query = base_query.where(Transaction.transfer_pair_id.is_(None))
     if user_pnl_only:
-        base_query = base_query.where(Account.is_closed == False, counts_as_user_pnl())
+        # Closed accounts are not excluded here: their history stays in the
+        # period totals this list drills into (issue #1112).
+        base_query = base_query.where(counts_as_user_pnl())
     if exclude_ignored:
         # Only drops rows; the summary below keeps computing over the same
         # filtered set, so the totals a hidden list shows stay the totals of
@@ -381,10 +393,64 @@ async def get_transactions(
                 ),
             ))
         else:
-            if from_date:
-                base_query = base_query.where(filter_date_col >= from_date)
-            if to_date:
-                base_query = base_query.where(filter_date_col <= to_date)
+            # Single-account date window: if it is exactly one bill cycle of
+            # a credit card account, membership is bill-based, not
+            # window-based. A manual effective_bill_date names a bill by its
+            # DUE date, and a due date can sit inside the NEXT cycle's
+            # purchase window (close 24 / due 18: the Aug bill is due 08-18,
+            # inside the Sep window 07-24 to 08-23), so window bucketing
+            # put overridden txs on the wrong bill and emptied their own
+            # bill (issue #563). The rule: no override stays in the window
+            # exactly as before; an override belongs to this bill when it
+            # falls after the previous bill's due date and on or before
+            # this bill's due date, so every override date maps to exactly
+            # one bill. Any other window shape, or an account whose
+            # close/due days make two bills share a due date (degenerate),
+            # keeps the historical behavior untouched.
+            cycle = None
+            if from_date is not None and to_date is not None:
+                # The list endpoint funnels the single account_id param into
+                # account_ids, so accept either shape when exactly one
+                # account is in scope.
+                single_account = account_id
+                if single_account is None and account_ids is not None and len(account_ids) == 1:
+                    single_account = account_ids[0]
+                if single_account is not None:
+                    acct_row = (
+                        await session.execute(
+                            select(
+                                Account.type,
+                                Account.statement_close_day,
+                                Account.payment_due_day,
+                            ).where(Account.id == single_account)
+                        )
+                    ).first()
+                    if acct_row is not None and acct_row[0] == "credit_card":
+                        cycle = cc_cycle_bill_due_dates(
+                            from_date, to_date, acct_row[1], acct_row[2]
+                        )
+            if cycle is None or cycle["degenerate"]:
+                if from_date:
+                    base_query = base_query.where(filter_date_col >= from_date)
+                if to_date:
+                    base_query = base_query.where(filter_date_col <= to_date)
+            else:
+                from sqlalchemy import and_ as _and
+
+                override = Transaction.effective_bill_date
+                base_query = base_query.where(
+                    or_(
+                        _and(
+                            override.is_(None),
+                            filter_date_col >= from_date,
+                            filter_date_col <= to_date,
+                        ),
+                        _and(
+                            override > cycle["prev"],
+                            override <= cycle["this"],
+                        ),
+                    )
+                )
     if search:
         term = f"%{search}%"
         base_query = base_query.where(
@@ -481,7 +547,7 @@ async def get_transactions(
         # would otherwise float old purchases to the top because their
         # bill due date is in the future.
         "transaction_date": Transaction.date,
-        "amount": Transaction.amount,
+        "amount": func.coalesce(Transaction.amount_primary, Transaction.amount),
         "description": Transaction.description,
         "payee": Payee.name,
         "category": Category.name,
@@ -492,13 +558,20 @@ async def get_transactions(
     }
     chosen_col = sort_columns.get(sort_by) if sort_by else None
     if chosen_col is None:
-        # Default: by date desc, with created_at as tiebreaker.
-        query = base_query.order_by(default_order_col.desc(), Transaction.created_at.desc())
+        # Default: by date desc, with created_at as tiebreaker. id comes last
+        # because a bank sync inserts its whole batch in one database
+        # transaction, so those rows share created_at; without a unique key
+        # the order between pages is undefined and rows repeat or vanish.
+        query = base_query.order_by(
+            default_order_col.desc(), Transaction.created_at.desc(), Transaction.id.desc()
+        )
     else:
         direction = (chosen_col.asc() if sort_dir == "asc" else chosen_col.desc())
         # Always tie-break on date desc + created_at desc so equal values
         # stay in a sensible order (e.g. multiple txs with the same amount).
-        query = base_query.order_by(direction, default_order_col.desc(), Transaction.created_at.desc())
+        query = base_query.order_by(
+            direction, default_order_col.desc(), Transaction.created_at.desc(), Transaction.id.desc()
+        )
     if not skip_pagination:
         query = query.offset((page - 1) * limit).limit(limit)
 
@@ -529,7 +602,59 @@ async def get_transactions(
         # and the frontend needs `is_shared` to lock them from edits.
         await _tag_shared_view(session, transactions, user_id)
 
+        if include_running_balance and from_date and primary_currency:
+            running_account = await _running_balance_account(
+                session, workspace_id,
+                account_ids=account_ids or ([account_id] if account_id else []),
+                narrowed=any((
+                    category_id, category_ids, payee_id, search, uncategorized,
+                    txn_type, tags, status, currency, account_types, transaction_ids,
+                    min_amount is not None, max_amount is not None,
+                    exclude_transfers, user_pnl_only, exclude_ignored,
+                    group_id, bill_id, unbilled_only,
+                    # Without the opening row the walk misses its amount
+                    # whenever it falls inside the range.
+                    not include_opening_balance,
+                )),
+                default_order=not sort_by or (sort_by == "date" and sort_dir == "desc"),
+            )
+            if running_account is not None:
+                balances = await get_running_balances(
+                    session, running_account,
+                    filtered_ids=select(base_query.subquery().c.id),
+                    order_col=default_order_col,
+                    date_from=from_date,
+                    row_ids=[tx.id for tx in transactions],
+                    primary_currency=primary_currency,
+                )
+                for tx in transactions:
+                    # A row deleted between the page query and the window
+                    # query has no balance; leave it null rather than fail.
+                    tx.running_balance, tx.running_balance_primary = balances.get(tx.id, (None, None))
+
     return transactions, total or 0, summary
+
+
+async def _running_balance_account(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    account_ids: list[uuid.UUID],
+    narrowed: bool,
+    default_order: bool,
+) -> Optional[Account]:
+    """The account whose running balance the list can carry, if any (#1202).
+
+    A running balance only means something on one account's full ledger read
+    newest first: a filter would skip rows the balance moved by, another order
+    would show values out of sequence. A card's balance is the bill cycle, which
+    the account page walks itself. Anything else gets no value, not an error.
+    """
+    if narrowed or not default_order or len(set(account_ids)) != 1:
+        return None
+    account = await get_account(session, account_ids[0], workspace_id)
+    if account is None or account.type == "credit_card":
+        return None
+    return account
 
 
 async def _tag_shared_view(
@@ -1833,6 +1958,54 @@ async def bulk_add_to_group(
     return {"updated": updated, "skipped": skipped}
 
 
+async def post_transaction_today(
+    session: AsyncSession,
+    transaction_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> Optional[Transaction]:
+    """Mark a transaction as posted and stamp it with today's calendar date.
+
+    The one-click "it cleared today" action for a pending entry: confirms the
+    status and moves the purchase date to the workspace's current day, the same
+    as saving the edit dialog with status "posted" and date "today". The
+    effective date and the FX restamp follow the date change, and a transfer
+    pair leg carries the same change to its partner, so the row ends up exactly
+    where the manual edit would have left it. No other field is touched, and the
+    transaction must belong to the given workspace.
+    """
+    transaction = await get_transaction(session, transaction_id, workspace_id)
+    if not transaction:
+        return None
+
+    today = app_today()
+    transaction.status = "posted"
+    transaction.date = today
+
+    account = await session.get(Account, transaction.account_id)
+    apply_effective_date(transaction, account)
+    await stamp_primary_amount(session, transaction.user_id, transaction)
+
+    if transaction.transfer_pair_id:
+        paired_result = await session.execute(
+            select(Transaction).where(
+                Transaction.workspace_id == workspace_id,
+                Transaction.transfer_pair_id == transaction.transfer_pair_id,
+                Transaction.id != transaction.id,
+            )
+        )
+        paired = paired_result.scalar_one_or_none()
+        if paired:
+            paired.status = "posted"
+            paired.date = today
+            paired_account = await session.get(Account, paired.account_id)
+            apply_effective_date(paired, paired_account)
+            await stamp_primary_amount(session, paired.user_id, paired)
+
+    await session.commit()
+    await session.refresh(transaction)
+    return transaction
+
+
 async def toggle_ignore_transaction(
     session: AsyncSession,
     transaction_id: uuid.UUID,
@@ -1962,3 +2135,102 @@ async def bulk_delete_transactions(
     )
     await session.commit()
     return len(valid_ids)
+
+
+async def suggest_descriptions(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    query: str,
+    limit: int = 8,
+) -> list[DescriptionSuggestion]:
+    """Distinct descriptions in the workspace that contain ``query``.
+
+    Powers the description autocomplete in the transaction form (issue
+    #1127). Each suggestion carries the category and payee of the most
+    recent transaction with that description, so picking one can prefill
+    them. Matching is case-insensitive; descriptions that *start* with the
+    query rank before ones that merely contain it, newest first otherwise.
+    """
+    term = query.strip()
+    if len(term) < 2:
+        return []
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    filters = (
+        Transaction.workspace_id == workspace_id,
+        Transaction.source != "opening_balance",
+        Transaction.is_ignored.is_(False),
+        Transaction.description.ilike(f"%{escaped}%", escape="\\"),
+    )
+    # Distinct and ranked in SQL *before* the limit, so many recent rows of
+    # one description can't push an older prefix match out of the results.
+    prefix_rank = func.min(
+        case((Transaction.description.ilike(f"{escaped}%", escape="\\"), 0), else_=1)
+    )
+    # Headroom over `limit` for spellings that differ only by case or
+    # surrounding spaces, which collapse into one suggestion below.
+    candidates = (
+        await session.execute(
+            select(Transaction.description)
+            .where(*filters)
+            .group_by(Transaction.description)
+            .order_by(prefix_rank, func.max(Transaction.date).desc(), Transaction.description)
+            .limit(limit * 4)
+        )
+    ).scalars().all()
+
+    chosen: dict[str, str] = {}  # casefolded key -> displayed description
+    spellings: dict[str, list[str]] = {}
+    for description in candidates:
+        key = description.strip().casefold()
+        if not key:
+            continue
+        if key not in chosen:
+            if len(chosen) == limit:
+                continue
+            chosen[key] = description.strip()
+        spellings.setdefault(key, []).append(description)
+    if not chosen:
+        return []
+
+    # Category and payee from the latest use of each chosen description: one
+    # row per spelling (ranked in SQL), however often it was used.
+    recency = (
+        func.row_number()
+        .over(
+            partition_by=Transaction.description,
+            order_by=(Transaction.date.desc(), Transaction.created_at.desc()),
+        )
+        .label("recency")
+    )
+    newest = (
+        select(
+            Transaction.description,
+            Transaction.category_id,
+            Transaction.payee_id,
+            Transaction.date,
+            Transaction.created_at,
+            recency,
+        )
+        .where(
+            *filters[:3],
+            Transaction.description.in_([d for k in chosen for d in spellings[k]]),
+        )
+        .subquery()
+    )
+    rows = await session.execute(
+        select(newest.c.description, newest.c.category_id, newest.c.payee_id)
+        .where(newest.c.recency == 1)
+        .order_by(newest.c.date.desc(), newest.c.created_at.desc())
+    )
+    latest: dict[str, tuple[Optional[uuid.UUID], Optional[uuid.UUID]]] = {}
+    for description, category_id, payee_id in rows:
+        latest.setdefault(description.strip().casefold(), (category_id, payee_id))
+
+    return [
+        DescriptionSuggestion(
+            description=display,
+            category_id=latest.get(key, (None, None))[0],
+            payee_id=latest.get(key, (None, None))[1],
+        )
+        for key, display in chosen.items()
+    ]

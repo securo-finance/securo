@@ -23,6 +23,10 @@ class DashboardSummary(BaseModel):
     assets_value: dict[str, float] = Field(default_factory=dict)  # currency -> total asset value
     assets_value_primary: float = 0.0
     primary_currency: str = "USD"
+    # No real FX rate for at least one currency bucket: the *_primary totals
+    # sum that bucket at 1:1, so they are an estimate, not a conversion.
+    # Same flag the account list carries (issue #1165).
+    fx_fallback: bool = False
     # Net pending balance from group splits (in primary currency).
     # Negative = the user is a net debtor (others paid for them, debt
     # owed). Positive = the user is a net creditor (paid for others,
@@ -72,3 +76,4 @@ class ProjectedTransaction(BaseModel):
     category_name: Optional[str]
     category_icon: Optional[str]
     category_color: Optional[str] = None
+    category_treat_as_transfer: bool = False

@@ -5,6 +5,8 @@ import { AlertCircle, Check, ChevronDown, ChevronRight, Loader2, Sparkles } from
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { formatDate } from '@/lib/date-range-format'
+import { useDateLocale } from '@/hooks/use-display-locale'
 import {
   budgets,
   categories,
@@ -14,7 +16,7 @@ import {
   transactions,
 } from '@/lib/api'
 
-import type { ProposalKind, ProposalData } from '@/lib/agent-proposals'
+import type { ProposalKind, ProposalData, TransferLeg } from '@/lib/agent-proposals'
 
 interface Props {
   toolCallId: string
@@ -39,6 +41,7 @@ function persistApplied(toolCallId: string, ref?: string) {
 
 export function ProposalCard({ toolCallId, data }: Props) {
   const { t } = useTranslation()
+  const dateLocale = useDateLocale()
   const qc = useQueryClient()
   const initiallyApplied = loadApplied()[toolCallId]
   const [appliedAt, setAppliedAt] = useState<number | null>(initiallyApplied?.ts ?? null)
@@ -82,7 +85,7 @@ export function ProposalCard({ toolCallId, data }: Props) {
   if (!data.kind) return null
 
   const kind = data.kind
-  const summary = renderSummary(kind, data, t)
+  const summary = renderSummary(kind, data, t, dateLocale)
   const isApplied = appliedAt !== null
 
   return (
@@ -161,7 +164,12 @@ function kindTitle(kind: ProposalKind, t: ReturnType<typeof useTranslation>['t']
   return t(`agents.proposal.kind.${kind}`)
 }
 
-function renderSummary(kind: ProposalKind, d: ProposalData, t: ReturnType<typeof useTranslation>['t']): string {
+function renderSummary(
+  kind: ProposalKind,
+  d: ProposalData,
+  t: ReturnType<typeof useTranslation>['t'],
+  dateLocale: string,
+): string {
   const p = (d.proposed || {}) as Record<string, unknown>
   const tgt = (d.target || {}) as Record<string, unknown>
   switch (kind) {
@@ -230,9 +238,27 @@ function renderSummary(kind: ProposalKind, d: ProposalData, t: ReturnType<typeof
         target: fmt(p.target_amount, p.currency),
         deadline: p.deadline ? String(p.deadline) : '—',
       })
+    case 'link_transfer':
+    case 'unlink_transfer': {
+      const legs = d.legs || []
+      // Debit first: money leaves that account and lands in the credit one.
+      const from = legs.find((l) => l.type === 'debit') ?? legs[0]
+      const to = legs.find((l) => l !== from)
+      return t(
+        kind === 'link_transfer' ? 'agents.proposal.summary.linkTransfer' : 'agents.proposal.summary.unlinkTransfer',
+        { from: legLabel(from, dateLocale), to: legLabel(to, dateLocale) },
+      )
+    }
     default:
       return ''
   }
+}
+
+function legLabel(leg: TransferLeg | undefined, dateLocale: string): string {
+  if (!leg) return '?'
+  const parts = [String(leg.account_name ?? leg.description ?? '?'), fmt(leg.amount, leg.currency)]
+  if (leg.date) parts.push(`(${formatDate(leg.date, dateLocale)})`)
+  return parts.join(' ')
 }
 
 function fmt(amount: unknown, currency: unknown): string {
@@ -408,6 +434,15 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         color: (p.color as string) || undefined,
       } as Parameters<typeof goals.create>[0])
       return g.id
+    }
+    case 'link_transfer': {
+      const res = await transactions.linkTransfer(data.transaction_ids || [])
+      return res.transfer_pair_id
+    }
+    case 'unlink_transfer': {
+      const pairId = String(data.transfer_pair_id)
+      await transactions.unlinkTransfer(pairId)
+      return pairId
     }
   }
 }

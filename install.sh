@@ -104,37 +104,6 @@ is_docker_compose_v2() {
   command -v docker-compose > /dev/null 2>&1 && docker-compose version 2>/dev/null | grep -Eq 'Docker Compose version v?2|v2'
 }
 
-version_at_least() {
-  local version="${1%%[-+]*}"
-  local minimum="${2%%[-+]*}"
-  local IFS=.
-  local -a version_parts minimum_parts
-  local version_part minimum_part i
-
-  [ -n "$version" ] || return 1
-
-  read -r -a version_parts <<< "$version"
-  read -r -a minimum_parts <<< "$minimum"
-
-  for i in 0 1 2; do
-    version_part="${version_parts[$i]:-0}"
-    minimum_part="${minimum_parts[$i]:-0}"
-    version_part="${version_part//[^0-9]/}"
-    minimum_part="${minimum_part//[^0-9]/}"
-    version_part="${version_part:-0}"
-    minimum_part="${minimum_part:-0}"
-
-    if ((10#$version_part > 10#$minimum_part)); then
-      return 0
-    fi
-    if ((10#$version_part < 10#$minimum_part)); then
-      return 1
-    fi
-  done
-
-  return 0
-}
-
 check_podman_compose_version() {
   local pc_version
 
@@ -142,14 +111,6 @@ check_podman_compose_version() {
   # podman-compose version; target the compose line explicitly.
   pc_version=$(podman-compose --version 2>&1 | grep -i 'podman-compose version' | awk '{print $NF}' || true)
   info "podman-compose ${pc_version:-unknown} found"
-
-  # 1.6.0 is the first release that resolves nested ${VAR:-${OTHER:-x}}
-  # interpolation. Below it, FRONTEND_URL is handed to the containers with the
-  # inner ${FRONTEND_PORT:-3000} left as literal text, which silently breaks
-  # CORS, passkeys, and the OAuth callbacks.
-  if [ -n "$pc_version" ] && ! version_at_least "$pc_version" "1.6.0"; then
-    warn "podman-compose $pc_version is old. Upgrade to >= 1.6.0: earlier versions leave FRONTEND_URL unresolved and break login callbacks."
-  fi
 }
 
 resolve_compose_command() {

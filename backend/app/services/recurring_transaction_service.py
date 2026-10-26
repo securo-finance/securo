@@ -3,7 +3,7 @@ import uuid
 from datetime import date, timedelta
 from typing import Optional
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today, get_workspace_timezone, today_in
@@ -265,12 +265,33 @@ def get_occurrences_in_range(
 
 
 async def generate_pending(
-    session: AsyncSession, user_id: uuid.UUID, up_to: Optional[date] = None
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    up_to: Optional[date] = None,
+    include_manual: bool = False,
+    workspace_id: Optional[uuid.UUID] = None,
 ) -> int:
     """Generate transactions for all pending recurring transactions up to a given date.
     If up_to is None, defaults to today. This allows the dashboard to pre-generate
     transactions for future months when the user navigates ahead.
+
+    Schedules with auto_generate off are left alone unless include_manual is
+    set: the hourly task must never materialize them, while the Generate
+    Pending button is the user asking for exactly that.
+
+    workspace_id narrows the run to one workspace. The button passes the
+    workspace it was authorized for, so a click there cannot write into
+    another workspace the user merely belongs to; unattended runs leave it
+    unset and cover all of them.
     Returns the count of transactions generated."""
+    # Unattended runs only touch schedules that opted in to auto-generation.
+    generation_filter = (
+        true() if include_manual else RecurringTransaction.auto_generate == True
+    )
+    if workspace_id is not None:
+        generation_filter = and_(
+            generation_filter, RecurringTransaction.workspace_id == workspace_id
+        )
     # A person's recurring rows may live in several workspaces, and each
     # workspace keeps its own calendar, so "today" is resolved per workspace.
     # The query is bounded by the latest of those days and the loop below
@@ -283,7 +304,7 @@ async def generate_pending(
                 .where(
                     RecurringTransaction.user_id == user_id,
                     RecurringTransaction.is_active == True,
-                    RecurringTransaction.auto_generate == True,
+                    generation_filter,
                 )
                 .distinct()
             )
@@ -301,7 +322,7 @@ async def generate_pending(
         .where(
             RecurringTransaction.user_id == user_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.auto_generate == True,
+            generation_filter,
             or_(
                 and_(
                     RecurringTransaction.weekend_adjustment == "previous_friday",

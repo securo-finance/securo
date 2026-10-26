@@ -97,7 +97,14 @@ async def _resolve_current_amount(
         accounts = await _get_open_accounts(session, workspace_id)
         today = app_today()
         total = Decimal("0")
+        seen_shared: set[str] = set()
         for acc in accounts:
+            # Cards on one consolidated credit line each carry the whole
+            # line's debt; count it once.
+            if acc.shared_balance_group and acc.type == "credit_card":
+                if acc.shared_balance_group in seen_shared:
+                    continue
+                seen_shared.add(acc.shared_balance_group)
             bal = Decimal(str(await _account_balance_at(session, acc, today)))
             total += await _convert_amount(session, bal, acc.currency, goal_currency)
 

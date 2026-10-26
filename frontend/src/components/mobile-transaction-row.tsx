@@ -7,6 +7,8 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import { isTransferTransaction } from '@/lib/transaction-transfer'
+import { transactionDescription } from '@/lib/transaction-description'
 
 /** Keep long merchant references on one line when there are no word breaks. */
 function hasWordBreaks(text: string): boolean {
@@ -28,6 +30,8 @@ interface MobileTransactionRowProps {
   onClick: (tx: Transaction) => void
   /** Show the payee instead of the account name in an account-scoped view. */
   showPayee?: boolean
+  /** Localize synthetic opening-balance descriptions only in account detail. */
+  localizeOpeningBalance?: boolean
 }
 
 export function MobileTransactionRow({
@@ -44,9 +48,13 @@ export function MobileTransactionRow({
   onSelect,
   onClick,
   showPayee = false,
+  localizeOpeningBalance = false,
 }: MobileTransactionRowProps) {
   const { mask } = usePrivacyMode()
   const { t } = useTranslation()
+  const description = localizeOpeningBalance
+    ? transactionDescription(tx.description, tx.source, t)
+    : tx.description
 
   const displayAmount = tx.is_shared && tx.viewer_share != null
     ? Number(tx.viewer_share)
@@ -102,16 +110,19 @@ export function MobileTransactionRow({
       <div className="min-w-0 flex-1">
         {/* Description row */}
         <div className="flex items-center gap-1.5">
-          <p className={`text-sm font-semibold text-foreground leading-tight min-w-0 ${hasWordBreaks(tx.description) ? 'break-words whitespace-normal' : 'truncate'}`}>
-            {tx.description}
+          <p className={`text-sm font-semibold text-foreground leading-tight min-w-0 ${hasWordBreaks(description) ? 'break-words whitespace-normal' : 'truncate'}`}>
+            {description}
           </p>
           {tx.group_id && (
             <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
               {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
             </span>
           )}
-          {!!tx.transfer_pair_id && (
-            <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" />
+          {isTransferTransaction(tx) && (
+            <ArrowLeftRight
+              className="h-3 w-3 text-blue-600 shrink-0"
+              aria-label={t('transactions.transfer')}
+            />
           )}
           {virtual && (
             <CalendarClock className="h-3 w-3 text-primary shrink-0" />
@@ -162,6 +173,14 @@ export function MobileTransactionRow({
               <span className="text-xs text-muted-foreground truncate">
                 {getAccountName(account)}
               </span>
+              {tx.transfer_counterpart && (
+                <>
+                  <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" aria-hidden="true" />
+                  <span className="text-xs text-muted-foreground truncate">
+                    {tx.transfer_counterpart.account_name}
+                  </span>
+                </>
+              )}
             </div>
           )
         )}

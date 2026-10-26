@@ -9,6 +9,8 @@ import { Switch } from '@/components/ui/switch'
 import { PageHeader } from '@/components/page-header'
 import { agents } from '@/lib/api'
 import { AgentFormDialog } from '@/components/agents/agent-form-dialog'
+import { AgentTemplatesSection } from '@/components/agents/agent-templates'
+import { BUILTIN_MCP_SERVER, type AgentTemplate } from '@/lib/agent-templates'
 import { useWorkspace } from '@/contexts/workspace-context'
 
 export default function AgentsListPage() {
@@ -16,12 +18,54 @@ export default function AgentsListPage() {
   const qc = useQueryClient()
   const { canWrite } = useWorkspace()
   const [createOpen, setCreateOpen] = useState(false)
+  const [formPreset, setFormPreset] = useState<AgentTemplate | null>(null)
+  const [creatingId, setCreatingId] = useState<string | null>(null)
   const { data: info } = useQuery({ queryKey: ['agents-info'], queryFn: () => agents.info() })
   const { data: list, isLoading } = useQuery({ queryKey: ['agents'], queryFn: () => agents.list() })
   const { data: connections } = useQuery({
     queryKey: ['agent-connections'],
     queryFn: () => agents.connections.list(),
   })
+
+  const createFromTemplateMut = useMutation({
+    mutationFn: async (tpl: AgentTemplate) => {
+      const conn = connections?.find((c) => c.is_default) ?? connections?.[0]
+      if (!conn) throw new Error('no connection')
+      // The tool scope goes in the create call itself, so the agent and its
+      // whitelist are saved together: there is no window where it exists
+      // without one (which the backend reads as "every tool allowed").
+      return agents.create({
+        name: t(tpl.nameKey),
+        description: t(tpl.descriptionKey),
+        system_prompt: tpl.systemPrompt,
+        connection_id: conn.id,
+        auto_context: true,
+        tools: tpl.tools.map((tool) => ({ server: BUILTIN_MCP_SERVER, tool_name: tool, enabled: true })),
+      })
+    },
+    onMutate: (tpl) => setCreatingId(tpl.id),
+    onSettled: () => setCreatingId(null),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agents'] })
+      toast.success(t('agents.form.created'))
+    },
+    onError: () => toast.error(t('agents.form.saveFailed')),
+  })
+
+  /**
+   * One click on a template card. With an LLM connection available the agent
+   * is created right away; without one, the form opens prefilled so the user
+   * picks a connection and finishes the setup in one place.
+   */
+  const handleTemplateCreate = (tpl: AgentTemplate) => {
+    const conn = connections?.find((c) => c.is_default) ?? connections?.[0]
+    if (conn) {
+      createFromTemplateMut.mutate(tpl)
+    } else {
+      setFormPreset(tpl)
+      setCreateOpen(true)
+    }
+  }
   // Setting an agent as default clears the flag on every other agent
   // server-side; we still need to refresh both queries so the badge
   // and the global-chat picker pick up the change immediately.
@@ -57,6 +101,14 @@ export default function AgentsListPage() {
       />
 
       <p className="text-sm text-muted-foreground mb-6 max-w-2xl">{t('agents.subtitle')}</p>
+
+      {canWrite && (
+        <AgentTemplatesSection
+          onCreate={handleTemplateCreate}
+          busyId={creatingId}
+          disabled={connections === undefined}
+        />
+      )}
 
       {isLoading ? (
         <div className="bg-card rounded-xl border border-border shadow-sm p-6 text-sm text-muted-foreground">
@@ -177,7 +229,15 @@ export default function AgentsListPage() {
         </div>
       )}
 
-      <AgentFormDialog open={createOpen} onOpenChange={setCreateOpen} providers={info?.providers ?? []} />
+      <AgentFormDialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open)
+          if (!open) setFormPreset(null)
+        }}
+        providers={info?.providers ?? []}
+        preset={formPreset}
+      />
     </div>
   )
 }

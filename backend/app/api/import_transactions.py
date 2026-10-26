@@ -69,10 +69,10 @@ async def preview_import(
             transactions = import_service.parse_ofx(content)
             detected_format = "ofx"
         elif filename.lower().endswith('.qif'):
-            transactions = import_service.parse_qif(content, date_format=date_format)
+            transactions, failed_rows = import_service.parse_qif(content, date_format=date_format)
             detected_format = "qif"
         elif filename.lower().endswith('.xml') or filename.lower().endswith('.camt'):
-            transactions = import_service.parse_camt(content)
+            transactions, failed_rows = import_service.parse_camt(content)
             detected_format = "camt"
         elif filename.lower().endswith('.csv'):
             detected_format = "csv"
@@ -100,11 +100,11 @@ async def preview_import(
                 detected_format = "ofx"
             except Exception:
                 try:
-                    transactions = import_service.parse_qif(content, date_format=date_format)
+                    transactions, failed_rows = import_service.parse_qif(content, date_format=date_format)
                     detected_format = "qif"
                 except Exception:
                     try:
-                        transactions = import_service.parse_camt(content)
+                        transactions, failed_rows = import_service.parse_camt(content)
                         detected_format = "camt"
                     except Exception:
                         transactions, failed_rows = import_service.parse_csv(content)
