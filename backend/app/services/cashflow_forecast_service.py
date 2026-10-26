@@ -4,13 +4,12 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.account import Account
-from app.models.bank_connection import BankConnection
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
+from app.models.workspace import Workspace
 from app.schemas.forecast import (
     CadenceEnum,
     CashflowForecastResponse,
@@ -19,7 +18,9 @@ from app.schemas.forecast import (
     ForecastSummary,
     SubscriptionStatusEnum,
 )
-from app.services import recurring_detector_service
+from app.core.config import get_settings
+from app.services import account_service, recurring_detector_service
+from app.services.fx_rate_service import convert
 
 
 def _date_matches_cadence(target_date: date, anchor_date: date, cadence: CadenceEnum) -> bool:
@@ -67,30 +68,28 @@ async def generate_cashflow_forecast(
     today = reference_date or date.today()
     end_date = today + timedelta(days=horizon_days)
 
-    # 1. Fetch current liquid balance across workspace accounts
-    acc_query = (
-        select(Account)
-        .outerjoin(BankConnection)
-        .where(
-            or_(
-                Account.workspace_id == workspace_id,
-                BankConnection.workspace_id == workspace_id,
-            ),
-            Account.is_closed.is_(False),
-        )
-    )
-    acc_result = await session.execute(acc_query)
-    accounts = list(acc_result.scalars().all())
+    # 1. Start from the same current balance the account screen shows: the
+    # transaction-based balance for manual accounts, the provider balance for
+    # connected ones. The stored balance column is only the opening balance
+    # for manual accounts.
+    workspace = await session.get(Workspace, workspace_id)
+    base_currency = workspace.default_currency if workspace else get_settings().default_currency
+    accounts = await account_service.get_accounts(session, workspace_id)
 
-    # Liquid funds = checking, savings, cash (credit card balances represent debt)
+    # Liquid funds = checking, savings, cash. Credit card balances are already
+    # signed (debt is negative), so adding them nets the debt off.
     starting_liquid_balance = Decimal("0.00")
     for acc in accounts:
-        balance_val = Decimal(str(acc.balance_primary if acc.balance_primary is not None else acc.balance))
-        if acc.type in ("checking", "savings", "cash", "depository"):
-            starting_liquid_balance += balance_val
-        elif acc.type == "credit_card":
-            # Subtract credit card debt from net liquid position
-            starting_liquid_balance -= abs(balance_val)
+        if acc["type"] not in ("checking", "savings", "cash", "depository", "credit_card"):
+            continue
+        balance_val, _ = await convert(
+            session,
+            Decimal(str(acc["current_balance"])),
+            acc["currency"],
+            base_currency,
+            today,
+        )
+        starting_liquid_balance += balance_val
 
     starting_liquid_balance = starting_liquid_balance.quantize(Decimal("0.01"))
 
