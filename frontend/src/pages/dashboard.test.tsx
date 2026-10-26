@@ -135,4 +135,94 @@ describe('Dashboard net worth breakdown', () => {
     const cardRow = within(tooltip).getByText(t('dashboard.creditCardBalance')).parentElement!
     expect(cardRow).toHaveTextContent(formatCurrency(-500, 'USD', 'en-US'))
   })
+
+  it('lists mortgage debt as its own row instead of available balance', async () => {
+    api.accounts.list.mockResolvedValue([
+      ...accounts,
+      account({ id: 'mortgage', name: 'Mortgage', type: 'loan', current_balance: -40000 }),
+    ])
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+
+    const tooltip = await screen.findByRole('tooltip')
+    const availableRow = within(tooltip).getByText(t('dashboard.availableBalance')).parentElement!
+    expect(availableRow).toHaveTextContent(formatCurrency(1000, 'USD', 'en-US'))
+    const loanRow = within(tooltip).getByText(t('dashboard.loanBalance')).parentElement!
+    expect(loanRow).toHaveTextContent(formatCurrency(-40000, 'USD', 'en-US'))
+  })
+})
+
+describe('Dashboard available balance without an FX rate', () => {
+  const renderDashboard = () => renderWithProviders(
+    <TooltipProvider delayDuration={0}>
+      <DashboardPage />
+    </TooltipProvider>,
+  )
+
+  it('shows an unconverted account in its own currency and flags the total', async () => {
+    api.accounts.list.mockResolvedValue([
+      account({ id: 'checking', name: 'Checking', current_balance: 1000 }),
+      account({ id: 'eur', name: 'Euro Savings', type: 'savings', currency: 'EUR', current_balance: 100, fx_fallback: true }),
+    ])
+    renderDashboard()
+
+    const chip = (await screen.findByText('Euro Savings')).closest('a')!
+    expect(chip).toHaveTextContent(formatCurrency(100, 'EUR', 'en-US'))
+    expect(screen.getByText(t('transactions.fxFallbackBanner'))).toBeInTheDocument()
+  })
+
+  it('does not flag the total when every account is converted', async () => {
+    renderDashboard()
+
+    await screen.findByText('Checking')
+    expect(screen.queryByText(t('transactions.fxFallbackBanner'))).not.toBeInTheDocument()
+  })
+})
+
+describe('Dashboard net worth without an FX rate', () => {
+  const renderDashboard = () => renderWithProviders(
+    <TooltipProvider delayDuration={0}>
+      <DashboardPage />
+    </TooltipProvider>,
+  )
+
+  it('flags the net worth total when the summary carried a fallback', async () => {
+    api.dashboard.summary.mockResolvedValue({ ...summary, fx_fallback: true })
+    renderDashboard()
+
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    expect(screen.getByText(t('transactions.fxFallbackBanner'))).toBeInTheDocument()
+  })
+
+  it('keeps the net worth quiet when every bucket was converted', async () => {
+    renderDashboard()
+
+    await screen.findByText('Checking')
+    expect(screen.queryByText(t('transactions.fxFallbackBanner'))).not.toBeInTheDocument()
+  })
+})
+
+describe('Dashboard refresh button', () => {
+  it('refetches page data when the refresh button is clicked', async () => {
+    const { user, queryClient } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    const refetch = vi.spyOn(queryClient, 'refetchQueries')
+
+    const button = screen.getByRole('button', { name: 'Refresh' })
+    await user.click(button)
+
+    expect(refetch).toHaveBeenCalledTimes(1)
+    // Only the queries on screen: a refresh must not refetch every page visited earlier.
+    expect(refetch).toHaveBeenCalledWith({ type: 'active' })
+  })
 })

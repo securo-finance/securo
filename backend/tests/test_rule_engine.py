@@ -745,3 +745,48 @@ def test_an_empty_list_of_assignable_categories_blocks_every_categorization():
         is False
     )
     assert tx.category_id is None
+
+
+# --- equals / not_equals on amounts (issue #850) ---
+#
+# Amounts are stored at a fixed scale (100.00) while the rule form submits
+# the number as typed (100); a string comparison of the two forms never
+# agrees, so equals on amount must compare numerically.
+
+
+def test_equals_amount_different_scales():
+    conditions = [{"field": "amount", "op": "equals", "value": "100"}]
+    tx = make_tx(amount=Decimal("100.00"))
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_equals_amount_value_with_trailing_zeros():
+    conditions = [{"field": "amount", "op": "equals", "value": "25.50"}]
+    tx = make_tx(amount=Decimal("25.5"))
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_equals_amount_no_match():
+    conditions = [{"field": "amount", "op": "equals", "value": "100.01"}]
+    tx = make_tx(amount=Decimal("100.00"))
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_not_equals_amount_different_scales():
+    conditions = [{"field": "amount", "op": "not_equals", "value": "100"}]
+    tx = make_tx(amount=Decimal("100.00"))
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_not_equals_amount_no_match():
+    conditions = [{"field": "amount", "op": "not_equals", "value": "100.01"}]
+    tx = make_tx(amount=Decimal("100.00"))
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_equals_amount_non_numeric_falls_back_to_text():
+    # A value that is not a number keeps the old text comparison: it cannot
+    # agree with a stored amount, which is what it did before the fix.
+    conditions = [{"field": "amount", "op": "equals", "value": "abc"}]
+    tx = make_tx(amount=Decimal("100.00"))
+    assert evaluate_conditions("and", conditions, tx) is False

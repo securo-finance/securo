@@ -38,6 +38,7 @@ of their own, and this module simply runs what comes back.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 from typing import Optional
@@ -363,6 +364,10 @@ async def _suggest_recurring(
     demotes the recurring rule from linking to suggesting. Without it that
     setting would be a switch that quietly does nothing, and a
     configuration screen whose switches do nothing is worse than no screen.
+
+    It also catches what the normalisation pass refused to guess: when
+    several bills fit a charge under a rule that asks for a single candidate,
+    each of them would link on its own, so each is offered instead.
     """
     unexplained = [
         transaction
@@ -395,6 +400,7 @@ async def _suggest_recurring(
         if await _already_settles_something(session, transaction.id):
             continue
         movement = _as_movement(transaction)
+        decided: list[tuple[RecurringTransaction, Decision]] = []
         for bill in bills:
             if bill.account_id != transaction.account_id:
                 continue
@@ -420,15 +426,23 @@ async def _suggest_recurring(
                 ),
                 base_currency=base_currency,
             )
-            if decision.port == "suggested":
-                await reconciliation_suggestion_service.record(
-                    session,
-                    workspace_id,
-                    transaction.id,
-                    decision,
-                    movement,
-                    RECURRING_NODE,
-                )
+            decided.append((bill, decision))
+        linked = [entry for entry in decided if entry[1].port == "linked"]
+        picked, rivals = reconciliation_rule_service.pick_linked(linked, composed)
+        offered = [
+            decision for _, decision in decided if decision.port == "suggested"
+        ]
+        if picked is None:
+            offered += [replace(decision, port="suggested") for _, decision in rivals]
+        for decision in offered:
+            await reconciliation_suggestion_service.record(
+                session,
+                workspace_id,
+                transaction.id,
+                decision,
+                movement,
+                RECURRING_NODE,
+            )
 
 
 async def match_for_invoice(

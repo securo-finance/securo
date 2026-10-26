@@ -924,3 +924,46 @@ async def test_transaction_calendar_ignored_actual_is_consistent_across_months(
     assert august_september_1.ending_balance == 1000.0
     assert september_september_1.ending_balance == 1000.0
     assert august_september_1.ending_balance == september_september_1.ending_balance
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_shows_closed_account_history_but_not_its_balance(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A closed account's past rows stay on the calendar (issue #1112), while the
+    running balance keeps counting only accounts that are still open."""
+    open_account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Open", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    closed_account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Closed", type="savings", balance=Decimal("0"), currency="BRL",
+        is_closed=True,
+    )
+    session.add_all([open_account, closed_account])
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=open_account.id, description="Salary", amount=Decimal("1000"),
+            currency="BRL", date=date(2026, 7, 2), type="credit", source="manual",
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=closed_account.id, description="Old fee", amount=Decimal("400"),
+            currency="BRL", date=date(2026, 7, 3), type="debit", source="manual",
+        ),
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+
+    july_3 = next(day for day in calendar.days if day.date == date(2026, 7, 3))
+    assert july_3.actual_count == 1
+    assert july_3.actual_expense == 400.0
+    assert july_3.items[0].description == "Old fee"
+    # The balance is what the open accounts hold; the closed account is not part of it.
+    assert july_3.ending_balance == 1000.0

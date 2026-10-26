@@ -15,6 +15,16 @@ if TYPE_CHECKING:
     from app.models.asset_value import AssetValue
 
 
+
+# Asset types a loan can be secured against (a mortgage, a car financing).
+LOAN_COLLATERAL_TYPES = frozenset({"real_estate", "vehicle"})
+
+# Decimal precision of the asset price fields (last_price, average_price,
+# Numeric(18,6)). FX conversions of asset values keep this many decimals so a
+# sub-cent market price survives the conversion instead of rounding to 0.00
+# (issue #622). Monetary amounts keep two.
+ASSET_PRICE_DECIMALS = 6
+
 class Asset(Base):
     __tablename__ = "assets"
     __table_args__ = (

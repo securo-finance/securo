@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
@@ -18,6 +19,7 @@ from app.services.dashboard_service import (
     _account_balance_at,
     _total_balance_by_currency,
     get_balance_history,
+    get_monthly_trend,
     get_summary,
     get_spending_by_category,
     get_projected_transactions,
@@ -377,10 +379,127 @@ async def test_get_summary_basic(session: AsyncSession, test_user, test_workspac
     assert summary.accounts_count >= 1
 
 
+# ---------------------------------------------------------------------------
+# get_summary: mixed currencies and the FX fallback flag (issue #1165)
+# ---------------------------------------------------------------------------
+
+
+async def _fund_manual(
+    session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
+    amount: float, currency: str,
+) -> Transaction:
+    """Opening credit for a manual account, in the account's own currency.
+
+    Manual account totals count transactions, not the balance field.
+    """
+    txn = Transaction(
+        id=uuid.uuid4(), user_id=user_id, account_id=account_id,
+        description="Opening balance", amount=Decimal(str(amount)),
+        date=app_today(), type="credit", source="opening_balance",
+        currency=currency, status="posted",
+    )
+    session.add(txn)
+    await session.commit()
+    return txn
+
+
 @pytest.mark.asyncio
-async def test_summary_matches_drilldown_and_excludes_closed_accounts(
+async def test_get_summary_mixed_currency_missing_rate_flags_fallback(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """No FX rate: foreign buckets stay at 1:1 and the summary is flagged.
+
+    The total keeps the native amounts (same rule as the available balance
+    headline) but must carry fx_fallback, so the UI shows the estimate
+    instead of presenting foreign money as converted (issue #1165).
+    """
+    from unittest.mock import AsyncMock
+    import app.services.fx_rate_service as fx
+
+    # Hermetic: never touch the network, even if a provider API key is set.
+    monkeypatch.setattr(fx, "sync_rates", AsyncMock(return_value=0))
+
+    home = await _make_account(session, test_user.id, "Home", currency="BRL")
+    abroad = await _make_account(session, test_user.id, "Abroad", currency="EUR")
+    await _fund_manual(session, test_user.id, home.id, 100.0, "BRL")
+    await _fund_manual(session, test_user.id, abroad.id, 50.0, "EUR")
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+
+    assert summary.primary_currency == "BRL"
+    assert summary.total_balance == {"BRL": 100.0, "EUR": 50.0}
+    # Summed at 1:1 (not silently converted) and flagged as an estimate.
+    assert summary.total_balance_primary == pytest.approx(150.0)
+    assert summary.fx_fallback is True
+
+
+@pytest.mark.asyncio
+async def test_get_summary_zero_foreign_balance_without_rate_is_not_flagged(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """A foreign account at zero needs no rate: the total is exact, so the
+    summary must not be flagged as an estimate (issue #1165)."""
+    from unittest.mock import AsyncMock
+    import app.services.fx_rate_service as fx
+
+    monkeypatch.setattr(fx, "sync_rates", AsyncMock(return_value=0))
+
+    home = await _make_account(session, test_user.id, "Home", currency="BRL")
+    abroad = await _make_account(session, test_user.id, "Abroad", currency="EUR")
+    await _fund_manual(session, test_user.id, home.id, 100.0, "BRL")
+    await _fund_manual(session, test_user.id, abroad.id, 50.0, "EUR")
+    session.add(Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=abroad.id,
+        description="Spent it all", amount=Decimal("50"), date=app_today(),
+        type="debit", source="manual", currency="EUR", status="posted",
+    ))
+    await session.commit()
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+
+    assert summary.total_balance_primary == pytest.approx(100.0)
+    assert summary.fx_fallback is False
+
+
+@pytest.mark.asyncio
+async def test_get_summary_mixed_currency_with_rate_converts(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """A real stored rate converts the bucket and no fallback flag is set."""
+    from unittest.mock import AsyncMock
+    import app.core.app_clock as clock
+    import app.services.fx_rate_service as fx
+    from app.models.fx_rate import FxRate
+
+    # Hermetic: never touch the network, even if a provider API key is set.
+    monkeypatch.setattr(fx, "sync_rates", AsyncMock(return_value=0))
+
+    home = await _make_account(session, test_user.id, "Home", currency="BRL")
+    abroad = await _make_account(session, test_user.id, "Abroad", currency="EUR")
+    await _fund_manual(session, test_user.id, home.id, 100.0, "BRL")
+    await _fund_manual(session, test_user.id, abroad.id, 50.0, "EUR")
+
+    today = clock.app_today()
+    session.add(FxRate(base_currency="USD", quote_currency="EUR", date=today, rate=Decimal("1.10"), source="test"))
+    session.add(FxRate(base_currency="USD", quote_currency="BRL", date=today, rate=Decimal("5.50"), source="test"))
+    await session.commit()
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+
+    # EUR -> BRL cross rate = 5.50 / 1.10 = 5.00, so 50 EUR counts as 250 BRL.
+    assert summary.total_balance_primary == pytest.approx(350.0)
+    assert summary.fx_fallback is False
+
+
+@pytest.mark.asyncio
+async def test_summary_keeps_closed_account_history_and_matches_drilldown(
     session: AsyncSession, test_user, test_workspace
 ):
+    """Closing an account stops it counting as current money, not as history.
+
+    Past income and expenses of a closed account stay in the month's totals
+    (issue #1112), and the drill-down behind those totals lists the same rows.
+    """
     month = (date.today().replace(day=1) - timedelta(days=1)).replace(day=1)
     month_start, month_end = _month_range(month)
     open_account = await _make_account(session, test_user.id, "Open")
@@ -404,13 +523,55 @@ async def test_summary_matches_drilldown_and_excludes_closed_accounts(
         user_pnl_only=True,
     )
 
-    assert {row.account_id for row in rows} == {open_account.id}
+    assert {row.account_id for row in rows} == {open_account.id, closed_account.id}
+    assert summary.monthly_income == pytest.approx(1000.0)
+    assert summary.monthly_expenses == pytest.approx(840.0)
     assert summary.monthly_income == pytest.approx(
         sum(float(row.amount) for row in rows if row.type == "credit")
     )
     assert summary.monthly_expenses == pytest.approx(
         sum(float(row.amount) for row in rows if row.type == "debit")
     )
+
+
+@pytest.mark.asyncio
+async def test_closed_account_balance_stays_out_of_current_totals(
+    session: AsyncSession, test_user, test_workspace
+):
+    """History of a closed account counts; its balance does not."""
+    month = date.today().replace(day=1)
+    open_account = await _make_account(session, test_user.id, "Open")
+    closed_account = await _make_account(
+        session, test_user.id, "Closed", is_closed=True
+    )
+    await _add_txn(session, test_user.id, open_account.id, 100, "credit", month)
+    await _add_txn(session, test_user.id, closed_account.id, 250, "credit", month)
+
+    summary = await get_summary(session, test_workspace.id, test_user.id, month=month)
+
+    assert summary.monthly_income == pytest.approx(350.0)
+    assert summary.total_balance.get("BRL", 0.0) == pytest.approx(100.0)
+    accounts = await _get_open_accounts(session, test_workspace.id)
+    assert {a.id for a in accounts} == {open_account.id}
+
+
+@pytest.mark.asyncio
+async def test_spending_and_trend_keep_closed_account_history(
+    session: AsyncSession, test_user, test_workspace
+):
+    cat = await _make_category(session, test_user.id, "Savings fees")
+    closed_account = await _make_account(
+        session, test_user.id, "Closed saver", is_closed=True
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, closed_account.id, 60, "debit", today, category_id=cat.id)
+
+    spending = await get_spending_by_category(session, test_workspace.id, test_user.id)
+    fees = next((s for s in spending if s.category_id == str(cat.id)), None)
+    assert fees is not None and fees.total == pytest.approx(60.0)
+
+    trend = await get_monthly_trend(session, test_workspace.id, test_user.id, months=1)
+    assert sum(point.expenses for point in trend) == pytest.approx(60.0)
 
 
 @pytest.mark.asyncio
@@ -567,6 +728,25 @@ async def test_spending_excludes_transfers(session: AsyncSession, test_user, tes
     # No spending should include the transfer
     total = sum(s.total for s in spending)
     assert 500 not in [s.total for s in spending] or total == 0
+
+
+@pytest.mark.asyncio
+async def test_spending_excludes_opening_balance(session: AsyncSession, test_user, test_workspace):
+    """A debt carried in as an opening balance is not spending, so the
+    breakdown still adds up to the expenses card."""
+    cat = await _make_category(session, test_user.id, "Groceries")
+    account = await _make_account(session, test_user.id, "OB Card", acc_type="credit_card")
+    today = date.today()
+
+    await _add_txn(session, test_user.id, account.id, 2500, "debit", today, source="opening_balance")
+    await _add_txn(session, test_user.id, account.id, 40, "debit", today, category_id=cat.id)
+
+    spending = await get_spending_by_category(session, test_workspace.id, test_user.id)
+    assert next((s for s in spending if s.category_id is None), None) is None
+    assert sum(s.total for s in spending) == pytest.approx(40.0)
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+    assert sum(s.total for s in spending) == pytest.approx(summary.monthly_expenses)
 
 
 @pytest.mark.asyncio

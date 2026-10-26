@@ -11,7 +11,11 @@ x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
   SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
   DEBUG: ${DEBUG:-true}
-  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+  # Not nested (${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}):
+  # podman-compose before 1.6.0 leaves a stray "}" on such values (#1162).
+  # Empty FRONTEND_URL makes the backend use http://localhost:$FRONTEND_PORT.
+  FRONTEND_URL: ${FRONTEND_URL:-}
+  FRONTEND_PORT: ${FRONTEND_PORT:-3000}
   WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Securo}
   WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
   WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
@@ -40,12 +44,13 @@ x-backend-env: &backend-env
   OIDC_WORKSPACE_ROLE_MAP: ${OIDC_WORKSPACE_ROLE_MAP:-}
   LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
   REDIS_URL: redis://redis:6379/0
+  BANK_SYNC_MIN_INTERVAL_HOURS: ${BANK_SYNC_MIN_INTERVAL_HOURS:-4}
   OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
   FX_SYNC_MODE: ${FX_SYNC_MODE:-on_demand}
   TESOURO_DIRETO_ENABLED: ${TESOURO_DIRETO_ENABLED:-true}
   STORAGE_LOCAL_PATH: /app/data/attachments
   AGENTS_KNOWLEDGE_STORAGE_PATH: /app/data/agent_knowledge
-  # Agents/LLM feature — opt-in. Off by default so existing users pay
+  # Agents/LLM feature, opt-in. Off by default so existing users pay
   # zero cost. Run `docker compose --profile agents up` after enabling.
   AGENTS_ENABLED: ${AGENTS_ENABLED:-false}
   AGENTS_BUILTIN_MCP_URL: ${AGENTS_BUILTIN_MCP_URL:-http://mcp-server:8765/mcp}
@@ -58,7 +63,7 @@ x-backend-env: &backend-env
   # TTL for tokens minted from /agents/connections → "External MCP access".
   # Used by Claude Desktop, n8n, custom clients plugging into Securo.
   AGENTS_MCP_EXTERNAL_TTL_DAYS: ${AGENTS_MCP_EXTERNAL_TTL_DAYS:-90}
-  # LLM provider config — only the provider you actually use needs setting.
+  # LLM provider config: only the provider you actually use needs setting.
   AGENTS_DEFAULT_PROVIDER: ${AGENTS_DEFAULT_PROVIDER:-ollama}
   AGENTS_DEFAULT_MODEL: ${AGENTS_DEFAULT_MODEL:-}
   AGENTS_OLLAMA_BASE_URL: ${AGENTS_OLLAMA_BASE_URL:-http://ollama:11434}
@@ -67,7 +72,7 @@ x-backend-env: &backend-env
   AGENTS_OPENAI_COMPAT_BASE_URL: ${AGENTS_OPENAI_COMPAT_BASE_URL:-}
   AGENTS_OPENAI_COMPAT_API_KEY: ${AGENTS_OPENAI_COMPAT_API_KEY:-}
   # Knowledge-base embeddings. `native` (default) uses fastembed with a
-  # bundled multilingual model — zero external setup. Override with
+  # bundled multilingual model, so zero external setup. Override with
   # ollama/openai/openai_compatible for better quality.
   AGENTS_EMBEDDING_PROVIDER: ${AGENTS_EMBEDDING_PROVIDER:-native}
   AGENTS_EMBEDDING_MODEL: ${AGENTS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
@@ -136,7 +141,7 @@ services:
     environment:
       BACKEND_URL: http://backend:8000
       # Also drives Vite's allowedHosts, so a proxied domain is not blocked.
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+      FRONTEND_URL: ${FRONTEND_URL:-}
       APP_VERSION_ROOT: /workspace
     depends_on:
       - backend
@@ -157,11 +162,11 @@ services:
 
   # Optional: Securo built-in MCP server. Only starts under the `agents`
   # profile (`docker compose --profile agents up`). Reuses the backend
-  # image, just runs a different uvicorn entry point. Modular by design —
+  # image, just runs a different uvicorn entry point. Modular by design:
   # users not using the agents feature pay zero cost.
   #
   # The port is published on the host (127.0.0.1 by default) so external
-  # agents — Claude Desktop, n8n, custom clients — can reach it after
+  # agents (Claude Desktop, n8n, custom clients) can reach it after
   # minting a token from the UI. JWT auth is always required. Override
   # AGENTS_MCP_EXTERNAL_HOST_PORT to e.g. "0.0.0.0:8765" to expose to LAN.
   mcp-server:

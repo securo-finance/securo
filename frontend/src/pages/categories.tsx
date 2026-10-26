@@ -20,6 +20,7 @@ import {
 import type { Category, CategoryGroup, CategoryUsage } from '@/types'
 import { Pencil, Trash2, Plus, ChevronDown, ChevronRight, ChevronsUpDown, Eye, EyeOff } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
+import { PageRefreshButton } from '@/components/page-refresh-button'
 import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
 import { CategoryIcon } from '@/components/category-icon'
 import { CategorySelect } from '@/components/category-select'
@@ -77,7 +78,7 @@ export default function CategoriesPage() {
     queryFn: groupsApi.listIncludingHidden,
   })
 
-  const { data: categoriesList } = useQuery({
+  const { data: categoriesList, isFetching: categoriesFetching } = useQuery({
     queryKey: ['categories', 'management'],
     queryFn: categoriesApi.listIncludingHidden,
   })
@@ -314,7 +315,16 @@ export default function CategoriesPage() {
 
   return (
     <div>
-      <PageHeader section={t('categories.title')} title={t('categories.title')} />
+      <PageHeader
+        section={t('categories.title')}
+        title={t('categories.title')}
+        action={
+          <PageRefreshButton
+            onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
+            refreshing={categoriesFetching}
+          />
+        }
+      />
 
       <p className="mb-4 text-sm text-muted-foreground">
         {t('categories.hiddenScopeDescription')}

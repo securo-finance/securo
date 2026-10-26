@@ -602,3 +602,24 @@ async def test_history_window_never_opens_on_an_orphaned_tool_result(
         ("user", "q2"), ("assistant", "a2"),
         ("user", "new question"),
     ]
+
+
+async def test_provider_receives_stable_conversation_session_id(
+    session, test_user, test_agent: Agent, test_conversation: Conversation
+):
+    """The executor hands the provider the conversation id, so backends
+    that route on a per-conversation session id can send it as a header."""
+    provider = _ScriptedProvider([[
+        ChatChunk(type="text_delta", text="ok"),
+        ChatChunk(type="finish", finish_reason="stop"),
+    ]])
+    with _patch_provider(provider):
+        await _drain(
+            AgentExecutor(mcp=_FakeMCP(tools=[])),
+            session=session,
+            agent=test_agent,
+            user_id=test_user.id,
+            conversation_id=test_conversation.id,
+            user_message="hi",
+        )
+    assert provider.session_id == str(test_conversation.id)

@@ -118,6 +118,9 @@ async def generate_title(
         provider, model = await _provider_and_model_for(session, agent)
         if not model:
             return conv
+        # Same per-conversation session id the chat run sends, so backends
+        # that require it accept the title request too.
+        provider.session_id = str(conversation_id)
         prompt_messages = [
             ChatMessage(role="system", content=_TITLE_PROMPT),
             ChatMessage(role="user", content="\n".join(transcript)),

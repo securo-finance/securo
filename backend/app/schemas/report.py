@@ -8,6 +8,13 @@ class ReportBreakdown(BaseModel):
     color: str
 
 
+class ReportDataRange(BaseModel):
+    """Oldest and newest transaction dates the workspace has (issue #765)."""
+
+    min_date: str | None = None
+    max_date: str | None = None
+
+
 class ReportSummary(BaseModel):
     primary_value: float
     change_amount: float
@@ -39,6 +46,13 @@ class ReportMeta(BaseModel):
     forecast_start_date: str | None = None
     baseline_active: bool = False
     baseline_lookback_days: int | None = None
+    # Cash flow only. ``runway_date`` is the first day (YYYY-MM-DD) the
+    # projected balance goes below zero, or None when it stays at or above
+    # zero through the horizon. ``lowest_balance`` is the minimum projected
+    # balance from today to the end of the horizon, on ``lowest_balance_date``.
+    runway_date: str | None = None
+    lowest_balance: float | None = None
+    lowest_balance_date: str | None = None
 
 
 class CategoryTrendItem(BaseModel):

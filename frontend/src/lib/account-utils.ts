@@ -23,6 +23,52 @@ export function sumAccountBalances(
 }
 
 /**
+ * The number a sidebar account row shows.
+ *
+ * Every card on one shared credit line repeats the contract-wide balance, so
+ * the row for such a card leads with its own open bill (the one due today or
+ * later) instead; the "shared" label next to the name still identifies the
+ * line. Without an open bill, and for every other account, the balance stands.
+ * The returned amount is signed like a balance: money owed is negative.
+ */
+export function sidebarAccountBalance(
+  account: Pick<
+    Account,
+    | 'type'
+    | 'shared_balance_group'
+    | 'balance_primary'
+    | 'current_balance'
+    | 'open_bill_total'
+    | 'open_bill_total_primary'
+  >,
+): { amount: number; isPrimary: boolean } {
+  const sharedCard =
+    account.type === 'credit_card' && account.shared_balance_group != null
+  if (sharedCard && account.open_bill_total != null) {
+    const raw = account.open_bill_total_primary ?? account.open_bill_total
+    // A bill is an amount to pay, so the row shows it as debt.
+    return {
+      amount: -Number(raw) || 0,
+      isPrimary: account.open_bill_total_primary != null,
+    }
+  }
+  return {
+    amount: Number(account.balance_primary ?? account.current_balance) || 0,
+    isPrimary: account.balance_primary != null,
+  }
+}
+
+/**
+ * The accounts total the sidebar shows. Loans are long-term debt that the
+ * net worth already counts, so they stay out of this money-on-hand total.
+ */
+export function sumAccountsTotal(
+  accounts: readonly Pick<Account, 'type' | 'balance_primary' | 'current_balance' | 'shared_balance_group'>[],
+): number {
+  return sumAccountBalances(accounts.filter((account) => account.type !== 'loan'))
+}
+
+/**
  * Return a presentation-only copy ordered by the name users see.
  * The input is never mutated, which keeps React Query's cached account list intact.
  */

@@ -239,3 +239,132 @@ async def test_monthly_report_follows_mode(session, test_user, test_account, mon
         assert {month: buckets[month] for month in expected} == expected
         assert sum(buckets.values()) == 150
         assert next(b.value for b in report.summary.breakdowns if b.key == "expenses") == 150
+
+
+async def test_reports_data_range_returns_min_max(
+    client, auth_headers, session, test_user, test_account, test_transactions
+):
+    """GET /reports/data-range reports the oldest and newest transaction dates."""
+    expected_max = max(t.date for t in test_transactions)
+    old = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id, account_id=test_account.id,
+        description="STORE PURCHASE", amount=Decimal("10.00"),
+        date=date(2024, 6, 15), type="debit", source="manual",
+    )
+    session.add(old)
+    await session.commit()
+    response = await client.get("/api/reports/data-range", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["min_date"] == "2024-06-15"
+    assert data["max_date"] == expected_max.strftime("%Y-%m-%d")
+
+
+async def test_reports_data_range_excludes_opening_balance(
+    client, auth_headers, session, test_user, test_account, test_transactions
+):
+    """Opening balances are synthetic; their date must not stretch the range."""
+    opening = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id, account_id=test_account.id,
+        description="OPENING BALANCE ENTRY", amount=Decimal("100.00"),
+        date=date(2010, 1, 1), type="credit", source="opening_balance",
+    )
+    session.add(opening)
+    await session.commit()
+    response = await client.get("/api/reports/data-range", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["min_date"] == min(t.date for t in test_transactions).strftime("%Y-%m-%d")
+    assert data["max_date"] == max(t.date for t in test_transactions).strftime("%Y-%m-%d")
+
+
+async def test_reports_data_range_empty_workspace(client, auth_headers, test_user, test_workspace):
+    """No transactions at all: both bounds are null."""
+    response = await client.get("/api/reports/data-range", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == {"min_date": None, "max_date": None}
+
+
+async def test_reports_data_range_scoped_to_workspace(
+    client, auth_headers, session, test_user, test_account, test_transactions
+):
+    """A transaction in another workspace must not stretch this workspace's range."""
+    from app.models.account import Account
+
+    ws_resp = await client.post(
+        "/api/workspaces", json={"name": "Second workspace"}, headers=auth_headers
+    )
+    assert ws_resp.status_code in (200, 201), ws_resp.text
+    other_ws_id = ws_resp.json()["id"]
+
+    other_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_ws_id,
+        name="Other checking",
+        type="checking",
+        balance=Decimal("0.00"),
+        currency="BRL",
+    )
+    session.add(other_account)
+    await session.commit()
+    await session.refresh(other_account)
+
+    other_txn = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id, account_id=other_account.id,
+        description="OTHER STORE PURCHASE", amount=Decimal("5.00"),
+        date=date(2015, 3, 1), type="debit", source="manual",
+    )
+    session.add(other_txn)
+    await session.commit()
+    await session.refresh(other_txn)
+    assert other_txn.workspace_id == uuid.UUID(other_ws_id)
+
+    response = await client.get("/api/reports/data-range", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["min_date"] == min(t.date for t in test_transactions).strftime("%Y-%m-%d")
+    assert data["max_date"] == max(t.date for t in test_transactions).strftime("%Y-%m-%d")
+
+
+async def test_reports_data_range_excludes_ignored_rows(
+    client, auth_headers, session, test_user, test_account, test_transactions
+):
+    """Ignored rows, or rows in an ignored category, show in no report tab,
+    so they must not stretch the range either."""
+    from app.models.category import Category
+
+    ignored_category = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Ignored bucket",
+        icon="x",
+        color="#000000",
+        is_ignored=True,
+    )
+    session.add(ignored_category)
+    await session.commit()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id, account_id=test_account.id,
+            description="IGNORED PURCHASE", amount=Decimal("10.00"),
+            date=date(2012, 5, 1), type="debit", source="manual",
+            is_ignored=True,
+        ),
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id, account_id=test_account.id,
+            description="IGNORED CATEGORY PURCHASE", amount=Decimal("10.00"),
+            date=date(2013, 5, 1), type="debit", source="manual",
+            category_id=ignored_category.id,
+        ),
+    ])
+    await session.commit()
+    response = await client.get("/api/reports/data-range", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["min_date"] == min(t.date for t in test_transactions).strftime("%Y-%m-%d")
