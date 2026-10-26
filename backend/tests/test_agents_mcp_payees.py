@@ -144,6 +144,135 @@ async def test_apply_update_payee_writes_name_and_cpf(
     assert [(row.kind, row.value) for row in tax_rows] == [("cpf", "11144477735")]
 
 
+async def test_update_refuses_duplicate_name(
+    session: AsyncSession,
+    external_ctx: CallContext,
+    cpf_payee: dict,
+    target_payee: dict,
+):
+    handler = REGISTRY["propose_update_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        payee_id=str(cpf_payee["id"]),
+        name=target_payee["name"],
+        apply=True,
+    )
+
+    assert result["error"] == "duplicate_payee_name"
+    assert result["existing"]["id"] == str(target_payee["id"])
+
+    session.expire_all()
+    unchanged = (
+        await session.execute(select(Payee).where(Payee.id == cpf_payee["id"]))
+    ).scalar_one()
+    assert unchanged.name == cpf_payee["name"]
+
+
+async def test_update_refuses_empty_name(
+    session: AsyncSession, external_ctx: CallContext, cpf_payee: dict
+):
+    handler = REGISTRY["propose_update_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        payee_id=str(cpf_payee["id"]),
+        name="   ",
+    )
+
+    assert result["error"] == "payee name cannot be empty"
+
+
+async def test_update_accepts_the_payees_own_name(
+    session: AsyncSession, external_ctx: CallContext, target_payee: dict
+):
+    handler = REGISTRY["propose_update_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        payee_id=str(target_payee["id"]),
+        name=target_payee["name"],
+        notes="Known counterparty",
+        apply=True,
+    )
+
+    assert result["applied"] is True
+    assert result["payee"]["name"] == target_payee["name"]
+    assert result["payee"]["notes"] == "Known counterparty"
+
+
+async def test_update_replaces_tax_ids_wholesale(
+    session: AsyncSession, external_ctx: CallContext, cpf_payee: dict
+):
+    payee_id = cpf_payee["id"]
+    session.add(
+        PayeeTaxId(
+            id=uuid.uuid4(),
+            payee_id=payee_id,
+            workspace_id=cpf_payee["workspace_id"],
+            kind="cpf",
+            value="11144477735",
+        )
+    )
+    await session.commit()
+
+    handler = REGISTRY["propose_update_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        payee_id=str(payee_id),
+        tax_ids=[{"kind": "cnpj", "value": "11.222.333/0001-81"}],
+        apply=True,
+    )
+
+    assert result["applied"] is True
+    assert result["payee"]["tax_ids"] == [{"kind": "cnpj", "value": "11222333000181"}]
+
+    session.expire_all()
+    rows = (
+        await session.execute(
+            select(PayeeTaxId).where(PayeeTaxId.payee_id == payee_id)
+        )
+    ).scalars().all()
+    assert [(row.kind, row.value) for row in rows] == [("cnpj", "11222333000181")]
+
+
+async def test_update_clears_tax_ids_when_given_an_empty_list(
+    session: AsyncSession, external_ctx: CallContext, cpf_payee: dict
+):
+    payee_id = cpf_payee["id"]
+    session.add(
+        PayeeTaxId(
+            id=uuid.uuid4(),
+            payee_id=payee_id,
+            workspace_id=cpf_payee["workspace_id"],
+            kind="cpf",
+            value="11144477735",
+        )
+    )
+    await session.commit()
+
+    handler = REGISTRY["propose_update_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        payee_id=str(payee_id),
+        tax_ids=[],
+        apply=True,
+    )
+
+    assert result["applied"] is True
+    assert result["payee"]["tax_ids"] == []
+
+    session.expire_all()
+    rows = (
+        await session.execute(
+            select(PayeeTaxId).where(PayeeTaxId.payee_id == payee_id)
+        )
+    ).scalars().all()
+    assert rows == []
+
+
 async def test_invalid_cpf_is_refused_before_write(
     session: AsyncSession, external_ctx: CallContext, cpf_payee: dict
 ):
@@ -205,6 +334,49 @@ async def test_preview_merge_payees_counts_transactions(
         await session.execute(select(Payee).where(Payee.id == source_id))
     ).scalar_one_or_none()
     assert still_there is not None
+
+
+async def test_merge_deduplicates_repeated_source_ids(
+    session: AsyncSession,
+    external_ctx: CallContext,
+    cpf_payee: dict,
+    target_payee: dict,
+    test_account,
+):
+    source_id = cpf_payee["id"]
+    target_id = target_payee["id"]
+    account_id = await _account_id(session, cpf_payee["workspace_id"])
+    session.add(
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=cpf_payee["user_id"],
+            workspace_id=cpf_payee["workspace_id"],
+            account_id=account_id,
+            description="PIX RECEBIDO ALEX EXAMPLE",
+            amount=Decimal("200.00"),
+            currency="BRL",
+            date=date(2026, 8, 29),
+            effective_date=date(2026, 8, 29),
+            type="credit",
+            source="sync",
+            status="posted",
+            payee_id=source_id,
+        )
+    )
+    await session.commit()
+
+    handler = REGISTRY["propose_merge_payees"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        source_ids=[str(source_id), str(source_id)],
+        target_id=str(target_id),
+        apply=True,
+    )
+
+    assert [source["id"] for source in result["sources"]] == [str(source_id)]
+    assert result["transactions_to_reassign"] == 1
+    assert result["transactions_reassigned"] == 1
 
 
 async def test_apply_merge_payees_reassigns_and_deletes_source(

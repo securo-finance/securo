@@ -1951,7 +1951,13 @@ async def propose_update_payee(
 
     changes: dict[str, Any] = {}
     if name is not None:
-        changes["name"] = name.strip()
+        cleaned = name.strip()
+        if not cleaned:
+            return {"error": "payee name cannot be empty"}
+        clash = await payee_service.find_payee_by_name(session, ws_id, cleaned)
+        if clash is not None and clash.id != payee.id:
+            return {"error": "duplicate_payee_name", "existing": _payee_snapshot(clash)}
+        changes["name"] = cleaned
     if type is not None:
         changes["type"] = type
     if notes is not None:
@@ -2046,7 +2052,7 @@ async def propose_merge_payees(
     if target is None:
         return {"error": "target payee not found"}
 
-    parsed_sources = parse_uuid_list(source_ids) or []
+    parsed_sources = list(dict.fromkeys(parse_uuid_list(source_ids) or []))
     if not parsed_sources:
         return {"error": "source_ids is required"}
     if tid in parsed_sources:
