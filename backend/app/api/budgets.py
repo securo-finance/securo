@@ -78,15 +78,18 @@ async def copy_budgets_endpoint(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
 ):
     """Copy all budget category allocations from a source month to a target month with optional percentage adjustments."""
-    return await budget_service.copy_monthly_budgets(
-        db=db,
-        workspace_id=ctx.workspace.id,
-        user_id=ctx.user_id,
-        source_month=req.source_month,
-        target_month=req.target_month,
-        adjustment_percentage=req.adjustment_percentage,
-        overwrite_existing=req.overwrite_existing,
-    )
+    try:
+        return await budget_service.copy_monthly_budgets(
+            db=db,
+            workspace_id=ctx.workspace.id,
+            user_id=ctx.user_id,
+            source_month=req.source_month,
+            target_month=req.target_month,
+            adjustment_percentage=req.adjustment_percentage,
+            overwrite_existing=req.overwrite_existing,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/rollover-summary", response_model=BudgetRolloverSummaryResponse)

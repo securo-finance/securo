@@ -3,7 +3,7 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BudgetCreate(BaseModel):
@@ -48,7 +48,7 @@ class BudgetVsActual(BaseModel):
 class BudgetCopyMonthRequest(BaseModel):
     source_month: _Date
     target_month: _Date
-    adjustment_percentage: Decimal = Decimal("0.0")
+    adjustment_percentage: Decimal = Field(default=Decimal("0.0"), ge=Decimal("-100"))
     overwrite_existing: bool = False
 
 
@@ -57,6 +57,7 @@ class BudgetRolloverCategory(BaseModel):
     category_name: str
     budgeted: Decimal
     actual_spent: Decimal
+    projected_spent: Decimal
     remaining: Decimal
     carryover_eligible: bool
 
@@ -65,6 +66,7 @@ class BudgetRolloverSummaryResponse(BaseModel):
     month: _Date
     total_budgeted: Decimal
     total_spent: Decimal
+    total_projected_spent: Decimal
     net_surplus: Decimal
     categories: list[BudgetRolloverCategory]
 

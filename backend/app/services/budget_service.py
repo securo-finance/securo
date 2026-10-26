@@ -495,56 +495,67 @@ async def copy_monthly_budgets(
     adjustment_percentage: Decimal = Decimal("0.0"),
     overwrite_existing: bool = False,
 ) -> list[Budget]:
-    source_first = date(source_month.year, source_month.month, 1)
-    target_first = date(target_month.year, target_month.month, 1)
+    """Copy the budgets a source month resolves to into a target month.
 
-    result = await db.execute(
+    The source is read with the same resolution the budget screen uses
+    (month override first, then the latest recurring default), across the
+    whole workspace, so inherited recurring amounts are copied and adjusted
+    too. Only month-specific overrides are written: recurring defaults are
+    never created or changed, so the months after the target keep resolving
+    the way they did before the copy.
+
+    A category that already has a budget in the target month is left alone
+    unless ``overwrite_existing`` is set. When it is, an existing override is
+    updated in place (whoever in the workspace created it) instead of adding
+    a second row next to it.
+    """
+    source_first = source_month.replace(day=1)
+    target_first = target_month.replace(day=1)
+    if source_first == target_first:
+        raise ValueError("source_month and target_month must be different months")
+
+    source_map = await _build_budget_map(db, workspace_id, source_first)
+    target_map = await _build_budget_map(db, workspace_id, target_first)
+
+    overrides_result = await db.execute(
         select(Budget).where(
-            and_(
-                Budget.workspace_id == workspace_id,
-                Budget.user_id == user_id,
-                Budget.month == source_first,
-            )
+            Budget.workspace_id == workspace_id,
+            Budget.is_recurring == False,  # noqa: E712
+            Budget.month == target_first,
         )
     )
-    source_budgets = result.scalars().all()
+    target_overrides: dict[str, list[Budget]] = {}
+    for b in overrides_result.scalars().all():
+        target_overrides.setdefault(str(b.category_id), []).append(b)
 
-    existing_target_res = await db.execute(
-        select(Budget).where(
-            and_(
-                Budget.workspace_id == workspace_id,
-                Budget.user_id == user_id,
-                Budget.month == target_first,
-            )
-        )
-    )
-    existing_target = {b.category_id: b for b in existing_target_res.scalars().all()}
-
-    created_or_updated: list[Budget] = []
     multiplier = Decimal("1.0") + (adjustment_percentage / Decimal("100.0"))
+    changed: list[Budget] = []
 
-    for src in source_budgets:
-        new_amount = (src.amount * multiplier).quantize(Decimal("0.01"))
-        if src.category_id in existing_target:
-            if overwrite_existing:
-                tgt = existing_target[src.category_id]
-                tgt.amount = new_amount
-                tgt.is_recurring = src.is_recurring
-                created_or_updated.append(tgt)
+    for cat_id, (amount, _is_recurring) in source_map.items():
+        if cat_id in target_map and not overwrite_existing:
+            continue
+        new_amount = (amount * multiplier).quantize(Decimal("0.01"))
+        overrides = target_overrides.get(cat_id)
+        if overrides:
+            for override in overrides:
+                override.amount = new_amount
+                changed.append(override)
         else:
             new_budget = Budget(
                 workspace_id=workspace_id,
                 user_id=user_id,
-                category_id=src.category_id,
+                category_id=uuid.UUID(cat_id),
                 amount=new_amount,
                 month=target_first,
-                is_recurring=src.is_recurring,
+                is_recurring=False,
             )
             db.add(new_budget)
-            created_or_updated.append(new_budget)
+            changed.append(new_budget)
 
     await db.commit()
-    return created_or_updated
+    for b in changed:
+        await db.refresh(b)
+    return changed
 
 
 async def get_budget_rollover_summary(
@@ -553,31 +564,42 @@ async def get_budget_rollover_summary(
     user_id: uuid.UUID,
     month: date,
 ) -> dict:
+    """End-of-month surplus or deficit per category.
+
+    ``remaining`` is measured against the projected spend (posted spend plus
+    the recurring and planned transactions still due that month), so a month
+    in progress or in the future isn't reported as mostly unspent.
+    """
     vs_actuals = await get_budget_vs_actual(db, workspace_id, user_id, month)
     total_budgeted = Decimal("0.00")
     total_spent = Decimal("0.00")
+    total_projected = Decimal("0.00")
     categories_summary = []
 
     for item in vs_actuals:
         budgeted = item.budget_amount or Decimal("0.00")
         spent = item.actual_amount
-        remaining = budgeted - spent
+        projected = item.projected_amount
+        remaining = budgeted - projected
         total_budgeted += budgeted
         total_spent += spent
+        total_projected += projected
         categories_summary.append({
             "category_id": item.category_id,
             "category_name": item.category_name,
             "budgeted": budgeted,
             "actual_spent": spent,
+            "projected_spent": projected,
             "remaining": remaining,
             "carryover_eligible": remaining > Decimal("0.00"),
         })
 
     return {
-        "month": date(month.year, month.month, 1),
+        "month": month.replace(day=1),
         "total_budgeted": total_budgeted,
         "total_spent": total_spent,
-        "net_surplus": total_budgeted - total_spent,
+        "total_projected_spent": total_projected,
+        "net_surplus": total_budgeted - total_projected,
         "categories": categories_summary,
     }
 
@@ -590,22 +612,20 @@ async def get_multi_month_forecast(
     num_months: int = 6,
 ) -> dict:
     items = []
-    cur_year = start_month.year
-    cur_month = start_month.month
+    m_date = start_month.replace(day=1)
 
     for _ in range(num_months):
-        m_date = date(cur_year, cur_month, 1)
         summary = await get_budget_rollover_summary(db, workspace_id, user_id, m_date)
         items.append({
             "month": m_date,
             "projected_budget": summary["total_budgeted"],
-            "projected_spend": summary["total_spent"],
+            "projected_spend": summary["total_projected_spent"],
             "projected_variance": summary["net_surplus"],
         })
-        cur_month += 1
-        if cur_month > 12:
-            cur_month = 1
-            cur_year += 1
+        if m_date.month == 12:
+            m_date = m_date.replace(year=m_date.year + 1, month=1)
+        else:
+            m_date = m_date.replace(month=m_date.month + 1)
 
     return {
         "forecast_months": num_months,
