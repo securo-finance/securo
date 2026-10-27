@@ -1352,9 +1352,28 @@ export const dashboard = {
     const { data } = await api.get('/dashboard/projected-transactions', { params })
     return data
   },
-  balanceHistory: async (month?: string, accountIds?: string[]): Promise<BalanceHistory> => {
+  balanceHistory: async (
+    month?: string,
+    accountIds?: string[],
+    comparisonMonths?: string[],
+  ): Promise<BalanceHistory> => {
     const extra = acctIdsParam(accountIds)
-    const { data } = await api.get('/dashboard/balance-history', { params: { month, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    const { data } = await api.get('/dashboard/balance-history', {
+      params: {
+        month,
+        ...(extra.params ?? {}),
+        ...(comparisonMonths?.length ? { comparison_months: comparisonMonths } : {}),
+      },
+      paramsSerializer: { indexes: null },
+    })
+    return data
+  },
+  balanceHistoryMonths: async (accountIds?: string[]): Promise<string[]> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get('/dashboard/balance-history/months', {
+      params: extra.params,
+      ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
+    })
     return data
   },
 }
