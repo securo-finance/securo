@@ -145,6 +145,52 @@ async def test_apply_update_payee_writes_name_and_cpf(
     assert [(row.kind, row.value) for row in tax_rows] == [("cpf", "11144477735")]
 
 
+async def test_update_preview_refuses_an_unappliable_type(
+    session: AsyncSession, external_ctx: CallContext, cpf_payee: dict
+):
+    """The dispatcher does not enforce the schema, so the preview must."""
+    payee_id = cpf_payee["id"]
+    handler = REGISTRY["propose_update_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        payee_id=str(payee_id),
+        type="invalid",
+        apply=True,
+    )
+
+    assert "kind" not in result
+    assert "error" in result
+
+    session.expire_all()
+    fresh = (
+        await session.execute(select(Payee).where(Payee.id == payee_id))
+    ).scalar_one()
+    assert fresh.type != "invalid"
+
+
+async def test_create_preview_refuses_an_unappliable_type(
+    session: AsyncSession, external_ctx: CallContext
+):
+    handler = REGISTRY["propose_create_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        name="Alex Example",
+        type="invalid",
+        apply=True,
+    )
+
+    assert "kind" not in result
+    assert "error" in result
+
+    session.expire_all()
+    created = (
+        await session.execute(select(Payee).where(Payee.name == "Alex Example"))
+    ).scalar_one_or_none()
+    assert created is None
+
+
 async def test_update_refuses_duplicate_name(
     session: AsyncSession,
     external_ctx: CallContext,

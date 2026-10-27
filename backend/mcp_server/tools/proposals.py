@@ -1844,6 +1844,22 @@ async def propose_create_payee(
             normalised_tax_ids = normalised
             proposed["tax_ids"] = normalised
 
+    # Same reason as propose_update_payee: the dispatcher does not enforce
+    # the advertised schema, so validate before showing a preview.
+    try:
+        create_data = PayeeCreate(
+            name=cleaned,
+            type=type,
+            notes=notes,
+            email=email,
+            phone=phone,
+            address=address,
+            website=website,
+            tax_ids=[TaxIdInput(**item) for item in normalised_tax_ids],
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}
+
     existing = await payee_service.find_payee_by_name(session, ws_id, cleaned)
     preview = {
         "kind": "create_payee",
@@ -1857,19 +1873,9 @@ async def propose_create_payee(
         return {**preview, "applied": False, "error": "duplicate_payee_name"}
 
     if _can_apply(ctx, apply):
-        data = PayeeCreate(
-            name=cleaned,
-            type=type,
-            notes=notes,
-            email=email,
-            phone=phone,
-            address=address,
-            website=website,
-            tax_ids=[TaxIdInput(**item) for item in normalised_tax_ids],
-        )
         try:
             created = await payee_service.create_payee(
-                session, ws_id, ctx.user_id, data
+                session, ws_id, ctx.user_id, create_data
             )
         except ValueError as exc:
             return {**preview, "applied": False, "error": str(exc)}
@@ -1984,6 +1990,18 @@ async def propose_update_payee(
     if not changes:
         return {"error": "no changes provided"}
 
+    # The MCP dispatcher passes arguments straight to the handler, so an
+    # external client can send a value the advertised schema forbids. Build
+    # the update here: a preview must not describe a change the apply path
+    # will refuse.
+    update_data: dict[str, Any] = dict(changes)
+    if normalised_tax_ids is not None:
+        update_data["tax_ids"] = [TaxIdInput(**item) for item in normalised_tax_ids]
+    try:
+        validated_update = PayeeUpdate(**update_data)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
     preview = {
         "kind": "update_payee",
         "target": _payee_snapshot(payee),
@@ -1992,12 +2010,9 @@ async def propose_update_payee(
     }
 
     if _can_apply(ctx, apply):
-        update_data: dict[str, Any] = dict(changes)
-        if normalised_tax_ids is not None:
-            update_data["tax_ids"] = [TaxIdInput(**item) for item in normalised_tax_ids]
         try:
             updated = await payee_service.update_payee(
-                session, payee.id, ws_id, PayeeUpdate(**update_data)
+                session, payee.id, ws_id, validated_update
             )
         except ValueError as exc:
             return {**preview, "applied": False, "error": str(exc)}
