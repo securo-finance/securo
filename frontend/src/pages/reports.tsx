@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState } from 'react'
 import { loadReportsRange, saveReportsRange, type ReportsRange } from '@/lib/remembered-range'
 import { useTranslation } from 'react-i18next'
-import { useDisplayLocale } from '@/hooks/use-display-locale'
+import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import {
   AreaChart,
@@ -72,7 +72,7 @@ function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
   }).format(value)
 }
 
-/** "Apr 2026" from a YYYY-MM-DD date, in the display locale. */
+/** "Apr 2026" from a YYYY-MM-DD date, in the date locale. */
 function formatShortMonth(isoDate: string, locale: string) {
   const [y, m] = isoDate.split('-').map(Number)
   return new Date(y, m - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' })
@@ -226,6 +226,9 @@ export default function ReportsPage() {
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
+  // Month and day words follow the app language, not the currency locale: a
+  // Portuguese UI showing US dollars still reads "Setembro de 2026".
+  const dateLocale = useDateLocale()
 
   const customDefaults = defaultCustomRange()
   // The page opens on the first tab with the range last used there (issue
@@ -330,9 +333,9 @@ export default function ReportsPage() {
     isCustomRange && !activeWindow
       ? t('reports.customRange')
       : activeWindow && selectedRange.monthAnchor !== undefined
-        ? monthLabel(activeWindow.from.slice(0, 7), locale)
+        ? monthLabel(activeWindow.from.slice(0, 7), dateLocale)
         : activeWindow
-          ? `${formatShortMonth(activeWindow.from, locale)} - ${formatShortMonth(activeWindow.to, locale)}`
+          ? `${formatShortMonth(activeWindow.from, dateLocale)} - ${formatShortMonth(activeWindow.to, dateLocale)}`
           : t(`reports.${RANGE_LABELS[selectedRange.key]}`)
 
   const handleSelectTab = (key: string) => {
@@ -459,7 +462,7 @@ export default function ReportsPage() {
   const formatDay = (iso: string) => {
     const day = new Date(iso + 'T00:00:00')
     const sameYear = day.getFullYear() === new Date().getFullYear()
-    return day.toLocaleDateString(locale, {
+    return day.toLocaleDateString(dateLocale, {
       day: 'numeric',
       month: 'short',
       ...(sameYear ? {} : { year: 'numeric' }),
