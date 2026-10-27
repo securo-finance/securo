@@ -755,6 +755,13 @@ def test_next_due_date_yearly():
     assert _next_due_date(date(2025, 6, 15), "yearly") == date(2026, 6, 15)
 
 
+def test_next_due_date_yearly_from_leap_day():
+    from app.services.asset_service import _next_due_date
+    from app.tasks.asset_tasks import _next_due_date as task_next_due_date
+    assert _next_due_date(date(2024, 2, 29), "yearly") == date(2025, 2, 28)
+    assert task_next_due_date(date(2024, 2, 29), "yearly") == date(2025, 2, 28)
+
+
 def test_generate_growth_values_empty_when_future():
     """No values generated when start date is in the future."""
     from app.services.asset_service import _generate_growth_values

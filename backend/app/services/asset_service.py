@@ -46,7 +46,8 @@ def _next_due_date(last_date: date, frequency: str) -> date:
         day = min(last_date.day, 28)
         return date(year, month, day)
     elif frequency == "yearly":
-        return date(last_date.year + 1, last_date.month, last_date.day)
+        day = min(last_date.day, 28) if last_date.month == 2 else last_date.day
+        return date(last_date.year + 1, last_date.month, day)
     return last_date + timedelta(days=1)
 
 
