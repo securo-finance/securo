@@ -512,7 +512,7 @@ async def test_yfinance_batch_keeps_decimal_precision_when_scaling():
 
 @pytest.mark.asyncio
 async def test_yfinance_batch_leaves_major_unit_lse_ticker_unchanged():
-    # Not every *.L listing trades in pence — some are quoted in GBP/USD.
+    # Not every *.L listing trades in pence; some are quoted in GBP/USD.
     provider = YFinanceProvider()
     with (
         patch.object(
@@ -534,7 +534,7 @@ async def test_yfinance_batch_leaves_major_unit_lse_ticker_unchanged():
 @pytest.mark.asyncio
 async def test_yfinance_batch_drops_price_when_currency_unknown():
     # A failed currency lookup must not let a raw pence close through as
-    # pounds — the symbol comes back None so the refresh falls back to
+    # pounds, so the symbol comes back None and the refresh falls back to
     # get_quote. Other symbols in the same chunk are unaffected.
     provider = YFinanceProvider()
     with (

@@ -11,6 +11,19 @@ export type ProposalKind =
   | 'update_recurring_transaction'
   | 'cancel_recurring_transaction'
   | 'create_goal'
+  | 'link_transfer'
+  | 'unlink_transfer'
+
+/** One leg of a transfer pair, as the transfer tools preview it. */
+export interface TransferLeg {
+  id: string
+  description?: string | null
+  date?: string | null
+  amount?: number | null
+  currency?: string | null
+  type?: string | null
+  account_name?: string | null
+}
 
 export interface ProposalData {
   kind?: ProposalKind
@@ -23,6 +36,9 @@ export interface ProposalData {
   name_collision?: { id: string; name: string }
   mode?: 'deactivate' | 'delete'
   apply_endpoint?: string
+  transaction_ids?: string[]
+  transfer_pair_id?: string
+  legs?: TransferLeg[]
   error?: string
 }
 
@@ -35,7 +51,7 @@ export function isProposalData(data: unknown): data is ProposalData {
     'create_rule', 'update_rule', 'delete_rule',
     'create_transaction', 'create_recurring_transaction',
     'update_recurring_transaction', 'cancel_recurring_transaction',
-    'create_goal',
+    'create_goal', 'link_transfer', 'unlink_transfer',
   ].includes(k)
 }
 

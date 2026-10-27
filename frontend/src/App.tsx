@@ -8,6 +8,7 @@ import { AuthProvider } from '@/contexts/auth-provider'
 import { WorkspaceProvider } from '@/contexts/workspace-provider'
 import { CollectionFilterProvider } from '@/contexts/collection-filter-provider'
 import { SidebarStateProvider } from '@/contexts/sidebar-state-provider'
+import { useCrossTabRefresh } from '@/hooks/use-cross-tab-refresh'
 import { ProtectedRoute } from '@/components/protected-route'
 import { AdminRoute } from '@/components/admin-route'
 import { AgentsRoute } from '@/components/agents-route'
@@ -64,10 +65,21 @@ function LoadingFallback() {
   )
 }
 
+/**
+ * Renders nothing; exists so `useCrossTabRefresh` can run where the
+ * `queryClient` is in scope: lists change in another tab and this tab
+ * refetches instead of serving the stale cache (issue #763).
+ */
+function CrossTabRefresh() {
+  useCrossTabRefresh()
+  return null
+}
+
 function App() {
   return (
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
+        <CrossTabRefresh />
         <TooltipProvider>
         <BrowserRouter>
           <AuthProvider>

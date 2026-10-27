@@ -1,5 +1,7 @@
 import uuid
 from dataclasses import dataclass, field
+from decimal import Decimal
+from itertools import groupby
 from typing import Optional
 
 from sqlalchemy import func, or_, select, update as sa_update
@@ -284,18 +286,20 @@ async def get_category_usage(
     return CategoryUsage(**counts, rules=rules)
 
 
+_Limit = tuple[Decimal, Decimal | None]
+
+
 async def _merge_budgets(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     category_id: uuid.UUID,
     destination_id: uuid.UUID,
 ) -> None:
-    """Move the budgets over, adding up the ones that would land on each other.
+    """Combine the workspace's effective monthly limits without losing either side.
 
-    A budget is unique per user, category, month and kind, so moving one onto a
-    month the destination already budgets would break that constraint. The two
-    limits are added instead: they are the same person's ceiling for the same
-    month, and dropping either would quietly lower it.
+    Recurring rows change a limit from their month onward; a one-off row only
+    overrides its own category for that month. Merge those schedules before
+    moving the rows, or a later recurring row would hide the earlier limit.
     """
     moving = (
         (
@@ -324,23 +328,47 @@ async def _merge_budgets(
         .scalars()
         .all()
     )
-    by_slot = {(b.user_id, b.month, b.is_recurring): b for b in existing}
+    # Readers take every member's row in a category's latest slot, so the rows
+    # of each (month, kind) slot must add up to both categories' limits. Each
+    # member keeps one row carrying their own limits, as the unique constraint
+    # requires; a limit whose author has no row in the slot (the other
+    # category's carried-over default) lands on a kept row, destination first.
+    ordered = sorted([*moving, *existing], key=lambda b: (b.month, not b.is_recurring))
+    recurring: dict[uuid.UUID, dict[uuid.UUID, _Limit]] = {}
+    for (_, is_recurring), slot in groupby(ordered, key=lambda b: (b.month, b.is_recurring)):
+        rows = list(slot)
+        limits: dict[uuid.UUID, dict[uuid.UUID, _Limit]] = {}
+        for budget in rows:
+            limits.setdefault(budget.category_id, {})[budget.user_id] = (
+                budget.amount, budget.amount_primary,
+            )
+        if is_recurring:
+            # Store immutable amounts before changing any ORM row. An
+            # override below must still see each original category's limit.
+            recurring.update(limits)
+        effective = recurring if is_recurring else recurring | limits
 
-    for budget in moving:
-        slot = (budget.user_id, budget.month, budget.is_recurring)
-        target = by_slot.get(slot)
-        if target is None:
-            budget.category_id = destination_id
-            by_slot[slot] = budget
-            continue
+        # Keeping the destination row means no source row is moved onto a
+        # slot the same member still holds, which would fail at flush.
+        kept: dict[uuid.UUID, Budget] = {}
+        for budget in sorted(rows, key=lambda b: b.category_id != destination_id):
+            kept.setdefault(budget.user_id, budget)
+        fallback = next(iter(kept))
+        shares: dict[uuid.UUID, list[_Limit]] = {user_id: [] for user_id in kept}
+        for by_user in effective.values():
+            for user_id, limit in by_user.items():
+                shares[user_id if user_id in kept else fallback].append(limit)
 
-        target.amount += budget.amount
-        # The converted amount is only a sum when both sides carry one.
-        if target.amount_primary is not None and budget.amount_primary is not None:
-            target.amount_primary += budget.amount_primary
-        else:
-            target.amount_primary = None
-        await session.delete(budget)
+        for user_id, target in kept.items():
+            target.category_id = destination_id
+            target.amount = sum((amount for amount, _ in shares[user_id]), Decimal("0"))
+            primary = [value for _, value in shares[user_id] if value is not None]
+            target.amount_primary = (
+                sum(primary, Decimal("0")) if len(primary) == len(shares[user_id]) else None
+            )
+        for budget in rows:
+            if kept[budget.user_id] is not budget:
+                await session.delete(budget)
 
 
 async def _repoint_rules(

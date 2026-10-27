@@ -65,6 +65,13 @@ async def test_get_me_unauthenticated(client: AsyncClient, clean_db):
 
 
 @pytest.mark.asyncio
+async def test_openapi_token_url_is_absolute(client: AsyncClient):
+    response = await client.get("/api/openapi.json")
+    flows = response.json()["components"]["securitySchemes"]["OAuth2PasswordBearer"]["flows"]
+    assert flows["password"]["tokenUrl"] == "/api/auth/login"
+
+
+@pytest.mark.asyncio
 async def test_login_forbidden_when_local_auth_disabled(client: AsyncClient, test_user, oidc_only_settings):
     response = await client.post(
         "/api/auth/login",

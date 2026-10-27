@@ -209,7 +209,7 @@ class YFinanceProvider(MarketPriceProvider):
                     currencies = await asyncio.to_thread(
                         self._get_currencies_sync, candidates
                     )
-                except Exception as e:  # pragma: no cover — upstream flakiness, not logic
+                except Exception as e:  # pragma: no cover (upstream flakiness, not logic)
                     logger.warning(
                         "minor-unit currency check failed for %s: %s", candidates, e
                     )
@@ -217,7 +217,7 @@ class YFinanceProvider(MarketPriceProvider):
                 for sym in candidates:
                     currency = currencies.get(sym)
                     if not currency:
-                        # Unit unknown — a raw pence/cents close could be
+                        # Unit unknown: a raw pence/cents close could be
                         # 100× off, so drop it and let the caller fall back
                         # to ``get_quote``, which normalizes on its own.
                         chunk_prices[sym] = None
@@ -280,7 +280,7 @@ class YFinanceProvider(MarketPriceProvider):
             return list(response.get("quotes") or [])
         except _rate_limit_exception_types():
             raise MarketPriceRateLimitedError("Yahoo Finance rate-limited the search")
-        except Exception as e:  # pragma: no cover — upstream flakiness, not logic
+        except Exception as e:  # pragma: no cover (upstream flakiness, not logic)
             logger.warning("yfinance search failed for %r: %s", query, e)
             return []
 
@@ -334,7 +334,7 @@ class YFinanceProvider(MarketPriceProvider):
                 # Swallowing upstream failures silently would leave callers
                 # unable to distinguish "no data" from "request blew up".
             )
-        except Exception as e:  # pragma: no cover — upstream flakiness
+        except Exception as e:  # pragma: no cover (upstream flakiness)
             logger.warning("yfinance batch download failed for %d symbols: %s", len(symbols), e)
             return out
 

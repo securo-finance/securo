@@ -66,7 +66,7 @@ async def _send(client: AsyncClient, op: Operation, path: str, headers: dict, kw
     """Send the request; an exception escaping the app counts as a 500."""
     try:
         resp = await client.request(op.method, path, headers=headers, **kwargs)
-    except Exception as exc:  # noqa: BLE001 — any escape is the finding
+    except Exception as exc:  # noqa: BLE001 (any escape is the finding)
         return UNHANDLED, f"{type(exc).__name__}: {exc}", None
     return resp.status_code, resp.text[:500], resp
 

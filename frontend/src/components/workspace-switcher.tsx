@@ -32,6 +32,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  BookOpen,
   Check,
   ChevronsUpDown,
   Download,
@@ -63,6 +64,9 @@ const ROLE_LABEL_KEY: Record<string, string> = {
 
 // Fallback when a workspace hasn't set its own color yet.
 const DEFAULT_COLOR = '#6366F1'
+
+// The help documentation, opened only when the user asks for it.
+export const DOCS_URL = 'https://docs.usesecuro.com'
 
 function workspaceIcon(w: Workspace): string {
   return w.icon || WORKSPACE_KIND_ICON[w.kind as WorkspaceKind] || 'briefcase'
@@ -293,6 +297,13 @@ export function WorkspaceSwitcher({
           >
             <Download size={14} />
             {t('update.menuItem')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => window.open(DOCS_URL, '_blank', 'noopener,noreferrer')}
+            className="flex items-center gap-2"
+          >
+            <BookOpen size={14} />
+            {t('nav.documentation')}
           </DropdownMenuItem>
 
           {/* Language sub-menu */}

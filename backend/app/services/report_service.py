@@ -4,13 +4,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import String, select, desc, func, case
+from sqlalchemy import String, select, desc, func, case, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.models.account import Account
-from app.models.asset import Asset
+from app.models.asset import ASSET_PRICE_DECIMALS, Asset
 from app.models.asset_value import AssetValue
 from app.models.transaction import Transaction
 from app.models.category import Category
@@ -123,7 +123,8 @@ async def _asset_value_at(
             amount = 0.0
         if amount > 0:
             converted, _ = await convert(
-                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff
+                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff,
+                decimals=ASSET_PRICE_DECIMALS,
             )
             total += float(converted)
     return total
@@ -153,8 +154,27 @@ async def _net_worth_at(
     liabilities_total = 0.0
     composition: list[ReportCompositionItem] = []
 
+    # Cards on one consolidated credit line (same shared_balance_group) each
+    # carry the whole line's debt, so they are summed as one item, the same way
+    # the dashboard's _total_balance_by_currency does. Only credit cards: an
+    # account retyped to checking keeps its group but no longer shares the debt.
+    grouped: dict[str, list[Account]] = {}
     for account in accounts:
-        bal = await _account_balance_at(session, account, cutoff)
+        shared = account.shared_balance_group if account.type == "credit_card" else None
+        grouped.setdefault(shared or str(account.id), []).append(account)
+
+    for key, group in grouped.items():
+        account = group[0]
+        bal = 0.0
+        for member in group:
+            bal += await _account_balance_at(session, member, cutoff)
+        if len(group) > 1 and account.shared_balance_group:
+            # Each card's balance at the cutoff is the shared debt today minus
+            # that card's own activity since, so the duplicates to strip are
+            # today's shared debt once per extra card.
+            current_shared = await _account_balance_at(session, account, app_today())
+            bal -= current_shared * (len(group) - 1)
+        label = " + ".join(get_account_name(member) for member in group)
         converted, _ = await convert(
             session, Decimal(str(abs(bal))), account.currency, primary_currency, cutoff
         )
@@ -163,8 +183,8 @@ async def _net_worth_at(
             liabilities_total += converted_val
             if converted_val > 0:
                 composition.append(ReportCompositionItem(
-                    key=str(account.id),
-                    label=get_account_name(account),
+                    key=key,
+                    label=label,
                     value=round(converted_val, 2),
                     color=_ACCOUNT_TYPE_COLORS.get(account.type, "#6B7280"),
                     group="liabilities",
@@ -173,8 +193,8 @@ async def _net_worth_at(
             accounts_total += converted_val
             if converted_val > 0:
                 composition.append(ReportCompositionItem(
-                    key=str(account.id),
-                    label=get_account_name(account),
+                    key=key,
+                    label=label,
                     value=round(converted_val, 2),
                     color=_ACCOUNT_TYPE_COLORS.get(account.type, "#6B7280"),
                     group="accounts",
@@ -190,7 +210,9 @@ async def _net_worth_at(
     if filtered:
         asset_stmt = asset_stmt.where(Asset.group_id.in_(asset_group_ids or []))
     asset_result = await session.execute(asset_stmt)
-    assets_total = 0.0
+    # Decimal until the one final rounding: sub-cent holdings must add up
+    # exactly the way the wallet rollup does.
+    assets_sum = Decimal("0")
     for asset in asset_result.scalars().all():
         val_result = await session.execute(
             select(AssetValue.amount)
@@ -209,10 +231,11 @@ async def _net_worth_at(
             amount = 0.0
         if amount > 0:
             converted, _ = await convert(
-                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff
+                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff,
+                decimals=ASSET_PRICE_DECIMALS,
             )
             converted_val = round(float(converted), 2)
-            assets_total += converted_val
+            assets_sum += converted
             composition.append(ReportCompositionItem(
                 key=str(asset.id),
                 label=asset.name,
@@ -221,6 +244,7 @@ async def _net_worth_at(
                 group="assets",
             ))
 
+    assets_total = float(assets_sum.quantize(Decimal("0.01")))
     net_worth = accounts_total + assets_total - liabilities_total
 
     return ReportDataPoint(
@@ -292,6 +316,37 @@ def _date_points(
             points.append(end)
 
     return points
+
+
+async def get_report_data_range(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+) -> tuple[date | None, date | None]:
+    """The span of transaction data the workspace actually has (issue #765).
+
+    Feeds the Reports page year picker: the UI lists one entry per year
+    between the lower bound and the current year. Buckets by the same
+    reporting date the reports aggregate on, so a year only shows up when
+    the reports can actually display it. Opening balances are excluded,
+    their dates are synthetic. Ignored transactions and transactions in
+    ignored categories are excluded too, as every report tab drops them.
+    """
+    accounting_mode = await get_credit_card_accounting_mode(session)
+    result = await session.execute(
+        select(
+            func.min(reporting_date_col(accounting_mode)),
+            func.max(reporting_date_col(accounting_mode)),
+        )
+        .outerjoin(Category, Transaction.category_id == Category.id)
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.source != "opening_balance",
+            Transaction.is_ignored.is_(False),
+            or_(Transaction.category_id.is_(None), Category.is_ignored.is_(False)),
+        )
+    )
+    min_date, max_date = result.one()
+    return min_date, max_date
 
 
 async def get_net_worth_report(

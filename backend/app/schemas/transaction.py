@@ -156,6 +156,19 @@ class TransactionInvoiceLink(BaseModel):
     amount: Decimal
 
 
+class TransactionTransferCounterpart(BaseModel):
+    """The other leg of a linked transfer, as seen from a list row.
+
+    Filled only by the paginated list, one query per page (issue #810),
+    so the badge on a row can name the account the transfer is linked
+    to without a per-row request. The dialog keeps using the dedicated
+    transfer-pair endpoint, which carries date and amount too.
+    """
+
+    account_id: uuid.UUID
+    account_name: str
+
+
 class TransactionRead(TransactionBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -175,6 +188,10 @@ class TransactionRead(TransactionBase):
     payee_name: Optional[str] = None
     notes: Optional[str] = None
     transfer_pair_id: Optional[uuid.UUID] = None
+    # Other leg of the transfer this row belongs to, when it is one.
+    # The paginated list fills it per page (issue #810); other endpoints
+    # leave it null.
+    transfer_counterpart: Optional[TransactionTransferCounterpart] = None
     amount_primary: Optional[float] = None
     fx_rate_used: Optional[float] = None
     fx_fallback: bool = False
@@ -201,6 +218,12 @@ class TransactionRead(TransactionBase):
     parent_owner_name: Optional[str] = None
     is_ignored: bool = False
     exclude_from_pnl: bool = False
+    # Account balance right after this row, set only when the list asked for
+    # it on one non-credit-card account's unfiltered ledger (#1202). The
+    # primary-currency value is null when the account is already in it, or
+    # when no real rate is available (#1165).
+    running_balance: Optional[float] = None
+    running_balance_primary: Optional[float] = None
 
     @model_validator(mode="after")
     def reflect_ignored_category(self):

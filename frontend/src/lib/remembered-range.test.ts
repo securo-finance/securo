@@ -64,12 +64,26 @@ describe('remembered date range', () => {
   })
 
   it('keeps a separate reports range per tab', () => {
-    const netWorth = { rangeKey: '2y', from: '', to: '', interval: 'monthly' }
-    const cashFlow = { rangeKey: '6m', from: '', to: '', interval: 'daily' }
+    const netWorth = { rangeKey: '2y', from: '', to: '', interval: 'monthly', periodOffset: 0 }
+    const cashFlow = { rangeKey: '6m', from: '', to: '', interval: 'daily', periodOffset: -1 }
     saveReportsRange('net_worth', netWorth)
     saveReportsRange('cash_flow', cashFlow)
     expect(loadReportsRange('net_worth')).toEqual(netWorth)
     expect(loadReportsRange('cash_flow')).toEqual(cashFlow)
     expect(loadReportsRange('money_map')).toBeNull()
+  })
+
+  it('normalizes the stored period offset to whole past periods', () => {
+    saveReportsRange('net_worth', { rangeKey: '1y', from: '', to: '', interval: 'monthly', periodOffset: -3 })
+    expect(loadReportsRange('net_worth')?.periodOffset).toBe(-3)
+
+    saveReportsRange('net_worth', { rangeKey: '1y', from: '', to: '', interval: 'monthly', periodOffset: 2 })
+    expect(loadReportsRange('net_worth')?.periodOffset).toBe(0)
+
+    localStorage.setItem(
+      'securo.dateRange.reports',
+      JSON.stringify({ net_worth: { rangeKey: '1y', from: '', to: '', interval: 'monthly', periodOffset: 'nope' } }),
+    )
+    expect(loadReportsRange('net_worth')?.periodOffset).toBe(0)
   })
 })

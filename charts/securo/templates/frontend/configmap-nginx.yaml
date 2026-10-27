@@ -29,6 +29,20 @@ data:
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
+        # Connecting a bank imports its whole history in this one request,
+        # which can outlast nginx's default 60s read timeout (issue #1148).
+        # Mirrors frontend/default.conf.template.
+        location = /api/connections/oauth/callback {
+            resolver ${NGINX_RESOLVER} valid=5s;
+            set $upstream ${BACKEND_URL};
+            proxy_pass $upstream;
+            proxy_read_timeout 300s;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
         # Never cache index.html so new deployments are always picked up immediately
         location = /index.html {
             add_header Cache-Control "no-store, no-cache, must-revalidate";

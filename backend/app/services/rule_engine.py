@@ -84,8 +84,22 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
         if op == "ends_with":
             return tx_str.endswith(val_str)
         if op == "equals":
+            # Amounts are stored with a fixed scale (100.00) while the rule
+            # form submits the number as typed (100): comparing their string
+            # forms would never agree. Compare numerically when both sides
+            # parse, and fall back to text when either does not.
+            if field == "amount":
+                try:
+                    return Decimal(str(tx_val)) == Decimal(str(value))
+                except InvalidOperation:
+                    pass
             return tx_str == val_str
         if op == "not_equals":
+            if field == "amount":
+                try:
+                    return Decimal(str(tx_val)) != Decimal(str(value))
+                except InvalidOperation:
+                    pass
             return tx_str != val_str
         if op == "regex":
             try:

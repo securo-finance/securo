@@ -19,7 +19,7 @@ const asgiFixture = asgiFixturePath
   : null
 
 const api = vi.hoisted(() => ({
-  accounts: { get: vi.fn(), bills: vi.fn(), summary: vi.fn(), list: vi.fn(), update: vi.fn() },
+  accounts: { get: vi.fn(), bills: vi.fn(), summary: vi.fn(), list: vi.fn(), update: vi.fn(), runningBalance: vi.fn() },
   transactions: { list: vi.fn(), update: vi.fn(), delete: vi.fn(), create: vi.fn() },
   dashboard: { projectedTransactions: vi.fn() },
   categories: { list: vi.fn() },
@@ -94,6 +94,7 @@ beforeEach(async () => {
   api.transactions.list.mockResolvedValue(
     asgiFixture?.responses.en ?? { items, total: items.length },
   )
+  api.accounts.runningBalance.mockResolvedValue([])
   api.dashboard.projectedTransactions.mockResolvedValue([])
   api.categories.list.mockResolvedValue([])
   api.categoryGroups.list.mockResolvedValue([])

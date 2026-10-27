@@ -17,7 +17,7 @@ import json
 from importlib.resources import files
 
 # importlib.resources (rather than Path(__file__)) so the file is found in
-# every install mode — editable, wheel, or zipped — as long as it's declared
+# every install mode (editable, wheel, or zipped) as long as it's declared
 # as package data (see [tool.setuptools.package-data] in pyproject.toml).
 _taxonomy = json.loads(
     files("app").joinpath("data", "default_categories.json").read_text(encoding="utf-8")
@@ -34,7 +34,7 @@ CATEGORY_TO_GROUP: dict[str, str] = {
 
 def localized_name(data: dict, lang: str) -> str:
     """Display name for `lang`: requested language, then English, then any
-    available translation. Never raises on a partially-translated entry —
+    available translation. Never raises on a partially-translated entry:
     a missing language must degrade to a readable name, not break seeding."""
     names = data["names"]
     fallback = names.get("en") or next(iter(names.values()))

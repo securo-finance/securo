@@ -20,7 +20,6 @@ from app.services import connection_service
 
 logger = logging.getLogger(__name__)
 
-STALE_THRESHOLD = timedelta(hours=4)
 PROVIDER_REFRESH_THRESHOLD = timedelta(hours=20)
 
 
@@ -47,7 +46,9 @@ async def _sync_all() -> int:
     """Find stale connections and sync each one."""
     engine, session_maker = _make_session_maker()
     try:
-        cutoff = datetime.now(timezone.utc) - STALE_THRESHOLD
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            hours=get_settings().bank_sync_min_interval_hours
+        )
         synced = 0
 
         async with session_maker() as session:
