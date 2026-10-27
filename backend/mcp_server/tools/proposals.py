@@ -30,6 +30,7 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.goal import Goal
 from app.models.group import Group, GroupMember
+from app.models.invoice_schedule import InvoiceSchedule
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.fiscal.registry import TaxIdKind, normalise_and_validate
@@ -2017,9 +2018,12 @@ async def propose_update_payee(
     description=_PROPOSAL_PREFACE
     + (
         "Build a preview for merging one or more payees into another. The "
-        "sources are deleted and their transactions (and invoices) move to "
-        "the target. Use this for a duplicate counterparty, never for a "
-        "rename: a rename is propose_update_payee."
+        "target keeps the history: transactions and invoices move to it. "
+        "The sources are deleted along with their fiscal documents, which "
+        "are not copied to the target. A source that still has a recurring "
+        "invoice schedule is refused, because the agreement is not moved. "
+        "Use this for a duplicate counterparty, never for a rename: a "
+        "rename is propose_update_payee."
     ),
     parameters={
         "type": "object",
@@ -2060,6 +2064,8 @@ async def propose_merge_payees(
 
     sources: list[dict[str, Any]] = []
     transactions_to_reassign = 0
+    schedules_found = 0
+    documents_deleted: list[dict[str, str]] = []
     for source_id in parsed_sources:
         source = await payee_service.get_payee(session, source_id, ws_id)
         if source is None:
@@ -2072,15 +2078,30 @@ async def propose_merge_payees(
             )
             or 0
         )
+        schedule_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(InvoiceSchedule)
+                .where(InvoiceSchedule.payee_id == source_id)
+            )
+            or 0
+        )
         transactions_to_reassign += count
+        schedules_found += schedule_count
+        source_tax_ids = [
+            {"kind": row.kind, "value": row.value} for row in source.tax_ids
+        ]
+        # Nothing copies these onto the target: the rows are deleted with
+        # the source. Listing them here is the only place the caller sees
+        # that a document is about to disappear.
+        documents_deleted.extend(source_tax_ids)
         sources.append(
             {
                 "id": str(source.id),
                 "name": source.name,
                 "transaction_count": count,
-                "tax_ids": [
-                    {"kind": row.kind, "value": row.value} for row in source.tax_ids
-                ],
+                "schedule_count": schedule_count,
+                "tax_ids": source_tax_ids,
             }
         )
 
@@ -2103,8 +2124,18 @@ async def propose_merge_payees(
         },
         "sources": sources,
         "transactions_to_reassign": transactions_to_reassign,
+        "documents_deleted": documents_deleted,
         "apply_endpoint": "POST /api/payees/merge",
     }
+
+    if schedules_found:
+        # The service refuses this on apply; the preview says so first so
+        # the caller does not present a merge that cannot land.
+        return {
+            **preview,
+            "applied": False,
+            "error": f"payee_has_schedules:{schedules_found}",
+        }
 
     if _can_apply(ctx, apply):
         try:

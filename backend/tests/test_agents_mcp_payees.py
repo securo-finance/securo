@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import mcp_server.tools  # noqa: F401
 from app.models.account import Account
+from app.models.invoice_schedule import InvoiceSchedule
 from app.models.payee import Payee, PayeeTaxId
 from app.models.transaction import Transaction
 from mcp_server.auth import CallContext
@@ -446,6 +447,88 @@ async def test_merge_refuses_target_as_source(
     )
 
     assert result["error"] == "target payee cannot also be a source"
+
+
+async def test_preview_merge_payees_discloses_deleted_documents(
+    session: AsyncSession,
+    external_ctx: CallContext,
+    cpf_payee: dict,
+    target_payee: dict,
+):
+    source_id = cpf_payee["id"]
+    session.add(
+        PayeeTaxId(
+            id=uuid.uuid4(),
+            payee_id=source_id,
+            workspace_id=cpf_payee["workspace_id"],
+            kind="cpf",
+            value="11144477735",
+        )
+    )
+    await session.commit()
+
+    handler = REGISTRY["propose_merge_payees"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        source_ids=[str(source_id)],
+        target_id=str(target_payee["id"]),
+    )
+
+    assert result["sources"][0]["tax_ids"] == [
+        {"kind": "cpf", "value": "11144477735"}
+    ]
+    # The source row is deleted, so its document goes with it. The preview
+    # has to say that instead of implying the target inherits it.
+    assert result["documents_deleted"] == [
+        {"kind": "cpf", "value": "11144477735"}
+    ]
+    assert result["sources"][0]["schedule_count"] == 0
+    assert "applied" not in result
+
+
+async def test_merge_refuses_source_with_schedule(
+    session: AsyncSession,
+    external_ctx: CallContext,
+    cpf_payee: dict,
+    target_payee: dict,
+):
+    source_id = cpf_payee["id"]
+    session.add(
+        InvoiceSchedule(
+            id=uuid.uuid4(),
+            workspace_id=cpf_payee["workspace_id"],
+            user_id=cpf_payee["user_id"],
+            payee_id=source_id,
+            name="Retainer",
+            status="active",
+            origin="local",
+            frequency="monthly",
+            start_date=date(2026, 1, 5),
+            end_type="never",
+            currency="BRL",
+        )
+    )
+    await session.commit()
+
+    handler = REGISTRY["propose_merge_payees"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        source_ids=[str(source_id)],
+        target_id=str(target_payee["id"]),
+        apply=True,
+    )
+
+    assert result["sources"][0]["schedule_count"] == 1
+    assert result["applied"] is False
+    assert result["error"] == "payee_has_schedules:1"
+
+    session.expire_all()
+    source = (
+        await session.execute(select(Payee).where(Payee.id == source_id))
+    ).scalar_one_or_none()
+    assert source is not None
 
 
 async def test_preview_create_payee_does_not_write(
