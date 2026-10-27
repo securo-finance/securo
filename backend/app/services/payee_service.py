@@ -312,6 +312,24 @@ async def _invoice_count(session: AsyncSession, payee_ids: list[uuid.UUID]) -> i
     return int(result.scalar_one())
 
 
+async def _schedule_count(session: AsyncSession, payee_ids: list[uuid.UUID]) -> int:
+    """How many recurring invoice agreements name any of these counterparties.
+
+    Same reasoning as `_invoice_count`: read the model here instead of
+    depending on the invoicing service. Unlike an invoice, a schedule is
+    an agreement about the future, so a merge must not silently rewrite
+    who the client is billed by.
+    """
+    from app.models.invoice_schedule import InvoiceSchedule
+
+    result = await session.execute(
+        select(func.count())
+        .select_from(InvoiceSchedule)
+        .where(InvoiceSchedule.payee_id.in_(payee_ids))
+    )
+    return int(result.scalar_one())
+
+
 async def delete_payee(session: AsyncSession, payee_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
     payee = await get_payee(session, payee_id, workspace_id)
     if not payee:
@@ -399,6 +417,15 @@ async def merge_payees(
         source = await get_payee(session, source_id, workspace_id)
         if not source:
             raise ValueError(f"Source payee {source_id} not found")
+
+    # A schedule is the agreement to bill this client every period, not a
+    # record of what was already billed. Moving it would silently change
+    # who the client signed with, and leaving it behind trips the RESTRICT
+    # foreign key on the delete below as a 500. Refuse, and say why.
+    merging_ids = [source_id for source_id in source_ids if source_id != target_id]
+    scheduled = await _schedule_count(session, merging_ids) if merging_ids else 0
+    if scheduled:
+        raise ValueError(f"payee_has_schedules:{scheduled}")
 
     # Reassign transactions
     result = await session.execute(

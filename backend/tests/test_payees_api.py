@@ -4,9 +4,11 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.invoice_schedule import InvoiceSchedule
 from app.models.payee import Payee
 from app.models.transaction import Transaction
 from app.models.user import User
@@ -349,6 +351,46 @@ async def test_merge_payees_invalid_target(client: AsyncClient, auth_headers):
         json={"target_id": str(uuid.uuid4()), "source_ids": [source["id"]]},
     )
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_merge_payees_refuses_source_with_schedule(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+):
+    target = await _create_payee(client, auth_headers, "MergeTarget")
+    source = await _create_payee(client, auth_headers, "MergeScheduledSource")
+
+    payee = (
+        await session.execute(select(Payee).where(Payee.id == uuid.UUID(source["id"])))
+    ).scalar_one()
+    session.add(
+        InvoiceSchedule(
+            id=uuid.uuid4(),
+            workspace_id=payee.workspace_id,
+            user_id=payee.user_id,
+            payee_id=payee.id,
+            name="Retainer",
+            status="active",
+            origin="local",
+            frequency="monthly",
+            start_date=date.today(),
+            end_type="never",
+            currency="BRL",
+        )
+    )
+    await session.commit()
+
+    resp = await client.post(
+        "/api/payees/merge", headers=auth_headers,
+        json={"target_id": target["id"], "source_ids": [source["id"]]},
+    )
+    assert resp.status_code == 409
+    detail = resp.json()["detail"]
+    assert detail["code"] == "payee_has_schedules"
+    assert detail["count"] == 1
+
+    resp = await client.get(f"/api/payees/{source['id']}", headers=auth_headers)
+    assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------
