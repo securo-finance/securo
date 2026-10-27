@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AccountBase(BaseModel):
@@ -21,6 +21,7 @@ class AccountCreate(BaseModel):
     balance: Decimal = Decimal("0.00")
     balance_date: Optional[date] = None
     currency: str = "USD"
+    order: int = Field(default=0, ge=0, le=2_147_483_647)
     secured_asset_id: Optional[uuid.UUID] = None
     credit_limit: Optional[Decimal] = None
     statement_close_day: Optional[int] = None
@@ -43,6 +44,12 @@ class AccountUpdate(BaseModel):
     minimum_payment: Optional[Decimal] = None
     card_brand: Optional[str] = None
     card_level: Optional[str] = None
+    order: int = Field(default=0, ge=0, le=2_147_483_647)
+
+
+class AccountOrdering(BaseModel):
+    account_id: uuid.UUID
+    order: int = Field(ge=0)
 
 
 class AccountRead(AccountBase):
@@ -51,6 +58,7 @@ class AccountRead(AccountBase):
     connection_id: Optional[uuid.UUID] = None
     external_id: Optional[str] = None
     display_name: Optional[str] = None
+    order: int = 0
     # Last 4 chars of the bank's identifier, when the provider exposes one.
     # Read-only: absent from AccountUpdate because sync owns it.
     masked_number: Optional[str] = None

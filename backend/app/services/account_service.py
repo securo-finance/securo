@@ -23,7 +23,7 @@ from app.models.asset import LOAN_COLLATERAL_TYPES, Asset
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
-from app.schemas.account import AccountCreate, AccountUpdate
+from app.schemas.account import AccountCreate, AccountOrdering, AccountUpdate
 from app.services._query_filters import (
     counts_as_pnl,
     counts_in_current_balance,
@@ -226,7 +226,7 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     query = _accounts_with_balances_query(workspace_id, *_balance_subqueries(app_today()))
     if not include_closed:
         query = query.where(Account.is_closed == False)
-    query = query.order_by(Account.name)
+    query = query.order_by(Account.order, func.coalesce(Account.display_name, Account.name))
     result = await session.execute(query)
     return [
             serialize_account(
@@ -319,6 +319,7 @@ def serialize_account(
         "external_id": acc.external_id,
         "name": acc.name,
         "display_name": acc.display_name,
+        "order": acc.order,
         "masked_number": acc.masked_number,
         "type": acc.type,
         "secured_asset_id": acc.secured_asset_id,
@@ -407,6 +408,32 @@ async def get_account(session: AsyncSession, account_id: uuid.UUID, workspace_id
     return result.scalar_one_or_none()
 
 
+async def bulk_order_accounts(
+    session: AsyncSession, workspace_id: uuid.UUID, ordering: list[AccountOrdering],
+) -> None:
+    ids = [item.account_id for item in ordering]
+    if len(set(ids)) != len(ids):
+        raise ValueError("Duplicate account_id")
+    if not ids:
+        return
+
+    result = await session.execute(
+        select(Account)
+        .outerjoin(BankConnection)
+        .where(
+            Account.id.in_(ids),
+            or_(Account.workspace_id == workspace_id, BankConnection.workspace_id == workspace_id),
+        )
+    )
+    owned = {account.id: account for account in result.scalars().all()}
+    if len(owned) != len(ids):
+        raise LookupError("Account not found")
+
+    for item in ordering:
+        owned[item.account_id].order = item.order
+    await session.commit()
+
+
 async def create_account(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -419,6 +446,7 @@ async def create_account(
         user_id=user_id,
         workspace_id=workspace_id,
         name=data.name,
+        order=data.order,
         type=data.type,
         balance=data.balance,
         currency=data.currency,
@@ -509,6 +537,7 @@ async def update_account(
     if account.connection_id is not None:
         editable_fields = {
             "display_name",
+            "order",
             "type",
             "credit_limit",
             "statement_close_day",
@@ -522,7 +551,7 @@ async def update_account(
             raise ValueError("Cannot edit bank-connected accounts")
         old_type = account.type
         new_type = update_data.get("type", account.type)
-        cc_fields = editable_fields - {"display_name", "type"}
+        cc_fields = editable_fields - {"display_name", "type", "order"}
         cc_update = {k: v for k, v in update_data.items() if k in cc_fields}
         if cc_update and new_type != "credit_card":
             raise ValueError("Credit card fields can only be set on credit card accounts")

@@ -16,6 +16,7 @@ from app.core.workspace_context import (
 )
 from app.schemas.account import (
     AccountCreate,
+    AccountOrdering,
     AccountRead,
     AccountRunningBalancePoint,
     AccountSummary,
@@ -43,6 +44,11 @@ async def list_accounts(
     accounts = await account_service.get_accounts(session, ctx.workspace.id, include_closed=include_closed)
     for acc in accounts:
         await _convert_to_primary(session, acc, ctx.user.primary_currency)
+    accounts.sort(key=lambda acc: (
+        acc["order"],
+        -abs(acc["balance_primary"] if acc.get("balance_primary") is not None else acc["current_balance"]),
+        (acc.get("display_name") or acc["name"]).casefold(),
+    ))
     return accounts
 
 
@@ -214,6 +220,20 @@ async def create_account(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return account_service.serialize_account(account, None, None)
+
+
+@router.patch("/bulk_ordering", status_code=status.HTTP_204_NO_CONTENT)
+async def bulk_order_accounts(
+    ordering: list[AccountOrdering],
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        await account_service.bulk_order_accounts(session, ctx.workspace.id, ordering)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.patch("/{account_id}", response_model=AccountRead)

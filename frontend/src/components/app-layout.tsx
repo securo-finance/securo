@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react'
-import { getAccountName, sidebarAccountBalance, sortAccountsByAbsoluteBalance, sumAccountsTotal } from '@/lib/account-utils'
+import { getAccountName, sidebarAccountBalance, sumAccountsTotal } from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
@@ -508,7 +508,7 @@ export function AppLayout() {
               </button>
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
-                  {sortAccountsByAbsoluteBalance(visibleAccounts, (a) => sidebarAccountBalance(a).amount).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
+                  {visibleAccounts.slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
                     const { amount: balance, isPrimary: balanceIsPrimary } = sidebarAccountBalance(acc)
                     const balanceCurrency = balanceIsPrimary ? userCurrency : acc.currency
                     const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
