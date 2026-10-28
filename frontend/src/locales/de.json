@@ -1368,7 +1368,17 @@
     "confirmDeleteDescription": "Das Budget für \"{{name}}\" wird dauerhaft gelöscht. Bestehende Transaktionen bleiben unverändert. Diese Aktion kann nicht rückgängig gemacht werden.",
     "confirmDeleteRecurringDescription": "Das wiederkehrende Budget für \"{{name}}\" wird dauerhaft gelöscht. Diese Definition gilt nicht mehr für zukünftige Monate. Bestehende Transaktionen bleiben unverändert. Diese Aktion kann nicht rückgängig gemacht werden.",
     "repeatEveryMonth": "Jeden Monat wiederholen",
-    "recurringLabel": "Wiederkehrend"
+    "recurringLabel": "Wiederkehrend",
+    "suggest": "Aus Verlauf vorschlagen",
+    "suggestTitle": "Budgets vorschlagen",
+    "suggestDescription": "Vorgeschlagene Limits auf Basis deines durchschnittlichen monatlichen Verbrauchs der letzten {{months}} Monate.",
+    "suggestPeriod": "Zeitraum",
+    "suggestMonths": "Monate",
+    "suggestSpent": "Ausgegeben im Zeitraum: {{amount}}",
+    "suggestCreate": "Budgets erstellen",
+    "suggestCreated": "{{count}} Budgets erstellt",
+    "suggestEmpty": "Keine Ausgaben im gewählten Zeitraum, aus denen vorgeschlagen werden kann.",
+    "suggestError": "Vorschläge konnten nicht geladen werden. Versuche es gleich noch einmal."
   },
   "goals": {
     "title": "Ziele",
@@ -1528,6 +1538,7 @@
     "addCondition": "Bedingung hinzufügen",
     "addGroup": "Gruppe hinzufügen",
     "addGroupHint": "Eine Gruppe verknüpft ihre eigenen Bedingungen mit UND oder ODER",
+    "amountSignHint": "Beträge sind vorzeichenbehaftet: Einnahmen sind positiv, Ausgaben negativ.",
     "group": "Gruppe",
     "removeGroup": "Gruppe entfernen",
     "blankConditionValue": "Jede Bedingung benötigt einen Wert. Eine leere Bedingung würde auf alle Transaktionen zutreffen.",

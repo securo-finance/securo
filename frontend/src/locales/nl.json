@@ -1369,7 +1369,17 @@
     "recurringLabel": "Terugkerend",
     "confirmDeleteTitle": "Budget verwijderen?",
     "confirmDeleteDescription": "Het budget voor \"{{name}}\" wordt permanent verwijderd. Bestaande transacties worden niet beïnvloed. Deze actie kan niet ongedaan worden gemaakt.",
-    "confirmDeleteRecurringDescription": "Het terugkerende budget voor \"{{name}}\" wordt permanent verwijderd. Deze definitie geldt niet meer voor latere maanden. Bestaande transacties worden niet beïnvloed. Deze actie kan niet ongedaan worden gemaakt."
+    "confirmDeleteRecurringDescription": "Het terugkerende budget voor \"{{name}}\" wordt permanent verwijderd. Deze definitie geldt niet meer voor latere maanden. Bestaande transacties worden niet beïnvloed. Deze actie kan niet ongedaan worden gemaakt.",
+    "suggest": "Suggereer uit geschiedenis",
+    "suggestTitle": "Budgetten suggereren",
+    "suggestDescription": "Voorgestelde limieten op basis van je gemiddelde maandelijkse uitgaven van de laatste {{months}} maanden.",
+    "suggestPeriod": "Periode",
+    "suggestMonths": "maanden",
+    "suggestSpent": "Besteed in de periode: {{amount}}",
+    "suggestCreate": "Budgetten aanmaken",
+    "suggestCreated": "{{count}} budgetten aangemaakt",
+    "suggestEmpty": "Geen uitgavenhistoriek in de geselecteerde periode.",
+    "suggestError": "Suggesties konden niet worden geladen. Probeer het zo opnieuw."
   },
   "goals": {
     "title": "Doelen",
@@ -1527,6 +1537,7 @@
     "addCondition": "Voorwaarde toevoegen",
     "addGroup": "Groep toevoegen",
     "addGroupHint": "Een groep voegt zijn eigen voorwaarden samen met AND of OR",
+    "amountSignHint": "Bedragen hebben een teken: inkomsten zijn positief, uitgaven negatief.",
     "group": "Groep",
     "removeGroup": "Groep verwijderen",
     "blankConditionValue": "Elke voorwaarde heeft een waarde nodig. Een blanco exemplaar zou overeenkomen met elke transactie.",

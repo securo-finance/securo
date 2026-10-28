@@ -196,6 +196,25 @@ export function formatCurrency(
 }
 
 /**
+ * Format a transaction amount with its direction: `+` for a credit, `-` for
+ * a debit, in front of the magnitude. Amounts that round to zero at the
+ * currency's precision carry no sign, so a zero debit never reads "-$0.00".
+ */
+export function formatSignedAmount(
+  amount: number,
+  type: string,
+  currency = 'USD',
+  locale = 'en-US',
+): string {
+  const magnitude = Math.abs(amount)
+  const formatted = formatCurrency(magnitude, currency, locale)
+  const factor = 10 ** (currencyFormatter(currency, locale).resolvedOptions().maximumFractionDigits ?? 2)
+  if (Math.round(magnitude * factor) === 0) return formatted
+  // Same rule as the backend rule engine: only a debit is negative.
+  return `${type === 'debit' ? '-' : '+'}${formatted}`
+}
+
+/**
  * Separators the display locale writes numbers with, derived from Intl so
  * they always agree with what `formatCurrency` renders.
  */

@@ -17,8 +17,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import type { Budget } from '@/types'
-import { Pencil, Trash2, Plus, Repeat, CalendarIcon } from 'lucide-react'
+import type { Budget, BudgetSuggestion } from '@/types'
+import { Pencil, Trash2, Plus, Repeat, CalendarIcon, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { MonthPicker } from '@/components/ui/monthpicker'
@@ -69,6 +69,10 @@ export default function BudgetsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Budget | null>(null)
   const [deletingBudget, setDeletingBudget] = useState<Budget | null>(null)
+  const [suggestOpen, setSuggestOpen] = useState(false)
+  const [suggestMonths, setSuggestMonths] = useState(3)
+  const [suggestRecurring, setSuggestRecurring] = useState(false)
+  const [suggestEdits, setSuggestEdits] = useState<Record<string, { checked: boolean; amount: string }>>({})
 
   const { data: budgetsList } = useQuery({
     queryKey: ['budgets', selectedMonth],
@@ -90,6 +94,43 @@ export default function BudgetsPage() {
   const { data: groupsList } = useQuery({
     queryKey: ['category-groups'],
     queryFn: groupsApi.list,
+  })
+
+  const { data: suggestionData, isPending: suggestionsPending, isError: suggestionsError } = useQuery({
+    queryKey: ['budgets', 'suggestions', monthParam, suggestMonths],
+    queryFn: () => budgetsApi.suggestions(monthParam, suggestMonths),
+    enabled: suggestOpen,
+  })
+
+  // Rows default to the fetched suggestions; user edits layer on top.
+  // Edits are reset when the dialog opens or the period changes.
+  const rowFor = (s: BudgetSuggestion) =>
+    suggestEdits[s.category_id] ?? { checked: !s.existing_budget, amount: s.suggested_amount }
+
+  const suggestable = (suggestionData?.suggestions ?? []).filter((s) => !s.existing_budget)
+  const batchItems = suggestable.filter((s) => {
+    const row = rowFor(s)
+    return row.checked && parseFloat(row.amount) > 0
+  })
+
+  const batchMutation = useMutation({
+    mutationFn: () =>
+      budgetsApi.createBatch({
+        month: monthParam,
+        is_recurring: suggestRecurring,
+        items: batchItems.map((s) => ({
+          category_id: s.category_id,
+          amount: parseFloat(rowFor(s).amount),
+        })),
+      }),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['budgets'] })
+      setSuggestOpen(false)
+      toast.success(t('budgets.suggestCreated', { count: created.length }))
+    },
+    onError: (err: unknown) => {
+      toast.error(extractApiError(err, t('common.error')))
+    },
   })
 
   const createMutation = useMutation({
@@ -197,9 +238,14 @@ export default function BudgetsPage() {
           title={t('budgets.title')}
           action={
             canWrite ? (
-              <Button size="sm" className="gap-1.5 h-8" onClick={() => { setEditing(null); setDialogOpen(true) }}>
-                <Plus size={13} /> {t('budgets.add')}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => { setSuggestEdits({}); setSuggestOpen(true) }}>
+                  <Sparkles size={13} /> {t('budgets.suggest')}
+                </Button>
+                <Button size="sm" className="gap-1.5 h-8" onClick={() => { setEditing(null); setDialogOpen(true) }}>
+                  <Plus size={13} /> {t('budgets.add')}
+                </Button>
+              </div>
             ) : undefined
           }
         />
@@ -332,6 +378,101 @@ export default function BudgetsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={suggestOpen} onOpenChange={(open) => { setSuggestOpen(open); if (!open) setSuggestEdits({}) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('budgets.suggestTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="space-y-1">
+                <Label>{t('budgets.suggestPeriod')}</Label>
+                <select
+                  value={suggestMonths}
+                  onChange={(e) => { setSuggestMonths(Number(e.target.value)); setSuggestEdits({}) }}
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value={3}>3 {t('budgets.suggestMonths')}</option>
+                  <option value={6}>6 {t('budgets.suggestMonths')}</option>
+                  <option value={12}>12 {t('budgets.suggestMonths')}</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer mt-5">
+                <input
+                  type="checkbox"
+                  checked={suggestRecurring}
+                  onChange={(e) => setSuggestRecurring(e.target.checked)}
+                  className="rounded border-border"
+                />
+                <span className="text-sm text-foreground">{t('budgets.repeatEveryMonth')}</span>
+              </label>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {t('budgets.suggestDescription', { months: suggestMonths })}
+            </p>
+            {suggestionsPending ? (
+              <p className="text-sm text-muted-foreground text-center py-8">{t('common.loading')}</p>
+            ) : suggestionsError ? (
+              <p role="alert" className="text-sm text-destructive text-center py-8">{t('budgets.suggestError')}</p>
+            ) : suggestable.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">{t('budgets.suggestEmpty')}</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
+                {suggestable.map((s) => {
+                  const row = rowFor(s)
+                  return (
+                    <div key={s.category_id} className="flex items-center gap-3 border-b border-border last:border-0 px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={row.checked}
+                        onChange={(e) =>
+                          setSuggestEdits((prev) => ({
+                            ...prev,
+                            [s.category_id]: { ...rowFor(s), checked: e.target.checked },
+                          }))
+                        }
+                        className="rounded border-border"
+                        aria-label={s.category_name}
+                      />
+                      <span className="flex-1 text-sm font-medium text-foreground truncate">{s.category_name}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                        {t('budgets.suggestSpent', { amount: formatCurrency(Number(s.total_spent), userCurrency, locale) })}
+                      </span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={row.amount}
+                        onChange={(e) =>
+                          setSuggestEdits((prev) => ({
+                            ...prev,
+                            [s.category_id]: { ...rowFor(s), amount: e.target.value },
+                          }))
+                        }
+                        className="w-24 h-8"
+                        aria-label={`${s.category_name} ${t('budgets.amount')}`}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setSuggestOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              disabled={batchMutation.isPending || batchItems.length === 0}
+              onClick={() => batchMutation.mutate()}
+            >
+              {t('budgets.suggestCreate')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

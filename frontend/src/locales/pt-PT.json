@@ -1371,7 +1371,17 @@
     "confirmDeleteDescription": "O orçamento para \"{{name}}\" será eliminado permanentemente. As transações existentes não são afetadas. Esta ação não pode ser desfeita.",
     "confirmDeleteRecurringDescription": "O orçamento recorrente para \"{{name}}\" será eliminado permanentemente. Esta definição deixará de se aplicar aos meses seguintes. As transações existentes não são afetadas. Esta ação não pode ser desfeita.",
     "repeatEveryMonth": "Repetir todo mês",
-    "recurringLabel": "Recorrente"
+    "recurringLabel": "Recorrente",
+    "suggest": "Sugerir pelo histórico",
+    "suggestTitle": "Sugerir orçamentos",
+    "suggestDescription": "Limites propostos com base na sua média de gastos mensais nos últimos {{months}} meses.",
+    "suggestPeriod": "Período",
+    "suggestMonths": "meses",
+    "suggestSpent": "Gasto de {{amount}} no período",
+    "suggestCreate": "Criar orçamentos",
+    "suggestCreated": "{{count}} orçamentos criados",
+    "suggestEmpty": "Sem histórico de gastos no período selecionado para sugerir.",
+    "suggestError": "Não foi possível carregar as sugestões. Tente novamente dentro de momentos."
   },
   "goals": {
     "title": "Objetivos",
@@ -1531,6 +1541,7 @@
     "addCondition": "Adicionar condição",
     "addGroup": "Adicionar grupo",
     "addGroupHint": "Um grupo junta as suas próprias condições com E ou OU",
+    "amountSignHint": "Os valores têm sinal: rendimentos são positivos, despesas são negativas.",
     "group": "Grupo",
     "removeGroup": "Remover grupo",
     "blankConditionValue": "Todas as condições precisam de um valor. Uma condição em branco corresponderia a todas as transações.",
