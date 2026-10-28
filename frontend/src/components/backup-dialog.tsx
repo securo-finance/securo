@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ShieldCheck } from 'lucide-react'
@@ -32,6 +33,7 @@ interface BackupDialogProps {
  */
 export function BackupDialog({ open, onClose }: BackupDialogProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [downloading, setDownloading] = useState(false)
@@ -59,7 +61,7 @@ export function BackupDialog({ open, onClose }: BackupDialogProps) {
 
     setDownloading(true)
     try {
-      await backupApi.download(password || undefined)
+      await backupApi.downloadProtected(password || undefined)
       toast.success(password ? t('backup.successEncrypted') : t('backup.success'))
       handleClose()
     } catch {
@@ -107,13 +109,25 @@ export function BackupDialog({ open, onClose }: BackupDialogProps) {
             </p>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={handleClose}>
-              {t('common.cancel')}
+          <DialogFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                handleClose()
+                navigate('/backups')
+              }}
+            >
+              {t('backup.menu')}
             </Button>
-            <Button type="submit" disabled={downloading}>
-              {downloading ? t('backup.downloading') : t('backup.button')}
-            </Button>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={handleClose}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" disabled={downloading}>
+                {downloading ? t('backup.downloading') : t('backup.button')}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

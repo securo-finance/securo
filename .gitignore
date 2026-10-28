@@ -15,6 +15,7 @@ docker-compose.override.yml
 .vscode/
 
 # Runtime artifacts written by the agents feature (uploaded KB files,
-# downloaded ONNX embedding models, transaction attachments). User data
-# — never commit.
+# downloaded ONNX embedding models, transaction attachments) and local Docker
+# Compose bind mounts (for example ./data/backups). User data — never commit.
 backend/data/
+data/

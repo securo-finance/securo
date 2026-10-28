@@ -62,6 +62,10 @@ spec:
             - name: attachments
               mountPath: /app/data/attachments
             {{- end }}
+            {{- if .Values.persistence.backups.enabled }}
+            - name: backups
+              mountPath: /app/data/backups
+            {{- end }}
             {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
             - name: agent-knowledge
               mountPath: /app/data/agent_knowledge
@@ -79,6 +83,11 @@ spec:
         - name: attachments
           persistentVolumeClaim:
             claimName: {{ include "securo.fullname" . }}-attachments
+        {{- end }}
+        {{- if .Values.persistence.backups.enabled }}
+        - name: backups
+          persistentVolumeClaim:
+            claimName: {{ include "securo.fullname" . }}-backups
         {{- end }}
         {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
         - name: agent-knowledge

@@ -79,6 +79,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # And for a rule being written: the draft has to be a body, and the answer
     # is which existing transactions it would match. Reads rules' own scope.
     ("POST", "/api/rules/preview"): "evaluates an unsaved rule against transactions; writes nothing",
+    ("POST", "/api/backups/preview-upload"): "parses an uploaded archive and returns a preview; writes nothing",
     # A read that has to be a POST: the backup password belongs in a body,
     # not in a query string. Same read permission as GET /api/export/backup.
     ("POST", "/api/export/backup"): "exports the workspace it can already read; writes nothing",

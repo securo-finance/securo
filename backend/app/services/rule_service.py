@@ -77,7 +77,7 @@ def _flatten_conditions(conditions: list) -> list:
     return leaves
 
 
-async def _validate_rule_definition(
+async def validate_rule_definition(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     conditions: list,
@@ -984,7 +984,7 @@ async def import_rules(
             skipped += 1
             continue
         try:
-            await _validate_rule_definition(
+            await validate_rule_definition(
                 session,
                 workspace_id,
                 [condition.model_dump() for condition in incoming.conditions],
@@ -1034,7 +1034,7 @@ async def create_rule(
     if data.name in existing_names:
         raise DuplicateRuleError(f"A rule named '{data.name}' already exists")
 
-    await _validate_rule_definition(session, workspace_id, data.conditions, data.actions)
+    await validate_rule_definition(session, workspace_id, data.conditions, data.actions)
 
     rule = Rule(
         user_id=user_id,
@@ -1074,7 +1074,7 @@ async def update_rule(
     if data.actions is not None:
         update_data["actions"] = [a.model_dump() for a in data.actions]
 
-    await _validate_rule_definition(
+    await validate_rule_definition(
         session,
         workspace_id,
         update_data.get("conditions", rule.conditions or []),
@@ -1276,7 +1276,7 @@ async def preview_rule(
     changing, because saving would change nothing.
     """
     will_apply = is_active and apply_to_existing
-    await _validate_rule_definition(session, workspace_id, conditions, actions or [])
+    await validate_rule_definition(session, workspace_id, conditions, actions or [])
 
     # Every transaction is evaluated in Python, so only the columns the engine
     # reads and `_rule_preview` copies are worth fetching — notably not
