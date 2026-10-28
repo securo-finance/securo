@@ -721,6 +721,10 @@ async def create_budgets_batch(
     return budgets
 
 
+# Budget.amount is Numeric(15, 2).
+_MAX_BUDGET_AMOUNT = Decimal("1e13")
+
+
 async def copy_monthly_budgets(
     db: AsyncSession,
     workspace_id: uuid.UUID,
@@ -742,7 +746,9 @@ async def copy_monthly_budgets(
     A category that already has a budget in the target month is left alone
     unless ``overwrite_existing`` is set. When it is, an existing override is
     updated in place (whoever in the workspace created it) instead of adding
-    a second row next to it.
+    a second row next to it, and a category whose target month already
+    resolves to the copied amount is skipped, so it stays on its recurring
+    default. Adjusted amounts round half a cent up, as splits do.
     """
     source_first = source_month.replace(day=1)
     target_first = target_month.replace(day=1)
@@ -767,9 +773,13 @@ async def copy_monthly_budgets(
     changed: list[Budget] = []
 
     for cat_id, (amount, _is_recurring) in source_map.items():
-        if cat_id in target_map and not overwrite_existing:
+        new_amount = (amount * multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if new_amount >= _MAX_BUDGET_AMOUNT:
+            raise ValueError("Adjusted budget amount is too large")
+        if cat_id in target_map and (
+            not overwrite_existing or target_map[cat_id][0] == new_amount
+        ):
             continue
-        new_amount = (amount * multiplier).quantize(Decimal("0.01"))
         overrides = target_overrides.get(cat_id)
         if overrides:
             for override in overrides:
@@ -799,11 +809,16 @@ async def get_budget_rollover_summary(
     user_id: uuid.UUID,
     month: date,
 ) -> dict:
-    """End-of-month surplus or deficit per category.
+    """End-of-month surplus or deficit per budgeted category.
 
     ``remaining`` is measured against the projected spend (posted spend plus
     the recurring and planned transactions still due that month), so a month
     in progress or in the future isn't reported as mostly unspent.
+
+    Only categories with a budget that month are included, in the list and in
+    the totals: ``net_surplus`` is the headroom left across the budget, not
+    the whole month's result, so spending in unbudgeted categories never
+    turns it into a deficit.
     """
     vs_actuals = await get_budget_vs_actual(db, workspace_id, user_id, month)
     total_budgeted = Decimal("0.00")
@@ -812,7 +827,9 @@ async def get_budget_rollover_summary(
     categories_summary = []
 
     for item in vs_actuals:
-        budgeted = item.budget_amount or Decimal("0.00")
+        if item.budget_amount is None:
+            continue
+        budgeted = item.budget_amount
         spent = item.actual_amount
         projected = item.projected_amount
         remaining = budgeted - projected

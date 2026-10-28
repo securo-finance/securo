@@ -79,7 +79,9 @@ class BudgetBatchCreate(BaseModel):
 class BudgetCopyMonthRequest(BaseModel):
     source_month: _Date
     target_month: _Date
-    adjustment_percentage: Decimal = Field(default=Decimal("0.0"), ge=Decimal("-100"))
+    adjustment_percentage: Decimal = Field(
+        default=Decimal("0.0"), ge=Decimal("-100"), le=Decimal("1000")
+    )
     overwrite_existing: bool = False
 
 

@@ -73,6 +73,74 @@ def test_copy_request_rejects_adjustment_below_minus_100():
         )
 
 
+def test_copy_request_rejects_adjustment_above_1000():
+    with pytest.raises(ValueError):
+        BudgetCopyMonthRequest(
+            source_month=date(2026, 8, 1),
+            target_month=date(2026, 9, 1),
+            adjustment_percentage=Decimal("1000.01"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_copy_rejects_adjusted_amount_beyond_column_range(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    cat = test_categories[0].id
+    session.add(_budget(test_user.id, test_workspace.id, cat, "9999999999999.00", date(2026, 8, 1)))
+    await session.commit()
+
+    with pytest.raises(ValueError):
+        await copy_monthly_budgets(
+            session, test_workspace.id, test_user.id,
+            source_month=date(2026, 8, 1), target_month=date(2026, 9, 1),
+            adjustment_percentage=Decimal("10"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_copy_rounds_half_cent_up(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    cat = test_categories[0].id
+    session.add(_budget(test_user.id, test_workspace.id, cat, "10.15", date(2026, 8, 1)))
+    await session.commit()
+
+    # 10.15 * 1.10 = 11.165: half-even would give 11.16.
+    copied = await copy_monthly_budgets(
+        session, test_workspace.id, test_user.id,
+        source_month=date(2026, 8, 1), target_month=date(2026, 9, 1),
+        adjustment_percentage=Decimal("10"),
+    )
+
+    assert [b.amount for b in copied] == [Decimal("11.17")]
+
+
+@pytest.mark.asyncio
+async def test_copy_with_overwrite_keeps_target_on_recurring_when_amount_is_unchanged(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    cat = test_categories[0].id
+    session.add_all([
+        _budget(test_user.id, test_workspace.id, cat, "100.00", date(2026, 1, 1), is_recurring=True),
+        _budget(test_user.id, test_workspace.id, cat, "100.00", date(2026, 2, 1)),
+    ])
+    await session.commit()
+
+    copied = await copy_monthly_budgets(
+        session, test_workspace.id, test_user.id,
+        source_month=date(2026, 2, 1), target_month=date(2026, 3, 1),
+        overwrite_existing=True,
+    )
+
+    # March already resolves to 100.00, so no override pins it.
+    assert copied == []
+    assert await _rows(session, test_workspace.id, cat) == [
+        (date(2026, 1, 1), True, Decimal("100.00")),
+        (date(2026, 2, 1), False, Decimal("100.00")),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_copy_rejects_same_source_and_target_month(
     session: AsyncSession, test_user, test_workspace, test_categories
@@ -223,3 +291,33 @@ async def test_rollover_and_forecast_use_projected_spend_for_future_months(
         (date(2030, 2, 1), Decimal("120.00"), Decimal("380.00")),
         (date(2030, 3, 1), Decimal("120.00"), Decimal("380.00")),
     ]
+
+
+@pytest.mark.asyncio
+async def test_rollover_net_surplus_counts_only_budgeted_categories(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    budgeted, unbudgeted = test_categories[0].id, test_categories[1].id
+    session.add(_budget(test_user.id, test_workspace.id, budgeted, "500.00", date(2030, 1, 1), is_recurring=True))
+    for cat, description, amount in ((budgeted, "Gym", "120.00"), (unbudgeted, "Rent", "900.00")):
+        session.add(RecurringTransaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            category_id=cat,
+            description=description,
+            amount=Decimal(amount),
+            currency="BRL",
+            type="debit",
+            frequency="monthly",
+            start_date=date(2030, 1, 10),
+            next_occurrence=date(2030, 1, 10),
+            is_active=True,
+        ))
+    await session.commit()
+
+    summary = await get_budget_rollover_summary(session, test_workspace.id, test_user.id, date(2030, 1, 1))
+
+    # The 900.00 in the unbudgeted category would turn this into a deficit.
+    assert [c["category_id"] for c in summary["categories"]] == [budgeted]
+    assert summary["total_projected_spent"] == Decimal("120.00")
+    assert summary["net_surplus"] == Decimal("380.00")
