@@ -570,6 +570,7 @@ async def test_get_accounts_raises_session_expired_when_details_unauthorized(eb_
         if request.url.path == "/sessions/sess-x":
             return httpx.Response(200, json={
                 "session_id": "sess-x",
+                "status": "AUTHORIZED",
                 "accounts_data": [{"uid": "acc-1"}, {"uid": "acc-2"}],
             })
         # Anchored on purpose: ``endswith`` would also match a deeper path such
@@ -599,6 +600,7 @@ async def test_get_accounts_exposes_stable_external_id(eb_keys):
         if path == "/sessions/sess-x":
             return httpx.Response(200, json={
                 "session_id": "sess-x",
+                "status": "AUTHORIZED",
                 "accounts_data": [
                     {
                         "uid": "acc-1",

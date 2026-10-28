@@ -312,9 +312,11 @@ class EnableBankingProvider(BankProvider):
     ) -> dict:
         async with self._client() as client:
             resp = await client.request(method, path, params=params, json=json_body)
-        if resp.status_code in (401, 410):
+        if resp.status_code in (401, 410) or (
+            resp.status_code == 403 and path.startswith("/accounts/")
+        ):
             raise SessionExpiredError(
-                f"Enable Banking returned {resp.status_code} for {path}"
+                "Enable Banking access refused; user must re-authorize"
             )
         if resp.status_code == 429:
             # The bank (ASPSP) is throttling us — transient, not a broken
@@ -464,7 +466,12 @@ class EnableBankingProvider(BankProvider):
         for raw_acc in accounts_raw:
             if isinstance(raw_acc, str):
                 continue  # restricted clients can return account IDs as strings
-            accounts.append(await self._build_account(raw_acc))
+            try:
+                accounts.append(await self._build_account(raw_acc))
+            except httpx.HTTPError:
+                logger.warning("Skipping an account whose initial balance could not be read")
+        if not accounts and any(isinstance(raw, dict) for raw in accounts_raw):
+            raise RuntimeError("Enable Banking could not read any linked account")
 
         encrypted_session = encrypt(session_id) or session_id
         credentials: dict[str, Any] = {
@@ -503,16 +510,12 @@ class EnableBankingProvider(BankProvider):
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
         # EB doesn't include balances in the session payload; fetch separately.
-        balance = Decimal("0")
-        try:
-            bal_resp = await self._request("GET", f"/accounts/{uid}/balances")
-            picked = _pick_balance(bal_resp.get("balances") or [])
-            balance = _balance_decimal(picked)
-            currency = _balance_currency(picked, currency)
-        except (httpx.HTTPError, SessionExpiredError) as exc:
-            logger.warning(
-                "Failed to fetch balances for account %s: %s", uid, exc
-            )
+        # Never turn a failed balance request into a successful zero balance.
+        # In particular, consent may expire between the session and account calls.
+        bal_resp = await self._request("GET", f"/accounts/{uid}/balances")
+        picked = _pick_balance(bal_resp.get("balances") or [])
+        balance = _balance_decimal(picked)
+        currency = _balance_currency(picked, currency)
         name = (
             raw.get("display_name")
             or raw.get("product")
@@ -568,7 +571,19 @@ class EnableBankingProvider(BankProvider):
         if not session_id:
             raise SessionExpiredError("Enable Banking session_id missing")
         data = await self._request("GET", f"/sessions/{session_id}")
+        # valid_until is only the maximum consent window. Banks can end it
+        # earlier; only AUTHORIZED permits account-information access.
+        if data.get("status") != "AUTHORIZED":
+            raise SessionExpiredError(
+                "Enable Banking session is not authorized; user must re-authorize"
+            )
         uids = self._account_uids(data)
+        if not uids:
+            raise ProviderUserActionRequired(
+                "Enable Banking returned no linked accounts; reconnect in the portal",
+                code="no_accounts_linked",
+                help_url="https://enablebanking.com/",
+            )
         # EB keys each account by a uid scoped to this session; the
         # identification_hash is the id that survives a reauthorisation. It comes
         # in the same payload we just fetched, so carry it through; otherwise a
@@ -582,17 +597,20 @@ class EnableBankingProvider(BankProvider):
         for uid in uids:
             try:
                 details = await self._request("GET", f"/accounts/{uid}/details")
+                account = await self._build_account(details, stable_external_ids.get(uid))
             except httpx.HTTPError as exc:
-                # A *transient* per-account failure. Without details we can't
-                # safely name/type the account, and a bare-uid AccountData would
-                # overwrite the stored name with a placeholder. Skip this account
-                # for this run (non-destructive: the existing row and its
-                # transactions are left intact and the next sync retries) rather
-                # than corrupt it. SessionExpiredError is deliberately NOT caught
-                # here: a dead consent is global, never per-account.
-                logger.warning("Failed to fetch details for account %s: %s", uid, exc)
+                # A transient details/balance failure skips only this account:
+                # never overwrite its stored name/balance with placeholder data.
+                # SessionExpiredError and ProviderRateLimited are deliberately
+                # NOT caught: consent loss/throttling affects the whole read.
+                logger.warning("Failed to fetch account data for account %s: %s", uid, exc)
                 continue
-            result.append(await self._build_account(details, stable_external_ids.get(uid)))
+            result.append(account)
+        if not result:
+            # Do not stamp last_sync_at when every account read failed. This
+            # uses sync's existing error/rollback path, not a claim of expiry:
+            # ASPSP_ERROR can also mean maintenance or a temporary bank outage.
+            raise RuntimeError("Enable Banking could not read any linked account")
         return result
 
     async def get_transactions(
