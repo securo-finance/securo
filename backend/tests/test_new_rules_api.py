@@ -1240,7 +1240,9 @@ async def test_preview_rule_pages_through_the_matches(
     """
     body = {
         "conditions_op": "and",
-        "conditions": [{"field": "amount", "op": "gt", "value": "0"}],
+        # Amount conditions compare the signed value, so a floor below every
+        # expense in the fixture is what matches debits and credits alike.
+        "conditions": [{"field": "amount", "op": "gt", "value": "-100000"}],
         "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
         "limit": 2,
     }

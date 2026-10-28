@@ -1367,7 +1367,17 @@
     "confirmDeleteDescription": "A(z) „{{name}}” költségkerete véglegesen törlődik. A meglévő tranzakciókat ez nem érinti. Ez a művelet nem vonható vissza.",
     "confirmDeleteRecurringDescription": "A(z) „{{name}}” ismétlődő költségkerete véglegesen törlődik. Ez a beállítás a későbbi hónapokra sem vonatkozik majd. A meglévő tranzakciókat ez nem érinti. Ez a művelet nem vonható vissza.",
     "repeatEveryMonth": "Ismétlés minden hónapban",
-    "recurringLabel": "Ismétlődő"
+    "recurringLabel": "Ismétlődő",
+    "suggest": "Javaslat a múltból",
+    "suggestTitle": "Költségkeretek javaslása",
+    "suggestDescription": "Javasolt limitek az elmúlt {{months}} hónap átlagos havi kiadásaid alapján.",
+    "suggestPeriod": "Időtartam",
+    "suggestMonths": "hó",
+    "suggestSpent": "Kiadás az időszakban: {{amount}}",
+    "suggestCreate": "Költségkeretek létrehozása",
+    "suggestCreated": "{{count}} költségkeret létrehozva",
+    "suggestEmpty": "Nincs kiadási előzmény a kiválasztott időszakban.",
+    "suggestError": "Nem sikerült betölteni a javaslatokat. Próbáld újra egy kicsit később."
   },
   "goals": {
     "title": "Célok",
@@ -1527,6 +1537,7 @@
     "addCondition": "Feltétel hozzáadása",
     "addGroup": "Csoport hozzáadása",
     "addGroupHint": "A csoport a saját feltételeit ÉS vagy VAGY kapcsolattal köti össze",
+    "amountSignHint": "Az összegek előjelesek: a bevételek pozitívak, a kiadások negatívak.",
     "group": "Csoport",
     "removeGroup": "Csoport eltávolítása",
     "blankConditionValue": "Minden feltételhez meg kell adni egy értéket. Egy üres feltétel minden tranzakcióra illeszkedne.",
