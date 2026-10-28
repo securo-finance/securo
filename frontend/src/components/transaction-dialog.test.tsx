@@ -1,10 +1,10 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
-import { currencies, groups, payees } from '@/lib/api'
+import { currencies, groups, payees, transactions } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Account, RecurringTransaction } from '@/types'
+import type { Account, RecurringTransaction, Transaction } from '@/types'
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
@@ -152,4 +152,104 @@ it('forgets a save variant the browser blocked, so a later plain Save just saves
 
   expect(onSave).toHaveBeenCalledTimes(1)
   expect(onSave.mock.calls[0][4]).toBe('save')
+})
+
+function transferLegFixture(pairId: string, over: Partial<Transaction> = {}): Transaction {
+  return {
+    id: 'tx-1160-leg',
+    user_id: 'synthetic-user',
+    account_id: 'acc-a',
+    category_id: null,
+    category: null,
+    external_id: null,
+    description: 'R1160 transfer repro',
+    original_description: null,
+    amount: 250,
+    currency: 'USD',
+    date: '2026-10-15',
+    type: 'debit',
+    source: 'transfer',
+    status: 'posted',
+    payee: null,
+    payee_id: null,
+    payee_name: null,
+    notes: null,
+    transfer_pair_id: pairId,
+    amount_primary: null,
+    fx_rate_used: null,
+    fx_fallback: false,
+    installment_number: null,
+    total_installments: null,
+    installment_total_amount: null,
+    installment_purchase_date: null,
+    installment_series_id: null,
+    bill_id: null,
+    effective_bill_date: null,
+    splits: [],
+    is_ignored: false,
+    ...over,
+  }
+}
+
+function renderTransferDialog(onUnlinkTransfer: (pairId: string) => void) {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  vi.spyOn(transactions, 'transferPair').mockResolvedValue(
+    transferLegFixture('pair-1160', {
+      id: 'tx-1160-counterpart',
+      type: 'credit',
+      account_id: 'acc-z',
+    }),
+  )
+  return renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('pair-1160')}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onUnlinkTransfer={onUnlinkTransfer}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+}
+
+it('asks for confirmation before unlinking a transfer pair', async () => {
+  const onUnlinkTransfer = vi.fn()
+  const { user } = renderTransferDialog(onUnlinkTransfer)
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.unlinkTransfer') }))
+
+  expect(await screen.findByText(t('transactions.unlinkTransferConfirm'))).toBeInTheDocument()
+  expect(onUnlinkTransfer).not.toHaveBeenCalled()
+})
+
+it('keeps the transfer linked when the unlink confirmation is cancelled', async () => {
+  const onUnlinkTransfer = vi.fn()
+  const { user } = renderTransferDialog(onUnlinkTransfer)
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.unlinkTransfer') }))
+  const confirmText = await screen.findByText(t('transactions.unlinkTransferConfirm'))
+  const confirmDialog = confirmText.closest('[role="dialog"]') as HTMLElement
+  await user.click(within(confirmDialog).getByRole('button', { name: t('common.cancel') }))
+
+  expect(screen.queryByText(t('transactions.unlinkTransferConfirm'))).not.toBeInTheDocument()
+  expect(onUnlinkTransfer).not.toHaveBeenCalled()
+})
+
+it('unlinks the pair only after the unlink confirmation is accepted', async () => {
+  const onUnlinkTransfer = vi.fn()
+  const { user } = renderTransferDialog(onUnlinkTransfer)
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.unlinkTransfer') }))
+  const confirmText = await screen.findByText(t('transactions.unlinkTransferConfirm'))
+  const confirmDialog = confirmText.closest('[role="dialog"]') as HTMLElement
+  await user.click(within(confirmDialog).getByRole('button', { name: t('transactions.unlinkTransfer') }))
+
+  expect(onUnlinkTransfer).toHaveBeenCalledTimes(1)
+  expect(onUnlinkTransfer).toHaveBeenCalledWith('pair-1160')
 })

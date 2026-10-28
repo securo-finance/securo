@@ -30,6 +30,7 @@ import { getAccountTypeConfig } from '@/lib/account-type-config'
 import { AccountPageActions } from '@/components/account-page-actions'
 import { AccountRowActions } from '@/components/account-row-actions'
 import { PageHeader } from '@/components/page-header'
+import { PageRefreshButton } from '@/components/page-refresh-button'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
 import { OAuthConnectDialog } from '@/components/oauth-connect-dialog'
@@ -89,7 +90,7 @@ export default function AccountsPage() {
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
   const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
 
-  const { data: accountsList, isLoading: accountsLoading } = useQuery({
+  const { data: accountsList, isLoading: accountsLoading, isFetching: accountsFetching } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accounts.list(),
   })
@@ -246,12 +247,18 @@ export default function AccountsPage() {
         section={t('accounts.title')}
         title={t('accounts.title')}
         action={
-          <AccountPageActions
-            canWrite={canWrite}
-            onAddAccount={() => { setEditingAccount(null); setDialogOpen(true) }}
-            onConnectBank={() => setConnectorSelectOpen(true)}
-            onOpenCollections={() => navigate('/collections')}
-          />
+          <div className="flex items-center gap-2">
+            <PageRefreshButton
+              onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
+              refreshing={accountsFetching}
+            />
+            <AccountPageActions
+              canWrite={canWrite}
+              onAddAccount={() => { setEditingAccount(null); setDialogOpen(true) }}
+              onConnectBank={() => setConnectorSelectOpen(true)}
+              onOpenCollections={() => navigate('/collections')}
+            />
+          </div>
         }
       />
 

@@ -59,6 +59,8 @@ export interface ReportsRange {
   from: string
   to: string
   interval: string
+  /** Period navigation offset in periods of the preset (issue #519); 0 means the window ends today. */
+  periodOffset?: number
 }
 
 /** Stored per-tab entries; anything that isn't an object (an older flat shape) is dropped. */
@@ -74,7 +76,13 @@ export function loadReportsRange(tab: string): ReportsRange | null {
   const v = readReportsTabs()[tab] as Partial<Record<keyof ReportsRange, unknown>> | undefined
   if (!v || typeof v.rangeKey !== 'string' || typeof v.interval !== 'string') return null
   if (!isDate(v.from) || !isDate(v.to)) return null
-  return { rangeKey: v.rangeKey, from: v.from, to: v.to, interval: v.interval }
+  // A stored offset that is not an integer (older writes, or
+  // corrupted storage) is dropped; a sane floor keeps the window reachable.
+  const periodOffset =
+    typeof v.periodOffset === 'number' && Number.isInteger(v.periodOffset)
+      ? Math.max(-1200, Math.min(0, v.periodOffset))
+      : 0
+  return { rangeKey: v.rangeKey, from: v.from, to: v.to, interval: v.interval, periodOffset }
 }
 
 export function saveReportsRange(tab: string, range: ReportsRange): void {

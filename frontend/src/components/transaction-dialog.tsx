@@ -541,6 +541,9 @@ function TransactionForm({
   const [unlinkingRecurring, setUnlinkingRecurring] = useState(false)
   const [addToRuleOpen, setAddToRuleOpen] = useState(false)
   const [extendRuleTarget, setExtendRuleTarget] = useState<Rule | null>(null)
+  // Unlinking re-reports the other leg, so the pair link is removed only
+  // after an explicit confirmation (issue #1160).
+  const [unlinkConfirmOpen, setUnlinkConfirmOpen] = useState(false)
 
   const { data: rulesList, isLoading: rulesLoading } = useQuery({
     queryKey: ['rules'],
@@ -921,20 +924,46 @@ function TransactionForm({
               <p className="text-xs text-blue-500 dark:text-blue-400">{t('transactions.transferTooltip')}</p>
             </div>
             {onUnlinkTransfer && transaction?.transfer_pair_id && (
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => {
-                  if (transaction?.transfer_pair_id) {
-                    onUnlinkTransfer(transaction.transfer_pair_id)
-                  }
-                }}
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-blue-200 dark:border-blue-800 bg-white/60 dark:bg-blue-900/40 px-2.5 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-200 hover:bg-white dark:hover:bg-blue-900/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title={t('transactions.unlinkTransferConfirm')}
-              >
-                <Unlink size={12} />
-                {t('transactions.unlinkTransfer')}
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setUnlinkConfirmOpen(true)}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-blue-200 dark:border-blue-800 bg-white/60 dark:bg-blue-900/40 px-2.5 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-200 hover:bg-white dark:hover:bg-blue-900/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Unlink size={12} />
+                  {t('transactions.unlinkTransfer')}
+                </button>
+                {/* Confirms the unlink: dropping the pair link re-reports the
+                    other leg, which changes reported totals (issue #1160). */}
+                <Dialog open={unlinkConfirmOpen} onOpenChange={setUnlinkConfirmOpen}>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>{t('transactions.unlinkTransfer')}</DialogTitle>
+                      <DialogDescription>
+                        {t('transactions.unlinkTransferConfirm')}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setUnlinkConfirmOpen(false)}>
+                        {t('common.cancel')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={() => {
+                          setUnlinkConfirmOpen(false)
+                          if (transaction?.transfer_pair_id) {
+                            onUnlinkTransfer(transaction.transfer_pair_id)
+                          }
+                        }}
+                      >
+                        {t('transactions.unlinkTransfer')}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </>
             )}
           </div>
         </div>

@@ -58,7 +58,7 @@ from app.services.reconciliation_engine import Expectation, Movement, evaluate
 
 # Real-transaction sources a recurring charge can arrive under. Excludes
 # "recurring" itself: that is the generated placeholder, handled separately.
-_REAL_SOURCES = ("sync", "ofx", "csv", "manual")
+_REAL_SOURCES = ("sync", "import", "ofx", "csv", "manual")
 
 
 def _date_reach(policy: dict[str, Any]) -> tuple[int, int]:

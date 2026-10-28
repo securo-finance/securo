@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
@@ -12,17 +13,20 @@ from app.models.transaction import Transaction
 from app.models.bank_connection import BankConnection
 from app.services.dashboard_service import (
     _balance_at,
+    _baseline_from_deltas,
     _get_recurring_projections,
     _month_range,
     _get_open_accounts,
     _account_balance_at,
     _total_balance_by_currency,
     get_balance_history,
+    get_balance_history_months,
     get_monthly_trend,
     get_summary,
     get_spending_by_category,
     get_projected_transactions,
 )
+
 from app.services.transaction_service import get_transactions
 
 
@@ -376,6 +380,118 @@ async def test_get_summary_basic(session: AsyncSession, test_user, test_workspac
     assert summary.monthly_income == pytest.approx(100.0)
     assert summary.monthly_expenses == pytest.approx(200.0)
     assert summary.accounts_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# get_summary: mixed currencies and the FX fallback flag (issue #1165)
+# ---------------------------------------------------------------------------
+
+
+async def _fund_manual(
+    session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
+    amount: float, currency: str,
+) -> Transaction:
+    """Opening credit for a manual account, in the account's own currency.
+
+    Manual account totals count transactions, not the balance field.
+    """
+    txn = Transaction(
+        id=uuid.uuid4(), user_id=user_id, account_id=account_id,
+        description="Opening balance", amount=Decimal(str(amount)),
+        date=app_today(), type="credit", source="opening_balance",
+        currency=currency, status="posted",
+    )
+    session.add(txn)
+    await session.commit()
+    return txn
+
+
+@pytest.mark.asyncio
+async def test_get_summary_mixed_currency_missing_rate_flags_fallback(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """No FX rate: foreign buckets stay at 1:1 and the summary is flagged.
+
+    The total keeps the native amounts (same rule as the available balance
+    headline) but must carry fx_fallback, so the UI shows the estimate
+    instead of presenting foreign money as converted (issue #1165).
+    """
+    from unittest.mock import AsyncMock
+    import app.services.fx_rate_service as fx
+
+    # Hermetic: never touch the network, even if a provider API key is set.
+    monkeypatch.setattr(fx, "sync_rates", AsyncMock(return_value=0))
+
+    home = await _make_account(session, test_user.id, "Home", currency="BRL")
+    abroad = await _make_account(session, test_user.id, "Abroad", currency="EUR")
+    await _fund_manual(session, test_user.id, home.id, 100.0, "BRL")
+    await _fund_manual(session, test_user.id, abroad.id, 50.0, "EUR")
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+
+    assert summary.primary_currency == "BRL"
+    assert summary.total_balance == {"BRL": 100.0, "EUR": 50.0}
+    # Summed at 1:1 (not silently converted) and flagged as an estimate.
+    assert summary.total_balance_primary == pytest.approx(150.0)
+    assert summary.fx_fallback is True
+
+
+@pytest.mark.asyncio
+async def test_get_summary_zero_foreign_balance_without_rate_is_not_flagged(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """A foreign account at zero needs no rate: the total is exact, so the
+    summary must not be flagged as an estimate (issue #1165)."""
+    from unittest.mock import AsyncMock
+    import app.services.fx_rate_service as fx
+
+    monkeypatch.setattr(fx, "sync_rates", AsyncMock(return_value=0))
+
+    home = await _make_account(session, test_user.id, "Home", currency="BRL")
+    abroad = await _make_account(session, test_user.id, "Abroad", currency="EUR")
+    await _fund_manual(session, test_user.id, home.id, 100.0, "BRL")
+    await _fund_manual(session, test_user.id, abroad.id, 50.0, "EUR")
+    session.add(Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=abroad.id,
+        description="Spent it all", amount=Decimal("50"), date=app_today(),
+        type="debit", source="manual", currency="EUR", status="posted",
+    ))
+    await session.commit()
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+
+    assert summary.total_balance_primary == pytest.approx(100.0)
+    assert summary.fx_fallback is False
+
+
+@pytest.mark.asyncio
+async def test_get_summary_mixed_currency_with_rate_converts(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """A real stored rate converts the bucket and no fallback flag is set."""
+    from unittest.mock import AsyncMock
+    import app.core.app_clock as clock
+    import app.services.fx_rate_service as fx
+    from app.models.fx_rate import FxRate
+
+    # Hermetic: never touch the network, even if a provider API key is set.
+    monkeypatch.setattr(fx, "sync_rates", AsyncMock(return_value=0))
+
+    home = await _make_account(session, test_user.id, "Home", currency="BRL")
+    abroad = await _make_account(session, test_user.id, "Abroad", currency="EUR")
+    await _fund_manual(session, test_user.id, home.id, 100.0, "BRL")
+    await _fund_manual(session, test_user.id, abroad.id, 50.0, "EUR")
+
+    today = clock.app_today()
+    session.add(FxRate(base_currency="USD", quote_currency="EUR", date=today, rate=Decimal("1.10"), source="test"))
+    session.add(FxRate(base_currency="USD", quote_currency="BRL", date=today, rate=Decimal("5.50"), source="test"))
+    await session.commit()
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+
+    # EUR -> BRL cross rate = 5.50 / 1.10 = 5.00, so 50 EUR counts as 250 BRL.
+    assert summary.total_balance_primary == pytest.approx(350.0)
+    assert summary.fx_fallback is False
 
 
 @pytest.mark.asyncio
@@ -991,7 +1107,291 @@ async def test_balance_history_basic(session, test_user, test_workspace):
 
     history = await get_balance_history(session, test_workspace.id, test_user.id)
     assert len(history.current) > 0
-    assert len(history.previous) > 0
+    assert 28 <= len(history.baseline) <= 31
+
+
+@pytest.mark.asyncio
+async def test_balance_history_single_comparison_reuses_month_daily_balances(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = await _make_account(session, test_user.id, "Single comparison")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit", date(2026, 1, 1),
+        source="opening_balance",
+    )
+    await _add_txn(session, test_user.id, account.id, 50, "credit", date(2026, 2, 5))
+    await _add_txn(
+        session, test_user.id, account.id, 5000, "credit", date(2026, 2, 10),
+        source="opening_balance",
+    )
+    await _add_txn(session, test_user.id, account.id, 5, "debit", date(2026, 2, 20))
+
+    history = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 4, 1),
+        account_ids=[account.id],
+        comparison_months=[date(2026, 2, 1)],
+    )
+
+    assert history.comparison_month == "2026-02"
+    assert history.comparison_opening_balance == 1000.0
+    assert history.comparison is not None
+    assert len(history.comparison) == 28
+    assert history.comparison[0].balance == 1000.0
+    assert history.comparison[4].balance == 1050.0
+    assert history.comparison[9].balance == 1050.0
+    assert history.comparison[5].balance == 1050.0
+    assert history.comparison[19].balance == 1045.0
+    assert history.baseline == []
+
+
+@pytest.mark.asyncio
+async def test_midmonth_opening_balances_are_excluded_from_current_and_baseline(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = await _make_account(session, test_user.id, "Opening balance consistency")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+
+    for month, amount in ((1, 10), (2, 20), (3, 30), (4, 40)):
+        await _add_txn(
+            session, test_user.id, account.id, 1000, "credit", date(2026, month, 15),
+            source="opening_balance",
+        )
+        await _add_txn(
+            session, test_user.id, account.id, amount, "credit", date(2026, month, 20)
+        )
+
+    history = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 4, 1),
+        account_ids=[account.id],
+        comparison_months=[date(2026, month, 1) for month in (1, 2, 3)],
+    )
+
+    current_change = [
+        point.balance - history.opening_balance
+        for point in history.current
+        if point.balance is not None
+    ]
+    assert current_change[14] == 0.0
+    assert current_change[19] == 40.0
+    assert history.baseline[14].median == 0.0
+    assert history.baseline[19].median == 20.0
+
+
+@pytest.mark.asyncio
+async def test_balance_history_single_comparison_stops_at_today(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.services.dashboard_service.app_today", lambda: date(2026, 10, 18)
+    )
+    account = await _make_account(session, test_user.id, "In-progress comparison")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(session, test_user.id, account.id, 50, "credit", date(2026, 10, 5))
+
+    history = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 11, 1),
+        account_ids=[account.id],
+        comparison_months=[date(2026, 10, 1)],
+    )
+
+    assert history.comparison is not None
+    assert len(history.comparison) == 31
+    assert history.comparison[17].balance is not None
+    assert all(point.balance is None for point in history.comparison[18:])
+
+
+@pytest.mark.asyncio
+async def test_balance_history_sparse_month_selection_excludes_gap_month(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = await _make_account(session, test_user.id, "Sparse comparisons")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(session, test_user.id, account.id, 10, "credit", date(2026, 1, 1))
+    await _add_txn(session, test_user.id, account.id, 1000, "credit", date(2026, 2, 1))
+    await _add_txn(session, test_user.id, account.id, 30, "credit", date(2026, 3, 1))
+
+    history = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 4, 1),
+        account_ids=[account.id],
+        comparison_months=[date(2026, 3, 1), date(2026, 1, 1)],
+    )
+
+    assert history.comparison is None
+    assert history.baseline[0].median == 20.0
+    assert history.baseline[0].lower_quartile is None
+    assert history.baseline[0].upper_quartile is None
+
+
+@pytest.mark.asyncio
+async def test_balance_history_month_options_are_scoped_and_exclude_openings(
+    session: AsyncSession, test_user, test_workspace
+):
+    first = await _make_account(session, test_user.id, "Month options one")
+    second = await _make_account(session, test_user.id, "Month options two")
+    first.workspace_id = test_workspace.id
+    second.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(
+        session, test_user.id, first.id, 500, "credit", date(2026, 1, 1),
+        source="opening_balance",
+    )
+    await _add_txn(session, test_user.id, first.id, 25, "credit", date(2026, 2, 1))
+    await _add_txn(session, test_user.id, second.id, 75, "credit", date(2026, 3, 1))
+
+    all_months = await get_balance_history_months(session, test_workspace.id)
+    first_account_months = await get_balance_history_months(
+        session, test_workspace.id, [first.id]
+    )
+
+    assert all_months == ["2026-02", "2026-03"]
+    assert first_account_months == ["2026-02"]
+
+
+@pytest.mark.asyncio
+async def test_balance_history_month_options_exclude_loans(
+    session: AsyncSession, test_user, test_workspace
+):
+    # Loans are left out of the balance curve, so their months have no data to plot.
+    checking = await _make_account(session, test_user.id, "Months checking")
+    loan = await _make_account(session, test_user.id, "Months loan", acc_type="loan")
+    checking.workspace_id = test_workspace.id
+    loan.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(session, test_user.id, checking.id, 25, "credit", date(2026, 2, 1))
+    await _add_txn(session, test_user.id, loan.id, 300, "debit", date(2026, 3, 1))
+
+    assert await get_balance_history_months(session, test_workspace.id) == ["2026-02"]
+    assert await get_balance_history_months(
+        session, test_workspace.id, [checking.id, loan.id]
+    ) == ["2026-02"]
+
+
+def test_baseline_from_deltas_median_and_quartiles():
+
+    # Four months; day-1 changes are -10, -20, -30, -40.
+    deltas = {
+        date(2026, 1, 1): -10.0,
+        date(2026, 2, 1): -20.0,
+        date(2026, 3, 1): -30.0,
+        date(2026, 4, 1): -40.0,
+    }
+    month_starts = [date(2026, month, 1) for month in range(1, 5)]
+    baseline = _baseline_from_deltas(deltas, month_starts, 31, date.max)
+    assert len(baseline) == 31
+    day1 = baseline[0]
+    assert day1.median == -25.0
+    assert day1.lower_quartile == -32.5
+    assert day1.upper_quartile == -17.5
+    assert baseline[1].median == -25.0
+
+
+def test_baseline_three_contributors_include_quartiles():
+    deltas = {
+        date(2026, 1, 1): 10.0,
+        date(2026, 2, 1): 20.0,
+        date(2026, 3, 1): 30.0,
+    }
+
+    baseline = _baseline_from_deltas(
+        deltas,
+        [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)],
+        30,
+        date.max,
+    )
+
+    assert baseline[0].median == 20.0
+    assert baseline[0].lower_quartile == 15.0
+    assert baseline[0].upper_quartile == 25.0
+
+
+def test_normalize_comparison_months_defaults_and_deduplicates():
+    from app.services.dashboard_service import _normalize_comparison_months
+
+    default = _normalize_comparison_months(None, date(2026, 10, 1))
+    selected = _normalize_comparison_months(
+        [date(2026, 3, 15), date(2026, 1, 1), date(2026, 3, 1)],
+        date(2026, 10, 1),
+    )
+
+    assert len(default) == 12
+    assert selected == [date(2026, 1, 1), date(2026, 3, 1)]
+
+
+@pytest.mark.parametrize(
+    "months",
+    [
+        pytest.param([], id="empty"),
+        pytest.param([date(2026, 10, 1)], id="not-before-viewed-month"),
+        pytest.param(
+            [date(2024 + index // 12, index % 12 + 1, 1) for index in range(25)],
+            id="more-than-24-months",
+        ),
+    ],
+)
+def test_normalize_comparison_months_rejects_invalid_selections(months):
+    from app.services.dashboard_service import _normalize_comparison_months
+
+    with pytest.raises(ValueError):
+        _normalize_comparison_months(months, date(2026, 10, 1))
+
+
+def test_baseline_aligns_month_end_income():
+    # Salary of +100 on the last day of Jan (31), Feb (28), Mar (31), Apr (30).
+    deltas = {
+        date(2026, 1, 31): 100.0,
+        date(2026, 2, 28): 100.0,
+        date(2026, 3, 31): 100.0,
+        date(2026, 4, 30): 100.0,
+    }
+    for target_days in (28, 30, 31):
+        month_starts = [date(2026, month, 1) for month in range(1, 5)]
+        baseline = _baseline_from_deltas(deltas, month_starts, target_days, date.max)
+        assert len(baseline) == target_days
+        assert baseline[-1].median == 100.0
+        assert baseline[0].median == 0.0
+
+
+def test_baseline_two_months_has_median_without_quartiles():
+    deltas = {date(2026, 1, 5): 10.0, date(2026, 2, 5): 20.0}
+    month_starts = [date(2026, month, 1) for month in range(1, 13)]
+    baseline = _baseline_from_deltas(deltas, month_starts, 30, date.max)
+    assert baseline[4].median == 15.0
+    assert baseline[4].lower_quartile is None
+    assert baseline[4].upper_quartile is None
+
+
+def test_baseline_omits_source_days_after_today():
+    # Viewing a future month: the in-progress month must not carry its
+    # balance flat past today and drag the median.
+    deltas = {
+        date(2026, 8, 1): 10.0,
+        date(2026, 9, 1): 20.0,
+        date(2026, 10, 1): 30.0,
+        date(2026, 10, 20): 1000.0,
+    }
+    month_starts = [date(2026, 8, 1), date(2026, 9, 1), date(2026, 10, 1)]
+    baseline = _baseline_from_deltas(deltas, month_starts, 30, date(2026, 10, 18))
+
+    assert baseline[17].median == 20.0  # day 18: Aug, Sep, Oct all count
+    assert baseline[18].median == 15.0  # day 19: only Aug and Sep
+    assert baseline[18].lower_quartile is None
 
 
 @pytest.mark.asyncio

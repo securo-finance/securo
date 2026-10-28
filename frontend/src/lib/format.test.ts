@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatAmountInput,
   formatCurrency,
+  formatSignedAmount,
   parseAmountInput,
   resolveDateLocale,
   resolveDateOrder,
@@ -37,6 +38,7 @@ describe('resolveDisplayLocale', () => {
     expect(resolveDisplayLocale('auto', 'HKD')).toBe('zh-HK')
     expect(resolveDisplayLocale('auto', 'TWD')).toBe('zh-TW')
     expect(resolveDisplayLocale('auto', 'ZAR')).toBe('en-ZA')
+    expect(resolveDisplayLocale('auto', 'GEL')).toBe('en-GE')
   })
 
   it('treats a missing number format like auto', () => {
@@ -166,6 +168,30 @@ describe('formatCurrency', () => {
 
   it('formats zero without a sign', () => {
     expect(normalize(formatCurrency(0, 'USD', 'en-US'))).toBe('$0.00')
+  })
+})
+
+describe('formatSignedAmount', () => {
+  it('prefixes credits with + and debits with -', () => {
+    expect(formatSignedAmount(100, 'credit', 'USD', 'en-US')).toBe('+$100.00')
+    expect(formatSignedAmount(100, 'debit', 'USD', 'en-US')).toBe('-$100.00')
+  })
+
+  it('takes the sign from the type, not from a stored negative amount', () => {
+    expect(formatSignedAmount(-100, 'debit', 'USD', 'en-US')).toBe('-$100.00')
+    expect(formatSignedAmount(-100, 'credit', 'USD', 'en-US')).toBe('+$100.00')
+    // any type other than debit counts as positive, like the rule engine
+    expect(formatSignedAmount(100, 'other', 'USD', 'en-US')).toBe('+$100.00')
+  })
+
+  it('leaves amounts that round to zero unsigned', () => {
+    expect(formatSignedAmount(0, 'debit', 'USD', 'en-US')).toBe('$0.00')
+    expect(formatSignedAmount(0.004, 'debit', 'USD', 'en-US')).toBe('$0.00')
+    expect(formatSignedAmount(0, 'credit', 'USD', 'en-US')).toBe('$0.00')
+    // Precision follows the currency: 0.4 JPY rounds to zero.
+    expect(normalize(formatSignedAmount(0.4, 'debit', 'JPY', 'ja-JP'))).toBe(
+      normalize(formatCurrency(0, 'JPY', 'ja-JP')),
+    )
   })
 })
 

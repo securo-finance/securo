@@ -7,7 +7,9 @@ import type { Account, Asset } from '@/types'
 
 /**
  * The loans secured against a property, with its value, debt and equity.
- * Renders nothing for a property without a linked loan.
+ * Renders nothing for a property without a linked loan. When the property
+ * has no value in the display currency (no FX rate), the loans are still
+ * listed and only the equity line is left out.
  */
 export function PropertyEquitySummary({
   asset,
@@ -24,8 +26,8 @@ export function PropertyEquitySummary({
 }) {
   const { t } = useTranslation()
   const linked = loans.filter(loan => loan.type === 'loan' && loan.secured_asset_id === asset.id)
-  const equity = getPropertyEquity(asset, linked)
-  if (linked.length === 0 || !equity) return null
+  const equity = getPropertyEquity(asset, linked, currency)
+  if (linked.length === 0) return null
 
   return (
     <div className="px-4 py-3 border-t border-border bg-muted/20 space-y-2">
@@ -42,13 +44,15 @@ export function PropertyEquitySummary({
           </div>
         ))}
       </div>
-      <p className="pt-2 border-t border-border text-xs font-medium">
-        {t('assets.propertyEquity', {
-          value: mask(formatCurrency(equity.value, currency, locale)),
-          debt: mask(formatCurrency(equity.debt, currency, locale)),
-          equity: mask(formatCurrency(equity.equity, currency, locale)),
-        })}
-      </p>
+      {equity && (
+        <p className="pt-2 border-t border-border text-xs font-medium">
+          {t('assets.propertyEquity', {
+            value: mask(formatCurrency(equity.value, currency, locale)),
+            debt: mask(formatCurrency(equity.debt, currency, locale)),
+            equity: mask(formatCurrency(equity.equity, currency, locale)),
+          })}
+        </p>
+      )}
     </div>
   )
 }

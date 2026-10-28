@@ -6,7 +6,7 @@ import { formatCurrency } from '@/lib/format'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, Asset } from '@/types'
 
-const home = { id: 'home', type: 'real_estate', current_value: 500000, current_value_primary: null } as Asset
+const home = { id: 'home', type: 'real_estate', currency: 'EUR', current_value: 500000, current_value_primary: null } as Asset
 
 function loan(id: string, name: string, balance: number, securedTo: string | null = 'home') {
   return {
@@ -43,5 +43,16 @@ describe('PropertyEquitySummary', () => {
     )
 
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('still lists the linked loans when the property has no FX rate', () => {
+    const abroad = { ...home, currency: 'GBP' } as Asset
+    renderWithProviders(
+      <PropertyEquitySummary asset={abroad} loans={[loan('a', 'Part A', -200000)]} {...props} />,
+    )
+
+    expect(screen.getByText('Part A')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Part A' })).toHaveAttribute('href', '/accounts/a')
+    expect(screen.queryByText(/equity/i)).not.toBeInTheDocument()
   })
 })

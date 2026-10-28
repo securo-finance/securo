@@ -21,6 +21,7 @@ import { normalizeRuleMatchValue, ruleSearchText } from '@/lib/rule-match-utils'
 import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Search, Power } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
+import { PageRefreshButton } from '@/components/page-refresh-button'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { RuleDialog } from '@/components/rule-dialog'
 import { ReconciliationRules } from '@/components/reconciliation-rules'
@@ -190,7 +191,7 @@ export default function RulesPage() {
     setDialogOpen(true)
   }
 
-  const { data: rulesList } = useQuery({
+  const { data: rulesList, isFetching: rulesFetching } = useQuery({
     queryKey: ['rules'],
     queryFn: rulesApi.list,
   })
@@ -442,7 +443,16 @@ export default function RulesPage() {
 
   return (
     <div>
-      <PageHeader section={t('rules.section')} title={t('nav.rules')} />
+      <PageHeader
+        section={t('rules.section')}
+        title={t('nav.rules')}
+        action={
+          <PageRefreshButton
+            onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
+            refreshing={rulesFetching}
+          />
+        }
+      />
 
       <div className="mb-4">
         <Segmented

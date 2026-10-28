@@ -353,6 +353,43 @@ def _build_bill_data(raw: dict) -> Optional[BillData]:
     )
 
 
+def _auto_invested_balance(account: dict) -> Decimal:
+    """Amount of the account balance that Pluggy has auto-invested.
+
+    Pluggy reports this in ``bankData.automaticallyInvestedBalance`` (for
+    example a checking account whose free slot is auto-applied to a CDB).
+    The same money is also listed by the provider's investments endpoint,
+    so counting it in the cash balance too would count it twice
+    (issue #843).
+    """
+    bank_data = account.get("bankData")
+    if not isinstance(bank_data, dict):
+        return Decimal(0)
+    raw = bank_data.get("automaticallyInvestedBalance")
+    if raw is None or isinstance(raw, bool):
+        return Decimal(0)
+    try:
+        value = Decimal(str(raw))
+    except InvalidOperation:
+        return Decimal(0)
+    return value if value.is_finite() and value >= 0 else Decimal(0)
+
+
+def _auto_invested_portion(account: dict) -> Decimal:
+    """Part of the reported balance that is auto-invested, clamped to [0, balance].
+
+    Pluggy's ``balance`` includes ``bankData.automaticallyInvestedBalance``.
+    The provider only reports the portion here; the sync decides whether to
+    subtract it (only when a live holding is counted for the account). A malformed
+    payload or a non-positive balance yields zero, so the cash balance can
+    never turn negative because of this field.
+    """
+    balance = Decimal(str(account.get("balance", 0)))
+    if balance <= 0:
+        return Decimal(0)
+    return min(_auto_invested_balance(account), balance)
+
+
 def _build_account_data(acc: dict, type_mapper) -> AccountData:
     """Map a Pluggy account payload to AccountData, including creditData when present."""
     account_type = type_mapper(acc.get("type", ""), acc.get("subtype"))
@@ -397,6 +434,9 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         # (or the card number for credit cards), which serves the same purpose.
         masked_number=mask_last4(acc.get("number")),
         shared_balance_group=shared_balance_group,
+        auto_invested_balance=(
+            Decimal(0) if account_type == "credit_card" else _auto_invested_portion(acc)
+        ),
     )
 
 

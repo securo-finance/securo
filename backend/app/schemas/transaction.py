@@ -156,6 +156,19 @@ class TransactionInvoiceLink(BaseModel):
     amount: Decimal
 
 
+class TransactionTransferCounterpart(BaseModel):
+    """The other leg of a linked transfer, as seen from a list row.
+
+    Filled only by the paginated list, one query per page (issue #810),
+    so the badge on a row can name the account the transfer is linked
+    to without a per-row request. The dialog keeps using the dedicated
+    transfer-pair endpoint, which carries date and amount too.
+    """
+
+    account_id: uuid.UUID
+    account_name: str
+
+
 class TransactionRead(TransactionBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -175,6 +188,10 @@ class TransactionRead(TransactionBase):
     payee_name: Optional[str] = None
     notes: Optional[str] = None
     transfer_pair_id: Optional[uuid.UUID] = None
+    # Other leg of the transfer this row belongs to, when it is one.
+    # The paginated list fills it per page (issue #810); other endpoints
+    # leave it null.
+    transfer_counterpart: Optional[TransactionTransferCounterpart] = None
     amount_primary: Optional[float] = None
     fx_rate_used: Optional[float] = None
     fx_fallback: bool = False

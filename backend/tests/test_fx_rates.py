@@ -267,6 +267,22 @@ class TestConvert:
         # 100 * (5.0 / 0.92) = 543.478...  → rounded to 543.48
         assert converted == Decimal("543.48")
 
+    @pytest.mark.asyncio
+    async def test_convert_price_precision_preserves_sub_cent_market_price(
+        self, session: AsyncSession, fx_rates
+    ):
+        """The issue #622 case: a low market price (a sub-cent coin at
+        0.00224 USD) converted at six decimals keeps its value instead of
+        rounding to 0.00."""
+        from app.services.fx_rate_service import convert
+
+        converted, rate = await convert(
+            session, Decimal("0.002240"), "USD", "EUR", decimals=6
+        )
+        assert rate == Decimal("0.9200000000")
+        # 0.00224 * 0.92 = 0.0020608  → 0.002061 at price precision
+        assert converted == Decimal("0.002061")
+
 
 class TestStampPrimaryAmount:
     """Tests for fx_rate_service.stamp_primary_amount()."""

@@ -1,8 +1,10 @@
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from math import isfinite
 from os import getenv
 from pathlib import Path
 
-from pydantic import SecretStr, model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -72,7 +74,7 @@ class Settings(BaseSettings):
 
     # FX Rates
     openexchangerates_app_id: str = ""
-    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR"  # comma-separated list
+    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR,GEL"  # comma-separated list
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage
@@ -114,8 +116,33 @@ class Settings(BaseSettings):
     oidc_admin_roles: str = ""  # comma-separated provider roles/groups that grant Securo admin
     oidc_workspace_role_map: str = ""  # JSON: {"provider-role": "owner|editor|viewer"}
 
+    # Deploy scripts that source the .env file with a shell need values with
+    # spaces to be quoted, and some panels (PaaS env vars, manual exports)
+    # keep those quotes in the value. Drop one pair of surrounding quotes so
+    # the provider always receives clean scope tokens (#887).
+    @field_validator("oidc_scopes")
+    @classmethod
+    def _strip_oidc_scopes_quotes(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1].strip()
+        return value
+
     # Celery
     redis_url: str = "redis://localhost:6379/0"
+    # Minimum age of a successful sync before automatic polling retries it.
+    # Set to 6 for banks limiting unattended account access to four times/day.
+    bank_sync_min_interval_hours: float = 4
+
+    @model_validator(mode="after")
+    def validate_bank_sync_interval(self):
+        if not isfinite(self.bank_sync_min_interval_hours) or self.bank_sync_min_interval_hours <= 0:
+            raise ValueError("BANK_SYNC_MIN_INTERVAL_HOURS must be finite and positive")
+        try:
+            datetime.now(timezone.utc) - timedelta(hours=self.bank_sync_min_interval_hours)
+        except OverflowError as exc:
+            raise ValueError("BANK_SYNC_MIN_INTERVAL_HOURS exceeds the supported date range") from exc
+        return self
 
     # Reverse-proxy trust for client-IP-based rate limiting. 0 (default) means
     # request.client.host is used as-is, which is only correct when nothing

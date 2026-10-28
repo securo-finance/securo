@@ -60,7 +60,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
-import { getPortfolioShare, getPortfolioTotalPrimary } from '@/lib/asset-portfolio-share'
+import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } from '@/lib/asset-portfolio-share'
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 import { formatCurrency } from '@/lib/format'
 
@@ -501,8 +501,22 @@ export default function AssetsPage() {
   const activeAssets = useMemo(() => assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? [], [assetsList])
   const soldAssets = assetsList?.filter(a => a.sell_date) ?? []
   // Denominator for the "% of portfolio" column: current holdings only, in the
-  // user's primary currency, so the active rows add up to 100%.
-  const portfolioTotalPrimary = getPortfolioTotalPrimary(activeAssets)
+  // user's primary currency, so the active rows add up to 100%. Assets with
+  // no resolvable FX rate are left out of the denominator (their rows show
+  // a dash) instead of being summed at a fake 1:1 rate (issue #574).
+  const portfolioTotalPrimary = getPortfolioTotalPrimary(activeAssets, userCurrency)
+
+  // Currencies of active assets that cannot be converted to the user's
+  // display currency: shown in a page-level banner and kept out of totals.
+  const unconvertedCurrencies = useMemo(() => {
+    const currencies = new Set<string>()
+    for (const a of activeAssets) {
+      if (a.current_value != null && a.currency !== userCurrency && a.current_value_primary == null) {
+        currencies.add(a.currency)
+      }
+    }
+    return [...currencies].sort()
+  }, [activeAssets, userCurrency])
 
   // Debounced ticker search. Runs only when the market-price method is
   // selected and the query is non-trivial — keeps the autocomplete snappy
@@ -745,7 +759,14 @@ export default function AssetsPage() {
     const isProviderOwned = isSynced && !isMarketPriced
     const hasCost = asset.average_price != null && asset.total_invested != null
     const profit = getAssetProfit(asset)
-    const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary)
+    // Foreign-currency asset the backend could not convert (no FX rate):
+    // keep it out of primary-currency totals and flag it instead.
+    const unconverted =
+      !asset.sell_date &&
+      asset.current_value != null &&
+      asset.currency !== userCurrency &&
+      asset.current_value_primary == null
+    const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
 
     return (
@@ -769,6 +790,16 @@ export default function AssetsPage() {
                   >
                     <AlertTriangle size={9} />
                     {t('assets.noPriceBadge')}
+                  </Badge>
+                )}
+                {unconverted && (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 gap-0.5 shrink-0"
+                    title={t('assets.noFxRateTitle')}
+                  >
+                    <AlertTriangle size={9} />
+                    {t('assets.noFxRate')}
                   </Badge>
                 )}
                 {asset.sell_date && (
@@ -824,6 +855,9 @@ export default function AssetsPage() {
                 <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
                 {asset.current_value_primary != null && asset.currency !== userCurrency && (
                   <span className="block text-[10px] text-muted-foreground">{mask(formatCurrency(asset.current_value_primary, userCurrency, locale))}</span>
+                )}
+                {unconverted && (
+                  <span className="block text-[10px] text-amber-600 dark:text-amber-400">{t('assets.noFxRate')}</span>
                 )}
               </>
             ) : <span className="text-muted-foreground">—</span>}
@@ -972,9 +1006,23 @@ export default function AssetsPage() {
   function renderWalletSection(wallet: AssetGroup, walletAssets: Asset[]) {
     const isCollapsed = collapsedWallets.has(wallet.id)
     const isSynced = wallet.source !== 'manual'
-    // Sum in wallet's reported current_value (already computed by backend).
-    // Fall back to per-asset sum if the rollup is stale after a move.
-    const total = walletAssets.reduce((s, a) => s + (a.current_value_primary ?? a.current_value ?? 0), 0) || wallet.current_value_primary || wallet.current_value
+    // Sum in the user's primary currency. Fall back to the wallet's own
+    // rollup if the per-asset sum is empty (rollup already excludes
+    // unconvertible assets, so it agrees with this one).
+    const total =
+      walletAssets.reduce((s, a) => s + (getAssetValuePrimary(a, userCurrency) ?? 0), 0) ||
+      wallet.current_value_primary ||
+      0
+    // Native values of assets the backend could not convert (no FX rate),
+    // grouped by currency and listed below the total. They are deliberately
+    // NOT added to the number above: that would mix unconverted currencies
+    // (issue #574).
+    const unconvertedSums = new Map<string, number>()
+    for (const a of walletAssets) {
+      if (getAssetValuePrimary(a, userCurrency) == null && a.current_value != null && a.currency !== userCurrency) {
+        unconvertedSums.set(a.currency, (unconvertedSums.get(a.currency) ?? 0) + Number(a.current_value))
+      }
+    }
 
     // Only show the institution as a subtitle when it's actually
     // additional information — if the user hasn't renamed the wallet,
@@ -1016,9 +1064,16 @@ export default function AssetsPage() {
               )}
             </div>
           </button>
-          <span className="text-sm font-bold tabular-nums text-foreground shrink-0">
-            {mask(formatCurrency(total, userCurrency, locale))}
-          </span>
+          <div className="flex flex-col items-end shrink-0">
+            <span className="text-sm font-bold tabular-nums text-foreground">
+              {mask(formatCurrency(total, userCurrency, locale))}
+            </span>
+            {[...unconvertedSums.entries()].map(([currency, amount]) => (
+              <span key={currency} className="text-[10px] text-amber-600 dark:text-amber-400 tabular-nums">
+                + {mask(formatCurrency(amount, currency, locale))} {currency} · {t('assets.noFxRate')}
+              </span>
+            ))}
+          </div>
           {canWrite && (
             <>
               <button
@@ -1107,6 +1162,15 @@ export default function AssetsPage() {
         />
       ) : (
       <>
+      {/* Assets that have no resolvable FX rate are left out of the totals
+          below; explain that so the numbers do not look wrong (issue #574). */}
+      {unconvertedCurrencies.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>{t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })}</span>
+        </div>
+      )}
+
       {/* Portfolio Chart */}
       {portfolioData && portfolioData.trend.length > 0 && (
         <PortfolioChart
@@ -1168,7 +1232,7 @@ export default function AssetsPage() {
           <DialogHeader>
             <DialogTitle>{editingAsset ? t('assets.editAsset') : t('assets.addAsset')}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
             {/* Name */}
             <div className="space-y-2">
               <Label>{t('assets.name')}</Label>

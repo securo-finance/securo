@@ -113,6 +113,9 @@ class LLMProvider(ABC):
         self.api_key = api_key
         self.base_url: str = base_url or ""
         self.default_model = model
+        # Stable per-conversation id, set by the executor before each run.
+        # Providers whose backends route on it send it as a request header.
+        self.session_id: Optional[str] = None
 
     @abstractmethod
     def chat_stream(

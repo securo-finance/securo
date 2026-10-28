@@ -127,6 +127,7 @@ describe('a non-credit-card account with more rows than one page', () => {
       recurring_id: 'rec-1', account_id: 'acc-1', description: 'Rent', amount: 500,
       amount_primary: null, currency: 'BRL', type: 'debit', date: '2026-09-28',
       category_id: null, category_name: null, category_icon: null, category_color: null,
+      category_treat_as_transfer: false,
     }])
   })
 

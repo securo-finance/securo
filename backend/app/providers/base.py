@@ -89,6 +89,14 @@ class AccountData:
     institution_external_id: Optional[str] = None
     institution_name: Optional[str] = None
     institution_logo_url: Optional[str] = None
+    # Part of `balance` that the bank has auto-applied to an investment which
+    # the provider also reports as a holding (Pluggy
+    # `bankData.automaticallyInvestedBalance`, issue #843). Zero when unknown.
+    # The sync subtracts it only when a live holding is counted for this
+    # account (see connection_service._auto_invested_deductions), so the
+    # money is counted once: as the asset when one mirrors it, as cash
+    # otherwise.
+    auto_invested_balance: Decimal = Decimal(0)
 
 
 @dataclass

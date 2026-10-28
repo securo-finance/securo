@@ -335,12 +335,15 @@ async def test_advance_past_early_charge_still_advances(session, test_user, test
 
 
 @pytest.mark.asyncio
-async def test_generate_pending_links_existing_real_tx(session, test_user, test_workspace, account):
-    """A synced charge that already covers the occurrence is linked, not duplicated."""
+@pytest.mark.parametrize("source", ["sync", "import"])
+async def test_generate_pending_links_existing_real_tx(
+    session, test_user, test_workspace, account, source
+):
+    """A synced or imported charge that already covers the occurrence is linked, not duplicated."""
     bill = await _make_bill(session, test_workspace, test_user, account)
     real = await _add_tx(
         session, test_user, test_workspace, account,
-        date=date(2025, 1, 11), source="sync", external_id="bank-1",
+        date=date(2025, 1, 11), source=source, external_id="bank-1",
     )
 
     count = await generate_pending(session, test_user.id, up_to=date(2025, 1, 20))

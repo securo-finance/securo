@@ -80,6 +80,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   HKD: 'zh-HK',
   TWD: 'zh-TW',
   ZAR: 'en-ZA',
+  GEL: 'en-GE',
 }
 
 /**
@@ -192,6 +193,25 @@ export function formatCurrency(
   // residue that summed balances and FX conversions leave behind.
   const factor = 10 ** (formatter.resolvedOptions().maximumFractionDigits ?? 2)
   return formatter.format(Math.round(value * factor) === 0 ? 0 : value)
+}
+
+/**
+ * Format a transaction amount with its direction: `+` for a credit, `-` for
+ * a debit, in front of the magnitude. Amounts that round to zero at the
+ * currency's precision carry no sign, so a zero debit never reads "-$0.00".
+ */
+export function formatSignedAmount(
+  amount: number,
+  type: string,
+  currency = 'USD',
+  locale = 'en-US',
+): string {
+  const magnitude = Math.abs(amount)
+  const formatted = formatCurrency(magnitude, currency, locale)
+  const factor = 10 ** (currencyFormatter(currency, locale).resolvedOptions().maximumFractionDigits ?? 2)
+  if (Math.round(magnitude * factor) === 0) return formatted
+  // Same rule as the backend rule engine: only a debit is negative.
+  return `${type === 'debit' ? '-' : '+'}${formatted}`
 }
 
 /**

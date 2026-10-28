@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
+from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
 from app.schemas.asset import MarketSymbolQuote
@@ -309,3 +310,248 @@ async def test_get_value_trend(client: AsyncClient, auth_headers: dict, test_ass
 async def test_unauthenticated_access(client: AsyncClient):
     response = await client.get("/api/assets")
     assert response.status_code == 401
+
+
+class TestAssetValuePrecision:
+    """FX conversion of asset values keeps price-field precision (issue #622).
+
+    A low-priced market asset held by a user in another currency must not
+    vanish from the primary-currency total: the converted value is rounded at
+    the asset price precision (six decimals), not the monetary two.
+    """
+
+    @pytest_asyncio.fixture
+    async def eur_rate(self, session: AsyncSession, clean_db) -> FxRate:
+        """USD -> EUR 0.92, same value the fx_rates fixture uses."""
+        fx = FxRate(
+            base_currency="USD",
+            quote_currency="EUR",
+            date=date.today(),
+            rate=Decimal("0.9200000000"),
+            source="test",
+        )
+        session.add(fx)
+        await session.commit()
+        await session.refresh(fx)
+        return fx
+
+    @pytest_asyncio.fixture
+    async def eur_user(
+        self, session: AsyncSession, test_user: User
+    ) -> User:
+        """The test user reads the portfolio in EUR, not BRL."""
+        test_user.preferences = {**(test_user.preferences or {}), "currency_display": "EUR"}
+        await session.commit()
+        return test_user
+
+    @pytest.mark.asyncio
+    async def test_list_keeps_sub_cent_value_in_primary_currency(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        session: AsyncSession,
+        eur_user: User,
+        test_workspace: Workspace,
+        eur_rate: FxRate,
+    ):
+        # One unit of a low-priced coin, worth a fraction of a cent.
+        asset = Asset(
+            id=uuid.uuid4(),
+            user_id=eur_user.id,
+            workspace_id=test_workspace.id,
+            name="Coin A",
+            type="investment",
+            currency="USD",
+            units=Decimal("1"),
+            valuation_method="market_price",
+            purchase_price=Decimal("0.00"),
+            last_price=Decimal("0.002087"),
+            ticker="COIN-USD",
+            position=0,
+        )
+        session.add(asset)
+        await session.commit()
+
+        headers = {**auth_headers, "X-Workspace-Id": str(test_workspace.id)}
+        response = await client.get("/api/assets", headers=headers)
+
+        assert response.status_code == 200
+        entry = next(a for a in response.json() if a["id"] == str(asset.id))
+        # 0.002087 USD * 0.92 = 0.001920 EUR at price precision. The
+        # two-decimal quantization the issue reports returned 0.0 here.
+        assert entry["current_value"] == pytest.approx(0.002087)
+        assert entry["current_value_primary"] == pytest.approx(0.00192)
+        assert entry["gain_loss"] == pytest.approx(0.002087)
+        assert entry["gain_loss_primary"] == pytest.approx(0.00192)
+
+    @pytest.mark.asyncio
+    async def test_values_at_total_keeps_sub_cent_assets(
+        self,
+        session: AsyncSession,
+        eur_user: User,
+        test_workspace: Workspace,
+        eur_rate: FxRate,
+    ):
+        """get_asset_values_at (the rollup behind the dashboard total and the
+        trend chart) must not drop low-priced holdings from the primary
+        total: each converted amount keeps six decimals, so the sum of
+        sub-cent values is correct. 2 x 0.002087 USD = 0.004174, and
+        0.002087 x 0.92 = 0.001920 per coin. Before the fix each asset
+        converted to 0.0 separately and the primary total was 0.0."""
+        from app.services.asset_service import get_asset_values_at
+
+        for i in range(2):
+            session.add(
+                Asset(
+                    id=uuid.uuid4(),
+                    user_id=eur_user.id,
+                    workspace_id=test_workspace.id,
+                    name=f"Coin {i}",
+                    type="investment",
+                    currency="USD",
+                    units=Decimal("1"),
+                    valuation_method="market_price",
+                    last_price=Decimal("0.002087"),
+                    ticker="COIN-USD",
+                    position=i,
+                )
+            )
+        await session.commit()
+
+        totals, primary_total = await get_asset_values_at(
+            session,
+            test_workspace.id,
+            primary_currency="EUR",
+            by_workspace=True,
+        )
+
+        assert totals["USD"] == pytest.approx(0.004174)
+        assert primary_total == pytest.approx(0.00384)
+class TestAssetListMissingFxRate:
+    """issue #574: an asset held in a currency with no resolvable FX rate
+    must not be stamped with a fake 1:1 primary value. The row keeps its
+    native amount, current_value_primary stays NULL, and the frontend keeps
+    the asset out of primary-currency totals instead of summing raw foreign
+    amounts. A sibling asset whose currency has a rate still converts, so
+    the list endpoint stays one consistent view."""
+
+    @pytest_asyncio.fixture
+    async def usd_user(
+        self, session: AsyncSession, test_user: User
+    ) -> User:
+        """The test user reads the portfolio in USD, not BRL."""
+        test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+        await session.commit()
+        return test_user
+
+    @pytest.mark.asyncio
+    async def test_list_converts_only_assets_that_have_a_rate(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        session: AsyncSession,
+        usd_user: User,
+        test_workspace: Workspace,
+    ):
+        session.add(FxRate(
+            id=uuid.uuid4(),
+            base_currency="USD",
+            quote_currency="EUR",
+            date=date.today(),
+            rate=Decimal("0.9200000000"),
+            source="test",
+        ))
+        eur_asset = Asset(
+            id=uuid.uuid4(),
+            user_id=usd_user.id,
+            workspace_id=test_workspace.id,
+            name="Fund",
+            type="investment",
+            currency="EUR",
+            units=Decimal("1000"),
+            valuation_method="manual",
+            purchase_price=Decimal("1000"),
+            position=0,
+        )
+        gbp_asset = Asset(
+            id=uuid.uuid4(),
+            user_id=usd_user.id,
+            workspace_id=test_workspace.id,
+            name="Cash",
+            type="cash",
+            currency="GBP",
+            units=Decimal("500"),
+            valuation_method="manual",
+            purchase_price=Decimal("500"),
+            position=1,
+        )
+        session.add_all([eur_asset, gbp_asset])
+        await session.commit()
+
+        headers = {**auth_headers, "X-Workspace-Id": str(test_workspace.id)}
+        response = await client.get("/api/assets", headers=headers)
+
+        assert response.status_code == 200
+        entries = {a["id"]: a for a in response.json()}
+        # With a rate (USD -> EUR 0.92, so EUR -> USD 1/0.92): converted at
+        # price precision, 1000 / 0.92 = 1086.956522.
+        eur = entries[str(eur_asset.id)]
+        assert eur["current_value_primary"] == pytest.approx(1086.956522, rel=1e-6)
+        # Without a rate for GBP: left NULL instead of the raw 500.0 the old
+        # code stamped at a fake 1:1 rate.
+        gbp = entries[str(gbp_asset.id)]
+        assert gbp["current_value"] == pytest.approx(500.0)
+        assert gbp["current_value_primary"] is None
+        assert gbp["gain_loss_primary"] is None
+
+    @pytest.mark.asyncio
+    async def test_refresh_price_leaves_primary_null_without_a_rate(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        session: AsyncSession,
+        usd_user: User,
+        test_workspace: Workspace,
+    ):
+        """The refresh endpoint stamps the primary fields on its own, so it
+        must apply the same rule as the list: no GBP rate, no fake value."""
+        asset = Asset(
+            id=uuid.uuid4(),
+            user_id=usd_user.id,
+            workspace_id=test_workspace.id,
+            name="Listed",
+            type="stock",
+            currency="GBP",
+            ticker="LSE",
+            units=Decimal("10"),
+            valuation_method="market_price",
+            purchase_price=Decimal("40"),
+            position=0,
+        )
+        session.add(asset)
+        session.add(AssetValue(
+            id=uuid.uuid4(),
+            asset_id=asset.id,
+            workspace_id=test_workspace.id,
+            amount=Decimal("500"),
+            price=Decimal("50"),
+            date=date.today(),
+            source="sync",
+        ))
+        await session.commit()
+
+        headers = {**auth_headers, "X-Workspace-Id": str(test_workspace.id)}
+        with patch(
+            "app.services.asset_service.refresh_market_price_asset",
+            new=AsyncMock(return_value=True),
+        ):
+            response = await client.post(
+                f"/api/assets/{asset.id}/refresh-price", headers=headers
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["current_value"] is not None
+        assert body["gain_loss"] is not None
+        assert body["current_value_primary"] is None
+        assert body["gain_loss_primary"] is None

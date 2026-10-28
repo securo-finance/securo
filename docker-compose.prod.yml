@@ -44,6 +44,7 @@ x-backend-env: &backend-env
   # client IP instead of nginx's own container address.
   TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
   REDIS_URL: redis://redis:6379/0
+  BANK_SYNC_MIN_INTERVAL_HOURS: ${BANK_SYNC_MIN_INTERVAL_HOURS:-4}
   STORAGE_LOCAL_PATH: /app/data/attachments
   AGENTS_KNOWLEDGE_STORAGE_PATH: /app/data/agent_knowledge
   # Agents/LLM feature, opt-in. Off by default so existing users pay
