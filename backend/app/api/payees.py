@@ -41,6 +41,17 @@ def _payee_in_use(error: ValueError) -> HTTPException:
                 "message": "This client has invoices. Merge it into another client instead.",
             },
         )
+    if reason.startswith("payee_has_schedules:"):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "payee_has_schedules",
+                "count": int(reason.split(":", 1)[1] or 0),
+                # A schedule is a live agreement, so the merge cannot
+                # carry it. The user has to end or move it first.
+                "message": "This client has recurring invoices. End the agreement before merging.",
+            },
+        )
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=reason)
 
 
@@ -143,7 +154,7 @@ async def merge_payees(
         reassigned = await payee_service.merge_payees(session, ctx.workspace.id, data.target_id, data.source_ids)
         return {"merged": len(data.source_ids), "transactions_reassigned": reassigned}
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise _payee_in_use(e)
 
 
 @router.post("/bulk-delete", status_code=status.HTTP_200_OK)

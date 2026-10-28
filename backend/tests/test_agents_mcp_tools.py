@@ -49,6 +49,9 @@ def test_registry_contains_v1_tools():
         "propose_update_recurring_transaction",
         "propose_cancel_recurring_transaction",
         "propose_create_goal",
+        "propose_update_payee",
+        "propose_merge_payees",
+        "propose_create_payee",
         "search_knowledge_base",
         "list_recurring_transactions",
         "list_assets",
@@ -60,7 +63,15 @@ def test_registry_contains_v1_tools():
 
 
 def test_proposal_tools_marked_is_proposal():
-    for name in ("propose_categorize", "propose_create_category", "propose_create_budget", "propose_create_payee_rule"):
+    for name in (
+        "propose_categorize",
+        "propose_create_category",
+        "propose_create_budget",
+        "propose_create_payee_rule",
+        "propose_update_payee",
+        "propose_merge_payees",
+        "propose_create_payee",
+    ):
         spec = REGISTRY[name]
         assert spec.is_proposal, f"{name} should have is_proposal=True"
 

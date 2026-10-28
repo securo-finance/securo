@@ -16,20 +16,23 @@ unchanged for Securo's own UI.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.group import Group, GroupMember
+from app.models.invoice_schedule import InvoiceSchedule
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
+from app.fiscal.registry import TaxIdKind, normalise_and_validate
 from app.schemas.budget import BudgetCreate
 from app.schemas.category import CategoryCreate
 from app.schemas.goal import GoalCreate
+from app.schemas.payee import PayeeCreate, PayeeUpdate, TaxIdInput
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
@@ -42,6 +45,7 @@ from app.services import (
     budget_service,
     category_service,
     goal_service,
+    payee_service,
     recurring_transaction_service,
     rule_service,
     transaction_service,
@@ -1099,5 +1103,460 @@ async def propose_create_payee_rule(
             ),
         )
         return {**preview, "applied": True, "id": str(created.id)}
+
+    return preview
+
+
+def _payee_snapshot(payee) -> dict[str, Any]:
+    """The fields a payee update can touch, small enough for an LLM."""
+    return {
+        "id": str(payee.id),
+        "name": payee.name,
+        "type": payee.type,
+        "source": payee.source,
+        "is_favorite": bool(payee.is_favorite),
+        "notes": payee.notes,
+        "email": payee.email,
+        "phone": payee.phone,
+        "address": payee.address,
+        "website": payee.website,
+        "tax_ids": [{"kind": row.kind, "value": row.value} for row in payee.tax_ids],
+    }
+
+
+def _normalise_tax_ids(
+    tax_ids: list[dict[str, Any]],
+) -> tuple[list[dict[str, str]] | None, str | None]:
+    """Validate the incoming document set without writing it.
+
+    The service repeats this on apply. Doing it here means a preview shows
+    the reason a document would be refused instead of pretending the whole
+    change is ready and failing halfway through.
+    """
+    normalised: list[dict[str, str]] = []
+    seen: set[TaxIdKind] = set()
+    for item in tax_ids:
+        raw_kind = item.get("kind")
+        try:
+            kind = TaxIdKind(raw_kind)
+        except (TypeError, ValueError):
+            return None, f"unknown_tax_id_kind:{raw_kind}"
+        if kind in seen:
+            return None, f"duplicate_tax_id:{kind.value}"
+        seen.add(kind)
+        value, error = normalise_and_validate(kind, str(item.get("value") or ""))
+        if error == "empty":
+            # An emptied field means "remove this document", not "store
+            # nothing"; mirrors payee_service._apply_tax_ids.
+            continue
+        if error:
+            return None, f"invalid_tax_id:{kind.value}:{error}"
+        normalised.append({"kind": kind.value, "value": value})
+    return normalised, None
+
+
+@tool(
+    name="propose_create_payee",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for adding a payee (counterparty) that does not "
+        "exist yet. Returns any payee that already uses the same name, "
+        "because the workspace refuses duplicates. `tax_ids` are validated "
+        "on preview, so an invalid document is refused before anything is "
+        "written."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "type": {"type": "string", "enum": ["person", "company"]},
+            "notes": {"type": "string", "maxLength": 1000},
+            "email": {"type": "string", "maxLength": 255},
+            "phone": {"type": "string", "maxLength": 50},
+            "address": {"type": "string", "maxLength": 500},
+            "website": {"type": "string", "maxLength": 255},
+            "tax_ids": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": [kind.value for kind in TaxIdKind],
+                        },
+                        "value": {"type": "string", "maxLength": 120},
+                    },
+                    "required": ["kind", "value"],
+                    "additionalProperties": False,
+                },
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "payees"],
+)
+async def propose_create_payee(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    name: str,
+    type: Literal["person", "company"] | None = None,
+    notes: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
+    website: str | None = None,
+    tax_ids: list[dict[str, Any]] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    cleaned = name.strip()
+    if not cleaned:
+        return {"error": "payee name cannot be empty"}
+
+    proposed: dict[str, Any] = {"name": cleaned}
+    for field, value in (
+        ("type", type),
+        ("notes", notes),
+        ("email", email),
+        ("phone", phone),
+        ("address", address),
+        ("website", website),
+    ):
+        if value is not None:
+            proposed[field] = value
+
+    normalised_tax_ids: list[dict[str, str]] = []
+    if tax_ids is not None:
+        normalised, error = _normalise_tax_ids(tax_ids)
+        if error:
+            return {"error": error}
+        if normalised is not None:
+            normalised_tax_ids = normalised
+            proposed["tax_ids"] = normalised
+
+    # Same reason as propose_update_payee: the dispatcher does not enforce
+    # the advertised schema, so validate before showing a preview.
+    try:
+        create_data = PayeeCreate(
+            name=cleaned,
+            type=type,
+            notes=notes,
+            email=email,
+            phone=phone,
+            address=address,
+            website=website,
+            tax_ids=[TaxIdInput(**item) for item in normalised_tax_ids],
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    existing = await payee_service.find_payee_by_name(session, ws_id, cleaned)
+    preview = {
+        "kind": "create_payee",
+        "proposed": proposed,
+        "existing": _payee_snapshot(existing) if existing is not None else None,
+        "apply_endpoint": "POST /api/payees",
+    }
+    if existing is not None:
+        # The service refuses this on apply; surface it in the preview so the
+        # caller learns before anything is written.
+        return {**preview, "applied": False, "error": "duplicate_payee_name"}
+
+    if _can_apply(ctx, apply):
+        try:
+            created = await payee_service.create_payee(
+                session, ws_id, ctx.user_id, create_data
+            )
+        except ValueError as exc:
+            return {**preview, "applied": False, "error": str(exc)}
+        fresh = await payee_service.get_payee(session, created.id, ws_id)
+        return {
+            **preview,
+            "applied": True,
+            "payee": _payee_snapshot(fresh or created),
+        }
+
+    return preview
+
+
+@tool(
+    name="propose_update_payee",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing one payee (counterparty), including "
+        "its fiscal documents. Pass the payee_id and only the fields to "
+        "change. `tax_ids` replaces the whole document set, so send every "
+        "document the payee should keep. Returns the current values next "
+        "to the proposed ones."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "payee_id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "type": {"type": "string", "enum": ["person", "company"]},
+            "notes": {"type": "string", "maxLength": 1000},
+            "email": {"type": "string", "maxLength": 255},
+            "phone": {"type": "string", "maxLength": 50},
+            "address": {"type": "string", "maxLength": 500},
+            "website": {"type": "string", "maxLength": 255},
+            "is_favorite": {"type": "boolean"},
+            "tax_ids": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": [kind.value for kind in TaxIdKind],
+                        },
+                        "value": {"type": "string", "maxLength": 120},
+                    },
+                    "required": ["kind", "value"],
+                    "additionalProperties": False,
+                },
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["payee_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "payees"],
+)
+async def propose_update_payee(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    payee_id: str,
+    name: str | None = None,
+    type: str | None = None,
+    notes: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
+    website: str | None = None,
+    is_favorite: bool | None = None,
+    tax_ids: list[dict[str, Any]] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    pid = parse_uuid(payee_id)
+    payee = await payee_service.get_payee(session, pid, ws_id) if pid else None
+    if payee is None:
+        return {"error": "payee not found"}
+
+    changes: dict[str, Any] = {}
+    if name is not None:
+        cleaned = name.strip()
+        if not cleaned:
+            return {"error": "payee name cannot be empty"}
+        clash = await payee_service.find_payee_by_name(session, ws_id, cleaned)
+        if clash is not None and clash.id != payee.id:
+            return {"error": "duplicate_payee_name", "existing": _payee_snapshot(clash)}
+        changes["name"] = cleaned
+    if type is not None:
+        changes["type"] = type
+    if notes is not None:
+        changes["notes"] = notes
+    if email is not None:
+        changes["email"] = email
+    if phone is not None:
+        changes["phone"] = phone
+    if address is not None:
+        changes["address"] = address
+    if website is not None:
+        changes["website"] = website
+    if is_favorite is not None:
+        changes["is_favorite"] = bool(is_favorite)
+
+    normalised_tax_ids: list[dict[str, str]] | None = None
+    if tax_ids is not None:
+        normalised_tax_ids, error = _normalise_tax_ids(tax_ids)
+        if error:
+            return {"error": error}
+        changes["tax_ids"] = normalised_tax_ids
+
+    if not changes:
+        return {"error": "no changes provided"}
+
+    # The MCP dispatcher passes arguments straight to the handler, so an
+    # external client can send a value the advertised schema forbids. Build
+    # the update here: a preview must not describe a change the apply path
+    # will refuse.
+    update_data: dict[str, Any] = dict(changes)
+    if normalised_tax_ids is not None:
+        update_data["tax_ids"] = [TaxIdInput(**item) for item in normalised_tax_ids]
+    try:
+        validated_update = PayeeUpdate(**update_data)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    preview = {
+        "kind": "update_payee",
+        "target": _payee_snapshot(payee),
+        "changes": changes,
+        "apply_endpoint": f"PATCH /api/payees/{payee.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        try:
+            updated = await payee_service.update_payee(
+                session, payee.id, ws_id, validated_update
+            )
+        except ValueError as exc:
+            return {**preview, "applied": False, "error": str(exc)}
+        if updated is None:
+            return {**preview, "applied": False, "error": "payee not found"}
+        fresh = await payee_service.get_payee(session, updated.id, ws_id)
+        return {
+            **preview,
+            "applied": True,
+            "payee": _payee_snapshot(fresh or updated),
+        }
+
+    return preview
+
+
+@tool(
+    name="propose_merge_payees",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for merging one or more payees into another. The "
+        "target keeps the history: transactions and invoices move to it. "
+        "The sources are deleted along with their fiscal documents, which "
+        "are not copied to the target. A source that still has a recurring "
+        "invoice schedule is refused, because the agreement is not moved. "
+        "Use this for a duplicate counterparty, never for a rename: a "
+        "rename is propose_update_payee."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "source_ids": {
+                "type": "array",
+                "items": {"type": "string", "format": "uuid"},
+                "minItems": 1,
+            },
+            "target_id": {"type": "string", "format": "uuid"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["source_ids", "target_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "payees"],
+)
+async def propose_merge_payees(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    source_ids: list[str],
+    target_id: str,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    tid = parse_uuid(target_id)
+    target = await payee_service.get_payee(session, tid, ws_id) if tid else None
+    if target is None:
+        return {"error": "target payee not found"}
+
+    parsed_sources = list(dict.fromkeys(parse_uuid_list(source_ids) or []))
+    if not parsed_sources:
+        return {"error": "source_ids is required"}
+    if tid in parsed_sources:
+        return {"error": "target payee cannot also be a source"}
+
+    sources: list[dict[str, Any]] = []
+    transactions_to_reassign = 0
+    schedules_found = 0
+    documents_deleted: list[dict[str, str]] = []
+    for source_id in parsed_sources:
+        source = await payee_service.get_payee(session, source_id, ws_id)
+        if source is None:
+            return {"error": f"source payee {source_id} not found"}
+        count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(Transaction)
+                .where(Transaction.payee_id == source_id)
+            )
+            or 0
+        )
+        schedule_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(InvoiceSchedule)
+                .where(InvoiceSchedule.payee_id == source_id)
+            )
+            or 0
+        )
+        transactions_to_reassign += count
+        schedules_found += schedule_count
+        source_tax_ids = [
+            {"kind": row.kind, "value": row.value} for row in source.tax_ids
+        ]
+        # Nothing copies these onto the target: the rows are deleted with
+        # the source. Listing them here is the only place the caller sees
+        # that a document is about to disappear.
+        documents_deleted.extend(source_tax_ids)
+        sources.append(
+            {
+                "id": str(source.id),
+                "name": source.name,
+                "transaction_count": count,
+                "schedule_count": schedule_count,
+                "tax_ids": source_tax_ids,
+            }
+        )
+
+    preview = {
+        "kind": "merge_payees",
+        "target": {
+            "id": str(target.id),
+            "name": target.name,
+            "transaction_count": int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Transaction)
+                    .where(Transaction.payee_id == target.id)
+                )
+                or 0
+            ),
+            "tax_ids": [
+                {"kind": row.kind, "value": row.value} for row in target.tax_ids
+            ],
+        },
+        "sources": sources,
+        "transactions_to_reassign": transactions_to_reassign,
+        "documents_deleted": documents_deleted,
+        "apply_endpoint": "POST /api/payees/merge",
+    }
+
+    if schedules_found:
+        # The service refuses this on apply; the preview says so first so
+        # the caller does not present a merge that cannot land.
+        return {
+            **preview,
+            "applied": False,
+            "error": f"payee_has_schedules:{schedules_found}",
+        }
+
+    if _can_apply(ctx, apply):
+        try:
+            reassigned = await payee_service.merge_payees(
+                session, ws_id, target.id, parsed_sources
+            )
+        except ValueError as exc:
+            return {**preview, "applied": False, "error": str(exc)}
+        return {
+            **preview,
+            "applied": True,
+            "transactions_reassigned": reassigned,
+        }
 
     return preview

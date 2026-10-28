@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.payee import Payee, PayeeMapping
+from app.models.invoice_schedule import InvoiceSchedule
 from app.models.transaction import Transaction
 from app.models.account import Account
 from app.models.user import User
@@ -523,6 +524,38 @@ async def test_merge_payees_source_not_found(session: AsyncSession, test_user, t
     target = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Target"))
     with pytest.raises(ValueError, match="Source payee"):
         await merge_payees(session, test_workspace.id, target.id, [uuid.uuid4()])
+
+
+@pytest.mark.asyncio
+async def test_merge_payees_refuses_source_with_schedule(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A recurring agreement is not history: the merge must refuse it."""
+    target = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Target"))
+    source = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Source"))
+
+    session.add(
+        InvoiceSchedule(
+            id=uuid.uuid4(),
+            workspace_id=test_workspace.id,
+            user_id=test_user.id,
+            payee_id=source.id,
+            name="Retainer",
+            status="active",
+            origin="local",
+            frequency="monthly",
+            start_date=date.today(),
+            end_type="never",
+            currency="BRL",
+        )
+    )
+    await session.commit()
+
+    with pytest.raises(ValueError, match="payee_has_schedules:1"):
+        await merge_payees(session, test_workspace.id, target.id, [source.id])
+
+    # Nothing was moved and the source is still there.
+    assert await get_payee(session, source.id, test_workspace.id) is not None
 
 
 # ---------------------------------------------------------------------------
