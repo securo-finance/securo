@@ -60,6 +60,7 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     splits: [],
     is_ignored: false,
     ...overrides,
+    reporting_date_override: overrides.reporting_date_override ?? null,
   }
 }
 

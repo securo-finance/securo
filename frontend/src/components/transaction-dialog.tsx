@@ -543,7 +543,8 @@ function TransactionForm({
   const isCreating = !transaction
   const selectedAccount = accounts.find(a => a.id === accountId)
   const isCreditCardSelected = selectedAccount?.type === 'credit_card'
-  const showReportingDateOverride = isSynced && !isCreditCardSelected
+  const showReportingDateOverride =
+    isSynced && selectedAccount != null && !isCreditCardSelected
   const showConversion = currency !== userCurrency && !isSynced
   // Privacy mode hides monetary values across the app, but the edit modal
   // surfaced the raw amount anyway (issue #323). Only existing transactions
