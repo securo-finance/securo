@@ -1420,7 +1420,17 @@
     "confirmDeleteDescription": "Budżet dla „{{name}}” zostanie trwale usunięty. Istniejące transakcje nie zostaną zmienione. Tej operacji nie można cofnąć.",
     "confirmDeleteRecurringDescription": "Cykliczny budżet dla „{{name}}” zostanie trwale usunięty. Ta definicja nie będzie już stosowana w kolejnych miesiącach. Istniejące transakcje nie zostaną zmienione. Tej operacji nie można cofnąć.",
     "repeatEveryMonth": "Powtarzaj co miesiąc",
-    "recurringLabel": "Cykliczny"
+    "recurringLabel": "Cykliczny",
+    "suggest": "Sugeruj z historii",
+    "suggestTitle": "Sugeruj budżety",
+    "suggestDescription": "Proponowane limity na podstawie średnich miesięcznych wydatków z ostatnich {{months}} miesięcy.",
+    "suggestPeriod": "Okres",
+    "suggestMonths": "mies.",
+    "suggestSpent": "Wydatki w okresie: {{amount}}",
+    "suggestCreate": "Utwórz budżety",
+    "suggestCreated": "Utworzono {{count}} budżetów",
+    "suggestEmpty": "Brak historii wydatków w wybranym okresie.",
+    "suggestError": "Nie udało się wczytać sugestii. Spróbuj ponownie za chwilę."
   },
   "goals": {
     "title": "Cele",
@@ -1598,6 +1608,7 @@
     "addCondition": "Dodaj warunek",
     "addGroup": "Dodaj grupę",
     "addGroupHint": "Grupa łączy własne warunki operatorem I lub LUB",
+    "amountSignHint": "Kwoty mają znak: przychody są dodatnie, wydatki ujemne.",
     "group": "Grupa",
     "removeGroup": "Usuń grupę",
     "blankConditionValue": "Każdy warunek wymaga wartości. Pusty warunek pasowałby do wszystkich transakcji.",

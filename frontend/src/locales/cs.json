@@ -1451,7 +1451,17 @@
     "confirmDeleteDescription": "Rozpočet pro „{{name}}“ bude trvale smazán. Stávající transakce to neovlivní. Tuto akci nelze vrátit.",
     "confirmDeleteRecurringDescription": "Opakovaný rozpočet pro „{{name}}“ bude trvale smazán. Tato definice se už nebude vztahovat na další měsíce. Stávající transakce to neovlivní. Tuto akci nelze vrátit.",
     "repeatEveryMonth": "Opakovat každý měsíc",
-    "recurringLabel": "Opakovaný"
+    "recurringLabel": "Opakovaný",
+    "suggest": "Navrhnout z historie",
+    "suggestTitle": "Navrhnout rozpočty",
+    "suggestDescription": "Navržené limity podle vašeho průměrného měsíčního vydání za posledních {{months}} měsíců.",
+    "suggestPeriod": "Období",
+    "suggestMonths": "měsíců",
+    "suggestSpent": "Vydáno za období: {{amount}}",
+    "suggestCreate": "Vytvořit rozpočty",
+    "suggestCreated": "Vytvořeno {{count}} rozpočtů",
+    "suggestEmpty": "Ve vybraném období není historie výdajů.",
+    "suggestError": "Návrhy se nepodařilo načíst. Zkuste to znovu za chvíli."
   },
   "goals": {
     "title": "Cíle",
@@ -1635,6 +1645,7 @@
     "addCondition": "Přidat podmínku",
     "addGroup": "Přidat skupinu",
     "addGroupHint": "Skupina spojuje své podmínky pomocí A nebo NEBO",
+    "amountSignHint": "Částky mají znaménko: příjmy jsou kladné, výdaje záporné.",
     "group": "Skupina",
     "removeGroup": "Odebrat skupinu",
     "blankConditionValue": "Každá podmínka potřebuje hodnotu. Prázdná by odpovídala každé transakci.",

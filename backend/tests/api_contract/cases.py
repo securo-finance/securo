@@ -66,6 +66,10 @@ BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
     ("POST", "/api/budgets"): lambda w: {
         "category_id": w["second_category_id"], "amount": 300, "month": "2026-05-01",
     },
+    ("POST", "/api/budgets/batch"): lambda w: {
+        "month": "2026-05-01",
+        "items": [{"category_id": w["second_category_id"], "amount": 300}],
+    },
     ("POST", "/api/payees/merge"): lambda w: {
         "source_ids": [w["second_payee_id"]], "target_id": w["payee_id"],
     },

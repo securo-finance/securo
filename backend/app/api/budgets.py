@@ -11,7 +11,14 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.budget import BudgetCreate, BudgetRead, BudgetUpdate, BudgetVsActual
+from app.schemas.budget import (
+    BudgetBatchCreate,
+    BudgetCreate,
+    BudgetRead,
+    BudgetSuggestionResponse,
+    BudgetUpdate,
+    BudgetVsActual,
+)
 from app.services import budget_service
 
 router = APIRouter(prefix="/api/budgets", tags=["budgets"])
@@ -36,6 +43,34 @@ async def create_budget(
         return await budget_service.create_budget(session, ctx.workspace.id, ctx.user_id, data)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post(
+    "/batch", response_model=list[BudgetRead], status_code=status.HTTP_201_CREATED
+)
+async def create_budgets_batch(
+    data: BudgetBatchCreate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        return await budget_service.create_budgets_batch(
+            session, ctx.workspace.id, ctx.user_id, data
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/suggestions", response_model=BudgetSuggestionResponse)
+async def budget_suggestions(
+    month: Optional[date] = Query(None),
+    months: int = Query(3, ge=1, le=24),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    return await budget_service.get_budget_suggestions(
+        session, ctx.workspace.id, ctx.user_id, month, months
+    )
 
 
 @router.patch("/{budget_id}", response_model=BudgetRead)

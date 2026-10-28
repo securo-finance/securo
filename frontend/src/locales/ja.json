@@ -1367,7 +1367,17 @@
     "confirmDeleteDescription": "「{{name}}」の予算を完全に削除します。既存の取引には影響しません。この操作は取り消せません。",
     "confirmDeleteRecurringDescription": "「{{name}}」の定期的な予算を完全に削除します。この定義は以降の月には適用されなくなります。既存の取引には影響しません。この操作は取り消せません。",
     "repeatEveryMonth": "毎月繰り返す",
-    "recurringLabel": "定期的"
+    "recurringLabel": "定期的",
+    "suggest": "履歴から提案",
+    "suggestTitle": "予算を提案",
+    "suggestDescription": "過去{{months}}ヶ月の平均月次支出に基づく、提案される上限額です。",
+    "suggestPeriod": "期間",
+    "suggestMonths": "ヶ月",
+    "suggestSpent": "期間内の支出: {{amount}}",
+    "suggestCreate": "予算を作成",
+    "suggestCreated": "{{count}}件の予算を作成しました",
+    "suggestEmpty": "選択した期間に支出の履歴がありません。",
+    "suggestError": "候補を読み込めませんでした。しばらくしてからもう一度お試しください。"
   },
   "goals": {
     "title": "目標",
@@ -1526,6 +1536,7 @@
     "addCondition": "条件を追加",
     "addGroup": "グループを追加",
     "addGroupHint": "グループは内部の条件をANDまたはORで結合します",
+    "amountSignHint": "金額には符号があります。収入は正、支出は負です。",
     "group": "グループ",
     "removeGroup": "グループを削除",
     "blankConditionValue": "すべての条件に値が必要です。空欄のままだとすべての取引に一致してしまいます。",

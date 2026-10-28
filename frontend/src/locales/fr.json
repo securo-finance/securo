@@ -1371,7 +1371,17 @@
     "confirmDeleteDescription": "Le budget pour « {{name}} » sera définitivement supprimé. Les transactions existantes ne sont pas affectées. Cette action est irréversible.",
     "confirmDeleteRecurringDescription": "Le budget récurrent pour « {{name}} » sera définitivement supprimé. Cette définition ne s'appliquera plus aux mois suivants. Les transactions existantes ne sont pas affectées. Cette action est irréversible.",
     "repeatEveryMonth": "Répéter chaque mois",
-    "recurringLabel": "Récurrent"
+    "recurringLabel": "Récurrent",
+    "suggest": "Suggérer depuis l'historique",
+    "suggestTitle": "Suggérer des budgets",
+    "suggestDescription": "Limites proposées sur la base de vos dépenses moyennes mensuelles des {{months}} derniers mois.",
+    "suggestPeriod": "Période",
+    "suggestMonths": "mois",
+    "suggestSpent": "Dépensé {{amount}} sur la période",
+    "suggestCreate": "Créer les budgets",
+    "suggestCreated": "{{count}} budgets créés",
+    "suggestEmpty": "Aucun historique de dépenses sur la période sélectionnée pour suggérer.",
+    "suggestError": "Impossible de charger les suggestions. Réessayez dans un instant."
   },
   "goals": {
     "title": "Objectifs",
@@ -1531,6 +1541,7 @@
     "addCondition": "Ajouter une condition",
     "addGroup": "Ajouter un groupe",
     "addGroupHint": "Un groupe combine ses propres conditions avec ET ou OU",
+    "amountSignHint": "Les montants sont signés : les revenus sont positifs, les dépenses négatives.",
     "group": "Groupe",
     "removeGroup": "Supprimer le groupe",
     "blankConditionValue": "Chaque condition nécessite une valeur. Une condition vide correspondrait à toutes les transactions.",

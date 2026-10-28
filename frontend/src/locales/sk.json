@@ -1435,7 +1435,17 @@
     "confirmDeleteDescription": "Rozpočet pre „{{name}}“ bude natrvalo vymazaný. Existujúce transakcie to neovplyvní. Túto akciu nie je možné vrátiť späť.",
     "confirmDeleteRecurringDescription": "Opakovaný rozpočet pre „{{name}}“ bude natrvalo vymazaný. Táto definícia sa už nebude vzťahovať na ďalšie mesiace. Existujúce transakcie to neovplyvní. Túto akciu nie je možné vrátiť späť.",
     "repeatEveryMonth": "Opakovať každý mesiac",
-    "recurringLabel": "Opakovaný"
+    "recurringLabel": "Opakovaný",
+    "suggest": "Navrhnúť z histórie",
+    "suggestTitle": "Navrhnúť rozpočty",
+    "suggestDescription": "Navrhnuté limity na základe vášho priemerného mesačného výdavku za posledné {{months}} mesiace.",
+    "suggestPeriod": "Obdobie",
+    "suggestMonths": "mesiacov",
+    "suggestSpent": "Vynaložené za obdobie: {{amount}}",
+    "suggestCreate": "Vytvoriť rozpočty",
+    "suggestCreated": "Vytvorené {{count}} rozpočtov",
+    "suggestEmpty": "Vo vybranom období nie je história výdavkov.",
+    "suggestError": "Návrhy sa nepodarilo načítať. Skúste to znova o chvíľu."
   },
   "goals": {
     "title": "Ciele",
@@ -1619,6 +1629,7 @@
     "addCondition": "Pridať podmienku",
     "addGroup": "Pridať skupinu",
     "addGroupHint": "Skupina spája svoje podmienky pomocou A alebo ALEBO",
+    "amountSignHint": "Sumy majú znamienko: príjmy sú kladné, výdaje záporné.",
     "group": "Skupina",
     "removeGroup": "Odstrániť skupinu",
     "blankConditionValue": "Každá podmienka potrebuje hodnotu. Prázdna by zodpovedala každej transakcii.",
