@@ -55,6 +55,7 @@ async def _make_card(
             date=app_today().replace(day=1),
             type="debit",
             source="opening_balance",
+            currency=currency,
         )
     )
     await session.commit()

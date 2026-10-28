@@ -25,6 +25,7 @@ from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate, LoanBalanceUpdate
 from app.services._query_filters import (
+    amount_in_account_currency,
     counts_as_pnl,
     counts_in_current_balance,
     counts_on_bill,
@@ -33,6 +34,7 @@ from app.services._query_filters import (
     is_not_future,
     is_not_ignored,
     reporting_date_col,
+    signed_amount_expr,
 )
 from app.services import loan_schedule
 from app.services.credit_card_service import (
@@ -89,17 +91,11 @@ def _balance_subqueries(today: _Date):
     number for the same account: the detail endpoint used to serialize with no
     balance at all, which made available_credit fall back to the full limit.
     """
-    # Subquery: compute current_balance per account from transactions in one pass
-    # Use amount_primary only when tx currency differs from account currency
-    # (converts foreign txs to account's reporting currency)
-    effective_amount = case(
-        (Transaction.currency == Account.currency, Transaction.amount),
-        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-    )
-    signed_amount = case(
-        (Transaction.type == "credit", effective_amount),
-        else_=-effective_amount,
-    )
+    # Subquery: compute current_balance per account from transactions in one pass.
+    # A foreign row counts only once amount_primary was stamped, so the manual
+    # account's current balance does not disagree with its history (#1263).
+    effective_amount = amount_in_account_currency(Account.currency)
+    signed_amount = signed_amount_expr(Account.currency)
 
     balance_sq = (
         select(
@@ -714,14 +710,11 @@ async def sync_opening_balance_for_connected_account(
     is_cc = account.type == "credit_card"
     target = -account.balance if is_cc else account.balance
 
-    effective_amount = case(
-        (Transaction.currency == account.currency, Transaction.amount),
-        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-    )
-    signed_amount = case(
-        (Transaction.type == "credit", effective_amount),
-        else_=-effective_amount,
-    )
+    # Only count a cross-currency row once it has a primary-currency value.
+    # The provider balance is the target, so an unconverted foreign row must
+    # not be treated as 1:1 and inflate the synthetic opening balance (issue
+    # #353). This mirrors signed_amount_expr.
+    signed_amount = signed_amount_expr(account.currency)
 
     sum_result = await session.execute(
         select(func.coalesce(func.sum(signed_amount), 0)).where(
@@ -926,16 +919,12 @@ async def get_account_summary(
     if account.connection_id:
         current_balance = float(account.balance)
     else:
-        # Current balance = SUM(credit amounts) - SUM(debit amounts)
+        # Current balance = SUM(credit amounts) - SUM(debit amounts). Unconverted
+        # foreign rows stay out so this matches the history chart (#1263).
         balance_result = await session.execute(
             select(
                 func.coalesce(
-                    func.sum(
-                        case(
-                            (Transaction.type == "credit", effective_amount),
-                            else_=-effective_amount,
-                        )
-                    ),
+                    func.sum(signed_amount_expr(account.currency)),
                     0,
                 )
             ).where(
@@ -1280,11 +1269,9 @@ async def get_period_opening_balance(
     from the same number (#1202).
     """
     today = app_today()
-    # Use amount_primary only when tx currency differs from account currency
-    effective_amount = case(
-        (Transaction.currency == account.currency, Transaction.amount),
-        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-    )
+    # A foreign row counts only once amount_primary was stamped, so the seed of
+    # the running-balance walk agrees with the rows the walk applies (#1263).
+    signed_amount = signed_amount_expr(account.currency)
     ob_base_filters = [
         Transaction.account_id == account.id,
         Transaction.is_ignored == False,
@@ -1309,20 +1296,12 @@ async def get_period_opening_balance(
             Transaction.date <= today,
         ]
         posted_result = await session.execute(
-            select(func.coalesce(func.sum(
-                case(
-                    (Transaction.type == "credit", effective_amount),
-                    else_=-effective_amount,
-                )
-            ), 0)).where(*period_filters, Transaction.status == "posted")
+            select(func.coalesce(func.sum(signed_amount), 0)).where(
+                *period_filters, Transaction.status == "posted",
+            )
         )
         pending_result = await session.execute(
-            select(func.coalesce(func.sum(
-                case(
-                    (Transaction.type == "credit", effective_amount),
-                    else_=-effective_amount,
-                )
-            ), 0)).where(
+            select(func.coalesce(func.sum(signed_amount), 0)).where(
                 *period_filters,
                 Transaction.status == "pending",
                 is_inside_provider_snapshot(),
@@ -1333,12 +1312,7 @@ async def get_period_opening_balance(
 
         if date_from > today:
             before_window_result = await session.execute(
-                select(func.coalesce(func.sum(
-                    case(
-                        (Transaction.type == "credit", effective_amount),
-                        else_=-effective_amount,
-                    )
-                ), 0)).where(
+                select(func.coalesce(func.sum(signed_amount), 0)).where(
                     *ob_base_filters,
                     Transaction.date > today,
                     Transaction.date < date_from,
@@ -1349,31 +1323,13 @@ async def get_period_opening_balance(
         return opening_balance
 
     manual_result = await session.execute(
-        select(func.coalesce(func.sum(
-            case(
-                (Transaction.type == "credit", effective_amount),
-                else_=-effective_amount,
-            )
-        ), 0)).where(
+        select(func.coalesce(func.sum(signed_amount), 0)).where(
             *ob_base_filters,
             Transaction.date < date_from,
             Transaction.status.in_(("posted", "pending")),
         )
     )
     return float(manual_result.scalar() or 0)
-
-
-def _signed_amount_expr(account_currency: str):
-    """credit → +amount, debit → −amount.
-    Uses amount_primary only when tx currency differs from account currency."""
-    effective = case(
-        (Transaction.currency == account_currency, Transaction.amount),
-        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-    )
-    return case(
-        (Transaction.type == "credit", effective),
-        else_=-effective,
-    )
 
 
 async def _account_balance_at(
@@ -1383,7 +1339,7 @@ async def _account_balance_at(
     """Get balance for a single account at a specific date.
     Excludes ignored transactions from the balance calculation."""
     result = await session.execute(
-        select(func.coalesce(func.sum(_signed_amount_expr(account_currency)), 0))
+        select(func.coalesce(func.sum(signed_amount_expr(account_currency)), 0))
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.account_id == account_id,
@@ -1414,7 +1370,7 @@ async def _account_daily_balance_series(
     result = await session.execute(
         select(
             Transaction.date,
-            func.sum(_signed_amount_expr(account_currency)),
+            func.sum(signed_amount_expr(account_currency)),
         )
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
@@ -1478,7 +1434,7 @@ def _running_balance_delta(account_currency: str):
     nothing, as in `get_period_opening_balance`. Status and date are not
     looked at: the walk is a projection, so pending and future-dated rows count.
     """
-    return case((is_not_ignored(), _signed_amount_expr(account_currency)), else_=0)
+    return case((is_not_ignored(), signed_amount_expr(account_currency)), else_=0)
 
 
 def _running_balance_delta_primary(primary_currency: str):

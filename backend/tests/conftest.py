@@ -504,6 +504,7 @@ async def test_transactions(
             date=dt,
             type=typ,
             source="manual",
+            currency=test_account.currency,
             created_at=datetime.now(timezone.utc),
         )
         session.add(txn)

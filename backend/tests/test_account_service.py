@@ -24,6 +24,7 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate
 from app.services.account_service import (
+    _account_balance_at,
     _simplefin_to_internal_balance,
     create_account,
     close_account,
@@ -32,6 +33,7 @@ from app.services.account_service import (
     get_account_balance_history,
     get_account_summary,
     get_accounts,
+    get_period_opening_balance,
     reopen_account,
     serialize_account,
     sync_opening_balance_for_connected_account,
@@ -71,6 +73,7 @@ async def _add_txn(
     amount: float, txn_type: str, txn_date: date,
     source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
     status: str = "posted", category_id: uuid.UUID | None = None,
+    currency: str = "BRL",
 ) -> Transaction:
     from datetime import datetime, timezone
     txn = Transaction(
@@ -83,7 +86,7 @@ async def _add_txn(
         type=txn_type,
         source=source,
         status=status,
-        currency="BRL",
+        currency=currency,
         transfer_pair_id=transfer_pair_id,
         category_id=category_id,
         created_at=datetime.now(timezone.utc),
@@ -1247,6 +1250,100 @@ async def test_sync_opening_balance_ignores_future_and_ignored_rows(
 
     assert opening.type == "credit"
     assert opening.amount == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_sync_opening_balance_ignores_unconverted_foreign_rows(
+    session, test_user, test_workspace, test_connection
+):
+    """A foreign row with no amount_primary must not be counted 1:1."""
+    account = await _make_account(
+        session, test_user.id, "Wise BRL", balance="1.02",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=1))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today,
+        currency="CLP",
+    )
+
+    await sync_opening_balance_for_connected_account(session, account)
+    from sqlalchemy import select
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )
+    opening = result.scalar_one()
+
+    assert opening.type == "debit"
+    assert opening.amount == Decimal("98.98")
+
+
+@pytest.mark.asyncio
+async def test_account_balance_ignores_unconverted_foreign_rows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Net worth history must not read 700,000 CLP as 700,000 BRL."""
+    account = await _make_account(session, test_user.id, "Wise BRL History", currency="BRL")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=1))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today,
+        currency="CLP",
+    )
+
+    balance = await _account_balance_at(session, account.id, today, "BRL")
+    assert balance == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_manual_account_reports_the_balance_its_history_ends_on(
+    session: AsyncSession, test_user, test_workspace
+):
+    """An unconverted foreign row stays out of the balance and the history (#1263)."""
+    account = await _make_account(session, test_user.id, "Manual BRL", currency="BRL")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=2))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today - timedelta(days=1),
+        currency="CLP",
+    )
+
+    accounts = await get_accounts(session, test_workspace.id)
+    listed = next(a for a in accounts if a["id"] == account.id)
+    assert listed["current_balance"] == pytest.approx(100.0)
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    assert summary["current_balance"] == pytest.approx(100.0)
+
+    history = await get_account_balance_history(
+        session, account.id, test_workspace.id,
+        date_from=today - timedelta(days=3), date_to=today,
+    )
+    assert history is not None
+    assert history[-1]["balance"] == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_period_opening_balance_ignores_unconverted_foreign_rows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The running-balance seed must agree with the rows the walk applies (#1263)."""
+    account = await _make_account(session, test_user.id, "Manual BRL Opening", currency="BRL")
+    today = date.today()
+    before_window = today - timedelta(days=3)
+    await _add_txn(session, test_user.id, account.id, 50, "credit", before_window)
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", before_window,
+        currency="CLP",
+    )
+
+    opening = await get_period_opening_balance(session, account, today)
+    assert opening == pytest.approx(50.0)
 
 
 # ---------------------------------------------------------------------------

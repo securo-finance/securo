@@ -70,6 +70,32 @@ def counts_in_current_balance(as_of: date):
     )
 
 
+def amount_in_account_currency(account_currency):
+    """SQL expression: a row's amount in its account's currency.
+
+    A row in another currency only has a usable account-currency value once
+    ``amount_primary`` was stamped; an unconverted one contributes zero
+    instead of being read 1:1 (#353, #1263). Falling back to the native amount
+    there is how a 700,000 CLP purchase became 700,000 BRL in the ledger.
+
+    Pass a currency code, or ``Account.currency`` from a query that joins the
+    account, so a correlated aggregate uses each row's own account.
+    """
+    return case(
+        (Transaction.currency == account_currency, Transaction.amount),
+        else_=func.coalesce(Transaction.amount_primary, 0),
+    )
+
+
+def signed_amount_expr(account_currency):
+    """`amount_in_account_currency`, signed: credit → +, debit → −."""
+    amount = amount_in_account_currency(account_currency)
+    return case(
+        (Transaction.type == "credit", amount),
+        else_=-amount,
+    )
+
+
 def reporting_date_col(accounting_mode: str):
     """The date column a transaction should be *bucketed by* in period
     aggregations (dashboard, reports, budgets).

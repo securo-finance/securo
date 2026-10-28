@@ -825,11 +825,11 @@ async def _make_manual_account(session, user_id, name, currency="BRL", acct_type
     return acct
 
 
-async def _add_txn(session, user_id, account_id, amount, txn_type, txn_date, source="manual"):
+async def _add_txn(session, user_id, account_id, amount, txn_type, txn_date, source="manual", currency="BRL"):
     txn = Transaction(
         id=uuid.uuid4(), user_id=user_id, account_id=account_id,
         description=f"Test {txn_type}", amount=Decimal(str(amount)),
-        date=txn_date, type=txn_type, source=source, currency="BRL",
+        date=txn_date, type=txn_type, source=source, currency=currency,
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -1024,6 +1024,39 @@ async def test_net_worth_does_not_merge_a_retyped_shared_card(
     # The card owes 500; the retyped account reads as +500 checking.
     assert dp.breakdowns["liabilities"] == 500.0
     assert dp.breakdowns["accounts"] == 500.0
+
+
+@pytest.mark.asyncio
+async def test_net_worth_connected_account_ignores_unconverted_foreign_activity(
+    session: AsyncSession, test_user, test_workspace: User
+):
+    """Provider balance minus activity after cutoff must not read CLP as BRL."""
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="test",
+        external_id="ext-wise-nw", institution_name="Wise",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
+        name="Wise BRL", type="checking", balance=Decimal("1.02"), currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+
+    await _add_txn(session, test_user.id, account.id, 100, "credit", date.today())
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", date.today(),
+        currency="CLP",
+    )
+
+    cutoff = date.today() - timedelta(days=30)
+    dp = await _net_worth_at(session, test_workspace.id, cutoff, "BRL")
+    assert dp.breakdowns["liabilities"] == pytest.approx(98.98)
+    assert dp.value == pytest.approx(-98.98)
 
 
 @pytest.mark.asyncio
