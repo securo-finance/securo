@@ -2654,7 +2654,7 @@ dev = [
 requires-dist = [
     { name = "aiofiles", specifier = ">=24.0" },
     { name = "aiosqlite", marker = "extra == 'dev'", specifier = ">=0.19.0" },
-    { name = "alembic", specifier = ">=1.13.0" },
+    { name = "alembic", specifier = ">=1.17.1" },
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "celery", extras = ["redis"], specifier = ">=5.3.0" },
     { name = "cryptography", specifier = "==46.0.7" },
