@@ -1268,6 +1268,7 @@
     "deleted": "Konto gelöscht",
     "syncDone": "Synchronisierung abgeschlossen",
     "syncRateLimited": "Tägliches Banklimit erreicht, es wurden keine neuen Daten geladen. Bitte später erneut versuchen.",
+    "syncPartial": "Einige Konten wurden aktualisiert, für die übrigen wurde jedoch das tägliche Banklimit erreicht. Sie werden später erneut versucht.",
     "syncError": "Synchronisierung fehlgeschlagen",
     "connected": "Bank erfolgreich verbunden",
     "connectError": "Verbindung zur Bank fehlgeschlagen",

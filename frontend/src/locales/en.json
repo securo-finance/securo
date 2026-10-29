@@ -1267,6 +1267,7 @@
     "deleted": "Account deleted",
     "syncDone": "Sync completed",
     "syncRateLimited": "Bank daily limit reached, no new data was fetched. Try again later.",
+    "syncPartial": "Some accounts were updated, but the bank's daily limit was reached for the others. They will be retried later.",
     "syncError": "Sync failed",
     "connected": "Bank connected successfully",
     "connectError": "Failed to connect bank",

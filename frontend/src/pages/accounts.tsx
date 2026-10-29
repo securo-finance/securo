@@ -148,6 +148,8 @@ export default function AccountsPage() {
       // without pulling anything: say so instead of a false "Sync completed".
       if (result.sync_outcome === 'rate_limited') {
         toast.warning(t('accounts.syncRateLimited'))
+      } else if (result.sync_outcome === 'partial') {
+        toast.warning(t('accounts.syncPartial'))
       } else {
         toast.success(t('accounts.syncDone'))
       }

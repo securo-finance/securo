@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -39,6 +41,26 @@ from app.providers.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """Seconds to wait from a Retry-After header (delta-seconds or HTTP date)."""
+    if not value:
+        return None
+    value = value.strip()
+    try:
+        seconds = float(value)
+    except ValueError:
+        pass
+    else:
+        return max(seconds, 0.0) if math.isfinite(seconds) else None
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max((when - datetime.now(timezone.utc)).total_seconds(), 0.0)
 
 JWT_ISSUER = "enablebanking.com"
 JWT_AUDIENCE = "api.enablebanking.com"
@@ -325,7 +347,8 @@ class EnableBankingProvider(BankProvider):
             # connection. Surface a distinct type so sync can skip-and-retry
             # instead of erroring the connection.
             raise ProviderRateLimited(
-                f"Enable Banking {method} {path} → 429: {resp.text[:200]}"
+                f"Enable Banking {method} {path} → 429: {resp.text[:200]}",
+                retry_after=_parse_retry_after(resp.headers.get("Retry-After")),
             )
         if resp.status_code >= 400:
             raise httpx.HTTPStatusError(
@@ -571,6 +594,11 @@ class EnableBankingProvider(BankProvider):
         session_id = self._session_id(credentials)
         if not session_id:
             raise SessionExpiredError("Enable Banking session_id missing")
+        # uids the bank throttled this run (429), and the longest Retry-After
+        # it sent for them: the sync layer uses both to report the run as
+        # partial, keep its checkpoint and back off before the next attempt.
+        self.rate_limited_account_ids: set[str] = set()
+        self.rate_limit_retry_after: Optional[float] = None
         data = await self._request("GET", f"/sessions/{session_id}")
         # The bank can end consent well before `valid_until`; EB still answers
         # 200 here but flags the session, and every account call then fails.
@@ -593,6 +621,11 @@ class EnableBankingProvider(BankProvider):
         for uid in uids:
             try:
                 details = await self._request("GET", f"/accounts/{uid}/details")
+            except ProviderRateLimited as exc:
+                # PSD2 throttling is per-account: skipping this one and keeping
+                # the rest is better than rolling the whole connection back.
+                self._skip_rate_limited(uid, "details", exc)
+                continue
             except httpx.HTTPError as exc:
                 # A *transient* per-account failure. Without details we can't
                 # safely name/type the account, and a bare-uid AccountData would
@@ -603,8 +636,29 @@ class EnableBankingProvider(BankProvider):
                 # here: a dead consent is global, never per-account.
                 logger.warning("Failed to fetch details for account %s: %s", uid, exc)
                 continue
-            result.append(await self._build_account(details, stable_external_ids.get(uid)))
+            try:
+                account = await self._build_account(details, stable_external_ids.get(uid))
+            except ProviderRateLimited as exc:
+                # Balance lookup throttled: without a balance we'd write a fake
+                # 0.00 over the real one, so skip the account for this run.
+                self._skip_rate_limited(uid, "balances", exc)
+                continue
+            result.append(account)
         return result
+
+    def _skip_rate_limited(
+        self, uid: str, resource: str, exc: ProviderRateLimited
+    ) -> None:
+        self.rate_limited_account_ids.add(uid)
+        if exc.retry_after is not None:
+            self.rate_limit_retry_after = max(
+                self.rate_limit_retry_after or 0.0, exc.retry_after
+            )
+        logger.warning(
+            "Enable Banking rate-limited %s for account %s; skipping it this run",
+            resource,
+            uid,
+        )
 
     async def get_transactions(
         self,

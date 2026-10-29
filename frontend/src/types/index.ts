@@ -158,9 +158,11 @@ export interface ConnectionSettings {
 // Response of POST /connections/{id}/sync: the connection plus what the run
 // actually did. "rate_limited" means the provider throttled the request
 // (429): nothing was pulled and last_sync_at was left untouched (issue #736).
+// "partial" means some accounts were throttled and skipped while the others
+// were imported.
 export interface SyncResult extends BankConnection {
   merged_count: number
-  sync_outcome: 'refreshed' | 'rate_limited'
+  sync_outcome: 'refreshed' | 'partial' | 'rate_limited'
 }
 
 export type AccountType = 'checking' | 'savings' | 'credit_card' | 'loan' | 'investment' | 'wallet'

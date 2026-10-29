@@ -45,6 +45,7 @@ async def test_sync_one_forwards_provider_refresh(session, test_user, test_works
         "app.tasks.sync_tasks.connection_service.sync_connection",
         new_callable=AsyncMock,
     ) as sync_connection:
+        sync_connection.return_value = (conn, 0, "refreshed")
         await _sync_one(
             session_maker,
             conn.id,

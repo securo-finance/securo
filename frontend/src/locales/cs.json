@@ -1347,6 +1347,7 @@
     "deleted": "Účet smazán",
     "syncDone": "Synchronizace dokončena",
     "syncRateLimited": "Dosáhnuto denního limitu banky, žádná nová data nebyla stažena. Zkuste to prosím později.",
+    "syncPartial": "Některé účty byly aktualizovány, ale u ostatních byl dosažen denní limit banky. Zkusíme je znovu později.",
     "syncError": "Synchronizace selhala",
     "connected": "Banka úspěšně propojena",
     "connectError": "Banku se nepodařilo propojit",

@@ -1271,6 +1271,7 @@
     "deleted": "Conta eliminada",
     "syncDone": "Sincronização concluída",
     "syncRateLimited": "Limite diário do banco atingido, nenhum dado novo foi obtido. Tente novamente mais tarde.",
+    "syncPartial": "Algumas contas foram atualizadas, mas o limite diário do banco foi atingido para as restantes. Serão tentadas novamente mais tarde.",
     "syncError": "Erro ao sincronizar",
     "connected": "Banco conectado com sucesso",
     "connectError": "Erro ao conectar banco",

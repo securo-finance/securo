@@ -1267,6 +1267,7 @@
     "deleted": "Számla törölve",
     "syncDone": "Szinkronizálás kész",
     "syncRateLimited": "Elérted a bank napi korlátját, nem érkeztek új adatok. Próbáld újra később.",
+    "syncPartial": "Néhány számla frissült, de a többinél elérted a bank napi korlátját. Ezeket később újra megpróbáljuk.",
     "syncError": "Sikertelen szinkronizálás",
     "connected": "Bank sikeresen csatlakoztatva",
     "connectError": "Nem sikerült csatlakoztatni a bankot",

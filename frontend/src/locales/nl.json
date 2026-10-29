@@ -1268,6 +1268,7 @@
     "deleted": "Account verwijderd",
     "syncDone": "Synchronisatie voltooid",
     "syncRateLimited": "Dagelijks banklimiet bereikt, er is geen nieuwe data opgehaald. Probeer het later opnieuw.",
+    "syncPartial": "Sommige rekeningen zijn bijgewerkt, maar voor de andere is het dagelijkse banklimiet bereikt. Die worden later opnieuw geprobeerd.",
     "syncError": "Synchronisatie mislukt",
     "connected": "Bank succesvol verbonden",
     "connectError": "Kan geen verbinding maken met de bank",
