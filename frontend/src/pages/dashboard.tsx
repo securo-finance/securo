@@ -36,6 +36,7 @@ import {
   XAxis,
   YAxis,
   Tooltip as RechartsTooltip,
+  DefaultTooltipContent,
   ResponsiveContainer,
 } from 'recharts'
 import { CheckCircle2, CalendarIcon, ChevronDown, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle } from 'lucide-react'
@@ -1232,10 +1233,9 @@ export default function DashboardPage() {
                   className="cursor-pointer"
                   onMouseMove={(state) => {
                     const idx = state?.activeTooltipIndex
-                    if (typeof idx === 'number') {
-                      const point = cumulativeData[idx]
-                      if (point) setHoveredDay(point.day)
-                    }
+                    const index = idx == null ? NaN : Number(idx)
+                    const point = Number.isInteger(index) ? cumulativeData[index] : undefined
+                    setHoveredDay(point?.day ?? null)
                   }}
                   onMouseLeave={() => setHoveredDay(null)}
                   onClick={(_state) => {
@@ -1283,6 +1283,19 @@ export default function DashboardPage() {
                     ]}
                   />
                   <RechartsTooltip
+                    content={({ payload, ...props }) => (
+                      <DefaultTooltipContent
+                        {...props}
+                        payload={payload.map((entry) => entry.dataKey === 'current' && typeof entry.value === 'number'
+                          ? {
+                            ...entry,
+                            color: entry.value === 0
+                              ? 'var(--muted-foreground)'
+                              : entry.value > 0 ? '#10B981' : '#F43F5E',
+                          }
+                          : entry)}
+                      />
+                    )}
                     formatter={(value, name) => {
                       const fmt = (v: number) => (privacyMode ? MASK : formatCurrency(v, userCurrency, locale))
                       if (name === 'band') {
@@ -1350,34 +1363,32 @@ export default function DashboardPage() {
             const footerDay = hoveredDay ?? lastDay
             const point = cumulativeData.find(d => d.day === footerDay)
             const comparisonValue = comparisonMonths.length === 1 ? point?.comparison : point?.median
-            if (!point || comparisonValue == null || point.current == null) return null
-            const footerDelta = point.current - comparisonValue
-            if (comparisonMonths.length === 1) {
-              return (
-                <div className="px-5 pb-4 pt-0 shrink-0">
-                  <p className="text-xs text-muted-foreground">
-                    {t('dashboard.balanceFlowVsMonth', {
-                      day: footerDay,
-                      month: monthLabel(comparisonMonths[0], uiLocale),
-                      delta: mask(`${footerDelta >= 0 ? '+' : ''}${formatCurrency(footerDelta, userCurrency, locale)}`),
-                    })}
-                  </p>
-                </div>
-              )
-            }
+            const rawDelta = point?.current != null && comparisonValue != null
+              ? point.current - comparisonValue
+              : null
+            const formattedDelta = rawDelta == null ? '' : formatCurrency(Math.abs(rawDelta), userCurrency, locale)
+            const footerDelta = formattedDelta === formatCurrency(0, userCurrency, locale) ? 0 : rawDelta
             return (
-              <div className="px-5 pb-4 pt-0 shrink-0">
-                <p className="text-xs text-muted-foreground">
-                  {t('dashboard.balanceFlowVsMedian', {
-                    day: footerDay,
-                    median: mask(formatCurrency(point.median, userCurrency, locale)),
-                    delta: mask(`${footerDelta >= 0 ? '+' : ''}${formatCurrency(footerDelta, userCurrency, locale)}`),
-                  })}
-                  {' '}
-                  <span className={footerDelta >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
-                    {footerDelta >= 0 ? '\u25B2' : '\u25BC'}
-                  </span>
-                </p>
+              <div className="h-20 overflow-y-auto px-5 pb-4 pt-0 shrink-0">
+                {point && footerDelta != null && (
+                  <p className="text-xs text-muted-foreground">
+                    {t(comparisonMonths.length === 1 ? 'dashboard.balanceFlowVsMonth' : 'dashboard.balanceFlowVsMedian', {
+                      context: footerDelta > 0 ? 'above' : footerDelta < 0 ? 'below' : 'equal',
+                      day: point.day,
+                      month: monthLabel(comparisonMonths[0], uiLocale),
+                      median: mask(formatCurrency(comparisonValue, userCurrency, locale)),
+                      delta: mask(formattedDelta),
+                    })}
+                    {footerDelta !== 0 && (
+                      <>
+                        {' '}
+                        <span className={footerDelta > 0 ? 'text-emerald-600' : 'text-rose-500'} aria-hidden="true">
+                          {footerDelta > 0 ? '\u25B2' : '\u25BC'}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
             )
           })()}
