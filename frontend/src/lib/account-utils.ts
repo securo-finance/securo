@@ -23,6 +23,14 @@ export function sumAccountBalances(
 }
 
 /**
+ * The accounts the sidebar lists. Loans and financing are long-term debt, not
+ * money to move day to day: they live on the Accounts page and in net worth.
+ */
+export function sidebarAccounts<T extends Pick<Account, 'type'>>(accounts: readonly T[]): T[] {
+  return accounts.filter((account) => account.type !== 'loan')
+}
+
+/**
  * The number a sidebar account row shows.
  *
  * Every card on one shared credit line repeats the contract-wide balance, so

@@ -15,31 +15,38 @@ unchanged for Securo's own UI.
 
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import select
+from pydantic import ValidationError
+from sqlalchemy import String, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.budget import Budget
 from app.models.category import Category
+from app.models.category_group import CategoryGroup
+from app.models.goal import Goal
 from app.models.group import Group, GroupMember
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
-from app.schemas.budget import BudgetCreate
+from app.schemas.budget import BudgetCreate, BudgetUpdate
 from app.schemas.category import CategoryCreate
-from app.schemas.goal import GoalCreate
+from app.schemas.category_group import CategoryGroupCreate
+from app.schemas.goal import GoalCreate, GoalUpdate
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
     WeekendAdjustment,
 )
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
-from app.schemas.transaction import TransactionCreate
+from app.schemas.transaction import TransactionCreate, TransactionUpdate
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import (
     budget_service,
+    category_group_service,
     category_service,
     goal_service,
     recurring_transaction_service,
@@ -49,12 +56,16 @@ from app.services import (
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import (
+    like_literal,
     num,
     parse_date,
     parse_uuid,
     parse_uuid_list,
     resolve_workspace_id,
 )
+
+# The notes column's own length, so a direct call cannot store more than the schema allows.
+NOTES_MAX_LENGTH: int = cast(int, cast(String, Transaction.__table__.c.notes.type).length)
 
 
 # Repeated in EVERY propose_* tool description. The LLM reads these when
@@ -179,6 +190,109 @@ async def propose_categorize(
 
 
 @tool(
+    name="propose_update_transaction_notes",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing one transaction's notes and tags. Tags "
+        "are hashtags inside the notes (e.g. #trip). `notes` replaces the "
+        "free text; `add_tags` and `remove_tags` are applied after it, and a "
+        "tag already present is not added twice. Only the notes change: "
+        "amount, date, account and category are never touched. Returns the "
+        "current notes alongside the result so the user can compare."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "transaction_id": {"type": "string", "format": "uuid"},
+            "notes": {
+                "type": "string",
+                "maxLength": NOTES_MAX_LENGTH,
+                "description": "Replaces the whole notes text; an empty string clears it",
+            },
+            "add_tags": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "Tags to add, with or without the leading #",
+            },
+            "remove_tags": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "Tags to remove, with or without the leading #",
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["transaction_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "transactions"],
+)
+async def propose_update_transaction_notes(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    transaction_id: str,
+    notes: str | None = None,
+    add_tags: list[str] | None = None,
+    remove_tags: list[str] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    if notes is None and not add_tags and not remove_tags:
+        return {"error": "no changes provided"}
+    ws_id = await resolve_workspace_id(session, ctx)
+    tx = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.id == parse_uuid(transaction_id),
+                Transaction.workspace_id == ws_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if tx is None:
+        return {"error": "transaction not found"}
+
+    new_notes = tx.notes if notes is None else (notes.strip() or None)
+    if remove_tags:
+        new_notes = transaction_service.notes_with_tags_removed(new_notes, remove_tags)
+    if add_tags:
+        new_notes = transaction_service.notes_with_tags_added(new_notes, add_tags)
+    if new_notes is not None and len(new_notes) > NOTES_MAX_LENGTH:
+        return {"error": f"notes must be {NOTES_MAX_LENGTH} characters or fewer"}
+    if new_notes == tx.notes:
+        return {"error": "the notes already read like that; nothing to change"}
+
+    preview = {
+        "kind": "update_transaction_notes",
+        "target": {
+            "id": str(tx.id),
+            "description": tx.description,
+            "date": tx.date.isoformat() if tx.date else None,
+            "amount": num(tx.amount),
+            "currency": tx.currency,
+            "notes": tx.notes,
+        },
+        "changes": {"notes": new_notes},
+        # Notes follow a transfer to its other leg, the same as an edit in
+        # the UI, so the preview says so instead of surprising the user.
+        "transfer_pair_id": str(tx.transfer_pair_id) if tx.transfer_pair_id else None,
+        "apply_endpoint": f"PATCH /api/transactions/{tx.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        try:
+            updated = await transaction_service.update_transaction(
+                session, tx.id, ws_id, ctx.user_id, TransactionUpdate(notes=new_notes)
+            )
+        except ValueError as exc:
+            return {**preview, "error": str(exc)}
+        if updated is None:
+            return {**preview, "error": "transaction not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
+
+    return preview
+
+
+@tool(
     name="propose_create_category",
     description=_PROPOSAL_PREFACE
     + (
@@ -215,7 +329,7 @@ async def propose_create_category(
         await session.execute(
             select(Category.id, Category.name).where(
                 Category.workspace_id == ws_id,
-                Category.name.ilike(name.strip()),
+                Category.name.ilike(like_literal(name.strip()), escape="\\"),
             )
         )
     ).first()
@@ -241,6 +355,76 @@ async def propose_create_category(
             CategoryCreate(
                 name=preview["proposed"]["name"],
                 group_id=parse_uuid(group_id) if group_id else None,
+                icon=preview["proposed"]["icon"],
+                color=preview["proposed"]["color"],
+            ),
+        )
+        return {**preview, "applied": True, "id": str(created.id)}
+
+    return preview
+
+
+@tool(
+    name="propose_create_category_group",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Preview the creation of a new category group (e.g. 'Pets', to hold "
+        "'Food', 'Vet' and 'Insurance'). Returns the proposed shape and any "
+        "name collision detected. Once applied, pass the returned id as "
+        "`group_id` to propose_create_category."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 100},
+            "icon": {"type": "string"},
+            "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "categories"],
+)
+async def propose_create_category_group(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    name: str,
+    icon: str | None = None,
+    color: str | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    existing = (
+        await session.execute(
+            select(CategoryGroup.id, CategoryGroup.name).where(
+                CategoryGroup.workspace_id == ws_id,
+                CategoryGroup.name.ilike(like_literal(name.strip()), escape="\\"),
+            )
+        )
+    ).first()
+    preview = {
+        "kind": "create_category_group",
+        "proposed": {
+            "name": name.strip(),
+            "icon": icon or "folder",
+            "color": color or "#6B7280",
+        },
+        "name_collision": {"id": str(existing.id), "name": existing.name} if existing else None,
+        "apply_endpoint": "POST /api/category-groups",
+    }
+
+    if _can_apply(ctx, apply):
+        if existing:
+            return {**preview, "error": f"category group named {existing.name!r} already exists"}
+        created = await category_group_service.create_group(
+            session,
+            ws_id,
+            ctx.user_id,
+            CategoryGroupCreate(
+                name=preview["proposed"]["name"],
                 icon=preview["proposed"]["icon"],
                 color=preview["proposed"]["color"],
             ),
@@ -329,6 +513,144 @@ async def propose_create_budget(
         return {**preview, "applied": True, "id": str(created.id)}
 
     return preview
+
+
+@tool(
+    name="propose_update_budget",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for changing the amount of an existing budget "
+        "(e.g. 'raise my groceries budget to R$1,500'). Call list_budgets "
+        "first to find the budget_id. For a recurring budget the new amount "
+        "covers every month that budget applies to, the same as editing it "
+        "on the budgets page. Returns the current amount alongside the new "
+        "one so the user can compare."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "budget_id": {"type": "string", "format": "uuid"},
+            "amount": {"type": "number", "exclusiveMinimum": 0},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["budget_id", "amount"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "budgets"],
+)
+async def propose_update_budget(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    budget_id: str,
+    amount: float,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    row = await _budget_with_category_name(session, ws_id, budget_id)
+    if row is None:
+        return {"error": "budget not found"}
+    budget, category_name = row
+
+    if amount <= 0:
+        return {"error": "amount must be greater than zero"}
+    new_amount = Decimal(str(amount))
+    if new_amount == budget.amount:
+        return {"error": "the budget already has that amount; nothing to change"}
+
+    preview = {
+        "kind": "update_budget",
+        "target": _budget_target(budget, category_name),
+        "changes": {"amount": float(new_amount)},
+        "apply_endpoint": f"PATCH /api/budgets/{budget.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        updated = await budget_service.update_budget(
+            session, budget.id, ws_id, BudgetUpdate(amount=new_amount)
+        )
+        if updated is None:
+            return {**preview, "error": "budget not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
+
+    return preview
+
+
+@tool(
+    name="propose_delete_budget",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for deleting a budget (e.g. 'drop the budget for "
+        "streaming'). Call list_budgets first to find the budget_id. "
+        "Deleting a recurring budget removes it from every month it covers; "
+        "the category and its transactions are untouched."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "budget_id": {"type": "string", "format": "uuid"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["budget_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "budgets"],
+)
+async def propose_delete_budget(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    budget_id: str,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    row = await _budget_with_category_name(session, ws_id, budget_id)
+    if row is None:
+        return {"error": "budget not found"}
+    budget, category_name = row
+
+    preview = {
+        "kind": "delete_budget",
+        "target": _budget_target(budget, category_name),
+        "apply_endpoint": f"DELETE /api/budgets/{budget.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        ok = await budget_service.delete_budget(session, budget.id, ws_id)
+        if not ok:
+            return {**preview, "error": "budget not found"}
+        return {**preview, "applied": True, "deleted": True}
+
+    return preview
+
+
+async def _budget_with_category_name(
+    session: AsyncSession, ws_id: uuid.UUID, budget_id: str
+) -> tuple[Budget, str | None] | None:
+    row = (
+        await session.execute(
+            select(Budget, Category.name)
+            .outerjoin(Category, Category.id == Budget.category_id)
+            .where(Budget.id == parse_uuid(budget_id), Budget.workspace_id == ws_id)
+        )
+    ).first()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
+def _budget_target(budget: Budget, category_name: str | None) -> dict[str, Any]:
+    return {
+        "id": str(budget.id),
+        "category_id": str(budget.category_id),
+        "category_name": category_name,
+        "month": budget.month.isoformat(),
+        "amount": num(budget.amount),
+        "currency": budget.currency,
+        "is_recurring": bool(budget.is_recurring),
+    }
 
 
 @tool(
@@ -1025,6 +1347,145 @@ async def propose_create_goal(
             ),
         )
         return {**preview, "applied": True, "id": str(created.id)}
+
+    return preview
+
+
+_GOAL_STATUSES = ["active", "completed", "paused", "archived"]
+
+
+@tool(
+    name="propose_update_goal",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing an existing goal (e.g. 'I have saved "
+        "R$3,000 for the trip now', 'move the deadline to December', "
+        "'pause my car goal'). Call list_goals first to find the goal_id, "
+        "then pass only the fields that change. `current_amount` is the "
+        "progress of a manual goal; a goal that tracks an account, asset or "
+        "net worth computes its progress itself, so it is refused there. "
+        "`status` pauses, archives, completes or reactivates the goal. "
+        "Returns the current values alongside the changes so the user can "
+        "compare."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "goal_id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "target_amount": {"type": "number", "exclusiveMinimum": 0},
+            "current_amount": {
+                "type": "number",
+                "minimum": 0,
+                "description": "How much is saved so far (manual goals only)",
+            },
+            "target_date": {
+                "type": "string",
+                "format": "date",
+                "description": "New deadline (YYYY-MM-DD); an empty string removes it",
+            },
+            "status": {"type": "string", "enum": _GOAL_STATUSES},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["goal_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "goals"],
+)
+async def propose_update_goal(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    goal_id: str,
+    name: str | None = None,
+    target_amount: float | None = None,
+    current_amount: float | None = None,
+    target_date: str | None = None,
+    status: str | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    goal = (
+        await session.execute(
+            select(Goal).where(Goal.id == parse_uuid(goal_id), Goal.workspace_id == ws_id)
+        )
+    ).scalar_one_or_none()
+    if goal is None:
+        return {"error": "goal not found"}
+
+    requested: dict[str, Any] = {}
+    if name is not None:
+        if not name.strip():
+            return {"error": "name cannot be empty"}
+        requested["name"] = name.strip()
+    if target_amount is not None:
+        if target_amount <= 0:
+            return {"error": "target_amount must be greater than zero"}
+        requested["target_amount"] = Decimal(str(target_amount))
+    if current_amount is not None:
+        if goal.tracking_type != "manual":
+            return {
+                "error": (
+                    f"this goal tracks its {goal.tracking_type.replace('_', ' ')}, "
+                    "so its progress cannot be set by hand"
+                )
+            }
+        if current_amount < 0:
+            return {"error": "current_amount cannot be negative"}
+        requested["current_amount"] = Decimal(str(current_amount))
+    if target_date is not None:
+        try:
+            requested["target_date"] = parse_date(target_date)
+        except ValueError:
+            return {"error": f"invalid target_date {target_date!r}; use YYYY-MM-DD"}
+    if status is not None:
+        requested["status"] = status
+    if not requested:
+        return {"error": "no changes provided"}
+
+    # Only what differs from the goal as stored goes into the proposal.
+    update_data = {k: v for k, v in requested.items() if getattr(goal, k) != v}
+    if not update_data:
+        return {"error": "the goal already reads like that; nothing to change"}
+    try:
+        update = GoalUpdate(**update_data)
+    except ValidationError as exc:
+        return {"error": "; ".join(str(e["msg"]) for e in exc.errors())}
+
+    changes: dict[str, Any] = {}
+    for key, value in update.model_dump(exclude_unset=True).items():
+        if isinstance(value, Decimal):
+            changes[key] = float(value)
+        elif key == "target_date":
+            changes[key] = value.isoformat() if value else None
+        else:
+            changes[key] = value
+
+    preview = {
+        "kind": "update_goal",
+        "target": {
+            "id": str(goal.id),
+            "name": goal.name,
+            "target_amount": num(goal.target_amount),
+            "current_amount": num(goal.current_amount),
+            "currency": goal.currency,
+            "target_date": goal.target_date.isoformat() if goal.target_date else None,
+            "status": goal.status,
+            "tracking_type": goal.tracking_type,
+        },
+        "changes": changes,
+        "apply_endpoint": f"PATCH /api/goals/{goal.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        try:
+            updated = await goal_service.update_goal(session, goal.id, ws_id, ctx.user_id, update)
+        except ValueError as exc:
+            return {**preview, "error": str(exc)}
+        if updated is None:
+            return {**preview, "error": "goal not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
 
     return preview
 

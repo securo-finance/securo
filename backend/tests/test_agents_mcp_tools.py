@@ -420,6 +420,16 @@ async def test_propose_create_category_no_collision(
     assert result["proposed"]["name"] == "UniqueNewCategoryX9Z"
 
 
+async def test_propose_create_category_wildcard_name_is_no_collision(
+    session: AsyncSession, ctx: CallContext, test_categories
+):
+    handler = REGISTRY["propose_create_category"].handler
+    # Unescaped, `%` would match every category and `_` any one character.
+    for name in ("%", "_" * len(test_categories[0].name)):
+        result = await handler(session=session, ctx=ctx, name=name)
+        assert result["name_collision"] is None, name
+
+
 async def test_propose_create_budget(
     session: AsyncSession, ctx: CallContext, test_categories
 ):

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   formatAmountInput,
+  formatCompactCurrency,
   formatCurrency,
   formatSignedAmount,
   parseAmountInput,
@@ -259,5 +260,29 @@ describe('formatAmountInput', () => {
 
   it('falls back to a dot format on a malformed locale', () => {
     expect(formatAmountInput(1.5, 'not a locale')).toBe('1.50')
+  })
+})
+
+describe('formatCompactCurrency', () => {
+  it('keeps a six-figure amount short enough for a chart tick', () => {
+    // The full form is "-R$340,000.00": far past the width an axis tick gets,
+    // which is what clipped the minus sign off a loan's balance chart.
+    const compact = normalize(formatCompactCurrency(-340000, 'BRL', 'en-US'))
+    expect(compact.length).toBeLessThan('-R$340,000.00'.length)
+    expect(compact.startsWith('-')).toBe(true)
+  })
+
+  it('keeps the sign on every magnitude', () => {
+    for (const value of [-1_500_000, -340_000, -1_200, -5]) {
+      expect(normalize(formatCompactCurrency(value, 'USD', 'en-US')).startsWith('-')).toBe(true)
+    }
+  })
+
+  it('renders a null value as the empty-value glyph', () => {
+    expect(formatCompactCurrency(null)).toBe('\u2014')
+  })
+
+  it('falls back to a dollar format on a malformed locale', () => {
+    expect(normalize(formatCompactCurrency(1500, 'USD', 'not a locale'))).toBe('$1.5K')
   })
 })

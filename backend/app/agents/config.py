@@ -36,6 +36,14 @@ class AgentSettings(BaseSettings):
     # mcp-server container publishes port 8765.
     mcp_external_ttl_days: int = 90
 
+    # Browser origins allowed to call the MCP server, comma-separated. The
+    # MCP spec requires servers to validate `Origin` (a DNS-rebinding guard)
+    # and refuse an invalid one with 403. Legitimate callers — the agent
+    # runtime, MCP gateways, desktop clients — send no `Origin` at all, so
+    # the default admits no browser page. Set only for a browser-based MCP
+    # client you deliberately want to allow, e.g. "https://app.example.com".
+    mcp_allowed_origins: str = ""
+
     # Embedding dimension for the knowledge_chunks vector column. Locked at
     # migration time. 1536 covers OpenAI text-embedding-3-small (default) and
     # nomic-embed-text via Matryoshka padding/truncation.

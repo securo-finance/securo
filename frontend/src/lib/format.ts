@@ -175,6 +175,20 @@ function currencyFormatter(currency: string, locale: string): Intl.NumberFormat 
   }
 }
 
+function compactCurrencyFormatter(currency: string, locale: string): Intl.NumberFormat {
+  const options: Intl.NumberFormatOptions = {
+    style: 'currency',
+    currency: currency || 'USD',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }
+  try {
+    return new Intl.NumberFormat(locale, options)
+  } catch {
+    return new Intl.NumberFormat('en-US', { ...options, currency: 'USD' })
+  }
+}
+
 /**
  * Format a numeric value as currency using Intl.NumberFormat.
  *
@@ -193,6 +207,24 @@ export function formatCurrency(
   // residue that summed balances and FX conversions leave behind.
   const factor = 10 ** (formatter.resolvedOptions().maximumFractionDigits ?? 2)
   return formatter.format(Math.round(value * factor) === 0 ? 0 : value)
+}
+
+/**
+ * Format a value as currency in compact notation ("-R$340 mil", "$1.2M").
+ *
+ * Chart axes give a tick a fixed width, and a full amount outgrows it as soon
+ * as the balance reaches six figures: the label then renders past the axis and
+ * the browser clips its leading characters, which costs a negative balance its
+ * minus sign. Compact notation keeps the tick inside its width at any
+ * magnitude, and the tooltip still carries the exact amount.
+ */
+export function formatCompactCurrency(
+  value: number | null | undefined,
+  currency = 'USD',
+  locale = 'en-US',
+): string {
+  if (value == null) return '\u2014'
+  return compactCurrencyFormatter(currency, locale).format(value)
 }
 
 /**

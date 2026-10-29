@@ -110,6 +110,10 @@ PARAM_WORLD_KEYS_BY_OPERATION: dict[tuple[str, str], dict[str, str]] = {
         ("GET", "statement"),
     )
 }
+PARAM_WORLD_KEYS_BY_OPERATION.update({
+    (method, f"/api/accounts/{{account_id}}/{route}"): {"account_id": "loan_account_id"}
+    for method, route in (("GET", "loan-schedule"), ("POST", "loan-balance"))
+})
 
 @dataclass(frozen=True)
 class KnownBug:

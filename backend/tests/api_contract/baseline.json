@@ -32,6 +32,7 @@
   "DELETE /api/invoices/{invoice_id}/deductions/{deduction_id}": 401,
   "DELETE /api/invoices/{invoice_id}/schedule": 401,
   "DELETE /api/invoices/{invoice_id}/share": 401,
+  "DELETE /api/mortgage-payments/{payment_id}": 401,
   "DELETE /api/payees/{payee_id}": 401,
   "DELETE /api/products/{product_id}": 401,
   "DELETE /api/products/{product_id}/prices/{price_id}": 401,
@@ -47,6 +48,7 @@
   "GET /api/accounts/{account_id}/balance-history": 401,
   "GET /api/accounts/{account_id}/bills": 401,
   "GET /api/accounts/{account_id}/running-balance": 401,
+  "GET /api/accounts/{account_id}/loan-schedule": 401,
   "GET /api/accounts/{account_id}/summary": 401,
   "GET /api/admin/accounting-mode": 401,
   "GET /api/admin/date-format": 401,
@@ -138,6 +140,7 @@
   "GET /api/invoices/{invoice_id}/document": 401,
   "GET /api/invoices/{invoice_id}/pdf": 401,
   "GET /api/invoices/{invoice_id}/statement": 401,
+  "GET /api/mortgage-payments/{payment_id}": 401,
   "GET /api/payees": 401,
   "GET /api/payees/{payee_id}": 401,
   "GET /api/payees/{payee_id}/summary": 401,
@@ -224,6 +227,7 @@
   "PATCH /api/workspaces/{workspace_id}/members/{member_user_id}": 401,
   "POST /api/accounts": 401,
   "POST /api/accounts/{account_id}/close": 401,
+  "POST /api/accounts/{account_id}/loan-balance": 401,
   "POST /api/accounts/{account_id}/reopen": 401,
   "POST /api/admin/users": 401,
   "POST /api/agents": 401,
@@ -325,6 +329,7 @@
   "POST /api/workspaces/{workspace_id}/archive": 401,
   "POST /api/workspaces/{workspace_id}/members": 401,
   "PUT /api/agents/{agent_id}/tools": 401,
+  "PUT /api/mortgage-payments/{payment_id}": 401,
   "PUT /api/reconciliation/rules/{node}/order": 401
  },
  "empty": {
@@ -337,6 +342,7 @@
   "PATCH /api/transactions/{transaction_id}/attachments/{attachment_id}": 422,
   "PATCH /api/workspaces/{workspace_id}/members/{member_user_id}": 422,
   "POST /api/accounts": 422,
+  "POST /api/accounts/{account_id}/loan-balance": 422,
   "POST /api/admin/users": 422,
   "POST /api/agents": 422,
   "POST /api/agents/connections": 422,
@@ -395,6 +401,7 @@
   "POST /api/transactions/{transaction_id}/create-counterpart": 422,
   "POST /api/workspaces": 422,
   "POST /api/workspaces/{workspace_id}/members": 422,
+  "PUT /api/mortgage-payments/{payment_id}": 422,
   "PUT /api/reconciliation/rules/{node}/order": 422
  },
  "ok": {
@@ -430,6 +437,7 @@
   "DELETE /api/invoices/{invoice_id}/deductions/{deduction_id}": 404,
   "DELETE /api/invoices/{invoice_id}/schedule": 200,
   "DELETE /api/invoices/{invoice_id}/share": 204,
+  "DELETE /api/mortgage-payments/{payment_id}": 404,
   "DELETE /api/payees/{payee_id}": 409,
   "DELETE /api/products/{product_id}": 204,
   "DELETE /api/products/{product_id}/prices/{price_id}": 404,
@@ -445,6 +453,7 @@
   "GET /api/accounts/{account_id}/balance-history": 200,
   "GET /api/accounts/{account_id}/bills": 200,
   "GET /api/accounts/{account_id}/running-balance": 200,
+  "GET /api/accounts/{account_id}/loan-schedule": 200,
   "GET /api/accounts/{account_id}/summary": 200,
   "GET /api/admin/accounting-mode": 200,
   "GET /api/admin/date-format": 200,
@@ -535,6 +544,7 @@
   "GET /api/invoices/{invoice_id}/document": 200,
   "GET /api/invoices/{invoice_id}/pdf": 200,
   "GET /api/invoices/{invoice_id}/statement": 200,
+  "GET /api/mortgage-payments/{payment_id}": 404,
   "GET /api/payees": 200,
   "GET /api/payees/{payee_id}": 200,
   "GET /api/payees/{payee_id}/summary": 200,
@@ -620,6 +630,7 @@
   "PATCH /api/workspaces/{workspace_id}/members/{member_user_id}": 400,
   "POST /api/accounts": 201,
   "POST /api/accounts/{account_id}/close": 200,
+  "POST /api/accounts/{account_id}/loan-balance": 200,
   "POST /api/accounts/{account_id}/reopen": 400,
   "POST /api/admin/users": 201,
   "POST /api/agents": 201,
@@ -721,6 +732,7 @@
   "POST /api/workspaces/{workspace_id}/archive": 400,
   "POST /api/workspaces/{workspace_id}/members": 400,
   "PUT /api/agents/{agent_id}/tools": 200,
+  "PUT /api/mortgage-payments/{payment_id}": 404,
   "PUT /api/reconciliation/rules/{node}/order": 400
  },
  "unknown_id": {
@@ -754,6 +766,7 @@
   "DELETE /api/invoices/{invoice_id}/deductions/{deduction_id}": 404,
   "DELETE /api/invoices/{invoice_id}/schedule": 404,
   "DELETE /api/invoices/{invoice_id}/share": 404,
+  "DELETE /api/mortgage-payments/{payment_id}": 404,
   "DELETE /api/payees/{payee_id}": 404,
   "DELETE /api/products/{product_id}": 404,
   "DELETE /api/products/{product_id}/prices/{price_id}": 404,
@@ -768,6 +781,7 @@
   "GET /api/accounts/{account_id}/balance-history": 404,
   "GET /api/accounts/{account_id}/bills": 404,
   "GET /api/accounts/{account_id}/running-balance": 404,
+  "GET /api/accounts/{account_id}/loan-schedule": 404,
   "GET /api/accounts/{account_id}/summary": 404,
   "GET /api/admin/users/{user_id}": 404,
   "GET /api/agents/connections/{conn_id}": 404,
@@ -799,6 +813,7 @@
   "GET /api/invoices/{invoice_id}/document": 404,
   "GET /api/invoices/{invoice_id}/pdf": 404,
   "GET /api/invoices/{invoice_id}/statement": 404,
+  "GET /api/mortgage-payments/{payment_id}": 404,
   "GET /api/payees/{payee_id}": 404,
   "GET /api/payees/{payee_id}/summary": 404,
   "GET /api/products/{product_id}": 404,
@@ -846,6 +861,7 @@
   "PATCH /api/workspaces/{workspace_id}": 404,
   "PATCH /api/workspaces/{workspace_id}/members/{member_user_id}": 404,
   "POST /api/accounts/{account_id}/close": 404,
+  "POST /api/accounts/{account_id}/loan-balance": 404,
   "POST /api/accounts/{account_id}/reopen": 404,
   "POST /api/agents/connections/{conn_id}/test": 404,
   "POST /api/agents/conversations/{conversation_id}/generate-title": 404,
@@ -883,7 +899,8 @@
   "POST /api/transactions/{transaction_id}/post-today": 404,
   "POST /api/workspaces/{workspace_id}/archive": 404,
   "POST /api/workspaces/{workspace_id}/members": 404,
-  "PUT /api/agents/{agent_id}/tools": 404
+  "PUT /api/agents/{agent_id}/tools": 404,
+  "PUT /api/mortgage-payments/{payment_id}": 422
  },
  "viewer": {
   "DELETE /api/accounts/{account_id}": 403,
@@ -916,6 +933,7 @@
   "DELETE /api/invoices/{invoice_id}/deductions/{deduction_id}": 403,
   "DELETE /api/invoices/{invoice_id}/schedule": 403,
   "DELETE /api/invoices/{invoice_id}/share": 403,
+  "DELETE /api/mortgage-payments/{payment_id}": 403,
   "DELETE /api/payees/{payee_id}": 403,
   "DELETE /api/products/{product_id}": 403,
   "DELETE /api/products/{product_id}/prices/{price_id}": 403,
@@ -969,6 +987,7 @@
   "PATCH /api/workspaces/{workspace_id}/members/{member_user_id}": 403,
   "POST /api/accounts": 403,
   "POST /api/accounts/{account_id}/close": 403,
+  "POST /api/accounts/{account_id}/loan-balance": 403,
   "POST /api/accounts/{account_id}/reopen": 403,
   "POST /api/agents": 403,
   "POST /api/agents/connections": 201,
@@ -1069,6 +1088,7 @@
   "POST /api/workspaces/{workspace_id}/archive": 403,
   "POST /api/workspaces/{workspace_id}/members": 403,
   "PUT /api/agents/{agent_id}/tools": 403,
+  "PUT /api/mortgage-payments/{payment_id}": 403,
   "PUT /api/reconciliation/rules/{node}/order": 403
  }
 }

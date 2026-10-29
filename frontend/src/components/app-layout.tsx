@@ -1,5 +1,11 @@
 import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react'
-import { getAccountName, sidebarAccountBalance, sortAccountsByAbsoluteBalance, sumAccountsTotal } from '@/lib/account-utils'
+import {
+  getAccountName,
+  sidebarAccountBalance,
+  sidebarAccounts,
+  sortAccountsByAbsoluteBalance,
+  sumAccountsTotal,
+} from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
@@ -190,7 +196,7 @@ export function AppLayout() {
     queryFn: () => accountsApi.list(),
   })
 
-  const allAccounts = accountsList ?? []
+  const allAccounts = sidebarAccounts(accountsList ?? [])
   // When a collection is active, the sidebar list + total reflect only its
   // accounts (issue #105). null = all accounts.
   const visibleAccounts = activeAccountIds

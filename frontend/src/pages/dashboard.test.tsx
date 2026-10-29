@@ -19,13 +19,17 @@ const api = vi.hoisted(() => ({
   },
   transactions: { list: vi.fn(), calendar: vi.fn() },
   budgets: { comparison: vi.fn() },
-  categories: { list: vi.fn() },
-  categoryGroups: { list: vi.fn() },
+  categories: { list: vi.fn(), listIncludingHidden: vi.fn() },
+  categoryGroups: { list: vi.fn(), listIncludingHidden: vi.fn() },
   accounts: { list: vi.fn() },
+  assets: { list: vi.fn() },
+  currencies: { list: vi.fn() },
+  mortgagePayments: { get: vi.fn() },
   goals: { summary: vi.fn() },
   groups: { list: vi.fn() },
   payees: { list: vi.fn() },
-  rules: { create: vi.fn() },
+  rules: { create: vi.fn(), list: vi.fn() },
+  settings: { attachments: vi.fn() },
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -140,11 +144,28 @@ beforeEach(() => {
   api.transactions.list.mockResolvedValue({ items: [], total: 0 })
   api.budgets.comparison.mockResolvedValue([])
   api.categories.list.mockResolvedValue([])
+  api.categories.listIncludingHidden.mockResolvedValue([])
   api.categoryGroups.list.mockResolvedValue([])
+  api.categoryGroups.listIncludingHidden.mockResolvedValue([])
   api.accounts.list.mockResolvedValue(accounts)
+  api.assets.list.mockResolvedValue([{ id: 'home', name: 'PR review home' }])
+  api.currencies.list.mockResolvedValue([])
+  api.mortgagePayments.get.mockResolvedValue({
+    payment_transaction_id: 'payment-1',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Checking',
+    allocations: [],
+    principal_total: 0,
+    interest_total: 0,
+    principal_percentage: 0,
+    interest_percentage: 0,
+  })
   api.goals.summary.mockResolvedValue([])
   api.groups.list.mockResolvedValue([])
   api.payees.list.mockResolvedValue([])
+  api.rules.list.mockResolvedValue([])
+  api.settings.attachments.mockResolvedValue({ enabled: false })
 })
 
 describe('Dashboard net worth breakdown', () => {
@@ -183,6 +204,43 @@ describe('Dashboard net worth breakdown', () => {
     const loanRow = within(tooltip).getByText(t('dashboard.loanBalance')).parentElement!
     expect(loanRow).toHaveTextContent(formatCurrency(-40000, 'USD', 'en-US'))
   })
+})
+
+it('shows the mortgage breakdown editor for a payment opened from the dashboard', async () => {
+  const loan = account({
+    id: 'mortgage',
+    name: 'Mortgage',
+    type: 'loan',
+    secured_asset_id: 'home',
+  })
+  api.accounts.list.mockResolvedValue([...accounts, loan])
+  api.transactions.list.mockResolvedValue({
+    items: [{
+      id: 'payment-1', user_id: 'user-1', account_id: 'checking', category_id: null,
+      category: null, external_id: null, description: 'Mortgage payment', original_description: null,
+      amount: 250, currency: 'USD', date: '2026-10-05', type: 'debit', source: 'manual',
+      status: 'posted', payee: null, payee_id: null, payee_name: null, notes: null,
+      transfer_pair_id: null, amount_primary: null, fx_rate_used: null, fx_fallback: false,
+      installment_number: null, total_installments: null, installment_total_amount: null,
+      installment_purchase_date: null, installment_series_id: null, bill_id: null,
+      effective_bill_date: null, splits: [], is_ignored: false,
+    }],
+    total: 1,
+    page: 1,
+    limit: 500,
+  })
+  const { user } = renderWithProviders(
+    <TooltipProvider delayDuration={0}>
+      <DashboardPage />
+    </TooltipProvider>,
+  )
+
+  await user.click(await screen.findByText('Mortgage payment'))
+  await user.click(await screen.findByRole('button', { name: t('transactions.mortgageAllocation') }))
+
+  expect(await screen.findByText(/Enter all parts in USD/)).toBeInTheDocument()
+  expect(screen.getByLabelText(t('transactions.mortgagePrincipal'))).toBeInTheDocument()
+  expect(screen.getByLabelText(t('transactions.mortgageInterest'))).toBeInTheDocument()
 })
 
 describe('Dashboard available balance without an FX rate', () => {

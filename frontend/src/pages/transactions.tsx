@@ -1114,25 +1114,39 @@ export default function TransactionsPage() {
     const showInlineTags = !grid.isVisible('tags')
     const noteText = tx.notes ? stripHashtags(tx.notes) : ''
     const noteTags = tx.notes ? parseHashtags(tx.notes) : []
+    // A long group or author name truncates inside its badge, so the label
+    // doubles as its own tooltip and stays readable on hover.
+    const groupBadgeLabel = tx.group_id
+      ? tx.is_shared && tx.parent_owner_name
+        ? t('splitGroups.sharedRowBadgeAuthor', {
+            author: tx.parent_owner_name,
+            group: groupNameById.get(tx.group_id) ?? '',
+          })
+        : t('splitGroups.ownerRowBadge', {
+            group: groupNameById.get(tx.group_id) ?? '',
+          })
+      : ''
     return (
       <div className="flex items-center gap-2 md:gap-3">
         <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size="lg" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-foreground truncate">{tx.description}</p>
+          {/* The column has a fixed width, so a row carrying several badges
+              (transfer with its counterpart account, report exclusion, an
+              installment counter) runs past the cell and paints over the
+              Category column next to it (issue #1306). Wrapping keeps every
+              badge inside the cell: they move to a second line instead of
+              escaping, and the description keeps its own width rather than
+              being squeezed to nothing. The overflow guard is the backstop:
+              the column can be dragged down to 41px, narrower than a single
+              badge, and there the badges clip at the cell edge instead. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 overflow-hidden">
+            <p className="max-w-full text-sm font-semibold text-foreground truncate">{tx.description}</p>
             {tx.group_id && (
               <span
-                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full"
+                className="inline-flex max-w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full"
                 title={t('splitGroups.sharedRowTooltip')}
               >
-                {tx.is_shared && tx.parent_owner_name
-                  ? t('splitGroups.sharedRowBadgeAuthor', {
-                      author: tx.parent_owner_name,
-                      group: groupNameById.get(tx.group_id) ?? '',
-                    })
-                  : t('splitGroups.ownerRowBadge', {
-                      group: groupNameById.get(tx.group_id) ?? '',
-                    })}
+                <span className="truncate" title={groupBadgeLabel}>{groupBadgeLabel}</span>
               </span>
             )}
             {/* The invoice this settles. Same badge shape as the split
@@ -1152,10 +1166,10 @@ export default function TransactionsPage() {
                 to="/rules?tab=queue"
                 onClick={(e) => e.stopPropagation()}
                 title={t('transactions.suggestionBadgeTooltip')}
-                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900 px-1.5 py-0.5 rounded-full hover:bg-amber-100 dark:hover:bg-amber-950/70 transition-colors"
+                className="inline-flex max-w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900 px-1.5 py-0.5 rounded-full hover:bg-amber-100 dark:hover:bg-amber-950/70 transition-colors"
               >
-                <HelpCircle className="h-3 w-3" />
-                {t('transactions.suggestionBadge')}
+                <HelpCircle className="h-3 w-3 shrink-0" />
+                <span className="truncate">{t('transactions.suggestionBadge')}</span>
               </Link>
             )}
             {(tx.invoice_links ?? []).map((link) => (
@@ -1164,20 +1178,27 @@ export default function TransactionsPage() {
                 to={`/invoices/${link.invoice_id}`}
                 onClick={(e) => e.stopPropagation()}
                 title={t('transactions.invoiceBadgeTooltip')}
-                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900 px-1.5 py-0.5 rounded-full hover:bg-emerald-100 dark:hover:bg-emerald-950/70 transition-colors"
+                className="inline-flex max-w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900 px-1.5 py-0.5 rounded-full hover:bg-emerald-100 dark:hover:bg-emerald-950/70 transition-colors"
               >
-                <Receipt className="h-3 w-3" />
-                {link.external_number
-                  ? t('transactions.invoiceBadge', { number: link.external_number })
-                  : link.number != null
-                    ? t('transactions.invoiceBadge', { number: link.number })
-                    : t('transactions.invoiceBadgeNoNumber')}
+                <Receipt className="h-3 w-3 shrink-0" />
+                <span className="truncate">
+                  {link.external_number
+                    ? t('transactions.invoiceBadge', { number: link.external_number })
+                    : link.number != null
+                      ? t('transactions.invoiceBadge', { number: link.number })
+                      : t('transactions.invoiceBadgeNoNumber')}
+                </span>
               </Link>
             ))}
+            {/* The label and the two icons keep their size, so that a
+                narrow column shortens the counterpart account name and
+                not the word that says what the badge is. Past the point
+                where even that no longer fits, the badge clips at the
+                cell edge rather than carrying on into the next column. */}
             {isTransferTransaction(tx) && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
-                <ArrowLeftRight className="h-3 w-3" />
-                {t('transactions.transfer')}
+              <span className="inline-flex max-w-full items-center gap-1 overflow-hidden text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
+                <ArrowLeftRight className="h-3 w-3 shrink-0" />
+                <span className="shrink-0">{t('transactions.transfer')}</span>
                 {tx.transfer_counterpart && (
                   <Link
                     to={`/accounts/${tx.transfer_counterpart.account_id}`}
@@ -1188,15 +1209,15 @@ export default function TransactionsPage() {
                     {tx.transfer_counterpart.account_name}
                   </Link>
                 )}
-                <span title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+                <span className="shrink-0" title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
               </span>
             )}
             {tx.is_ignored &&
               (
-              <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
-                <EyeClosed className="h-3 w-3" />
-                {t('transactions.ignored')}
-                <span title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+              <span className="inline-flex max-w-full items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                <EyeClosed className="h-3 w-3 shrink-0" />
+                <span className="truncate">{t('transactions.ignored')}</span>
+                <span className="shrink-0" title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
               </span>
                             )
             }
@@ -1204,23 +1225,23 @@ export default function TransactionsPage() {
                 balance, so its amount keeps its colour and sign and only
                 the badge marks it. Ignored greys the amount out instead. */}
             {tx.exclude_from_pnl && !tx.is_ignored && (
-              <span className="ml-2 inline-flex items-center gap-1 text-xs text-slate-600 font-normal bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 dark:text-slate-300 dark:bg-slate-500/15 dark:border-slate-500/30">
-                <ChartNoAxesColumn className="h-3 w-3" />
-                {t('transactions.excludedFromReports')}
-                <span title={t('transactions.excludeFromReportsHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+              <span className="inline-flex max-w-full items-center gap-1 text-xs text-slate-600 font-normal bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 dark:text-slate-300 dark:bg-slate-500/15 dark:border-slate-500/30">
+                <ChartNoAxesColumn className="h-3 w-3 shrink-0" />
+                <span className="truncate">{t('transactions.excludedFromReports')}</span>
+                <span className="shrink-0" title={t('transactions.excludeFromReportsHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
               </span>
             )}
             {tx.recurring_transaction_id != null && (
               <span
-                className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full"
+                className="inline-flex max-w-full items-center text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full"
                 title={t('transactions.recurringLinkedTooltip')}
               >
-                {t('transactions.recurringBadge')}
+                <span className="truncate">{t('transactions.recurringBadge')}</span>
               </span>
             )}
             {tx.installment_number != null && tx.total_installments != null && (
               <span
-                className="inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full"
+                className="inline-flex shrink-0 items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full"
                 title={tx.installment_total_amount != null
                   ? t('transactions.installmentTooltip', { count: tx.total_installments, total: tx.installment_total_amount })
                   : undefined}

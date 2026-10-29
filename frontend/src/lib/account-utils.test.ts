@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { sidebarAccountBalance, sortAccountsByAbsoluteBalance, sortAccountsByDisplayName, sumAccountsTotal } from './account-utils'
+import {
+  sidebarAccountBalance,
+  sidebarAccounts,
+  sortAccountsByAbsoluteBalance,
+  sortAccountsByDisplayName,
+  sumAccountsTotal,
+} from './account-utils'
 
 describe('sortAccountsByDisplayName', () => {
   it('orders accounts by display name when present and falls back to name', () => {
@@ -88,6 +94,18 @@ describe('sumAccountsTotal', () => {
     ]
 
     expect(sumAccountsTotal(accounts)).toBe(3500)
+  })
+})
+
+describe('sidebarAccounts', () => {
+  it('leaves loans out of the sidebar list', () => {
+    const accounts = [
+      { id: 'checking', type: 'checking' },
+      { id: 'card', type: 'credit_card' },
+      { id: 'mortgage', type: 'loan' },
+    ]
+
+    expect(sidebarAccounts(accounts).map((account) => account.id)).toEqual(['checking', 'card'])
   })
 })
 
