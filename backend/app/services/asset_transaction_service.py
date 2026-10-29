@@ -210,20 +210,34 @@ async def list_workspace_transactions(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     *,
+    asset_id: Optional[uuid.UUID] = None,
     ticker: Optional[str] = None,
     kind: Optional[str] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
     limit: int = 500,
 ) -> list[AssetTransactionRead]:
-    """All ledger transactions in a workspace — powers the Transactions tab."""
+    """All ledger transactions in a workspace — powers the Transactions tab.
+
+    Every filter is applied in SQL before the limit, so narrowing a range
+    returns the newest rows *inside* it rather than filtering a page that
+    was already truncated.
+    """
     query = (
         select(AssetTransaction, Asset)
         .join(Asset, AssetTransaction.asset_id == Asset.id)
         .where(AssetTransaction.workspace_id == workspace_id)
     )
+    if asset_id is not None:
+        query = query.where(AssetTransaction.asset_id == asset_id)
     if ticker:
         query = query.where(Asset.ticker == ticker.upper())
     if kind in _VALID_KINDS:
         query = query.where(AssetTransaction.kind == kind)
+    if from_date is not None:
+        query = query.where(AssetTransaction.date >= from_date)
+    if to_date is not None:
+        query = query.where(AssetTransaction.date <= to_date)
     query = query.order_by(
         AssetTransaction.date.desc(), AssetTransaction.created_at.desc()
     ).limit(limit)
