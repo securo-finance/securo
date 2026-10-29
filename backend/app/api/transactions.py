@@ -24,6 +24,7 @@ from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
+from app.services._query_filters import reporting_date_value
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -295,7 +296,7 @@ async def export_transactions(
     output = io.StringIO()
     output.write("﻿")  # UTF-8 BOM for Excel
     writer = csv.writer(output)
-    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used"])
+    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used", "reporting_date", "reporting_date_override"])
     for tx in transactions:
         writer.writerow([
             tx.date.isoformat(),
@@ -312,6 +313,8 @@ async def export_transactions(
             tx.source,
             str(tx.amount_primary) if tx.amount_primary is not None else "",
             str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
+            reporting_date_value(tx, accounting_mode).isoformat(),
+            tx.reporting_date_override.isoformat() if tx.reporting_date_override else "",
         ])
 
     output.seek(0)

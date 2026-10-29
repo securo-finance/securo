@@ -1002,10 +1002,9 @@ async def get_account_summary(
     if account.type in LIABILITY_ACCOUNT_TYPES and account.connection_id:
         current_balance = -current_balance
 
-    # Bucketing date: for credit-card txs the user can override which cycle
-    # a tx belongs to via `effective_bill_date`. We honor that first so the
-    # totals card and bar chart agree with the transactions list (issue #92).
-    bucket_date = func.coalesce(Transaction.effective_bill_date, Transaction.date)
+    # Reporting attribution may be corrected independently of the immutable
+    # transaction list while balance reconstruction above stays on bank dates.
+    bucket_date = reporting_date_col("cash")
 
     # Bill-based membership for the plain (cycle-math) window: when the
     # caller sent a window that is exactly one bill cycle of this credit
