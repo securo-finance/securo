@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
 import { defineConfig, loadEnv } from 'vite'
+import { VitePWA } from 'vite-plugin-pwa'
 import { resolveAppVersion } from './build/version.ts'
 
 function getFrontendHost(frontendUrl?: string) {
@@ -35,7 +36,25 @@ export default defineConfig(async ({ mode }) => {
       // page instead of booting the app (issue #295).
       assetsDir: 'static',
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      // Service worker (Workbox generateSW). The web manifest is the
+      // hand-written public/manifest.json, so the plugin doesn't generate one.
+      // The whole build output is precached, so the app opens offline right
+      // after install. /api is never cached nor answered with the shell
+      // fallback, so no financial data is stored offline.
+      VitePWA({
+        registerType: 'autoUpdate',
+        manifest: false,
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,png,ico}'],
+          navigateFallback: '/index.html',
+          navigateFallbackDenylist: [/^\/api\//, /^\/i\//],
+          cleanupOutdatedCaches: true,
+        },
+      }),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, './src'),

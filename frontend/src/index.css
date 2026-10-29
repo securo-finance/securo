@@ -131,6 +131,16 @@
   }
 }
 
+/* Installed PWA: there is no browser chrome to refresh from, so a rubber-band
+   pull on the page itself only reads as a glitch. Browser tabs keep the
+   native pull-to-refresh. */
+@media (display-mode: standalone) {
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+}
+
 /* Recharts focuses its wrapper/surface on click; on macOS this draws a
    browser focus ring around the whole chart. Suppress it — the chart conveys
    selection via bar opacity, not a focus outline. */

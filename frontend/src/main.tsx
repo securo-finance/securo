@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import { i18nReady } from './lib/i18n'
 import App from './App.tsx'
+import { reloadOnStaleChunk } from './lib/reload-on-stale-chunk'
+
+reloadOnStaleChunk()
 
 // Honour a persisted language before rendering any translated UI.
 void i18nReady.then(() => {
