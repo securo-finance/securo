@@ -1,3 +1,4 @@
+import calendar
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -1363,6 +1364,36 @@ async def test_cash_flow_no_data_with_balance_is_flat(
 
 
 @pytest.mark.asyncio
+async def test_cash_flow_monthly_buckets_cover_whole_months(
+    session: AsyncSession, test_user, test_workspace: User
+):
+    """The first and last monthly bars span full calendar months, not today ± N months."""
+    account = await _make_manual_account(session, test_user.id, "CF Whole Months")
+    today = date.today()
+    first_of_month = today.replace(day=1)
+    # The 1st of last month: before today - 1 month whenever today isn't the 1st.
+    past_start = (first_of_month - timedelta(days=1)).replace(day=1)
+    await _add_txn(session, test_user.id, account.id, 70, "credit", past_start)
+    # The last day of the month 3 months ahead: past today + 3 months whenever
+    # today isn't the last day of its month.
+    end_month = _add_months(first_of_month, 3)
+    horizon_end = end_month.replace(day=calendar.monthrange(end_month.year, end_month.month)[1])
+    await _make_recurring(
+        session, test_user.id, account.id, 30, "debit",
+        next_occurrence=horizon_end, end_date=horizon_end,
+    )
+
+    report = await get_cash_flow_report(session, test_workspace.id, test_user.id, months=3, interval="monthly")
+
+    assert report.trend[0].date == f"{past_start.year}-{past_start.month:02d}"
+    assert report.trend[0].breakdowns["inflow"] == 70.0
+    assert report.trend[-1].date == f"{end_month.year}-{end_month.month:02d}"
+    assert report.trend[-1].breakdowns["outflow"] == 30.0
+    proj_expenses = next(b for b in report.summary.breakdowns if b.key == "projectedExpenses")
+    assert proj_expenses.value == 30.0
+
+
+@pytest.mark.asyncio
 async def test_cash_flow_recurring_credit_increases_balance(
     session: AsyncSession, test_user, test_workspace: User
 ):
@@ -1690,8 +1721,9 @@ async def test_cash_flow_weekly_recurring(session: AsyncSession, test_user, test
 
     report = await get_cash_flow_report(session, test_workspace.id, test_user.id, months=1, interval="daily")
     proj_exp = next(b for b in report.summary.breakdowns if b.key == "projectedExpenses")
-    # ~4-5 weekly occurrences in 1 month
-    assert 240.0 <= proj_exp.value <= 480.0
+    # One occurrence a week from tomorrow up to the month-end horizon.
+    occurrences = (_cash_flow_forecast_days(1) - 1) // 7 + 1
+    assert proj_exp.value == 80.0 * occurrences
 
 
 @pytest.mark.asyncio
@@ -1797,8 +1829,12 @@ async def test_cash_flow_api_default_params(client, auth_headers, test_transacti
     assert resp.status_code == 200
     data = resp.json()
     assert data["meta"]["interval"] == "daily"
-    # 1 month past + 6 months forward * ~30 days = ~210 trend points
-    assert 180 <= len(data["trend"]) <= 230
+    # One daily point from the 1st of last month to the last day of the
+    # month 6 months ahead.
+    first_of_month = date.today().replace(day=1)
+    end_month = _add_months(first_of_month, 6)
+    end = end_month.replace(day=calendar.monthrange(end_month.year, end_month.month)[1])
+    assert len(data["trend"]) == (end - _add_months(first_of_month, -1)).days + 1
 
 
 @pytest.mark.asyncio
@@ -2629,6 +2665,14 @@ async def test_cash_flow_baseline_off_uses_recurring(
     assert proj_exp.value == 0.0
 
 
+def _cash_flow_forecast_days(months: int) -> int:
+    """Days from tomorrow to the month-end horizon get_cash_flow_report projects to."""
+    today = date.today()
+    end_month = _add_months(today.replace(day=1), months)
+    end = end_month.replace(day=calendar.monthrange(end_month.year, end_month.month)[1])
+    return (end - today).days
+
+
 @pytest.mark.asyncio
 async def test_cash_flow_baseline_on_replaces_recurring_with_mean(
     session: AsyncSession, test_user, test_workspace: User
@@ -2669,9 +2713,8 @@ async def test_cash_flow_baseline_on_replaces_recurring_with_mean(
     proj_exp = next(b for b in report.summary.breakdowns if b.key == "projectedExpenses")
     # Recurring R$9999 credit should NOT appear (baseline replaces recurring).
     assert proj_income.value < 100.0
-    # Outflow should reflect ~R$100/day × 3 months ≈ R$9000.
-    assert proj_exp.value > 8000.0
-    assert proj_exp.value < 10000.0
+    # Outflow is R$100/day for every forecast day up to the month-end horizon.
+    assert proj_exp.value == pytest.approx(100.0 * _cash_flow_forecast_days(3), abs=0.01)
 
 
 @pytest.mark.asyncio
@@ -2730,9 +2773,8 @@ async def test_cash_flow_baseline_lookback_adapts_to_short_history(
     # Earliest tx is 7 days ago, so lookback is 7 days.
     assert report.meta.baseline_lookback_days == 7
     proj_exp = next(b for b in report.summary.breakdowns if b.key == "projectedExpenses")
-    # 7 days × R$20 = R$140 over 7 days → R$20/day → ~R$1820 over ~91 days.
-    assert proj_exp.value > 1500.0
-    assert proj_exp.value < 2200.0
+    # 7 days × R$20 = R$140 over 7 days → R$20/day for every forecast day.
+    assert proj_exp.value == pytest.approx(20.0 * _cash_flow_forecast_days(3), abs=0.01)
 
 
 @pytest.mark.asyncio
@@ -2785,7 +2827,7 @@ async def test_cash_flow_meta_carries_forecast_start_date(
 async def test_cash_flow_chart_includes_past_history(
     session: AsyncSession, test_user, test_workspace: User
 ):
-    """Trend starts ~1 month before today so the today-marker has context."""
+    """Trend starts on the 1st of last month so the today-marker has context."""
     account = await _make_manual_account(session, test_user.id, "CF Past")
     await _add_txn(
         session, test_user.id, account.id, 500, "credit",
@@ -2796,12 +2838,9 @@ async def test_cash_flow_chart_includes_past_history(
         session, test_workspace.id, test_user.id, months=3, interval="daily",
     )
 
-    # First trend point should be ~30 days before today.
+    # _PAST_HISTORY_MONTHS = 1, aligned to the start of that month.
     first_date = date.fromisoformat(report.trend[0].date)
-    today = date.today()
-    delta_days = (today - first_date).days
-    # _PAST_HISTORY_MONTHS = 1 (28–31 days depending on month).
-    assert 27 <= delta_days <= 32
+    assert first_date == _add_months(date.today().replace(day=1), -1)
 
 
 def test_add_years_clamps_leap_day():
