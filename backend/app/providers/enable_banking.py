@@ -97,11 +97,15 @@ def _account_identifier(raw: dict) -> Optional[str]:
     return None
 
 
-def _pick_balance(balances: list[dict]) -> Optional[dict]:
-    """Pick the most useful balance from EB's list (prefer closing booked)."""
+def _pick_balance(balances: list[Any]) -> Optional[dict]:
+    """Prefer instant/intraday balances; operators can opt for booked balances.
+
+    Available/expected balances may include pending entries or credit facilities,
+    so they are not interchangeable with a booked accounting balance.
+    """
     if not balances:
         return None
-    priority = ["CLBD", "ITAV", "CLAV", "XPCD", "OPBD", "OPAV"]
+    priority = get_settings().enable_banking_balance_priority.split(",")
     by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
     for key in priority:
         if key in by_type:
