@@ -732,7 +732,7 @@ async def _set_installments(
 async def create_invoice(
     session: AsyncSession,
     workspace_id: uuid.UUID,
-    user_id: uuid.UUID,
+    user_id: Optional[uuid.UUID],
     data: dict[str, Any],
 ) -> Invoice:
     settings = await get_settings(session, workspace_id)
