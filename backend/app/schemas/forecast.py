@@ -84,6 +84,9 @@ class ForecastSummary(BaseModel):
     runway_days: Optional[int] = None
     has_shortfall_risk: bool
     first_shortfall_date: Optional[date] = None
+    # Currencies of balances or bills left out because no FX rate to the
+    # workspace currency was available.
+    unconverted_currencies: list[str] = Field(default_factory=list)
 
 
 class CashflowForecastResponse(BaseModel):

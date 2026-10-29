@@ -206,3 +206,91 @@ async def test_detect_monthly_subscription_pattern(session):
     assert payroll_item.cadence == CadenceEnum.BI_WEEKLY
     assert payroll_item.direction == FlowDirectionEnum.INFLOW
     assert payroll_item.average_amount == Decimal("3500.00")
+
+
+async def _detector_workspace(session, name):
+    user_id = uuid.uuid4()
+    ws = Workspace(id=uuid.uuid4(), name=name, default_currency="USD")
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=ws.id,
+        name="Checking",
+        type="checking",
+        balance=Decimal("0.00"),
+        currency="USD",
+    )
+    session.add_all([ws, account])
+    await session.flush()
+    return user_id, ws, account
+
+
+def _posted_tx(user_id, workspace_id, account_id, payee, amount, tx_date, **kwargs):
+    return Transaction(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=account_id,
+        description=kwargs.pop("description", payee),
+        payee=payee,
+        amount=Decimal(amount),
+        amount_primary=Decimal(amount),
+        currency="USD",
+        date=tx_date,
+        effective_date=tx_date,
+        type=kwargs.pop("type", "debit"),
+        source=kwargs.pop("source", "manual"),
+        status="posted",
+        **kwargs,
+    )
+
+
+@pytest.mark.asyncio
+async def test_detector_ignores_opening_balances(session):
+    user_id, ws, _ = await _detector_workspace(session, "Opening Balances WS")
+    # One opening balance per account, created a month apart.
+    for tx_date in (date(2026, 5, 1), date(2026, 6, 1), date(2026, 7, 1)):
+        account = Account(
+            id=uuid.uuid4(), user_id=user_id, workspace_id=ws.id, name=f"Acc {tx_date}",
+            type="checking", balance=Decimal("500.00"), currency="USD",
+        )
+        session.add(account)
+        await session.flush()
+        session.add(_posted_tx(
+            user_id, ws.id, account.id, None, "500.00", tx_date,
+            description="Opening balance", type="credit", source="opening_balance",
+        ))
+    await session.commit()
+
+    result = await detect_recurring_patterns(
+        session, ws.id, min_occurrences=2, reference_date=date(2026, 7, 15)
+    )
+    assert result.items == []
+
+
+@pytest.mark.asyncio
+async def test_detector_ignores_rows_marked_ignored(session):
+    user_id, ws, account = await _detector_workspace(session, "Ignored Rows WS")
+    for tx_date in (date(2026, 5, 1), date(2026, 6, 1), date(2026, 7, 1)):
+        session.add(_posted_tx(
+            user_id, ws.id, account.id, "Netflix", "15.99", tx_date, is_ignored=True,
+        ))
+    await session.commit()
+
+    result = await detect_recurring_patterns(
+        session, ws.id, min_occurrences=2, reference_date=date(2026, 7, 15)
+    )
+    assert result.items == []
+
+
+@pytest.mark.asyncio
+async def test_detector_needs_more_than_two_charges_for_a_weekly_pattern(session):
+    user_id, ws, account = await _detector_workspace(session, "Two One-Offs WS")
+    for tx_date in (date(2026, 7, 1), date(2026, 7, 8)):
+        session.add(_posted_tx(user_id, ws.id, account.id, "Hardware Store", "42.00", tx_date))
+    await session.commit()
+
+    result = await detect_recurring_patterns(
+        session, ws.id, min_occurrences=2, reference_date=date(2026, 7, 10)
+    )
+    assert result.items == []

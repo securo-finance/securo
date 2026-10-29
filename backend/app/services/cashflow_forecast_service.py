@@ -20,7 +20,9 @@ from app.schemas.forecast import (
 )
 from app.core.config import get_settings
 from app.services import account_service, recurring_detector_service
-from app.services.fx_rate_service import convert
+from app.services._query_filters import counts_as_pnl
+from app.services.fx_rate_service import convert_or_none
+from app.services.recurring_transaction_service import get_occurrences_in_range
 
 
 def _date_matches_cadence(target_date: date, anchor_date: date, cadence: CadenceEnum) -> bool:
@@ -77,18 +79,31 @@ async def generate_cashflow_forecast(
     accounts = await account_service.get_accounts(session, workspace_id)
 
     # Liquid funds = checking, savings, cash. Credit card balances are already
-    # signed (debt is negative), so adding them nets the debt off.
+    # signed (debt is negative), so adding them nets the debt off. Amounts with
+    # no FX rate are left out and reported instead of counted 1:1 (#574).
     starting_liquid_balance = Decimal("0.00")
+    unconverted_currencies: set[str] = set()
+    seen_shared_lines: set[str] = set()
     for acc in accounts:
         if acc["type"] not in ("checking", "savings", "cash", "depository", "credit_card"):
             continue
-        balance_val, _ = await convert(
+        # Cards on one consolidated credit line each carry the whole line's
+        # debt, so the line is counted once, as on the dashboard.
+        shared_line = acc.get("shared_balance_group") if acc["type"] == "credit_card" else None
+        if shared_line:
+            if shared_line in seen_shared_lines:
+                continue
+            seen_shared_lines.add(shared_line)
+        balance_val, _ = await convert_or_none(
             session,
             Decimal(str(acc["current_balance"])),
             acc["currency"],
             base_currency,
             today,
         )
+        if balance_val is None:
+            unconverted_currencies.add(acc["currency"])
+            continue
         starting_liquid_balance += balance_val
 
     starting_liquid_balance = starting_liquid_balance.quantize(Decimal("0.01"))
@@ -123,29 +138,34 @@ async def generate_cashflow_forecast(
         if r.description
     }
 
-    # Combined scheduled items list: [(name, direction, amount, next_date, cadence)]
-    schedule_items = []
+    # Manual recurrings follow the same schedule the dashboard projects:
+    # frequency, end date, intended day and weekend adjustment all apply.
+    # {date: [(name, direction, amount)]}
+    manual_events: dict[date, list[tuple[str, FlowDirectionEnum, Decimal]]] = {}
     for r in manual_recurrings:
         direction = FlowDirectionEnum.INFLOW if r.type == "credit" else FlowDirectionEnum.OUTFLOW
-        cadence_map = {
-            "weekly": CadenceEnum.WEEKLY,
-            "biweekly": CadenceEnum.BI_WEEKLY,
-            "monthly": CadenceEnum.MONTHLY,
-            "quarterly": CadenceEnum.QUARTERLY,
-            "yearly": CadenceEnum.ANNUAL,
-            "annual": CadenceEnum.ANNUAL,
-        }
-        cadence = cadence_map.get(str(r.frequency).lower(), CadenceEnum.MONTHLY)
-        schedule_items.append(
-            (
-                r.description or "Scheduled Recurring",
-                direction,
-                Decimal(str(r.amount)),
-                r.next_occurrence,
-                cadence,
-            )
+        amount, _ = await convert_or_none(
+            session, Decimal(str(r.amount)), r.currency, base_currency, today
         )
+        if amount is None:
+            unconverted_currencies.add(r.currency)
+            continue
+        occurrences = get_occurrences_in_range(
+            start=r.next_occurrence,
+            frequency=r.frequency,
+            end_date=r.end_date,
+            range_start=today,
+            range_end=end_date + timedelta(days=1),
+            intended_day=r.day_of_month or r.start_date.day,
+            weekend_adjustment=r.weekend_adjustment,
+        )
+        for occ_date in occurrences:
+            manual_events.setdefault(occ_date, []).append(
+                (r.description or "Scheduled Recurring", direction, amount)
+            )
 
+    # Detected items: [(name, direction, amount, next_date, cadence)]
+    schedule_items = []
     for item in detected_res.items:
         if item.status != SubscriptionStatusEnum.ACTIVE:
             continue
@@ -170,7 +190,8 @@ async def generate_cashflow_forecast(
             .where(
                 and_(
                     Transaction.workspace_id == workspace_id,
-                    Transaction.transfer_pair_id.is_(None),
+                    counts_as_pnl(),
+                    Transaction.source != "opening_balance",
                     Transaction.date >= hist_start,
                     Transaction.date < today,
                     Transaction.type == "debit",
@@ -216,14 +237,17 @@ async def generate_cashflow_forecast(
         day_events = []
 
         # Find recurring items matching today
+        day_items = list(manual_events.get(sim_date, []))
         for name, direction, amount, anchor, cadence in schedule_items:
             if _date_matches_cadence(sim_date, anchor, cadence):
-                if direction == FlowDirectionEnum.INFLOW:
-                    day_inflow += amount
-                    day_events.append(f"+{amount:.2f} {name}")
-                else:
-                    day_outflow += amount
-                    day_events.append(f"-{amount:.2f} {name}")
+                day_items.append((name, direction, amount))
+        for name, direction, amount in day_items:
+            if direction == FlowDirectionEnum.INFLOW:
+                day_inflow += amount
+                day_events.append(f"+{amount:.2f} {name}")
+            else:
+                day_outflow += amount
+                day_events.append(f"-{amount:.2f} {name}")
 
         day_burn = daily_discretionary_burn if day_idx > 0 else Decimal("0.00")
         day_net = (day_inflow - day_outflow - day_burn).quantize(Decimal("0.01"))
@@ -276,6 +300,7 @@ async def generate_cashflow_forecast(
         runway_days=runway_days,
         has_shortfall_risk=has_shortfall,
         first_shortfall_date=first_shortfall_date,
+        unconverted_currencies=sorted(unconverted_currencies),
     )
 
     return CashflowForecastResponse(

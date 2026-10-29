@@ -17,6 +17,7 @@ from app.schemas.forecast import (
     RecurringDetectionResponse,
     SubscriptionStatusEnum,
 )
+from app.services._query_filters import counts_as_pnl
 
 # Common subscription & utility indicators
 SUBSCRIPTION_KEYWORDS = {
@@ -37,6 +38,19 @@ NOISE_PREFIX_REGEX = re.compile(
     r"sp\s*\*|amzn\s+mktp(\s+[a-z]{2})?\s*\*?|paypal\s*\*|intl\s+pos)\s*",
     re.IGNORECASE,
 )
+
+
+# Fewest charges that make a cadence believable. Two charges a week apart are
+# as likely to be two unrelated purchases as a weekly bill, while a yearly
+# bill can only show up twice in any sensible lookback.
+MIN_OCCURRENCES_BY_CADENCE = {
+    CadenceEnum.WEEKLY: 4,
+    CadenceEnum.BI_WEEKLY: 3,
+    CadenceEnum.MONTHLY: 3,
+    CadenceEnum.QUARTERLY: 2,
+    CadenceEnum.SEMI_ANNUAL: 2,
+    CadenceEnum.ANNUAL: 2,
+}
 
 
 DATE_AND_ID_CLEANUP_REGEX = re.compile(r"(\b\d{2}/\d{2}\b|\b\d{4}-\d{2}-\d{2}\b|#\s*\w+|\b\d{4,}\b|\*+)", re.IGNORECASE)
@@ -135,13 +149,18 @@ async def detect_recurring_patterns(
     today = reference_date or date.today()
     start_date = today - timedelta(days=lookback_days)
 
+    # Same exclusions the reports use (transfers, ignored rows, settlement
+    # debits), plus opening balances: one per account, so accounts created a
+    # month apart would otherwise look like a monthly bill.
     query = (
         select(Transaction)
         .where(
             and_(
                 Transaction.workspace_id == workspace_id,
-                Transaction.transfer_pair_id.is_(None),
+                counts_as_pnl(),
+                Transaction.source != "opening_balance",
                 Transaction.date >= start_date,
+                Transaction.date <= today,
                 Transaction.status == "posted",
             )
         )
@@ -190,6 +209,8 @@ async def detect_recurring_patterns(
         cadence, expected_interval = calculate_cadence(avg_interval)
 
         if cadence == CadenceEnum.IRREGULAR:
+            continue
+        if len(sorted_txs) < max(min_occurrences, MIN_OCCURRENCES_BY_CADENCE[cadence]):
             continue
 
         # Interval variance & standard deviation
