@@ -25,7 +25,10 @@ from app.services._query_filters import (
 )
 from app.services import invoice_forecast_service
 from app.services.admin_service import get_credit_card_accounting_mode
-from app.services.recurring_transaction_service import get_occurrences_in_range
+from app.services.recurring_transaction_service import (
+    get_occurrences_in_range,
+    occurrence_rules,
+)
 from app.services.asset_service import get_asset_values_at
 from app.services.fx_rate_service import _resolve_rate, convert
 from app.models.user import User
@@ -139,7 +142,7 @@ async def _get_recurring_projections(
             range_start=month_start,
             range_end=month_end,
             intended_day=rec.day_of_month or rec.start_date.day,
-            weekend_adjustment=rec.weekend_adjustment,
+            **occurrence_rules(rec),
         )
         for occ_date in occurrences:
             if (rec.id, occ_date) in materialized_occurrences:
@@ -1165,7 +1168,7 @@ async def get_projected_transactions(
             range_start=range_start,
             range_end=range_end,
             intended_day=rec.day_of_month or rec.start_date.day,
-            weekend_adjustment=rec.weekend_adjustment,
+            **occurrence_rules(rec),
         )
         cat_name, cat_icon, cat_color, cat_is_transfer = (
             cat_map.get(rec.category_id, (None, None, None, False))

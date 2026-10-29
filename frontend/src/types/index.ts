@@ -672,6 +672,11 @@ export interface FailedRow {
   error_reason: string
 }
 
+export interface HolidayCalendarCountry {
+  country: string
+  subdivisions: { code: string; name: string }[]
+}
+
 export interface RecurringTransaction {
   id: string
   user_id: string
@@ -684,11 +689,19 @@ export interface RecurringTransaction {
   frequency: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
   weekend_adjustment: 'none' | 'previous_friday' | 'next_monday'
   day_of_month: number | null
+  business_day: number | null
+  count_saturdays: boolean
+  /** Country code with an optional subdivision: `BR`, `BR-SP`, `US-NY`. */
+  holiday_calendar: string | null
+  grace_days: number
+  match_keywords: string | null
+  amount_tolerance_percent: number
   start_date: string
   end_date: string | null
   is_active: boolean
   auto_generate: boolean
   next_occurrence: string
+  next_due_date?: string
   amount_primary: number | null
   fx_rate_used: number | null
 }

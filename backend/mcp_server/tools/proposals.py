@@ -1036,7 +1036,8 @@ async def propose_create_recurring_transaction(
                 description=description.strip(),
                 amount=Decimal(str(amount)),
                 currency=resolved_currency,
-                type=type,
+                # "expense"/"income" are accepted and normalized by the schema.
+                type=type,  # ty: ignore[invalid-argument-type]
                 frequency=frequency,
                 weekend_adjustment=weekend_adjustment,
                 day_of_month=int(day_of_month) if day_of_month else None,

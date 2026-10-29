@@ -25,6 +25,18 @@ class RecurringTransaction(Base):
             "weekend_adjustment IN ('none', 'previous_friday', 'next_monday')",
             name="ck_recurring_transactions_weekend_adjustment",
         ),
+        CheckConstraint(
+            "business_day IS NULL OR (business_day >= 1 AND business_day <= 23)",
+            name="ck_recurring_transactions_business_day",
+        ),
+        CheckConstraint(
+            "grace_days >= 0 AND grace_days <= 15",
+            name="ck_recurring_transactions_grace_days",
+        ),
+        CheckConstraint(
+            "amount_tolerance_percent >= 0 AND amount_tolerance_percent <= 50",
+            name="ck_recurring_transactions_amount_tolerance",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -43,6 +55,33 @@ class RecurringTransaction(Base):
         String(20), default="none", server_default="none"
     )
     day_of_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # When set, each occurrence falls on the n-th business day of its month
+    # (a salary "on the 5th business day") instead of on day_of_month. The
+    # nominal pointer then sits on the 1st and only the effective date moves.
+    business_day: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Count Saturdays toward business_day, as the Brazilian labour rule does.
+    # An occurrence that lands on a Saturday is then moved by
+    # weekend_adjustment, since no money moves on it.
+    count_saturdays: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Holiday calendar: a country code with an optional subdivision ("BR",
+    # "BR-SP", "US-NY"). Holidays are not business days, and
+    # weekend_adjustment moves an occurrence off them too. The schema checks
+    # the code against app.services.business_days; the list is too long and
+    # changes too often to hold in a CHECK constraint.
+    holiday_calendar: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    # How many days late the charge may arrive and still be this occurrence
+    # (rent due on the 5th that may be paid on the 6th). Widens the matching
+    # window after the due date; the due date itself does not move.
+    grace_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Comma-separated words the bank prints for this charge ("Transferência
+    # Recebida" for a salary). A charge whose description contains one is
+    # treated as describing this bill, whatever the bill itself is called.
+    match_keywords: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # How far, in percent, the charge may differ from ``amount`` and still be
+    # this bill (a rent that carries the month's utilities). Zero is exact.
+    amount_tolerance_percent: Mapped[Decimal] = mapped_column(
+        Numeric(precision=5, scale=2), default=0, server_default="0"
+    )
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
