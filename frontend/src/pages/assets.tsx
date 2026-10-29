@@ -53,6 +53,8 @@ import {
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
+import { ExchangeRateSetupBanner, ExchangeRateSetupIcon } from '@/components/exchange-rate-setup-notice'
+import { needsConversion, useExchangeRatesNeedSetup } from '@/hooks/use-exchange-rates-need-setup'
 import { PropertyEquitySummary } from '@/components/property-equity-summary'
 import { LOAN_COLLATERAL_TYPES } from '@/lib/property-equity'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -272,6 +274,8 @@ export default function AssetsPage() {
     const allowed = new Set(activeWalletIds)
     return (rawAssetsList ?? []).filter((a) => a.group_id && allowed.has(a.group_id))
   }, [rawAssetsList, activeWalletIds])
+
+  const exchangeRatesNeedSetup = useExchangeRatesNeedSetup(assetsList, userCurrency)
 
   const { data: rawPortfolioData } = useQuery({
     queryKey: ['portfolio-trend'],
@@ -768,6 +772,7 @@ export default function AssetsPage() {
       asset.current_value_primary == null
     const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
+    const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
 
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
@@ -852,7 +857,10 @@ export default function AssetsPage() {
           <div className="text-right tabular-nums">
             {asset.current_value != null ? (
               <>
-                <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
+                <span className="inline-flex items-center justify-end gap-1">
+                  <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
+                  {needsExchangeRate && <ExchangeRateSetupIcon from={asset.currency} to={userCurrency} isAdmin={Boolean(user?.is_superuser)} />}
+                </span>
                 {asset.current_value_primary != null && asset.currency !== userCurrency && (
                   <span className="block text-[10px] text-muted-foreground">{mask(formatCurrency(asset.current_value_primary, userCurrency, locale))}</span>
                 )}
@@ -1162,6 +1170,7 @@ export default function AssetsPage() {
         />
       ) : (
       <>
+      {exchangeRatesNeedSetup && <ExchangeRateSetupBanner isAdmin={Boolean(user?.is_superuser)} />}
       {/* Assets that have no resolvable FX rate are left out of the totals
           below; explain that so the numbers do not look wrong (issue #574). */}
       {unconvertedCurrencies.length > 0 && (

@@ -30,6 +30,7 @@ from app.models.user import User
 from app.providers import get_provider
 from app.providers.base import (
     AccountData,
+    BankProvider,
     HoldingData,
     ProviderNotConfiguredError,
     ProviderRateLimited,
@@ -37,6 +38,7 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
 )
+from app.services.provider_settings import resolve_settings
 from app.services import oauth_state
 from app.services import admin_service
 from app.services import reconciliation_service, recurring_match_service
@@ -264,7 +266,10 @@ def _account_balance(acc_data: AccountData, deducted: set[str]) -> Decimal:
 
 
 async def _fetch_holdings(
-    connection: BankConnection, credentials: dict
+    session: AsyncSession,
+    connection: BankConnection,
+    credentials: dict,
+    provider: BankProvider | None = None,
 ) -> Optional[list[HoldingData]]:
     """Fetch the connection's holdings, or None when the provider call fails.
 
@@ -273,7 +278,9 @@ async def _fetch_holdings(
     sync), so they are logged and reported as None.
     """
     try:
-        provider = get_provider(connection.provider)
+        provider = provider or get_provider(
+            connection.provider, settings=await resolve_settings(session)
+        )
         return await provider.get_holdings(credentials)
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -498,7 +505,7 @@ async def _sync_holdings(
     bank-account sync that just succeeded.
     """
     if holdings is None:
-        holdings = await _fetch_holdings(connection, credentials)
+        holdings = await _fetch_holdings(session, connection, credentials)
         if holdings is None:
             return
 
@@ -1173,8 +1180,9 @@ async def get_oauth_url(
     workspace_id: uuid.UUID,
     flow_params: Optional[dict] = None,
     reconnect_connection_id: Optional[uuid.UUID] = None,
+    session: AsyncSession | None = None,
 ) -> str:
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, settings=await resolve_settings(session))
     state = await oauth_state.store_state(
         {
             "user_id": str(user_id),
@@ -1198,7 +1206,7 @@ async def get_reauth_url(
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         raise ValueError("Connection not found")
-    provider = get_provider(connection.provider)
+    provider = get_provider(connection.provider, settings=await resolve_settings(session))
     state = await oauth_state.store_state(
         {
             "user_id": str(user_id),
@@ -1217,9 +1225,9 @@ async def get_reauth_url(
 
 
 async def list_provider_institutions(
-    provider_name: str, country: Optional[str] = None
+    provider_name: str, country: Optional[str] = None, session: AsyncSession | None = None
 ) -> dict:
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, settings=await resolve_settings(session))
     data = await provider.list_institutions(country)
     return {
         "countries": data.countries,
@@ -1240,9 +1248,10 @@ async def list_provider_institutions(
 
 
 async def create_connect_token(
-    provider_name: str, user_id: uuid.UUID, item_id: str | None = None
+    provider_name: str, user_id: uuid.UUID, item_id: str | None = None,
+    session: AsyncSession | None = None,
 ) -> dict:
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, settings=await resolve_settings(session))
     token_data = await provider.create_connect_token(str(user_id), item_id=item_id)
     return {"access_token": token_data.access_token}
 
@@ -1311,7 +1320,7 @@ async def handle_oauth_callback(
     if not provider_name:
         raise ValueError("OAuth callback missing provider")
 
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, settings=await resolve_settings(session))
     connection_data = await provider.handle_oauth_callback(code)
 
     if existing_reconnect:
@@ -1362,7 +1371,9 @@ async def handle_oauth_callback(
     # decided from the live synced assets already stored.
     holdings: Optional[list[HoldingData]] = None
     if _sync_assets_enabled(connection.settings):
-        holdings = await _fetch_holdings(connection, connection_data.credentials)
+        holdings = await _fetch_holdings(
+            session, connection, connection_data.credentials, provider
+        )
     auto_invested_deducted = await _resolve_auto_invested_deductions(
         session, connection, holdings, connection_data.accounts
     )
@@ -2282,13 +2293,11 @@ async def sync_connection(
     # provider is a server misconfiguration, and the catch-all below would
     # wrongly stamp the (healthy) connection with status="error".
     try:
-        provider = get_provider(connection.provider)
+        provider = get_provider(connection.provider, settings=await resolve_settings(session))
     except ValueError as exc:
         raise ProviderNotConfiguredError(
-            f"Provider '{connection.provider}' is not configured in this process. "
-            "If connecting from the web app works but background sync fails, the "
-            "worker service is likely not loading the environment (.env) that "
-            "enables this provider."
+            f"Provider '{connection.provider}' is not configured. "
+            "Ask an administrator to configure it in Settings or through the environment."
         ) from exc
 
     try:
@@ -2352,7 +2361,7 @@ async def sync_connection(
         # the deduction is decided from the live synced assets already stored.
         holdings: Optional[list[HoldingData]] = None
         if _sync_assets_enabled(conn_settings):
-            holdings = await _fetch_holdings(connection, credentials)
+            holdings = await _fetch_holdings(session, connection, credentials, provider)
         auto_invested_deducted = await _resolve_auto_invested_deductions(
             session, connection, holdings, accounts_data
         )
