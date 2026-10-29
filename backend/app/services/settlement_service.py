@@ -126,13 +126,16 @@ async def _pick_default_account_for_user(
     from app.models.workspace import WorkspaceMember
 
     # Resolve the workspaces the user can write to. Pick the first
-    # account that lives in any of them; ties broken by name.
+    # account the user owns in any of them; ties broken by name. A shared
+    # workspace also holds other members' accounts, which must never
+    # receive this user's credit.
     user_workspaces_subq = select(WorkspaceMember.workspace_id).where(
         WorkspaceMember.user_id == user_id
     )
     result = await session.execute(
         select(Account)
         .where(
+            Account.user_id == user_id,
             Account.workspace_id.in_(user_workspaces_subq),
             Account.is_closed.is_(False),
             Account.type.in_(("checking", "savings")),
