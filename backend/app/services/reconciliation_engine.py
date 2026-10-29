@@ -46,7 +46,7 @@ from decimal import ROUND_DOWN, Decimal
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from app.services.text_similarity import names_account, token_overlap
+from app.services.text_similarity import description_match, names_account
 
 #: What the decision came out of. Named rather than boolean so a node
 #: graph can wire each one somewhere different later.
@@ -894,7 +894,9 @@ def evaluate(
             score = 1.0
             similarity = rule.get("description_similarity")
             if similarity:
-                score = token_overlap(movement.description, candidate.description)
+                score = description_match(
+                    movement.description, candidate.description
+                )
                 if score < float(similarity.get("min", 0)):
                     note.rejected_by = Reason.DESCRIPTION
                     note.score = score
