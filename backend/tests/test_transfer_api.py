@@ -92,6 +92,59 @@ async def test_create_same_currency_transfer(
 
 
 @pytest.mark.asyncio
+async def test_create_transfer_applies_rules_to_both_legs(
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    second_account: Account,
+    test_categories,
+):
+    for leg_type, category in (
+        ("debit", test_categories[0]),
+        ("credit", test_categories[1]),
+    ):
+        rule_response = await client.post(
+            "/api/rules",
+            json={
+                "name": f"Transfer {leg_type} category",
+                "conditions_op": "and",
+                "conditions": [
+                    {
+                        "field": "description",
+                        "op": "contains",
+                        "value": "RULED CARD PAYMENT",
+                    },
+                    {"field": "type", "op": "equals", "value": leg_type},
+                ],
+                "actions": [{"op": "set_category", "value": str(category.id)}],
+                "priority": 5,
+                "is_active": True,
+            },
+            headers=auth_headers,
+        )
+        assert rule_response.status_code == 201
+
+    response = await client.post(
+        "/api/transactions/transfer",
+        json={
+            "from_account_id": str(test_account.id),
+            "to_account_id": str(second_account.id),
+            "amount": 500.00,
+            "date": "2026-01-15",
+            "description": "RULED CARD PAYMENT 1234",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["debit"]["category_id"] == str(test_categories[0].id)
+    assert data["credit"]["category_id"] == str(test_categories[1].id)
+    assert data["debit"]["transfer_pair_id"] == data["transfer_pair_id"]
+    assert data["credit"]["transfer_pair_id"] == data["transfer_pair_id"]
+
+
+@pytest.mark.asyncio
 async def test_create_cross_currency_transfer(
     client: AsyncClient, auth_headers, test_account: Account, usd_account: Account
 ):

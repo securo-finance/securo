@@ -1120,6 +1120,9 @@ async def create_transfer(
     session.add(credit_tx)
     await session.flush()
 
+    await apply_rules_to_transaction(session, user_id, debit_tx)
+    await apply_rules_to_transaction(session, user_id, credit_tx)
+
     # Stamp primary amounts on both
     await stamp_primary_amount(session, user_id, debit_tx)
     await stamp_primary_amount(session, user_id, credit_tx)
