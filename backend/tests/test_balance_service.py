@@ -2,11 +2,13 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
+import bcrypt
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.group_settlement import GroupSettlementCreate
 from app.schemas.transaction_split import (
@@ -18,6 +20,7 @@ from app.services import (
     group_service,
     settlement_service,
     split_service,
+    workspace_service,
 )
 
 
@@ -35,7 +38,9 @@ async def _make_account(session: AsyncSession, user_id) -> Account:
     return account
 
 
-async def _make_tx(session, user_id, account_id, amount, currency="USD") -> Transaction:
+async def _make_tx(
+    session, user_id, account_id, amount, currency="USD", tx_type="debit"
+) -> Transaction:
     tx = Transaction(
         id=uuid.uuid4(),
         user_id=user_id,
@@ -44,12 +49,29 @@ async def _make_tx(session, user_id, account_id, amount, currency="USD") -> Tran
         amount=Decimal(amount),
         currency=currency,
         date=date.today(),
-        type="debit",
+        type=tx_type,
         source="manual",
     )
     session.add(tx)
     await session.flush()
     return tx
+
+
+async def _make_user_with_workspace(session: AsyncSession, email: str):
+    user = User(
+        id=uuid.uuid4(),
+        email=email,
+        hashed_password=bcrypt.hashpw(b"x", bcrypt.gensalt()).decode(),
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(user)
+    await session.flush()
+    workspace = await workspace_service.create_personal_workspace_for_user(
+        session, user, commit=True
+    )
+    return user, workspace
 
 
 async def _setup(session, test_user, workspace_id, n_others=2):
@@ -103,6 +125,127 @@ async def test_balances_each_friend_owes_their_share(
     for f in friends:
         assert by_member[f.id] == Decimal("30.00")
     assert self_m.id not in by_member
+
+
+@pytest.mark.asyncio
+async def test_credit_split_makes_recorder_owe(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Splitting an income (credit) reverses the debt: the recorder received
+    the money, so they owe each other member that member's share."""
+    group, self_m, friends = await _setup(
+        session, test_user, test_workspace.id, n_others=3
+    )
+    account = await _make_account(session, test_user.id)
+    tx = await _make_tx(
+        session, test_user.id, account.id, "120.00", tx_type="credit"
+    )
+
+    payload = TransactionSplitsInput(
+        share_type="equal",
+        splits=[
+            TransactionSplitInput(group_member_id=self_m.id),
+            *[TransactionSplitInput(group_member_id=f.id) for f in friends],
+        ],
+    )
+    await split_service.replace_splits(session, tx, payload, test_user.id)
+    await session.commit()
+
+    balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+    assert balances is not None
+    by_member = {ln["member_id"]: ln["amount"] for ln in balances["lines"]}
+    # 120 split in 4 is 30 each. Negative means the caller owes the friend,
+    # the opposite of the debit case.
+    for f in friends:
+        assert by_member[f.id] == Decimal("-30.00")
+    assert self_m.id not in by_member
+
+
+@pytest.mark.asyncio
+async def test_credit_split_by_linked_member_makes_them_owe(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A credit recorded by a linked member makes that member, not the
+    default payer, owe the other members their share."""
+    group, self_m, _ = await _setup(
+        session, test_user, test_workspace.id, n_others=0
+    )
+    friend_user, _ = await _make_user_with_workspace(session, "friend@example.com")
+    friend = await group_service.create_member(
+        session,
+        group.id,
+        test_workspace.id,
+        GroupMemberCreate(name="Friend", linked_user_id=friend_user.id),
+    )
+    assert friend is not None
+    account = await _make_account(session, friend_user.id)
+    tx = await _make_tx(
+        session, friend_user.id, account.id, "120.00", tx_type="credit"
+    )
+
+    payload = TransactionSplitsInput(
+        share_type="equal",
+        splits=[
+            TransactionSplitInput(group_member_id=self_m.id),
+            TransactionSplitInput(group_member_id=friend.id),
+        ],
+    )
+    await split_service.replace_splits(session, tx, payload, friend_user.id)
+    await session.commit()
+
+    balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+    assert balances is not None
+    by_member = {ln["member_id"]: ln["amount"] for ln in balances["lines"]}
+    # The friend received the 120, so they owe self a 60.00 share: positive,
+    # unlike the credit above, which was recorded by self.
+    assert by_member[friend.id] == Decimal("60.00")
+    assert self_m.id not in by_member
+
+
+@pytest.mark.asyncio
+async def test_debit_and_credit_splits_net_to_zero(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A debit and a credit of the same amount, split the same way, cancel
+    out: the friend owes half of the expense and is owed half of the income."""
+    group, self_m, friends = await _setup(
+        session, test_user, test_workspace.id, n_others=1
+    )
+    friend = friends[0]
+    account = await _make_account(session, test_user.id)
+    tx_debit = await _make_tx(
+        session, test_user.id, account.id, "100.00", tx_type="debit"
+    )
+    tx_credit = await _make_tx(
+        session, test_user.id, account.id, "100.00", tx_type="credit"
+    )
+
+    for tx in (tx_debit, tx_credit):
+        await split_service.replace_splits(
+            session,
+            tx,
+            TransactionSplitsInput(
+                share_type="equal",
+                splits=[
+                    TransactionSplitInput(group_member_id=self_m.id),
+                    TransactionSplitInput(group_member_id=friend.id),
+                ],
+            ),
+            test_user.id,
+        )
+    await session.commit()
+
+    balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+    assert balances is not None
+    # +50 from the debit and -50 from the credit leave a zero balance, and
+    # zero-amount lines are dropped from the ledger.
+    assert balances["lines"] == []
 
 
 @pytest.mark.asyncio
