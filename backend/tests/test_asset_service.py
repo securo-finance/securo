@@ -21,6 +21,7 @@ from app.services.asset_service import (
     _generate_growth_values,
     _next_due_date,
     build_market_value_series,
+    estimate_gross_value_series,
     get_portfolio_trend,
 )
 
@@ -45,6 +46,36 @@ def test_build_market_value_series_reflects_quantity_over_time():
     assert round(out[date(2026, 5, 15)]) == round(250 * 46.43)    # 250 units at the carried price
     assert round(out[date(2026, 5, 17)]) == round(250 * 45.47)    # after → 250 units
     assert round(out[date(2026, 6, 11)]) == round(250 * 41.65)
+
+
+def test_estimate_gross_value_series_interpolates_legacy_net_rows():
+    start = date(2026, 5, 25)
+    records = [
+        (start, Decimal("100"), Decimal("100")),
+        (start + timedelta(days=1), Decimal("105"), None),
+        (start + timedelta(days=2), Decimal("110"), Decimal("112")),
+    ]
+    assert estimate_gross_value_series(records) == [
+        (start, 100.0),
+        (start + timedelta(days=1), 106.0),
+        (start + timedelta(days=2), 112.0),
+    ]
+
+
+def test_estimate_gross_value_series_resets_after_withdrawal():
+    start = date(2026, 5, 25)
+    records = [
+        (start, Decimal("100"), Decimal("100")),
+        (start + timedelta(days=1), Decimal("110"), None),
+        (start + timedelta(days=2), Decimal("50"), None),
+        (start + timedelta(days=3), Decimal("55"), Decimal("56")),
+    ]
+    assert estimate_gross_value_series(records) == [
+        (start, 100.0),
+        (start + timedelta(days=1), 110.0),
+        (start + timedelta(days=2), 50.0),
+        (start + timedelta(days=3), 56.0),
+    ]
 
 
 def test_build_market_value_series_handles_sell_and_missing_price():

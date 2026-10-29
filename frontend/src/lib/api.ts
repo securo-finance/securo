@@ -81,6 +81,11 @@ import type {
   AssetValue,
   MarketSymbolMatch,
   MarketSymbolQuote,
+  BenchmarkMatch,
+  HoldingTradeImport,
+  PerformanceMethod,
+  PortfolioPerformance,
+  PortfolioPerformancePeriod,
   Attachment,
   Goal,
   GoalSummary,
@@ -1492,6 +1497,47 @@ export const assets = {
     const { data } = await api.get('/assets/portfolio-trend')
     return data
   },
+  benchmarkSearch: async (q: string, limit = 15): Promise<BenchmarkMatch[]> => {
+    const { data } = await api.get('/assets/benchmarks/search', { params: { q, limit } })
+    return data
+  },
+  performance: async (
+    benchmarks: BenchmarkMatch[],
+    period: PortfolioPerformancePeriod,
+    assetGroupIds?: string[] | null,
+    selectedAssetGroupIds?: string[],
+    assetIds?: string[],
+    method: PerformanceMethod = 'twr',
+  ): Promise<PortfolioPerformance> => {
+    const hasGroups = assetGroupIds != null && assetGroupIds.length > 0
+    const { data } = await api.get('/assets/performance', {
+      params: {
+        ...(benchmarks.length
+          ? {
+              provider: benchmarks.map((item) => item.provider),
+              benchmark: benchmarks.map((item) => item.symbol),
+            }
+          : {}),
+        period,
+        method,
+        ...(hasGroups ? { asset_group_ids: assetGroupIds } : {}),
+        ...(selectedAssetGroupIds?.length
+          ? { selected_asset_group_ids: selectedAssetGroupIds }
+          : {}),
+        ...(assetIds?.length ? { asset_ids: assetIds } : {}),
+      },
+      paramsSerializer: { indexes: null as null },
+    })
+    return data
+  },
+  tradeImport: async (): Promise<HoldingTradeImport> => {
+    const { data } = await api.get('/assets/performance/trade-import')
+    return data
+  },
+  enableTradeImport: async (): Promise<HoldingTradeImport> => {
+    const { data } = await api.post('/assets/performance/trade-import')
+    return data
+  },
   marketSearch: async (q: string, limit = 15): Promise<MarketSymbolMatch[]> => {
     const { data } = await api.get('/assets/market/search', { params: { q, limit } })
     return data
@@ -1842,7 +1888,7 @@ export const search = {
 
 // App-level feature flags (whether optional modules like agents are mounted)
 export interface AppInfo {
-  features: { agents: boolean; tesouro_direto?: boolean }
+  features: { agents: boolean; tesouro_direto?: boolean; performance_benchmarks?: boolean }
 }
 
 export const info = {
