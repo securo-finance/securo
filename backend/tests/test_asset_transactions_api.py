@@ -128,6 +128,25 @@ async def test_deleting_a_split_a_later_sell_needs_returns_422(
 
 
 @pytest.mark.asyncio
+async def test_a_split_too_large_to_store_returns_422(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
+    url = f"/api/assets/{market_asset_api.id}/transactions"
+    buy = {"kind": "buy", "quantity": 1000, "price": 480, "date": "2026-01-01"}
+    assert (await client.post(url, headers=auth_headers, json=buy)).status_code == 201
+
+    r = await client.post(
+        url,
+        headers=auth_headers,
+        json={"kind": "split", "old_units": 1, "new_units": 1_000_000, "date": "2026-02-01"},
+    )
+
+    assert r.status_code == 422
+    assert "too large to store" in r.json()["detail"]
+    assert len((await client.get(url, headers=auth_headers)).json()) == 1
+
+
+@pytest.mark.asyncio
 async def test_update_transaction_all_fields_via_api(
     client: AsyncClient, auth_headers: dict, market_asset_api: Asset
 ):

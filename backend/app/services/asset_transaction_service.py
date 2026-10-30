@@ -44,6 +44,9 @@ _VALID_KINDS = {"buy", "sell", "split"}
 # side past this is a typo.
 _MAX_SPLIT_UNITS = 1_000_000
 
+# The most assets.units and asset_values.amount can hold: both are Numeric(15, 6).
+_MAX_STORED_VALUE = Decimal("999999999.999999")
+
 
 def _d(value) -> Decimal:
     return Decimal(str(value or 0))
@@ -200,6 +203,18 @@ def _raise_if_split_not_allowed(asset: Asset) -> None:
                 "Splits can only be recorded on market-priced holdings "
                 "that aren't synced from a bank connection."
             ),
+        )
+
+
+def _raise_if_split_too_large(transactions: list[AssetTransaction], asset: Asset) -> None:
+    # A ratio inside the cap can still leave more units, or more value at the
+    # current price, than the columns hold, and the database would only say so
+    # while saving.
+    units = _recompute(transactions)["units"]
+    if max(units, units * _d(asset.last_price)) > _MAX_STORED_VALUE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="This split would leave the holding too large to store. Check the ratio.",
         )
 
 
@@ -399,6 +414,8 @@ async def add_transaction(
             _raise_if_nothing_held_before(ledger, data.date)
         # A reverse split can leave a later sell short of units, like a sell can.
         _raise_if_oversell(ledger + [new_tx])
+        if is_split:
+            _raise_if_split_too_large(ledger + [new_tx], asset)
     session.add(new_tx)
     await session.flush()
     await recompute_and_cache(session, asset)
@@ -461,6 +478,7 @@ async def update_transaction(
         return None
 
     if kind == "split":
+        _raise_if_split_too_large(others + [edited], asset)
         # These stay 0 on a split; validation let through a null, which the
         # columns would reject.
         for key in ("quantity", "price", "fee"):
