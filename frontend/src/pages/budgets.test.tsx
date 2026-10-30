@@ -1,207 +1,76 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
-import { format } from 'date-fns'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
 
 import BudgetsPage from '@/pages/budgets'
 import { renderWithProviders, t } from '@/test/utils'
+import type { Budget, BudgetVsActual, Category } from '@/types'
 
 const api = vi.hoisted(() => ({
-  budgets: {
-    list: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-    comparison: vi.fn(),
-    suggestions: vi.fn(),
-    createBatch: vi.fn(),
-  },
-  categories: {
-    list: vi.fn(),
-    listIncludingHidden: vi.fn(),
-  },
-  categoryGroups: {
-    list: vi.fn(),
-  },
+  budgets: { list: vi.fn(), comparison: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  categories: { list: vi.fn() },
+  categoryGroups: { list: vi.fn() },
 }))
 
-vi.mock('@/lib/api', () => ({
-  budgets: api.budgets,
-  categories: api.categories,
-  categoryGroups: api.categoryGroups,
-}))
-
-vi.mock('@/hooks/use-display-locale', () => ({
-  useDisplayLocale: () => 'en-US',
-  useDateLocale: () => 'en-US',
-}))
-
-vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
-}))
-
-vi.mock('@/contexts/workspace-context', () => ({
-  useWorkspace: () => ({ canWrite: true }),
-}))
-
+vi.mock('@/lib/api', () => ({ budgets: api.budgets, categories: api.categories, categoryGroups: api.categoryGroups }))
+vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'UTC' }))
+vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }) }))
+vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ canWrite: true }) }))
 vi.mock('@/hooks/use-privacy-mode', () => ({
-  usePrivacyMode: () => ({ mask: (value: string) => value }),
+  usePrivacyMode: () => ({ mask: (value: string) => value, privacyMode: false, MASK: '••••' }),
 }))
 
-const categories = [
-  {
-    id: 'cat-groceries', user_id: 'user-1', group_id: null, name: 'Groceries',
-    icon: '', color: '#34d399', is_system: false, is_hidden: false,
-    treat_as_transfer: false, is_ignored: false,
-  },
-  {
-    id: 'cat-utilities', user_id: 'user-1', group_id: null, name: 'Utilities',
-    icon: '', color: '#f59e0b', is_system: false, is_hidden: false,
-    treat_as_transfer: false, is_ignored: false,
-  },
-]
+function category(id: string, name: string): Category {
+  return { id, user_id: 'u', group_id: 'g', name, icon: 'circle-help', color: '#000', is_system: false, is_hidden: false, treat_as_transfer: false, is_ignored: false }
+}
 
-function suggestion(partial: Record<string, unknown>) {
+function comparisonRow(categoryId: string, actual: number): BudgetVsActual {
   return {
-    category_id: 'cat-groceries',
-    category_name: 'Groceries',
-    category_icon: '',
-    category_color: '#34d399',
-    group_id: null,
-    group_name: null,
-    suggested_amount: '120.50',
-    total_spent: '361.50',
-    months_with_data: 3,
-    existing_budget: false,
-    ...partial,
+    category_id: categoryId, category_name: categoryId, category_icon: 'x', category_color: '#000', group_id: null, group_name: null,
+    budget_amount: null, actual_amount: actual, projected_amount: actual, prev_month_amount: 0, projected_prev_month_amount: 0,
+    percentage_used: null, is_recurring: false,
   }
 }
 
-function mockSuggestions(suggestions: unknown[]) {
-  api.budgets.suggestions.mockResolvedValue({
-    month: '2026-10-01', months_requested: 3, months_analyzed: 3, suggestions,
-  })
-}
+const rent: Budget = { id: 'b-rent', user_id: 'u', category_id: 'rent', amount: 900, month: '2026-08-01', is_recurring: true }
 
-const expectedMonth = `${format(new Date(), 'yyyy-MM')}-01`
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(Date.UTC(2026, 9, 10, 12)))
+  vi.clearAllMocks()
+  api.budgets.list.mockResolvedValue([rent])
+  api.categories.list.mockResolvedValue([])
+  api.categoryGroups.list.mockResolvedValue([{
+    id: 'g', user_id: 'u', name: 'Housing', icon: 'home', color: '#000', position: 0, is_system: false, is_hidden: false,
+    categories: [category('rent', 'Rent'), category('food', 'Groceries')],
+  }])
+  // Groceries: 300, 340 and a one-off 2000 month; the suggestion is the median.
+  api.budgets.comparison.mockImplementation(async (month: string) => ({
+    '2026-09-01': [comparisonRow('food', 300)],
+    '2026-08-01': [comparisonRow('food', 2000)],
+    '2026-07-01': [comparisonRow('food', 340)],
+  }[month] ?? []))
+  api.budgets.update.mockResolvedValue(rent)
+  api.budgets.create.mockResolvedValue(rent)
+})
 
-describe('BudgetsPage suggestions', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    api.budgets.list.mockResolvedValue([])
-    api.categories.list.mockResolvedValue(categories)
-    api.categories.listIncludingHidden.mockResolvedValue(categories)
-    api.categoryGroups.list.mockResolvedValue([])
-  })
+afterEach(() => vi.useRealTimers())
 
-  it('offers the suggest button next to the add button', async () => {
-    renderWithProviders(<BudgetsPage />, { route: '/budgets' })
+describe('Budget settings page', () => {
+  it('suggests the median month and saves every change in one go', async () => {
+    const { user } = renderWithProviders(<BudgetsPage />)
 
-    expect(await screen.findByRole('button', { name: t('budgets.suggest') })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: t('budgets.add') })).toBeInTheDocument()
-  })
+    expect(await screen.findByText(t('budgets.average', { amount: '$340.00' }), { exact: false })).toBeInTheDocument()
 
-  it('lists only categories without a budget and creates them in one batch', async () => {
-    mockSuggestions([
-      suggestion({}),
-      suggestion({
-        category_id: 'cat-utilities',
-        category_name: 'Utilities',
-        suggested_amount: '80.00',
-        total_spent: '240.00',
-        existing_budget: true,
-      }),
-    ])
-    api.budgets.createBatch.mockResolvedValue([{ id: 'b1', user_id: 'user-1', category_id: 'cat-groceries', amount: 120.5, month: expectedMonth, is_recurring: false }])
-    const { user } = renderWithProviders(<BudgetsPage />, { route: '/budgets' })
+    await user.clear(screen.getByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) }))
+    await user.type(screen.getByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) }), '950')
+    await user.click(screen.getByRole('button', { name: t('budgets.useSuggestion') }))
+    // Groceries only for this month.
+    await user.click(screen.getByRole('button', { name: t('budgets.repeatEveryMonthFor', { category: 'Groceries' }) }))
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
 
-    await user.click(await screen.findByRole('button', { name: t('budgets.suggest') }))
-    const dialog = await screen.findByRole('dialog')
-
-    expect(within(dialog).getByText('Groceries')).toBeInTheDocument()
-    expect(within(dialog).queryByText('Utilities')).not.toBeInTheDocument()
-    expect(within(dialog).getByDisplayValue('120.50')).toBeInTheDocument()
-    expect(api.budgets.suggestions).toHaveBeenCalledWith(expectedMonth, 3)
-
-    await user.click(within(dialog).getByRole('button', { name: t('budgets.suggestCreate') }))
-
-    await waitFor(() => {
-      expect(api.budgets.createBatch).toHaveBeenCalledWith({
-        month: expectedMonth,
-        is_recurring: false,
-        items: [{ category_id: 'cat-groceries', amount: 120.5 }],
-      })
-    })
-    await waitFor(() => expect(api.budgets.list.mock.calls.length).toBeGreaterThanOrEqual(2))
-  })
-
-  it('shows the empty message when every category already has a budget', async () => {
-    mockSuggestions([suggestion({ existing_budget: true })])
-    const { user } = renderWithProviders(<BudgetsPage />, { route: '/budgets' })
-
-    await user.click(await screen.findByRole('button', { name: t('budgets.suggest') }))
-    const dialog = await screen.findByRole('dialog')
-
-    expect(within(dialog).getByText(t('budgets.suggestEmpty'))).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: t('budgets.suggestCreate') })).toBeDisabled()
-  })
-
-  it('shows an error, not the empty message, when suggestions fail to load', async () => {
-    api.budgets.suggestions.mockRejectedValue(new Error('server error'))
-    const { user } = renderWithProviders(<BudgetsPage />, { route: '/budgets' })
-
-    await user.click(await screen.findByRole('button', { name: t('budgets.suggest') }))
-    const dialog = await screen.findByRole('dialog')
-
-    expect(await within(dialog).findByText(t('budgets.suggestError'))).toBeInTheDocument()
-    expect(within(dialog).queryByText(t('budgets.suggestEmpty'))).not.toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: t('budgets.suggestCreate') })).toBeDisabled()
-  })
-
-  it('only sends checked rows with a positive amount', async () => {
-    mockSuggestions([
-      suggestion({}),
-      suggestion({
-        category_id: 'cat-utilities',
-        category_name: 'Utilities',
-        suggested_amount: '80.00',
-        total_spent: '240.00',
-      }),
-    ])
-    api.budgets.createBatch.mockResolvedValue([{ id: 'b1', user_id: 'user-1', category_id: 'cat-utilities', amount: 80, month: expectedMonth, is_recurring: false }])
-    const { user } = renderWithProviders(<BudgetsPage />, { route: '/budgets' })
-
-    await user.click(await screen.findByRole('button', { name: t('budgets.suggest') }))
-    const dialog = await screen.findByRole('dialog')
-
-    await user.click(within(dialog).getByRole('checkbox', { name: 'Groceries' }))
-    await user.click(within(dialog).getByRole('button', { name: t('budgets.suggestCreate') }))
-
-    await waitFor(() => {
-      expect(api.budgets.createBatch).toHaveBeenCalledWith({
-        month: expectedMonth,
-        is_recurring: false,
-        items: [{ category_id: 'cat-utilities', amount: 80 }],
-      })
-    })
-  })
-
-  it('marks the created budgets as recurring when the repeat checkbox is on', async () => {
-    mockSuggestions([suggestion({})])
-    api.budgets.createBatch.mockResolvedValue([{ id: 'b1', user_id: 'user-1', category_id: 'cat-groceries', amount: 120.5, month: expectedMonth, is_recurring: true }])
-    const { user } = renderWithProviders(<BudgetsPage />, { route: '/budgets' })
-
-    await user.click(await screen.findByRole('button', { name: t('budgets.suggest') }))
-    const dialog = await screen.findByRole('dialog')
-
-    await user.click(within(dialog).getByRole('checkbox', { name: t('budgets.repeatEveryMonth') }))
-    await user.click(within(dialog).getByRole('button', { name: t('budgets.suggestCreate') }))
-
-    await waitFor(() => {
-      expect(api.budgets.createBatch).toHaveBeenCalledWith({
-        month: expectedMonth,
-        is_recurring: true,
-        items: [{ category_id: 'cat-groceries', amount: 120.5 }],
-      })
-    })
+    await waitFor(() => expect(api.budgets.create).toHaveBeenCalled())
+    expect(api.budgets.update).toHaveBeenCalledWith('b-rent', { amount: 950, effective_month: '2026-10-01' })
+    expect(api.budgets.create).toHaveBeenCalledWith({ category_id: 'food', amount: 340, month: '2026-10-01', is_recurring: false })
   })
 })
