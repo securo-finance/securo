@@ -41,10 +41,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # A split cannot be stored without its ratio, so those rows are deleted
-    # first. The holdings they touched keep their cached units until their
-    # ledger is next recomputed.
-    op.execute("DELETE FROM asset_transactions WHERE kind = 'split'")
+    # A split can't be stored without its ratio, and a ledger replayed without
+    # it leaves the sells after it short of units. Unlike a log or a suggestion
+    # it's a record, so it isn't deleted here: rolling back has to remove it on
+    # purpose.
+    split = op.get_bind().execute(
+        sa.text(f"SELECT 1 FROM {_TABLE} WHERE kind = 'split' LIMIT 1")
+    ).first()
+    if split is not None:
+        raise RuntimeError(
+            "Cannot remove the split columns because split entries exist in the "
+            "asset ledger. Delete them in the app, along with any sells recorded "
+            "after them, and rerun the migration."
+        )
     op.drop_constraint(_CHECK, _TABLE, type_="check")
     op.drop_column(_TABLE, "new_units")
     op.drop_column(_TABLE, "old_units")
