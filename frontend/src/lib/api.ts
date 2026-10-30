@@ -1515,14 +1515,16 @@ export const assets = {
   },
   addTransaction: async (
     id: string,
-    tx: { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string },
+    tx:
+      | { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string }
+      | { kind: 'split'; old_units: number; new_units: number; date: string; notes?: string },
   ): Promise<Asset> => {
     const { data } = await api.post(`/assets/${id}/transactions`, tx)
     return data
   },
   updateTransaction: async (
     txId: string,
-    tx: Partial<{ kind: 'buy' | 'sell'; quantity: number; price: number; fee: number; date: string; notes: string }>,
+    tx: Partial<{ kind: 'buy' | 'sell' | 'split'; quantity: number; price: number; fee: number; old_units: number; new_units: number; date: string; notes: string }>,
   ): Promise<Asset> => {
     const { data } = await api.patch(`/assets/transactions/${txId}`, tx)
     return data
