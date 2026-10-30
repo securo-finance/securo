@@ -14,6 +14,12 @@ RUN npm run build
 # Serve with nginx
 FROM nginxinc/nginx-unprivileged:alpine
 
+# Dynamic Nginx DNS resolver fallback.
+# This prevents Nginx from failing on boot in environments where NGINX_RESOLVER 
+# is unset, while allowing PaaS to dynamically resolve upstream backends
+# without hardcoding IPs or hitting 508 Loop Detected errors.
+ENV PROXY_HOST=\$host
+
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY default.conf.template /etc/nginx/templates/default.conf.template
 
@@ -24,5 +30,6 @@ COPY default.conf.template /etc/nginx/templates/default.conf.template
 # NGINX_RESOLVER explicitly still overrides both.
 ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 COPY --chmod=755 docker-entrypoint.d/19-resolver.envsh /docker-entrypoint.d/
-
+ENV PORT=8080
+ENV PROXY_SSL_VERIFY=off
 EXPOSE 8080
