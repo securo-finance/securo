@@ -149,6 +149,17 @@ def _counterparty_name(raw: dict, party: str) -> str:
     return name.strip() if isinstance(name, str) else ""
 
 
+def _counterparty_identity(raw: dict, party: str) -> str:
+    """IBAN of the counterparty account, falling back to its name."""
+    account = raw.get(f"{party}_account")
+    iban = (
+        account.get("iban")
+        if isinstance(account, dict) and isinstance(account.get("iban"), str)
+        else ""
+    )
+    return iban.strip() or _counterparty_name(raw, party)
+
+
 def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     """Stable id for a booked transaction.
 
@@ -158,20 +169,8 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     sync layer's pending↔posted twin matcher handles that.
     """
     amount = raw.get("transaction_amount") or {}
-    creditor_acc = raw.get("creditor_account")
-    debtor_acc = raw.get("debtor_account")
-    creditor_iban = (
-        creditor_acc.get("iban")
-        if isinstance(creditor_acc, dict) and isinstance(creditor_acc.get("iban"), str)
-        else ""
-    )
-    debtor_iban = (
-        debtor_acc.get("iban")
-        if isinstance(debtor_acc, dict) and isinstance(debtor_acc.get("iban"), str)
-        else ""
-    )
-    creditor_identity = creditor_iban.strip() or _counterparty_name(raw, "creditor")
-    debtor_identity = debtor_iban.strip() or _counterparty_name(raw, "debtor")
+    creditor_identity = _counterparty_identity(raw, "creditor")
+    debtor_identity = _counterparty_identity(raw, "debtor")
     parts = [
         str(account_uid),
         str(raw.get("booking_date") or ""),
@@ -183,6 +182,52 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
         _join_remittance(raw.get("remittance_information"))[:80],
         creditor_identity,
         debtor_identity,
+    ]
+    digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    return digest[:32]
+
+
+def _canonical_amount(amount_obj: Any) -> str:
+    """Canonical string for an EB amount.
+
+    "12", "12.0" and "12.00" are the same amount, so parse it as a Decimal
+    to give every spelling the same external id.
+    """
+    if not isinstance(amount_obj, dict):
+        return ""
+    raw = amount_obj.get("amount")
+    if raw is None or raw == "":
+        return ""
+    try:
+        return format(Decimal(str(raw)).normalize(), "f")
+    except InvalidOperation:
+        return str(raw)
+
+
+def _entry_reference_external_id(entry_ref: str, amount_obj: dict, raw: dict) -> str:
+    """Disambiguate a non-empty ``entry_reference`` with transaction details.
+
+    EB's `entry_reference` is not guaranteed unique per transaction: some
+    institutions reuse it across a batch/settlement (multiple ledger lines
+    clearing under one shared reference) or across follow-on charges against
+    the same card authorization (see #753). Folding in the amount, the
+    available date fields, the direction, the remittance text and the
+    counterparties keeps a truly-unique reference stable across re-fetches
+    while separating genuinely distinct transactions that happen to share
+    one (e.g. a charge and its refund, or settlement lines for different
+    counterparties with equal amounts).
+    """
+    parts = [
+        entry_ref,
+        _canonical_amount(amount_obj),
+        str(amount_obj.get("currency") or "") if isinstance(amount_obj, dict) else "",
+        str(raw.get("booking_date") or ""),
+        str(raw.get("value_date") or ""),
+        str(raw.get("transaction_date") or ""),
+        str(raw.get("credit_debit_indicator") or "").upper(),
+        _join_remittance(raw.get("remittance_information"))[:80],
+        _counterparty_identity(raw, "creditor"),
+        _counterparty_identity(raw, "debtor"),
     ]
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
     return digest[:32]
@@ -744,7 +789,9 @@ class EnableBankingProvider(BankProvider):
         description = description.strip()[:500] or "Transaction"
         entry_ref = (raw.get("entry_reference") or "").strip()
         external_id = (
-            entry_ref if entry_ref and entry_ref != "0" else _txn_fingerprint(account_uid, raw)
+            _entry_reference_external_id(entry_ref, amount_obj, raw)
+            if entry_ref and entry_ref != "0"
+            else _txn_fingerprint(account_uid, raw)
         )
         return TransactionData(
             external_id=external_id,
