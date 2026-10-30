@@ -988,6 +988,44 @@ async def test_deleting_a_split_gives_back_the_previous_position(session, test_w
     assert read.transaction_count == 1
 
 
+@pytest.mark.asyncio
+async def test_deleting_a_split_a_later_sell_needs_is_refused(session, test_workspace, market_asset):
+    await _buy(session, test_workspace, market_asset, "3", "485", date(2026, 1, 1))
+    await _add_split(session, test_workspace, market_asset, 1, 100, date(2026, 2, 1))
+    before = await _sell(session, test_workspace, market_asset, "100", "6", date(2026, 2, 2))
+    split = next(tx for tx in await _ledger(session, test_workspace, market_asset) if tx.kind == "split")
+
+    with pytest.raises(HTTPException) as exc:
+        await asset_transaction_service.delete_transaction(session, split.id, test_workspace.id)
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == (
+        "This split can't be deleted because a later sell depends on its units. "
+        "Delete or edit that sell first."
+    )
+    assert not session.deleted
+    after = await asset_service.get_asset(session, market_asset.id, test_workspace.id)
+    assert before is not None and after is not None
+    assert after.units == before.units == 200
+    assert after.realized_gain == before.realized_gain
+    assert after.sell_date is None
+    assert len(await _ledger(session, test_workspace, market_asset)) == 3
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_split_keeps_a_later_sell_that_still_fits(session, test_workspace, market_asset):
+    await _buy(session, test_workspace, market_asset, "10", "20", date(2026, 1, 1))
+    await _add_split(session, test_workspace, market_asset, 1, 2, date(2026, 2, 1))
+    await _sell(session, test_workspace, market_asset, "1", "12", date(2026, 2, 2))
+    split = next(tx for tx in await _ledger(session, test_workspace, market_asset) if tx.kind == "split")
+
+    read = await asset_transaction_service.delete_transaction(session, split.id, test_workspace.id)
+
+    assert read is not None
+    assert read.units == 9
+    assert read.transaction_count == 2
+
+
 # Issue #944: a split is a ledger entry, and the chart values a day as the
 # quantity held then times the price stored for that day. That only adds up
 # while the stored prices are the ones quoted at the time, so no path may

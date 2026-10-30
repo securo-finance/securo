@@ -487,6 +487,18 @@ async def delete_transaction(
     asset = await _load_asset(session, tx.asset_id, workspace_id)
     if asset is None:
         return None
+    if tx.kind == "split":
+        # The recompute would clamp a sell that needed the split's units, and
+        # that can close the holding.
+        others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]
+        if _detect_oversell(others) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "This split can't be deleted because a later sell depends on its units. "
+                    "Delete or edit that sell first."
+                ),
+            )
     await session.delete(tx)
     await session.flush()
     await recompute_and_cache(session, asset)
