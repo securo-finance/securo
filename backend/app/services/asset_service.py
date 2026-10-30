@@ -1,8 +1,8 @@
 import logging
 import uuid
 from datetime import date, datetime, timezone, timedelta
-from decimal import Decimal
-from typing import Any, Optional, cast
+from decimal import ROUND_DOWN, Decimal
+from typing import Any, Optional, Sequence, cast
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, func, desc, update as sa_update
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 ValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, amount, price_per_share)
 TxRecord = tuple[date, str, Decimal, Optional[Decimal]]  # (date, kind, quantity, price_per_share)
+SplitRecord = tuple[date, int, int]  # (date, old_units, new_units)
 
 
 def _next_due_date(last_date: date, frequency: str) -> date:
@@ -203,9 +204,23 @@ async def _get_value_as_of(
     return result.scalar_one_or_none()
 
 
+_UNIT_STEP = Decimal("0.000001")  # asset_transactions.quantity keeps six decimals
+
+
+def split_units(quantity: Decimal, old_units: int, new_units: int) -> Decimal:
+    """Units held after an `old_units` → `new_units` split of `quantity`.
+
+    Rounded down to the six decimals a ledger quantity can hold, so a sell
+    can always close the whole position after a split whose ratio doesn't
+    divide evenly (10 units through a 3 → 1 reverse split are 3.333333).
+    """
+    return (quantity * new_units / old_units).quantize(_UNIT_STEP, rounding=ROUND_DOWN)
+
+
 def build_market_value_series(
     value_rows: list[ValueRecord],
     txs: list[TxRecord],
+    splits: Sequence[SplitRecord] = (),
 ) -> list[tuple[date, float]]:
     """Rebuild a market-priced holding's value series from the ledger.
 
@@ -216,6 +231,12 @@ def build_market_value_series(
     trade's own price on dates that predate any recorded market price (backdated
     trades entered before price tracking began), and to the baked amount when
     neither a price nor a later market price exists.
+
+    Splits are replayed with the trades: each one scales the quantity on its
+    date, before that day's trades, and gets a point of its own. Stored prices
+    are never adjusted for a split (see `AssetValue.price`), so a price carried
+    forward from before one is converted to the units after it; otherwise the
+    old per-unit price would be multiplied by the new quantity.
 
     A point is emitted at every stored-value date *and* every trade date, so a
     quantity change shows up on the chart at the date it happened. Without the
@@ -241,6 +262,10 @@ def build_market_value_series(
         if p is not None:
             tx_price[d] = p
 
+    split_by_date: dict[date, list[tuple[int, int]]] = {}
+    for d, old_units, new_units in splits:
+        split_by_date.setdefault(d, []).append((old_units, new_units))
+
     # Stored value points by date (last write wins on duplicate dates).
     value_by_date: dict[date, tuple[Decimal, Optional[Decimal]]] = {
         d: (amount, price) for d, amount, price in value_rows
@@ -250,7 +275,13 @@ def build_market_value_series(
     qty = Decimal("0")
     last_price: Optional[Decimal] = None  # most recent known per-share price
     seen_market = False  # has a stored market price been reached yet?
-    for d in sorted(set(value_by_date) | set(tx_delta)):
+    for d in sorted(set(value_by_date) | set(tx_delta) | set(split_by_date)):
+        for old_units, new_units in split_by_date.get(d, ()):
+            # A split lands before that day's trades, as in the ledger replay.
+            qty = split_units(qty, old_units, new_units)
+            if last_price is not None:
+                # A price carried from before the split is per pre-split unit.
+                last_price = last_price * old_units / new_units
         qty += tx_delta.get(d, Decimal("0"))
         held = qty if qty > 0 else Decimal("0")
 
@@ -306,14 +337,21 @@ async def _load_asset_native_values(
     # Bulk-load the ledger for market-priced holdings (one query).
     market_ids = [a.id for a in assets if a.valuation_method == "market_price"]
     txs_by_aid: dict[str, list[TxRecord]] = {}
+    splits_by_aid: dict[str, list[SplitRecord]] = {}
     if market_ids:
         tq = select(
             AssetTransaction.asset_id, AssetTransaction.date,
             AssetTransaction.kind, AssetTransaction.quantity, AssetTransaction.price,
+            AssetTransaction.old_units, AssetTransaction.new_units,
         ).where(AssetTransaction.asset_id.in_(market_ids))
         if up_to_date is not None:
             tq = tq.where(AssetTransaction.date <= up_to_date)
-        for aid, d, kind, qty, price in (await session.execute(tq)).all():
+        for aid, d, kind, qty, price, old_units, new_units in (await session.execute(tq)).all():
+            if kind == "split":
+                # A split has no quantity or price of its own; replaying it as a
+                # "sell of 0" would leave the units unchanged.
+                splits_by_aid.setdefault(str(aid), []).append((d, old_units, new_units))
+                continue
             txs_by_aid.setdefault(str(aid), []).append(
                 (d, kind, Decimal(str(qty)), Decimal(str(price)) if price is not None else None)
             )
@@ -322,7 +360,9 @@ async def _load_asset_native_values(
     for asset in assets:
         aid = str(asset.id)
         if asset.valuation_method == "market_price":
-            values_map[aid] = build_market_value_series(raw[aid], txs_by_aid.get(aid, []))
+            values_map[aid] = build_market_value_series(
+                raw[aid], txs_by_aid.get(aid, []), splits_by_aid.get(aid, [])
+            )
         else:
             values_map[aid] = [(d, float(amt)) for d, amt, _ in raw[aid]]
 
@@ -847,13 +887,19 @@ async def get_asset_value_trend(
                 select(
                     AssetTransaction.date, AssetTransaction.kind,
                     AssetTransaction.quantity, AssetTransaction.price,
+                    AssetTransaction.old_units, AssetTransaction.new_units,
                 )
                 .where(AssetTransaction.asset_id == asset_id)
             )
         ).all()
         series = build_market_value_series(
             [(d, a, p) for d, a, p in rows],
-            [(d, k, Decimal(str(q)), Decimal(str(pr)) if pr is not None else None) for d, k, q, pr in txs],
+            [
+                (d, k, Decimal(str(q)), Decimal(str(pr)) if pr is not None else None)
+                for d, k, q, pr, _, _ in txs
+                if k != "split"
+            ],
+            [(d, old, new) for d, k, _, _, old, new in txs if k == "split"],
         )
         return [{"date": d.isoformat(), "amount": v} for d, v in series]
 

@@ -119,12 +119,15 @@ class AssetRead(BaseModel):
 
 
 class AssetTransactionCreate(BaseModel):
-    kind: str  # buy | sell
-    quantity: Decimal
-    price: Decimal
+    kind: str  # buy | sell | split
+    quantity: Optional[Decimal] = None  # required for a buy or sell
+    price: Optional[Decimal] = None  # required for a buy or sell
     fee: Decimal = Decimal("0")
     date: _date
     notes: Optional[str] = None
+    # Split only: units held before → after (a 100-for-1 split is 1 → 100).
+    old_units: Optional[int] = None
+    new_units: Optional[int] = None
 
 
 class AssetTransactionUpdate(BaseModel):
@@ -134,6 +137,8 @@ class AssetTransactionUpdate(BaseModel):
     fee: Optional[Decimal] = None
     date: Optional[_date] = None
     notes: Optional[str] = None
+    old_units: Optional[int] = None
+    new_units: Optional[int] = None
 
 
 class AssetBuyCreate(BaseModel):
@@ -159,6 +164,9 @@ class AssetTransactionRead(BaseModel):
     date: _date
     source: str
     notes: Optional[str] = None
+    # Split only: the units held before and after it (null on buys and sells).
+    old_units: Optional[int] = None
+    new_units: Optional[int] = None
     # Denormalized holding context so the global transactions tab can render
     # rows without an extra per-row asset lookup.
     asset_name: Optional[str] = None
