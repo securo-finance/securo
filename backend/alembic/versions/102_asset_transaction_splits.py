@@ -51,8 +51,8 @@ def downgrade() -> None:
     if split is not None:
         raise RuntimeError(
             "Cannot remove the split columns because split entries exist in the "
-            "asset ledger. Delete them in the app, along with any sells recorded "
-            "after them, and rerun the migration."
+            "asset ledger. Delete them in the app, along with any later sells that "
+            "depend on them, and rerun the migration."
         )
     op.drop_constraint(_CHECK, _TABLE, type_="check")
     op.drop_column(_TABLE, "new_units")
