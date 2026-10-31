@@ -4,7 +4,7 @@ Covers the weighted-average (preço médio) algorithm and the service paths:
 buy/sell recompute, realized gains, find-or-create consolidation by ticker.
 """
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 from unittest.mock import patch
@@ -13,10 +13,10 @@ from zoneinfo import ZoneInfo
 import pytest
 import pytest_asyncio
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.app_clock import app_today, use_resolved_timezone
+from app.core.app_clock import app_timezone, app_today, use_resolved_timezone
 from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
@@ -1026,7 +1026,7 @@ async def test_deleting_a_split_keeps_a_later_sell_that_still_fits(session, test
     assert read.transaction_count == 2
 
 
-_SPLIT_TOO_LARGE = "This split would leave the holding too large to store. Check the ratio."
+_TOO_LARGE = "This would leave the holding too large to store. Check the quantity, price and ratio."
 
 
 @pytest.mark.asyncio
@@ -1044,7 +1044,7 @@ async def test_a_split_the_columns_cant_hold_is_refused(session, test_workspace,
         await _add_split(session, test_workspace, market_asset, 1, 1_000_000, date(2026, 2, 1))
 
     assert exc.value.status_code == 422
-    assert exc.value.detail == _SPLIT_TOO_LARGE
+    assert exc.value.detail == _TOO_LARGE
     assert not session.new
     after = await asset_service.get_asset(session, market_asset.id, test_workspace.id)
     assert before is not None and after is not None
@@ -1064,7 +1064,7 @@ async def test_editing_a_split_past_what_the_columns_hold_is_refused(session, te
         )
 
     assert exc.value.status_code == 422
-    assert exc.value.detail == _SPLIT_TOO_LARGE
+    assert exc.value.detail == _TOO_LARGE
     # The rejected edit must not be left pending for a later commit to persist.
     assert not session.dirty
     assert await _split_ratio(session, split.id) == (1, 100)
@@ -1079,8 +1079,270 @@ async def test_a_second_split_is_judged_on_the_holding_it_leaves(session, test_w
         await _add_split(session, test_workspace, market_asset, 1, 1000, date(2026, 3, 1))
 
     assert exc.value.status_code == 422
-    assert exc.value.detail == _SPLIT_TOO_LARGE
+    assert exc.value.detail == _TOO_LARGE
     assert len(await _ledger(session, test_workspace, market_asset)) == 2
+
+
+async def _too_large(call) -> None:
+    with pytest.raises(HTTPException) as exc:
+        await call
+    assert exc.value.status_code == 422
+    assert exc.value.detail == _TOO_LARGE
+
+
+async def _cheap_holding_split_a_million_for_one(session, workspace, asset):
+    """100,000,000 units from 100 bought, at a price too low for the value to matter."""
+    asset.last_price = Decimal("0.0001")
+    await session.commit()
+    await _buy(session, workspace, asset, "100", "480", date(2026, 1, 1))
+    await _add_split(session, workspace, asset, 1, 1_000_000, date(2026, 2, 1))
+
+
+@pytest.mark.asyncio
+async def test_a_backdated_buy_past_a_split_that_wont_fit_is_refused(session, test_workspace, market_asset):
+    await _cheap_holding_split_a_million_for_one(session, test_workspace, market_asset)
+
+    await _too_large(_buy(session, test_workspace, market_asset, "1900", "480", date(2026, 1, 15)))
+
+    assert len(await _ledger(session, test_workspace, market_asset)) == 2
+
+
+@pytest.mark.asyncio
+async def test_buying_into_a_holding_past_a_split_that_wont_fit_is_refused(session, test_user, test_workspace, market_asset):
+    await _cheap_holding_split_a_million_for_one(session, test_workspace, market_asset)
+
+    await _too_large(asset_transaction_service.buy_into_holding(
+        session, test_workspace.id, test_user.id,
+        AssetBuyCreate(ticker="PETR4.SA", quantity=Decimal("1900"), price=Decimal("480"), date=date(2026, 1, 15)),
+    ))
+
+    assert not session.new
+    assert len(await _ledger(session, test_workspace, market_asset)) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_new_holding_that_wont_fit_is_not_created(session, test_user, test_workspace):
+    provider = _FakeProvider({"VALE3.SA": _quote("VALE3.SA", 30.0)})
+
+    await _too_large(asset_transaction_service.buy_into_holding(
+        session, test_workspace.id, test_user.id,
+        AssetBuyCreate(ticker="VALE3.SA", quantity=Decimal("2000000000"), price=Decimal("1"), date=date(2026, 1, 1)),
+        market_provider=provider,
+    ))
+
+    assert not session.new
+    assert (await session.execute(select(Asset).where(Asset.ticker == "VALE3.SA"))).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_editing_a_buy_past_a_split_so_it_wont_fit_is_refused(session, test_workspace, market_asset):
+    await _cheap_holding_split_a_million_for_one(session, test_workspace, market_asset)
+    buy = next(tx for tx in await _ledger(session, test_workspace, market_asset) if tx.kind == "buy")
+
+    await _too_large(asset_transaction_service.update_transaction(
+        session, buy.id, test_workspace.id, AssetTransactionUpdate(quantity=Decimal("2000")),
+    ))
+
+    assert (await session.get(AssetTransaction, buy.id)).quantity == Decimal("100")
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_reverse_split_the_holding_needs_to_fit_is_refused(session, test_workspace, market_asset):
+    market_asset.last_price = Decimal("0.0001")
+    await session.commit()
+    await _buy(session, test_workspace, market_asset, "1000", "480", date(2026, 1, 1))
+    await _add_split(session, test_workspace, market_asset, 1000, 1, date(2026, 2, 1))
+    await _add_split(session, test_workspace, market_asset, 1, 1_000_000, date(2026, 3, 1))
+    reverse = next(
+        tx for tx in await _ledger(session, test_workspace, market_asset) if tx.old_units == 1000
+    )
+
+    await _too_large(asset_transaction_service.delete_transaction(session, reverse.id, test_workspace.id))
+
+    assert len(await _ledger(session, test_workspace, market_asset)) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_reverse_split_that_lifts_the_average_past_its_column_is_refused(session, test_workspace, market_asset):
+    market_asset.last_price = Decimal("0.0001")
+    await session.commit()
+    await _buy(session, test_workspace, market_asset, "1", "1000000", date(2026, 1, 1))
+
+    await _too_large(_add_split(session, test_workspace, market_asset, 1_000_000, 1, date(2026, 2, 1)))
+
+    assert len(await _ledger(session, test_workspace, market_asset)) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_buy_that_wont_fit_is_refused_without_any_split(session, test_workspace, market_asset):
+    market_asset.last_price = Decimal("0.0001")
+    await session.commit()
+
+    await _too_large(_buy(session, test_workspace, market_asset, "2000000000", "1", date(2026, 1, 1)))
+
+    assert await _ledger(session, test_workspace, market_asset) == []
+
+
+# A split recorded before the feed catches up: the cached quote is per pre-split
+# unit, so a recompute must not store it as today's price for the new quantity.
+
+_QUOTED_AT = datetime(2020, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+
+async def _holding_quoted_yesterday(session, workspace, asset):
+    """3 units valued at the 500 quoted yesterday, with nothing stored for today."""
+    today = app_today()
+    yesterday = today - timedelta(days=1)
+    asset.last_price = Decimal("500")
+    await session.commit()
+    await _buy(session, workspace, asset, "3", "485", today - timedelta(days=30))
+    await session.execute(delete(AssetValue).where(AssetValue.asset_id == asset.id))
+    session.add(AssetValue(
+        asset_id=asset.id, workspace_id=workspace.id, amount=Decimal("1500"),
+        price=Decimal("500"), date=yesterday, source="sync",
+    ))
+    quoted_at = datetime.combine(yesterday, time(12), tzinfo=app_timezone())
+    asset.last_price_at = quoted_at
+    await session.commit()
+    return quoted_at
+
+
+async def _today_value(session, asset) -> Optional[AssetValue]:
+    return (
+        await session.execute(
+            select(AssetValue).where(AssetValue.asset_id == asset.id, AssetValue.date == app_today())
+        )
+    ).scalar_one_or_none()
+
+
+async def _trend(session, workspace, asset) -> dict[str, float]:
+    points = await asset_service.get_asset_value_trend(session, asset.id, workspace.id)
+    assert points is not None
+    return {p["date"]: p["amount"] for p in points}
+
+
+@pytest.mark.asyncio
+async def test_a_split_after_the_last_quote_stores_no_price_for_today(session, test_workspace, market_asset):
+    quoted_at = await _holding_quoted_yesterday(session, test_workspace, market_asset)
+
+    read = await _add_split(session, test_workspace, market_asset, 1, 100, app_today())
+
+    assert read.units == 300
+    assert await _today_value(session, market_asset) is None
+    await session.refresh(market_asset)
+    assert market_asset.last_price == Decimal("500")
+    assert market_asset.last_price_at.replace(tzinfo=None) == quoted_at.replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_the_chart_stays_level_until_the_refresh_after_a_split(session, test_workspace, market_asset):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+
+    await _add_split(session, test_workspace, market_asset, 1, 100, today)
+
+    trend = await _trend(session, test_workspace, market_asset)
+    assert trend[(today - timedelta(days=1)).isoformat()] == pytest.approx(1500)
+    assert trend[today.isoformat()] == pytest.approx(1500)
+
+    await asset_service._apply_price_to_asset(session, market_asset, Decimal("5.05"))
+    await session.commit()
+
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.price == Decimal("5.05")
+    assert stored.amount == pytest.approx(Decimal("1515"))
+    trend = await _trend(session, test_workspace, market_asset)
+    assert trend[today.isoformat()] == pytest.approx(1515)
+
+
+@pytest.mark.asyncio
+async def test_a_trade_after_a_split_waits_for_the_refresh_too(session, test_workspace, market_asset):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    await _add_split(session, test_workspace, market_asset, 1, 100, today)
+
+    read = await _buy(session, test_workspace, market_asset, "100", "5", today)
+
+    assert read.units == 400
+    assert await _today_value(session, market_asset) is None
+    await session.refresh(market_asset)
+    assert market_asset.last_price == Decimal("500")  # never scaled by a recompute
+    assert (await _trend(session, test_workspace, market_asset))[today.isoformat()] == pytest.approx(2000)
+
+
+@pytest.mark.asyncio
+async def test_a_trade_after_the_refresh_values_today_at_the_new_quote(session, test_workspace, market_asset):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    await _add_split(session, test_workspace, market_asset, 1, 100, today)
+    await asset_service._apply_price_to_asset(session, market_asset, Decimal("5"))
+    await session.commit()
+
+    await _buy(session, test_workspace, market_asset, "100", "5", today)
+
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.price == Decimal("5")
+    assert stored.amount == pytest.approx(Decimal("2000"))
+
+
+@pytest.mark.asyncio
+async def test_deleting_the_split_values_today_at_the_quote_again(session, test_workspace, market_asset):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    await _add_split(session, test_workspace, market_asset, 1, 100, app_today())
+    split = next(tx for tx in await _ledger(session, test_workspace, market_asset) if tx.kind == "split")
+
+    read = await asset_transaction_service.delete_transaction(session, split.id, test_workspace.id)
+
+    assert read is not None
+    assert read.units == 3
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.price == Decimal("500")
+    assert stored.amount == pytest.approx(Decimal("1500"))
+
+
+@pytest.mark.asyncio
+async def test_a_trade_without_splits_updates_today_but_not_the_quote_time(session, test_workspace, market_asset):
+    quoted_at = await _holding_quoted_yesterday(session, test_workspace, market_asset)
+
+    await _buy(session, test_workspace, market_asset, "1", "490", app_today())
+
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.price == Decimal("500")
+    assert stored.amount == pytest.approx(Decimal("2000"))
+    await session.refresh(market_asset)
+    assert market_asset.last_price_at.replace(tzinfo=None) == quoted_at.replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_a_quote_from_before_a_split_doesnt_count_towards_the_size_limit(session, test_workspace, market_asset):
+    # 3,000,000 units at the old 500 would be 1.5 billion, but that value is never stored.
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+
+    read = await _add_split(session, test_workspace, market_asset, 1, 1_000_000, app_today())
+
+    assert read.units == 3_000_000
+
+
+@pytest.mark.parametrize(
+    ("quoted_at", "split_on", "predates"),
+    [
+        (_QUOTED_AT, date(2020, 1, 2), True),
+        (_QUOTED_AT, date(2020, 1, 1), False),
+        (_QUOTED_AT, date(2019, 12, 31), False),
+        # 23:30 UTC on Jan 1 is already Jan 2 in Madrid, so a Jan 2 split isn't newer.
+        (datetime(2020, 1, 1, 23, 30, tzinfo=timezone.utc), date(2020, 1, 2), False),
+        (None, date(2020, 1, 2), False),
+    ],
+)
+def test_quote_predates_a_split_reads_the_workspace_calendar(quoted_at, split_on, predates):
+    asset = Asset(last_price_at=quoted_at)
+    ledger = [_tx("buy", "1", "10", date(2019, 1, 1)), _split(1, 2, split_on)]
+    with use_resolved_timezone(ZoneInfo("Europe/Madrid")):
+        assert asset_transaction_service._quote_predates_a_split(asset, ledger) is predates
 
 
 # Issue #944: a split is a ledger entry, and the chart values a day as the

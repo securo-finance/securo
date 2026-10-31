@@ -772,7 +772,7 @@ async def update_asset(
         and asset.units is not None
         and asset.units > 0
     ):
-        await _apply_price_to_asset(session, asset, Decimal(str(asset.last_price)))
+        await upsert_today_value(session, asset, Decimal(str(asset.last_price)))
 
     await session.commit()
     await session.refresh(asset)
@@ -1134,12 +1134,22 @@ async def _apply_price_to_asset(
     """
     asset.last_price = new_price
     asset.last_price_at = datetime.now(timezone.utc)
+    await upsert_today_value(session, asset, new_price, value_date=value_date)
 
+
+async def upsert_today_value(
+    session: AsyncSession, asset: Asset, price: Decimal, *, value_date: date | None = None
+) -> None:
+    """Rewrite today's AssetValue as units × price.
+
+    Leaves `last_price` and `last_price_at` alone, so a change of quantity
+    doesn't pass for a new quote.
+    """
     if not asset.units or asset.units <= 0:
         return
 
     today = value_date or app_today()
-    new_amount = new_price * Decimal(str(asset.units))
+    new_amount = price * Decimal(str(asset.units))
     existing = await session.execute(
         select(AssetValue)
         .where(AssetValue.asset_id == asset.id, AssetValue.date == today)
@@ -1149,14 +1159,14 @@ async def _apply_price_to_asset(
     today_value = existing.scalar_one_or_none()
     if today_value is not None:
         today_value.amount = new_amount
-        today_value.price = new_price
+        today_value.price = price
         today_value.source = "sync"
     else:
         session.add(
             AssetValue(
                 asset_id=asset.id,
                 amount=new_amount,
-                price=new_price,
+                price=price,
                 date=today,
                 source="sync",
             )
