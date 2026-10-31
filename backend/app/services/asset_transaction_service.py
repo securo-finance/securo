@@ -7,6 +7,10 @@ ledger in date order and cached on the asset row so list views stay cheap.
 Average price uses the weighted-average method (the Brazilian preço médio
 convention), not FIFO/LIFO: a sell realizes `(price - avg) * qty` and lowers
 the cost basis proportionally, leaving the per-unit average unchanged.
+
+A stock split changes how many units there are, not what they cost: it is
+applied before that day's trades and leaves the cost basis and realized gain
+alone, so the average price moves by the inverse ratio (issue #944).
 """
 import logging
 import uuid
@@ -18,6 +22,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_timezone, app_today
 from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
 from app.providers.market_price import MarketPriceProvider, get_market_price_provider
@@ -33,11 +38,36 @@ from app.services.asset_group_service import ensure_group_in_workspace
 
 logger = logging.getLogger(__name__)
 
-_VALID_KINDS = {"buy", "sell"}
+_VALID_KINDS = {"buy", "sell", "split"}
+
+# Whole units on each side of a split. Real splits stay in the hundreds, so a
+# side past this is a typo.
+_MAX_SPLIT_UNITS = 1_000_000
+
+# The most assets.units and asset_values.amount can hold: both are Numeric(15, 6).
+_MAX_STORED_VALUE = Decimal("999999999.999999")
+# The most assets.average_price can hold: it is Numeric(18, 6).
+_MAX_STORED_PRICE = Decimal("999999999999.999999")
 
 
 def _d(value) -> Decimal:
     return Decimal(str(value or 0))
+
+
+def _replay_order(tx: AssetTransaction) -> tuple[date, int, datetime]:
+    """Ledger replay order: by date, a split before that day's trades, then
+    in the order the entries were made."""
+    return (
+        tx.date,
+        0 if tx.kind == "split" else 1,
+        tx.created_at or datetime.min.replace(tzinfo=timezone.utc),
+    )
+
+
+def _units_after_split(qty: Decimal, tx: AssetTransaction) -> Decimal:
+    # The table's check constraint guarantees a split row carries its ratio.
+    assert tx.old_units is not None and tx.new_units is not None
+    return asset_service.split_units(qty, tx.old_units, tx.new_units)
 
 
 def _recompute(transactions: list[AssetTransaction]) -> dict:
@@ -46,7 +76,7 @@ def _recompute(transactions: list[AssetTransaction]) -> dict:
     Returns units (current quantity), average_price (per unit, None when flat),
     cost_basis (of held units), realized_gain, first_buy/last_sell dates.
     """
-    txs = sorted(transactions, key=lambda t: (t.date, t.created_at or datetime.min.replace(tzinfo=timezone.utc)))
+    txs = sorted(transactions, key=_replay_order)
     qty = Decimal("0")
     cost = Decimal("0")
     realized = Decimal("0")
@@ -69,6 +99,11 @@ def _recompute(transactions: list[AssetTransaction]) -> dict:
             cost -= avg * sell_qty
             qty -= sell_qty
             last_sell = tx.date
+        elif tx.kind == "split":
+            # A split changes how many units there are, not what they cost: the
+            # cost basis and realized gain stay, so the average price moves by the
+            # inverse ratio.
+            qty = _units_after_split(qty, tx)
 
     avg_price = (cost / qty) if qty > 0 else None
     return {
@@ -88,10 +123,7 @@ def _detect_oversell(transactions: list[AssetTransaction]) -> Optional[tuple[Dec
     We keep the portfolio buy-and-hold: a position can't go negative (no
     shorting), so an over-sell is rejected rather than silently clamped.
     """
-    txs = sorted(
-        transactions,
-        key=lambda t: (t.date, t.created_at or datetime.min.replace(tzinfo=timezone.utc)),
-    )
+    txs = sorted(transactions, key=_replay_order)
     qty = Decimal("0")
     for tx in txs:
         q = _d(tx.quantity)
@@ -101,6 +133,8 @@ def _detect_oversell(transactions: list[AssetTransaction]) -> Optional[tuple[Dec
             if q > qty:
                 return (q, qty)
             qty -= q
+        elif tx.kind == "split":
+            qty = _units_after_split(qty, tx)
     return None
 
 
@@ -127,6 +161,75 @@ def _raise_if_oversell(transactions: list[AssetTransaction]) -> None:
                 f"Cannot sell {fmt(attempted)} units — only {fmt(available)} held at that date. "
                 "Short positions aren't supported."
             ),
+        )
+
+
+def _raise_if_nothing_held_before(transactions: list[AssetTransaction], on: date) -> None:
+    """A split needs units to split: reject one dated before the holding's
+    first buy, or while the position is closed. Without this, a split on a
+    holding whose units predate the ledger (a "no cost" holding) would
+    recompute its units to zero.
+    """
+    # Strictly before: a split is applied ahead of the trades on its own date.
+    if _recompute([t for t in transactions if t.date < on])["units"] <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"No units are held before {on.isoformat()}. "
+                "Record the buys before the split first."
+            ),
+        )
+
+
+def _raise_if_split_in_future(on: date) -> None:
+    # The ledger applies an entry as soon as it exists, but the quote only
+    # moves on the split's date. Recorded ahead of it, the holding would show
+    # the new units at the old price until then.
+    if on > app_today():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "A split can't be dated in the future. "
+                "Record it once the holding trades at the new price."
+            ),
+        )
+
+
+def _raise_if_split_not_allowed(asset: Asset) -> None:
+    # Splits live in the ledger of holdings tracked here. A synced holding
+    # takes its units from the provider, which reflects the split itself.
+    if asset.valuation_method != "market_price" or asset.connection_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "Splits can only be recorded on market-priced holdings "
+                "that aren't synced from a bank connection."
+            ),
+        )
+
+
+def _quote_predates_a_split(asset: Asset, transactions: list[AssetTransaction]) -> bool:
+    if asset.last_price_at is None:
+        return False
+    quoted_on = asset.last_price_at.astimezone(app_timezone()).date()
+    return any(tx.kind == "split" and tx.date > quoted_on for tx in transactions)
+
+
+def _raise_if_too_large_to_store(transactions: list[AssetTransaction], asset: Asset) -> None:
+    # The ledger's own limits can still leave more units, more value at the
+    # current price or a higher average price than the columns hold, and the
+    # database would only say so while saving. A quote from before a split is
+    # never stored against the new quantity, so it doesn't count.
+    position = _recompute(transactions)
+    units = position["units"]
+    value = Decimal("0") if _quote_predates_a_split(asset, transactions) else units * _d(asset.last_price)
+    if (
+        max(units, value) > _MAX_STORED_VALUE
+        or _d(position["average_price"]) > _MAX_STORED_PRICE
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="This would leave the holding too large to store. Check the quantity, price and ratio.",
         )
 
 
@@ -160,9 +263,14 @@ async def recompute_and_cache(session: AsyncSession, asset: Asset) -> None:
         # Fully exited — mark sold so it drops out of the active portfolio.
         asset.sell_date = pos["last_sell"]
 
-    # Keep today's chart point in step with the new quantity.
-    if asset.valuation_method == "market_price" and asset.last_price is not None:
-        await asset_service._apply_price_to_asset(session, asset, Decimal(str(asset.last_price)))
+    # Keep today's chart point in step with the new quantity. A quote from before
+    # a split is per pre-split unit, so it waits for the next refresh instead.
+    if (
+        asset.valuation_method == "market_price"
+        and asset.last_price is not None
+        and not _quote_predates_a_split(asset, txs)
+    ):
+        await asset_service.upsert_today_value(session, asset, Decimal(str(asset.last_price)))
 
 
 def _tx_to_read(tx: AssetTransaction, asset: Optional[Asset] = None) -> AssetTransactionRead:
@@ -176,6 +284,8 @@ def _tx_to_read(tx: AssetTransaction, asset: Optional[Asset] = None) -> AssetTra
         date=tx.date,
         source=tx.source,
         notes=tx.notes,
+        old_units=tx.old_units,
+        new_units=tx.new_units,
         asset_name=asset.name if asset else None,
         ticker=asset.ticker if asset else None,
         currency=asset.currency if asset else None,
@@ -231,11 +341,49 @@ async def list_workspace_transactions(
     return [_tx_to_read(tx, asset) for tx, asset in result.all()]
 
 
-def _validate(kind: str, quantity: Decimal, price: Decimal) -> None:
+def _validate(
+    kind: str,
+    quantity: Optional[Decimal],
+    price: Optional[Decimal],
+    *,
+    fee: Optional[Decimal] = None,
+    old_units: Optional[int] = None,
+    new_units: Optional[int] = None,
+) -> None:
     if kind not in _VALID_KINDS:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="kind must be 'buy' or 'sell'",
+            detail="kind must be 'buy', 'sell' or 'split'",
+        )
+    if kind == "split":
+        if (
+            old_units is None
+            or new_units is None
+            or not 0 < old_units <= _MAX_SPLIT_UNITS
+            or not 0 < new_units <= _MAX_SPLIT_UNITS
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "old_units and new_units must be whole numbers "
+                    f"from 1 to {_MAX_SPLIT_UNITS}"
+                ),
+            )
+        if old_units == new_units:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="old_units and new_units must differ",
+            )
+        if any(v is not None and v != 0 for v in (quantity, price, fee)):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="a split has no quantity, price or fee",
+            )
+        return
+    if old_units is not None or new_units is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="old_units and new_units only apply to a split",
         )
     if quantity is None or quantity <= 0:
         raise HTTPException(
@@ -258,21 +406,35 @@ async def add_transaction(
     asset = await _load_asset(session, asset_id, workspace_id)
     if asset is None:
         return None
-    _validate(data.kind, data.quantity, data.price)
+    _validate(
+        data.kind, data.quantity, data.price,
+        fee=data.fee, old_units=data.old_units, new_units=data.new_units,
+    )
+    is_split = data.kind == "split"
+    if is_split:
+        _raise_if_split_not_allowed(asset)
+        _raise_if_split_in_future(data.date)
     new_tx = AssetTransaction(
         asset_id=asset.id,
         workspace_id=workspace_id,
         kind=data.kind,
-        quantity=data.quantity,
-        price=data.price,
-        fee=data.fee or Decimal("0"),
+        quantity=Decimal("0") if is_split else data.quantity,
+        price=Decimal("0") if is_split else data.price,
+        fee=Decimal("0") if is_split else (data.fee or Decimal("0")),
         date=data.date,
         source="manual",
         notes=data.notes,
+        old_units=data.old_units,
+        new_units=data.new_units,
         created_at=datetime.now(timezone.utc),
     )
-    if data.kind == "sell":
-        _raise_if_oversell(await _load_txs(session, asset.id) + [new_tx])
+    ledger = await _load_txs(session, asset.id)
+    if is_split:
+        _raise_if_nothing_held_before(ledger, data.date)
+    if data.kind in ("sell", "split"):
+        # A reverse split can leave a later sell short of units, like a sell can.
+        _raise_if_oversell(ledger + [new_tx])
+    _raise_if_too_large_to_store(ledger + [new_tx], asset)
     session.add(new_tx)
     await session.flush()
     await recompute_and_cache(session, asset)
@@ -295,17 +457,36 @@ async def update_transaction(
     if tx is None:
         return None
     fields = data.model_dump(exclude_unset=True)
+    kind = fields.get("kind", tx.kind)
+    if (kind == "split") != (tx.kind == "split"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "A split can't become a buy or a sell, or the other way round. "
+                "Delete it and add a new entry."
+            ),
+        )
     # Validate the prospective ledger before mutating the row — editing a buy
     # down or a sell up could drive the position negative.
-    others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]
     edited = AssetTransaction(
         asset_id=tx.asset_id,
-        kind=fields.get("kind", tx.kind),
+        kind=kind,
         quantity=fields.get("quantity", tx.quantity),
         price=fields.get("price", tx.price),
+        fee=fields.get("fee", tx.fee),
         date=fields.get("date", tx.date),
+        old_units=fields.get("old_units", tx.old_units),
+        new_units=fields.get("new_units", tx.new_units),
         created_at=tx.created_at,
     )
+    _validate(
+        edited.kind, edited.quantity, edited.price,
+        fee=edited.fee, old_units=edited.old_units, new_units=edited.new_units,
+    )
+    others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]
+    if kind == "split":
+        _raise_if_split_in_future(edited.date)
+        _raise_if_nothing_held_before(others, edited.date)
     _raise_if_oversell(others + [edited])
 
     # Resolve the asset before mutating the row: bailing out after the
@@ -315,9 +496,14 @@ async def update_transaction(
     if asset is None:
         return None
 
+    _raise_if_too_large_to_store(others + [edited], asset)
+    if kind == "split":
+        # These stay 0 on a split; validation let through a null, which the
+        # columns would reject.
+        for key in ("quantity", "price", "fee"):
+            fields.pop(key, None)
     for key, value in fields.items():
         setattr(tx, key, value)
-    _validate(tx.kind, _d(tx.quantity), _d(tx.price))
     await session.flush()
     await recompute_and_cache(session, asset)
     await session.commit()
@@ -338,6 +524,18 @@ async def delete_transaction(
     asset = await _load_asset(session, tx.asset_id, workspace_id)
     if asset is None:
         return None
+    others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]
+    # The recompute would clamp a sell that needed the split's units, and that
+    # can close the holding.
+    if tx.kind == "split" and _detect_oversell(others) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "This split can't be deleted because a later sell depends on its units. "
+                "Delete or edit that sell first."
+            ),
+        )
+    _raise_if_too_large_to_store(others, asset)
     await session.delete(tx)
     await session.flush()
     await recompute_and_cache(session, asset)
@@ -368,6 +566,7 @@ async def buy_into_holding(
         )
     )
     asset = result.scalar_one_or_none()
+    ledger = [] if asset is None else await _load_txs(session, asset.id)
 
     if asset is None:
         provider = market_provider or get_market_price_provider()
@@ -392,22 +591,23 @@ async def buy_into_holding(
             logo_url=quote.logo_url,
             source="yfinance",
         )
-        session.add(asset)
-        await session.flush()
 
-    session.add(
-        AssetTransaction(
-            asset_id=asset.id,
-            workspace_id=workspace_id,
-            kind="buy",
-            quantity=data.quantity,
-            price=data.price,
-            fee=data.fee or Decimal("0"),
-            date=data.date,
-            source="manual",
-            notes=data.notes,
-        )
+    new_tx = AssetTransaction(
+        workspace_id=workspace_id,
+        kind="buy",
+        quantity=data.quantity,
+        price=data.price,
+        fee=data.fee or Decimal("0"),
+        date=data.date,
+        source="manual",
+        notes=data.notes,
+        created_at=datetime.now(timezone.utc),
     )
+    _raise_if_too_large_to_store(ledger + [new_tx], asset)
+    session.add(asset)
+    await session.flush()
+    new_tx.asset_id = asset.id
+    session.add(new_tx)
     await session.flush()
     await recompute_and_cache(session, asset)
     await session.commit()

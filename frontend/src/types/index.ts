@@ -973,13 +973,17 @@ export interface AssetImportResult {
 export interface AssetTransaction {
   id: string
   asset_id: string
-  kind: 'buy' | 'sell'
+  kind: 'buy' | 'sell' | 'split'
   quantity: number
   price: number
   fee: number
   date: string
   source: string
   notes: string | null
+  // Split only: the units held before the split became `new_units` after it
+  // (a 100-for-1 split is 1 → 100). Null on buys and sells.
+  old_units: number | null
+  new_units: number | null
   asset_name: string | null
   ticker: string | null
   currency: string | null

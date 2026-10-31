@@ -228,12 +228,13 @@ async def portfolio_trend(
 @router.get("/transactions", response_model=list[AssetTransactionRead])
 async def list_workspace_transactions(
     ticker: str | None = Query(None, max_length=32),
-    kind: str | None = Query(None, pattern="^(buy|sell)$"),
+    kind: str | None = Query(None, pattern="^(buy|sell|split)$"),
     limit: int = Query(500, ge=1, le=2000),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """All buy/sell transactions in the workspace — powers the Transactions tab."""
+    """All ledger entries (buys, sells and splits) in the workspace — powers the
+    Transactions tab."""
     return await asset_transaction_service.list_workspace_transactions(
         session, ctx.workspace.id, ticker=ticker, kind=kind, limit=limit
     )
