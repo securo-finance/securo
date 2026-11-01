@@ -27,6 +27,7 @@ async def test_s3_server_round_trip():
         storage_s3_bucket=values["BUCKET"],
         storage_s3_region=values["REGION"],
         storage_s3_endpoint_url=values["ENDPOINT"],
+        storage_s3_allow_insecure_http=values["ENDPOINT"].startswith("http://"),
         storage_s3_addressing_style="path",
         storage_s3_access_key=values["ACCESS_KEY"],
         storage_s3_secret_key=values["SECRET_KEY"],

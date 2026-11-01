@@ -84,6 +84,8 @@ and `STORAGE_S3_SECRET_KEY` in `securo-secrets` (optionally
 `secret.storageS3SecretKey`, and `secret.storageS3SessionToken` when letting Helm
 create the Secret. Leave credentials unset when using an SDK-supported workload
 identity. For AWS S3, omit the endpoint and use addressing style `auto`.
+`http://` endpoints are rejected unless `config.storageS3AllowInsecureHttp: "true"`
+is set (development only; traffic is unencrypted).
 
 Create a private bucket before deployment and migrate existing attachments
 before disabling their PVC. Consult the repository README's Attachment Storage

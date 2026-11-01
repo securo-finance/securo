@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     storage_s3_secret_key: SecretStr = SecretStr("")
     storage_s3_session_token: SecretStr = SecretStr("")
     storage_s3_endpoint_url: str = ""  # for S3-compatible services (MinIO, DigitalOcean Spaces)
+    storage_s3_allow_insecure_http: bool = False  # development only: permits http:// endpoints
     storage_s3_addressing_style: str = "auto"  # auto|path|virtual; checked only when S3 is selected
 
     # Registration
@@ -159,15 +160,19 @@ class Settings(BaseSettings):
             raise ValueError("STORAGE_S3_SESSION_TOKEN requires explicit S3 access and secret keys")
         if self.storage_s3_endpoint_url:
             endpoint = urlsplit(self.storage_s3_endpoint_url)
+            allowed_schemes = {"https", "http"} if self.storage_s3_allow_insecure_http else {"https"}
             if (
-                endpoint.scheme not in {"http", "https"}
+                endpoint.scheme not in allowed_schemes
                 or not endpoint.hostname
                 or endpoint.username is not None
                 or endpoint.password is not None
                 or endpoint.query
                 or endpoint.fragment
             ):
-                raise ValueError("STORAGE_S3_ENDPOINT_URL must be an HTTP(S) URL without credentials, query or fragment")
+                raise ValueError(
+                    "STORAGE_S3_ENDPOINT_URL must be an HTTPS URL without credentials, query or fragment "
+                    "(http:// requires STORAGE_S3_ALLOW_INSECURE_HTTP=true, development only)"
+                )
         return self
 
     @model_validator(mode="after")

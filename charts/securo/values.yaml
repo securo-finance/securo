@@ -84,6 +84,7 @@ config:
   storageS3Bucket: ""
   storageS3Region: ""
   storageS3EndpointUrl: ""
+  storageS3AllowInsecureHttp: "false" # development only; required for http:// endpoints
   storageS3AddressingStyle: "auto" # use path for Garage/MinIO
   agentsKnowledgeStoragePath: "/app/data/agent_knowledge"
 

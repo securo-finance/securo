@@ -124,8 +124,9 @@ Temporary credentials can include `STORAGE_S3_SESSION_TOKEN`. Omit both access
 and secret keys to use the SDK's credential chain, such as an IAM role; the
 container must actually have access to that identity. Standard AWS credential
 environment variables are not automatically forwarded by the bundled Compose
-files. HTTPS certificate verification remains enabled; HTTP endpoints are
-accepted for local development.
+files. HTTPS certificate verification remains enabled; `http://` endpoints are
+rejected unless `STORAGE_S3_ALLOW_INSECURE_HTTP=true` is set (local development
+only, as data is sent unencrypted).
 
 Grant the application only read/write/delete access to its bucket objects
 (`s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on AWS). Garage uses its own

@@ -189,12 +189,25 @@ async def test_invalid_keys_never_reach_s3(s3, key, operation):
     {"storage_provider": "typo"},
     {"storage_s3_addressing_style": "typo"},
     {"storage_s3_endpoint_url": "file:///tmp/s3"},
+    {"storage_s3_endpoint_url": "http://s3.example.com"},
     {"storage_s3_endpoint_url": "https://user:secret@s3.example.com"},
     {"storage_s3_endpoint_url": "https://s3.example.com?secret=value"},
 ])
 def test_invalid_configuration_fails_early(s3_settings, overrides):
     with pytest.raises(ValidationError):
         Settings(_env_file=None, _secrets_dir=None, **(s3_settings.model_dump() | overrides))
+
+
+def test_http_endpoint_allowed_with_explicit_opt_in(s3_settings):
+    settings = Settings(
+        _env_file=None,
+        _secrets_dir=None,
+        **(s3_settings.model_dump() | {
+            "storage_s3_endpoint_url": "http://localhost:3900",
+            "storage_s3_allow_insecure_http": True,
+        }),
+    )
+    assert settings.storage_s3_endpoint_url == "http://localhost:3900"
 
 
 def test_local_default_does_not_require_s3_configuration(s3_settings):
