@@ -78,6 +78,9 @@ global:
   existingSecret: securo-secrets
 ```
 
+S3 support needs the `-s3` image variant, so also set the backend image tag to
+`latest-s3` (or `<version>-s3`) in `backend.image.tag`.
+
 In addition to the usual application secrets, provide `STORAGE_S3_ACCESS_KEY`
 and `STORAGE_S3_SECRET_KEY` in `securo-secrets` (optionally
 `STORAGE_S3_SESSION_TOKEN`). Alternatively, use `secret.storageS3AccessKey`,

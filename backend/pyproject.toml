@@ -24,7 +24,6 @@ dependencies = [
     "ofxparse>=0.21",
     "celery[redis]>=5.3.0",
     "aiofiles>=24.0",
-    "aiobotocore>=2.21.0",
     "redis[hiredis]>=5.0.0",
     "pyotp>=2.9.0",
     "webauthn>=2.8.0",
@@ -50,6 +49,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Only needed when STORAGE_PROVIDER=s3.
+s3 = [
+    "aiobotocore>=2.21.0",
+]
 dev = [
     "pytest>=9.0.0",
     "pytest-asyncio>=1.0",
