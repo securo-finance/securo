@@ -43,6 +43,9 @@ class S3StorageProvider(StorageProvider):
                 connect_timeout=5,
                 read_timeout=30,
                 retries={"mode": "standard", "total_max_attempts": 3},
+                # Endpoints come only from STORAGE_S3_ENDPOINT_URL so the HTTPS
+                # check cannot be bypassed via AWS_ENDPOINT_URL[_S3] or shared config.
+                ignore_configured_endpoint_urls=True,
                 # Optional SDK checksum trailers are not supported by every
                 # S3-compatible server. Retain checksums when the API requires them.
                 request_checksum_calculation="when_required",

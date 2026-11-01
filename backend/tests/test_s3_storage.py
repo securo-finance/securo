@@ -67,6 +67,7 @@ async def test_upload_preserves_key_bytes_and_content_type(s3):
     assert config.read_timeout == 30
     assert config.retries == {"mode": "standard", "total_max_attempts": 3}
     assert config.request_checksum_calculation == "when_required"
+    assert config.ignore_configured_endpoint_urls is True
     context.__aexit__.assert_awaited_once()
 
 
