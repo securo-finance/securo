@@ -89,6 +89,27 @@ async def test_aws_default_endpoint_and_credential_chain(s3, s3_settings):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "endpoint_variable", ["AWS_ENDPOINT_URL_S3", "AWS_ENDPOINT_URL"]
+)
+async def test_aws_endpoint_environment_variables_are_ignored(
+    s3_settings, monkeypatch, tmp_path, endpoint_variable,
+):
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.setenv(endpoint_variable, "http://unvalidated.example.com")
+    monkeypatch.setenv(
+        "AWS_CONFIG_FILE", str(tmp_path / "empty-aws-config")
+    )
+    s3_settings.storage_s3_endpoint_url = ""
+    s3_settings.storage_s3_region = "us-east-1"
+
+    with patch("app.providers.s3_storage.get_settings", return_value=s3_settings):
+        async with S3StorageProvider()._client() as client:
+            assert client.meta.endpoint_url == "https://s3.amazonaws.com"
+
+
+@pytest.mark.asyncio
 async def test_temporary_credentials(s3, s3_settings):
     from pydantic import SecretStr
 
