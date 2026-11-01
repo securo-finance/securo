@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     storage_s3_secret_key: SecretStr = SecretStr("")
     storage_s3_session_token: SecretStr = SecretStr("")
     storage_s3_endpoint_url: str = ""  # for S3-compatible services (MinIO, DigitalOcean Spaces)
-    storage_s3_addressing_style: Literal["auto", "path", "virtual"] = "auto"
+    storage_s3_addressing_style: str = "auto"  # auto|path|virtual; checked only when S3 is selected
 
     # Registration
     registration_enabled: bool = True
@@ -149,6 +149,8 @@ class Settings(BaseSettings):
             return self
         if not self.storage_s3_bucket.strip():
             raise ValueError("STORAGE_S3_BUCKET is required when STORAGE_PROVIDER=s3")
+        if self.storage_s3_addressing_style not in {"auto", "path", "virtual"}:
+            raise ValueError("STORAGE_S3_ADDRESSING_STYLE must be one of: auto, path, virtual")
         has_access_key = bool(self.storage_s3_access_key.get_secret_value())
         has_secret_key = bool(self.storage_s3_secret_key.get_secret_value())
         if has_access_key != has_secret_key:
