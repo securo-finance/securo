@@ -21,13 +21,13 @@ from fastapi import APIRouter, Depends, status
 
 from app.agents.config import get_agent_settings
 from app.agents.mcp.auth import mint_token
-from app.core.workspace_context import WorkspaceContext, current_writable_workspace
+from app.core.workspace_context import WorkspaceContext, current_jwt_writable_workspace
 
 router = APIRouter(prefix="/api/agents/mcp-tokens", tags=["agents"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_mcp_token(ctx: WorkspaceContext = Depends(current_writable_workspace)):
+async def create_mcp_token(ctx: WorkspaceContext = Depends(current_jwt_writable_workspace)):
     """Mint a long-lived MCP token for an external client.
 
     Write-gated because of what the token can do, not because minting

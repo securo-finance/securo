@@ -6,8 +6,8 @@ Resolution order:
 
 A personal access token pins the workspace instead: no header resolves
 to the token's workspace, and a header naming any other workspace is a
-403. A PAT is accepted only here; routes that depend on the user alone
-stay JWT-only.
+403. A PAT is accepted only here; routes that depend on the user alone,
+or on `current_jwt_writable_workspace`, stay JWT-only.
 
 If neither resolves, raises 404. Returns a `WorkspaceContext` value
 object that carries the workspace + the requester's membership + the
@@ -24,7 +24,7 @@ from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import use_resolved_timezone, workspace_timezone
-from app.core.auth import current_active_user_optional
+from app.core.auth import current_active_user, current_active_user_optional
 from app.core.database import get_async_session
 from app.core.personal_access_tokens import authenticate_pat, bearer_token, is_pat
 from app.models.personal_access_token import PersonalAccessToken
@@ -160,5 +160,19 @@ async def resolve_workspace(
 async def current_writable_workspace(
     ctx: WorkspaceContext = Depends(current_workspace),
 ) -> WorkspaceContext:
+    ctx.require_write()
+    return ctx
+
+
+async def current_jwt_writable_workspace(
+    x_workspace_id: Optional[str] = Header(default=None, alias="X-Workspace-Id"),
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> WorkspaceContext:
+    """Write-gated context that rejects personal access tokens.
+
+    For routes that issue credentials: a PAT must not mint another one.
+    """
+    ctx = await resolve_workspace(x_workspace_id, user, session)
     ctx.require_write()
     return ctx

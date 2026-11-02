@@ -96,6 +96,13 @@ async def test_pat_is_rejected_on_user_only_routes(client: AsyncClient, auth_hea
     assert (await client.post(TOKENS, json={"name": "x"}, headers=headers)).status_code == 401
 
 
+async def test_pat_cannot_mint_mcp_token(client: AsyncClient, auth_headers: dict):
+    token = (await _create(client, auth_headers))["token"]
+
+    response = await client.post("/api/agents/mcp-tokens", headers=_bearer(token))
+    assert response.status_code == 401
+
+
 async def test_workspace_header_must_match_token(
     client: AsyncClient,
     auth_headers: dict,
