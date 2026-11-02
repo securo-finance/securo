@@ -1343,6 +1343,62 @@ async def test_sync_connection_enable_banking_pending_booked_past_date_window_is
     ]
 
 
+def _eb_settling_payload(entry_ref: str, amount: str, *, booking_date: str | None) -> dict:
+    """One operation, spelled as EB spells it before and after it books."""
+    return {
+        "entry_reference": entry_ref,
+        "transaction_amount": {"currency": "EUR", "amount": amount},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": booking_date,
+        "value_date": "2026-08-31",
+        "remittance_information": ["SUPERMARKT 12 AT"],
+    }
+
+
+async def _eb_fetch(booked: list[dict], pending: list[dict]) -> list[TransactionData]:
+    """One page through the real provider, so its own filtering applies."""
+    page = {"transactions": {"booked": booked, "pending": pending}}
+    with patch.object(
+        EnableBankingProvider, "_request", new=AsyncMock(return_value=page)
+    ):
+        return await EnableBankingProvider()._fetch_transactions(
+            "eb-account", date(2026, 8, 1), date(2026, 9, 30), "auto"
+        )
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_pending_and_booked_in_one_fetch(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """An institution can list an operation as booked while still listing it
+    as pending. The booked entry carries a booking date, so it hashes to a
+    different id; the pending row the sync holds must be re-keyed onto it
+    rather than left behind next to a second row."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    pending_raw = _eb_settling_payload("auth-9", "25.00", booking_date=None)
+    booked_raw = _eb_settling_payload("auth-9", "25.00", booking_date="2026-09-01")
+
+    first = await _eb_fetch([], [pending_raw])
+    held = _eb_row(
+        test_user.id, test_workspace.id, account,
+        first[0].external_id, pending_raw, "25.00",
+        status="pending", date=date(2026, 8, 31),
+    )
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    settling = await _eb_fetch([booked_raw], [pending_raw])
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, settling)
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.amount, row.status) for row in rows] == [
+        (held_id, Decimal("25.00"), "posted"),
+    ]
+    assert rows[0].external_id == _eb_txn(booked_raw).external_id
+
+
 @pytest.mark.asyncio
 async def test_simplefin_rekey_respects_institution_and_closed_account(
     session: AsyncSession, test_user, test_workspace,

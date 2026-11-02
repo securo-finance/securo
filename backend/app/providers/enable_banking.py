@@ -233,6 +233,29 @@ def _entry_reference_external_id(entry_ref: str, amount_obj: dict, raw: dict) ->
     return digest[:32]
 
 
+def _settlement_key(raw: dict) -> Optional[tuple[str, str, str, str]]:
+    """Identity of one operation across its pending and booked spellings.
+
+    A pending entry and the booked entry it settles into keep the reference,
+    the amount, the currency and the direction; the booking date is what the
+    settlement adds. Returns None when the reference is absent or is the "0"
+    placeholder, which carries no identity of its own.
+    """
+    entry_ref = raw.get("entry_reference")
+    entry_ref = entry_ref.strip() if isinstance(entry_ref, str) else ""
+    if not entry_ref or entry_ref == "0":
+        return None
+    amount_obj = raw.get("transaction_amount")
+    if not isinstance(amount_obj, dict):
+        return None
+    return (
+        entry_ref,
+        _canonical_amount(amount_obj),
+        str(amount_obj.get("currency") or ""),
+        str(raw.get("credit_debit_indicator") or "").upper(),
+    )
+
+
 def _extract_payee(raw: dict, indicator: str, source: str) -> Optional[str]:
     """Pick a payee name from EB transaction payload.
 
@@ -701,7 +724,9 @@ class EnableBankingProvider(BankProvider):
     ) -> list[TransactionData]:
         date_from = start.isoformat()
         date_to = end.isoformat()
-        transactions: list[TransactionData] = []
+        collected: list[tuple[TransactionData, Optional[tuple[str, str, str, str]]]] = []
+        booked_keys: dict[tuple[str, str, str, str], int] = {}
+        pending_keys: dict[tuple[str, str, str, str], int] = {}
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
         seen_transaction_ids: set[str] = set()
@@ -721,9 +746,14 @@ class EnableBankingProvider(BankProvider):
                 # A broken pagination cursor can make Enable Banking return a
                 # page we have already consumed. Keep the result idempotent
                 # even before the repeated cursor is detected below.
-                if parsed and parsed.external_id not in seen_transaction_ids:
-                    transactions.append(parsed)
-                    seen_transaction_ids.add(parsed.external_id)
+                if not parsed or parsed.external_id in seen_transaction_ids:
+                    continue
+                key = _settlement_key(raw_txn)
+                if key is not None:
+                    counts = pending_keys if parsed.status == "pending" else booked_keys
+                    counts[key] = counts.get(key, 0) + 1
+                collected.append((parsed, key))
+                seen_transaction_ids.add(parsed.external_id)
 
             next_continuation_key = page.get("continuation_key") or None
             if not next_continuation_key:
@@ -737,7 +767,23 @@ class EnableBankingProvider(BankProvider):
                 break
             seen_continuation_keys.add(next_continuation_key)
             continuation_key = next_continuation_key
-        return transactions
+        # While an operation settles, an institution can list it as booked and
+        # still as pending in the same response. The two spellings differ (the
+        # booked one carries the booking date), so they hash to different ids:
+        # both would land, and the pending row would never clear, because the
+        # id it already holds is in this batch and the re-key skips a sibling
+        # that is still returned. Booked is the truth, so its pending twin is
+        # dropped here and the sync re-keys the row it already holds. Only an
+        # unambiguous pair counts: a reference shared by several entries on
+        # either side is #753's case, where each entry is its own transaction.
+        return [
+            parsed
+            for parsed, key in collected
+            if key is None
+            or parsed.status != "pending"
+            or booked_keys.get(key) != 1
+            or pending_keys.get(key) != 1
+        ]
 
     @staticmethod
     def _iter_transactions(page: dict):

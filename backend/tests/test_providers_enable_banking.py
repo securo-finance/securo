@@ -1105,3 +1105,71 @@ async def test_get_accounts_authorized_session_returns_accounts(eb_keys):
         accounts = await provider.get_accounts({"session_id": "sess-1"})
     assert [a.external_id for a in accounts] == ["acc-uid-1"]
     assert accounts[0].balance == Decimal("859.43")
+
+
+def _settling_payload(entry_ref: str, amount: str, *, booking_date: str | None) -> dict:
+    return {
+        "entry_reference": entry_ref,
+        "transaction_amount": {"amount": amount, "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": booking_date,
+        "value_date": "2026-05-10",
+        "remittance_information": ["SUPERMARKT 12 AT"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_drops_pending_twin_of_a_booked_entry(eb_keys):
+    """An institution can list one operation as booked and still as pending
+    while it settles. The booked entry is the truth; its pending twin would
+    hash to a second id and land as a row that never clears."""
+    provider = EnableBankingProvider()
+    page = {
+        "transactions": {
+            "booked": [_settling_payload("auth-9", "25.00", booking_date="2026-05-11")],
+            "pending": [_settling_payload("auth-9", "25.00", booking_date=None)],
+        },
+        "continuation_key": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    assert [(t.status, t.date) for t in txns] == [("posted", date(2026, 5, 11))]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_keeps_pending_siblings_sharing_a_reference(eb_keys):
+    """Two equal charges on one card authorization share the reference (#753).
+    One booking does not make the other pending entry its twin, so an
+    ambiguous reference keeps every entry."""
+    provider = EnableBankingProvider()
+    page = {
+        "transactions": {
+            "booked": [_settling_payload("auth-1", "9.99", booking_date="2026-05-11")],
+            "pending": [
+                _settling_payload("auth-1", "9.99", booking_date=None),
+                dict(
+                    _settling_payload("auth-1", "9.99", booking_date=None),
+                    value_date="2026-05-12",
+                ),
+            ],
+        },
+        "continuation_key": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    assert sorted(t.status for t in txns) == ["pending", "pending", "posted"]
+    assert len({t.external_id for t in txns}) == 3
