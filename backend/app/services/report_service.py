@@ -47,6 +47,7 @@ _ACCOUNT_TYPE_COLORS: dict[str, str] = {
     "checking": "#6366F1",
     "savings": "#3B82F6",
     "credit_card": "#F43F5E",
+    "loan": "#F43F5E",
     "investment": "#8B5CF6",
     "wallet": "#F59E0B",
 }
@@ -179,7 +180,7 @@ async def _net_worth_at(
             session, Decimal(str(abs(bal))), account.currency, primary_currency, cutoff
         )
         converted_val = float(converted)
-        if account.type == "credit_card" or bal < 0:
+        if account.type in {"credit_card", "loan"} or bal < 0:
             liabilities_total += converted_val
             if converted_val > 0:
                 composition.append(ReportCompositionItem(

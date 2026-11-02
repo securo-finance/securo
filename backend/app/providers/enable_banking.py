@@ -54,6 +54,10 @@ DEFAULT_HISTORY_DAYS = 90
 # Shorter window retried when a bank rejects the default one as out of bounds.
 FALLBACK_HISTORY_DAYS = 30
 TRANSACTION_PAGE_LIMIT = 50  # safety cap
+# Session states after which no data can be read until the user re-authorizes.
+TERMINAL_SESSION_STATUSES = frozenset(
+    {"EXPIRED", "REVOKED", "CLOSED", "CANCELLED", "INVALID"}
+)
 
 
 def _map_cash_account_type(eb_type: Optional[str]) -> str:
@@ -568,6 +572,13 @@ class EnableBankingProvider(BankProvider):
         if not session_id:
             raise SessionExpiredError("Enable Banking session_id missing")
         data = await self._request("GET", f"/sessions/{session_id}")
+        # The bank can end consent well before `valid_until`; EB still answers
+        # 200 here but flags the session, and every account call then fails.
+        # Raise so the connection is marked expired instead of "syncing" zero
+        # accounts forever.
+        status = (data.get("status") or "").upper()
+        if status in TERMINAL_SESSION_STATUSES:
+            raise SessionExpiredError(f"Enable Banking session is {status}")
         uids = self._account_uids(data)
         # EB keys each account by a uid scoped to this session; the
         # identification_hash is the id that survives a reauthorisation. It comes

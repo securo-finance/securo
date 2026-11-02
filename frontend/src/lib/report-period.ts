@@ -67,6 +67,20 @@ export function rollingStart(today: string, months: number): string {
 }
 
 /**
+ * Whole calendar months a range covers, or null when it does not line up with
+ * month boundaries. A range that starts on the 1st and ends on a month's last
+ * day has an exact width in months; the day-based estimate below does not,
+ * because a calendar year is 364 or 365 days and rounds up to thirteen.
+ */
+export function alignedSpanMonths(window: PeriodWindow): number | null {
+  const s = parseIso(window.from)
+  const t = parseIso(window.to)
+  if (s.d !== 1) return null
+  if (t.d !== new Date(t.y, t.m, 0).getDate()) return null
+  return (t.y - s.y) * 12 + (t.m - s.m) + 1
+}
+
+/**
  * Window width in months: ceil of the span in days / 30, clamped to 1..24.
  * Same rule the page uses when it sends a custom range, so shifted windows
  * keep the `months` parameter the API expects.
@@ -90,8 +104,9 @@ export function windowMonths(window: PeriodWindow): number {
  * `offset` counts periods of the preset (months, financial years, the
  * rolling length or the custom span), not calendar months.
  * - `custom` at offset 0 returns null (the page already sends the picked
- *   dates); negative offsets step the picked range back by its own length in
- *   months.
+ *   dates); negative offsets step the picked range back by its own length,
+ *   in whole months when the range covers whole months, otherwise by its
+ *   rounded span.
  */
 export function periodWindow(
   preset: PeriodPreset,
@@ -140,6 +155,17 @@ export function periodWindow(
     }
     case 'custom': {
       if (offset === 0 || !customRange) return null
+      // A range that covers whole months (the year picker sends one, and so
+      // does any month-to-month pick) steps by exactly that many months, each
+      // window ending the day before the next one starts. Rounding its day
+      // span instead would move a year back by thirteen months.
+      const aligned = alignedSpanMonths(customRange)
+      if (aligned !== null) {
+        return {
+          from: addMonthsIso(customRange.from, aligned * offset),
+          to: addDaysIso(addMonthsIso(customRange.from, aligned * (offset + 1)), -1),
+        }
+      }
       const spanMonths = Math.max(1, Math.ceil(daysBetween(customRange.from, customRange.to) / 30))
       return {
         from: addMonthsIso(customRange.from, spanMonths * offset),

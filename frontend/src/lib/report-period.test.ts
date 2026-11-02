@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { addDaysIso, addMonthsIso, daysBetween, periodWindow, rollingStart, windowMonths } from './report-period'
+import {
+  addDaysIso,
+  addMonthsIso,
+  alignedSpanMonths,
+  daysBetween,
+  periodWindow,
+  rollingStart,
+  windowMonths,
+} from './report-period'
 
 describe('addDaysIso', () => {
   it('shifts within a month', () => {
@@ -177,5 +185,54 @@ describe('periodWindow: custom ranges', () => {
       from: '2026-01-10',
       to: '2026-04-20',
     })
+  })
+
+  it('steps a picked year back one year, not thirteen months', () => {
+    const year = { from: '2025-01-01', to: '2025-12-31' }
+    expect(periodWindow({ kind: 'custom' }, '2026-09-15', -1, year)).toEqual({
+      from: '2024-01-01',
+      to: '2024-12-31',
+    })
+  })
+
+  it('steps a picked year forward again to where it started', () => {
+    const year = { from: '2025-01-01', to: '2025-12-31' }
+    expect(periodWindow({ kind: 'custom' }, '2026-09-15', 1, year)).toEqual({
+      from: '2026-01-01',
+      to: '2026-12-31',
+    })
+  })
+
+  it('keeps February whole when a leap year steps back', () => {
+    const window = { from: '2024-01-01', to: '2024-02-29' }
+    expect(periodWindow({ kind: 'custom' }, '2026-09-15', -1, window)).toEqual({
+      from: '2023-11-01',
+      to: '2023-12-31',
+    })
+  })
+
+  it('steps a half-year of whole months back by six months', () => {
+    const half = { from: '2026-07-01', to: '2026-12-31' }
+    expect(periodWindow({ kind: 'custom' }, '2026-09-15', -1, half)).toEqual({
+      from: '2026-01-01',
+      to: '2026-06-30',
+    })
+  })
+})
+
+describe('alignedSpanMonths', () => {
+  it('counts the months a range of whole months covers', () => {
+    expect(alignedSpanMonths({ from: '2025-01-01', to: '2025-12-31' })).toBe(12)
+    expect(alignedSpanMonths({ from: '2026-07-01', to: '2026-12-31' })).toBe(6)
+    expect(alignedSpanMonths({ from: '2026-03-01', to: '2026-03-31' })).toBe(1)
+    expect(alignedSpanMonths({ from: '2024-02-01', to: '2024-02-29' })).toBe(1)
+  })
+
+  it('declines a range that does not start on the first', () => {
+    expect(alignedSpanMonths({ from: '2026-05-10', to: '2026-08-31' })).toBeNull()
+  })
+
+  it('declines a range that stops short of the month end', () => {
+    expect(alignedSpanMonths({ from: '2026-01-01', to: '2026-10-26' })).toBeNull()
   })
 })

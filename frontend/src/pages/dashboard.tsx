@@ -38,7 +38,7 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle } from 'lucide-react'
+import { CheckCircle2, CalendarIcon, ChevronDown, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
@@ -57,7 +57,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
-import { formatCurrency } from '@/lib/format'
+import { formatCompactCurrency, formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
@@ -72,6 +72,8 @@ function parseHashtags(notes: string | null): string[] {
 
 const MONTH_REGEX = /^\d{4}-\d{2}$/
 const MONTH_STRING_LENGTH = 7
+const COMPARISON_MONTH_PARAM = 'comparison_month'
+const EMPTY_COMPARISON_MONTHS: string[] = []
 
 function parseMonthFromParams(params: URLSearchParams): string | null {
   const monthParam = params.get('month')
@@ -88,6 +90,21 @@ function parseMonthFromParams(params: URLSearchParams): string | null {
   }
 
   return null
+}
+
+function normalizeComparisonMonths(months: string[], availableMonths: string[], viewedMonth: string): string[] {
+  const available = new Set(availableMonths)
+  return [...new Set(months)]
+    .filter((month) => MONTH_REGEX.test(month) && month < viewedMonth && available.has(month))
+    .sort()
+    .slice(-24)
+}
+
+function defaultComparisonMonths(availableMonths: string[], viewedMonth: string): string[] {
+  const firstMonth = shiftMonth(viewedMonth, -12)
+  return availableMonths
+    .filter((month) => MONTH_REGEX.test(month) && month >= firstMonth && month < viewedMonth)
+    .sort()
 }
 
 
@@ -121,6 +138,8 @@ export default function DashboardPage() {
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
 
   const prevSearchRef = useRef<string | null>(null)
+  const searchParamsRef = useRef(searchParams)
+  searchParamsRef.current = searchParams
 
   // Sync state from URL when navigating (e.g. back/forward button)
   useEffect(() => {
@@ -141,7 +160,7 @@ export default function DashboardPage() {
 
   // Sync selectedMonth and the transactions view back to URL
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
+    const params = new URLSearchParams(searchParamsRef.current.toString())
     if (selectedMonth) {
       params.set('month', selectedMonth)
       params.delete('from')
@@ -167,6 +186,7 @@ export default function DashboardPage() {
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
   const queryClient = useQueryClient()
   const [headerCalOpen, setHeaderCalOpen] = useState(false)
+  const [comparisonPickerOpen, setComparisonPickerOpen] = useState(false)
   const [hoveredDay, setHoveredDay] = useState<number | null>(null)
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const { from: monthStart, to: monthEnd } = monthRange(selectedMonth)
@@ -176,7 +196,7 @@ export default function DashboardPage() {
 
   const handleMonthChange = (newMonth: string) => {
     setSelectedMonth(newMonth)
-}
+  }
 
   // Active Collection filter (issue #105): scope dashboard cards to its
   // accounts. undefined when "All accounts".
@@ -187,6 +207,71 @@ export default function DashboardPage() {
   // data — skip the account-only cards so they render empty instead of
   // silently falling back to "all accounts".
   const noAccounts = activeAccountIds !== null && activeAccountIds.length === 0
+
+  const { data: comparisonMonthOptions, isLoading: comparisonMonthsLoading } = useQuery({
+    queryKey: ['dashboard', 'balance-history-months', activeAccountIds],
+    queryFn: () => dashboard.balanceHistoryMonths(acctIds),
+    enabled: !noAccounts,
+    staleTime: 60_000,
+  })
+  const availableComparisonMonths = comparisonMonthOptions ?? EMPTY_COMPARISON_MONTHS
+  const defaultMonths = useMemo(
+    () => defaultComparisonMonths(availableComparisonMonths, selectedMonth),
+    [availableComparisonMonths, selectedMonth],
+  )
+  const requestedComparisonMonths = useMemo(
+    () => searchParams.getAll(COMPARISON_MONTH_PARAM),
+    [searchParams],
+  )
+  const validComparisonMonths = useMemo(
+    () => normalizeComparisonMonths(
+      requestedComparisonMonths,
+      availableComparisonMonths,
+      selectedMonth,
+    ),
+    [requestedComparisonMonths, availableComparisonMonths, selectedMonth],
+  )
+  const comparisonMonths = validComparisonMonths.length > 0 ? validComparisonMonths : defaultMonths
+
+  useEffect(() => {
+    // Only prune once the options have loaded; a failed request must not drop a shared selection.
+    if (comparisonMonthsLoading || !comparisonMonthOptions || requestedComparisonMonths.length === 0) return
+    // After navigation the URL is ahead of selectedMonth for one render; validate against the month it asks for.
+    const urlMonth = parseMonthFromParams(searchParams)
+    if (urlMonth && urlMonth !== selectedMonth) return
+    if (
+      requestedComparisonMonths.length === validComparisonMonths.length &&
+      requestedComparisonMonths.every((month, index) => month === validComparisonMonths[index])
+    ) return
+
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete(COMPARISON_MONTH_PARAM)
+    validComparisonMonths.forEach((month) => params.append(COMPARISON_MONTH_PARAM, month))
+    setSearchParams(params, { replace: true })
+  }, [
+    comparisonMonthsLoading,
+    comparisonMonthOptions,
+    requestedComparisonMonths,
+    validComparisonMonths,
+    selectedMonth,
+    searchParams,
+    setSearchParams,
+  ])
+
+  const toggleComparisonMonth = (month: string, checked: boolean) => {
+    const nextMonths = checked
+      ? [...comparisonMonths, month]
+      : comparisonMonths.filter((selected) => selected !== month)
+    if (nextMonths.length === 0 || nextMonths.length > 24) return
+
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete(COMPARISON_MONTH_PARAM)
+    const orderedMonths = [...new Set(nextMonths)].sort()
+    orderedMonths.forEach((selected) => {
+      params.append(COMPARISON_MONTH_PARAM, selected)
+    })
+    setSearchParams(params)
+  }
 
   const { data: summary, isLoading: summaryLoading, isFetching: summaryFetching } = useQuery({
     queryKey: ['dashboard', 'summary', selectedMonth, activeAccountIds, activeWalletIds],
@@ -199,12 +284,15 @@ export default function DashboardPage() {
     enabled: !noAccounts,
   })
 
-  const prevMonth = shiftMonth(selectedMonth, -1)
 
   const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
-    queryKey: ['dashboard', 'balance-history', selectedMonth, activeAccountIds],
-    queryFn: () => dashboard.balanceHistory(monthParam, acctIds),
-    enabled: !noAccounts,
+    queryKey: ['dashboard', 'balance-history', selectedMonth, activeAccountIds, comparisonMonths],
+    queryFn: () => dashboard.balanceHistory(
+      monthParam,
+      acctIds,
+      comparisonMonths.length > 0 ? comparisonMonths.map((value) => `${value}-01`) : undefined,
+    ),
+    enabled: !noAccounts && !comparisonMonthsLoading,
   })
 
   const { data: currentMonthTxs, isLoading: currentTxLoading } = useQuery({
@@ -365,18 +453,32 @@ export default function DashboardPage() {
   const cumulativeData = useMemo(() => {
     if (!balanceHistory) return []
     const daysInMonth = monthLastDay(selectedMonth)
-    const result: { day: number; current: number | null; previous: number }[] = []
-    let lastPrevBalance = 0
+    const opening = balanceHistory.opening_balance
+    const result: {
+      day: number
+      current: number | null
+      comparison: number | null
+      median: number | null
+      band: [number, number] | null
+    }[] = []
+    let lastComparison: number | null = null
     for (let day = 1; day <= daysInMonth; day++) {
       const cur = balanceHistory.current.find(d => d.day === day)
-      const prev = balanceHistory.previous.find(d => d.day === day)
-      if (prev?.balance != null) {
-        lastPrevBalance = prev.balance
+      const comparisonPoint = balanceHistory.comparison?.find(d => d.day === day)
+      if (comparisonPoint?.balance != null && balanceHistory.comparison_opening_balance != null) {
+        lastComparison = comparisonPoint.balance - balanceHistory.comparison_opening_balance
+      } else if (comparisonPoint) {
+        // A null balance is a day after today; only carry over days the comparison month lacks.
+        lastComparison = null
       }
+      const base = balanceHistory.baseline.find(d => d.day === day)
+      const hasBand = base?.lower_quartile != null && base?.upper_quartile != null
       result.push({
         day,
-        current: cur?.balance ?? null,
-        previous: prev?.balance ?? lastPrevBalance,
+        current: cur?.balance != null ? cur.balance - opening : null,
+        comparison: lastComparison,
+        median: base?.median ?? null,
+        band: hasBand ? [base!.lower_quartile!, base!.upper_quartile!] : null,
       })
     }
     return result
@@ -384,9 +486,7 @@ export default function DashboardPage() {
 
   const lastCurrentPoint = [...cumulativeData].reverse().find(d => d.current !== null)
   const lastDay = lastCurrentPoint?.day ?? 0
-  const currentStartBalance = balanceHistory?.current.find(d => d.day === 1)?.balance ?? 0
-  const currentLatestBalance = lastCurrentPoint?.current ?? 0
-  const monthVariation = currentLatestBalance - currentStartBalance
+  const monthVariation = lastCurrentPoint?.current ?? 0
 
   const primaryCurrency = summary?.primary_currency ?? userCurrency
   const totalBalance = summary?.total_balance_primary ?? Object.values(summary?.total_balance ?? {}).reduce((a, b) => a + Number(b), 0)
@@ -732,13 +832,13 @@ export default function DashboardPage() {
                     <p className="text-xs tabular-nums mt-2.5 inline-block cursor-help text-muted-foreground underline decoration-dotted underline-offset-2">
                       {summary.pending_shares_net < 0
                         ? t('dashboard.pendingSharesOwe', {
-                            net: mask(formatCurrency(availableBalance + summary.pending_shares_net, primaryCurrency, locale)),
-                            owed: mask(formatCurrency(Math.abs(summary.pending_shares_net), primaryCurrency, locale)),
-                          })
+                          net: mask(formatCurrency(availableBalance + summary.pending_shares_net, primaryCurrency, locale)),
+                          owed: mask(formatCurrency(Math.abs(summary.pending_shares_net), primaryCurrency, locale)),
+                        })
                         : t('dashboard.pendingSharesOwed', {
-                            net: mask(formatCurrency(availableBalance + summary.pending_shares_net, primaryCurrency, locale)),
-                            owed: mask(formatCurrency(summary.pending_shares_net, primaryCurrency, locale)),
-                          })}
+                          net: mask(formatCurrency(availableBalance + summary.pending_shares_net, primaryCurrency, locale)),
+                          owed: mask(formatCurrency(summary.pending_shares_net, primaryCurrency, locale)),
+                        })}
                     </p>
                   </TooltipTrigger>
                   <TooltipContent>{t('dashboard.pendingSharesTooltip')}</TooltipContent>
@@ -987,9 +1087,8 @@ export default function DashboardPage() {
                             <div className="flex items-center gap-2 shrink-0">
                               <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(item.actual, userCurrency, locale))}</span>
                               {item.momPct !== null && (
-                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${
-                                  item.momPct > 0 ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400' : item.momPct < 0 ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
-                                }`}>
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${item.momPct > 0 ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400' : item.momPct < 0 ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
+                                  }`}>
                                   {item.momPct > 0 ? '\u2191' : item.momPct < 0 ? '\u2193' : '='}{Math.abs(item.momPct).toFixed(0)}%
                                 </span>
                               )}
@@ -1003,9 +1102,8 @@ export default function DashboardPage() {
                                   style={{ width: `${Math.min(pct!, 100)}%` }}
                                 />
                               </div>
-                              <span className={`text-[11px] tabular-nums font-medium shrink-0 ${
-                                pct! > 100 ? 'text-rose-500' : pct! >= 80 ? 'text-amber-500' : 'text-muted-foreground'
-                              }`}>
+                              <span className={`text-[11px] tabular-nums font-medium shrink-0 ${pct! > 100 ? 'text-rose-500' : pct! >= 80 ? 'text-amber-500' : 'text-muted-foreground'
+                                }`}>
                                 {mask(t('dashboard.ofBudget', { budget: formatCurrency(item.budget_amount!, userCurrency, locale) }))}
                               </span>
                             </div>
@@ -1027,7 +1125,63 @@ export default function DashboardPage() {
           <div className="px-5 pt-5 pb-3 shrink-0">
             <div className="flex items-start justify-between mb-0.5">
               <div>
-                <p className="text-base font-bold text-foreground">{t('dashboard.balanceFlow')}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-base font-bold text-foreground">{t('dashboard.balanceFlow')}</p>
+                  <Popover open={comparisonPickerOpen} onOpenChange={setComparisonPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={availableComparisonMonths.filter((month) => month < selectedMonth).length === 0}
+                        aria-label={comparisonMonths.length === 1
+                          ? monthLabel(comparisonMonths[0], uiLocale)
+                          : `${t('dashboard.compareMonths')} (${comparisonMonths.length})`}
+                        className="h-7 gap-1.5 px-2 text-[11px] font-medium"
+                      >
+                        <CalendarIcon className="size-3.5" />
+                        {comparisonMonths.length === 1
+                          ? monthLabel(comparisonMonths[0], uiLocale)
+                          : `${t('dashboard.compareMonths')} (${comparisonMonths.length})`}
+                        <ChevronDown className="size-3" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-64 p-2">
+                      <p className="px-2 pb-2 text-xs font-semibold text-foreground">
+                        {t('dashboard.selectComparisonMonths')}
+                      </p>
+                      <div className="max-h-64 overflow-y-auto">
+                        {availableComparisonMonths
+                          .filter((month) => month < selectedMonth)
+                          .slice()
+                          .reverse()
+                          .map((month) => {
+                            const checked = comparisonMonths.includes(month)
+                            return (
+                              <label
+                                key={month}
+                                className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-muted"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={
+                                    (checked && comparisonMonths.length === 1) ||
+                                    (!checked && comparisonMonths.length >= 24)
+                                  }
+                                  onChange={(event) => toggleComparisonMonth(month, event.target.checked)}
+                                />
+                                <span>{monthLabel(month, uiLocale)}</span>
+                              </label>
+                            )
+                          })}
+                      </div>
+                      {availableComparisonMonths.filter((month) => month < selectedMonth).length === 0 && (
+                        <p className="px-2 py-2 text-xs text-muted-foreground">{t('dashboard.noData')}</p>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(dateLocale)} → {new Date(`${selectedMonth}-${String(lastCurrentPoint?.day ?? monthLastDay(selectedMonth)).padStart(2, '0')}T00:00:00`).toLocaleDateString(dateLocale)}
                 </p>
@@ -1046,10 +1200,25 @@ export default function DashboardPage() {
                 <span className="inline-block w-3 h-0.5 rounded-full bg-emerald-500" />
                 {t('dashboard.balanceCurrentMonthLegend')}
               </span>
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="inline-block w-3 border-t-2 border-dashed border-slate-400" />
-                {t('dashboard.balancePreviousMonthLegend')}
-              </span>
+              {comparisonMonths.length === 1 ? (
+                <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className="inline-block w-3 border-t-2 border-dashed border-slate-400" />
+                  {monthLabel(comparisonMonths[0], uiLocale)}
+                </span>
+              ) : (
+                <>
+                  <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className="inline-block w-3 h-0.5 rounded-full bg-slate-400" />
+                    {t('dashboard.balanceMedianLegend')}
+                  </span>
+                  {cumulativeData.some((point) => point.band !== null) && (
+                    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span className="inline-block w-3 h-2 rounded-sm bg-slate-400/25" />
+                      {t('dashboard.balanceRangeLegend')}
+                    </span>
+                  )}
+                </>
+              )}
             </div>
           </div>
           <div className="px-1 pb-4 flex-1 min-h-0">
@@ -1101,23 +1270,36 @@ export default function DashboardPage() {
                     tickFormatter={(v) => {
                       if (privacyMode) return ''
                       if (v === 0) return '0'
-                      return formatCurrency(v, userCurrency, locale).replace(/,00$/, '').replace(/\.00$/, '')
+                      return formatCompactCurrency(v, userCurrency, locale)
                     }}
                     tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                     axisLine={false}
                     tickLine={false}
-                    width={56}
+                    width={64}
                     tickCount={5}
                     domain={[
-                      (dataMin: number) => dataMin < 0 ? Math.floor(dataMin / 100) * 100 : 0,
-                      (dataMax: number) => Math.ceil(dataMax / 100) * 100,
+                      (dataMin: number) => Math.min(0, Math.floor(dataMin / 100) * 100),
+                      (dataMax: number) => Math.max(0, Math.ceil(dataMax / 100) * 100),
                     ]}
                   />
                   <RechartsTooltip
-                    formatter={(value, name) => [
-                      value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
-                      name === 'current' ? monthLabel(selectedMonth, uiLocale).split(' ')[0] : monthLabel(prevMonth, uiLocale).split(' ')[0],
-                    ]}
+                    formatter={(value, name) => {
+                      const fmt = (v: number) => (privacyMode ? MASK : formatCurrency(v, userCurrency, locale))
+                      if (name === 'band') {
+                        const range = value as [number, number] | null
+                        return [range ? `${fmt(range[0])} – ${fmt(range[1])}` : '\u2014', t('dashboard.balanceRangeLegend')]
+                      }
+                      if (name === 'comparison') {
+                        return [
+                          value !== null ? fmt(Number(value)) : '\u2014',
+                          monthLabel(comparisonMonths[0], uiLocale),
+                        ]
+                      }
+                      return [
+                        value !== null ? fmt(Number(value)) : '\u2014',
+                        name === 'current' ? monthLabel(selectedMonth, uiLocale).split(' ')[0] : t('dashboard.balanceMedianLegend'),
+                      ]
+                    }}
                     labelFormatter={(day) => t('dashboard.day', { day })}
                     contentStyle={{
                       background: 'var(--card)',
@@ -1127,6 +1309,16 @@ export default function DashboardPage() {
                       boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
                       fontSize: '12px',
                     }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="band"
+                    stroke="none"
+                    fill="#94A3B8"
+                    fillOpacity={0.22}
+                    dot={false}
+                    activeDot={false}
+                    connectNulls={false}
                   />
                   <Area
                     type="monotone"
@@ -1140,12 +1332,13 @@ export default function DashboardPage() {
                   />
                   <Line
                     type="monotone"
-                    dataKey="previous"
+                    dataKey={comparisonMonths.length === 1 ? 'comparison' : 'median'}
                     stroke="#94A3B8"
                     strokeWidth={2}
-                    strokeDasharray="5 3"
+                    strokeDasharray={comparisonMonths.length === 1 ? '5 3' : undefined}
                     dot={false}
                     activeDot={{ r: 3, fill: '#94A3B8' }}
+                    connectNulls={false}
                   />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -1155,22 +1348,34 @@ export default function DashboardPage() {
           </div>
           {!balanceHistoryLoading && lastCurrentPoint && (() => {
             const footerDay = hoveredDay ?? lastDay
-            const footerPrev = balanceHistory?.previous.find(d => d.day === footerDay)?.balance ?? 0
-            const footerCurrent = cumulativeData.find(d => d.day === footerDay)?.current ?? totalBalance
-            const footerPct = footerPrev !== 0 ? ((footerCurrent - footerPrev) / Math.abs(footerPrev)) * 100 : null
-            if (footerPrev === 0 || footerPct === null) return null
+            const point = cumulativeData.find(d => d.day === footerDay)
+            const comparisonValue = comparisonMonths.length === 1 ? point?.comparison : point?.median
+            if (!point || comparisonValue == null || point.current == null) return null
+            const footerDelta = point.current - comparisonValue
+            if (comparisonMonths.length === 1) {
+              return (
+                <div className="px-5 pb-4 pt-0 shrink-0">
+                  <p className="text-xs text-muted-foreground">
+                    {t('dashboard.balanceFlowVsMonth', {
+                      day: footerDay,
+                      month: monthLabel(comparisonMonths[0], uiLocale),
+                      delta: mask(`${footerDelta >= 0 ? '+' : ''}${formatCurrency(footerDelta, userCurrency, locale)}`),
+                    })}
+                  </p>
+                </div>
+              )
+            }
             return (
               <div className="px-5 pb-4 pt-0 shrink-0">
                 <p className="text-xs text-muted-foreground">
-                  {t('dashboard.balanceFlowVsPrev', {
-                    month: monthLabel(prevMonth, uiLocale).split(' ')[0],
+                  {t('dashboard.balanceFlowVsMedian', {
                     day: footerDay,
-                    amount: mask(formatCurrency(footerPrev, userCurrency, locale)),
-                    delta: `${footerPct >= 0 ? '+' : ''}${footerPct.toFixed(1)}%`,
+                    median: mask(formatCurrency(point.median, userCurrency, locale)),
+                    delta: mask(`${footerDelta >= 0 ? '+' : ''}${formatCurrency(footerDelta, userCurrency, locale)}`),
                   })}
                   {' '}
-                  <span className={footerPct >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
-                    {footerPct >= 0 ? '\u25B2' : '\u25BC'}
+                  <span className={footerDelta >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
+                    {footerDelta >= 0 ? '\u25B2' : '\u25BC'}
                   </span>
                 </p>
               </div>
@@ -1290,300 +1495,298 @@ export default function DashboardPage() {
         )}
 
         {txViewMode === 'list' && (
-        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-          {txListLoading ? (
-            <div className="p-5 space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : pagedRows.length > 0 ? (
-            <>
-              {isMobile ? (
-                <div>
-                  {pagedRows.map((row) => (
-                    <div
-                      key={row.key}
-                      className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 bg-card ${
-                        row.isProjected ? '' : 'cursor-pointer active:bg-muted/60'
-                      }`}
-                      onClick={() => {
-                        if (row.isProjected) return
-                        if (row.isShared) {
-                          if (row.groupId) navigate(`/groups/${row.groupId}`)
-                          return
-                        }
-                        const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
-                        if (tx) { setEditingTx(tx); setDialogOpen(true) }
-                      }}
-                    >
-                      {/* Category Icon */}
-                      <div className="shrink-0">
-                        <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />
-                      </div>
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+            {txListLoading ? (
+              <div className="p-5 space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : pagedRows.length > 0 ? (
+              <>
+                {isMobile ? (
+                  <div>
+                    {pagedRows.map((row) => (
+                      <div
+                        key={row.key}
+                        className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 bg-card ${row.isProjected ? '' : 'cursor-pointer active:bg-muted/60'
+                          }`}
+                        onClick={() => {
+                          if (row.isProjected) return
+                          if (row.isShared) {
+                            if (row.groupId) navigate(`/groups/${row.groupId}`)
+                            return
+                          }
+                          const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
+                          if (tx) { setEditingTx(tx); setDialogOpen(true) }
+                        }}
+                      >
+                        {/* Category Icon */}
+                        <div className="shrink-0">
+                          <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />
+                        </div>
 
-                      {/* Content */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
-                          {row.groupId && (
-                            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
-                              {row.isShared && row.parentOwnerName
-                                ? t('splitGroups.sharedShortBadgeAuthor', { author: row.parentOwnerName })
-                                : row.groupName ?? t('splitGroups.sharedShortBadge')}
-                            </span>
-                          )}
-                          {row.isProjected && (
-                            <ProjectedTransactionBadge />
-                          )}
-                          {row.installmentNumber != null && row.totalInstallments != null && (
-                            <span className="inline-flex items-center text-[9px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1 py-0.5 rounded-full shrink-0">
-                              {row.installmentNumber}/{row.totalInstallments}
-                            </span>
-                          )}
-                          {row.showPendingBadge && (
-                            <span
-                              title={t('transactions.pending')}
-                              className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
-                            >
-                              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
-                            </span>
-                          )}
-                          {row.isIgnored && (
-                            <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
-                          )}
-                          {row.attachmentCount > 0 && (
-                            <Paperclip size={11} className="text-muted-foreground shrink-0" />
+                        {/* Content */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
+                            {row.groupId && (
+                              <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
+                                {row.isShared && row.parentOwnerName
+                                  ? t('splitGroups.sharedShortBadgeAuthor', { author: row.parentOwnerName })
+                                  : row.groupName ?? t('splitGroups.sharedShortBadge')}
+                              </span>
+                            )}
+                            {row.isProjected && (
+                              <ProjectedTransactionBadge />
+                            )}
+                            {row.installmentNumber != null && row.totalInstallments != null && (
+                              <span className="inline-flex items-center text-[9px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1 py-0.5 rounded-full shrink-0">
+                                {row.installmentNumber}/{row.totalInstallments}
+                              </span>
+                            )}
+                            {row.showPendingBadge && (
+                              <span
+                                title={t('transactions.pending')}
+                                className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+                              >
+                                <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+                              </span>
+                            )}
+                            {row.isIgnored && (
+                              <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
+                            )}
+                            {row.attachmentCount > 0 && (
+                              <Paperclip size={11} className="text-muted-foreground shrink-0" />
+                            )}
+                          </div>
+                          {row.accountId && (() => {
+                            const acc = accountsList?.find((a) => a.id === row.accountId)
+                            if (!acc) return null
+                            return (
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <AccountIcon account={acc} size="xs" />
+                                <span className="text-xs text-muted-foreground truncate">{getAccountName(acc)}</span>
+                              </div>
+                            )
+                          })()}
+                          {!row.accountId && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{formatDate(row.date, dateLocale)}</p>
                           )}
                         </div>
-                        {row.accountId && (() => {
-                          const acc = accountsList?.find((a) => a.id === row.accountId)
-                          if (!acc) return null
-                          return (
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <AccountIcon account={acc} size="xs" />
-                              <span className="text-xs text-muted-foreground truncate">{getAccountName(acc)}</span>
-                            </div>
-                          )
-                        })()}
-                        {!row.accountId && (
-                          <p className="text-xs text-muted-foreground mt-0.5">{formatDate(row.date, dateLocale)}</p>
-                        )}
-                      </div>
 
-                      {/* Amount */}
-                      <div className="shrink-0 text-right">
-                        <span className={`text-sm font-bold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                          {mask(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '\u2212'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
-                        </span>
-                        {row.isShared && row.parentTotal != null && (
-                          <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                            {t('splitGroups.sharedRowParent', {
-                              total: formatCurrency(Math.abs(row.parentTotal), row.currency, locale),
-                            })}
-                          </div>
-                        )}
-                        {!row.isShared && row.ownerShare != null && (
-                          <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                            {t('splitGroups.ownerRowYourShare', {
-                              share: formatCurrency(Math.abs(row.ownerShare), row.currency, locale),
-                            })}
-                          </div>
-                        )}
-                        {!row.isShared && row.currency !== userCurrency && row.amountPrimary != null && (
-                          <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                            {mask(formatCurrency(Math.abs(row.amountPrimary), userCurrency, locale))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-b border-border hover:bg-transparent">
-                    <TableHead className="pl-5 text-xs font-medium text-muted-foreground hidden sm:table-cell">{t('transactions.date')}</TableHead>
-                    <TableHead className="text-xs font-medium text-muted-foreground">{t('transactions.description')}</TableHead>
-                    <TableHead className="text-xs font-medium text-muted-foreground hidden sm:table-cell">{t('transactions.account')}</TableHead>
-                    <TableHead className="pr-5 text-right text-xs font-medium text-muted-foreground">{t('transactions.amount')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pagedRows.map((row) => (
-                    <TableRow
-                      key={row.key}
-                      className={`border-b border-border last:border-0 ${
-                        row.isProjected
-                          ? ''
-                          : row.isShared
-                            ? 'cursor-pointer hover:bg-muted'
-                            : 'cursor-pointer hover:bg-muted'
-                      }`}
-                      onClick={() => {
-                        if (row.isProjected) return
-                        if (row.isShared) {
-                          // Shared rows belong to another user — open the
-                          // group instead of the (locked) edit dialog.
-                          if (row.groupId) navigate(`/groups/${row.groupId}`)
-                          return
-                        }
-                        const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
-                        if (tx) { setEditingTx(tx); setDialogOpen(true) }
-                      }}
-                    >
-                      <TableCell className="py-2.5 pl-5 text-sm text-muted-foreground tabular-nums whitespace-nowrap hidden sm:table-cell">
-                        {formatDate(row.date, dateLocale)}
-                      </TableCell>
-                      <TableCell className="py-2.5 pl-5 sm:pl-0">
-                        <div className="flex items-center gap-3">
-                          <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
-                              {row.groupId && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 shrink-0 uppercase tracking-wide">
-                                  {row.isShared && row.parentOwnerName
-                                    ? t('splitGroups.sharedShortBadgeAuthor', { author: row.parentOwnerName })
-                                    : row.groupName ?? t('splitGroups.sharedShortBadge')}
-                                </span>
-                              )}
-                              {row.isProjected && (
-                                <ProjectedTransactionBadge />
-                              )}
-                              {row.installmentNumber != null && row.totalInstallments != null && (
-                                <span className="inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full shrink-0">
-                                  {row.installmentNumber}/{row.totalInstallments}
-                                </span>
-                              )}
-                              {row.showPendingBadge && (
-                                <span
-                                  title={t('transactions.pending')}
-                                  className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
-                                >
-                                  <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
-                                </span>
-                              )}
-                              {row.isIgnored && (
-                                <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
-                                <EyeClosed className="h-3 w-3" />
-                                {t('transactions.ignored')}
-                                <span title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
-                                </span>
-                              )}
-                              {row.attachmentCount > 0 && (
-                                <Paperclip size={12} className="text-muted-foreground shrink-0" />
-                              )}
+                        {/* Amount */}
+                        <div className="shrink-0 text-right">
+                          <span className={`text-sm font-bold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                            {mask(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '\u2212'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
+                          </span>
+                          {row.isShared && row.parentTotal != null && (
+                            <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                              {t('splitGroups.sharedRowParent', {
+                                total: formatCurrency(Math.abs(row.parentTotal), row.currency, locale),
+                              })}
                             </div>
-                            <p className="text-xs text-muted-foreground sm:hidden">{formatDate(row.date, dateLocale)}</p>
-                          </div>
+                          )}
+                          {!row.isShared && row.ownerShare != null && (
+                            <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                              {t('splitGroups.ownerRowYourShare', {
+                                share: formatCurrency(Math.abs(row.ownerShare), row.currency, locale),
+                              })}
+                            </div>
+                          )}
+                          {!row.isShared && row.currency !== userCurrency && row.amountPrimary != null && (
+                            <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                              {mask(formatCurrency(Math.abs(row.amountPrimary), userCurrency, locale))}
+                            </div>
+                          )}
                         </div>
-                      </TableCell>
-                      <TableCell className="py-2.5 text-sm text-muted-foreground hidden sm:table-cell">
-                        {(() => {
-                          const acc = row.accountId
-                            ? accountsList?.find((a) => a.id === row.accountId)
-                            : undefined
-                          if (!acc) return <span className="text-muted-foreground">—</span>
-                          return (
-                            <span className="flex items-center gap-2 min-w-0">
-                              <AccountIcon account={acc} size="sm" />
-                              <span className="truncate">{getAccountName(acc)}</span>
-                            </span>
-                          )
-                        })()}
-                      </TableCell>
-                      <TableCell className="py-2.5 pr-5 text-right">
-                        <span className={`text-sm font-semibold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                          {mask(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
-                        </span>
-                        {row.isShared && row.parentTotal != null && (
-                          <span className="block text-[10px] text-muted-foreground tabular-nums">
-                            {t('splitGroups.sharedRowParent', {
-                              total: formatCurrency(Math.abs(row.parentTotal), row.currency, locale),
-                            })}
-                          </span>
-                        )}
-                        {!row.isShared && row.ownerShare != null && (
-                          <span className="block text-[10px] text-muted-foreground tabular-nums">
-                            {t('splitGroups.ownerRowYourShare', {
-                              share: formatCurrency(Math.abs(row.ownerShare), row.currency, locale),
-                            })}
-                          </span>
-                        )}
-                        {!row.isShared && row.currency !== userCurrency && row.amountPrimary != null && (
-                          <span className="block text-[10px] text-muted-foreground tabular-nums">
-                            {mask(formatCurrency(Math.abs(row.amountPrimary), userCurrency, locale))}
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              )}
-              {allDisplayRows.length > 10 && (
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-5 py-4 border-t border-border">
-                  <div className="hidden sm:block w-32" />
-                  {txTotalPages > 1 ? (
-                    <div className="flex items-center justify-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={txPage <= 1}
-                        onClick={() => setTxPage(txPage - 1)}
-                      >
-                        {t('dashboard.previous')}
-                      </Button>
-                      <span className="text-sm text-muted-foreground">
-                        {txPage} / {txTotalPages}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={txPage >= txTotalPages}
-                        onClick={() => setTxPage(txPage + 1)}
-                      >
-                        {t('dashboard.next')}
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="hidden sm:block" />
-                  )}
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{t('common.rowsPerPage', 'Rows per page')}</span>
-                    <Select
-                      value={String(txPerPage)}
-                      onValueChange={(val) => {
-                        const nextLimit = Number(val)
-                        setTxPerPage(nextLimit)
-                        setTxPage(1)
-                        try {
-                          localStorage.setItem('securo.dashboard.pageSize', String(nextLimit))
-                        } catch {
-                          // ignored
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-[70px] h-8 text-xs">
-                        <SelectValue placeholder={txPerPage} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="10">10</SelectItem>
-                        <SelectItem value="20">20</SelectItem>
-                        <SelectItem value="50">50</SelectItem>
-                        <SelectItem value="100">100</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-muted-foreground text-sm text-center py-8">{t('dashboard.noTransactions')}</p>
-          )}
-        </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-b border-border hover:bg-transparent">
+                        <TableHead className="pl-5 text-xs font-medium text-muted-foreground hidden sm:table-cell">{t('transactions.date')}</TableHead>
+                        <TableHead className="text-xs font-medium text-muted-foreground">{t('transactions.description')}</TableHead>
+                        <TableHead className="text-xs font-medium text-muted-foreground hidden sm:table-cell">{t('transactions.account')}</TableHead>
+                        <TableHead className="pr-5 text-right text-xs font-medium text-muted-foreground">{t('transactions.amount')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pagedRows.map((row) => (
+                        <TableRow
+                          key={row.key}
+                          className={`border-b border-border last:border-0 ${row.isProjected
+                            ? ''
+                            : row.isShared
+                              ? 'cursor-pointer hover:bg-muted'
+                              : 'cursor-pointer hover:bg-muted'
+                            }`}
+                          onClick={() => {
+                            if (row.isProjected) return
+                            if (row.isShared) {
+                              // Shared rows belong to another user — open the
+                              // group instead of the (locked) edit dialog.
+                              if (row.groupId) navigate(`/groups/${row.groupId}`)
+                              return
+                            }
+                            const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
+                            if (tx) { setEditingTx(tx); setDialogOpen(true) }
+                          }}
+                        >
+                          <TableCell className="py-2.5 pl-5 text-sm text-muted-foreground tabular-nums whitespace-nowrap hidden sm:table-cell">
+                            {formatDate(row.date, dateLocale)}
+                          </TableCell>
+                          <TableCell className="py-2.5 pl-5 sm:pl-0">
+                            <div className="flex items-center gap-3">
+                              <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
+                                  {row.groupId && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 shrink-0 uppercase tracking-wide">
+                                      {row.isShared && row.parentOwnerName
+                                        ? t('splitGroups.sharedShortBadgeAuthor', { author: row.parentOwnerName })
+                                        : row.groupName ?? t('splitGroups.sharedShortBadge')}
+                                    </span>
+                                  )}
+                                  {row.isProjected && (
+                                    <ProjectedTransactionBadge />
+                                  )}
+                                  {row.installmentNumber != null && row.totalInstallments != null && (
+                                    <span className="inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full shrink-0">
+                                      {row.installmentNumber}/{row.totalInstallments}
+                                    </span>
+                                  )}
+                                  {row.showPendingBadge && (
+                                    <span
+                                      title={t('transactions.pending')}
+                                      className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+                                    >
+                                      <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+                                    </span>
+                                  )}
+                                  {row.isIgnored && (
+                                    <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                                      <EyeClosed className="h-3 w-3" />
+                                      {t('transactions.ignored')}
+                                      <span title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+                                    </span>
+                                  )}
+                                  {row.attachmentCount > 0 && (
+                                    <Paperclip size={12} className="text-muted-foreground shrink-0" />
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground sm:hidden">{formatDate(row.date, dateLocale)}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-2.5 text-sm text-muted-foreground hidden sm:table-cell">
+                            {(() => {
+                              const acc = row.accountId
+                                ? accountsList?.find((a) => a.id === row.accountId)
+                                : undefined
+                              if (!acc) return <span className="text-muted-foreground">—</span>
+                              return (
+                                <span className="flex items-center gap-2 min-w-0">
+                                  <AccountIcon account={acc} size="sm" />
+                                  <span className="truncate">{getAccountName(acc)}</span>
+                                </span>
+                              )
+                            })()}
+                          </TableCell>
+                          <TableCell className="py-2.5 pr-5 text-right">
+                            <span className={`text-sm font-semibold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                              {mask(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
+                            </span>
+                            {row.isShared && row.parentTotal != null && (
+                              <span className="block text-[10px] text-muted-foreground tabular-nums">
+                                {t('splitGroups.sharedRowParent', {
+                                  total: formatCurrency(Math.abs(row.parentTotal), row.currency, locale),
+                                })}
+                              </span>
+                            )}
+                            {!row.isShared && row.ownerShare != null && (
+                              <span className="block text-[10px] text-muted-foreground tabular-nums">
+                                {t('splitGroups.ownerRowYourShare', {
+                                  share: formatCurrency(Math.abs(row.ownerShare), row.currency, locale),
+                                })}
+                              </span>
+                            )}
+                            {!row.isShared && row.currency !== userCurrency && row.amountPrimary != null && (
+                              <span className="block text-[10px] text-muted-foreground tabular-nums">
+                                {mask(formatCurrency(Math.abs(row.amountPrimary), userCurrency, locale))}
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+                {allDisplayRows.length > 10 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-5 py-4 border-t border-border">
+                    <div className="hidden sm:block w-32" />
+                    {txTotalPages > 1 ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={txPage <= 1}
+                          onClick={() => setTxPage(txPage - 1)}
+                        >
+                          {t('dashboard.previous')}
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          {txPage} / {txTotalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={txPage >= txTotalPages}
+                          onClick={() => setTxPage(txPage + 1)}
+                        >
+                          {t('dashboard.next')}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="hidden sm:block" />
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{t('common.rowsPerPage', 'Rows per page')}</span>
+                      <Select
+                        value={String(txPerPage)}
+                        onValueChange={(val) => {
+                          const nextLimit = Number(val)
+                          setTxPerPage(nextLimit)
+                          setTxPage(1)
+                          try {
+                            localStorage.setItem('securo.dashboard.pageSize', String(nextLimit))
+                          } catch {
+                            // ignored
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="w-[70px] h-8 text-xs">
+                          <SelectValue placeholder={txPerPage} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="20">20</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                          <SelectItem value="100">100</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-muted-foreground text-sm text-center py-8">{t('dashboard.noTransactions')}</p>
+            )}
+          </div>
         )}
       </div>
 
@@ -1591,12 +1794,12 @@ export default function DashboardPage() {
         filter={
           drillDown
             ? {
-                ...drillDown,
-                // Keep drill-downs consistent with the collection-scoped cards
-                // they open from (e.g. "Categorize now").
-                account_ids:
-                  drillDown.account_ids ?? (acctIds && acctIds.length > 0 ? acctIds : undefined),
-              }
+              ...drillDown,
+              // Keep drill-downs consistent with the collection-scoped cards
+              // they open from (e.g. "Categorize now").
+              account_ids:
+                drillDown.account_ids ?? (acctIds && acctIds.length > 0 ? acctIds : undefined),
+            }
             : null
         }
         onClose={() => setDrillDown(null)}
@@ -1609,7 +1812,14 @@ export default function DashboardPage() {
         transaction={editingTx}
         categories={categoriesList ?? []}
         categoryGroups={categoryGroupsList ?? []}
-        accounts={(accountsList ?? []).map((a: { id: string; name: string; display_name?: string | null }) => ({ id: a.id, name: getAccountName(a) }))}
+        accounts={(accountsList ?? []).map((a) => ({
+          id: a.id,
+          name: getAccountName(a),
+          display_name: a.display_name,
+          type: a.type,
+          currency: a.currency,
+          secured_asset_id: a.secured_asset_id,
+        }))}
         onSave={(data) => {
           if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data })
         }}

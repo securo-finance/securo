@@ -6,10 +6,12 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/date-range-format'
+import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import {
   budgets,
   categories,
+  categoryGroups,
   goals,
   recurring,
   rules,
@@ -54,11 +56,10 @@ export function ProposalCard({ toolCallId, data }: Props) {
       setAppliedAt(Date.now())
       toast.success(t('agents.proposal.applied'))
       // Invalidate the broad surface that proposals may have changed.
+      invalidateCategoryQueries(qc)
       ;[
         'transactions',
         'accounts',
-        'categories',
-        'category-groups',
         'recurring-transactions',
         'budgets',
         'rules',
@@ -249,6 +250,44 @@ function renderSummary(
         { from: legLabel(from, dateLocale), to: legLabel(to, dateLocale) },
       )
     }
+    case 'update_goal': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      const lines = Object.entries(changes).map(([k, v]) => {
+        const before = tgt[k]
+        return `${k}: ${String(before ?? '∅')} → ${String(v ?? '∅')}`
+      })
+      return t('agents.proposal.summary.updateGoal', {
+        name: String(tgt.name ?? '?'),
+        changes: lines.join(', ') || '—',
+      })
+    }
+    case 'update_budget': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      return t('agents.proposal.summary.updateBudget', {
+        category: String((tgt.category_name as string) ?? tgt.category_id ?? '?'),
+        month: String(tgt.month ?? '?'),
+        before: fmt(tgt.amount, tgt.currency),
+        after: fmt(changes.amount, tgt.currency),
+      })
+    }
+    case 'delete_budget':
+      return t(tgt.is_recurring ? 'agents.proposal.summary.deleteRecurringBudget' : 'agents.proposal.summary.deleteBudget', {
+        category: String((tgt.category_name as string) ?? tgt.category_id ?? '?'),
+        amount: fmt(tgt.amount, tgt.currency),
+        month: String(tgt.month ?? '?'),
+      })
+    case 'update_transaction_notes': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      return t('agents.proposal.summary.updateTransactionNotes', {
+        description: String(tgt.description ?? '?'),
+        before: String(tgt.notes || '∅'),
+        after: String(changes.notes || '∅'),
+      })
+    }
+    case 'create_category_group':
+      return t('agents.proposal.summary.createCategoryGroup', {
+        name: String(p.name ?? '?'),
+      }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
     default:
       return ''
   }
@@ -307,6 +346,11 @@ function SplitPreview({ proposed }: { proposed?: Record<string, unknown> }) {
   )
 }
 
+// The preview found the name taken; creating it anyway would make a duplicate.
+function rejectNameCollision(data: ProposalData): void {
+  if (data.name_collision) throw new Error(`The name is already used by ${data.name_collision.name}`)
+}
+
 // Each kind maps to one Securo endpoint already exposed via lib/api.ts.
 // Returns a string ref (id of the new entity) when available — used as a
 // breadcrumb in the localStorage record so a future "view created entity"
@@ -320,6 +364,7 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       return `${res.updated} updated`
     }
     case 'create_category': {
+      rejectNameCollision(data)
       const c = await categories.create({
         name: String(p.name),
         group_id: (p.group_id as string) || undefined,
@@ -443,6 +488,38 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       const pairId = String(data.transfer_pair_id)
       await transactions.unlinkTransfer(pairId)
       return pairId
+    }
+    case 'update_goal': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await goals.update(id, (data.changes || {}) as Parameters<typeof goals.update>[1])
+      return id
+    }
+    case 'update_budget': {
+      // Only the amount goes out, the same edit the budgets page makes.
+      const id = String((data.target as Record<string, unknown>).id)
+      await budgets.update(id, { amount: Number((data.changes as Record<string, unknown>).amount) })
+      return id
+    }
+    case 'delete_budget': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await budgets.delete(id)
+      return id
+    }
+    case 'update_transaction_notes': {
+      // Only `notes` goes out, so the edit cannot reach amount, date or account.
+      const id = String((data.target as Record<string, unknown>).id)
+      const notes = (data.changes as Record<string, unknown> | undefined)?.notes
+      await transactions.update(id, { notes: typeof notes === 'string' ? notes : null })
+      return id
+    }
+    case 'create_category_group': {
+      rejectNameCollision(data)
+      const g = await categoryGroups.create({
+        name: String(p.name),
+        icon: (p.icon as string) || undefined,
+        color: (p.color as string) || undefined,
+      })
+      return g.id
     }
   }
 }

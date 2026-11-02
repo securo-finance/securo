@@ -43,7 +43,10 @@ x-backend-env: &backend-env
   OIDC_ADMIN_ROLES: ${OIDC_ADMIN_ROLES:-}
   OIDC_WORKSPACE_ROLE_MAP: ${OIDC_WORKSPACE_ROLE_MAP:-}
   LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
+  # No default, so an unset value leaves backend/.env and the app default to decide.
+  REGISTRATION_ENABLED:
   REDIS_URL: redis://redis:6379/0
+  BANK_SYNC_MIN_INTERVAL_HOURS: ${BANK_SYNC_MIN_INTERVAL_HOURS:-4}
   OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
   FX_SYNC_MODE: ${FX_SYNC_MODE:-on_demand}
   TESOURO_DIRETO_ENABLED: ${TESOURO_DIRETO_ENABLED:-true}
@@ -62,6 +65,9 @@ x-backend-env: &backend-env
   # TTL for tokens minted from /agents/connections → "External MCP access".
   # Used by Claude Desktop, n8n, custom clients plugging into Securo.
   AGENTS_MCP_EXTERNAL_TTL_DAYS: ${AGENTS_MCP_EXTERNAL_TTL_DAYS:-90}
+  # Browser origins the MCP server accepts, comma-separated. Blank admits
+  # none; the agent runtime, gateways and desktop clients send no Origin.
+  AGENTS_MCP_ALLOWED_ORIGINS: ${AGENTS_MCP_ALLOWED_ORIGINS:-}
   # LLM provider config: only the provider you actually use needs setting.
   AGENTS_DEFAULT_PROVIDER: ${AGENTS_DEFAULT_PROVIDER:-ollama}
   AGENTS_DEFAULT_MODEL: ${AGENTS_DEFAULT_MODEL:-}
