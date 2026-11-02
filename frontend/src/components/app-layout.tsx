@@ -57,12 +57,14 @@ import {
   Shield,
   ShieldCheck,
   Fingerprint,
+  KeySquare,
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
 import { BackupDialog } from '@/components/backup-dialog'
 import { TwoFactorSetup } from '@/components/two-factor-setup'
 import { PasskeyManagementDialog } from '@/components/passkey-management-dialog'
+import { PersonalAccessTokensDialog } from '@/components/personal-access-tokens-dialog'
 import { CommandPalette } from '@/components/command-palette'
 import { useCommandPaletteHotkey } from '@/hooks/use-command-palette-hotkey'
 import { GlobalChatPanel } from '@/components/global-chat-panel'
@@ -113,6 +115,7 @@ export function AppLayout() {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [passkeysOpen, setPasskeysOpen] = useState(false)
+  const [accessTokensOpen, setAccessTokensOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -270,6 +273,7 @@ export function AppLayout() {
             onChangePassword={() => setChangePasswordOpen(true)}
             onTwoFactor={() => setTwoFactorOpen(true)}
             onPasskeys={() => setPasskeysOpen(true)}
+            onAccessTokens={() => setAccessTokensOpen(true)}
             localAuthEnabled={localAuthEnabled}
             agentsEnabled={agentsEnabled}
             onBackup={() => setBackupOpen(true)}
@@ -574,6 +578,7 @@ export function AppLayout() {
               onChangePassword={() => setChangePasswordOpen(true)}
               onTwoFactor={() => setTwoFactorOpen(true)}
               onPasskeys={() => setPasskeysOpen(true)}
+              onAccessTokens={() => setAccessTokensOpen(true)}
               localAuthEnabled={localAuthEnabled}
               onBackup={() => setBackupOpen(true)}
               onUpdateAvailable={() => setUpdateDialogOpen(true)}
@@ -626,6 +631,10 @@ export function AppLayout() {
         onClose={() => setPasskeysOpen(false)}
         localAuthEnabled={localAuthEnabled}
       />
+      <PersonalAccessTokensDialog
+        open={accessTokensOpen}
+        onClose={() => setAccessTokensOpen(false)}
+      />
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
       {quickAddOpen && (
         <Suspense fallback={null}>
@@ -651,6 +660,7 @@ function UserMenu({
   onChangePassword,
   onTwoFactor,
   onPasskeys,
+  onAccessTokens,
   localAuthEnabled,
   onBackup,
   dark,
@@ -662,6 +672,7 @@ function UserMenu({
   onChangePassword: () => void
   onTwoFactor: () => void
   onPasskeys: () => void
+  onAccessTokens: () => void
   localAuthEnabled: boolean
   onBackup: () => void
   dark?: boolean
@@ -729,6 +740,13 @@ function UserMenu({
         >
           <Fingerprint size={14} />
           {t('auth.passkeysTitle')}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onAccessTokens}
+          className="flex items-center gap-2"
+        >
+          <KeySquare size={14} />
+          {t('accessTokens.title')}
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={onBackup}

@@ -41,6 +41,7 @@ it('opens the help documentation in a new tab from the account menu', async () =
       onChangePassword={vi.fn()}
       onTwoFactor={vi.fn()}
       onPasskeys={vi.fn()}
+      onAccessTokens={vi.fn()}
       onBackup={vi.fn()}
       onUpdateAvailable={vi.fn()}
       agentsEnabled={false}

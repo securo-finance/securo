@@ -8,6 +8,8 @@ import type {
   AdminUserList,
   Passkey,
   PasskeyOptionsResponse,
+  PersonalAccessToken,
+  PersonalAccessTokenCreated,
   AppSetting,
   Category,
   CategoryRuleUsage,
@@ -341,6 +343,26 @@ export const auth = {
     // fall back instead of leaving the page stuck on its loading state.
     const { data } = await api.get('/auth/oidc/config', { timeout: 5000 })
     return data
+  },
+}
+
+// Personal access tokens. Created in the active workspace (the request's
+// X-Workspace-Id); listed across every workspace.
+export const personalAccessTokens = {
+  list: async (): Promise<PersonalAccessToken[]> => {
+    const { data } = await api.get('/personal-access-tokens')
+    return data
+  },
+  create: async (body: {
+    name: string
+    read_only: boolean
+    expires_in_days: number | null
+  }): Promise<PersonalAccessTokenCreated> => {
+    const { data } = await api.post('/personal-access-tokens', body)
+    return data
+  },
+  revoke: async (id: string): Promise<void> => {
+    await api.delete(`/personal-access-tokens/${id}`)
   },
 }
 

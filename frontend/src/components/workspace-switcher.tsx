@@ -46,6 +46,7 @@ import {
   ShieldCheck,
   Sparkles,
   Fingerprint,
+  KeySquare,
 } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import {
@@ -82,6 +83,8 @@ interface AccountMenuProps {
   onTwoFactor: () => void
   /** Open the passkey management dialog. */
   onPasskeys: () => void
+  /** Open the personal access token dialog. */
+  onAccessTokens: () => void
   /** Trigger a backup download. */
   onBackup: () => void
   /** Open the "Update available" dialog. */
@@ -107,6 +110,7 @@ export function WorkspaceSwitcher({
   onChangePassword,
   onTwoFactor,
   onPasskeys,
+  onAccessTokens,
   onBackup,
   onUpdateAvailable,
   agentsEnabled,
@@ -272,6 +276,13 @@ export function WorkspaceSwitcher({
           >
             <Fingerprint size={14} />
             {t('auth.passkeysTitle')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={onAccessTokens}
+            className="flex items-center gap-2"
+          >
+            <KeySquare size={14} />
+            {t('accessTokens.title')}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={onBackup}

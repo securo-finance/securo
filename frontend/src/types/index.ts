@@ -33,6 +33,23 @@ export interface Passkey {
   last_used_at: string | null
 }
 
+export interface PersonalAccessToken {
+  id: string
+  name: string
+  token_prefix: string
+  workspace_id: string
+  workspace_name: string
+  read_only: boolean
+  expires_at: string | null
+  last_used_at: string | null
+  created_at: string
+}
+
+export interface PersonalAccessTokenCreated extends PersonalAccessToken {
+  /** Plaintext secret. Only present in the create response. */
+  token: string
+}
+
 export interface PasskeyOptionsResponse {
   challenge_id: string
   options: Record<string, unknown>
