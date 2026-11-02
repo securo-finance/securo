@@ -226,15 +226,26 @@ def _parse_date(raw: str, date_format: Optional[str]) -> Optional[date_type]:
     raw = raw.strip()
     if not raw:
         return None
-    formats = []
-    if date_format and date_format in DATE_FORMAT_MAP:
-        formats.append(DATE_FORMAT_MAP[date_format])
-    formats.extend(['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%Y/%m/%d', '%d.%m.%Y'])
-    for fmt in formats:
+
+    def parse(fmt: str) -> Optional[date_type]:
+        # Broker exports sometimes append a time to the date, in which case the
+        # first 10 characters are the date itself.
+        value = raw[:10] if len(raw) > 10 and fmt == '%Y-%m-%d' else raw
         try:
-            return datetime.strptime(raw[:10] if len(raw) > 10 and fmt == '%Y-%m-%d' else raw, fmt).date()
+            return datetime.strptime(value, fmt).date()
         except ValueError:
-            continue
+            return None
+
+    if date_format and date_format in DATE_FORMAT_MAP:
+        # The user chose a format, so the file is parsed with it strictly,
+        # like parse_csv does: "13/02/2026" must not become February 13
+        # under MM/DD/YYYY.
+        return parse(DATE_FORMAT_MAP[date_format])
+
+    for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%Y/%m/%d', '%d.%m.%Y']:
+        parsed = parse(fmt)
+        if parsed is not None:
+            return parsed
     return None
 
 
@@ -320,6 +331,16 @@ def parse_orders_csv(
         else:
             kind = 'sell' if quantity < 0 else 'buy'
 
+        # Fees are costs: a negative one would push the cost basis down, and
+        # a malformed fee is reported like the other bad cells instead of
+        # being read as zero.
+        fee_raw = cell(row, 'fee')
+        fee = _parse_decimal(fee_raw)
+        if fee_raw and (fee is None or fee < 0):
+            errors.append(AssetImportRowError(row=index, reason='invalid_fee', ticker=ticker))
+            continue
+        fee = fee or Decimal('0')
+
         orders.append(AssetOrderImport(
             row=index,
             ticker=ticker,
@@ -327,7 +348,7 @@ def parse_orders_csv(
             kind=kind,
             quantity=abs(quantity),
             price=price,
-            fee=_parse_decimal(cell(row, 'fee')) or Decimal('0'),
+            fee=fee,
             currency=(cell(row, 'currency') or None),
             name=(cell(row, 'name') or None),
             notes=(cell(row, 'notes') or None),

@@ -1,4 +1,6 @@
 import axios from 'axios'
+import type { AxiosResponse } from 'axios'
+import { markDataChanged } from '@/lib/data-changed'
 import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
   User,
@@ -13,10 +15,15 @@ import type {
   CategoryGroup,
   BankConnection,
   ConnectionSettings,
+  SyncResult,
   Account,
   AccountSummary,
+  AccountRunningBalancePoint,
   Collection,
   CreditCardBill,
+  LoanBalanceAdjustment,
+  LoanBalanceUpdate,
+  LoanSchedule,
   DescriptionSuggestion,
   Transaction,
   Payee,
@@ -49,6 +56,7 @@ import type {
   TransactionCalendarResponse,
   Budget,
   BudgetVsActual,
+  BudgetSuggestionResponse,
   Rule,
   RuleAction,
   RuleConditionNode,
@@ -87,6 +95,7 @@ import type {
   GroupMember,
   GroupSettlement,
   GroupBalances,
+  GroupSummary,
   TransactionSplitsInput,
   TransactionEditPayload,
   InstallmentSeriesInput,
@@ -104,6 +113,7 @@ import type {
 const api = axios.create({
   baseURL: '/api',
 })
+export { api }
 
 // Storage key for the currently-selected workspace ID. Lives in
 // localStorage so reloads + new tabs stay on the same workspace until
@@ -133,6 +143,31 @@ api.interceptors.response.use(
     }
     return Promise.reject(error)
   }
+)
+
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /** Set on POSTs that only read (previews, sign-in, tokens, tests) so
+     * they do not tell other tabs that data changed. */
+    skipDataChanged?: boolean
+  }
+}
+
+/** Request config for a POST that changes nothing on the server. */
+const readOnly = { skipDataChanged: true } as const
+
+// A successful mutation here changes data that other tabs may be showing.
+// The bump fires the `storage` event in those tabs, where
+// `useCrossTabRefresh` turns it into a cache invalidation (issue #763).
+// Read-only POSTs opt out: a preview query re-run by that invalidation would
+// otherwise bump again and make two open tabs refresh each other forever.
+api.interceptors.response.use(
+  (response: AxiosResponse) => {
+    const method = (response.config.method ?? 'get').toLowerCase()
+    if (method !== 'get' && !response.config.skipDataChanged) markDataChanged()
+    return response
+  },
+  (error: unknown) => Promise.reject(error)
 )
 
 // Workspaces
@@ -212,6 +247,7 @@ export const auth = {
     formData.append('username', email)
     formData.append('password', password)
     const { data } = await api.post('/auth/login', formData, {
+      ...readOnly,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     })
     return data
@@ -243,7 +279,7 @@ export const auth = {
     await api.post('/auth/2fa/disable', { password, code })
   },
   verify2fa: async (tempToken: string, code: string): Promise<{ access_token: string; token_type: string }> => {
-    const { data } = await api.post('/auth/2fa/verify', { temp_token: tempToken, code })
+    const { data } = await api.post('/auth/2fa/verify', { temp_token: tempToken, code }, readOnly)
     return data
   },
   listPasskeys: async (): Promise<Passkey[]> => {
@@ -270,7 +306,7 @@ export const auth = {
     await api.delete(`/auth/passkeys/${id}`)
   },
   passkeyAuthenticationOptions: async (email?: string): Promise<PasskeyOptionsResponse> => {
-    const { data } = await api.post('/auth/passkeys/authenticate/options', { email })
+    const { data } = await api.post('/auth/passkeys/authenticate/options', { email }, readOnly)
     return data
   },
   verifyPasskeyAuthentication: async (
@@ -280,11 +316,11 @@ export const auth = {
     const { data } = await api.post('/auth/passkeys/authenticate/verify', {
       challenge_id: challengeId,
       credential,
-    })
+    }, readOnly)
     return data
   },
   passkeySecondFactorOptions: async (tempToken: string): Promise<PasskeyOptionsResponse> => {
-    const { data } = await api.post('/auth/passkeys/2fa/options', { temp_token: tempToken })
+    const { data } = await api.post('/auth/passkeys/2fa/options', { temp_token: tempToken }, readOnly)
     return data
   },
   verifyPasskeySecondFactor: async (
@@ -296,7 +332,7 @@ export const auth = {
       temp_token: tempToken,
       challenge_id: challengeId,
       credential,
-    })
+    }, readOnly)
     return data
   },
   oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
@@ -381,11 +417,11 @@ export const connections = {
     return data.providers
   },
   getConnectToken: async (provider = 'pluggy'): Promise<string> => {
-    const { data } = await api.post('/connections/connect-token', { provider })
+    const { data } = await api.post('/connections/connect-token', { provider }, readOnly)
     return data.access_token
   },
   getOAuthUrl: async (provider: string, flow_params?: Record<string, unknown>): Promise<string> => {
-    const { data } = await api.post('/connections/oauth/url', { provider, flow_params })
+    const { data } = await api.post('/connections/oauth/url', { provider, flow_params }, readOnly)
     return data.url
   },
   listInstitutions: async (
@@ -426,15 +462,15 @@ export const connections = {
     return data
   },
   getReauthUrl: async (connectionId: string): Promise<string> => {
-    const { data } = await api.post(`/connections/${connectionId}/oauth/reauth-url`)
+    const { data } = await api.post(`/connections/${connectionId}/oauth/reauth-url`, undefined, readOnly)
     return data.url
   },
-  sync: async (id: string): Promise<BankConnection> => {
+  sync: async (id: string): Promise<SyncResult> => {
     const { data } = await api.post(`/connections/${id}/sync`)
     return data
   },
   getReconnectToken: async (connectionId: string): Promise<string> => {
-    const { data } = await api.post(`/connections/${connectionId}/reconnect-token`)
+    const { data } = await api.post(`/connections/${connectionId}/reconnect-token`, undefined, readOnly)
     return data.access_token
   },
   updateSettings: async (
@@ -465,6 +501,7 @@ export const accounts = {
     balance?: number
     balance_date?: string
     currency?: string
+    secured_asset_id?: string | null
     credit_limit?: number | null
     statement_close_day?: number | null
     payment_due_day?: number | null
@@ -483,8 +520,20 @@ export const accounts = {
     const { data } = await api.get(`/accounts/${id}/summary`, { params: { from, to, bill_id: billId, unbilled_only: unbilledOnly || undefined } })
     return data
   },
-  balanceHistory: async (id: string, from?: string, to?: string): Promise<{ date: string; balance: number; balance_primary?: number }[]> => {
+  balanceHistory: async (id: string, from?: string, to?: string): Promise<{ date: string; balance: number; balance_primary?: number; fx_fallback?: boolean }[]> => {
     const { data } = await api.get(`/accounts/${id}/balance-history`, { params: { from, to } })
+    return data
+  },
+  runningBalance: async (id: string, from?: string, to?: string): Promise<AccountRunningBalancePoint[]> => {
+    const { data } = await api.get(`/accounts/${id}/running-balance`, { params: { from, to } })
+    return data
+  },
+  loanSchedule: async (id: string): Promise<LoanSchedule> => {
+    const { data } = await api.get(`/accounts/${id}/loan-schedule`)
+    return data
+  },
+  adjustLoanBalance: async (id: string, body: LoanBalanceUpdate): Promise<LoanBalanceAdjustment> => {
+    const { data } = await api.post(`/accounts/${id}/loan-balance`, body)
     return data
   },
   bills: async (id: string, limit = 24): Promise<CreditCardBill[]> => {
@@ -498,6 +547,49 @@ export const accounts = {
   reopen: async (id: string): Promise<Account> => {
     const { data } = await api.post(`/accounts/${id}/reopen`)
     return data
+  },
+}
+
+export interface MortgagePaymentAllocation {
+  loan_account_id: string
+  loan_name: string
+  principal_amount: number
+  interest_amount: number
+  payment_amount: number
+  principal_percentage: number
+  interest_percentage: number
+  historical: boolean
+  bank_managed: boolean
+}
+
+export const mortgagePayments = {
+  get: async (paymentId: string): Promise<{
+    payment_transaction_id: string
+    payment_amount: number
+    currency: string
+    payment_account_name: string
+    allocations: MortgagePaymentAllocation[]
+    principal_total: number
+    interest_total: number
+    principal_percentage: number
+    interest_percentage: number
+  }> => {
+    const { data } = await api.get(`/mortgage-payments/${paymentId}`)
+    return data
+  },
+  replace: async (
+    paymentId: string,
+    allocations: {
+      loan_account_id: string
+      principal_amount: number
+      interest_amount: number
+    }[],
+  ) => {
+    const { data } = await api.put(`/mortgage-payments/${paymentId}`, { allocations })
+    return data
+  },
+  remove: async (paymentId: string): Promise<void> => {
+    await api.delete(`/mortgage-payments/${paymentId}`)
   },
 }
 
@@ -521,6 +613,7 @@ export const transactions = {
     page?: number
     limit?: number
     include_opening_balance?: boolean
+    include_running_balance?: boolean
     exclude_transfers?: boolean
     user_pnl_only?: boolean
     exclude_ignored?: boolean
@@ -582,6 +675,10 @@ export const transactions = {
   },
   unlinkRecurring: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/unlink-recurring`)
+    return data
+  },
+  postToday: async (id: string): Promise<Transaction> => {
+    const { data } = await api.post(`/transactions/${id}/post-today`)
     return data
   },
   createTransfer: async (transfer: {
@@ -681,7 +778,7 @@ export const transactions = {
     if (options?.column_mapping && Object.keys(options.column_mapping).length > 0) {
       formData.append('column_mapping', JSON.stringify(options.column_mapping))
     }
-    const { data } = await api.post('/transactions/import/preview', formData)
+    const { data } = await api.post('/transactions/import/preview', formData, readOnly)
     return data
   },
   import: async (
@@ -988,6 +1085,10 @@ export const groups = {
     const { data } = await api.get(`/groups/${groupId}/balances`)
     return data
   },
+  summary: async (groupId: string): Promise<GroupSummary> => {
+    const { data } = await api.get(`/groups/${groupId}/summary`)
+    return data
+  },
   transactions: async (groupId: string, limit = 20): Promise<Transaction[]> => {
     const { data } = await api.get(`/groups/${groupId}/transactions`, {
       params: { limit },
@@ -1053,7 +1154,7 @@ export const rules = {
     limit?: number
     offset?: number
   }): Promise<RulePreviewResponse> => {
-    const { data } = await api.post('/rules/preview', draft)
+    const { data } = await api.post('/rules/preview', draft, readOnly)
     return data
   },
   applyAll: async (): Promise<{ applied: number }> => {
@@ -1247,6 +1348,18 @@ export const budgets = {
     const { data } = await api.get('/budgets/comparison', { params: { month } })
     return data
   },
+  suggestions: async (month: string, months: number): Promise<BudgetSuggestionResponse> => {
+    const { data } = await api.get('/budgets/suggestions', { params: { month, months } })
+    return data
+  },
+  createBatch: async (payload: {
+    month: string
+    is_recurring: boolean
+    items: { category_id: string; amount: number }[]
+  }): Promise<Budget[]> => {
+    const { data } = await api.post('/budgets/batch', payload)
+    return data
+  },
 }
 
 // Goals
@@ -1311,9 +1424,28 @@ export const dashboard = {
     const { data } = await api.get('/dashboard/projected-transactions', { params })
     return data
   },
-  balanceHistory: async (month?: string, accountIds?: string[]): Promise<BalanceHistory> => {
+  balanceHistory: async (
+    month?: string,
+    accountIds?: string[],
+    comparisonMonths?: string[],
+  ): Promise<BalanceHistory> => {
     const extra = acctIdsParam(accountIds)
-    const { data } = await api.get('/dashboard/balance-history', { params: { month, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    const { data } = await api.get('/dashboard/balance-history', {
+      params: {
+        month,
+        ...(extra.params ?? {}),
+        ...(comparisonMonths?.length ? { comparison_months: comparisonMonths } : {}),
+      },
+      paramsSerializer: { indexes: null },
+    })
+    return data
+  },
+  balanceHistoryMonths: async (accountIds?: string[]): Promise<string[]> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get('/dashboard/balance-history/months', {
+      params: extra.params,
+      ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
+    })
     return data
   },
 }
@@ -1416,7 +1548,7 @@ export const assets = {
     if (options?.column_mapping && Object.keys(options.column_mapping).length > 0) {
       formData.append('column_mapping', JSON.stringify(options.column_mapping))
     }
-    const { data } = await api.post('/assets/import/preview', formData)
+    const { data } = await api.post('/assets/import/preview', formData, readOnly)
     return data
   },
   importOrders: async (
@@ -1530,6 +1662,13 @@ export const reports = {
     const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
+  // Oldest and newest transaction dates in the workspace (opening
+  // balances excluded). The reports page builds its year picker from
+  // these bounds (issue #765).
+  dataRange: async (): Promise<{ min_date: string | null; max_date: string | null }> => {
+    const { data } = await api.get('/reports/data-range')
+    return data
+  },
 }
 
 // Currencies
@@ -1582,7 +1721,7 @@ export const backup = {
     const { data } = await api.post(
       '/export/backup',
       password ? { password } : {},
-      { responseType: 'blob' },
+      { ...readOnly, responseType: 'blob' },
     )
     const blob = new Blob([data], { type: 'application/zip' })
     const url = URL.createObjectURL(blob)
@@ -1852,7 +1991,13 @@ export const agents = {
     const { data } = await api.get(`/agents/${id}`)
     return data
   },
-  create: async (payload: Partial<Agent> & { name: string }): Promise<Agent> => {
+  create: async (
+    payload: Partial<Agent> & {
+      name: string
+      /** Tool whitelist saved with the agent in the same transaction. */
+      tools?: { server: string; tool_name: string; enabled: boolean }[]
+    },
+  ): Promise<Agent> => {
     const { data } = await api.post('/agents', payload)
     return data
   },
@@ -1942,7 +2087,7 @@ export const agents = {
       await api.delete(`/agents/connections/${id}`)
     },
     test: async (id: string): Promise<LlmConnectionTestResult> => {
-      const { data } = await api.post(`/agents/connections/${id}/test`)
+      const { data } = await api.post(`/agents/connections/${id}/test`, undefined, readOnly)
       return data
     },
   },

@@ -3,11 +3,13 @@ import uuid
 import pytest
 
 from httpx import AsyncClient
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.app_settings import AppSetting
 from app.models.user import User
 from app.core.auth import get_jwt_strategy
+from app.core.config import get_settings
 
 
 pytestmark = pytest.mark.asyncio
@@ -343,6 +345,24 @@ class TestRegistrationToggle:
         response = await client.get("/api/admin/registration-status")
         assert response.status_code == 200
         assert "enabled" in response.json()
+
+    async def test_env_var_closes_registration_when_nothing_is_saved(
+        self, client: AsyncClient, session: AsyncSession, monkeypatch
+    ):
+        # The database is shared by the worker, and another test may have
+        # saved the toggle: start from nothing saved.
+        await session.execute(delete(AppSetting).where(AppSetting.key == "registration_enabled"))
+        await session.commit()
+        monkeypatch.setattr(get_settings(), "registration_enabled", False)
+
+        status_response = await client.get("/api/admin/registration-status")
+        assert status_response.json()["enabled"] is False
+
+        reg_response = await client.post(
+            "/api/auth/register",
+            json={"email": "closed@example.com", "password": "password123"},
+        )
+        assert reg_response.status_code == 403
 
     async def test_disable_registration(
         self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User, session: AsyncSession

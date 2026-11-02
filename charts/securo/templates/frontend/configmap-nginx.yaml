@@ -11,6 +11,9 @@ data:
         listen 8080;
         root /usr/share/nginx/html;
         index index.html;
+        # Attachments go up to STORAGE_MAX_FILE_SIZE_MB (10 MB); nginx's default limit is 1 MB.
+        # Mirrors frontend/default.conf.template.
+        client_max_body_size 15m;
 
         # API proxy to backend.
         # Resolve the backend hostname at request time instead of caching the IP
@@ -23,6 +26,20 @@ data:
             resolver ${NGINX_RESOLVER} valid=5s;
             set $upstream ${BACKEND_URL};
             proxy_pass $upstream;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Connecting a bank imports its whole history in this one request,
+        # which can outlast nginx's default 60s read timeout (issue #1148).
+        # Mirrors frontend/default.conf.template.
+        location = /api/connections/oauth/callback {
+            resolver ${NGINX_RESOLVER} valid=5s;
+            set $upstream ${BACKEND_URL};
+            proxy_pass $upstream;
+            proxy_read_timeout 300s;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

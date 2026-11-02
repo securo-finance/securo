@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowLeftRight, CalendarDays, Copy, Download, List, MoreHorizontal } from 'lucide-react'
+import { ArrowLeftRight, CalendarDays, Copy, Download, List, MoreHorizontal, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { MonthStepper } from '@/components/month-stepper'
 import { TransactionsViewSwitcher, type TransactionsViewSwitcherProps } from '@/components/transactions-view-switcher'
@@ -34,6 +34,9 @@ export type TransactionsPageActionsProps = {
   onAdd?: () => void
   onDuplicate?: () => void
   onTransfer?: () => void
+  /** Refetch the current list; `refreshing` spins the icon while it runs. */
+  onRefresh?: () => void
+  refreshing?: boolean
   testId?: string
 }
 
@@ -51,6 +54,19 @@ function DesktopSecondaryActions(props: TransactionsPageActionsProps) {
     <div className="hidden sm:contents">
       <TransactionsViewSwitcher {...props.view} />
       {props.columnPicker}
+      {props.onRefresh && (
+        <Button
+          variant="outline"
+          size="icon"
+          className="!size-9"
+          aria-label={t('transactions.refresh')}
+          data-testid="refresh-transactions"
+          disabled={props.refreshing}
+          onClick={props.onRefresh}
+        >
+          <RefreshCw size={16} className={props.refreshing ? 'animate-spin' : ''} />
+        </Button>
+      )}
       <Button variant="outline" disabled={props.exporting} onClick={props.onExport}>
         <Download size={16} className="mr-1.5" />{props.exportLabel}
       </Button>
@@ -90,6 +106,7 @@ function MobileSecondaryMenu(props: TransactionsPageActionsProps) {
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled={props.exporting} onClick={props.onExport}><Download size={16} className="mr-2" />{props.exportLabel}</DropdownMenuItem>
+        {props.onRefresh && <DropdownMenuItem onClick={props.onRefresh}><RefreshCw size={16} className="mr-2" />{t('transactions.refresh')}</DropdownMenuItem>}
         {props.onDuplicate && <DropdownMenuItem onClick={props.onDuplicate}><Copy size={16} className="mr-2" />{t('transactions.duplicate')}</DropdownMenuItem>}
         {props.onTransfer && <DropdownMenuItem onClick={props.onTransfer}><ArrowLeftRight size={16} className="mr-2" />{t('transactions.transfer')}</DropdownMenuItem>}
       </DropdownMenuContent>

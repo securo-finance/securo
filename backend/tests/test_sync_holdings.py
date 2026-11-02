@@ -359,6 +359,50 @@ async def test_provider_withdrawn_holding_reopens_when_active_again(
 
 
 @pytest.mark.asyncio
+async def test_withdrawal_status_with_positive_balance_keeps_asset_active(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """Issue #819: the provider can deliver a contradictory payload whose
+    raw status says TOTAL_WITHDRAWAL while the position still reports a
+    positive balance and quantity. The payload goes through the real
+    provider mapping and then the sync, which must keep the asset active
+    and keep recording today's value, with the raw status preserved in
+    metadata."""
+    from app.providers.pluggy import _build_holding_data
+
+    def _raw(status: str, balance: float) -> dict:
+        return {
+            "id": "h-1",
+            "name": "Fixed income fund",
+            "type": "FIXED_INCOME",
+            "currencyCode": "BRL",
+            "status": status,
+            "balance": balance,
+            "quantity": 10,
+            "value": balance / 10,
+        }
+
+    _MockProvider._holdings = [_build_holding_data(_raw("ACTIVE", 500))]
+    assert mock_connection.credentials is not None
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    [asset] = await _assets_for(session, test_user)
+    assert asset.sell_date is None
+
+    _MockProvider._holdings = [_build_holding_data(_raw("TOTAL_WITHDRAWAL", 510))]
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    await session.refresh(asset)
+
+    assert asset.sell_date is None
+    assert asset.is_archived is False
+    assert asset.external_metadata is not None
+    assert asset.external_metadata["status"] == "TOTAL_WITHDRAWAL"
+    values = await _values_for(session, asset.id)
+    assert any(v.date == date.today() and v.amount == Decimal("510") for v in values)
+
+
+@pytest.mark.asyncio
 async def test_active_holding_preserves_sell_date_edited_after_provider_withdrawal(
     session: AsyncSession, test_user: User, mock_connection: BankConnection
 ):

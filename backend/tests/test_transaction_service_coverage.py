@@ -378,15 +378,20 @@ async def test_get_transactions_user_pnl_only_returns_only_dashboard_reportable_
 
 
 async def test_get_transactions_sorting(session, test_user, test_workspace, acct):
-    await _mk_txn(session, test_user, acct, description="Aaa", amount=Decimal("30"))
-    await _mk_txn(session, test_user, acct, description="Zzz", amount=Decimal("10"))
+    await _mk_txn(
+        session, test_user, acct, description="Aaa",
+        amount=Decimal("30"), amount_primary=Decimal("5"),
+    )
+    await _mk_txn(
+        session, test_user, acct, description="Zzz",
+        amount=Decimal("10"), amount_primary=Decimal("40"),
+    )
     await _mk_txn(session, test_user, acct, description="Mmm", amount=Decimal("20"))
 
     asc, _, _ = await get_transactions(
         session, test_workspace.id, test_user.id, sort_by="amount", sort_dir="asc"
     )
-    amts = [t.amount for t in asc]
-    assert amts == sorted(amts)
+    assert [t.description for t in asc] == ["Aaa", "Mmm", "Zzz"]
 
     desc, _, _ = await get_transactions(
         session, test_workspace.id, test_user.id, sort_by="description", sort_dir="desc"
