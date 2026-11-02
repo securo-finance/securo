@@ -2168,6 +2168,7 @@
     "byIncome": "Por Receita",
     "byExpenses": "Por Despesa",
     "net": "Líquido",
+    "netFlow": "Fluxo líquido",
     "assetsAndAccounts": "Ativos e Contas",
     "youOwn": "Tens",
     "youOwe": "Deves",
@@ -2771,7 +2772,9 @@
         "unlink_transfer": "Desassociar transferência",
         "update_goal": "Atualizar objetivo",
         "update_budget": "Atualizar orçamento",
-        "delete_budget": "Eliminar orçamento"
+        "delete_budget": "Eliminar orçamento",
+        "update_transaction_notes": "Editar notas da transação",
+        "create_category_group": "Criar grupo de categorias"
       },
       "summary": {
         "categorize": "{{count}} transação(ões) → {{category}}",
@@ -2789,7 +2792,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}} ({{month}}): {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{amount}} para {{month}}",
-        "deleteRecurringBudget": "{{category}}: {{amount}} todos os meses a partir de {{month}}"
+        "deleteRecurringBudget": "{{category}}: {{amount}} todos os meses a partir de {{month}}",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "“{{name}}”"
       }
     },
     "conversation": {

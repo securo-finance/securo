@@ -17,22 +17,24 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import String, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.budget import Budget
 from app.models.category import Category
+from app.models.category_group import CategoryGroup
 from app.models.goal import Goal
 from app.models.group import Group, GroupMember
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.budget import BudgetCreate, BudgetUpdate
 from app.schemas.category import CategoryCreate
+from app.schemas.category_group import CategoryGroupCreate
 from app.schemas.goal import GoalCreate, GoalUpdate
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
@@ -40,10 +42,11 @@ from app.schemas.recurring_transaction import (
     WeekendAdjustment,
 )
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
-from app.schemas.transaction import TransactionCreate
+from app.schemas.transaction import TransactionCreate, TransactionUpdate
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import (
     budget_service,
+    category_group_service,
     category_service,
     goal_service,
     recurring_transaction_service,
@@ -53,12 +56,16 @@ from app.services import (
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import (
+    like_literal,
     num,
     parse_date,
     parse_uuid,
     parse_uuid_list,
     resolve_workspace_id,
 )
+
+# The notes column's own length, so a direct call cannot store more than the schema allows.
+NOTES_MAX_LENGTH: int = cast(int, cast(String, Transaction.__table__.c.notes.type).length)
 
 
 # Repeated in EVERY propose_* tool description. The LLM reads these when
@@ -183,6 +190,109 @@ async def propose_categorize(
 
 
 @tool(
+    name="propose_update_transaction_notes",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing one transaction's notes and tags. Tags "
+        "are hashtags inside the notes (e.g. #trip). `notes` replaces the "
+        "free text; `add_tags` and `remove_tags` are applied after it, and a "
+        "tag already present is not added twice. Only the notes change: "
+        "amount, date, account and category are never touched. Returns the "
+        "current notes alongside the result so the user can compare."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "transaction_id": {"type": "string", "format": "uuid"},
+            "notes": {
+                "type": "string",
+                "maxLength": NOTES_MAX_LENGTH,
+                "description": "Replaces the whole notes text; an empty string clears it",
+            },
+            "add_tags": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "Tags to add, with or without the leading #",
+            },
+            "remove_tags": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "Tags to remove, with or without the leading #",
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["transaction_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "transactions"],
+)
+async def propose_update_transaction_notes(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    transaction_id: str,
+    notes: str | None = None,
+    add_tags: list[str] | None = None,
+    remove_tags: list[str] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    if notes is None and not add_tags and not remove_tags:
+        return {"error": "no changes provided"}
+    ws_id = await resolve_workspace_id(session, ctx)
+    tx = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.id == parse_uuid(transaction_id),
+                Transaction.workspace_id == ws_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if tx is None:
+        return {"error": "transaction not found"}
+
+    new_notes = tx.notes if notes is None else (notes.strip() or None)
+    if remove_tags:
+        new_notes = transaction_service.notes_with_tags_removed(new_notes, remove_tags)
+    if add_tags:
+        new_notes = transaction_service.notes_with_tags_added(new_notes, add_tags)
+    if new_notes is not None and len(new_notes) > NOTES_MAX_LENGTH:
+        return {"error": f"notes must be {NOTES_MAX_LENGTH} characters or fewer"}
+    if new_notes == tx.notes:
+        return {"error": "the notes already read like that; nothing to change"}
+
+    preview = {
+        "kind": "update_transaction_notes",
+        "target": {
+            "id": str(tx.id),
+            "description": tx.description,
+            "date": tx.date.isoformat() if tx.date else None,
+            "amount": num(tx.amount),
+            "currency": tx.currency,
+            "notes": tx.notes,
+        },
+        "changes": {"notes": new_notes},
+        # Notes follow a transfer to its other leg, the same as an edit in
+        # the UI, so the preview says so instead of surprising the user.
+        "transfer_pair_id": str(tx.transfer_pair_id) if tx.transfer_pair_id else None,
+        "apply_endpoint": f"PATCH /api/transactions/{tx.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        try:
+            updated = await transaction_service.update_transaction(
+                session, tx.id, ws_id, ctx.user_id, TransactionUpdate(notes=new_notes)
+            )
+        except ValueError as exc:
+            return {**preview, "error": str(exc)}
+        if updated is None:
+            return {**preview, "error": "transaction not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
+
+    return preview
+
+
+@tool(
     name="propose_create_category",
     description=_PROPOSAL_PREFACE
     + (
@@ -219,7 +329,7 @@ async def propose_create_category(
         await session.execute(
             select(Category.id, Category.name).where(
                 Category.workspace_id == ws_id,
-                Category.name.ilike(name.strip()),
+                Category.name.ilike(like_literal(name.strip()), escape="\\"),
             )
         )
     ).first()
@@ -245,6 +355,76 @@ async def propose_create_category(
             CategoryCreate(
                 name=preview["proposed"]["name"],
                 group_id=parse_uuid(group_id) if group_id else None,
+                icon=preview["proposed"]["icon"],
+                color=preview["proposed"]["color"],
+            ),
+        )
+        return {**preview, "applied": True, "id": str(created.id)}
+
+    return preview
+
+
+@tool(
+    name="propose_create_category_group",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Preview the creation of a new category group (e.g. 'Pets', to hold "
+        "'Food', 'Vet' and 'Insurance'). Returns the proposed shape and any "
+        "name collision detected. Once applied, pass the returned id as "
+        "`group_id` to propose_create_category."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 100},
+            "icon": {"type": "string"},
+            "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "categories"],
+)
+async def propose_create_category_group(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    name: str,
+    icon: str | None = None,
+    color: str | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    existing = (
+        await session.execute(
+            select(CategoryGroup.id, CategoryGroup.name).where(
+                CategoryGroup.workspace_id == ws_id,
+                CategoryGroup.name.ilike(like_literal(name.strip()), escape="\\"),
+            )
+        )
+    ).first()
+    preview = {
+        "kind": "create_category_group",
+        "proposed": {
+            "name": name.strip(),
+            "icon": icon or "folder",
+            "color": color or "#6B7280",
+        },
+        "name_collision": {"id": str(existing.id), "name": existing.name} if existing else None,
+        "apply_endpoint": "POST /api/category-groups",
+    }
+
+    if _can_apply(ctx, apply):
+        if existing:
+            return {**preview, "error": f"category group named {existing.name!r} already exists"}
+        created = await category_group_service.create_group(
+            session,
+            ws_id,
+            ctx.user_id,
+            CategoryGroupCreate(
+                name=preview["proposed"]["name"],
                 icon=preview["proposed"]["icon"],
                 color=preview["proposed"]["color"],
             ),

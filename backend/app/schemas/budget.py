@@ -74,3 +74,43 @@ class BudgetBatchCreate(BaseModel):
     month: _Date
     is_recurring: bool = False
     items: list[BudgetBatchItem] = Field(min_length=1, max_length=200)
+
+
+class BudgetCopyMonthRequest(BaseModel):
+    source_month: _Date
+    target_month: _Date
+    adjustment_percentage: Decimal = Field(
+        default=Decimal("0.0"), ge=Decimal("-100"), le=Decimal("1000")
+    )
+    overwrite_existing: bool = False
+
+
+class BudgetRolloverCategory(BaseModel):
+    category_id: uuid.UUID
+    category_name: str
+    budgeted: Decimal
+    actual_spent: Decimal
+    projected_spent: Decimal
+    remaining: Decimal
+    carryover_eligible: bool
+
+
+class BudgetRolloverSummaryResponse(BaseModel):
+    month: _Date
+    total_budgeted: Decimal
+    total_spent: Decimal
+    total_projected_spent: Decimal
+    net_surplus: Decimal
+    categories: list[BudgetRolloverCategory]
+
+
+class BudgetMultiMonthForecastItem(BaseModel):
+    month: _Date
+    projected_budget: Decimal
+    projected_spend: Decimal
+    projected_variance: Decimal
+
+
+class BudgetForecastResponse(BaseModel):
+    forecast_months: int
+    items: list[BudgetMultiMonthForecastItem]

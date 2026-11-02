@@ -2168,6 +2168,7 @@
     "byIncome": "Por Receita",
     "byExpenses": "Por Despesa",
     "net": "Líquido",
+    "netFlow": "Fluxo líquido",
     "assetsAndAccounts": "Ativos e Contas",
     "youOwn": "Você Tem",
     "youOwe": "Você Deve",
@@ -2771,7 +2772,9 @@
         "unlink_transfer": "Desvincular transferência",
         "update_goal": "Atualizar meta",
         "update_budget": "Atualizar orçamento",
-        "delete_budget": "Excluir orçamento"
+        "delete_budget": "Excluir orçamento",
+        "update_transaction_notes": "Editar notas da transação",
+        "create_category_group": "Criar grupo de categorias"
       },
       "summary": {
         "categorize": "{{count}} transação(ões) → {{category}}",
@@ -2789,7 +2792,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}} ({{month}}): {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{amount}} para {{month}}",
-        "deleteRecurringBudget": "{{category}}: {{amount}} todo mês a partir de {{month}}"
+        "deleteRecurringBudget": "{{category}}: {{amount}} todo mês a partir de {{month}}",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "“{{name}}”"
       }
     },
     "conversation": {

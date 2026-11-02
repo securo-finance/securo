@@ -2164,6 +2164,7 @@
     "byIncome": "आय के अनुसार",
     "byExpenses": "खर्च के अनुसार",
     "net": "निवल",
+    "netFlow": "शुद्ध प्रवाह",
     "assetsAndAccounts": "संपत्तियाँ और खाते",
     "youOwn": "आपके पास",
     "youOwe": "आप पर बकाया",
@@ -2783,7 +2784,9 @@
         "unlink_transfer": "ट्रांसफ़र अलग करें",
         "update_goal": "लक्ष्य अपडेट करें",
         "update_budget": "बजट अपडेट करें",
-        "delete_budget": "बजट हटाएँ"
+        "delete_budget": "बजट हटाएँ",
+        "update_transaction_notes": "लेन-देन के नोट्स संपादित करें",
+        "create_category_group": "श्रेणी समूह बनाएँ"
       },
       "summary": {
         "categorize": "{{count}} लेन-देन → {{category}}",
@@ -2801,7 +2804,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}} ({{month}}): {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{month}} के लिए {{amount}}",
-        "deleteRecurringBudget": "{{category}}: {{month}} से हर महीने {{amount}}"
+        "deleteRecurringBudget": "{{category}}: {{month}} से हर महीने {{amount}}",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "“{{name}}”"
       }
     },
     "conversation": {

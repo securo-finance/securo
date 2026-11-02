@@ -2180,6 +2180,7 @@
     "byIncome": "За доходами",
     "byExpenses": "За витратами",
     "net": "Чистий",
+    "netFlow": "Чистий потік",
     "assetsAndAccounts": "Активи та рахунки",
     "youOwn": "Вам належить",
     "youOwe": "Ви винні",
@@ -2800,7 +2801,9 @@
         "unlink_transfer": "Розірвати зв'язок переказу",
         "update_goal": "Оновити ціль",
         "update_budget": "Оновити бюджет",
-        "delete_budget": "Видалити бюджет"
+        "delete_budget": "Видалити бюджет",
+        "update_transaction_notes": "Змінити примітки до транзакції",
+        "create_category_group": "Створити групу категорій"
       },
       "summary": {
         "categorize": "{{count}} транзакцій → {{category}}",
@@ -2818,7 +2821,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}} ({{month}}): {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{amount}} на {{month}}",
-        "deleteRecurringBudget": "{{category}}: {{amount}} щомісяця з {{month}}"
+        "deleteRecurringBudget": "{{category}}: {{amount}} щомісяця з {{month}}",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "«{{name}}»"
       }
     },
     "conversation": {

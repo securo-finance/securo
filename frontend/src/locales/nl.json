@@ -2166,6 +2166,7 @@
     "byIncome": "Op inkomen",
     "byExpenses": "Door uitgaven",
     "net": "Netto",
+    "netFlow": "Netto kasstroom",
     "assetsAndAccounts": "Activa en rekeningen",
     "youOwn": "U bezit",
     "youOwe": "U bent het verschuldigd",
@@ -2785,7 +2786,9 @@
         "unlink_transfer": "Overboeking ontkoppelen",
         "update_goal": "Doel bijwerken",
         "update_budget": "Begroting bijwerken",
-        "delete_budget": "Begroting verwijderen"
+        "delete_budget": "Begroting verwijderen",
+        "update_transaction_notes": "Opmerkingen van transactie bewerken",
+        "create_category_group": "Categoriegroep aanmaken"
       },
       "summary": {
         "categorize": "{{count}} transactie(s) → {{category}}",
@@ -2803,7 +2806,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}} ({{month}}): {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{amount}} voor {{month}}",
-        "deleteRecurringBudget": "{{category}}: {{amount}} per maand vanaf {{month}}"
+        "deleteRecurringBudget": "{{category}}: {{amount}} per maand vanaf {{month}}",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "“{{name}}”"
       }
     },
     "conversation": {
