@@ -1897,6 +1897,44 @@ async def _find_synced_duplicate(
             ):
                 return candidate
 
+    # Path 4: Enable Banking re-key. Its id hashes the entry_reference with
+    # the payload, so a richer remittance text or a settled date on a later
+    # fetch changes the id of a row we already hold. The reference is not
+    # unique on its own (#753), so it must also agree on amount and type
+    # within a few days, and the old id must have dropped out of this batch:
+    # a sibling sharing the reference that is still returned is its own
+    # transaction. More than one candidate is ambiguous, so none is chosen.
+    # A pending fetch never takes over a booked row.
+    entry_ref = raw.get("entry_reference")
+    entry_ref = entry_ref.strip() if isinstance(entry_ref, str) else ""
+    if entry_ref and entry_ref != "0":
+        statement = select(Transaction).where(
+            Transaction.account_id == account_id,
+            or_(
+                Transaction.source == "sync",
+                Transaction.source.in_(LOCAL_IMPORT_SOURCES),
+            ),
+            Transaction.raw_data.is_not(None),
+            Transaction.date >= txn_data.date - timedelta(days=3),
+            Transaction.date <= txn_data.date + timedelta(days=3),
+            Transaction.amount == txn_data.amount,
+            Transaction.type == txn_data.type,
+            Transaction.external_id != txn_data.external_id,
+        )
+        if txn_data.status == "pending":
+            statement = statement.where(Transaction.status == "pending")
+        result = await session.execute(statement)
+        rekey_matches = []
+        for candidate in result.scalars():
+            if candidate.external_id in incoming_external_ids:
+                continue
+            candidate_raw = candidate.raw_data if isinstance(candidate.raw_data, dict) else {}
+            candidate_ref = candidate_raw.get("entry_reference")
+            if isinstance(candidate_ref, str) and candidate_ref.strip() == entry_ref:
+                rekey_matches.append(candidate)
+        if len(rekey_matches) == 1:
+            return rekey_matches[0]
+
     # Path 5: local import history from before the account was connected.
     # Posting lag and statement exports can shift the date or shorten the
     # merchant description, so accept only one exact normalized merchant/payee.
