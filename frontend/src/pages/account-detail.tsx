@@ -35,7 +35,8 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCreateTransaction } from '@/hooks/use-create-transaction'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
-import { formatCurrency } from '@/lib/format'
+import { formatCompactCurrency, formatCurrency } from '@/lib/format'
+import { LoanScheduleCard } from '@/components/loan-schedule-card'
 import {
   AreaChart,
   Area,
@@ -1452,6 +1453,10 @@ export default function AccountDetailPage() {
         )
       })()}
 
+      {account.type === 'loan' && (
+        <LoanScheduleCard accountId={account.id} locale={locale} dateLocale={dateLocale} mask={mask} canWrite={canWrite} />
+      )}
+
       {/* Balance / Cycle spending chart */}
       {(() => {
         const cycleEmpty = isCreditCard && chartData.length > 0 && chartData[chartData.length - 1].balance === 0
@@ -1543,12 +1548,12 @@ export default function AccountDetailPage() {
                   tickFormatter={(v) => {
                     if (privacyMode) return ''
                     if (v === 0) return '0'
-                    return formatCurrency(v, displayCurrency, locale).replace(/,00$/, '').replace(/\.00$/, '')
+                    return formatCompactCurrency(v, displayCurrency, locale)
                   }}
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                   axisLine={false}
                   tickLine={false}
-                  width={56}
+                  width={64}
                   tickCount={5}
                   domain={[
                     (dataMin: number) => dataMin < 0 ? Math.floor(dataMin / 100) * 100 : 0,

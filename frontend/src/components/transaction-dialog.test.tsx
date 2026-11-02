@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
-import { currencies, groups, payees, transactions } from '@/lib/api'
+import { assets, currencies, groups, mortgagePayments, payees, transactions } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, RecurringTransaction, Transaction } from '@/types'
 
@@ -252,4 +252,146 @@ it('unlinks the pair only after the unlink confirmation is accepted', async () =
 
   expect(onUnlinkTransfer).toHaveBeenCalledTimes(1)
   expect(onUnlinkTransfer).toHaveBeenCalledWith('pair-1160')
+})
+
+it.each([
+  ['ignored transaction', { is_ignored: true }],
+  ['transfer', { transfer_pair_id: 'pair-1160' }],
+  ['ignored category', { category: { id: 'ignored', is_ignored: true } as Transaction['category'] }],
+])('hides mortgage allocation controls for an ineligible %s', async (_name, overrides) => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const getAllocations = vi.spyOn(mortgagePayments, 'get').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 0,
+    interest_total: 0,
+    principal_percentage: 0,
+    interest_percentage: 0,
+  })
+  const securedLoan = {
+    id: 'loan-1',
+    name: 'Mortgage',
+    type: 'loan',
+    currency: 'USD',
+    secured_asset_id: 'property-1',
+  } as Account
+
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('pair-1160', {
+        source: 'sync',
+        transfer_pair_id: null,
+        ...overrides,
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[...accountFixtures, securedLoan]}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  expect(screen.queryByText(t('transactions.mortgageAllocation'))).not.toBeInTheDocument()
+  expect(getAllocations).not.toHaveBeenCalled()
+})
+
+it('reads the split against the payment, not against the parts entered so far', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  vi.spyOn(assets, 'list').mockResolvedValue([])
+  vi.spyOn(mortgagePayments, 'get').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 0,
+    interest_total: 0,
+    principal_percentage: 0,
+    interest_percentage: 0,
+  })
+  const securedLoan = {
+    id: 'loan-1',
+    name: 'Mortgage',
+    type: 'loan',
+    currency: 'USD',
+    secured_asset_id: 'property-1',
+  } as Account
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('pair-1160', { source: 'sync', transfer_pair_id: null })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[...accountFixtures, securedLoan]}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.mortgageAllocation') }))
+  await user.type(await screen.findByLabelText(t('transactions.mortgagePrincipal')), '100')
+
+  // 100 of a 250 payment is 40%, with the rest of the payment still
+  // unallocated. Against the parts alone it would read as the whole payment.
+  expect(
+    await screen.findByText(t('transactions.mortgageSplitPercentages', { principal: '40.0', interest: '0.0' })),
+  ).toBeInTheDocument()
+})
+
+it('does not submit the transaction when Enter is pressed in a mortgage split field', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  vi.spyOn(assets, 'list').mockResolvedValue([])
+  vi.spyOn(mortgagePayments, 'get').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 0,
+    interest_total: 0,
+    principal_percentage: 0,
+    interest_percentage: 0,
+  })
+  const onSave = vi.fn()
+  const securedLoan = {
+    id: 'loan-1',
+    name: 'Mortgage',
+    type: 'loan',
+    currency: 'USD',
+    secured_asset_id: 'property-1',
+  } as Account
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('pair-1160', { source: 'sync', transfer_pair_id: null })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[...accountFixtures, securedLoan]}
+      onSave={onSave}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.mortgageAllocation') }))
+  const principalInput = await screen.findByLabelText(t('transactions.mortgagePrincipal'))
+  await user.type(principalInput, '100')
+  await user.keyboard('{Enter}')
+
+  expect(onSave).not.toHaveBeenCalled()
 })

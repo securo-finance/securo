@@ -57,7 +57,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
-import { formatCurrency } from '@/lib/format'
+import { formatCompactCurrency, formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
@@ -1270,12 +1270,12 @@ export default function DashboardPage() {
                     tickFormatter={(v) => {
                       if (privacyMode) return ''
                       if (v === 0) return '0'
-                      return formatCurrency(v, userCurrency, locale).replace(/,00$/, '').replace(/\.00$/, '')
+                      return formatCompactCurrency(v, userCurrency, locale)
                     }}
                     tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                     axisLine={false}
                     tickLine={false}
-                    width={56}
+                    width={64}
                     tickCount={5}
                     domain={[
                       (dataMin: number) => Math.min(0, Math.floor(dataMin / 100) * 100),
@@ -1812,7 +1812,14 @@ export default function DashboardPage() {
         transaction={editingTx}
         categories={categoriesList ?? []}
         categoryGroups={categoryGroupsList ?? []}
-        accounts={(accountsList ?? []).map((a: { id: string; name: string; display_name?: string | null }) => ({ id: a.id, name: getAccountName(a) }))}
+        accounts={(accountsList ?? []).map((a) => ({
+          id: a.id,
+          name: getAccountName(a),
+          display_name: a.display_name,
+          type: a.type,
+          currency: a.currency,
+          secured_asset_id: a.secured_asset_id,
+        }))}
         onSave={(data) => {
           if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data })
         }}

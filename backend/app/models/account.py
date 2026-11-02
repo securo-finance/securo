@@ -1,9 +1,9 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, SmallInteger, String
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, SmallInteger, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -47,6 +47,15 @@ class Account(Base):
         UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL"), nullable=True, index=True
     )
     balance: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0.00"))
+    # Loan accounts only: the contract terms, all optional. The payment
+    # schedule is computed from them on read (app/services/loan_schedule.py).
+    loan_kind: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    loan_original_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    loan_interest_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=9, scale=6), nullable=True)
+    loan_rate_period: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    loan_term_months: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    loan_first_payment_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    loan_amortization: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     balance_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     credit_limit: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
