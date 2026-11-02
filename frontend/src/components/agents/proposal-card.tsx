@@ -6,10 +6,12 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/date-range-format'
+import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import {
   budgets,
   categories,
+  categoryGroups,
   goals,
   recurring,
   rules,
@@ -54,11 +56,10 @@ export function ProposalCard({ toolCallId, data }: Props) {
       setAppliedAt(Date.now())
       toast.success(t('agents.proposal.applied'))
       // Invalidate the broad surface that proposals may have changed.
+      invalidateCategoryQueries(qc)
       ;[
         'transactions',
         'accounts',
-        'categories',
-        'category-groups',
         'recurring-transactions',
         'budgets',
         'rules',
@@ -275,6 +276,18 @@ function renderSummary(
         amount: fmt(tgt.amount, tgt.currency),
         month: String(tgt.month ?? '?'),
       })
+    case 'update_transaction_notes': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      return t('agents.proposal.summary.updateTransactionNotes', {
+        description: String(tgt.description ?? '?'),
+        before: String(tgt.notes || '∅'),
+        after: String(changes.notes || '∅'),
+      })
+    }
+    case 'create_category_group':
+      return t('agents.proposal.summary.createCategoryGroup', {
+        name: String(p.name ?? '?'),
+      }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
     default:
       return ''
   }
@@ -333,6 +346,11 @@ function SplitPreview({ proposed }: { proposed?: Record<string, unknown> }) {
   )
 }
 
+// The preview found the name taken; creating it anyway would make a duplicate.
+function rejectNameCollision(data: ProposalData): void {
+  if (data.name_collision) throw new Error(`The name is already used by ${data.name_collision.name}`)
+}
+
 // Each kind maps to one Securo endpoint already exposed via lib/api.ts.
 // Returns a string ref (id of the new entity) when available — used as a
 // breadcrumb in the localStorage record so a future "view created entity"
@@ -346,6 +364,7 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       return `${res.updated} updated`
     }
     case 'create_category': {
+      rejectNameCollision(data)
       const c = await categories.create({
         name: String(p.name),
         group_id: (p.group_id as string) || undefined,
@@ -485,6 +504,22 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       const id = String((data.target as Record<string, unknown>).id)
       await budgets.delete(id)
       return id
+    }
+    case 'update_transaction_notes': {
+      // Only `notes` goes out, so the edit cannot reach amount, date or account.
+      const id = String((data.target as Record<string, unknown>).id)
+      const notes = (data.changes as Record<string, unknown> | undefined)?.notes
+      await transactions.update(id, { notes: typeof notes === 'string' ? notes : null })
+      return id
+    }
+    case 'create_category_group': {
+      rejectNameCollision(data)
+      const g = await categoryGroups.create({
+        name: String(p.name),
+        icon: (p.icon as string) || undefined,
+        color: (p.color as string) || undefined,
+      })
+      return g.id
     }
   }
 }

@@ -2257,6 +2257,7 @@
     "byIncome": "Przychody",
     "byExpenses": "Wydatki",
     "net": "Netto",
+    "netFlow": "Przepływ netto",
     "assetsAndAccounts": "Aktywa i Konta",
     "youOwn": "Posiadasz",
     "youOwe": "Jesteś winien",
@@ -2878,7 +2879,9 @@
         "unlink_transfer": "Rozłącz przelew",
         "update_goal": "Zaktualizuj cel",
         "update_budget": "Zaktualizuj budżet",
-        "delete_budget": "Usuń budżet"
+        "delete_budget": "Usuń budżet",
+        "update_transaction_notes": "Edytuj notatki transakcji",
+        "create_category_group": "Utwórz grupę kategorii"
       },
       "summary": {
         "categorize_one": "{{count}} transakcja → {{category}}",
@@ -2899,7 +2902,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}} ({{month}}): {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{amount}} na {{month}}",
-        "deleteRecurringBudget": "{{category}}: {{amount}} co miesiąc od {{month}}"
+        "deleteRecurringBudget": "{{category}}: {{amount}} co miesiąc od {{month}}",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "„{{name}}”"
       }
     },
     "conversation": {

@@ -2168,6 +2168,7 @@
     "byIncome": "Bevételek szerint",
     "byExpenses": "Kiadások szerint",
     "net": "Nettó",
+    "netFlow": "Nettó pénzáramlás",
     "assetsAndAccounts": "Eszközök és számlák",
     "youOwn": "Vagyonod",
     "youOwe": "Tartozásod",
@@ -2787,7 +2788,9 @@
         "unlink_transfer": "Átvezetés szétválasztása",
         "update_goal": "Cél frissítése",
         "update_budget": "Költségkeret frissítése",
-        "delete_budget": "Költségkeret törlése"
+        "delete_budget": "Költségkeret törlése",
+        "update_transaction_notes": "Tranzakció megjegyzéseinek szerkesztése",
+        "create_category_group": "Kategóriacsoport létrehozása"
       },
       "summary": {
         "categorize": "{{count}} tranzakció → {{category}}",
@@ -2805,7 +2808,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}} ({{month}}): {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{amount}} – {{month}}",
-        "deleteRecurringBudget": "{{category}}: {{amount}} havonta, {{month}} kezdettel"
+        "deleteRecurringBudget": "{{category}}: {{amount}} havonta, {{month}} kezdettel",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "„{{name}}”"
       }
     },
     "conversation": {

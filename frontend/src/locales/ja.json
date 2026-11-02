@@ -2168,6 +2168,7 @@
     "byIncome": "収入別",
     "byExpenses": "支出別",
     "net": "純額",
+    "netFlow": "純キャッシュフロー",
     "assetsAndAccounts": "資産と口座",
     "youOwn": "あなたの資産",
     "youOwe": "あなたの負債",
@@ -2787,7 +2788,9 @@
         "unlink_transfer": "振替のリンクを解除",
         "update_goal": "目標を更新",
         "update_budget": "予算を更新",
-        "delete_budget": "予算を削除"
+        "delete_budget": "予算を削除",
+        "update_transaction_notes": "取引のメモを編集",
+        "create_category_group": "カテゴリグループを作成"
       },
       "summary": {
         "categorize": "{{count}}件の取引 → {{category}}",
@@ -2805,7 +2808,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}}（{{month}}）: {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{month}}の予算{{amount}}",
-        "deleteRecurringBudget": "{{category}}: {{month}}から毎月{{amount}}"
+        "deleteRecurringBudget": "{{category}}: {{month}}から毎月{{amount}}",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "「{{name}}」"
       }
     },
     "conversation": {

@@ -1,23 +1,28 @@
 import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { renderWithProviders } from '@/test/utils'
+import { createTestQueryClient, renderWithProviders } from '@/test/utils'
 import { isProposalData } from '@/lib/agent-proposals'
+import { toast } from 'sonner'
 
-const { linkTransfer, unlinkTransfer, updateGoal, updateBudget, deleteBudget } = vi.hoisted(() => ({
-  linkTransfer: vi.fn(),
-  unlinkTransfer: vi.fn(),
-  updateGoal: vi.fn(),
-  updateBudget: vi.fn(),
-  deleteBudget: vi.fn(),
-}))
+const { linkTransfer, unlinkTransfer, updateGoal, updateBudget, deleteBudget, updateTransaction, createGroup } =
+  vi.hoisted(() => ({
+    linkTransfer: vi.fn(),
+    unlinkTransfer: vi.fn(),
+    updateGoal: vi.fn(),
+    updateBudget: vi.fn(),
+    deleteBudget: vi.fn(),
+    updateTransaction: vi.fn(),
+    createGroup: vi.fn(),
+  }))
 vi.mock('@/lib/api', () => ({
   budgets: { update: updateBudget, delete: deleteBudget },
   categories: {},
+  categoryGroups: { create: createGroup },
   goals: { update: updateGoal },
   recurring: {},
   rules: {},
-  transactions: { linkTransfer, unlinkTransfer },
+  transactions: { linkTransfer, unlinkTransfer, update: updateTransaction },
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/hooks/use-display-locale', () => ({ useDateLocale: () => 'en-GB' }))
@@ -185,5 +190,106 @@ describe('ProposalCard goal and budget kinds', () => {
     await user.click(screen.getByRole('button', { name: /Apply/ }))
 
     await waitFor(() => expect(deleteBudget).toHaveBeenCalledWith('budget-2'))
+  })
+})
+
+describe('ProposalCard notes and category group kinds', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    updateTransaction.mockReset()
+    createGroup.mockReset()
+  })
+
+  it('treats the notes and category group previews as proposals', () => {
+    expect(isProposalData({ kind: 'update_transaction_notes' })).toBe(true)
+    expect(isProposalData({ kind: 'create_category_group' })).toBe(true)
+  })
+
+  it('shows the notes before and after, and sends only the notes on Apply', async () => {
+    updateTransaction.mockResolvedValue({ id: 'tx-1' })
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-notes"
+        data={{
+          kind: 'update_transaction_notes',
+          target: { id: 'tx-1', description: 'Lunch', amount: 30, notes: 'with Ana' },
+          changes: { notes: 'with Ana #trip' },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Edit transaction notes')).toBeInTheDocument()
+    expect(screen.getByText('Lunch: with Ana → with Ana #trip')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() =>
+      expect(updateTransaction).toHaveBeenCalledWith('tx-1', { notes: 'with Ana #trip' }),
+    )
+  })
+
+  it('clears the notes when the proposal leaves none', async () => {
+    updateTransaction.mockResolvedValue({ id: 'tx-2' })
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-clear-notes"
+        data={{
+          kind: 'update_transaction_notes',
+          target: { id: 'tx-2', description: 'Taxi', notes: '#work' },
+          changes: { notes: null },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Taxi: #work → ∅')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() => expect(updateTransaction).toHaveBeenCalledWith('tx-2', { notes: null }))
+  })
+
+  it('creates the category group on Apply, and refreshes both group list keys', async () => {
+    createGroup.mockResolvedValue({ id: 'group-1' })
+    const queryClient = createTestQueryClient()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-group"
+        data={{
+          kind: 'create_category_group',
+          proposed: { name: 'Pets', icon: 'paw-print', color: '#10B981' },
+        }}
+      />,
+      { queryClient },
+    )
+
+    expect(screen.getByText('Create category group')).toBeInTheDocument()
+    expect(screen.getByText('“Pets”')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() =>
+      expect(createGroup).toHaveBeenCalledWith({ name: 'Pets', icon: 'paw-print', color: '#10B981' }),
+    )
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['categoryGroups'] }))
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['category-groups'] })
+  })
+
+  it('refuses to create a group whose name the preview found taken', async () => {
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-group-taken"
+        data={{
+          kind: 'create_category_group',
+          proposed: { name: 'Casa' },
+          name_collision: { id: 'group-1', name: 'Casa' },
+        }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to apply'))
+    expect(createGroup).not.toHaveBeenCalled()
   })
 })

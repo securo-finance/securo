@@ -2168,6 +2168,7 @@
     "byIncome": "By Income",
     "byExpenses": "By Expenses",
     "net": "Net",
+    "netFlow": "Net flow",
     "assetsAndAccounts": "Assets & Accounts",
     "youOwn": "You Own",
     "youOwe": "You Owe",
@@ -2787,7 +2788,9 @@
         "unlink_transfer": "Unlink transfer",
         "update_goal": "Update goal",
         "update_budget": "Update budget",
-        "delete_budget": "Delete budget"
+        "delete_budget": "Delete budget",
+        "update_transaction_notes": "Edit transaction notes",
+        "create_category_group": "Create category group"
       },
       "summary": {
         "categorize": "{{count}} transaction(s) → {{category}}",
@@ -2805,7 +2808,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}} ({{month}}): {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{amount}} for {{month}}",
-        "deleteRecurringBudget": "{{category}}: {{amount}} every month from {{month}}"
+        "deleteRecurringBudget": "{{category}}: {{amount}} every month from {{month}}",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "“{{name}}”"
       }
     },
     "conversation": {

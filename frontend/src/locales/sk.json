@@ -2284,6 +2284,7 @@
     "byIncome": "Podľa príjmov",
     "byExpenses": "Podľa výdavkov",
     "net": "Čisté",
+    "netFlow": "Čistý tok",
     "assetsAndAccounts": "Aktíva a účty",
     "youOwn": "Vlastníš",
     "youOwe": "Dlhuješ",
@@ -2927,7 +2928,9 @@
         "unlink_transfer": "Zrušiť prepojenie prevodu",
         "update_goal": "Upraviť cieľ",
         "update_budget": "Upraviť rozpočet",
-        "delete_budget": "Vymazať rozpočet"
+        "delete_budget": "Vymazať rozpočet",
+        "update_transaction_notes": "Upraviť poznámku transakcie",
+        "create_category_group": "Vytvoriť skupinu kategórií"
       },
       "summary": {
         "categorize": "{{count}} transakcií → {{category}}",
@@ -2949,7 +2952,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}} ({{month}}): {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{amount}} na {{month}}",
-        "deleteRecurringBudget": "{{category}}: {{amount}} každý mesiac od {{month}}"
+        "deleteRecurringBudget": "{{category}}: {{amount}} každý mesiac od {{month}}",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "„{{name}}“"
       }
     },
     "conversation": {

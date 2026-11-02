@@ -2172,6 +2172,7 @@
     "byIncome": "Per entrate",
     "byExpenses": "Per spese",
     "net": "Netto",
+    "netFlow": "Flusso netto",
     "assetsAndAccounts": "Attività e Conti",
     "youOwn": "Hai",
     "youOwe": "Devi",
@@ -2775,7 +2776,9 @@
         "unlink_transfer": "Scollega trasferimento",
         "update_goal": "Aggiorna obiettivo",
         "update_budget": "Aggiorna budget",
-        "delete_budget": "Elimina budget"
+        "delete_budget": "Elimina budget",
+        "update_transaction_notes": "Modifica note della transazione",
+        "create_category_group": "Crea gruppo di categorie"
       },
       "summary": {
         "categorize": "{{count}} transazione/i → {{category}}",
@@ -2793,7 +2796,9 @@
         "updateGoal": "{{name}} → {{changes}}",
         "updateBudget": "{{category}} ({{month}}): {{before}} → {{after}}",
         "deleteBudget": "{{category}}: {{amount}} per {{month}}",
-        "deleteRecurringBudget": "{{category}}: {{amount}} ogni mese da {{month}}"
+        "deleteRecurringBudget": "{{category}}: {{amount}} ogni mese da {{month}}",
+        "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
+        "createCategoryGroup": "“{{name}}”"
       }
     },
     "conversation": {
