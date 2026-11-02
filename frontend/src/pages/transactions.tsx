@@ -2245,16 +2245,16 @@ export default function TransactionsPage() {
           <p className="text-sm text-muted-foreground">
             {t('transactions.confirmTransferCategoryDesc')}
           </p>
-          <DialogFooter className="flex-row flex-nowrap items-center justify-end gap-2 sm:space-x-0">
+          <DialogFooter className="flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-2">
             <Button
-              className="shrink-0"
+              className="w-full sm:w-auto"
               variant="outline"
               onClick={() => setPendingTransferCategoryUpdate(null)}
             >
               {t('common.cancel')}
             </Button>
             <Button
-              className="min-w-0 flex-1 truncate"
+              className="w-full sm:w-auto"
               variant="outline"
               onClick={() => submitPendingTransferCategoryUpdate(false)}
               disabled={updateMutation.isPending}
@@ -2262,7 +2262,7 @@ export default function TransactionsPage() {
               {t('transactions.confirmTransferCategorySingle')}
             </Button>
             <Button
-              className="min-w-0 flex-1 truncate"
+              className="w-full sm:w-auto"
               onClick={() => submitPendingTransferCategoryUpdate(true)}
               disabled={updateMutation.isPending}
             >
