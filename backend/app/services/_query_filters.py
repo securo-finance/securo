@@ -135,6 +135,23 @@ def is_transfer():
     )
 
 
+def is_not_transfer():
+    """SQL filter: the negation of `is_transfer`, safe for uncategorized rows.
+
+    `~is_transfer()` would also drop rows with no category: their
+    `category_id IN (...)` is NULL, so the whole negation is NULL.
+    """
+    return and_(
+        Transaction.transfer_pair_id.is_(None),
+        or_(
+            Transaction.category_id.is_(None),
+            Transaction.category_id.not_in(
+                select(Category.id).where(Category.treat_as_transfer.is_(True))
+            ),
+        ),
+    )
+
+
 def counts_as_pnl():
     """SQL filter: True when a transaction should contribute to income/expense totals.
 
