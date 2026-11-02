@@ -2425,6 +2425,8 @@
     "allSettled": "सब निपट गया।",
     "owesYou": "{{name}} पर आपका बकाया है",
     "youOwe": "{{name}} को आप पर बकाया है",
+    "owesGroupOwner": "{{name}} पर समूह के स्वामी का बकाया है",
+    "groupOwnerOwes": "{{name}} का समूह के स्वामी पर बकाया है",
     "ownerBadge": "स्वामी",
     "settleUp": "निपटान करें",
     "payNow": "अभी भुगतान करें",

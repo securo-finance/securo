@@ -2429,6 +2429,8 @@
     "allSettled": "Tudo quitado.",
     "owesYou": "{{name}} te deve",
     "youOwe": "Você deve para {{name}}",
+    "owesGroupOwner": "{{name}} deve para o dono do grupo",
+    "groupOwnerOwes": "O dono do grupo deve para {{name}}",
     "ownerBadge": "dono",
     "settleUp": "Acertar",
     "payNow": "Pagar",

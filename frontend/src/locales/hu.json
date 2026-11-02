@@ -2425,6 +2425,8 @@
     "allSettled": "Minden ki van egyenlítve.",
     "owesYou": "{{name}} tartozik neked",
     "youOwe": "Tartozásod {{name}} felé",
+    "owesGroupOwner": "{{name}} tartozik a csoport tulajdonosának",
+    "groupOwnerOwes": "A csoport tulajdonosa tartozik {{name}} felé",
     "ownerBadge": "tulajdonos",
     "settleUp": "Kiegyenlítés",
     "payNow": "Fizetés most",

@@ -51,6 +51,15 @@ function group(viewer: 'alice' | 'bob') {
   }
 }
 
+// The owner (Alice) never added herself, so the group has no member for her.
+function groupWithoutOwnerMember(viewer: 'alice' | 'dave') {
+  return {
+    ...group('alice'),
+    is_owner: viewer === 'alice',
+    members: [member('m-bob', 'Bob', 'user-bob', false), member('m-carol', 'Carol', null, false)],
+  }
+}
+
 const line = (member_id: string, amount: number) => ({
   member_id, currency: 'USD', amount, amount_in_default_currency: amount,
 })
@@ -137,5 +146,41 @@ describe('GroupDetailPage balances', () => {
     const [from, to] = within(dialog).getAllByRole('combobox')
     expect(from).toHaveValue('m-alice')
     expect(to).toHaveValue('m-carol')
+  })
+
+  it('shows a workspace member outside the group the owner\'s balances in the third person', async () => {
+    auth.userId = 'user-dave'
+    api.get.mockResolvedValue(groupWithoutOwnerMember('dave'))
+    // No member of their own: the lines come back from the owner's side.
+    api.balances.mockResolvedValue({
+      group_id: 'g1', self_member_id: null, default_currency: 'USD',
+      lines: [line('m-bob', 30), line('m-carol', -10)],
+    })
+    renderPage()
+
+    await screen.findByText(t('splitGroups.owesGroupOwner', { name: 'Bob' }))
+    expect(screen.getByText(t('splitGroups.groupOwnerOwes', { name: 'Carol' }))).toBeInTheDocument()
+    expect(screen.queryByText(t('splitGroups.owesYou', { name: 'Bob' }))).not.toBeInTheDocument()
+    expect(screen.queryByText(t('splitGroups.youOwe', { name: 'Carol' }))).not.toBeInTheDocument()
+    expect(kpi(t('splitGroups.kpiOwedToYouAsMember'))).toHaveTextContent('$0.00')
+    expect(kpi(t('splitGroups.kpiYouOwe'))).toHaveTextContent('$0.00')
+    expect(screen.queryByRole('button', { name: t('splitGroups.payNow') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('splitGroups.settleUp') })).not.toBeInTheDocument()
+  })
+
+  it('keeps first person for an owner who is not a member of their own group', async () => {
+    auth.userId = 'user-alice'
+    api.get.mockResolvedValue(groupWithoutOwnerMember('alice'))
+    api.balances.mockResolvedValue({
+      group_id: 'g1', self_member_id: null, default_currency: 'USD',
+      lines: [line('m-bob', 30), line('m-carol', -10)],
+    })
+    renderPage()
+
+    await screen.findByText(t('splitGroups.owesYou', { name: 'Bob' }))
+    expect(screen.getByText(t('splitGroups.youOwe', { name: 'Carol' }))).toBeInTheDocument()
+    expect(screen.queryByText(t('splitGroups.owesGroupOwner', { name: 'Bob' }))).not.toBeInTheDocument()
+    expect(kpi(t('splitGroups.kpiOwedToYou'))).toHaveTextContent('$30.00')
+    expect(kpi(t('splitGroups.kpiYouOwe'))).toHaveTextContent('$10.00')
   })
 })

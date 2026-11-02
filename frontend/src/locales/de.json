@@ -2426,6 +2426,8 @@
     "allSettled": "Alles ausgeglichen.",
     "owesYou": "{{name}} schuldet dir",
     "youOwe": "Du schuldest {{name}}",
+    "owesGroupOwner": "{{name}} schuldet dem Gruppeninhaber",
+    "groupOwnerOwes": "Der Gruppeninhaber schuldet {{name}}",
     "ownerBadge": "Inhaber",
     "settleUp": "Abrechnen",
     "payNow": "Jetzt bezahlen",

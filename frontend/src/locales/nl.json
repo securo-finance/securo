@@ -2425,6 +2425,8 @@
     "allSettled": "Alles geregeld.",
     "owesYou": "{{name}} is u iets verschuldigd",
     "youOwe": "U bent {{name}} iets verschuldigd",
+    "owesGroupOwner": "{{name}} is de groepseigenaar iets verschuldigd",
+    "groupOwnerOwes": "De groepseigenaar is {{name}} iets verschuldigd",
     "ownerBadge": "eigenaar",
     "settleUp": "Afrekenen",
     "payNow": "Betaal nu",

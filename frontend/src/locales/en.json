@@ -2425,6 +2425,8 @@
     "allSettled": "All settled.",
     "owesYou": "{{name}} owes you",
     "youOwe": "You owe {{name}}",
+    "owesGroupOwner": "{{name}} owes the group owner",
+    "groupOwnerOwes": "The group owner owes {{name}}",
     "ownerBadge": "owner",
     "settleUp": "Settle up",
     "payNow": "Pay now",

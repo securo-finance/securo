@@ -2442,6 +2442,8 @@
     "allSettled": "Усі розрахунки завершено.",
     "owesYou": "{{name}} винен вам",
     "youOwe": "Ви винні {{name}}",
+    "owesGroupOwner": "{{name}} винен власнику групи",
+    "groupOwnerOwes": "Власник групи винен {{name}}",
     "ownerBadge": "власник",
     "settleUp": "Розрахуватися",
     "payNow": "Оплатити зараз",

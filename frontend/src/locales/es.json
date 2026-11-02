@@ -2429,6 +2429,8 @@
     "allSettled": "Todo liquidado.",
     "owesYou": "{{name}} te debe",
     "youOwe": "Debes a {{name}}",
+    "owesGroupOwner": "{{name}} le debe al propietario del grupo",
+    "groupOwnerOwes": "El propietario del grupo le debe a {{name}}",
     "ownerBadge": "propietario",
     "settleUp": "Liquidar",
     "payNow": "Pagar ahora",

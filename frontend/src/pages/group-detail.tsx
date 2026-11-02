@@ -437,21 +437,35 @@ export default function GroupDetailPage() {
   // amount_in_default_currency (FX-converted server-side). Filtering by
   // a single currency would otherwise hide debts in another currency
   // — e.g. a EUR-only line wouldn't show up for a USD-default group.
-  const owedToViewer = useMemo(() => {
-    if (!balances) return 0
-    return balances.lines
-      .filter((l) => l.amount > 0)
-      .reduce((s, l) => s + Number(l.amount_in_default_currency), 0)
-  }, [balances])
+  //
+  // A viewer who is neither the owner nor in the group (a workspace
+  // member) has no member of their own. When the owner isn't a member
+  // either, the lines come back from the owner's side: they are the
+  // owner's debts, so they are shown in the third person and kept out of
+  // the viewer's KPIs.
+  const ownerSideLines = !isOwner && !!balances && !balances.self_member_id
+  const viewerLines = useMemo(
+    () => (balances && !ownerSideLines ? balances.lines : []),
+    [balances, ownerSideLines],
+  )
 
-  const viewerOwes = useMemo(() => {
-    if (!balances) return 0
-    return Math.abs(
-      balances.lines
-        .filter((l) => l.amount < 0)
+  const owedToViewer = useMemo(
+    () =>
+      viewerLines
+        .filter((l) => l.amount > 0)
         .reduce((s, l) => s + Number(l.amount_in_default_currency), 0),
-    )
-  }, [balances])
+    [viewerLines],
+  )
+
+  const viewerOwes = useMemo(
+    () =>
+      Math.abs(
+        viewerLines
+          .filter((l) => l.amount < 0)
+          .reduce((s, l) => s + Number(l.amount_in_default_currency), 0),
+      ),
+    [viewerLines],
+  )
 
   // Per-line breakdown for the two debt KPIs. Each row shows the other
   // party's name and the amount in its native currency — so a EUR line
@@ -463,24 +477,22 @@ export default function GroupDetailPage() {
   }, [group?.members])
 
   const owedToViewerBreakdown = useMemo<KpiBreakdownItem[]>(() => {
-    if (!balances) return []
-    return balances.lines
+    return viewerLines
       .filter((l) => l.amount > 0)
       .map((l) => ({
         name: memberNameById.get(l.member_id) ?? '—',
         amountText: formatCurrency(Number(l.amount), l.currency, locale),
       }))
-  }, [balances, memberNameById, locale])
+  }, [viewerLines, memberNameById, locale])
 
   const viewerOwesBreakdown = useMemo<KpiBreakdownItem[]>(() => {
-    if (!balances) return []
-    return balances.lines
+    return viewerLines
       .filter((l) => l.amount < 0)
       .map((l) => ({
         name: memberNameById.get(l.member_id) ?? '—',
         amountText: formatCurrency(Math.abs(Number(l.amount)), l.currency, locale),
       }))
-  }, [balances, memberNameById, locale])
+  }, [viewerLines, memberNameById, locale])
 
   const monthlyData = useMemo(() => {
     if (!summary) return []
@@ -709,11 +721,16 @@ export default function GroupDetailPage() {
             {balances.lines.map((line, idx) => {
               // Each line is the viewer's balance with one other member:
               // positive = they owe the viewer, negative = the viewer owes them.
+              // Owner-side lines (see ownerSideLines) are the owner's instead.
               const positive = line.amount > 0
               const otherName = memberName_(line.member_id)
-              const label = positive
-                ? t('splitGroups.owesYou', { name: otherName })
-                : t('splitGroups.youOwe', { name: otherName })
+              const label = ownerSideLines
+                ? positive
+                  ? t('splitGroups.owesGroupOwner', { name: otherName })
+                  : t('splitGroups.groupOwnerOwes', { name: otherName })
+                : positive
+                  ? t('splitGroups.owesYou', { name: otherName })
+                  : t('splitGroups.youOwe', { name: otherName })
               return (
                 <li
                   key={`${line.member_id}-${line.currency}-${idx}`}
@@ -733,7 +750,7 @@ export default function GroupDetailPage() {
                       // - Owner can act on any line
                       // - Linked member can only pay what they owe
                       //   (negative amount = they owe that member)
-                      const canActLinked = !isOwner && !positive
+                      const canActLinked = !isOwner && !ownerSideLines && !positive
                       if (!isOwner && !canActLinked) return null
                       if (!canWrite) return null
                       return (

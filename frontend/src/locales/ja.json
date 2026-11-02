@@ -2425,6 +2425,8 @@
     "allSettled": "精算が完了しています。",
     "owesYou": "{{name}}があなたに未払い",
     "youOwe": "あなたは{{name}}に未払い",
+    "owesGroupOwner": "{{name}}がグループのオーナーに未払い",
+    "groupOwnerOwes": "グループのオーナーが{{name}}に未払い",
     "ownerBadge": "オーナー",
     "settleUp": "精算する",
     "payNow": "今すぐ支払う",

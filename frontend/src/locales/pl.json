@@ -2529,6 +2529,8 @@
     "allSettled": "Wszystko rozliczone.",
     "owesYou": "{{name}} jest Ci winien",
     "youOwe": "Jesteś winien {{name}}",
+    "owesGroupOwner": "{{name}} jest winien właścicielowi grupy",
+    "groupOwnerOwes": "Właściciel grupy jest winien {{name}}",
     "ownerBadge": "właściciel",
     "settleUp": "Rozlicz",
     "payNow": "Zapłać teraz",
