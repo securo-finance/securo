@@ -6,6 +6,9 @@ honest about what that costs.
 """
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.exc import IntegrityError
+
+from app.services import payee_service
 
 
 @pytest.mark.asyncio
@@ -219,3 +222,25 @@ async def test_a_merge_of_two_sources_with_one_kind_moves_one_document(
     documents = await _merge_and_read_documents(client, auth_headers, target, [first, second])
 
     assert documents == {"other": "A-1"}
+
+
+@pytest.mark.asyncio
+async def test_a_merge_that_loses_a_race_answers_conflict(
+    client: AsyncClient, auth_headers, test_workspace, monkeypatch
+):
+    """A concurrent merge can land the same kind on the target first."""
+    source = await _payee_with(client, auth_headers, "Dup LTDA", [])
+    target = await _payee_with(client, auth_headers, "Main LTDA", [])
+
+    async def lose_the_race(*args, **kwargs):
+        raise IntegrityError("INSERT INTO payee_tax_ids", {}, Exception("uq_payee_tax_id_kind"))
+
+    monkeypatch.setattr(payee_service, "merge_payees", lose_the_race)
+    merged = await client.post(
+        "/api/payees/merge",
+        headers=auth_headers,
+        json={"target_id": target, "source_ids": [source]},
+    )
+
+    assert merged.status_code == 409, merged.text
+    assert "Retry the merge" in merged.json()["detail"]
