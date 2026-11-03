@@ -120,6 +120,7 @@ describe('credit card cycle window', () => {
     await waitFor(() => {
       const last = txCalls().at(-1)!
       expect(last.unbilled_only).toBe(true)
+      expect(last.statement_view).toBe(true)
       expect(String(last.from) >= '2026-04-30').toBe(true)
     })
   })

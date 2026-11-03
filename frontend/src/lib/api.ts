@@ -609,6 +609,7 @@ export const transactions = {
     bill_id?: string
     group_id?: string
     unbilled_only?: boolean
+    statement_view?: boolean
     q?: string
     page?: number
     limit?: number
