@@ -298,7 +298,7 @@ async def test_ledger_rejects_a_kind_outside_buy_and_sell(
     await _buy(session, test_workspace, holding, "10", "20", date(2026, 1, 1))
     handler = REGISTRY["list_asset_transactions"].handler
 
-    for kind in ("dividend", "Staking", "transfer"):
+    for kind in ("dividend", "Staking", "transfer", ""):
         with pytest.raises(ValueError, match="'buy' or 'sell'"):
             await handler(session=session, ctx=ctx, kind=kind)
 

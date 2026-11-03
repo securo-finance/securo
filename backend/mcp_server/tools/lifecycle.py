@@ -168,8 +168,10 @@ async def list_assets(
         "quantity, price per unit (in the asset's currency), fee, date, "
         "source and the asset's name and ticker. `total` counts the rows "
         "returned; `has_more` is true when more rows match than the limit "
-        "let through, so narrow the range or raise the limit before "
-        "treating the list as complete. Dividends and staking rewards are "
+        "let through, so narrow the range or raise the limit (up to 500) "
+        "before treating the list as complete. There is no offset: if a "
+        "single day alone holds more than 500 matching rows, the rest of "
+        "that day cannot be listed. Dividends and staking rewards are "
         "NOT here: the ledger only records buys and sells, and any other "
         "`kind` is rejected. For the resulting position and cost basis use "
         "list_assets."
@@ -201,8 +203,9 @@ async def list_asset_transactions(
 ) -> dict[str, Any]:
     # The service drops a kind it does not recognise, which would hand back
     # the whole ledger looking filtered — the REST API answers 422 instead.
-    # Normalise the casing an LLM is likely to send, then refuse the rest.
-    if kind:
+    # Normalise the casing an LLM is likely to send, then refuse the rest,
+    # "" included: the REST pattern rejects it too.
+    if kind is not None:
         kind = kind.lower()
         if kind not in _LEDGER_KINDS:
             raise ValueError(
@@ -216,7 +219,7 @@ async def list_asset_transactions(
         ws_id,
         asset_id=parse_uuid(asset_id),
         ticker=ticker,
-        kind=kind or None,
+        kind=kind,
         from_date=parse_date(from_date),
         to_date=parse_date(to_date),
         # One row past the cap tells a full page apart from a truncated one.
