@@ -261,6 +261,49 @@ async def test_receiver_credit_created_when_to_member_is_linked_with_account(
 
 
 @pytest.mark.asyncio
+async def test_administrative_settlement_does_not_create_receiver_credit(
+    session: AsyncSession, test_user, test_workspace
+):
+    receiver, _receiver_ws = await _make_user_with_workspace(
+        session, "rx-admin@example.com"
+    )
+    await _make_account(session, receiver.id)
+
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="AdminSettlement")
+    )
+    me = await group_service.create_member(
+        session,
+        group.id,
+        test_workspace.id,
+        GroupMemberCreate(name="Me", is_self=True),
+    )
+    bob = await group_service.create_member(
+        session,
+        group.id,
+        test_workspace.id,
+        GroupMemberCreate(name="Bob", linked_user_id=receiver.id),
+    )
+
+    settlement = await settlement_service.create_settlement(
+        session,
+        group.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementCreate(
+            from_member_id=me.id,
+            to_member_id=bob.id,
+            amount=Decimal("50.00"),
+            currency="USD",
+            date=date.today(),
+        ),
+    )
+
+    assert settlement is not None
+    assert settlement.receiver_transaction_id is None
+
+
+@pytest.mark.asyncio
 async def test_receiver_credit_skipped_when_to_member_is_shadow(
     session: AsyncSession, test_user, test_workspace
 ):

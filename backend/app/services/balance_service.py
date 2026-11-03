@@ -13,8 +13,9 @@ owes the caller and a negative amount means the caller owes M. Pairs that
 don't involve the caller are left out, and so are a member's pairs with
 an owner who isn't a member of the group.
 
-Mixed currencies are kept as separate lines (each line also carries its
-amount in the group's default currency).
+Mixed currencies are kept as separate lines when no historical billing
+amount is available. Transactions with a persisted primary-currency amount
+are represented in that billing currency for settlement matching.
 """
 
 import uuid
@@ -29,6 +30,7 @@ from app.models.group import GroupMember
 from app.models.group_settlement import GroupSettlement
 from app.models.transaction import Transaction
 from app.models.transaction_split import TransactionSplit
+from app.models.user import User
 
 # Stands in for a group owner who isn't one of the group's members.
 _GROUP_OWNER = uuid.UUID(int=0)
@@ -93,17 +95,54 @@ async def compute_balances(
 
     # Splits: each member's share of a transaction someone else paid is
     # what they owe the payer.
+    from app.core.config import get_settings
+
+    fallback_currency = get_settings().default_currency
     splits_result = await session.execute(
-        select(TransactionSplit, Transaction.currency, Transaction.user_id, Transaction.type)
+        select(
+            TransactionSplit,
+            Transaction.amount,
+            Transaction.amount_primary,
+            Transaction.currency,
+            Transaction.user_id,
+            Transaction.type,
+            User.preferences,
+        )
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .join(GroupMember, TransactionSplit.group_member_id == GroupMember.id)
+        .join(User, Transaction.user_id == User.id)
         .where(GroupMember.group_id == group_id)
     )
-    for split, currency, recorder_id, tx_type in splits_result.all():
+    for (
+        split,
+        transaction_amount,
+        amount_primary,
+        currency,
+        recorder_id,
+        tx_type,
+        preferences,
+    ) in splits_result.all():
         recorder = member_by_user.get(recorder_id, default_payer)
         if split.group_member_id == recorder:
             continue
         share = Decimal(str(split.share_amount))
+        primary_currency = (preferences or {}).get(
+            "currency_display", fallback_currency
+        )
+        # Preserve the historical conversion stored on the transaction when
+        # the group's default currency is the user's primary currency.
+        if (
+            amount_primary is not None
+            and primary_currency == group.default_currency
+            and currency != group.default_currency
+            and transaction_amount
+        ):
+            share = (
+                Decimal(str(amount_primary))
+                * share
+                / Decimal(str(abs(transaction_amount)))
+            ).quantize(Decimal("0.01"))
+            currency = group.default_currency
         if tx_type == "credit":
             # Income: the recorder received the money, so they owe each
             # other member that member's share.

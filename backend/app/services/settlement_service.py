@@ -312,7 +312,12 @@ async def create_settlement(
     # user and has a checking/savings account, record the cash-in side
     # so their books reflect the actual money received.
     receiver_tx_id = None
-    if receiver_user_id is not None:
+    # A settlement without an account or linked transaction is an
+    # administrative adjustment. Do not invent a bank credit for it; the
+    # balance correction belongs only in the group ledger.
+    if receiver_user_id is not None and (
+        account_id is not None or data.transaction_id is not None
+    ):
         receiver_desc = description or f"Acerto · {group.name} · {from_name}"
         receiver_tx = await _create_receiver_credit(
             session,
