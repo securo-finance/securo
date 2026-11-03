@@ -244,3 +244,27 @@ async def test_a_merge_that_loses_a_race_answers_conflict(
 
     assert merged.status_code == 409, merged.text
     assert "Retry the merge" in merged.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_merge_blocked_by_another_constraint_is_not_a_conflict(
+    client: AsyncClient, auth_headers, test_workspace, monkeypatch
+):
+    """Only the document-kind race is worth a retry; others fail as before."""
+    source = await _payee_with(client, auth_headers, "Dup LTDA", [])
+    target = await _payee_with(client, auth_headers, "Main LTDA", [])
+
+    async def blocked_by_a_schedule(*args, **kwargs):
+        raise IntegrityError(
+            "DELETE FROM payees",
+            {},
+            Exception("invoice_schedules_payee_id_fkey"),
+        )
+
+    monkeypatch.setattr(payee_service, "merge_payees", blocked_by_a_schedule)
+    with pytest.raises(IntegrityError):
+        await client.post(
+            "/api/payees/merge",
+            headers=auth_headers,
+            json={"target_id": target, "source_ids": [source]},
+        )
