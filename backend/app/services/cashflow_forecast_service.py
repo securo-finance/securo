@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.workspace import Workspace
@@ -59,6 +60,58 @@ def _date_matches_cadence(target_date: date, anchor_date: date, cadence: Cadence
     return False
 
 
+# Manual recurring frequencies expressed as detector cadences.
+_FREQUENCY_TO_CADENCE = {
+    "weekly": CadenceEnum.WEEKLY,
+    "biweekly": CadenceEnum.BI_WEEKLY,
+    "monthly": CadenceEnum.MONTHLY,
+    "quarterly": CadenceEnum.QUARTERLY,
+    "semiannual": CadenceEnum.SEMI_ANNUAL,
+    "yearly": CadenceEnum.ANNUAL,
+}
+
+# How far a detected average may sit from a manual rule's amount and still be
+# taken for the same bill. Utility and card bills drift a little month to
+# month; a different bill on the same cadence rarely lands this close.
+_SAME_BILL_AMOUNT_TOLERANCE = Decimal("0.10")
+
+
+def _names_match(detected_key: str, manual_key: str) -> bool:
+    """Same merchant when one normalized name is the other or contains it."""
+    if not detected_key or not manual_key:
+        return False
+    if detected_key == manual_key:
+        return True
+    shorter, longer = sorted((detected_key, manual_key), key=len)
+    return len(shorter) >= 3 and shorter in longer
+
+
+def _matches_manual_rule(item, rule: dict) -> bool:
+    """Whether a detected pattern is a bill a manual rule already schedules.
+
+    Transactions not linked to the rule (imported from the bank, entered by
+    hand) often carry a payee unrelated to the rule's description, so a name
+    match alone misses them. The same direction, cadence and amount on the
+    same account or category is the same bill under another name.
+    """
+    if item.direction != rule["direction"]:
+        return False
+    if _names_match(item.normalized_key.lower(), rule["name_key"]):
+        return True
+    if rule["amount"] is None or item.cadence != rule["cadence"]:
+        return False
+    same_place = (
+        (rule["account_id"] is not None and item.account_id == rule["account_id"])
+        or (rule["category_id"] is not None and item.category_id == rule["category_id"])
+    )
+    if not same_place:
+        return False
+    expected = abs(rule["amount"])
+    if expected == 0:
+        return False
+    return abs(abs(item.average_amount) - expected) <= expected * _SAME_BILL_AMOUNT_TOLERANCE
+
+
 async def generate_cashflow_forecast(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -67,7 +120,9 @@ async def generate_cashflow_forecast(
     reference_date: Optional[date] = None,
 ) -> CashflowForecastResponse:
     """Generate day-by-day predictive cashflow simulation and liquidity runway metrics."""
-    today = reference_date or date.today()
+    # The workspace's own calendar, like the account balances and dashboard,
+    # so the starting balance and the simulation agree on which day is today.
+    today = reference_date or app_today()
     end_date = today + timedelta(days=horizon_days)
 
     # 1. Start from the same current balance the account screen shows: the
@@ -131,21 +186,29 @@ async def generate_cashflow_forecast(
         exclude_recurring_ids=manual_recurring_ids,
     )
 
-    # Deduplicate: if an auto-detected item shares payee with manual recurring, prefer manual
-    manual_payee_set = {
-        recurring_detector_service.normalize_merchant_name(r.description).lower()
-        for r in manual_recurrings
-        if r.description
-    }
-
     # Manual recurrings follow the same schedule the dashboard projects:
     # frequency, end date, intended day and weekend adjustment all apply.
     # {date: [(name, direction, amount)]}
     manual_events: dict[date, list[tuple[str, FlowDirectionEnum, Decimal]]] = {}
+    # What each manual rule looks like to the detector, to drop detected
+    # patterns that are the same bill under another payee name.
+    manual_rules: list[dict] = []
     for r in manual_recurrings:
         direction = FlowDirectionEnum.INFLOW if r.type == "credit" else FlowDirectionEnum.OUTFLOW
         amount, _ = await convert_or_none(
             session, Decimal(str(r.amount)), r.currency, base_currency, today
+        )
+        manual_rules.append(
+            {
+                "name_key": recurring_detector_service.normalize_merchant_name(r.description).lower()
+                if r.description
+                else "",
+                "direction": direction,
+                "amount": amount,
+                "cadence": _FREQUENCY_TO_CADENCE.get(r.frequency),
+                "account_id": r.account_id,
+                "category_id": r.category_id,
+            }
         )
         if amount is None:
             unconverted_currencies.add(r.currency)
@@ -165,15 +228,26 @@ async def generate_cashflow_forecast(
             )
 
     # Detected items: [(name, direction, amount, next_date, cadence)]
+    # A pending item is a little late, not gone: its history already leaves
+    # the burn below, so dropping it from the schedule would make the expense
+    # vanish. Pending outflows stay scheduled at their next expected date,
+    # labelled pending. Pending inflows are left out, so a late paycheck
+    # cannot hide a shortfall. Lapsed items have stopped and stay out.
     schedule_items = []
     for item in detected_res.items:
-        if item.status != SubscriptionStatusEnum.ACTIVE:
+        if any(_matches_manual_rule(item, rule) for rule in manual_rules):
             continue
-        if item.normalized_key.lower() in manual_payee_set:
+        if item.status == SubscriptionStatusEnum.PENDING:
+            if item.direction != FlowDirectionEnum.OUTFLOW:
+                continue
+            name = f"{item.merchant_name} (pending)"
+        elif item.status == SubscriptionStatusEnum.ACTIVE:
+            name = item.merchant_name
+        else:
             continue
         schedule_items.append(
             (
-                item.merchant_name,
+                name,
                 item.direction,
                 item.average_amount,
                 item.next_expected_date,
@@ -208,7 +282,13 @@ async def generate_cashflow_forecast(
             t for t in hist_txs
             if t.recurring_transaction_id not in manual_recurring_ids
             and recurring_detector_service.normalize_merchant_name(t.payee or t.description).lower() not in detected_names_lower
-            and recurring_detector_service.normalize_merchant_name(t.payee or t.description).lower() not in manual_payee_set
+            and not any(
+                _names_match(
+                    recurring_detector_service.normalize_merchant_name(t.payee or t.description).lower(),
+                    rule["name_key"],
+                )
+                for rule in manual_rules
+            )
         ]
 
         if discretionary_txs:

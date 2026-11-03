@@ -9,6 +9,7 @@ from typing import Optional
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.transaction import Transaction
 from app.schemas.forecast import (
     CadenceEnum,
@@ -146,7 +147,7 @@ async def detect_recurring_patterns(
     skipped, so a caller that already schedules those records does not see
     them detected a second time under a different payee name.
     """
-    today = reference_date or date.today()
+    today = reference_date or app_today()
     start_date = today - timedelta(days=lookback_days)
 
     # Same exclusions the reports use (transfers, ignored rows, settlement

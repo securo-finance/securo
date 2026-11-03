@@ -463,3 +463,118 @@ async def test_cashflow_forecast_counts_shared_credit_line_once(session):
 
     # Both cards report the same 800 of debt on one line: 5,000 - 800.
     assert forecast.summary.starting_liquid_balance == Decimal("4200.00")
+
+
+def _posted_debit(user_id, workspace_id, account_id, payee, amount, tx_date, **kwargs):
+    return Transaction(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=account_id,
+        description=payee,
+        payee=payee,
+        amount=Decimal(amount),
+        amount_primary=Decimal(amount),
+        currency="USD",
+        date=tx_date,
+        effective_date=tx_date,
+        type="debit",
+        source=kwargs.pop("source", "manual"),
+        status="posted",
+        **kwargs,
+    )
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_keeps_pending_detected_outflow_scheduled(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Pending WS")
+    # Billed on the 1st for three months, then July's charge was the last one:
+    # 47 days later the pattern is pending (late), not lapsed.
+    for tx_date in (date(2026, 5, 1), date(2026, 6, 1), date(2026, 7, 1)):
+        session.add(_posted_debit(user_id, ws.id, checking.id, "Streamly", "15.00", tx_date))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=30, include_discretionary_burn=True,
+        reference_date=date(2026, 8, 17),
+    )
+
+    charge_day = next(p for p in forecast.daily_trajectory if p.date == date(2026, 9, 1))
+    assert charge_day.recurring_outflow == Decimal("15.00")
+    assert charge_day.events == ["-15.00 Streamly (pending)"]
+    assert forecast.summary.total_projected_outflow == Decimal("15.00")
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_counts_manual_bill_once_when_bank_rows_use_another_payee(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Same Bill WS")
+    session.add(_manual_recurring(
+        user_id, ws.id, checking.id, "Electricity", "monthly", date(2026, 9, 15),
+        amount=Decimal("120.00"),
+    ))
+    # The same bill imported from the bank, not linked to the rule and under
+    # the utility's own name.
+    for tx_date, amount in (
+        (date(2026, 6, 15), "118.00"),
+        (date(2026, 7, 15), "121.00"),
+        (date(2026, 8, 15), "122.00"),
+    ):
+        session.add(_posted_debit(
+            user_id, ws.id, checking.id, "PG&E Web Online", amount, tx_date, source="sync"
+        ))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=60, include_discretionary_burn=False,
+        reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.summary.total_projected_outflow == Decimal("240.00")
+    bill_day = next(p for p in forecast.daily_trajectory if p.date == date(2026, 9, 15))
+    assert bill_day.events == ["-120.00 Electricity"]
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_keeps_unrelated_bill_on_same_cadence(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Other Bill WS")
+    session.add(_manual_recurring(
+        user_id, ws.id, checking.id, "Electricity", "monthly", date(2026, 9, 15),
+        amount=Decimal("120.00"),
+    ))
+    # Monthly too, same account, but a different amount: a separate bill.
+    for tx_date in (date(2026, 6, 20), date(2026, 7, 20), date(2026, 8, 20)):
+        session.add(_posted_debit(
+            user_id, ws.id, checking.id, "City Water Dept", "45.00", tx_date, source="sync"
+        ))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=30, include_discretionary_burn=False,
+        reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.summary.total_projected_outflow == Decimal("165.00")
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_starts_on_the_workspace_calendar_day(session):
+    from zoneinfo import ZoneInfo
+
+    from app.core.app_clock import today_in, use_resolved_timezone
+
+    _, ws, _ = await _forecast_workspace(session, "Forecast Clock WS")
+    await session.commit()
+
+    # UTC+14 and UTC-11 are always on different calendar days.
+    starts = {}
+    for name in ("Pacific/Kiritimati", "Pacific/Pago_Pago"):
+        zone = ZoneInfo(name)
+        with use_resolved_timezone(zone):
+            forecast = await generate_cashflow_forecast(
+                session, ws.id, horizon_days=7, include_discretionary_burn=False,
+            )
+        starts[name] = (forecast.summary.start_date, today_in(zone))
+
+    for start_date, expected in starts.values():
+        assert start_date == expected
+    assert starts["Pacific/Kiritimati"][0] != starts["Pacific/Pago_Pago"][0]
