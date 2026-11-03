@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset_group import AssetGroup
+from app.models.user import User
 from app.services import (
     asset_service,
     asset_transaction_service,
@@ -22,6 +23,10 @@ from app.services import (
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import num, parse_date, parse_uuid, resolve_workspace_id
+
+
+# Mirrors asset_transaction_service._VALID_KINDS, which is private.
+_LEDGER_KINDS = frozenset({"buy", "sell"})
 
 
 async def _group_names(session: AsyncSession, workspace_id) -> dict[str, str]:
@@ -85,14 +90,20 @@ async def list_recurring_transactions(
         "holdings also carry cost basis: `average_price` (weighted-average "
         "cost per unit), `total_invested` (cost basis of the units still "
         "held), `gain_loss` (unrealized), `realized_gain` (from past sells) "
-        "and `transaction_count`. A `transaction_count` of 0 means the "
-        "holding has no ledger, so its cost fields are null — answer 'how "
-        "much did I pay for X?' from these fields, and use "
-        "list_asset_transactions for the individual buys and sells. Every "
-        "money field is in that holding's own `currency`, so do NOT add "
-        "them up across holdings unless the currencies match: a portfolio "
-        "mixing EUR and USD needs converting first, and summing as-is "
-        "silently reports a 1:1 total."
+        "and `transaction_count`. Answer 'how much did I pay for X?' from "
+        "these fields, and use list_asset_transactions for the individual "
+        "buys and sells. A `transaction_count` of 0 means the holding has no "
+        "ledger: `average_price` and `total_invested` are null, but "
+        "`gain_loss` can still come from a purchase price entered on the "
+        "holding itself, and `realized_gain` reads 0 once a ledger has been "
+        "emptied. `current_value` and the cost fields are in the holding's "
+        "own `currency`. "
+        "For totals across holdings use `current_value_primary` and "
+        "`gain_loss_primary`, already converted to the user's "
+        "`primary_currency` (returned alongside the items). They are null "
+        "when no exchange rate is available: report those holdings "
+        "separately in their own currency, never add their native amounts "
+        "to a primary-currency total."
     ),
     parameters={
         "type": "object",
@@ -109,8 +120,16 @@ async def list_assets(
     ws_id = await resolve_workspace_id(session, ctx)
     rows = await asset_service.get_assets(session, ws_id, include_archived=include_archived)
     group_names = await _group_names(session, ws_id)
+    user = await session.get(User, ctx.user_id)
+    primary_currency = user.primary_currency if user else None
     items: list[dict[str, Any]] = []
     for r in rows:
+        # Unlike the REST list, holdings already in the primary currency get
+        # their native amounts copied across: an agent summing
+        # current_value_primary should only meet null where a conversion is
+        # genuinely missing, not wherever no conversion was needed.
+        if primary_currency:
+            await asset_service.stamp_primary_values(session, r, primary_currency)
         d = r.model_dump(mode="json") if hasattr(r, "model_dump") else dict(r.__dict__)
         group_id = str(d.get("group_id")) if d.get("group_id") else None
         items.append({
@@ -127,11 +146,12 @@ async def list_assets(
             "average_price": num(d.get("average_price")),
             "total_invested": num(d.get("total_invested")),
             "gain_loss": num(d.get("gain_loss")),
+            "gain_loss_primary": num(d.get("gain_loss_primary")),
             "realized_gain": num(d.get("realized_gain")),
             "transaction_count": int(d.get("transaction_count") or 0),
             "is_archived": bool(d.get("is_archived", False)),
         })
-    return {"items": items, "total": len(items)}
+    return {"items": items, "total": len(items), "primary_currency": primary_currency}
 
 
 @tool(
@@ -143,9 +163,13 @@ async def list_assets(
         "date range; every filter is applied before the limit, so narrowing "
         "a range returns the newest rows inside it. Each row carries "
         "quantity, price per unit (in the asset's currency), fee, date, "
-        "source and the asset's name and ticker. Dividends and staking "
-        "rewards are NOT here: the ledger only records buys and sells. For "
-        "the resulting position and cost basis use list_assets."
+        "source and the asset's name and ticker. `total` counts the rows "
+        "returned; `has_more` is true when more rows match than the limit "
+        "let through, so narrow the range or raise the limit before "
+        "treating the list as complete. Dividends and staking rewards are "
+        "NOT here: the ledger only records buys and sells, and any other "
+        "`kind` is rejected. For the resulting position and cost basis use "
+        "list_assets."
     ),
     parameters={
         "type": "object",
@@ -170,22 +194,33 @@ async def list_asset_transactions(
     kind: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
-    limit: int = 100,
+    limit: int | None = 100,
 ) -> dict[str, Any]:
+    # The service drops a kind it does not recognise, which would hand back
+    # the whole ledger looking filtered — the REST API answers 422 instead.
+    # Normalise the casing an LLM is likely to send, then refuse the rest.
+    if kind:
+        kind = kind.lower()
+        if kind not in _LEDGER_KINDS:
+            raise ValueError(
+                f"kind must be 'buy' or 'sell', got {kind!r}: the ledger "
+                "does not record dividends or staking rewards"
+            )
+    capped = max(1, min(int(limit if limit is not None else 100), 500))
     ws_id = await resolve_workspace_id(session, ctx)
     rows = await asset_transaction_service.list_workspace_transactions(
         session,
         ws_id,
         asset_id=parse_uuid(asset_id),
         ticker=ticker,
-        # The service drops a kind it does not recognise, which would hand
-        # back an unfiltered list that looks filtered. Normalise the casing
-        # an LLM is likely to send rather than let "Buy" silently widen it.
-        kind=kind.lower() if kind else None,
+        kind=kind or None,
         from_date=parse_date(from_date),
         to_date=parse_date(to_date),
-        limit=max(1, min(int(limit), 500)),
+        # One row past the cap tells a full page apart from a truncated one.
+        limit=capped + 1,
     )
+    has_more = len(rows) > capped
+    rows = rows[:capped]
     items = [
         {
             "id": str(t.id),
@@ -203,7 +238,7 @@ async def list_asset_transactions(
         }
         for t in rows
     ]
-    return {"items": items, "total": len(items)}
+    return {"items": items, "total": len(items), "has_more": has_more}
 
 
 @tool(

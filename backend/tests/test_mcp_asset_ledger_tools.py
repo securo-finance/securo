@@ -14,8 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # Importing this package registers all tools into mcp_server.registry.REGISTRY.
 import mcp_server.tools  # noqa: F401
+from app.core.app_clock import app_today
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
+from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.schemas.asset import AssetTransactionCreate
 from app.services import asset_transaction_service
@@ -110,11 +112,64 @@ async def test_list_assets_without_a_ledger_reports_zero_transactions(
     assert item["average_price"] is None
 
 
+async def test_list_assets_converts_to_the_primary_currency(
+    session: AsyncSession, ctx: CallContext, test_workspace, holding: Asset
+):
+    """A USD holding for a BRL user comes back in BRL too, so an agent can
+    total a mixed-currency portfolio without converting anything itself."""
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=app_today(),
+        rate=Decimal("5.0"), source="test",
+    ))
+    await session.commit()
+    await _buy(session, test_workspace, holding, "15", "22", date(2026, 1, 1))
+
+    r = await REGISTRY["list_assets"].handler(session=session, ctx=ctx)
+    assert r["primary_currency"] == "BRL"
+    item = next(i for i in r["items"] if i["ticker"] == "MSFT")
+    # 15 units @ 40 USD = 600 USD -> 3000 BRL; gain 600 - 330 = 270 -> 1350
+    assert item["current_value_primary"] == pytest.approx(3000.0)
+    assert item["gain_loss_primary"] == pytest.approx(1350.0)
+
+
+async def test_list_assets_leaves_primary_null_without_a_rate(
+    session: AsyncSession, ctx: CallContext, test_workspace, holding: Asset
+):
+    """No FX rate must read as 'not converted', never as a 1:1 amount."""
+    await _buy(session, test_workspace, holding, "15", "22", date(2026, 1, 1))
+
+    r = await REGISTRY["list_assets"].handler(session=session, ctx=ctx)
+    item = next(i for i in r["items"] if i["ticker"] == "MSFT")
+    assert item["current_value"] == pytest.approx(600.0)
+    assert item["current_value_primary"] is None
+    assert item["gain_loss_primary"] is None
+
+
+async def test_list_assets_fills_primary_for_same_currency_holdings(
+    session: AsyncSession, ctx: CallContext, test_user: User, test_workspace
+):
+    """Unlike the REST list, null here only ever means a missing rate."""
+    local = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Petrobras", type="stock", currency="BRL",
+        valuation_method="market_price", ticker="PETR4.SA",
+        last_price=Decimal("30.00"),
+    )
+    session.add(local)
+    await session.commit()
+    await _buy(session, test_workspace, local, "10", "25", date(2026, 1, 1))
+
+    r = await REGISTRY["list_assets"].handler(session=session, ctx=ctx)
+    item = next(i for i in r["items"] if i["ticker"] == "PETR4.SA")
+    assert item["current_value_primary"] == pytest.approx(item["current_value"])
+    assert item["gain_loss_primary"] == pytest.approx(50.0)
+
+
 # --- list_asset_transactions ----------------------------------------------
 
 async def test_ledger_empty_returns_stable_shape(session: AsyncSession, ctx: CallContext):
     r = await REGISTRY["list_asset_transactions"].handler(session=session, ctx=ctx)
-    assert r == {"items": [], "total": 0}
+    assert r == {"items": [], "total": 0, "has_more": False}
 
 
 async def test_ledger_returns_newest_first_with_asset_context(
@@ -164,6 +219,19 @@ async def test_ledger_kind_casing_does_not_widen_the_filter(
         assert [t["kind"] for t in r["items"]] == ["sell"], spelling
 
 
+async def test_ledger_rejects_a_kind_outside_buy_and_sell(
+    session: AsyncSession, ctx: CallContext, test_workspace, holding: Asset
+):
+    """An unknown kind used to fall through the service filter and return
+    the whole ledger as if filtered; the REST API answers 422 instead."""
+    await _buy(session, test_workspace, holding, "10", "20", date(2026, 1, 1))
+    handler = REGISTRY["list_asset_transactions"].handler
+
+    for kind in ("dividend", "Staking", "transfer"):
+        with pytest.raises(ValueError, match="'buy' or 'sell'"):
+            await handler(session=session, ctx=ctx, kind=kind)
+
+
 async def test_ledger_filters_by_asset_id(
     session: AsyncSession, ctx: CallContext, test_workspace, holding: Asset
 ):
@@ -195,11 +263,47 @@ async def test_ledger_date_range_is_applied_before_the_limit(
     assert [t["date"] for t in both["items"]] == ["2026-05-03", "2026-05-02"]
 
 
-async def test_ledger_limit_is_capped(
+async def test_ledger_limit_is_clamped_before_the_query(
+    session: AsyncSession, ctx: CallContext, monkeypatch
+):
+    """Checks the limit the service receives, which a one-row fixture
+    could not tell apart from an uncapped query. The tool asks for one row
+    past the cap so it can tell a full page from a truncated one."""
+    seen: list[int] = []
+
+    async def fake_list(*args, **kwargs):
+        seen.append(kwargs["limit"])
+        return []
+
+    monkeypatch.setattr(
+        asset_transaction_service, "list_workspace_transactions", fake_list
+    )
+    handler = REGISTRY["list_asset_transactions"].handler
+    for limit in (10_000, 0, None):
+        await handler(session=session, ctx=ctx, limit=limit)
+    assert seen == [501, 2, 101]
+
+
+async def test_ledger_null_limit_falls_back_to_the_default(
     session: AsyncSession, ctx: CallContext, test_workspace, holding: Asset
 ):
     await _buy(session, test_workspace, holding, "10", "20", date(2026, 1, 1))
+    r = await REGISTRY["list_asset_transactions"].handler(
+        session=session, ctx=ctx, limit=None
+    )
+    assert r["total"] == 1
+
+
+async def test_ledger_flags_a_truncated_page(
+    session: AsyncSession, ctx: CallContext, test_workspace, holding: Asset
+):
+    """`total` counts the rows returned, so without `has_more` a page cut
+    at the limit would look like the complete ledger."""
+    for day in range(1, 4):
+        await _buy(session, test_workspace, holding, "1", "10", date(2026, 5, day))
     handler = REGISTRY["list_asset_transactions"].handler
-    # Over the cap and under the floor both resolve to a usable query.
-    assert (await handler(session=session, ctx=ctx, limit=10_000))["total"] == 1
-    assert (await handler(session=session, ctx=ctx, limit=0))["total"] == 1
+
+    cut = await handler(session=session, ctx=ctx, limit=2)
+    assert (cut["total"], cut["has_more"]) == (2, True)
+    whole = await handler(session=session, ctx=ctx, limit=3)
+    assert (whole["total"], whole["has_more"]) == (3, False)

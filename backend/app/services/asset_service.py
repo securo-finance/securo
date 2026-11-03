@@ -23,7 +23,7 @@ from app.providers.market_price import (
 )
 from app.schemas.asset import AssetCreate, AssetUpdate, AssetValueCreate, AssetRead, AssetValueRead
 from app.services.asset_group_service import ensure_group_in_workspace
-from app.services.fx_rate_service import convert, has_rate, stamp_primary_amount
+from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
 
 logger = logging.getLogger(__name__)
 
@@ -397,6 +397,35 @@ async def get_assets(
         count = await _get_value_count(session, asset.id)
         reads.append(_asset_to_read(asset, latest, count, tx_counts.get(asset.id, 0)))
     return reads
+
+
+async def stamp_primary_values(
+    session: AsyncSession, asset: AssetRead, primary_currency: str
+) -> None:
+    """Fill ``current_value_primary`` and ``gain_loss_primary`` in place.
+
+    When no FX rate can be resolved both stay NULL instead of a fake 1:1
+    value, so primary-currency totals never silently sum raw foreign
+    amounts (issue #574). An asset already in ``primary_currency`` gets its
+    native amounts copied across; callers that reserve NULL for "same
+    currency" skip those assets before calling.
+    """
+    if asset.current_value is None:
+        return
+    converted, _ = await convert_or_none(
+        session, Decimal(str(asset.current_value)), asset.currency, primary_currency,
+        decimals=ASSET_PRICE_DECIMALS,
+    )
+    if converted is None:
+        return
+    asset.current_value_primary = float(converted)
+    if asset.gain_loss is not None:
+        gl_converted, _ = await convert_or_none(
+            session, Decimal(str(asset.gain_loss)), asset.currency, primary_currency,
+            decimals=ASSET_PRICE_DECIMALS,
+        )
+        if gl_converted is not None:
+            asset.gain_loss_primary = float(gl_converted)
 
 
 async def get_asset(
