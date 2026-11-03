@@ -1957,7 +1957,8 @@
     "walletWarningTitle": "Already in your portfolio",
     "warning": {
       "exists_in_other_wallet": "{{ticker}} is already held in {{wallet}}. Importing here creates a second position.",
-      "orders_already_in_other_wallet": "{{ticker}}: these same orders are already in {{wallet}}. Importing here would count the shares twice."
+      "orders_already_in_other_wallet": "{{ticker}}: these same orders are already in {{wallet}}. Importing here would count the shares twice.",
+      "currency_converted": "{{ticker}} prices and fees were converted into the holding currency ({{detail}})."
     },
     "kind": {
       "buy": "Buy",

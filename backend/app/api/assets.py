@@ -302,7 +302,7 @@ async def preview_asset_import(
     # table, the count and the button all describe the same import.
     rejected = {e.row for e in summary["errors"]}
     return AssetImportPreview(
-        orders=[o for o in orders if o.row not in rejected],
+        orders=[o for o in summary.get("orders", orders) if o.row not in rejected],
         errors=errors + summary["errors"],
         warnings=summary["warnings"],
         csv_columns=columns,
