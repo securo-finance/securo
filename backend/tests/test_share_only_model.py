@@ -32,6 +32,7 @@ from app.schemas.transaction_split import (
     TransactionSplitsInput,
 )
 from app.services import (
+    admin_service,
     balance_service,
     budget_service,
     dashboard_service,
@@ -735,6 +736,45 @@ async def test_summary_projection_drops_pending_row_owed_in_full(
         session, test_workspace.id, test_user.id, today.replace(day=1)
     )
     assert summary.projected_expenses_primary == pytest.approx(0.0, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_accrual_summary_takes_the_friend_share_off_a_card_purchase_once(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """In accrual mode a card purchase posted today but due later this month
+    is still forecast, so the posted offset must not also take the friend's
+    share off it: a 10 expense plus a 100 purchase split in half projects 60."""
+    today = date(2026, 5, 10)
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: today)
+    monkeypatch.setattr("app.services._query_filters.app_today", lambda: today)
+    await admin_service.set_app_setting(session, "credit_card_accounting_mode", "accrual")
+    await _force_user_currency(session, test_user, "USD")
+    account = await _make_account(session, test_user.id)
+    await _make_tx(session, test_user.id, account.id, "10.00", when=today)
+    purchase = await _make_tx(session, test_user.id, account.id, "100.00", when=today)
+    purchase.effective_date = date(2026, 5, 25)
+    _, members = await _setup_group(
+        session, test_user, test_workspace.id, "Me", "Friend"
+    )
+    await split_service.replace_splits(
+        session,
+        purchase,
+        TransactionSplitsInput(
+            share_type="equal",
+            splits=[TransactionSplitInput(group_member_id=m.id) for m in members],
+        ),
+        test_user.id,
+    )
+    await session.commit()
+
+    summary = await dashboard_service.get_summary(
+        session, test_workspace.id, test_user.id, today.replace(day=1)
+    )
+    assert summary.monthly_expenses_primary == pytest.approx(10.0, abs=0.01)
+    assert summary.projected_expenses_primary == pytest.approx(60.0, abs=0.01)
+    assert summary.monthly_expenses == pytest.approx(10.0, abs=0.01)
+    assert summary.projected_expenses == pytest.approx(60.0, abs=0.01)
 
 
 @pytest.mark.asyncio

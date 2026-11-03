@@ -405,7 +405,7 @@ async def get_summary(
             user_id,
             month_start,
             month_end,
-            use_effective_date=False,
+            use_effective_date=accounting_mode == "accrual",
             workspace_id=workspace_id,
         )
         monthly_income -= own_offset_inc
@@ -555,7 +555,7 @@ async def get_summary(
             user_id,
             month_start,
             month_end,
-            use_effective_date=False,
+            use_effective_date=accounting_mode == "accrual",
             primary_currency=primary_currency,
             workspace_id=workspace_id,
         )
