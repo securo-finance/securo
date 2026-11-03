@@ -198,6 +198,44 @@ async def test_list_assets_fetches_a_missing_rate_once_per_request(
     assert all(i["current_value_primary"] is None for i in r["items"])
 
 
+async def test_list_assets_resolves_a_stored_rate_once_per_request(
+    session: AsyncSession, ctx: CallContext, test_user: User, test_workspace,
+    holding: Asset, monkeypatch,
+):
+    """The missing-rate test above would still pass if only misses were
+    cached, so this one counts lookups when the rate exists."""
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=app_today(),
+        rate=Decimal("5.0"), source="test",
+    ))
+    await session.commit()
+    await _buy(session, test_workspace, holding, "15", "22", date(2026, 1, 1))
+    for ticker in ("AAPL", "GOOG"):
+        extra = Asset(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name=ticker, type="stock", currency="USD",
+            valuation_method="market_price", ticker=ticker,
+            last_price=Decimal("10.00"),
+        )
+        session.add(extra)
+        await session.commit()
+        await _buy(session, test_workspace, extra, "1", "10", date(2026, 1, 1))
+
+    real = asset_service.convert_or_none
+    lookups: list = []
+
+    async def counting(*args, **kwargs):
+        lookups.append(args[2:4])
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(asset_service, "convert_or_none", counting)
+    r = await REGISTRY["list_assets"].handler(session=session, ctx=ctx)
+    assert lookups == [("USD", "BRL")]
+    values = {i["ticker"]: i["current_value_primary"] for i in r["items"]}
+    # 15 x 40 USD and 1 x 10 USD, all at 5 BRL per USD.
+    assert values == pytest.approx({"MSFT": 3000.0, "AAPL": 50.0, "GOOG": 50.0})
+
+
 # --- list_asset_transactions ----------------------------------------------
 
 async def test_ledger_empty_returns_stable_shape(session: AsyncSession, ctx: CallContext):
