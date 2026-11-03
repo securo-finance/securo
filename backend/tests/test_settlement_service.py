@@ -261,16 +261,16 @@ async def test_receiver_credit_created_when_to_member_is_linked_with_account(
 
 
 @pytest.mark.asyncio
-async def test_administrative_settlement_does_not_create_receiver_credit(
+async def test_linking_transaction_on_update_creates_receiver_credit(
     session: AsyncSession, test_user, test_workspace
 ):
     receiver, _receiver_ws = await _make_user_with_workspace(
-        session, "rx-admin@example.com"
+        session, "rx-update@example.com"
     )
-    await _make_account(session, receiver.id)
-
+    receiver_account = await _make_account(session, receiver.id)
+    payer_account = await _make_account(session, test_user.id)
     group = await group_service.create_group(
-        session, test_workspace.id, test_user.id, GroupCreate(name="AdminSettlement")
+        session, test_workspace.id, test_user.id, GroupCreate(name="UpdateReceiver")
     )
     me = await group_service.create_member(
         session,
@@ -284,7 +284,6 @@ async def test_administrative_settlement_does_not_create_receiver_credit(
         test_workspace.id,
         GroupMemberCreate(name="Bob", linked_user_id=receiver.id),
     )
-
     settlement = await settlement_service.create_settlement(
         session,
         group.id,
@@ -298,9 +297,36 @@ async def test_administrative_settlement_does_not_create_receiver_credit(
             date=date.today(),
         ),
     )
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=payer_account.id,
+        description="Settlement payment",
+        amount=Decimal("50.00"),
+        currency="USD",
+        date=date.today(),
+        type="debit",
+        source="manual",
+    )
+    session.add(tx)
+    await session.flush()
 
-    assert settlement is not None
-    assert settlement.receiver_transaction_id is None
+    updated = await settlement_service.update_settlement(
+        session,
+        group.id,
+        settlement.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementUpdate(transaction_id=tx.id),
+    )
+
+    assert updated is not None
+    assert updated.receiver_transaction_id is not None
+    receiver_tx = await session.get(Transaction, updated.receiver_transaction_id)
+    assert receiver_tx is not None
+    assert receiver_tx.account_id == receiver_account.id
+    assert receiver_tx.amount == Decimal("50.00")
 
 
 @pytest.mark.asyncio

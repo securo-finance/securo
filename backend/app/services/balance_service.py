@@ -110,9 +110,50 @@ async def compute_balances(
         )
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .join(GroupMember, TransactionSplit.group_member_id == GroupMember.id)
-        .join(User, Transaction.user_id == User.id)
+        .outerjoin(User, Transaction.user_id == User.id)
         .where(GroupMember.group_id == group_id)
     )
+    split_rows = splits_result.all()
+    converted_shares: dict[uuid.UUID, dict[uuid.UUID, Decimal]] = {}
+    rows_by_transaction: dict[uuid.UUID, list[tuple]] = defaultdict(list)
+    for row in split_rows:
+        rows_by_transaction[row[0].transaction_id].append(row)
+
+    for transaction_id, transaction_rows in rows_by_transaction.items():
+        first_row = transaction_rows[0]
+        transaction_amount = first_row[1]
+        amount_primary = first_row[2]
+        transaction_currency = first_row[3]
+        preferences = first_row[6]
+        primary_currency = (preferences or {}).get(
+            "currency_display", fallback_currency
+        )
+        if (
+            amount_primary is not None
+            and primary_currency == group.default_currency
+            and transaction_currency != group.default_currency
+            and transaction_amount
+        ):
+            target_amount = abs(Decimal(str(amount_primary))).quantize(Decimal("0.01"))
+            source_amount = abs(Decimal(str(transaction_amount)))
+            converted = [
+                (
+                    row[0].group_member_id,
+                    (
+                        target_amount
+                        * Decimal(str(row[0].share_amount))
+                        / source_amount
+                    ).quantize(Decimal("0.01")),
+                )
+                for row in transaction_rows
+            ]
+            residual = target_amount - sum(
+                (share for _, share in converted), Decimal("0")
+            )
+            member_id, last_share = converted[-1]
+            converted[-1] = (member_id, last_share + residual)
+            converted_shares[transaction_id] = dict(converted)
+
     for (
         split,
         transaction_amount,
@@ -121,7 +162,7 @@ async def compute_balances(
         recorder_id,
         tx_type,
         preferences,
-    ) in splits_result.all():
+    ) in split_rows:
         recorder = member_by_user.get(recorder_id, default_payer)
         if split.group_member_id == recorder:
             continue
@@ -137,11 +178,7 @@ async def compute_balances(
             and currency != group.default_currency
             and transaction_amount
         ):
-            share = (
-                Decimal(str(amount_primary))
-                * share
-                / Decimal(str(abs(transaction_amount)))
-            ).quantize(Decimal("0.01"))
+            share = converted_shares[split.transaction_id][split.group_member_id]
             currency = group.default_currency
         if tx_type == "credit":
             # Income: the recorder received the money, so they owe each

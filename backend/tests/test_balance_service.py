@@ -345,6 +345,100 @@ async def test_foreign_split_uses_historical_primary_amount(
 
 
 @pytest.mark.asyncio
+async def test_foreign_split_conversion_uses_absolute_primary_amount(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, self_m, friends = await _setup(
+        session, test_user, test_workspace.id, n_others=1
+    )
+    friend = friends[0]
+    account = await _make_account(session, test_user.id)
+    tx = await _make_tx(
+        session,
+        test_user.id,
+        account.id,
+        "-100.00",
+        currency="EUR",
+    )
+    tx.amount_primary = Decimal("-110.00")
+    await split_service.replace_splits(
+        session,
+        tx,
+        TransactionSplitsInput(
+            share_type="exact",
+            splits=[
+                TransactionSplitInput(
+                    group_member_id=self_m.id, share_amount=Decimal("50.00")
+                ),
+                TransactionSplitInput(
+                    group_member_id=friend.id, share_amount=Decimal("50.00")
+                ),
+            ],
+        ),
+        test_user.id,
+    )
+    await session.commit()
+
+    balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+
+    assert balances is not None
+    line = next(line for line in balances["lines"] if line["member_id"] == friend.id)
+    assert line["amount"] == Decimal("55.00")
+
+
+@pytest.mark.asyncio
+async def test_foreign_split_conversion_assigns_rounding_residual(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, self_m, friends = await _setup(
+        session, test_user, test_workspace.id, n_others=2
+    )
+    account = await _make_account(session, test_user.id)
+    tx = await _make_tx(
+        session,
+        test_user.id,
+        account.id,
+        "3.00",
+        currency="EUR",
+    )
+    tx.amount_primary = Decimal("100.00")
+    await split_service.replace_splits(
+        session,
+        tx,
+        TransactionSplitsInput(
+            share_type="exact",
+            splits=[
+                TransactionSplitInput(
+                    group_member_id=self_m.id, share_amount=Decimal("1.00")
+                ),
+                *[
+                    TransactionSplitInput(
+                        group_member_id=friend.id, share_amount=Decimal("1.00")
+                    )
+                    for friend in friends
+                ],
+            ],
+        ),
+        test_user.id,
+    )
+    await session.commit()
+
+    balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+
+    assert balances is not None
+    amounts = [
+        line["amount"]
+        for line in balances["lines"]
+        if line["member_id"] in {friend.id for friend in friends}
+    ]
+    assert sum(amounts, Decimal("0")) == Decimal("66.67")
+
+
+@pytest.mark.asyncio
 async def test_self_loan_increases_balance_owed(
     session: AsyncSession, test_user, test_workspace
 ):

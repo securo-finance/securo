@@ -312,12 +312,7 @@ async def create_settlement(
     # user and has a checking/savings account, record the cash-in side
     # so their books reflect the actual money received.
     receiver_tx_id = None
-    # A settlement without an account or linked transaction is an
-    # administrative adjustment. Do not invent a bank credit for it; the
-    # balance correction belongs only in the group ledger.
-    if receiver_user_id is not None and (
-        account_id is not None or data.transaction_id is not None
-    ):
+    if receiver_user_id is not None:
         receiver_desc = description or f"Acerto · {group.name} · {from_name}"
         receiver_tx = await _create_receiver_credit(
             session,
@@ -388,6 +383,32 @@ async def update_settlement(
 
     for key, value in update_data.items():
         setattr(settlement, key, value)
+
+    if (
+        settlement.transaction_id is not None
+        and settlement.receiver_transaction_id is None
+    ):
+        receiver_meta_result = await session.execute(
+            select(GroupMember.linked_user_id, GroupMember.is_self).where(
+                GroupMember.id == settlement.to_member_id
+            )
+        )
+        receiver_meta = receiver_meta_result.one_or_none()
+        receiver_user_id = receiver_meta[0] if receiver_meta else None
+        if receiver_user_id is None and receiver_meta and receiver_meta[1]:
+            receiver_user_id = group.user_id
+        if receiver_user_id is not None:
+            receiver_tx = await _create_receiver_credit(
+                session,
+                receiver_user_id,
+                settlement.amount,
+                settlement.currency,
+                settlement.date,
+                f"Acerto · {group.name}",
+                preferred_workspace_id=group.workspace_id,
+            )
+            if receiver_tx is not None:
+                settlement.receiver_transaction_id = receiver_tx.id
 
     await session.commit()
     await session.refresh(settlement)
