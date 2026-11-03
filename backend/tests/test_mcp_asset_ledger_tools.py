@@ -19,8 +19,9 @@ from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.fx_rate import FxRate
 from app.models.user import User
-from app.schemas.asset import AssetTransactionCreate
-from app.services import asset_transaction_service
+from app.models.workspace import Workspace, WorkspaceMember
+from app.schemas.asset import AssetTransactionCreate, AssetUpdate
+from app.services import asset_service, asset_transaction_service
 from mcp_server.auth import CallContext
 from mcp_server.registry import REGISTRY
 
@@ -165,6 +166,38 @@ async def test_list_assets_fills_primary_for_same_currency_holdings(
     assert item["gain_loss_primary"] == pytest.approx(50.0)
 
 
+async def test_list_assets_fetches_a_missing_rate_once_per_request(
+    session: AsyncSession, ctx: CallContext, test_user: User, test_workspace,
+    holding: Asset, monkeypatch,
+):
+    """Without a per-request cache every USD holding retried the provider,
+    twice each (value and gain), and each retry can wait on its timeout."""
+    from app.services import fx_rate_service
+
+    calls: list = []
+
+    async def no_rates(*args, **kwargs):
+        calls.append(args)
+        return 0
+
+    monkeypatch.setattr(fx_rate_service, "sync_rates", no_rates)
+    await _buy(session, test_workspace, holding, "15", "22", date(2026, 1, 1))
+    for ticker in ("AAPL", "GOOG"):
+        extra = Asset(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name=ticker, type="stock", currency="USD",
+            valuation_method="market_price", ticker=ticker,
+            last_price=Decimal("10.00"),
+        )
+        session.add(extra)
+        await session.commit()
+        await _buy(session, test_workspace, extra, "1", "10", date(2026, 1, 1))
+
+    r = await REGISTRY["list_assets"].handler(session=session, ctx=ctx)
+    assert len(calls) == 1
+    assert all(i["current_value_primary"] is None for i in r["items"])
+
+
 # --- list_asset_transactions ----------------------------------------------
 
 async def test_ledger_empty_returns_stable_shape(session: AsyncSession, ctx: CallContext):
@@ -241,6 +274,61 @@ async def test_ledger_filters_by_asset_id(
     assert (await handler(session=session, ctx=ctx, asset_id=str(holding.id)))["total"] == 1
     other = await handler(session=session, ctx=ctx, asset_id=str(uuid.uuid4()))
     assert other["total"] == 0
+
+
+async def test_ledger_is_scoped_to_the_callers_workspace(
+    session: AsyncSession, ctx: CallContext, test_user: User, test_workspace,
+    holding: Asset,
+):
+    """Every other ledger test seeds one workspace, so they would still pass
+    if the workspace filter in the query were dropped."""
+    other_ws = Workspace(
+        id=uuid.uuid4(), name="Second", kind="personal",
+        created_by_user_id=test_user.id, default_currency="BRL", locale="pt-BR",
+    )
+    session.add(other_ws)
+    await session.flush()
+    session.add(WorkspaceMember(
+        id=uuid.uuid4(), workspace_id=other_ws.id, user_id=test_user.id, role="owner",
+    ))
+    foreign = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other_ws.id,
+        name="Microsoft", type="stock", currency="USD",
+        valuation_method="market_price", ticker="MSFT",
+        last_price=Decimal("40.00"),
+    )
+    session.add(foreign)
+    await session.commit()
+    await _buy(session, test_workspace, holding, "10", "20", date(2026, 1, 1))
+    await _buy(session, other_ws, foreign, "3", "30", date(2026, 1, 2))
+    handler = REGISTRY["list_asset_transactions"].handler
+
+    # Same ticker in both workspaces, so only the workspace filter separates them.
+    mine = await handler(session=session, ctx=ctx, ticker="MSFT")
+    assert [i["asset_id"] for i in mine["items"]] == [str(holding.id)]
+    theirs = await handler(
+        session=session,
+        ctx=CallContext(user_id=test_user.id, workspace_id=other_ws.id),
+        ticker="MSFT",
+    )
+    assert [i["asset_id"] for i in theirs["items"]] == [str(foreign.id)]
+
+
+async def test_ledger_ticker_filter_survives_a_lowercase_rename(
+    session: AsyncSession, ctx: CallContext, test_user: User, test_workspace,
+    holding: Asset,
+):
+    """The filter uppercases its input, so a ticker stored lowercase by an
+    edit would never match its own transactions."""
+    await _buy(session, test_workspace, holding, "10", "20", date(2026, 1, 1))
+    await asset_service.update_asset(
+        session, holding.id, test_workspace.id, test_user.id,
+        AssetUpdate(ticker="msf.de"),
+    )
+    handler = REGISTRY["list_asset_transactions"].handler
+
+    for ticker in ("MSF.DE", "msf.de"):
+        assert (await handler(session=session, ctx=ctx, ticker=ticker))["total"] == 1
 
 
 async def test_ledger_date_range_is_applied_before_the_limit(

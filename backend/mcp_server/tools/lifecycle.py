@@ -123,13 +123,16 @@ async def list_assets(
     user = await session.get(User, ctx.user_id)
     primary_currency = user.primary_currency if user else None
     items: list[dict[str, Any]] = []
+    rates: dict = {}
     for r in rows:
         # Unlike the REST list, holdings already in the primary currency get
         # their native amounts copied across: an agent summing
         # current_value_primary should only meet null where a conversion is
         # genuinely missing, not wherever no conversion was needed.
         if primary_currency:
-            await asset_service.stamp_primary_values(session, r, primary_currency)
+            await asset_service.stamp_primary_values(
+                session, r, primary_currency, rates
+            )
         d = r.model_dump(mode="json") if hasattr(r, "model_dump") else dict(r.__dict__)
         group_id = str(d.get("group_id")) if d.get("group_id") else None
         items.append({

@@ -172,13 +172,16 @@ async def list_assets(
 ):
     assets = await asset_service.get_assets(session, ctx.workspace.id, include_archived=include_archived)
     primary_currency = ctx.user.primary_currency
+    rates: dict = {}
     for asset in assets:
         # stamp_primary_values leaves current_value_primary NULL when no FX rate
         # can be resolved, instead of stamping a fake 1:1 value. The UI
         # shows the native amount flagged as unconverted and keeps it out
         # of primary-currency totals (issue #574).
         if asset.currency != primary_currency:
-            await asset_service.stamp_primary_values(session, asset, primary_currency)
+            await asset_service.stamp_primary_values(
+                session, asset, primary_currency, rates
+            )
     return assets
 
 

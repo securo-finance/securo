@@ -400,7 +400,10 @@ async def get_assets(
 
 
 async def stamp_primary_values(
-    session: AsyncSession, asset: AssetRead, primary_currency: str
+    session: AsyncSession,
+    asset: AssetRead,
+    primary_currency: str,
+    rates: Optional[dict[str, Optional[Decimal]]] = None,
 ) -> None:
     """Fill ``current_value_primary`` and ``gain_loss_primary`` in place.
 
@@ -409,23 +412,38 @@ async def stamp_primary_values(
     amounts (issue #574). An asset already in ``primary_currency`` gets its
     native amounts copied across; callers that reserve NULL for "same
     currency" skip those assets before calling.
+
+    List callers pass one ``rates`` dict for the whole request. It keeps
+    the rate resolved for each currency, a missing one included, so a
+    currency with no rate today costs one on-demand provider fetch per
+    request instead of one per asset.
     """
     if asset.current_value is None:
         return
-    converted, _ = await convert_or_none(
-        session, Decimal(str(asset.current_value)), asset.currency, primary_currency,
-        decimals=ASSET_PRICE_DECIMALS,
-    )
-    if converted is None:
+    if asset.currency == primary_currency:
+        asset.current_value_primary = asset.current_value
+        asset.gain_loss_primary = asset.gain_loss
         return
-    asset.current_value_primary = float(converted)
-    if asset.gain_loss is not None:
-        gl_converted, _ = await convert_or_none(
-            session, Decimal(str(asset.gain_loss)), asset.currency, primary_currency,
-            decimals=ASSET_PRICE_DECIMALS,
+    if rates is not None and asset.currency in rates:
+        rate = rates[asset.currency]
+    else:
+        # Resolving the rate for one unit keeps it unrounded, so both
+        # amounts below round exactly as convert_or_none would.
+        _, rate = await convert_or_none(
+            session, Decimal("1"), asset.currency, primary_currency
         )
-        if gl_converted is not None:
-            asset.gain_loss_primary = float(gl_converted)
+        if rates is not None:
+            rates[asset.currency] = rate
+    if rate is None:
+        return
+    quantum = Decimal(1).scaleb(-ASSET_PRICE_DECIMALS)
+    asset.current_value_primary = float(
+        (Decimal(str(asset.current_value)) * rate).quantize(quantum)
+    )
+    if asset.gain_loss is not None:
+        asset.gain_loss_primary = float(
+            (Decimal(str(asset.gain_loss)) * rate).quantize(quantum)
+        )
 
 
 async def get_asset(
@@ -684,6 +702,10 @@ async def update_asset(
         await ensure_group_in_workspace(session, update_data["group_id"], workspace_id)
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
+    # Stored uppercase, as on create, so the ledger's ticker filter (which
+    # compares against the uppercased input) keeps matching after an edit.
+    if update_data.get("ticker"):
+        update_data["ticker"] = update_data["ticker"].upper()
 
     tx_count = await session.scalar(
         select(func.count()).select_from(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
