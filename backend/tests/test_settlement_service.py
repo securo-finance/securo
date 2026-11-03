@@ -284,6 +284,8 @@ async def test_linking_transaction_on_update_creates_receiver_credit(
         test_workspace.id,
         GroupMemberCreate(name="Bob", linked_user_id=receiver.id),
     )
+    assert me is not None
+    assert bob is not None
     settlement = await settlement_service.create_settlement(
         session,
         group.id,
@@ -297,6 +299,7 @@ async def test_linking_transaction_on_update_creates_receiver_credit(
             date=date.today(),
         ),
     )
+    assert settlement is not None
     tx = Transaction(
         id=uuid.uuid4(),
         user_id=test_user.id,

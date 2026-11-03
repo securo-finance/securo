@@ -21,7 +21,7 @@ are represented in that billing currency for settlement matching.
 import uuid
 from collections import defaultdict
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -115,7 +115,7 @@ async def compute_balances(
     )
     split_rows = splits_result.all()
     converted_shares: dict[uuid.UUID, dict[uuid.UUID, Decimal]] = {}
-    rows_by_transaction: dict[uuid.UUID, list[tuple]] = defaultdict(list)
+    rows_by_transaction: dict[uuid.UUID, list[Any]] = defaultdict(list)
     for row in split_rows:
         rows_by_transaction[row[0].transaction_id].append(row)
 
