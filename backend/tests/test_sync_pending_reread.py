@@ -427,6 +427,34 @@ async def test_promoted_row_survives_phantom_cleanup(
     assert row.status == "posted"
 
 
+@pytest.mark.asyncio
+async def test_rekeyed_promoted_row_survives_phantom_cleanup(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The same when the re-read promoted the row under a new id: the
+    cleanup exempts it by the id it carries after the promotion, which the
+    regular listing never returned."""
+    conn, account = await _setup(session, test_user.id)
+    pending = _add_tx(session, test_user.id, account, "old-pending", 30, description="PAGAMENTO")
+    _add_tx(
+        session, test_user.id, account, "paired-twin", 30,
+        description="PAGAMENTO", status="posted", transfer_pair_id=uuid.uuid4(),
+    )
+    pending_id = pending.id
+    await session.commit()
+
+    provider = _provider(
+        listed=[_posted("paired-twin", 30, description="PAGAMENTO")],
+        reread=[_posted("posted-id", 30, description="PAGAMENTO")],
+    )
+    await _sync(session, conn, test_workspace.id, test_user.id, provider)
+
+    row = await session.get(Transaction, pending_id)
+    assert row is not None
+    assert row.external_id == "posted-id"
+    assert row.status == "posted"
+
+
 @pytest.mark.parametrize(
     "days_ago, listed",
     [
