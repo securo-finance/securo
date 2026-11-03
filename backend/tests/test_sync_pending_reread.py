@@ -23,7 +23,10 @@ from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
 from app.providers.base import AccountData, BillData, TransactionData
-from app.services.connection_service import sync_connection
+from app.services.connection_service import (
+    _PENDING_REREAD_LOOKBACK,
+    sync_connection,
+)
 
 ACCOUNT_EXT_ID = "card-1"
 
@@ -126,7 +129,7 @@ async def test_pending_row_outside_the_window_posts_and_joins_its_bill(
 
     provider.get_transactions_by_date.assert_awaited_once()
     assert provider.get_transactions_by_date.await_args.args[2] == (
-        app_today() - timedelta(days=30)
+        app_today() - timedelta(days=30) - _PENDING_REREAD_LOOKBACK
     )
     row = await _by_external_id(session, "old-pending")
     bill = (await session.execute(
@@ -153,8 +156,74 @@ async def test_reread_starts_at_the_oldest_pending_row_not_returned(
     await _sync(session, conn, test_workspace.id, test_user.id, provider)
 
     assert provider.get_transactions_by_date.await_args.args[2] == (
-        app_today() - timedelta(days=40)
+        app_today() - timedelta(days=40) - _PENDING_REREAD_LOOKBACK
     )
+
+
+def _listing_from(rows):
+    """A by-date re-read that, like Pluggy's `dateFrom`, only returns rows
+    dated on or after the requested day."""
+    async def by_date(_credentials, _account_external_id, date_from, **_kwargs):
+        return [row for row in rows if row.date >= date_from]
+    return by_date
+
+
+@pytest.mark.asyncio
+async def test_row_posted_on_an_earlier_date_than_it_was_stored_still_posts(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Itaú stores a scheduled installment on the bill's due day and posts it
+    on the day it lands in the bill, 36 days before. Re-reading from the stored
+    date alone would never return it."""
+    conn, account = await _setup(session, test_user.id)
+    pending = _add_tx(session, test_user.id, account, "installment-9", 20)
+    await session.commit()
+
+    provider = _provider()
+    provider.get_transactions_by_date.side_effect = _listing_from(
+        [_posted("installment-9", 56)]
+    )
+    await _sync(session, conn, test_workspace.id, test_user.id, provider)
+
+    await session.refresh(pending)
+    assert pending.status == "posted"
+    assert pending.date == app_today() - timedelta(days=20)
+
+
+@pytest.mark.asyncio
+async def test_rekeyed_installment_posted_on_an_earlier_date_still_posts(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The same case when the charge also comes back under a new id: the
+    installment fingerprint, not the date, ties it to the pending row."""
+    conn, account = await _setup(session, test_user.id)
+    purchase_date = app_today() - timedelta(days=56)
+    fingerprint = dict(
+        installment_number=10, total_installments=12,
+        installment_purchase_date=purchase_date,
+    )
+    pending = _add_tx(session, test_user.id, account, "scheduled-10", 20, **fingerprint)
+    account_id = account.id
+    await session.commit()
+
+    posted = _posted("charged-10", 56)
+    posted.installment_number = 10
+    posted.total_installments = 12
+    posted.installment_purchase_date = purchase_date
+    provider = _provider()
+    provider.get_transactions_by_date.side_effect = _listing_from([posted])
+    await _sync(session, conn, test_workspace.id, test_user.id, provider)
+
+    await session.refresh(pending)
+    assert pending.status == "posted"
+    assert pending.external_id == "charged-10"
+    count = await session.scalar(
+        select(func.count()).select_from(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.source == "sync",
+        )
+    )
+    assert count == 1
 
 
 @pytest.mark.asyncio

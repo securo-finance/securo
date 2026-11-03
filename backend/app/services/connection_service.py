@@ -1933,6 +1933,12 @@ def _relink_bill(
 # this is one the provider keeps pending, and counting it would widen every sync.
 _PENDING_REREAD_WINDOW = timedelta(days=90)
 
+# A row can post on an earlier date than it had while pending: Itaú dates a
+# scheduled installment on the bill's due day (the 15th) and the posted charge
+# on the day it lands in the bill, the 9th of the month before. The re-read
+# starts this far back so it still returns them; the widest gap seen is 37 days.
+_PENDING_REREAD_LOOKBACK = timedelta(days=45)
+
 
 async def _unseen_pending_dates(
     session: AsyncSession,
@@ -2867,7 +2873,7 @@ async def sync_connection(
                     reread = await provider.get_transactions_by_date(
                         credentials,
                         acc_data.external_id,
-                        min(unseen_pending.values()),
+                        min(unseen_pending.values()) - _PENDING_REREAD_LOOKBACK,
                         payee_source=payee_source,
                     )
                 except Exception as e:  # noqa: BLE001 - a failed re-read only delays promotion
