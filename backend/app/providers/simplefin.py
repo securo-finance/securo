@@ -184,8 +184,7 @@ def _surface_errors(
 
 
 def _positions_value(raw_acc: dict) -> Decimal:
-    """Market value of the positions SimpleFIN lists inside this account,
-    clamped to [0, balance].
+    """Market value of the positions SimpleFIN lists inside this account.
 
     SimpleFIN returns a brokerage as one account whose ``balance`` is the
     whole portfolio (positions plus cash), with the positions themselves
@@ -198,16 +197,16 @@ def _positions_value(raw_acc: dict) -> Decimal:
     Counts a position only when it carries an id and a market value (the
     same two things get_holdings requires before importing it) and is
     quoted in the account's currency; a position in another currency cannot
-    be subtracted from this balance, so it is left in. Clamped to the
-    balance so the cash residual never turns negative: a margin debit is
-    not modelled, and the account then shows zero cash rather than debt.
+    be subtracted from this balance, so it is left in. Not clamped to the
+    balance: positions worth more than the balance mean a margin debit, and
+    the negative cash residual is what the reports count as the liability,
+    so net worth still equals the balance the broker reported.
     """
-    balance = _to_decimal(raw_acc.get("balance")) or Decimal("0")
-    if balance <= 0:
-        return Decimal("0")
     acc_currency = _iso_currency(raw_acc.get("currency"), "USD") or "USD"
     total = Decimal("0")
     for raw in raw_acc.get("holdings") or []:
+        if not isinstance(raw, dict):
+            continue
         if not str(raw.get("id") or ""):
             continue
         value = _to_decimal(raw.get("market_value"))
@@ -216,7 +215,7 @@ def _positions_value(raw_acc: dict) -> Decimal:
         if (_iso_currency(raw.get("currency"), acc_currency) or acc_currency) != acc_currency:
             continue
         total += value
-    return min(total, balance)
+    return total
 
 
 class SimpleFinProvider(BankProvider):

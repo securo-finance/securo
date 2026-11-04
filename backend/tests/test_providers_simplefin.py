@@ -917,17 +917,26 @@ def test_parse_accounts_without_holdings_reports_nothing_to_deduct():
     assert accounts[0].auto_invested_balance == Decimal("0")
 
 
-def test_parse_accounts_caps_positions_value_at_the_balance():
-    """Positions worth more than the balance (a margin debit) must not push
-    the cash residual below zero; the account then shows zero cash."""
-    _, accounts = SimpleFinProvider._parse_accounts(_brokerage_payload(balance="400"))
-    assert accounts[0].auto_invested_balance == Decimal("400")
-
-
-def test_parse_accounts_reports_nothing_to_deduct_without_positive_balance():
-    for balance in ("0", "-12.50"):
+def test_parse_accounts_does_not_clamp_positions_to_the_balance():
+    """Positions worth more than the balance mean a margin debit. The full
+    positions value is reported so the sync stores the negative cash
+    residual, which the reports count as the liability; clamping would
+    overstate net worth by the debt."""
+    for balance in ("400", "0"):
         _, accounts = SimpleFinProvider._parse_accounts(_brokerage_payload(balance=balance))
-        assert accounts[0].auto_invested_balance == Decimal("0"), balance
+        assert accounts[0].auto_invested_balance == Decimal("573.60"), balance
+
+
+def test_parse_accounts_ignores_malformed_holdings_entries():
+    """A null or non-object entry in holdings must not abort the accounts
+    sync; get_holdings skips it too, so nothing is counted for it."""
+    payload = _brokerage_payload(holdings=[
+        None,
+        "not-a-holding",
+        {"id": "h-ok", "symbol": "OK", "currency": "USD", "market_value": "50.25"},
+    ])
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+    assert accounts[0].auto_invested_balance == Decimal("50.25")
 
 
 def test_parse_accounts_skips_positions_get_holdings_would_not_import():
