@@ -30,7 +30,6 @@ from app.models.group import GroupMember
 from app.models.group_settlement import GroupSettlement
 from app.models.transaction import Transaction
 from app.models.transaction_split import TransactionSplit
-from app.models.user import User
 
 # Stands in for a group owner who isn't one of the group's members.
 _GROUP_OWNER = uuid.UUID(int=0)
@@ -96,23 +95,19 @@ async def compute_balances(
 
     # Splits: each member's share of a transaction someone else paid is
     # what they owe the payer.
-    from app.core.config import get_settings
-
-    fallback_currency = get_settings().default_currency
     splits_result = await session.execute(
         select(
             TransactionSplit,
             Transaction.amount,
             Transaction.amount_primary,
+            Transaction.amount_primary_currency,
             Transaction.currency,
             Transaction.user_id,
             Transaction.type,
-            User.preferences,
             Transaction.date,
         )
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .join(GroupMember, TransactionSplit.group_member_id == GroupMember.id)
-        .outerjoin(User, Transaction.user_id == User.id)
         .where(GroupMember.group_id == group_id)
         .order_by(
             TransactionSplit.transaction_id,
@@ -135,12 +130,11 @@ async def compute_balances(
         first_row = transaction_rows[0]
         transaction_amount = first_row[1]
         amount_primary = first_row[2]
-        transaction_currency = first_row[3]
-        preferences = first_row[6]
-        primary_currency = (preferences or {}).get("currency_display", fallback_currency)
+        amount_primary_currency = first_row[3]
+        transaction_currency = first_row[4]
         if (
             amount_primary is not None
-            and primary_currency == group.default_currency
+            and amount_primary_currency == group.default_currency
             and transaction_currency != group.default_currency
             and transaction_amount
         ):
@@ -174,10 +168,10 @@ async def compute_balances(
         split,
         transaction_amount,
         amount_primary,
+        amount_primary_currency,
         currency,
         recorder_id,
         tx_type,
-        preferences,
         transaction_date,
     ) in split_rows:
         recorder = member_by_user.get(recorder_id, default_payer)
@@ -185,12 +179,11 @@ async def compute_balances(
             continue
         share = Decimal(str(split.share_amount))
         source_currency = currency
-        primary_currency = (preferences or {}).get("currency_display", fallback_currency)
         # Preserve the historical conversion stored on the transaction when
-        # the group's default currency is the user's primary currency.
+        # its recorded currency matches the group's default currency.
         if (
             amount_primary is not None
-            and primary_currency == group.default_currency
+            and amount_primary_currency == group.default_currency
             and currency != group.default_currency
             and transaction_amount
         ):

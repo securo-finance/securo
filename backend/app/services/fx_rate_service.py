@@ -319,6 +319,8 @@ async def stamp_primary_amount(
     # Genuine same-currency 1:1 — always safe to persist.
     if obj_currency == primary_currency:
         setattr(obj, primary_field, amount_dec.quantize(Decimal("0.01")))
+        if hasattr(obj, "amount_primary_currency"):
+            obj.amount_primary_currency = primary_currency
         if hasattr(obj, rate_field):
             setattr(obj, rate_field, Decimal("1"))
         return
@@ -336,5 +338,7 @@ async def stamp_primary_amount(
         return
 
     setattr(obj, primary_field, (amount_dec * rate).quantize(Decimal("0.01")))
+    if hasattr(obj, "amount_primary_currency"):
+        obj.amount_primary_currency = primary_currency
     if hasattr(obj, rate_field):
         setattr(obj, rate_field, rate)

@@ -316,6 +316,8 @@ async def test_foreign_split_uses_historical_primary_amount(
         currency="EUR",
     )
     tx.amount_primary = Decimal("110.00")
+    tx.amount_primary_currency = "USD"
+    test_user.preferences = {"currency_display": "EUR"}
     await split_service.replace_splits(
         session,
         tx,
@@ -343,6 +345,18 @@ async def test_foreign_split_uses_historical_primary_amount(
     assert line["currency"] == "USD"
     assert line["amount"] == Decimal("55.00")
 
+    tx.amount_primary_currency = None
+    await session.commit()
+    legacy_balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+    assert legacy_balances is not None
+    legacy_line = next(
+        line for line in legacy_balances["lines"] if line["member_id"] == friend.id
+    )
+    assert legacy_line["currency"] == "EUR"
+    assert legacy_line["amount"] == Decimal("50.00")
+
 
 @pytest.mark.asyncio
 async def test_legacy_foreign_currency_settlement_closes_converted_balance(
@@ -361,6 +375,7 @@ async def test_legacy_foreign_currency_settlement_closes_converted_balance(
         currency="EUR",
     )
     tx.amount_primary = Decimal("110.00")
+    tx.amount_primary_currency = "USD"
     await split_service.replace_splits(
         session,
         tx,
@@ -437,6 +452,7 @@ async def test_foreign_settlement_does_not_clear_future_native_split(
     )
     converted_tx.date = date(2025, 1, 1)
     converted_tx.amount_primary = Decimal("110.00")
+    converted_tx.amount_primary_currency = "USD"
     await split_service.replace_splits(
         session,
         converted_tx,
@@ -508,6 +524,7 @@ async def test_foreign_split_conversion_uses_absolute_primary_amount(
         currency="EUR",
     )
     tx.amount_primary = Decimal("-110.00")
+    tx.amount_primary_currency = "USD"
     await split_service.replace_splits(
         session,
         tx,
@@ -545,6 +562,7 @@ async def test_foreign_split_conversion_assigns_rounding_residual(
         currency="EUR",
     )
     tx.amount_primary = Decimal("100.00")
+    tx.amount_primary_currency = "USD"
     await split_service.replace_splits(
         session,
         tx,

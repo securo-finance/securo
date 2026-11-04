@@ -87,6 +87,7 @@ async def _backfill_primary_amounts() -> dict:
                     if rate is None:
                         continue  # still no rate — leave as-is, heal next run
                     tx.amount_primary = (Decimal(str(tx.amount)) * rate).quantize(Decimal("0.01"))
+                    tx.amount_primary_currency = primary_currency
                     tx.fx_rate_used = rate
                     stats["transactions"] += 1
                 except Exception:

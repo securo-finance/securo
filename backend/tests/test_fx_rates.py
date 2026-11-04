@@ -309,6 +309,7 @@ class TestStampPrimaryAmount:
 
         await stamp_primary_amount(session, test_user.id, txn)
         assert txn.amount_primary == Decimal("100.00")
+        assert txn.amount_primary_currency == "BRL"
         assert txn.fx_rate_used == Decimal("1")
 
     @pytest.mark.asyncio
@@ -333,6 +334,7 @@ class TestStampPrimaryAmount:
 
         await stamp_primary_amount(session, test_user.id, txn)
         assert txn.amount_primary == Decimal("250.00")  # 50 * 5.0
+        assert txn.amount_primary_currency == "BRL"
         assert txn.fx_rate_used == Decimal("5.0000000000")
 
     @pytest.mark.asyncio

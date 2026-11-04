@@ -20,6 +20,7 @@ from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.schemas.transaction import TransactionImport, FailedRow
 from app.services import reconciliation_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
@@ -1166,6 +1167,9 @@ async def import_transactions(
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
                     placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                    user = await session.get(User, user_id)
+                    if user is not None:
+                        placeholder.amount_primary_currency = user.primary_currency
                 else:
                     await stamp_primary_amount(session, user_id, placeholder)
             if placeholder.category_id is None:
@@ -1196,6 +1200,9 @@ async def import_transactions(
         if txn_data.fx_rate:
             incoming.fx_rate_used = txn_data.fx_rate
             incoming.amount_primary = txn_data.amount * txn_data.fx_rate
+            user = await session.get(User, user_id)
+            if user is not None:
+                incoming.amount_primary_currency = user.primary_currency
 
         session.add(incoming)
         await session.flush()
