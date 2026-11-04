@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from typing import Optional
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from app.models.user import User
 from app.providers.market_price import (
     MarketPriceProvider,
     MarketPriceRateLimitedError,
+    YFinanceProvider,
 )
 from app.schemas.asset import (
     AssetCreate,
@@ -127,6 +129,41 @@ async def test_create_market_price_asset_seeds_quote_and_initial_value(
     assert created.current_value == pytest.approx(1802.50)
     # One AssetValue should have been seeded from the quote.
     assert created.value_count == 1
+
+
+@pytest.mark.asyncio
+async def test_create_market_price_asset_is_idempotent_by_external_id(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    provider = FakeMarketProvider({"VOO": _quote("VOO", 625.50)})
+    data = AssetCreate(
+        name="Vanguard S&P 500 ETF",
+        type="investment",
+        valuation_method="market_price",
+        ticker="VOO",
+        units=Decimal("3.5"),
+        external_id="portfolio-voo",
+    )
+
+    first = await asset_service.create_asset(
+        session, test_workspace.id, test_user.id, data, market_provider=provider
+    )
+    second = await asset_service.create_asset(
+        session, test_workspace.id, test_user.id, data, market_provider=provider
+    )
+
+    assert second.id == first.id
+    assert second.external_id == "portfolio-voo"
+    assert second.source == "yfinance"
+    assert second.value_count == 1
+    rows = await session.execute(
+        select(Asset).where(
+            Asset.workspace_id == test_workspace.id,
+            Asset.source == "yfinance",
+            Asset.external_id == "portfolio-voo",
+        )
+    )
+    assert len(rows.scalars().all()) == 1
 
 
 @pytest.mark.asyncio
@@ -387,3 +424,137 @@ async def test_refresh_all_halts_on_rate_limit(
     # skipped bucket, no per-asset fallback was attempted.
     assert result["refreshed"] == 0
     assert result["skipped"] == 2
+
+
+# ---- YFinanceProvider batch refresh: minor-unit normalization ----
+
+
+@pytest.mark.asyncio
+async def test_yfinance_batch_normalizes_gbp_pence_to_pounds():
+    # yf.download reports LSE tickers in pence; the batch path must scale
+    # them to pounds the same way get_quote does at creation.
+    provider = YFinanceProvider()
+    with (
+        patch.object(
+            YFinanceProvider,
+            "_download_prices_sync",
+            return_value={"EQQQ.L": Decimal("38450")},
+        ),
+        patch.object(
+            YFinanceProvider,
+            "_get_currencies_sync",
+            return_value={"EQQQ.L": "GBp"},
+        ) as currencies,
+    ):
+        prices = await provider.get_latest_prices(["EQQQ.L"])
+
+    currencies.assert_called_once_with(["EQQQ.L"])
+    assert prices["EQQQ.L"] == Decimal("384.50")
+
+
+@pytest.mark.asyncio
+async def test_yfinance_batch_normalizes_zac_cents_to_rand():
+    provider = YFinanceProvider()
+    with (
+        patch.object(
+            YFinanceProvider,
+            "_download_prices_sync",
+            return_value={"NPN.JO": Decimal("612300")},
+        ),
+        patch.object(
+            YFinanceProvider,
+            "_get_currencies_sync",
+            return_value={"NPN.JO": "ZAc"},
+        ),
+    ):
+        prices = await provider.get_latest_prices(["NPN.JO"])
+
+    assert prices["NPN.JO"] == Decimal("6123.00")
+
+
+@pytest.mark.asyncio
+async def test_yfinance_batch_leaves_usd_ticker_unchanged():
+    # No *.L / *.JO suffix → no currency lookup at all, price passes through.
+    provider = YFinanceProvider()
+    with (
+        patch.object(
+            YFinanceProvider,
+            "_download_prices_sync",
+            return_value={"AAPL": Decimal("181.25")},
+        ),
+        patch.object(YFinanceProvider, "_get_currencies_sync") as currencies,
+    ):
+        prices = await provider.get_latest_prices(["AAPL"])
+
+    currencies.assert_not_called()
+    assert prices["AAPL"] == Decimal("181.25")
+
+
+@pytest.mark.asyncio
+async def test_yfinance_batch_keeps_decimal_precision_when_scaling():
+    provider = YFinanceProvider()
+    with (
+        patch.object(
+            YFinanceProvider,
+            "_download_prices_sync",
+            return_value={"EQQQ.L": Decimal("123.45678901234567")},
+        ),
+        patch.object(
+            YFinanceProvider,
+            "_get_currencies_sync",
+            return_value={"EQQQ.L": "GBp"},
+        ),
+    ):
+        prices = await provider.get_latest_prices(["EQQQ.L"])
+
+    assert prices["EQQQ.L"] == Decimal("1.2345678901234567")
+
+
+@pytest.mark.asyncio
+async def test_yfinance_batch_leaves_major_unit_lse_ticker_unchanged():
+    # Not every *.L listing trades in pence; some are quoted in GBP/USD.
+    provider = YFinanceProvider()
+    with (
+        patch.object(
+            YFinanceProvider,
+            "_download_prices_sync",
+            return_value={"CSPX.L": Decimal("612.40")},
+        ),
+        patch.object(
+            YFinanceProvider,
+            "_get_currencies_sync",
+            return_value={"CSPX.L": "USD"},
+        ),
+    ):
+        prices = await provider.get_latest_prices(["CSPX.L"])
+
+    assert prices["CSPX.L"] == Decimal("612.40")
+
+
+@pytest.mark.asyncio
+async def test_yfinance_batch_drops_price_when_currency_unknown():
+    # A failed currency lookup must not let a raw pence close through as
+    # pounds, so the symbol comes back None and the refresh falls back to
+    # get_quote. Other symbols in the same chunk are unaffected.
+    provider = YFinanceProvider()
+    with (
+        patch.object(
+            YFinanceProvider,
+            "_download_prices_sync",
+            return_value={
+                "EQQQ.L": Decimal("38450"),
+                "SGLN.L": Decimal("5120"),
+                "AAPL": Decimal("181.25"),
+            },
+        ),
+        patch.object(
+            YFinanceProvider,
+            "_get_currencies_sync",
+            return_value={"EQQQ.L": None, "SGLN.L": "GBp"},
+        ),
+    ):
+        prices = await provider.get_latest_prices(["EQQQ.L", "SGLN.L", "AAPL"])
+
+    assert prices["EQQQ.L"] is None
+    assert prices["SGLN.L"] == Decimal("51.20")
+    assert prices["AAPL"] == Decimal("181.25")

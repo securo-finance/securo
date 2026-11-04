@@ -1,3 +1,6 @@
+from datetime import date
+from typing import Optional
+
 import pytest
 from unittest.mock import patch
 
@@ -10,6 +13,7 @@ from app.providers import (
     _PROVIDERS,
 )
 from app.providers.base import BankProvider
+from app.core.config import Settings
 
 
 class FakeProvider(BankProvider):
@@ -21,7 +25,12 @@ class FakeProvider(BankProvider):
     def flow_type(self) -> str:
         return "widget"
 
-    def get_oauth_url(self, redirect_uri: str, state: str) -> str:
+    async def get_oauth_url(
+        self,
+        redirect_uri: str,
+        state: str,
+        flow_params: Optional[dict] = None,
+    ) -> str:
         return "https://fake.example.com"
 
     async def handle_oauth_callback(self, code: str):
@@ -30,7 +39,13 @@ class FakeProvider(BankProvider):
     async def get_accounts(self, credentials: dict):
         return []
 
-    async def get_transactions(self, credentials, account_id, since, **kw):
+    async def get_transactions(
+        self,
+        credentials: dict,
+        account_external_id: str,
+        since: Optional[date] = None,
+        payee_source: str = "auto",
+    ) -> list:
         return []
 
     async def refresh_credentials(self, credentials: dict) -> dict:
@@ -106,15 +121,12 @@ class TestOAuthRedirectDefaults:
     parse (containers/podman-compose#1064).
     """
 
-    def _settings(self, **overrides):
-        from app.core.config import Settings
-
-        defaults = {
-            "frontend_url": "http://localhost:3000",
-            "pluggy_oauth_redirect_uri": "",
-            "enable_banking_oauth_redirect_uri": "",
-        }
-        return Settings(**{**defaults, **overrides})
+    def _settings(self, **overrides) -> Settings:
+        return Settings(
+            frontend_url="http://localhost:3000",
+            pluggy_oauth_redirect_uri="",
+            enable_banking_oauth_redirect_uri="",
+        ).model_copy(update=overrides)
 
     def test_default_derives_from_frontend_url(self):
         from app.providers.base import default_oauth_redirect_uri

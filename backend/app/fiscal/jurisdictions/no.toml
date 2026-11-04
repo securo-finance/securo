@@ -1,0 +1,4 @@
+# Norway. Outside the EU, so there is no intra-EU VAT id: a
+# VAT-registered company appends MVA to its organisasjonsnummer.
+code = "NO"
+kinds = ["no_orgnr"]

@@ -17,6 +17,7 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+        checksum/nginx-config: {{ include (print $.Template.BasePath "/frontend/configmap-nginx.yaml") . | sha256sum }}
       labels:
         {{- include "securo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
@@ -43,7 +44,7 @@ spec:
             periodSeconds: 10
           env:
             - name: BACKEND_URL
-              value: "http://{{ include "securo.fullname" . }}-backend:8000"
+              value: {{ default (printf "http://%s-backend.%s.svc.cluster.local:%v" (include "securo.fullname" .) .Release.Namespace .Values.backend.service.port) .Values.frontend.backendUrl | quote }}
             - name: FRONTEND_URL
               value: {{ include "securo.frontendUrl" . | quote }}
           volumeMounts:

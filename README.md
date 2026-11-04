@@ -3,13 +3,15 @@
 </p>
 <h1 align="center">Securo</h1>
 <p align="center">
-  <a href="https://github.com/securo-finance/securo/actions/workflows/ci.yml"><img src="https://github.com/securo-finance/securo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/securo-finance/securo/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://github.com/securo-finance/securo/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI" /></a>
   <img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tassionoronha/ae627b744aaa2ba89d850ea541c311be/raw/coverage.json" alt="Coverage" />
   <a href="https://github.com/securo-finance/securo/pkgs/container/securo-frontend"><img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tassionoronha/ae627b744aaa2ba89d850ea541c311be/raw/downloads.json" alt="Downloads" /></a>
+  <br />
+  <a href="https://artifacthub.io/packages/search?repo=securo"><img src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/securo" alt="Artifact Hub" /></a>
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" /></a>
   <a href="https://discord.gg/rUqTKtQ9S4"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Join our Discord" /></a>
   <br />
-  <a href="https://usesecuro.com/">Website</a> · <a href="https://demo.usesecuro.com/">Try our Demo</a> · <a href="https://docs.usesecuro.com/">Read the Docs</a> · <a href="https://discord.gg/rUqTKtQ9S4">Discord</a>
+  <a href="https://usesecuro.com/">Website</a> · <a href="https://demo.usesecuro.com/">Demo</a> · <a href="https://www.usesecuro.com/roadmap">Roadmap</a> · <a href="https://docs.usesecuro.com/">Docs</a> · <a href="https://discord.gg/rUqTKtQ9S4">Discord</a> · <a href="https://cal.com/tassio/15min">Talk to the maintainer</a>
 </p>
 
 <h3 align="center">Finance apps want your data. This one doesn't.</h3>
@@ -69,6 +71,8 @@ PLUGGY_CLIENT_ID=your-client-id
 PLUGGY_CLIENT_SECRET=your-client-secret
 ```
 
+See [automatic bank synchronization](docs/automatic-bank-sync.md) to configure the minimum polling interval (including PSD2 four-access-per-day limits).
+
 ### Enable Banking — European banks (PSD2)
 
 Sign up at [enablebanking.com](https://enablebanking.com), create a Production application, and download its PEM private key. Save the PEM to `./secrets/` (gitignored), then add:
@@ -114,7 +118,29 @@ OIDC_CLIENT_SECRET=your-client-secret
 OIDC_REDIRECT_URI=https://your-securo-host/api/auth/oidc/callback
 ```
 
+To require SSO-only access after OIDC is configured, set `LOCAL_AUTH_ENABLED=false`. Securo will start in this mode only when `OIDC_ENABLED=true`, `OIDC_CLIENT_ID`, and `OIDC_DISCOVERY_URL` are all configured; otherwise startup fails with a validation error instead of leaving the instance with no usable login method. The login page shows an explicit configuration error if the server reports that neither local auth nor OIDC is available. If only the optional OIDC-config request fails, the client keeps local controls available with a warning; the backend remains authoritative and still rejects them in OIDC-only mode.
+
+With local auth disabled, Securo rejects password and passkey login, public registration, first-admin password setup, admin or workspace-invite creation of password-backed users, forgot/reset-password requests, password updates, new passkey registration or verification, and new TOTP setup or enablement. Local credential controls are hidden from login, account, setup, registration, and admin user-management screens. Existing users, password hashes, active sessions, passkeys, and TOTP configuration are not deleted; existing passkeys and TOTP can still be removed as cleanup paths. OIDC user provisioning and existing-account linking remain controlled separately by `OIDC_AUTO_REGISTER` and `OIDC_EXISTING_USER_LINK_MODE`.
+
+On a fresh OIDC-only instance, the first account must be provisioned through OIDC. Keep `OIDC_AUTO_REGISTER=true`, enable `OIDC_SYNC_ROLES=true`, and include one of the values from `OIDC_ADMIN_ROLES` in that identity's configured roles claim so the first login becomes a Securo administrator. Do not disable OIDC auto-registration before at least one matching account exists.
+
 New OIDC users are auto-provisioned by default (`OIDC_AUTO_REGISTER=true`) using verified email addresses. Set `OIDC_AUTO_REGISTER=false` to allow only existing Securo users whose email matches the provider claim.
+
+### Linking existing accounts
+
+An account that already exists in Securo (created with a password) is never linked to an OIDC identity automatically, so the first SSO login of an existing user is rejected by default. `OIDC_EXISTING_USER_LINK_MODE` controls that:
+
+```
+OIDC_EXISTING_USER_LINK_MODE=disabled
+```
+
+| Value | Behavior |
+|-------|----------|
+| `disabled` (default) | Never link. Existing accounts must keep using password login. |
+| `verified_email` | Link the existing account when the provider sends `email_verified=true` for the same email. |
+| `email` | Link on a matching email alone, even without `email_verified`. |
+
+Use `verified_email` to move existing users to SSO without recreating their accounts and data. Only pick `email` if you trust your provider to own every address it asserts, since anyone able to set an email there could claim the matching Securo account. An OIDC identity already linked to another account is always rejected, in every mode.
 
 ### Optional OIDC role sync
 
@@ -156,6 +182,10 @@ OPENEXCHANGERATES_APP_ID=your-app-id
 
 Rates are fetched on-demand when foreign-currency transactions are created. Without a key, cross-currency amounts default to a 1:1 fallback rate with a visual warning.
 
+## Timezone
+
+Balances, budgets, due dates and recurring transactions turn over at midnight in the application timezone. Set it once in Admin Settings → Date and time; a workspace that keeps its books somewhere else can pick its own timezone in Workspace settings. Without a saved value the application follows `TZ` from the environment, then the host timezone, then UTC, so an existing installation keeps behaving as before until someone changes it.
+
 ## AI Agents (Optional)
 
 Self-hosted AI assistants over your Securo data — multi-provider (OpenAI, Anthropic, Ollama, OpenAI-compatible), tool-use via MCP, per-agent RAG knowledge base, ⌘J global chat panel.
@@ -169,6 +199,22 @@ COMPOSE_PROFILES=agents
 
 Then `docker compose up -d`. Settings → AI Agents to add a provider connection. Off by default; zero cost when off.
 
+### Without Docker
+
+`COMPOSE_PROFILES=agents` only tells Docker Compose to start the extra `mcp-server` container, so on a bare-metal or LXC install set `AGENTS_ENABLED=true` alone. The built-in MCP server is a plain uvicorn app in the same virtualenv; run it next to the API and point the backend at it:
+
+```bash
+# alongside the API/worker/beat processes
+uvicorn mcp_server.main:app --host 127.0.0.1 --port 8765
+```
+
+```
+AGENTS_ENABLED=true
+AGENTS_BUILTIN_MCP_URL=http://127.0.0.1:8765/mcp
+```
+
+Without that server the agents still chat, but they have no tools and cannot read your data. The backend log says which MCP server it failed to reach.
+
 ## Tech Stack
 
 | Layer | Stack |
@@ -181,6 +227,8 @@ Then `docker compose up -d`. Settings → AI Agents to add a provider connection
 ## AI-Assisted Development
 
 Parts of this codebase were built with help of AI. All code is human-reviewed and no data leaves your environment.
+
+Contributing with AI is welcome. We review the author, not the tool: whatever wrote the diff, you own its quality, its fit with where Securo is going, and everything that happens after it merges. See [Using AI](CONTRIBUTING.md#using-ai).
 
 ## Development
 
@@ -221,6 +269,8 @@ mise frontend:build
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+Not sure where to start, or want to talk something through first? [Book 15 minutes](https://cal.com/tassio/15min) — no agenda needed. Something broken, an idea, or just what you think of Securo, all welcome.
 
 ## License
 

@@ -6,6 +6,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.api.two_factor import _verify_totp
+from app.core.auth import get_jwt_strategy
 
 
 def _make_redis_mock_with_store():
@@ -56,6 +57,47 @@ async def test_setup_2fa(client: AsyncClient, auth_headers: dict):
     assert "secret" in data
     assert "otpauth_uri" in data
     assert "otpauth://totp/" in data["otpauth_uri"]
+
+
+@pytest.mark.parametrize("path", ["/api/auth/2fa/setup", "/api/auth/2fa/enable"])
+async def test_totp_enrollment_forbidden_when_local_auth_disabled(
+    client: AsyncClient,
+    test_user,
+    oidc_only_settings,
+    path: str,
+):
+    token = await get_jwt_strategy().write_token(test_user)
+    response = await client.post(
+        path,
+        json={"code": "123456"} if path.endswith("/enable") else None,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "LOCAL_AUTH_DISABLED"
+
+
+async def test_disable_2fa_allowed_for_cleanup_when_local_auth_disabled(
+    client: AsyncClient,
+    test_user,
+    session,
+    oidc_only_settings,
+):
+    secret = pyotp.random_base32()
+    test_user.totp_secret = secret
+    test_user.is_2fa_enabled = True
+    session.add(test_user)
+    await session.commit()
+
+    token = await get_jwt_strategy().write_token(test_user)
+    response = await client.post(
+        "/api/auth/2fa/disable",
+        json={"password": "testpass123", "code": pyotp.TOTP(secret).now()},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["detail"] == "2FA disabled"
 
 
 async def test_enable_2fa(client: AsyncClient, auth_headers: dict, test_user):

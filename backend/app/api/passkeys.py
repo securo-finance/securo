@@ -1,4 +1,5 @@
 import json
+import logging
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -25,6 +26,7 @@ from webauthn.helpers.structs import (
 )
 
 from app.core.auth import current_active_user, get_jwt_strategy
+from app.core.auth_policy import require_local_auth_enabled
 from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.rate_limit import login_rate_limit
@@ -43,6 +45,8 @@ from app.schemas.passkey import (
     PasskeySecondFactorOptionsRequest,
     PasskeySecondFactorVerifyRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -155,10 +159,17 @@ async def _verify_passkey_credential(
             expected_origin=challenge["origin"],
             expected_rp_id=challenge["rp_id"],
             credential_public_key=base64url_to_bytes(passkey.public_key),
-            credential_current_sign_count=passkey.sign_count,
+            # Synced passkeys (1Password, iCloud Keychain, Google Password
+            # Manager) legitimately report a stale counter when used from
+            # another device, so the anti-clone regression check only applies
+            # to device-bound credentials.
+            credential_current_sign_count=0 if passkey.backed_up else passkey.sign_count,
             require_user_verification=True,
         )
     except Exception as exc:
+        logger.warning(
+            "Passkey verification failed for credential %s: %s", passkey.credential_id, exc
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey") from exc
 
     verified_credential_id = _as_base64url(verification.credential_id)
@@ -189,7 +200,11 @@ async def list_passkeys(
     return result.scalars().all()
 
 
-@router.post("/passkeys/register/options", response_model=PasskeyOptionsResponse)
+@router.post(
+    "/passkeys/register/options",
+    response_model=PasskeyOptionsResponse,
+    dependencies=[Depends(require_local_auth_enabled)],
+)
 async def passkey_registration_options(
     request: Request,
     body: PasskeyRegisterOptionsRequest,
@@ -231,7 +246,11 @@ async def passkey_registration_options(
     return PasskeyOptionsResponse(challenge_id=challenge_id, options=_options_dict(options))
 
 
-@router.post("/passkeys/register/verify", response_model=PasskeyRead)
+@router.post(
+    "/passkeys/register/verify",
+    response_model=PasskeyRead,
+    dependencies=[Depends(require_local_auth_enabled)],
+)
 async def verify_passkey_registration(
     body: PasskeyRegisterVerifyRequest,
     user: User = Depends(current_active_user),
@@ -294,7 +313,7 @@ async def delete_passkey(
 @router.post(
     "/passkeys/authenticate/options",
     response_model=PasskeyOptionsResponse,
-    dependencies=[Depends(login_rate_limit)],
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
 )
 async def passkey_authentication_options(
     request: Request,
@@ -304,16 +323,32 @@ async def passkey_authentication_options(
     context = resolve_webauthn_context(request)
     email = body.email.strip().lower() if body.email else None
     expected_user_id: str | None = None
+    allow_credentials: list[PublicKeyCredentialDescriptor] | None = None
 
     if email:
         user_result = await session.execute(select(User).where(func.lower(User.email) == email))
         login_user = user_result.scalar_one_or_none()
         if login_user is not None:
             expected_user_id = str(login_user.id)
+            # Listing the user's credentials lets password managers surface
+            # the matching passkey even when they can't take part in a pure
+            # discoverable-credential ceremony (e.g. 1Password with a locked
+            # vault shows an empty picker otherwise). The endpoint is
+            # rate-limited, which bounds credential enumeration.
+            passkeys_result = await session.execute(
+                select(UserPasskey)
+                .where(UserPasskey.user_id == login_user.id)
+                .order_by(UserPasskey.created_at.asc())
+            )
+            allow_credentials = [
+                PublicKeyCredentialDescriptor(id=base64url_to_bytes(pk.credential_id))
+                for pk in passkeys_result.scalars().all()
+            ] or None
 
     options = generate_authentication_options(
         rp_id=context.rp_id,
         user_verification=UserVerificationRequirement.REQUIRED,
+        allow_credentials=allow_credentials,
     )
     challenge_id = await _store_challenge(
         AUTHENTICATE_CHALLENGE_PREFIX,
@@ -328,7 +363,10 @@ async def passkey_authentication_options(
     return PasskeyOptionsResponse(challenge_id=challenge_id, options=_options_dict(options))
 
 
-@router.post("/passkeys/authenticate/verify", dependencies=[Depends(login_rate_limit)])
+@router.post(
+    "/passkeys/authenticate/verify",
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
+)
 async def verify_passkey_authentication(
     body: PasskeyAuthenticateVerifyRequest,
     session: AsyncSession = Depends(get_async_session),
@@ -363,7 +401,11 @@ async def verify_passkey_authentication(
     return {"access_token": token, "token_type": "bearer"}
 
 
-@router.post("/passkeys/2fa/options", response_model=PasskeyOptionsResponse, dependencies=[Depends(login_rate_limit)])
+@router.post(
+    "/passkeys/2fa/options",
+    response_model=PasskeyOptionsResponse,
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
+)
 async def passkey_second_factor_options(
     request: Request,
     body: PasskeySecondFactorOptionsRequest,
@@ -398,7 +440,10 @@ async def passkey_second_factor_options(
     return PasskeyOptionsResponse(challenge_id=challenge_id, options=_options_dict(options))
 
 
-@router.post("/passkeys/2fa/verify", dependencies=[Depends(login_rate_limit)])
+@router.post(
+    "/passkeys/2fa/verify",
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
+)
 async def verify_passkey_second_factor(
     body: PasskeySecondFactorVerifyRequest,
     session: AsyncSession = Depends(get_async_session),

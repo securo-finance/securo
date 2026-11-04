@@ -1,0 +1,4 @@
+# Greece. The AFM is the tax number, quoted as the VAT number with an EL
+# prefix, which is why the prefix does not match the country code.
+code = "GR"
+kinds = ["vat"]

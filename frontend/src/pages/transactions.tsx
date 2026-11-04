@@ -3,17 +3,30 @@ import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
 import { currentMonth, monthRange, monthFromRange } from '@/lib/month-utils'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { loadRange, saveRange } from '@/lib/remembered-range'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi, rules as rulesApi } from '@/lib/api'
+import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi, rules as rulesApi, reconciliation as reconciliationApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuPortal,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
+import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -34,39 +47,49 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, CalendarDays, Check, HelpCircle, Info, List, Paperclip, Users, X, EyeClosed, SlidersHorizontal } from 'lucide-react'
-import type { Transaction, Rule } from '@/types'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
+import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
+import { isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { CategoryIcon } from '@/components/category-icon'
 import { CategorySelect } from '@/components/category-select'
-import { TransactionDialog, extractApiError, type SaveAction } from '@/components/transaction-dialog'
+import { CategoryPicker } from '@/components/category-picker'
+import { TransactionDialog, type SaveAction, type TransactionSavePayload } from '@/components/transaction-dialog'
+import { PostTodayButton } from '@/components/post-today-button'
+import { extractApiError } from '@/lib/api-errors'
+import { refreshTransactionsView } from '@/lib/transactions-refresh'
 import { TransactionsColumnPicker } from '@/components/transactions-column-picker'
 import { TransactionsPageActions } from '@/components/transactions-page-actions'
 import { MobileBulkSelectionActions } from '@/components/mobile-bulk-selection-actions'
 import { type ColumnDef, type ColumnId, useTransactionsGridState } from '@/components/transactions-grid-columns'
 import { TransferDialog } from '@/components/transfer-dialog'
+import { useSidebarState } from '@/contexts/sidebar-state-context'
+import { cn } from '@/lib/utils'
 import { LinkTransferDialog } from '@/components/link-transfer-dialog'
 import { BulkAddToGroupDialog, type BulkAddToGroupSubmission } from '@/components/bulk-add-to-group-dialog'
 import { TransactionsFilterBar } from '@/components/transactions-filter-bar'
 import { TransactionCalendarView } from '@/components/transaction-calendar-view'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { useCreateTransaction } from '@/hooks/use-create-transaction'
+import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
+import { formatCurrency } from '@/lib/format'
+import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import { isTransferTransaction } from '@/lib/transaction-transfer'
 
-type TransactionUpdatePayload = Partial<Transaction> & {
+type TransactionUpdatePayload = TransactionEditPayload & {
   apply_to_transfer_pair?: boolean
+  apply_to?: TransactionApplyScope
 }
 
 type PendingTransferCategoryUpdate = {
   id: string
   data: TransactionUpdatePayload
-}
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
 
 function parseHashtags(notes: string | null): string[] {
@@ -75,16 +98,20 @@ function parseHashtags(notes: string | null): string[] {
   return matches ?? []
 }
 
+const HIDE_IGNORED_STORAGE_KEY = 'securo.transactions.hideIgnored'
+
 export default function TransactionsPage() {
   const { t, i18n } = useTranslation()
+  const { collapsed: sidebarCollapsed } = useSidebarState()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
+  const isMobile = useIsMobile()
   const { user } = useAuth()
   const { activeAccountIds } = useCollectionFilter()
-  const { canWrite } = useWorkspace()
+  const { canWrite, hasModule } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
@@ -105,19 +132,21 @@ export default function TransactionsPage() {
     return initial ? [initial] : []
   })
   const [filterUncategorized, setFilterUncategorized] = useState<boolean>(false)
-  // Seed the date range from the URL, or default to the current month on first
-  // open (no ?from/?to). Done in the initializer so it survives effect re-runs
-  // (e.g. React StrictMode's double-invoke in development).
-  const [filterFrom, setFilterFrom] = useState<string>(() => {
+  // Seed the date range from the URL, else the range last used on this page
+  // (issue #1053), else the current month. Done in the initializer so it
+  // survives effect re-runs (e.g. React StrictMode's double-invoke in
+  // development).
+  const [initialRange] = useState(() => {
     const f = searchParams.get('from')
     const t = searchParams.get('to')
-    return f || t ? (f ?? '') : monthRange(currentMonth()).from
+    if (f || t) return { from: f ?? '', to: t ?? '' }
+    return loadRange('transactions') ?? monthRange(currentMonth())
   })
-  const [filterTo, setFilterTo] = useState<string>(() => {
-    const f = searchParams.get('from')
-    const t = searchParams.get('to')
-    return f || t ? (t ?? '') : monthRange(currentMonth()).to
-  })
+  const [filterFrom, setFilterFrom] = useState<string>(initialRange.from)
+  const [filterTo, setFilterTo] = useState<string>(initialRange.to)
+  useEffect(() => {
+    saveRange('transactions', filterFrom, filterTo)
+  }, [filterFrom, filterTo])
   // Month reflected by the stepper: the active range when it spans exactly one
   // full month, otherwise the current month (custom ranges still navigable).
   const steppedMonth = monthFromRange(filterFrom, filterTo) ?? currentMonth()
@@ -133,8 +162,9 @@ export default function TransactionsPage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [pendingTransferCategoryUpdate, setPendingTransferCategoryUpdate] =
     useState<PendingTransferCategoryUpdate | null>(null)
-  const [formResetKey, setFormResetKey] = useState(0)
-  const [duplicateDraft, setDuplicateDraft] = useState<Partial<Transaction> | null>(null)
+  // Manual installment-series scoped delete. Scoped edits are handled by the
+  // shared TransactionDialog so account detail and dashboard behave the same.
+  const [pendingSeriesDeleteId, setPendingSeriesDeleteId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>(() => (
     searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
   ))
@@ -142,6 +172,19 @@ export default function TransactionsPage() {
   const [filterPayee, setFilterPayee] = useState<string>(searchParams.get('payee_id') ?? '')
   const [filterGroupId, setFilterGroupId] = useState<string>(searchParams.get('group_id') ?? '')
   const [filterType, setFilterType] = useState<string>(searchParams.get('type') ?? '')
+  const [filterStatus, setFilterStatus] = useState<string>(searchParams.get('status') ?? '')
+  // Hiding ignored rows is a reading preference, not a query someone re-picks
+  // every visit, so it outlives the page the way page size and columns do. The
+  // URL still wins when present, so a shared link shows what its sender saw.
+  const [hideIgnored, setHideIgnored] = useState<boolean>(() => {
+    const fromUrl = searchParams.get('hide_ignored')
+    if (fromUrl !== null) return fromUrl === 'true'
+    try {
+      return localStorage.getItem(HIDE_IGNORED_STORAGE_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
   const [filterMinAmount, setFilterMinAmount] = useState<string>(searchParams.get('min_amount') ?? '')
   const [filterMaxAmount, setFilterMaxAmount] = useState<string>(searchParams.get('max_amount') ?? '')
   const [tagFilters, setTagFilters] = useState<string[]>([])
@@ -190,6 +233,9 @@ export default function TransactionsPage() {
   const [bulkTagInput, setBulkTagInput] = useState<string>('')
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
+  const [isBulkBarPulsing, setIsBulkBarPulsing] = useState(false)
+  const [menuEpoch, setMenuEpoch] = useState(0)
+  const bulkTagInputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
   const highlightId = searchParams.get('highlight')
   const highlightedRowRef = useRef<HTMLTableRowElement | null>(null)
@@ -219,6 +265,9 @@ export default function TransactionsPage() {
     setFilterPayee(searchParams.get('payee_id') ?? '')
     setFilterGroupId(searchParams.get('group_id') ?? '')
     setFilterType(searchParams.get('type') ?? '')
+    setFilterStatus(searchParams.get('status') ?? '')
+    const urlHideIgnored = searchParams.get('hide_ignored')
+    if (urlHideIgnored !== null) setHideIgnored(urlHideIgnored === 'true')
     const categories = searchParams.get('category_id');
     setFilterCategoryIds(categories ? categories.split(',') : []);
     setFilterUncategorized(searchParams.get('uncategorized') === '1');
@@ -253,6 +302,7 @@ export default function TransactionsPage() {
         ['payee_id', filterPayee],
         ['group_id', filterGroupId],
         ['type', filterType],
+        ['status', filterStatus],
         ['category_id', filterCategoryIds.join(',')],
         ['uncategorized', filterUncategorized ? '1' : ''],
         ['account_id', filterAccountIds.join(',')],
@@ -260,6 +310,7 @@ export default function TransactionsPage() {
         ['to', filterTo],
         ['min_amount', filterMinAmount],
         ['max_amount', filterMaxAmount],
+        ['hide_ignored', hideIgnored ? 'true' : ''],
       ].filter(([, v]) => v.length),
     );
 
@@ -276,6 +327,7 @@ export default function TransactionsPage() {
     filterPayee,
     filterGroupId,
     filterType,
+    filterStatus,
     filterCategoryIds,
     filterUncategorized,
     filterAccountIds,
@@ -283,6 +335,7 @@ export default function TransactionsPage() {
     filterTo,
     filterMinAmount,
     filterMaxAmount,
+    hideIgnored,
   ]);
 
   useEffect(() => {
@@ -299,7 +352,7 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
@@ -348,8 +401,8 @@ export default function TransactionsPage() {
   const noAccounts = filterAccountIds.length === 0
     && activeAccountIds !== null && activeAccountIds.length === 0
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery, tagFilters, grid.sortBy, grid.sortDir],
+  const { data, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -360,6 +413,7 @@ export default function TransactionsPage() {
         payee_id: filterPayee || undefined,
         group_id: filterGroupId || undefined,
         type: filterType || undefined,
+        status: filterStatus || undefined,
         uncategorized: filterUncategorized ? true : undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
@@ -367,13 +421,16 @@ export default function TransactionsPage() {
         max_amount: filterMaxAmount ? Number(filterMaxAmount) : undefined,
         q: searchQuery || undefined,
         tags: tagFilters.length > 0 ? tagFilters : undefined,
-        ...grid.apiSort,
+        exclude_ignored: hideIgnored ? true : undefined,
+        // Mobile has no column headers to change sort; force date-desc so
+        // the date grouping always works correctly.
+        ...(isMobile ? { sort_by: 'date', sort_dir: 'desc' as const } : grid.apiSort),
       }),
   })
 
   const calendarMonth = steppedMonth
   const calendarAccountIds = filterAccountIds.length === 1 ? filterAccountIds : []
-  const { data: calendarData, isLoading: calendarLoading } = useQuery({
+  const { data: calendarData, isLoading: calendarLoading, isFetching: calendarFetching, refetch: refetchCalendar } = useQuery({
     queryKey: ['transactions', 'calendar', calendarMonth, calendarAccountIds],
     enabled: viewMode === 'calendar',
     queryFn: () => transactions.calendar({
@@ -393,6 +450,7 @@ export default function TransactionsPage() {
     payee_id: filterPayee || undefined,
     group_id: filterGroupId || undefined,
     type: filterType || undefined,
+    status: filterStatus || undefined,
     uncategorized: filterUncategorized || undefined,
     from: filterFrom || undefined,
     to: filterTo || undefined,
@@ -422,6 +480,14 @@ export default function TransactionsPage() {
     queryFn: categoriesApi.list,
   })
 
+  // A category filter survives in the URL, so it can outlive the category
+  // being hidden. Kept apart from the list that feeds the picker.
+  const { data: allCategoriesList } = useQuery({
+    queryKey: ['categories', 'management'],
+    queryFn: categoriesApi.listIncludingHidden,
+    enabled: filterCategoryIds.length > 0,
+  })
+
   const { data: categoryGroupsList } = useQuery({
     queryKey: ['categoryGroups'],
     queryFn: categoryGroupsApi.list,
@@ -441,6 +507,34 @@ export default function TransactionsPage() {
     queryKey: ['recurring'],
     queryFn: recurring.list,
   })
+  const recurringById = useMemo(
+    () => new Map((recurringList ?? []).map(item => [item.id, item])),
+    [recurringList],
+  )
+
+  // Every open question, indexed by the money it is about. One request
+  // for the page rather than one per row: the queue is small by design,
+  // and if it ever is not, that is the rules wanting changing rather than
+  // this needing pagination.
+  //
+  // Skipped entirely where neither set is on, so a workspace pays nothing
+  // for a surface it cannot reach. Either one is enough: the recurring
+  // matcher records its questions against a transaction exactly as the
+  // invoice one does, and a personal workspace has only that one.
+  const { data: openQuestions } = useQuery<ReconciliationSuggestion[]>({
+    queryKey: ['reconciliation-suggestions'],
+    queryFn: reconciliationApi.suggestions,
+    enabled: hasModule('invoices') || hasModule('recurring'),
+  })
+  const suggestionsByTransaction = useMemo(
+    () =>
+      new Map(
+        (openQuestions ?? [])
+          .filter((s) => s.transaction?.id)
+          .map((s) => [s.transaction!.id, s]),
+      ),
+    [openQuestions],
+  )
 
   const { data: accountingModeData } = useQuery({
     queryKey: ['admin', 'accounting-mode'],
@@ -451,48 +545,14 @@ export default function TransactionsPage() {
 
   const invalidateAfterTxMutation = () => invalidateFinancialQueries(queryClient)
 
-  const createMutation = useMutation({
-    mutationFn: async (payload: { tx: Partial<Transaction>; recurringData?: { frequency: string; end_date?: string }; pendingFiles?: File[]; action?: SaveAction }) => {
-      const created = await transactions.create(payload.tx)
-      if (payload.recurringData) {
-        await recurring.create({
-          description: payload.tx.description,
-          amount: payload.tx.amount,
-          currency: payload.tx.currency ?? userCurrency,
-          type: payload.tx.type,
-          frequency: payload.recurringData.frequency,
-          start_date: payload.tx.date,
-          end_date: payload.recurringData.end_date || undefined,
-          category_id: payload.tx.category_id || undefined,
-          account_id: payload.tx.account_id || undefined,
-          skip_first: true,
-        } as Record<string, unknown>)
-      }
-      if (payload.pendingFiles?.length) {
-        await Promise.all(
-          payload.pendingFiles.map(file => transactions.attachments.upload(created.id, file))
-        )
-      }
-      return created
-    },
-    onSuccess: (_created, variables) => {
-      invalidateAfterTxMutation()
-      queryClient.invalidateQueries({ queryKey: ['recurring'] })
-      toast.success(t('transactions.created'))
-      if (variables.action === 'saveAndNew') {
-        setDuplicateDraft(null)
-        setFormResetKey(k => k + 1)
-      } else if (variables.action === 'saveAndDuplicate') {
-        setDuplicateDraft(variables.tx)
-        setFormResetKey(k => k + 1)
-      } else {
-        setDialogOpen(false)
-      }
-    },
-    onError: (error) => {
-      toast.error(extractApiError(error))
-    },
-  })
+  const {
+    mutation: createMutation,
+    create: createTransaction,
+    duplicateDraft,
+    setDuplicateDraft,
+    formResetKey,
+    resetForm,
+  } = useCreateTransaction({ onDone: () => setDialogOpen(false) })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, ...data }: TransactionUpdatePayload & { id: string }) =>
@@ -509,12 +569,24 @@ export default function TransactionsPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => transactions.delete(id),
+    mutationFn: (payload: { id: string; applyTo?: TransactionApplyScope }) =>
+      transactions.delete(payload.id, payload.applyTo ?? 'this'),
     onSuccess: () => {
       invalidateAfterTxMutation()
       setDialogOpen(false)
       setEditingTx(null)
       toast.success(t('transactions.deleted'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const postTodayMutation = useMutation({
+    mutationFn: (id: string) => transactions.postToday(id),
+    onSuccess: () => {
+      invalidateAfterTxMutation()
+      toast.success(t('transactions.updated'))
     },
     onError: (error) => {
       toast.error(extractApiError(error))
@@ -598,6 +670,20 @@ export default function TransactionsPage() {
     },
   })
 
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
+  const bulkDeleteMutation = useMutation({
+    mutationFn: () => transactions.bulkDelete(Array.from(selectedIds)),
+    onSuccess: (result) => {
+      invalidateAfterTxMutation()
+      setSelectedIds(new Set())
+      setBulkDeleteConfirmOpen(false)
+      toast.success(t('transactions.bulkDeleteSuccess', { count: result.deleted }))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
   const createCounterpartMutation = useMutation({
     mutationFn: ({ anchorId, toAccountId }: { anchorId: string; toAccountId: string }) =>
       transactions.createTransferCounterpart(anchorId, toAccountId),
@@ -634,7 +720,7 @@ export default function TransactionsPage() {
       date: string
       description: string
       notes?: string
-      fx_rate?: number
+      destination_amount?: number
     }) => transactions.createTransfer(data),
     onSuccess: () => {
       invalidateAfterTxMutation()
@@ -698,8 +784,38 @@ export default function TransactionsPage() {
 
   // Tag filtering is now applied server-side, so the visible list and the
   // page count both reflect the same filtered total — issue #88.
-  const filteredItems = data?.items ?? []
+  const filteredItems = useMemo(() => data?.items ?? [], [data?.items])
   const selectableItems = filteredItems.filter(tx => !tx.is_shared)
+
+  // Group transactions by date for the mobile card view
+  const groupedByDate = useMemo(() => {
+    const groups: { date: string; label: string; items: Transaction[] }[] = []
+    let current: { date: string; label: string; items: Transaction[] } | null = null
+    for (const tx of filteredItems) {
+      if (!current || current.date !== tx.date) {
+        current = {
+          date: tx.date,
+          label: new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale, {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          }),
+          items: [],
+        }
+        groups.push(current)
+      }
+      current.items.push(tx)
+    }
+    return groups
+  }, [filteredItems, dateLocale])
+
+  // Pre-resolve accounts into a Map for O(1) lookup in the mobile card view
+  const accountById = useMemo(() => {
+    const map = new Map<string, typeof accountsList extends (infer T)[] | undefined ? T : never>()
+    for (const a of accountsList ?? []) map.set(a.id, a)
+    return map
+  }, [accountsList])
 
   const toggleSelectAll = () => {
     if (!selectableItems.length) return
@@ -761,6 +877,16 @@ export default function TransactionsPage() {
 
   const totalPages = data ? Math.ceil(data.total / limit) : 0
 
+  const handleFocusTagInput = () => {
+    setIsBulkBarPulsing(true)
+    setTimeout(() => {
+      bulkTagInputRef.current?.focus()
+    }, 50)
+    setTimeout(() => {
+      setIsBulkBarPulsing(false)
+    }, 800)
+  }
+
   const isTransferCategoryPromptOpen = !!pendingTransferCategoryUpdate
 
   const submitPendingTransferCategoryUpdate = (applyToTransferPair: boolean) => {
@@ -775,13 +901,14 @@ export default function TransactionsPage() {
   }
 
   const handleTransactionSave = (
-    data: Partial<Transaction>,
+    data: TransactionSavePayload,
     recurringData?: { frequency: string; end_date?: string },
+    installmentData?: InstallmentSeriesInput,
     pendingFiles?: File[],
     action?: SaveAction,
   ) => {
     if (!editingTx) {
-      createMutation.mutate({ tx: data, recurringData, pendingFiles, action })
+      createTransaction(data, recurringData, installmentData, pendingFiles, action)
       return
     }
 
@@ -798,13 +925,19 @@ export default function TransactionsPage() {
     updateMutation.mutate({ id: editingTx.id, ...data })
   }
 
+  const submitPendingSeriesDelete = (scope: TransactionApplyScope) => {
+    if (!pendingSeriesDeleteId) return
+    deleteMutation.mutate({ id: pendingSeriesDeleteId, applyTo: scope })
+    setPendingSeriesDeleteId(null)
+  }
+
   // Open the Add Transaction dialog seeded from an existing row's
   // fields (issue #158). Identity-bearing fields (id, transfer_pair,
   // installment series, splits) are dropped so the dialog treats the
   // result as a brand-new transaction; the user can tweak the date or
   // any other field before saving.
   const handleDuplicateTransaction = (tx: Transaction) => {
-    const draft: Partial<Transaction> = {
+    const draft: TransactionEditPayload = {
       description: tx.description,
       amount: tx.amount,
       currency: tx.currency,
@@ -818,8 +951,7 @@ export default function TransactionsPage() {
       notes: tx.notes,
     }
     setEditingTx(null)
-    setDuplicateDraft(draft)
-    setFormResetKey(k => k + 1)
+    resetForm(draft)
     setDialogOpen(true)
   }
 
@@ -831,6 +963,16 @@ export default function TransactionsPage() {
       setDialogOpen(true)
     } catch {
       toast.error(t('common.error'))
+    }
+  }
+
+  const handleHideIgnoredChange = (next: boolean) => {
+    setHideIgnored(next)
+    setPage(1)
+    try {
+      localStorage.setItem(HIDE_IGNORED_STORAGE_KEY, String(next))
+    } catch {
+      // Private mode or a full quota: the filter still applies for this visit.
     }
   }
 
@@ -847,11 +989,13 @@ export default function TransactionsPage() {
           category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
           payee_id: filterPayee || undefined,
           type: filterType || undefined,
+          status: filterStatus || undefined,
           uncategorized: filterUncategorized ? true : undefined,
           from: filterFrom || undefined,
           to: filterTo || undefined,
           q: searchQuery || undefined,
           tags: tagFilters.length > 0 ? tagFilters : undefined,
+          exclude_ignored: hideIgnored ? true : undefined,
         })
       }
       toast.success(t('transactions.exportSuccess'))
@@ -970,55 +1114,134 @@ export default function TransactionsPage() {
     const showInlineTags = !grid.isVisible('tags')
     const noteText = tx.notes ? stripHashtags(tx.notes) : ''
     const noteTags = tx.notes ? parseHashtags(tx.notes) : []
+    // A long group or author name truncates inside its badge, so the label
+    // doubles as its own tooltip and stays readable on hover.
+    const groupBadgeLabel = tx.group_id
+      ? tx.is_shared && tx.parent_owner_name
+        ? t('splitGroups.sharedRowBadgeAuthor', {
+            author: tx.parent_owner_name,
+            group: groupNameById.get(tx.group_id) ?? '',
+          })
+        : t('splitGroups.ownerRowBadge', {
+            group: groupNameById.get(tx.group_id) ?? '',
+          })
+      : ''
     return (
       <div className="flex items-center gap-2 md:gap-3">
         <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size="lg" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-foreground truncate">{tx.description}</p>
+          {/* The column has a fixed width, so a row carrying several badges
+              (transfer with its counterpart account, report exclusion, an
+              installment counter) runs past the cell and paints over the
+              Category column next to it (issue #1306). Wrapping keeps every
+              badge inside the cell: they move to a second line instead of
+              escaping, and the description keeps its own width rather than
+              being squeezed to nothing. The overflow guard is the backstop:
+              the column can be dragged down to 41px, narrower than a single
+              badge, and there the badges clip at the cell edge instead. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 overflow-hidden">
+            <p className="max-w-full text-sm font-semibold text-foreground truncate">{tx.description}</p>
             {tx.group_id && (
               <span
-                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full"
+                className="inline-flex max-w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full"
                 title={t('splitGroups.sharedRowTooltip')}
               >
-                {tx.is_shared && tx.parent_owner_name
-                  ? t('splitGroups.sharedRowBadgeAuthor', {
-                      author: tx.parent_owner_name,
-                      group: groupNameById.get(tx.group_id) ?? '',
-                    })
-                  : t('splitGroups.ownerRowBadge', {
-                      group: groupNameById.get(tx.group_id) ?? '',
-                    })}
+                <span className="truncate" title={groupBadgeLabel}>{groupBadgeLabel}</span>
               </span>
             )}
-            {!!tx.transfer_pair_id && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
-                <ArrowLeftRight className="h-3 w-3" />
-                {t('transactions.transfer')}
-                <span title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+            {/* The invoice this settles. Same badge shape as the split
+                and transfer markers beside it, and absent entirely in a
+                workspace without the invoicing module — the server does
+                not send the field there. */}
+            {/* One badge per invoice this row settles: a payout net of
+                fees settles several, and showing only the last one read
+                as if the others had never been paid. */}
+            {/* A question waiting on this row. The confirmed link above
+                is green and settled; this is amber and open, because it
+                is not a fact yet. It lived only in a tab on the rules
+                page, which meant you found out a question existed by
+                going somewhere you had no reason to go. */}
+            {suggestionsByTransaction.get(tx.id) && (
+              <Link
+                to="/rules?tab=queue"
+                onClick={(e) => e.stopPropagation()}
+                title={t('transactions.suggestionBadgeTooltip')}
+                className="inline-flex max-w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900 px-1.5 py-0.5 rounded-full hover:bg-amber-100 dark:hover:bg-amber-950/70 transition-colors"
+              >
+                <HelpCircle className="h-3 w-3 shrink-0" />
+                <span className="truncate">{t('transactions.suggestionBadge')}</span>
+              </Link>
+            )}
+            {(tx.invoice_links ?? []).map((link) => (
+              <Link
+                key={link.invoice_id}
+                to={`/invoices/${link.invoice_id}`}
+                onClick={(e) => e.stopPropagation()}
+                title={t('transactions.invoiceBadgeTooltip')}
+                className="inline-flex max-w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900 px-1.5 py-0.5 rounded-full hover:bg-emerald-100 dark:hover:bg-emerald-950/70 transition-colors"
+              >
+                <Receipt className="h-3 w-3 shrink-0" />
+                <span className="truncate">
+                  {link.external_number
+                    ? t('transactions.invoiceBadge', { number: link.external_number })
+                    : link.number != null
+                      ? t('transactions.invoiceBadge', { number: link.number })
+                      : t('transactions.invoiceBadgeNoNumber')}
+                </span>
+              </Link>
+            ))}
+            {/* The label and the two icons keep their size, so that a
+                narrow column shortens the counterpart account name and
+                not the word that says what the badge is. Past the point
+                where even that no longer fits, the badge clips at the
+                cell edge rather than carrying on into the next column. */}
+            {isTransferTransaction(tx) && (
+              <span className="inline-flex max-w-full items-center gap-1 overflow-hidden text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
+                <ArrowLeftRight className="h-3 w-3 shrink-0" />
+                <span className="shrink-0">{t('transactions.transfer')}</span>
+                {tx.transfer_counterpart && (
+                  <Link
+                    to={`/accounts/${tx.transfer_counterpart.account_id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    title={tx.transfer_counterpart.account_name}
+                    className="normal-case tracking-normal font-medium max-w-[180px] truncate hover:underline"
+                  >
+                    {tx.transfer_counterpart.account_name}
+                  </Link>
+                )}
+                <span className="shrink-0" title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
               </span>
             )}
-            {tx.is_ignored && 
+            {tx.is_ignored &&
               (
-              <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
-                <EyeClosed className="h-3 w-3" />
-                {t('transactions.ignored')}
-                <span title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+              <span className="inline-flex max-w-full items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                <EyeClosed className="h-3 w-3 shrink-0" />
+                <span className="truncate">{t('transactions.ignored')}</span>
+                <span className="shrink-0" title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
               </span>
                             )
             }
-            {(tx.recurring_transaction_id != null ||
-              recurringList?.some(r => r.description === tx.description && r.type === tx.type)) && (
+            {/* Distinct from Ignored on purpose: this row still moves the
+                balance, so its amount keeps its colour and sign and only
+                the badge marks it. Ignored greys the amount out instead. */}
+            {tx.exclude_from_pnl && !tx.is_ignored && (
+              <span className="inline-flex max-w-full items-center gap-1 text-xs text-slate-600 font-normal bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 dark:text-slate-300 dark:bg-slate-500/15 dark:border-slate-500/30">
+                <ChartNoAxesColumn className="h-3 w-3 shrink-0" />
+                <span className="truncate">{t('transactions.excludedFromReports')}</span>
+                <span className="shrink-0" title={t('transactions.excludeFromReportsHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+              </span>
+            )}
+            {tx.recurring_transaction_id != null && (
               <span
-                className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full"
-                title={tx.recurring_transaction_id != null ? t('transactions.recurringLinkedTooltip') : undefined}
+                className="inline-flex max-w-full items-center text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full"
+                title={t('transactions.recurringLinkedTooltip')}
               >
-                {t('transactions.recurringBadge')}
+                <span className="truncate">{t('transactions.recurringBadge')}</span>
               </span>
             )}
             {tx.installment_number != null && tx.total_installments != null && (
               <span
-                className="inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full"
+                className="inline-flex shrink-0 items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full"
                 title={tx.installment_total_amount != null
                   ? t('transactions.installmentTooltip', { count: tx.total_installments, total: tx.installment_total_amount })
                   : undefined}
@@ -1026,6 +1249,21 @@ export default function TransactionsPage() {
                 {tx.installment_number}/{tx.total_installments}
               </span>
             )}
+            {shouldShowPendingBadge(tx) && (
+              <span
+                title={t('transactions.pending')}
+                className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+              >
+                <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+              </span>
+            )}
+            <PostTodayButton
+              id={tx.id}
+              status={tx.status}
+              source={tx.source}
+              canWrite={canWrite}
+              onPostToday={(id) => postTodayMutation.mutate(id)}
+            />
             {(tx.attachment_count ?? 0) > 0 && (
               <Paperclip size={12} className="text-muted-foreground shrink-0" />
             )}
@@ -1036,7 +1274,7 @@ export default function TransactionsPage() {
           {(showInlineNotes || showInlineTags) && tx.notes && (
             <div className="mt-1 space-y-0.5">
               {showInlineNotes && noteText && (
-                <p className="text-xs text-muted-foreground italic leading-snug">{noteText}</p>
+                <p className="text-xs text-muted-foreground italic leading-snug truncate">{noteText}</p>
               )}
               {showInlineTags && noteTags.length > 0 && (
                 <div className="flex flex-wrap gap-1">
@@ -1200,31 +1438,15 @@ export default function TransactionsPage() {
               prevLabel: t('transactions.monthPrevious'),
               nextLabel: t('transactions.monthNext'),
             }}
-            viewToggle={
-              <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
-                <Button
-                  variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-8 gap-1.5 px-2.5"
-                  onClick={() => setViewMode('list')}
-                >
-                  <List size={14} />
-                  {t('transactions.listView')}
-                </Button>
-                <Button
-                  variant={viewMode === 'calendar' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-8 gap-1.5 px-2.5"
-                  onClick={() => {
-                    if (filterAccountIds.length > 1) setFilterAccountIds([])
-                    setViewMode('calendar')
-                  }}
-                >
-                  <CalendarDays size={14} />
-                  {t('transactions.calendarView')}
-                </Button>
-              </div>
-            }
+            view={{
+              value: viewMode,
+              onChange: (value) => {
+                if (value === 'calendar' && filterAccountIds.length > 1) setFilterAccountIds([])
+                setViewMode(value)
+              },
+              listLabel: t('transactions.listView'),
+              calendarLabel: t('transactions.calendarView'),
+            }}
             columnPicker={viewMode === 'list' ? <TransactionsColumnPicker state={grid} /> : null}
             exportLabel={exportLabel}
             exporting={exporting}
@@ -1232,6 +1454,16 @@ export default function TransactionsPage() {
             onAdd={canWrite ? () => { setEditingTx(null); setDialogOpen(true) } : undefined}
             onDuplicate={duplicableTx ? () => handleDuplicateTransaction(duplicableTx) : undefined}
             onTransfer={canWrite ? () => setTransferDialogOpen(true) : undefined}
+            onRefresh={noAccounts ? undefined : () => {
+              void refreshTransactionsView({
+                viewMode,
+                refetchList: refetch,
+                refetchCalendar,
+                onError: (message) => toast.error(message),
+              })
+            }}
+            refreshing={viewMode === 'calendar' ? calendarFetching : isFetching}
+            testId="transactions-page-actions"
           />
         }
       />
@@ -1266,6 +1498,10 @@ export default function TransactionsPage() {
         onGroupIdChange={(v) => { setFilterGroupId(v); setPage(1) }}
         filterType={filterType}
         onTypeChange={(v) => { setFilterType(v); setPage(1) }}
+        filterStatus={filterStatus}
+        onStatusChange={(v) => { setFilterStatus(v); setPage(1) }}
+        hideIgnored={hideIgnored}
+        onHideIgnoredChange={handleHideIgnoredChange}
         filterFrom={filterFrom}
         filterTo={filterTo}
         onDateRangeChange={(from, to) => { setFilterFrom(from); setFilterTo(to); setPage(1) }}
@@ -1281,8 +1517,10 @@ export default function TransactionsPage() {
           setFilterPayee('')
           setFilterGroupId('')
           setFilterType('')
+          setFilterStatus('')
           setFilterMinAmount('')
           setFilterMaxAmount('')
+          handleHideIgnoredChange(false)
           setSearchInput('')
           setSearchQuery('')
           clearTagFilters()
@@ -1290,6 +1528,7 @@ export default function TransactionsPage() {
         }}
         accounts={accountsList ?? []}
         categories={categoriesList ?? []}
+        referenceCategories={allCategoriesList}
         categoryGroups={categoryGroupsList ?? []}
         payees={payeesList ?? []}
         groups={allGroups ?? []}
@@ -1301,7 +1540,7 @@ export default function TransactionsPage() {
             <button
               onClick={() => { setFilterGroupId(''); setPage(1) }}
               className="ml-0.5 text-primary/60 hover:text-primary"
-              aria-label="Clear group filter"
+              aria-label={t('transactions.clearGroupFilter')}
             >
               ×
             </button>
@@ -1344,10 +1583,12 @@ export default function TransactionsPage() {
           selectedDate={calendarSelectedDate}
           onSelectedDateChange={setCalendarSelectedDate}
           onOpenTransaction={handleOpenCalendarTransaction}
+          accounts={accountsList}
+          userCurrency={userCurrency}
         />
       )}
 
-      {/* Table */}
+      {/* Table / Mobile Cards */}
       {viewMode === 'list' && (
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden mb-4">
         {isLoading ? (
@@ -1356,7 +1597,50 @@ export default function TransactionsPage() {
               <Skeleton key={i} className="h-14 w-full" />
             ))}
           </div>
+        ) : isMobile ? (
+          /* ── Mobile card view: grouped by date ── */
+          <div>
+            {groupedByDate.map((group) => (
+              <div key={group.date}>
+                <div className="bg-muted/80 px-4 py-1.5 border-b border-border">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    {group.label}
+                  </span>
+                </div>
+                {group.items.map((tx) => (
+                  <MobileTransactionRow
+                    key={tx.id}
+                    tx={tx}
+                    account={tx.account_id ? accountById.get(tx.account_id) : undefined}
+                    groupName={tx.group_id ? groupNameById.get(tx.group_id) : undefined}
+                    selected={selectedIds.has(tx.id)}
+                    selectable={canWrite && !tx.is_shared}
+                    canWrite={canWrite}
+                    highlighted={tx.id === highlightId}
+                    highlightedRowRef={tx.id === highlightId ? highlightedRowRef : undefined}
+                    locale={locale}
+                    userCurrency={userCurrency}
+                    onSelect={toggleSelect}
+                    onClick={(t) => {
+                      if (t.is_shared) {
+                        if (t.group_id) navigate(`/groups/${t.group_id}`)
+                        return
+                      }
+                      setEditingTx(t)
+                      setDialogOpen(true)
+                    }}
+                  />
+                ))}
+              </div>
+            ))}
+            {filteredItems.length === 0 && (
+              <div className="text-center py-16 text-muted-foreground">
+                {t('transactions.noResults')}
+              </div>
+            )}
+          </div>
         ) : (
+          /* ── Desktop table view ── */
           <div className="overflow-x-auto">
           <Table style={{ tableLayout: 'fixed' }}>
             <TableHeader>
@@ -1377,42 +1661,119 @@ export default function TransactionsPage() {
             </TableHeader>
             <TableBody>
               {filteredItems.map((tx) => (
-                <TableRow
-                  key={tx.id}
-                  ref={tx.id === highlightId ? highlightedRowRef : undefined}
-                  className={`hover:bg-muted border-b border-border last:border-0 ${
-                    selectedIds.has(tx.id) ? 'bg-primary/5' : ''
-                  } ${tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer'}`}
-                  onClick={() => {
-                    if (tx.is_shared) {
-                      // Owned by another user — view in the group context instead.
-                      if (tx.group_id) navigate(`/groups/${tx.group_id}`)
-                      return
-                    }
-                    if (!canWrite) return
-                    setEditingTx(tx)
-                    setDialogOpen(true)
-                  }}
-                >
-                  <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0">
-                    {/* Bulk operations are scoped to user.id so they
-                        silently skip shared rows — hide the checkbox
-                        on those to avoid the dead-end UX. */}
-                    {canWrite && !tx.is_shared && (
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(tx.id)}
-                        onChange={() => {}}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleSelect(tx.id, e.shiftKey)
-                        }}
-                        className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
-                      />
-                    )}
-                  </TableCell>
-                  {grid.visibleColumns.map(col => renderBodyCell(col, tx))}
-                </TableRow>
+                <ContextMenu key={`${tx.id}:${menuEpoch}`}>
+                  <ContextMenuTrigger asChild disabled={!canWrite || tx.is_shared}>
+                    <TableRow
+                      ref={tx.id === highlightId ? highlightedRowRef : undefined}
+                      onContextMenu={() => {
+                        if (canWrite && !tx.is_shared && !selectedIds.has(tx.id)) {
+                          setSelectedIds(new Set([tx.id]))
+                          setLastSelectedId(tx.id)
+                        }
+                      }}
+                      className={`hover:bg-muted border-b border-border last:border-0 ${
+                        selectedIds.has(tx.id) ? 'bg-primary/5' : ''
+                      } ${tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer'}`}
+                      onClick={() => {
+                        if (tx.is_shared) {
+                          // Owned by another user — view in the group context instead.
+                          if (tx.group_id) navigate(`/groups/${tx.group_id}`)
+                          return
+                        }
+                        if (!canWrite) return
+                        setEditingTx(tx)
+                        setDialogOpen(true)
+                      }}
+                    >
+                      <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0">
+                        {/* Bulk operations are scoped to user.id so they
+                            silently skip shared rows — hide the checkbox
+                            on those to avoid the dead-end UX. */}
+                        {canWrite && !tx.is_shared && (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(tx.id)}
+                            onChange={() => {}}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleSelect(tx.id, e.shiftKey)
+                            }}
+                            className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                          />
+                        )}
+                      </TableCell>
+                      {grid.visibleColumns.map(col => renderBodyCell(col, tx))}
+                    </TableRow>
+                  </ContextMenuTrigger>
+                  <ContextMenuPortal>
+                    <ContextMenuContent className="w-64">
+                      <ContextMenuItem
+                        disabled={!canOpenLinkDialog}
+                        onSelect={() => setLinkTransferDialogOpen(true)}
+                      >
+                        <ArrowLeftRight className="mr-2 h-4 w-4" />
+                        {t('transactions.linkAsTransfer')}
+                      </ContextMenuItem>
+
+                      <ContextMenuSub>
+                        <ContextMenuSubTrigger>
+                          <TagIcon className="mr-2 h-4 w-4" />
+                          {t('transactions.selectCategory')}
+                        </ContextMenuSubTrigger>
+                        <ContextMenuPortal>
+                          <ContextMenuSubContent className="w-64 p-0">
+                            {/* A text field inside a Radix menu would have its arrow keys
+                                and typing (typeahead) handled as menu navigation, so keep
+                                the key events inside the picker. Escape still closes the
+                                menu, as it is handled on the document. */}
+                            <div onKeyDown={(e) => e.stopPropagation()}>
+                              <CategoryPicker
+                                value={null}
+                                onChange={(categoryId) => {
+                                  bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: categoryId || null })
+                                  // Radix's context menu can't be closed from outside and
+                                  // picker rows are not menu items, so remount it to dismiss.
+                                  setMenuEpoch((n) => n + 1)
+                                }}
+                                categories={categoriesList ?? []}
+                                groups={categoryGroupsList ?? []}
+                                allowNone
+                                autoFocus
+                              />
+                            </div>
+                          </ContextMenuSubContent>
+                        </ContextMenuPortal>
+                      </ContextMenuSub>
+
+                      <ContextMenuItem onSelect={() => setBulkAddToGroupOpen(true)}>
+                        <Users className="mr-2 h-4 w-4" />
+                        {t('transactions.addToGroup')}
+                      </ContextMenuItem>
+
+                      <ContextMenuItem onSelect={handleFocusTagInput}>
+                        <TagIcon className="mr-2 h-4 w-4" />
+                        {t('transactions.bulkAddTags')}
+                      </ContextMenuItem>
+
+                      {selectedSingleTx && (
+                        <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
+                          <SlidersHorizontal className="mr-2 h-4 w-4" />
+                          {t('transactions.createRule')}
+                        </ContextMenuItem>
+                      )}
+
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        variant="destructive"
+                        disabled={bulkDeleteMutation.isPending}
+                        onSelect={() => setBulkDeleteConfirmOpen(true)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {t('common.delete')}
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenuPortal>
+                </ContextMenu>
               ))}
               {filteredItems.length === 0 && (
                 <TableRow>
@@ -1428,33 +1789,72 @@ export default function TransactionsPage() {
         {/* Filtered summary (issue #185): income / expenses / net across
             ALL rows matching the active filters — not just this page. */}
         {!isLoading && data?.summary && filteredItems.length > 0 && (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-border bg-muted/30 px-4 py-2.5">
-            <span className="mr-auto text-xs text-muted-foreground">
-              {t('transactions.summaryCount', { count: data.total })}
-            </span>
-            {/* Excluded (#242): transfers / investments / ignored, kept out of
-                income/expense. Hidden when nothing was excluded in range. */}
-            {data.summary.excluded > 0 && (
+          <div className="flex flex-col sm:flex-row flex-wrap sm:items-center gap-x-5 gap-y-1 border-t border-border bg-muted/30 px-4 py-2.5">
+            {/* Mobile: count + saldo on first line */}
+            <div className="flex items-center justify-between sm:hidden">
+              <span className="text-xs text-muted-foreground">
+                {t('transactions.summaryCount', { count: data.total })}
+              </span>
               <span className="flex items-baseline gap-1.5 text-xs">
+                <span className="text-muted-foreground">{t('transactions.summaryNet')}</span>
+                <span
+                  className={`text-sm font-bold tabular-nums ${
+                    data.summary.net >= 0 ? 'text-emerald-600' : 'text-rose-500'
+                  }`}
+                >
+                  {mask(formatCurrency(data.summary.net, data.summary.currency, locale))}
+                </span>
+              </span>
+            </div>
+            {/* Mobile: receitas + despesas on second line */}
+            <div className="flex items-center justify-between sm:hidden">
+              <span className="flex items-baseline gap-1.5 text-xs">
+                <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
+                <span className="text-sm font-semibold tabular-nums text-emerald-600">
+                  {mask(formatCurrency(data.summary.income, data.summary.currency, locale))}
+                </span>
+              </span>
+              <span className="flex items-baseline gap-1.5 text-xs">
+                <span className="text-muted-foreground">{t('transactions.summaryExpenses')}</span>
+                <span className="text-sm font-semibold tabular-nums text-rose-500">
+                  {mask(formatCurrency(data.summary.expense, data.summary.currency, locale))}
+                </span>
+              </span>
+            </div>
+            {/* Mobile: excluido on third line */}
+            {data.summary.excluded > 0 && (
+              <span className="flex items-baseline gap-1.5 text-xs sm:hidden">
                 <span className="text-muted-foreground">{t('transactions.summaryExcluded')}</span>
                 <span className="text-sm font-semibold tabular-nums text-muted-foreground">
                   {mask(formatCurrency(data.summary.excluded, data.summary.currency, locale))}
                 </span>
               </span>
             )}
-            <span className="flex items-baseline gap-1.5 text-xs">
+            {/* Desktop: original horizontal layout */}
+            <span className="mr-auto text-xs text-muted-foreground hidden sm:inline">
+              {t('transactions.summaryCount', { count: data.total })}
+            </span>
+            {data.summary.excluded > 0 && (
+              <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
+                <span className="text-muted-foreground">{t('transactions.summaryExcluded')}</span>
+                <span className="text-sm font-semibold tabular-nums text-muted-foreground">
+                  {mask(formatCurrency(data.summary.excluded, data.summary.currency, locale))}
+                </span>
+              </span>
+            )}
+            <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
               <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
               <span className="text-sm font-semibold tabular-nums text-emerald-600">
                 {mask(formatCurrency(data.summary.income, data.summary.currency, locale))}
               </span>
             </span>
-            <span className="flex items-baseline gap-1.5 text-xs">
+            <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
               <span className="text-muted-foreground">{t('transactions.summaryExpenses')}</span>
               <span className="text-sm font-semibold tabular-nums text-rose-500">
                 {mask(formatCurrency(data.summary.expense, data.summary.currency, locale))}
               </span>
             </span>
-            <span className="flex items-baseline gap-1.5 text-xs">
+            <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
               <span className="text-muted-foreground">{t('transactions.summaryNet')}</span>
               <span
                 className={`text-sm font-bold tabular-nums ${
@@ -1530,11 +1930,17 @@ export default function TransactionsPage() {
       {/* Bulk Action Bar — aligned with the main content area: clears the
           fixed sidebar on lg+ and matches the page's max-w-7xl + p-6 wrapper
           so the bar visually sits over the transactions list, not the
-          full viewport. */}
+          full viewport. The left offset follows the sidebar's real
+          collapsed state (240px expanded / 64px collapsed) so it stays
+          centered when the nav is collapsed (issue #1027). */}
       {viewMode === 'list' && selectedIds.size > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 lg:left-60 z-50">
+        <div className={cn(
+          "fixed bottom-0 left-0 right-0 z-50",
+          "transition-[left] duration-300 ease-in-out motion-reduce:transition-none",
+          sidebarCollapsed ? 'lg:left-16' : 'lg:left-60',
+        )}>
         <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
-          <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2">
+          <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2 transition-all duration-500">
             <MobileBulkSelectionActions
               selectedCount={selectedIds.size}
               categoryValue={bulkCategory}
@@ -1559,10 +1965,11 @@ export default function TransactionsPage() {
               onTagInputChange={setBulkTagInput}
               onAddTags={(tags) => bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
               onRemoveTags={(tags) => bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
+              onBulkDelete={() => setBulkDeleteConfirmOpen(true)}
               onClear={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
             />
 
-            <div className="hidden w-full items-stretch gap-1.5 sm:flex">
+            <div className="hidden w-full items-center gap-1.5 sm:flex">
             {/* Selection count + net total — stacked vertically so the
                 sum (issue #185) adds no horizontal width to an already
                 crowded bar. The sum is hidden below sm where only the
@@ -1630,12 +2037,16 @@ export default function TransactionsPage() {
             <div className="w-px bg-border/60 self-stretch" />
 
             {/* Add tags inline */}
-            <div className="flex items-center gap-1 px-1">
+            <div
+              className={`flex items-center gap-1 px-1 rounded-xl transition-all duration-300 ${
+                isBulkBarPulsing ? 'ring-2 ring-primary ring-offset-2 scale-[1.05] bg-primary/5' : ''
+              }`}>
               <input
+                ref={bulkTagInputRef}
                 type="text"
                 value={bulkTagInput}
                 onChange={(e) => setBulkTagInput(e.target.value)}
-                placeholder={t('transactions.addTagsPlaceholder', '#tag…')}
+                placeholder={t('transactions.addTagsPlaceholder')}
                 className="rounded-lg px-2.5 py-2 text-sm bg-transparent text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:bg-muted/60 w-28 md:w-40"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && bulkTagInput.trim()) {
@@ -1655,7 +2066,7 @@ export default function TransactionsPage() {
                   bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
                 }}
                 className="h-8 w-8 px-0 shrink-0"
-                title={t('transactions.bulkAddTags', 'Add tags')}
+                title={t('transactions.bulkAddTags')}
               >
                 <Check size={15} />
               </Button>
@@ -1709,6 +2120,18 @@ export default function TransactionsPage() {
                 </Button>
               )
             })()}
+
+            {/* Bulk Delete */}
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setBulkDeleteConfirmOpen(true)}
+              disabled={bulkDeleteMutation.isPending}
+              className="h-8 px-3 shrink-0 text-sm"
+            >
+              <Trash2 size={15} className="lg:mr-1.5" />
+              <span className="hidden lg:inline">{t('common.delete')}</span>
+            </Button>
 
             <div className="ml-auto" />
 
@@ -1782,9 +2205,21 @@ export default function TransactionsPage() {
         categories={categoriesList ?? []}
         categoryGroups={categoryGroupsList ?? []}
         accounts={accountsList ?? []}
-        recurringMatch={editingTx ? recurringList?.find(r => r.description === editingTx.description && r.type === editingTx.type) : undefined}
+        recurringMatch={
+          editingTx?.recurring_transaction_id
+            ? recurringById.get(editingTx.recurring_transaction_id)
+            : undefined
+        }
         onSave={handleTransactionSave}
-        onDelete={editingTx ? () => deleteMutation.mutate(editingTx.id) : undefined}
+        onDelete={editingTx ? () => {
+          if (isManualInstallmentSeriesRow(editingTx)) {
+            // Deleting one row of a manual series — ask the user
+            // whether to drop this, this+future, or all installments.
+            setPendingSeriesDeleteId(editingTx.id)
+          } else {
+            deleteMutation.mutate({ id: editingTx.id })
+          }
+        } : undefined}
         onUnlinkTransfer={(pairId) => unlinkTransferMutation.mutate(pairId)}
         onIgnoreChanged={invalidateAfterTxMutation}
         onCreateRule={(tx) => {
@@ -1810,16 +2245,16 @@ export default function TransactionsPage() {
           <p className="text-sm text-muted-foreground">
             {t('transactions.confirmTransferCategoryDesc')}
           </p>
-          <DialogFooter className="flex-row flex-nowrap items-center justify-end gap-2 sm:space-x-0">
+          <DialogFooter className="flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-2">
             <Button
-              className="shrink-0"
+              className="w-full sm:w-auto"
               variant="outline"
               onClick={() => setPendingTransferCategoryUpdate(null)}
             >
               {t('common.cancel')}
             </Button>
             <Button
-              className="min-w-0 flex-1 truncate"
+              className="w-full sm:w-auto"
               variant="outline"
               onClick={() => submitPendingTransferCategoryUpdate(false)}
               disabled={updateMutation.isPending}
@@ -1827,13 +2262,83 @@ export default function TransactionsPage() {
               {t('transactions.confirmTransferCategorySingle')}
             </Button>
             <Button
-              className="min-w-0 flex-1 truncate"
+              className="w-full sm:w-auto"
               onClick={() => submitPendingTransferCategoryUpdate(true)}
               disabled={updateMutation.isPending}
             >
               {updateMutation.isPending
                 ? t('common.loading')
                 : t('transactions.confirmTransferCategoryBoth')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Installment-series delete scope. Edit scope is handled by the shared
+          TransactionDialog so every edit surface behaves consistently. */}
+      <Dialog
+        open={!!pendingSeriesDeleteId}
+        onOpenChange={(open) => {
+          if (!open) setPendingSeriesDeleteId(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('transactions.installmentScopeTitle')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t('transactions.installmentScopeDeleteDesc')}
+          </p>
+          <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2">
+            <Button
+              autoFocus
+              onClick={() => submitPendingSeriesDelete('this')}
+              disabled={updateMutation.isPending || deleteMutation.isPending}
+              className="justify-center"
+            >
+              {updateMutation.isPending || deleteMutation.isPending
+                ? t('common.loading')
+                : t('transactions.installmentScopeThis')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => submitPendingSeriesDelete('future')}
+              disabled={updateMutation.isPending || deleteMutation.isPending}
+              className="justify-center"
+            >
+              {t('transactions.installmentScopeFuture')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => submitPendingSeriesDelete('all')}
+              disabled={updateMutation.isPending || deleteMutation.isPending}
+              className="justify-center"
+            >
+              {t('transactions.installmentScopeAll')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete confirmation */}
+      <Dialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('transactions.bulkDeleteTitle', { count: selectedIds.size })}</DialogTitle>
+            <DialogDescription>
+              {t('transactions.bulkDeleteDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBulkDeleteConfirmOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => bulkDeleteMutation.mutate()}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              {bulkDeleteMutation.isPending ? t('common.loading') : t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>

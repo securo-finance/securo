@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
@@ -10,6 +10,9 @@ from sqlalchemy.sql import func
 
 from app.agents.config import get_agent_settings
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.agents.models.agent import Agent
 
 _EMBED_DIM = get_agent_settings().embedding_dim
 
@@ -37,7 +40,7 @@ class KnowledgeDoc(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    agent: Mapped["Agent"] = relationship(back_populates="knowledge_docs")  # noqa: F821
+    agent: Mapped["Agent"] = relationship(back_populates="knowledge_docs")
     chunks: Mapped[list["KnowledgeChunk"]] = relationship(back_populates="doc", cascade="all, delete-orphan")
 
 

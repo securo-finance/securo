@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { connections } from '@/lib/api'
@@ -38,14 +38,16 @@ export function ConnectionSettingsDialog({
   const [importPending, setImportPending] = useState(true)
   const [syncAssets, setSyncAssets] = useState(true)
 
-  useEffect(() => {
+  const [formSource, setFormSource] = useState<{ connection: typeof connection } | null>(null)
+  if (!formSource || formSource.connection !== connection) {
+    setFormSource({ connection })
     if (connection) {
       setDisplayName(connection.display_name ?? '')
       setPayeeSource(connection.settings?.payee_source ?? 'auto')
       setImportPending(connection.settings?.import_pending ?? true)
       setSyncAssets(connection.settings?.sync_assets ?? true)
     }
-  }, [connection])
+  }
 
   const mutation = useMutation({
     mutationFn: () =>

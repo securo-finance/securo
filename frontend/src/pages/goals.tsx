@@ -1,5 +1,5 @@
 import { createElement, useState } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -32,10 +32,7 @@ import { PageHeader } from '@/components/page-header'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
-}
+import { formatCurrency } from '@/lib/format'
 
 function getGoalIcon(iconKey: string | null) {
   return (iconKey && ICON_MAP[iconKey]) || Target
@@ -543,7 +540,7 @@ export default function GoalsPage() {
                 label={t('goals.account')}
                 placeholder={t('goals.selectAccount')}
                 defaultValue={editing?.account_id}
-                items={accountsList}
+                items={sortAccountsByDisplayName(accountsList ?? [])}
                 renderOption={(acc) => `${getAccountName(acc)} (${acc.currency})`}
               />
             )}

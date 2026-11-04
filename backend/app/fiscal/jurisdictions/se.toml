@@ -1,0 +1,4 @@
+# Sweden. The organisationsnummer identifies the company; VAT adds the SE
+# prefix and a 01 suffix.
+code = "SE"
+kinds = ["se_orgnr", "vat"]

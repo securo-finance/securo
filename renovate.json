@@ -1,0 +1,56 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Europe/Paris",
+  "schedule": ["before 8am on monday"],
+  "prConcurrentLimit": 5,
+  "labels": ["dependencies"],
+  "rangeStrategy": "update-lockfile",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 8am on the first day of the month"]
+  },
+  "packageRules": [
+    {
+      "description": "Cooldown before we pick up a new release, so a compromised publish has time to be caught and unpublished. Mirrors `min-release-age` in frontend/.npmrc, which only covers a dependency added by hand.",
+      "matchManagers": ["npm"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "GitHub Actions (non-major)"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "frontend (non-major)"
+    },
+    {
+      "matchManagers": ["pep621"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "backend (non-major)"
+    },
+    {
+      "description": "Postgres majors need a deliberate data migration for self-hosters — never auto-PR them",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["pgvector/pgvector"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "uv pinned in the Dockerfile, CI and scripts/lock.sh (marked with a `# renovate:` comment)",
+      "fileMatch": [
+        "^backend/Dockerfile$",
+        "^backend/scripts/lock\\.sh$",
+        "^\\.github/workflows/ci\\.yml$"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[^\\n]*?(?:==|@)(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ]
+    }
+  ]
+}

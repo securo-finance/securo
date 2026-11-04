@@ -10,6 +10,7 @@ from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.services.import_service import (
+    _preprocess_ofx,
     detect_csv_columns,
     parse_csv,
     parse_ofx,
@@ -30,7 +31,7 @@ class TestParseCsv:
             "12/02/2026,IFOOD RESTAURANTE,-45.00\n"
             "05/02/2026,SALARIO FEV,8000.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 3
 
@@ -59,7 +60,7 @@ class TestParseCsv:
             "2026-02-10,GROCERY STORE,-120.50\n"
             "2026-02-15,SALARY PAYMENT,5000.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
 
@@ -96,7 +97,7 @@ class TestParseCsv:
             '10/02/2026,MERCADO LIVRE,"R$ -150,99"\n'
             '11/02/2026,PIX RECEBIDO,"R$ 200,00"\n'
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
 
@@ -114,7 +115,7 @@ class TestParseCsv:
         """CSV encoded with UTF-8 BOM should be parsed correctly."""
         # Encode with utf-8-sig which prepends BOM bytes; parse_csv decodes with utf-8-sig
         csv_content = "date,description,amount\n2026-01-15,TEST TRANSACTION,-50.00\n"
-        transactions = parse_csv(csv_content.encode("utf-8-sig"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8-sig"))
 
         assert len(transactions) == 1
         assert transactions[0].description == "TEST TRANSACTION"
@@ -127,7 +128,7 @@ class TestParseCsv:
             "not-a-date,BAD ROW,-10.00\n"
             "2026-02-20,GOOD ROW,-30.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].description == "GOOD ROW"
@@ -139,7 +140,7 @@ class TestParseCsv:
             "2026-02-20,BAD AMOUNT,abc\n"
             "2026-02-21,GOOD AMOUNT,-75.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].description == "GOOD AMOUNT"
@@ -147,7 +148,7 @@ class TestParseCsv:
     def test_parse_csv_dd_mm_yyyy_format(self):
         """DD/MM/YYYY date format should be correctly parsed."""
         csv_content = "data,descricao,valor\n25/12/2025,NATAL,-500.00\n"
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].date == date(2025, 12, 25)
@@ -159,7 +160,7 @@ class TestParseCsv:
             "15/01/2026;Grocery Store;-120.50\n"
             "20/01/2026;Salary Payment;5000.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].description == "Grocery Store"
@@ -176,7 +177,7 @@ class TestParseCsv:
             "2026-01-15\tGrocery Store\t-120.50\n"
             "2026-01-20\tSalary Payment\t5000.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].description == "Grocery Store"
@@ -189,7 +190,7 @@ class TestParseCsv:
     def test_parse_csv_empty_file(self):
         """A CSV with only headers and no data rows should return empty list."""
         csv_content = "date,description,amount\n"
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
         assert len(transactions) == 0
 
     def test_parse_csv_explicit_date_format(self):
@@ -199,12 +200,12 @@ class TestParseCsv:
             "03/04/2026,PAYMENT,-100.00\n"
         )
         # With MM/DD/YYYY format, 03/04 = March 4
-        transactions = parse_csv(csv_content.encode("utf-8"), date_format="MM/DD/YYYY")
+        transactions, _ = parse_csv(csv_content.encode("utf-8"), date_format="MM/DD/YYYY")
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 3, 4)
 
         # With DD/MM/YYYY format, 03/04 = April 3
-        transactions = parse_csv(csv_content.encode("utf-8"), date_format="DD/MM/YYYY")
+        transactions, _ = parse_csv(csv_content.encode("utf-8"), date_format="DD/MM/YYYY")
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 4, 3)
 
@@ -215,7 +216,7 @@ class TestParseCsv:
             "2026-01-10,EXPENSE,100.00\n"
             "2026-01-11,INCOME,-500.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"), flip_amount=True)
+        transactions, _ = parse_csv(csv_content.encode("utf-8"), flip_amount=True)
         assert len(transactions) == 2
         # 100.00 flipped to -100.00 => debit
         assert transactions[0].type == "debit"
@@ -231,7 +232,7 @@ class TestParseCsv:
             "2026-01-10,SALARY,5000.00,\n"
             "2026-01-11,RENT,,1200.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             inflow_column="inflow",
             outflow_column="outflow",
@@ -250,11 +251,22 @@ class TestParseCsv:
             "2026-01-11,RENT,1200.00\n"
         )
 
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
         assert len(transactions) == 2
         assert transactions[0].amount == Decimal("5000.00")
         assert transactions[1].amount == Decimal("1200.00")
 
+    def test_parse_csv_autodetects_payee_and_notes(self):
+        """CSV with common headers for payee and notes should auto-detect them. external_id is strictly explicit."""
+        csv_content = (
+            "date,description,amount,merchant,transaction_id,notes\n"
+            "2026-05-01,AMAZON,-25.00,Amazon.com,txn_123,Gift for John\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+        assert len(transactions) == 1
+        assert transactions[0].payee_raw == "Amazon.com"
+        assert transactions[0].external_id is None
+        assert transactions[0].notes == "Gift for John"
 
 class TestParseCsvColumnMapping:
     """Tests for customizable CSV column mapping (issue #201)."""
@@ -266,7 +278,7 @@ class TestParseCsvColumnMapping:
             "2026-01-10,COFFEE SHOP,-12.50\n"
             "2026-01-11,PAYCHECK,3000.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={
                 "date": "Posted On",
@@ -294,7 +306,7 @@ class TestParseCsvColumnMapping:
             "date,description,details,amount\n"
             "2026-01-10,WRONG,RIGHT,-10.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={"description": "details"},
         )
@@ -307,7 +319,7 @@ class TestParseCsvColumnMapping:
             "txn_date,description,amount\n"
             "2026-01-10,GROCERIES,-55.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={"date": "txn_date"},
         )
@@ -328,7 +340,7 @@ class TestParseCsvColumnMapping:
     def test_column_mapping_case_insensitive(self):
         """Mapping values are matched case-insensitively against CSV headers."""
         csv_content = "Date,Description,Amount\n2026-01-10,X,-1.00\n"
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={"date": "DATE", "description": "Description", "amount": "amount"},
         )
@@ -342,7 +354,7 @@ class TestParseCsvColumnMapping:
             "2026-01-10,SALARY,5000.00,\n"
             "2026-01-11,RENT,,1200.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={
                 "date": "Posted On",
@@ -363,7 +375,7 @@ class TestParseCsvColumnMapping:
             "date,description,amount,ccy,exch\n"
             "2026-01-10,HOTEL,-100.00,EUR,1.08\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={"currency": "ccy", "fx_rate": "exch"},
         )
@@ -374,7 +386,7 @@ class TestParseCsvColumnMapping:
     def test_column_mapping_ignores_empty_values(self):
         """Empty mapping values are ignored and fall back to auto-detection."""
         csv_content = "date,description,amount\n2026-01-10,X,-1.00\n"
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={"date": "", "description": "  "},
         )
@@ -389,7 +401,7 @@ class TestParseCsvColumnMapping:
             "2026-04-01,Whole Foods,55.00,debit\n"
             "2026-04-02,Employer Inc,4200.00,credit\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={
                 "date": "Booking Date",
@@ -410,7 +422,7 @@ class TestParseCsvColumnMapping:
             "Posting Date,Details,Amount\n"
             "22/03/2026,Gym Membership,-60.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             date_format="DD/MM/YYYY",
             column_mapping={
@@ -430,7 +442,7 @@ class TestParseCsvColumnMapping:
             "2026-07-02;Nomina;3.500,00\n"
             "2026-07-03;Hotel;-200,00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={
                 "date": "Fecha",
@@ -443,6 +455,28 @@ class TestParseCsvColumnMapping:
         assert transactions[0].type == "credit"
         assert transactions[1].amount == Decimal("200.00")
         assert transactions[1].type == "debit"
+
+    def test_column_mapping_payee_external_id_notes(self):
+        """Explicitly mapping payee, external_id, and notes should extract them correctly."""
+        csv_content = (
+            "Txn Date,Memo,Value,Counterparty,ExtRef,Comment\n"
+            "2026-08-01,Purchase,-15.00,Target,ref999,Groceries\n"
+        )
+        transactions, _ = parse_csv(
+            csv_content.encode("utf-8"),
+            column_mapping={
+                "date": "Txn Date",
+                "description": "Memo",
+                "amount": "Value",
+                "payee": "Counterparty",
+                "external_id": "ExtRef",
+                "notes": "Comment",
+            },
+        )
+        assert len(transactions) == 1
+        assert transactions[0].payee_raw == "Target"
+        assert transactions[0].external_id == "ref999"
+        assert transactions[0].notes == "Groceries"
 
 
 class TestDetectCsvColumns:
@@ -482,7 +516,7 @@ class TestParseQif:
             "MSalary\n"
             "^\n"
         )
-        transactions = parse_qif(qif_content.encode("utf-8"))
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
 
         assert len(transactions) == 2
 
@@ -496,6 +530,61 @@ class TestParseQif:
         assert transactions[1].date == date(2026, 1, 20)
         assert transactions[1].type == "credit"
 
+    def test_parse_qif_explicit_day_first_format(self):
+        """An explicit DD/MM/YYYY choice must win over the US-first default."""
+        qif_content = (
+            "D07/03/2026\n"
+            "T-100.00\n"
+            "PLandlord\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"), date_format="DD/MM/YYYY")
+        assert len(transactions) == 1
+        assert transactions[0].date == date(2026, 3, 7)
+
+    def test_parse_qif_explicit_month_first_format(self):
+        qif_content = (
+            "D07/03/2026\n"
+            "T-100.00\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"), date_format="MM/DD/YYYY")
+        assert transactions[0].date == date(2026, 7, 3)
+
+    def test_parse_qif_infers_day_first_from_whole_file(self):
+        """One unambiguous date (day > 12) pins the whole file to DD/MM, so
+        ambiguous dates in the same file stop being parsed as MM/DD."""
+        qif_content = (
+            "D25/03/2026\n"
+            "T-10.00\n"
+            "^\n"
+            "D07/03/2026\n"
+            "T-20.00\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert transactions[0].date == date(2026, 3, 25)
+        assert transactions[1].date == date(2026, 3, 7)
+
+    def test_parse_qif_ambiguous_file_keeps_us_default(self):
+        """A fully ambiguous file keeps the historical MM/DD-first order."""
+        qif_content = (
+            "D07/03/2026\n"
+            "T-20.00\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert transactions[0].date == date(2026, 7, 3)
+
+    def test_parse_qif_explicit_format_two_digit_year(self):
+        qif_content = (
+            "D07/03/26\n"
+            "T-100.00\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"), date_format="DD/MM/YYYY")
+        assert transactions[0].date == date(2026, 3, 7)
+
     def test_parse_qif_memo_as_description(self):
         """When no payee, memo should be used as description."""
         qif_content = (
@@ -504,7 +593,7 @@ class TestParseQif:
             "MGrocery purchase\n"
             "^\n"
         )
-        transactions = parse_qif(qif_content.encode("utf-8"))
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
         assert len(transactions) == 1
         assert transactions[0].description == "Grocery purchase"
 
@@ -515,7 +604,7 @@ class TestParseQif:
             "T-10.00\n"
             "^\n"
         )
-        transactions = parse_qif(qif_content.encode("utf-8"))
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
         assert len(transactions) == 1
         assert transactions[0].description == "Unknown"
 
@@ -527,7 +616,7 @@ class TestParseQif:
             "PTest\n"
             "^\n"
         )
-        transactions = parse_qif(qif_content.encode("utf-8"))
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 3, 15)
 
@@ -543,7 +632,7 @@ class TestParseQif:
             "PValid\n"
             "^\n"
         )
-        transactions = parse_qif(qif_content.encode("utf-8"))
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
         assert len(transactions) == 1
         assert transactions[0].description == "Valid"
 
@@ -556,7 +645,7 @@ class TestParseQif:
             "MCompra em São Paulo\n"
             "^\n"
         )
-        transactions = parse_qif(qif_text.encode("cp1252"))
+        transactions, failed_rows = parse_qif(qif_text.encode("cp1252"))
 
         assert len(transactions) == 1
         assert transactions[0].description == "Pagamento cartão"
@@ -571,7 +660,7 @@ class TestParseQif:
             "PBig Purchase\n"
             "^\n"
         )
-        transactions = parse_qif(qif_content.encode("utf-8"))
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("1250.00")
 
@@ -584,7 +673,7 @@ class TestParseQif:
             "PCaf\u00e9 Fran\u00e7ais\n"
             "^\n"
         )
-        transactions = parse_qif(qif_content.encode("latin-1"))
+        transactions, failed_rows = parse_qif(qif_content.encode("latin-1"))
         assert len(transactions) == 1
         assert transactions[0].description == "Caf\u00e9 Fran\u00e7ais"
         assert transactions[0].amount == Decimal("75.00")
@@ -598,7 +687,7 @@ class TestParseQif:
             "PTest\n"
             "^\n"
         )
-        transactions = parse_qif(qif_content.encode("utf-8"))
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 1, 15)
 
@@ -610,7 +699,7 @@ class TestParseQif:
             "PTest\n"
             "^\n"
         )
-        transactions = parse_qif(qif_content.encode("utf-8"))
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 1, 15)
 
@@ -645,7 +734,7 @@ class TestParseCamt:
             '<NtryDtls><TxDtls><RmtInf><Ustrd>Electric Bill</Ustrd></RmtInf></TxDtls></NtryDtls>'
             '</Ntry>'
         )
-        transactions = parse_camt(self._make_camt_xml(entries))
+        transactions, failed_rows = parse_camt(self._make_camt_xml(entries))
 
         assert len(transactions) == 2
 
@@ -669,7 +758,7 @@ class TestParseCamt:
             '<NtryDtls><TxDtls><RmtInf><Ustrd>Test</Ustrd></RmtInf></TxDtls></NtryDtls>'
             '</Ntry>'
         )
-        transactions = parse_camt(self._make_camt_xml(entries))
+        transactions, failed_rows = parse_camt(self._make_camt_xml(entries))
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 2, 20)
 
@@ -684,7 +773,7 @@ class TestParseCamt:
             '<NtryDtls><TxDtls><RltdPties><Cdtr><Nm>Store ABC</Nm></Cdtr></RltdPties></TxDtls></NtryDtls>'
             '</Ntry>'
         )
-        transactions = parse_camt(self._make_camt_xml(entries))
+        transactions, failed_rows = parse_camt(self._make_camt_xml(entries))
         assert len(transactions) == 1
         assert transactions[0].description == "Store ABC"
 
@@ -697,7 +786,7 @@ class TestParseCamt:
             '<BookgDt><Dt>2026-01-01</Dt></BookgDt>'
             '</Ntry>'
         )
-        transactions = parse_camt(self._make_camt_xml(entries))
+        transactions, failed_rows = parse_camt(self._make_camt_xml(entries))
         assert len(transactions) == 1
         assert transactions[0].description == "Unknown"
 
@@ -715,7 +804,7 @@ class TestParseCamt:
             '<NtryDtls><TxDtls><RmtInf><Ustrd>Valid</Ustrd></RmtInf></TxDtls></NtryDtls>'
             '</Ntry>'
         )
-        transactions = parse_camt(self._make_camt_xml(entries))
+        transactions, failed_rows = parse_camt(self._make_camt_xml(entries))
         assert len(transactions) == 1
         assert transactions[0].description == "Valid"
 
@@ -734,7 +823,7 @@ class TestParseCamt:
             '</Stmt></BkToCstmrStmt>'
             '</Document>'
         ).encode('utf-8')
-        transactions = parse_camt(xml)
+        transactions, failed_rows = parse_camt(xml)
         assert len(transactions) == 1
         assert transactions[0].description == "No NS"
         assert transactions[0].amount == Decimal("300.00")
@@ -757,7 +846,7 @@ class TestParseCamt:
             '</Rpt></BkToCstmrAcctRpt>'
             '</Document>'
         ).encode('utf-8')
-        transactions = parse_camt(xml)
+        transactions, failed_rows = parse_camt(xml)
         assert len(transactions) == 1
         assert transactions[0].description == "Supermarket"
         assert transactions[0].amount == Decimal("42.50")
@@ -791,7 +880,7 @@ class TestParseCamt:
             '</Rpt></BkToCstmrAcctRpt>'
             '</Document>'
         ).encode('utf-8')
-        transactions = parse_camt(xml)
+        transactions, failed_rows = parse_camt(xml)
         assert len(transactions) == 1
         assert transactions[0].description == "Supermarket (booked)"
 
@@ -819,7 +908,7 @@ class TestParseCamt:
             '  </BkToCstmrStmt>\n'
             '</Document>\n'
         ).encode('utf-8')
-        transactions = parse_camt(xml)
+        transactions, failed_rows = parse_camt(xml)
         assert len(transactions) == 1
         assert transactions[0].description == "Booked"
         assert transactions[0].amount == Decimal("42.50")
@@ -966,6 +1055,237 @@ class TestParseOfx:
         assert transactions[0].description == "UBER TRIP"
         assert transactions[0].amount == Decimal("100.00")
 
+    def _make_ofx_xml(
+        self, memo: str, xml_encoding: str, *, prolog: bool = True, ofx_pi: bool = True
+    ) -> bytes:
+        """Helper to build an OFX 2.x document: XML prolog, no SGML header
+        block (e.g. Erste Bank's "MS Money Sunset Deluxe" export).
+
+        The XML declaration is optional in XML 1.0 and the <?OFX ?> instruction
+        can be dropped too, so `prolog` and `ofx_pi` cover the headerless
+        variants that reach ofxparse with nothing before the first tag.
+        """
+        text = (
+            (f'<?xml version="1.0" encoding="{xml_encoding}" ?>' if prolog else "")
+            + ('<?OFX OFXHEADER="200" VERSION="202" SECURITY="NONE" '
+               'OLDFILEUID="NONE" NEWFILEUID="NONE"?>' if ofx_pi else "")
+            + "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>EUR</CURDEF>"
+            "<BANKACCTFROM><BANKID>1</BANKID><ACCTID>1</ACCTID>"
+            "<ACCTTYPE>CHECKING</ACCTTYPE></BANKACCTFROM>"
+            "<BANKTRANLIST><DTSTART>20260101</DTSTART><DTEND>20260131</DTEND>"
+            "<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260115</DTPOSTED>"
+            "<TRNAMT>-10.00</TRNAMT><FITID>1</FITID>"
+            f"<MEMO>{memo}</MEMO></STMTTRN>"
+            "</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"
+        )
+        return text.encode(xml_encoding.lower().replace("iso-8859-1", "latin-1"))
+
+    def test_parse_ofx_xml_format_without_sgml_header(self):
+        """OFX 2.x/XML files (no SGML header block) with UTF-8 non-ASCII
+        characters should parse without raising UnicodeDecodeError."""
+        ofx = self._make_ofx_xml("1 Aufladung(en) für Konto", "utf-8")
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "1 Aufladung(en) für Konto"
+        assert transactions[0].amount == Decimal("10.00")
+        assert transactions[0].type == "debit"
+
+    def test_parse_ofx_xml_format_latin1(self):
+        """OFX 2.x/XML files declaring and using Latin-1 should decode
+        correctly, proving the fix doesn't hardcode UTF-8."""
+        ofx = self._make_ofx_xml("Café Paris", "ISO-8859-1")
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "Café Paris"
+
+    def test_parse_ofx_xml_format_ascii_only(self):
+        """OFX 2.x/XML files with pure-ASCII content should still parse
+        correctly after the SGML header injection."""
+        ofx = self._make_ofx_xml("Grocery Store", "utf-8")
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "Grocery Store"
+        assert transactions[0].amount == Decimal("10.00")
+
+    def test_parse_ofx_xml_format_without_xml_prolog(self):
+        """The XML declaration is optional, so an OFX 2.x file may open with
+        just its <?OFX ?> instruction. It reaches ofxparse with nothing before
+        the first tag, so it hits the same bug and needs the same header."""
+        ofx = self._make_ofx_xml("Aufladung für Konto", "utf-8", prolog=False)
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "Aufladung für Konto"
+
+    def test_parse_ofx_xml_format_bare_ofx_element(self):
+        """Neither declaration is required: a document opening straight on
+        <OFX> is the same headerless case."""
+        ofx = self._make_ofx_xml("Café Paris", "utf-8", prolog=False, ofx_pi=False)
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "Café Paris"
+
+    def test_parse_ofx_sgml_header_is_not_duplicated(self):
+        """A real OFX 1.x file already has a header before its first tag, so it
+        must be left untouched rather than given a second one."""
+        ofx = self._make_ofx_xml("Grocery Store", "utf-8", prolog=False, ofx_pi=False)
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:UTF-8\r\nCHARSET:NONE\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n" + ofx
+        )
+        assert _preprocess_ofx(sgml).count(b"OFXHEADER:") == 1
+        assert parse_ofx(sgml)[0].description == "Grocery Store"
+
+    def test_parse_ofx_sgml_header_iso_8859_1_encoding(self):
+        """OFX 1.x files with ENCODING:ISO-8859-1 in the SGML header should
+        parse without UnboundLocalError (ofxparse only handles USASCII,
+        UNICODE and UTF-8)."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:ISO-8859-1\r\nCHARSET:8859-1\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-25.50<FITID>TX001"
+            b"<NAME>Caf\xe9 Express</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Caf\xe9 Express"
+
+    def test_parse_ofx_sgml_header_windows_1252_encoding(self):
+        """OFX 1.x files with ENCODING:WINDOWS-1252 should parse correctly."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:WINDOWS-1252\r\nCHARSET:1252\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-50.00<FITID>TX002"
+            b"<NAME>Loj\xe3 Center</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Loj\xe3 Center"
+
+    def test_parse_ofx_windows_1252_charset_decodes_typographic_characters(self):
+        """WINDOWS-1252/CP1252 must normalise to CHARSET:1252, not 8859-1.
+
+        Byte 0x96 is an en dash (U+2013) in Windows-1252 but an undefined
+        C1 control code in ISO-8859-1 — declaring the wrong CHARSET would
+        have ofxparse decode this byte as the control code instead of the
+        dash the source bank actually meant.
+        """
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:WINDOWS-1252\r\nCHARSET:1252\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-15.00<FITID>TX005"
+            b"<NAME>Loja A \x96 Filial B</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Loja A – Filial B"
+
+    def test_parse_ofx_sgml_header_unknown_encoding_fallback(self):
+        """An OFX file with a completely unknown ENCODING value should fall
+        back to UTF-8 without crashing."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:UNKNOWN-CODEC\r\nCHARSET:8859-1\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-10.00<FITID>TX003"
+            b"<NAME>Simple Transaction</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Simple Transaction"
+
+    def test_parse_ofx_body_encoding_line_not_corrupted(self):
+        """Transaction memo content that happens to contain 'ENCODING:' on a
+        new line must not be rewritten by the header normalisation."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:ISO-8859-1\r\nCHARSET:8859-1\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-30.00<FITID>TX004"
+            b"<NAME>Rate: ENCODING:WINDOWS-1252 promo</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert "ENCODING:WINDOWS-1252" in transactions[0].description
+
+    def test_normalize_ofx_encoding_only_affects_preamble(self):
+        """_normalize_ofx_encoding must only touch the preamble before the
+        first '<', never the body."""
+        from app.services.import_service import _normalize_ofx_encoding
+
+        text = (
+            "ENCODING:ISO-8859-1\r\nCHARSET:8859-1\r\n\r\n"
+            "<OFX><MEMO>\r\nENCODING:WINDOWS-1252 line</MEMO>"
+        )
+        result = _normalize_ofx_encoding(text, "latin-1")
+        # Preamble should be normalised
+        assert "ENCODING:USASCII" in result.split("<")[0]
+        # Body should be untouched
+        assert "ENCODING:WINDOWS-1252" in result.split("<", 1)[1]
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MULTI-CURRENCY PARSING TESTS
@@ -983,7 +1303,7 @@ class TestCsvCurrencyParsing:
             "2026-01-11,Local Store,-45.00,BRL\n"
             "2026-01-12,Euro Payment,-80.00,EUR\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 3
         assert transactions[0].currency == "USD"
@@ -997,7 +1317,7 @@ class TestCsvCurrencyParsing:
             "10/01/2026,AMAZON,-120.50,USD\n"
             "11/01/2026,PIX RECEBIDO,500.00,BRL\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].currency == "USD"
@@ -1010,7 +1330,7 @@ class TestCsvCurrencyParsing:
             "2026-01-10,Amazon Purchase,-120.50,USD,5.25\n"
             "2026-01-11,Local Store,-45.00,BRL,\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].currency == "USD"
@@ -1024,7 +1344,7 @@ class TestCsvCurrencyParsing:
             "data,descricao,valor,moeda,taxa_cambio\n"
             '10/01/2026,COMPRA EXTERIOR,-200.00,USD,"5,30"\n'
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].fx_rate == Decimal("5.30")
@@ -1035,7 +1355,7 @@ class TestCsvCurrencyParsing:
             "date,description,amount\n"
             "2026-01-10,GROCERY,-50.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].currency is None
@@ -1071,7 +1391,7 @@ class TestCamtCurrencyParsing:
             '<NtryDtls><TxDtls><RmtInf><Ustrd>Euro Payment</Ustrd></RmtInf></TxDtls></NtryDtls>'
             '</Ntry>'
         )
-        transactions = parse_camt(self._make_camt_xml(entries))
+        transactions, failed_rows = parse_camt(self._make_camt_xml(entries))
 
         assert len(transactions) == 2
         assert transactions[0].currency == "USD"
@@ -1087,7 +1407,7 @@ class TestCamtCurrencyParsing:
             '<NtryDtls><TxDtls><RmtInf><Ustrd>Test</Ustrd></RmtInf></TxDtls></NtryDtls>'
             '</Ntry>'
         )
-        transactions = parse_camt(self._make_camt_xml(entries))
+        transactions, failed_rows = parse_camt(self._make_camt_xml(entries))
 
         assert len(transactions) == 1
         assert transactions[0].currency is None
@@ -1178,6 +1498,34 @@ class TestImportTransactionsFx:
         tx = (await session.execute(select(Transaction).where(Transaction.payee_id == payee.id))).scalar_one()
         assert payee.workspace_id == test_workspace.id
         assert tx.workspace_id == test_workspace.id
+
+    @pytest.mark.asyncio
+    async def test_import_csv_preserves_notes_and_external_id(self, session: AsyncSession, test_user: User, test_workspace, test_account: Account):
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+        from sqlalchemy import select
+
+        txns = [
+            TransactionImport(
+                description="Hardware Store",
+                amount=Decimal("50.00"),
+                date=date(2026, 2, 10),
+                type="debit",
+                currency=test_account.currency,
+                external_id="ext_456",
+                notes="Tools for repair",
+            ),
+        ]
+
+        imported, _, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, txns, "csv",
+        )
+
+        assert imported == 1
+        tx = (await session.execute(select(Transaction).where(Transaction.external_id == "ext_456"))).scalar_one()
+        assert tx.notes == "Tools for repair"
+        assert tx.original_description == "Hardware Store"
+        assert tx.description_is_rule_managed is False
 
     @pytest.mark.asyncio
     @patch("app.services.fx_rate_service._provider")
@@ -1374,7 +1722,7 @@ class TestParseCsvTypeColumn:
             "2026-01-05,Salario Dia 5,13311.00,credit\n"
             "2026-01-01,Financiamento Casa,577.00,debit\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].type == "credit"
@@ -1389,7 +1737,7 @@ class TestParseCsvTypeColumn:
             "2026-01-01,Rent,1200.00,debit\n"
             "2026-01-02,Internet,119.00,debit\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert all(t.type == "debit" for t in transactions)
 
@@ -1400,7 +1748,7 @@ class TestParseCsvTypeColumn:
             "2026-01-01,Expense,-100.00\n"
             "2026-01-02,Income,500.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert transactions[0].type == "debit"
         assert transactions[1].type == "credit"
@@ -1412,7 +1760,7 @@ class TestParseCsvTypeColumn:
             "2026-01-01,Expense,-100.00,unknown\n"
             "2026-01-02,Income,500.00,invalid\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert transactions[0].type == "debit"
         assert transactions[1].type == "credit"
@@ -1437,7 +1785,7 @@ class TestParseCsvCategoryColumn:
             "2026-01-05,Salario Dia 5,13311.00,credit,BRL,Salário & Renda\n"
             "2026-01-01,Financiamento Casa,577.00,debit,BRL,Moradia\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].category_name == "Salário & Renda"
@@ -1449,7 +1797,7 @@ class TestParseCsvCategoryColumn:
             "date,description,amount\n"
             "2026-01-01,Grocery Store,-50.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert transactions[0].category_name is None
 
@@ -1459,7 +1807,7 @@ class TestParseCsvCategoryColumn:
             "date,description,amount,type,currency,category\n"
             "2026-01-01,Some Transaction,100.00,credit,BRL,\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert transactions[0].category_name is None
 
@@ -1469,7 +1817,7 @@ class TestParseCsvCategoryColumn:
             "data,descricao,valor,categoria\n"
             "01/01/2026,Supermercado,-150.00,Alimentação\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].category_name == "Alimentação"
@@ -1549,6 +1897,84 @@ class TestImportTransactionsWithCategory:
             select(Transaction).where(Transaction.description == "Unknown Cat Transaction")
         )).scalar_one()
         assert tx.category_id is None
+
+    @pytest.mark.asyncio
+    @patch("app.services.fx_rate_service._provider")
+    async def test_hidden_category_name_leaves_uncategorized(
+        self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """A hidden category is withheld on import, as it is in the preview.
+
+        The preview filters hidden categories out of its suggestion map. The
+        final import used to build its own unfiltered map, so a CSV naming a
+        hidden category still got it persisted, and the imported row disagreed
+        with what the preview showed.
+        """
+        from app.models.category import Category
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+        from sqlalchemy import select
+
+        hidden = Category(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name="Categoria Oculta", icon="eye-off", color="#64748B", is_hidden=True,
+        )
+        session.add(hidden)
+        await session.commit()
+
+        txns = [TransactionImport(
+            description="Hidden Cat Transaction",
+            amount=Decimal("42.00"),
+            date=date(2026, 1, 11),
+            type="debit",
+            category_name="Categoria Oculta",
+        )]
+
+        imported, _, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, txns, "import",
+        )
+
+        assert imported == 1
+        tx = (await session.execute(
+            select(Transaction).where(Transaction.description == "Hidden Cat Transaction")
+        )).scalar_one()
+        assert tx.category_id is None
+
+    @pytest.mark.asyncio
+    @patch("app.services.fx_rate_service._provider")
+    async def test_category_name_matches_case_insensitively(
+        self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """Import matches category names the way the preview does."""
+        from app.models.category import Category
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+        from sqlalchemy import select
+
+        category = Category(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name="Alimentação", icon="utensils", color="#F97316",
+        )
+        session.add(category)
+        await session.commit()
+
+        txns = [TransactionImport(
+            description="Case Insensitive Cat",
+            amount=Decimal("18.00"),
+            date=date(2026, 1, 12),
+            type="debit",
+            category_name="  alimentação  ",
+        )]
+
+        imported, _, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, txns, "import",
+        )
+
+        assert imported == 1
+        tx = (await session.execute(
+            select(Transaction).where(Transaction.description == "Case Insensitive Cat")
+        )).scalar_one()
+        assert tx.category_id == category.id
 
     @pytest.mark.asyncio
     @patch("app.services.fx_rate_service._provider")
@@ -1673,7 +2099,7 @@ class TestImportTransactionsWithCategory:
             "2026-01-05,Salario Dia 5,13311.00,credit,BRL,Salário & Renda\n"
             "2026-01-01,Financiamento Casa,577.00,debit,BRL,Moradia\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert transactions[0].type == "credit"
         assert transactions[1].type == "debit"
@@ -1766,13 +2192,171 @@ class TestOfxInstallmentDedup:
         )
         await import_transactions(session, test_workspace.id, test_user.id, test_account.id, [txn], "ofx")
         imported, skipped, _, _ = await import_transactions(
-            session, test_workspace.id, test_user.id, test_account.id, [txn], "ofx",
+            session,
+            test_workspace.id,
+            test_user.id,
+            test_account.id,
+            [txn, txn.model_copy()],
+            "ofx",
         )
         assert imported == 0
-        assert skipped == 1
+        assert skipped == 2
+
+
+    @pytest.mark.asyncio
+    async def test_same_external_id_same_date_different_amounts_all_imported(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """Some banks reuse one FITID for several entries on the same day
+        (issue #911). Each distinct amount must be imported, and re-importing
+        the same file must still skip all of them."""
+        from app.schemas.transaction import TransactionImport
+
+        rows = [
+            TransactionImport(
+                description=memo,
+                amount=Decimal(amount),
+                date=date(2026, 7, 1),
+                type="credit",
+                external_id="101.820.900.050.894",
+            )
+            for memo, amount in [
+                ("Rende Facil 1", "1.72"),
+                ("Rende Facil 2", "3.04"),
+                ("Rende Facil 3", "2.85"),
+            ]
+        ]
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, rows, "ofx",
+        )
+        assert imported == 3
+        assert skipped == 0
+
+        imported2, skipped2, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            test_account.id,
+            [r.model_copy() for r in rows],
+            "ofx",
+        )
+        assert imported2 == 0
+        assert skipped2 == 3
 
 
 class TestCsvDuplicateDetectionToggle:
+    @pytest.mark.asyncio
+    async def test_csv_identical_new_rows_remain_distinct(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        from app.schemas.transaction import TransactionImport
+
+        row = TransactionImport(
+            description="Coffee Shop",
+            amount=Decimal("8.50"),
+            date=date(2026, 6, 15),
+            type="debit",
+        )
+        imported, skipped, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            test_account.id,
+            [row, row.model_copy()],
+            "csv",
+        )
+
+        assert (imported, skipped) == (2, 0)
+
+    @pytest.mark.asyncio
+    async def test_csv_exact_match_consumes_one_synced_row_once(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+
+        session.add(Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            external_id="provider-coffee",
+            description="Coffee Shop",
+            amount=Decimal("8.50"),
+            date=date(2026, 6, 15),
+            type="debit",
+            source="sync",
+            status="posted",
+        ))
+        await session.commit()
+
+        row = TransactionImport(
+            description="Coffee Shop",
+            amount=Decimal("8.50"),
+            date=date(2026, 6, 15),
+            type="debit",
+        )
+        imported, skipped, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            test_account.id,
+            [row, row.model_copy()],
+            "csv",
+        )
+
+        assert (imported, skipped) == (1, 1)
+
+    @pytest.mark.asyncio
+    async def test_csv_payee_match_consumes_one_synced_row_once(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+
+        synced = Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            external_id="provider-spotify",
+            description="SPOTIFY USA 45 W. 18TH STREET NEW YORK",
+            payee="Spotify",
+            amount=Decimal("12.99"),
+            date=date(2026, 6, 15),
+            type="debit",
+            source="sync",
+            status="posted",
+        )
+        session.add(synced)
+        await session.commit()
+
+        imported, skipped, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            test_account.id,
+            [
+                TransactionImport(
+                    description="Spotify",
+                    payee_raw="Spotify",
+                    amount=Decimal("12.99"),
+                    date=date(2026, 6, 16),
+                    type="debit",
+                ),
+                TransactionImport(
+                    description="Spotify",
+                    payee_raw="Spotify",
+                    amount=Decimal("12.99"),
+                    date=date(2026, 6, 16),
+                    type="debit",
+                ),
+            ],
+            "csv",
+        )
+
+        assert (imported, skipped) == (1, 1)
+
     @pytest.mark.asyncio
     async def test_csv_detect_duplicates_false_allows_duplicates(
         self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
@@ -2230,3 +2814,715 @@ async def test_import_tolerates_duplicate_external_id_rows(
         )
     )).scalars().all()
     assert len(remaining) == 2
+
+
+@pytest.mark.asyncio
+async def test_import_external_id_reconciles_matching_synced_transaction(
+    session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+):
+    from app.models.transaction import Transaction
+    from app.schemas.transaction import TransactionImport
+
+    session.add(Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        external_id="provider-id",
+        description="Music subscription",
+        original_description="SPOTIFY",
+        amount=Decimal("23.90"),
+        date=date(2026, 1, 15),
+        type="debit",
+        source="sync",
+    ))
+    await session.commit()
+
+    imported, skipped, _, _ = await import_transactions(
+        session,
+        test_workspace.id,
+        test_user.id,
+        test_account.id,
+        [TransactionImport(
+            external_id="ofx-fitid",
+            description="SPOTIFY",
+            amount=Decimal("23.90"),
+            date=date(2026, 1, 15),
+            type="debit",
+        )],
+        "ofx",
+        detected_format="ofx",
+    )
+
+    assert imported == 0
+    assert skipped == 1
+
+
+def test_normalize_amount_swiss_single_quotes():
+    from app.services.import_service import normalize_amount
+    assert normalize_amount("1'050.45") == "1050.45"
+    assert normalize_amount("-2'416.70") == "-2416.70"
+    assert normalize_amount("5'400") == "5400"
+
+
+def test_parse_csv_returns_failed_rows():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "date,description,amount,currency\n"
+        "2026-08-01,Valid,-10.00,CHF\n"
+        "invalid_date,Invalid Date,-10.00,CHF\n"
+        "2026-08-03,Invalid Amount,invalid_val,CHF\n"
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+    assert len(transactions) == 1
+    assert len(failed_rows) == 2
+    assert failed_rows[0].line_number == 3
+    assert failed_rows[0].error_reason == "invalid_date"
+    assert failed_rows[0].raw_value == "invalid_date"
+    assert failed_rows[0].description == "Invalid Date"
+    assert failed_rows[1].line_number == 4
+    assert failed_rows[1].error_reason == "invalid_amount"
+    assert failed_rows[1].raw_value == "invalid_val"
+    assert failed_rows[1].description == "Invalid Amount"
+
+
+def test_parse_csv_reports_short_rows_instead_of_raising():
+    """A row with fewer cells than the header is reported, not fatal.
+
+    csv.DictReader leaves the missing cells as None, so every .strip() on them
+    used to raise and the API turned that into a 400 for the whole file. One
+    malformed row is exactly what failed_rows exists to describe.
+    """
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "date,description,amount\n"
+        "2026-08-01,Valid,-10.00\n"
+        "2026-08-02,Missing amount\n"
+        "2026-08-03\n"
+        "invalid_date\n"
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+
+    assert len(transactions) == 1
+    assert len(failed_rows) == 3
+    assert failed_rows[0].line_number == 3
+    assert failed_rows[0].description == "Missing amount"
+    assert failed_rows[0].error_reason == "invalid_amount"
+    # A cell the row never had reads as empty, never as None.
+    assert failed_rows[1].line_number == 4
+    assert failed_rows[1].description == ""
+    assert failed_rows[2].line_number == 5
+    assert failed_rows[2].error_reason == "invalid_date"
+    assert failed_rows[2].raw_value == "invalid_date"
+
+
+def test_parse_csv_comma_thousands_inferred_per_column():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "Date,Transaction Type,Amount,Description\n"
+        '2026-08-01,Credit,"375,000.00",SALARY\n'
+        '2026-08-02,Debit,"25,000",TRANSFER\n'
+        '2026-08-03,DEBIT,"1,500.50",AIRTIME\n'
+        '2026-08-05,debit,"3,000",POS\n'
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+
+    assert failed_rows == []
+    assert [t.amount for t in transactions] == [
+        Decimal("375000.00"), Decimal("25000"), Decimal("1500.50"), Decimal("3000"),
+    ]
+    assert [t.type for t in transactions] == ["credit", "debit", "debit", "debit"]
+
+
+def test_parse_csv_comma_thousands_only_column():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "date,description,amount\n"
+        '2026-08-02,Transfer,"-25,000"\n'
+        '2026-08-03,Salary,"1,234,567"\n'
+    )
+    transactions, _ = parse_csv(csv_content.encode("utf-8"))
+    assert [t.amount for t in transactions] == [Decimal("25000"), Decimal("1234567")]
+    assert [t.type for t in transactions] == ["debit", "credit"]
+
+
+def test_parse_csv_brazilian_column_still_parses():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "data;descricao;valor\n"
+        "01/08/2026;Mercado;-1.234,56\n"
+        "02/08/2026;Padaria;-12,50\n"
+        "03/08/2026;Aluguel;-2.000\n"
+    )
+    transactions, _ = parse_csv(csv_content.encode("utf-8"))
+    assert [t.amount for t in transactions] == [
+        Decimal("1234.56"), Decimal("12.50"), Decimal("2000"),
+    ]
+    assert all(t.type == "debit" for t in transactions)
+
+
+def test_parse_csv_zero_comma_is_decimal():
+    from app.services.import_service import parse_csv
+    csv_content = 'date,description,amount\n2026-08-01,Fee,"0,125"\n'
+    transactions, _ = parse_csv(csv_content.encode("utf-8"))
+    assert transactions[0].amount == Decimal("0.125")
+
+
+def test_parse_csv_strips_currency_symbols_and_codes():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "date,description,amount\n"
+        "2026-08-01,A,$40.00\n"
+        "2026-08-02,B,NGN 2300.50\n"
+        "2026-08-03,C,USD 10\n"
+        "2026-08-04,D,-₦1500.00\n"
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+    assert failed_rows == []
+    assert [t.amount for t in transactions] == [
+        Decimal("40.00"), Decimal("2300.50"), Decimal("10"), Decimal("1500.00"),
+    ]
+    assert transactions[3].type == "debit"
+
+
+def test_normalize_amount_currency_and_separators():
+    from app.services.import_service import normalize_amount
+    assert normalize_amount("$40.00") == "40.00"
+    assert normalize_amount("€12,50") == "12.50"
+    assert normalize_amount("NGN 2,300.50") == "2300.50"
+    assert normalize_amount("₦1,500.00") == "1500.00"
+    assert normalize_amount("USD 10") == "10"
+    assert normalize_amount("12,50 EUR") == "12.50"
+    assert normalize_amount("R$ 1.234,56") == "1234.56"
+    assert normalize_amount("-$40.00") == "-40.00"
+    assert normalize_amount("(12.50)") == "-12.50"
+    assert normalize_amount("25,000", ".") == "25000"
+    assert normalize_amount("0,125", ".") == "0.125"
+    assert normalize_amount("1.234", ",") == "1234"
+    # Without a column hint the per-cell behaviour is unchanged.
+    assert normalize_amount("0,125") == "0.125"
+    assert normalize_amount("12,50") == "12.50"
+
+
+def test_infer_decimal_separator():
+    from app.services.import_service import infer_decimal_separator
+    assert infer_decimal_separator(["25,000", "1,500.50"]) == "."
+    assert infer_decimal_separator(["1.234,56", "12,50"]) == ","
+    assert infer_decimal_separator(["25,000", "3,000"]) == "."
+    assert infer_decimal_separator(["0,125"]) is None
+    assert infer_decimal_separator(["10", ""]) is None
+
+
+def test_parse_csv_dr_cr_and_unicode_minus_keep_the_sign():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "date,description,amount\n"
+        "2026-08-01,Card,100.00 DR\n"
+        "2026-08-02,Refund,50.00 CR\n"
+        "2026-08-03,Fee,\u221240.00\n"
+        "2026-08-04,Costa Rica,CRC 10.00\n"
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+    assert failed_rows == []
+    assert [(t.type, t.amount) for t in transactions] == [
+        ("debit", Decimal("100.00")),
+        ("credit", Decimal("50.00")),
+        ("debit", Decimal("40.00")),
+        ("credit", Decimal("10.00")),
+    ]
+
+
+def test_normalize_amount_dr_cr_markers():
+    from app.services.import_service import normalize_amount
+    assert normalize_amount("1,234.56DR") == "-1234.56"
+    assert normalize_amount("-10.00 CR") == "10.00"
+    assert normalize_amount("10.00 XDR") == "10.00"
+    assert normalize_amount("\u20131.50") == "-1.50"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rule_status", ["posted", "pending"])
+async def test_import_suggestions_evaluate_status_as_posted(
+    session: AsyncSession, test_user, test_workspace, test_categories, rule_status: str,
+):
+    from app.models.rule import Rule
+    from app.schemas.transaction import TransactionImport
+    from app.services.import_service import enrich_with_category_suggestions
+
+    category = test_categories[0]
+    session.add(Rule(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Status category",
+        conditions_op="and",
+        conditions=[{"field": "status", "op": "equals", "value": rule_status}],
+        actions=[{"op": "set_category", "value": str(category.id)}],
+        is_active=True,
+    ))
+    await session.commit()
+    transactions = [TransactionImport(
+        description="Coffee", amount=Decimal("12.34"), date=date(2025, 4, 15), type="debit",
+    )]
+
+    preview = await enrich_with_category_suggestions(session, test_workspace.id, transactions)
+
+    assert preview[0].suggested_category_id == (category.id if rule_status == "posted" else None)
+    assert preview[0].suggested_category_name == (
+        category.name if rule_status == "posted" else None
+    )
+
+
+@pytest.mark.asyncio
+async def test_import_posted_status_rule_applies_to_matched_recurring_placeholder(
+    session: AsyncSession, test_user, test_workspace, test_account, test_categories,
+):
+    from sqlalchemy import select
+
+    from app.models.recurring_transaction import RecurringTransaction
+    from app.models.rule import Rule
+    from app.models.transaction import Transaction
+    from app.schemas.transaction import TransactionImport
+
+    day = date(2025, 4, 15)
+    category = test_categories[0]
+    recurring = RecurringTransaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=test_account.id,
+        description="Coffee", amount=Decimal("12.34"), currency=test_account.currency,
+        type="debit", frequency="monthly", start_date=day, next_occurrence=day,
+    )
+    session.add(recurring)
+    await session.flush()
+    placeholder = Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=test_account.id,
+        recurring_transaction_id=recurring.id, description="Coffee", amount=Decimal("12.34"),
+        currency=test_account.currency, date=day, type="debit", source="recurring", status="pending",
+    )
+    session.add(placeholder)
+    session.add(Rule(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Posted coffee",
+        conditions_op="and",
+        conditions=[{"field": "status", "op": "equals", "value": "posted"}],
+        actions=[
+            {"op": "set_category", "value": str(category.id)},
+            {"op": "append_notes", "value": "Rule applied"},
+        ],
+        is_active=True,
+    ))
+    await session.commit()
+    transaction = TransactionImport(
+        description="Coffee", external_id="statement-coffee", amount=Decimal("12.34"),
+        currency=test_account.currency, date=day, type="debit",
+    )
+
+    imported, skipped, _, import_id = await import_transactions(
+        session, test_workspace.id, test_user.id, test_account.id, [transaction],
+        "ofx", detected_format="ofx",
+    )
+
+    assert (imported, skipped) == (1, 0)
+    rows = (await session.scalars(
+        select(Transaction).where(Transaction.import_id == import_id)
+    )).all()
+    assert [row.id for row in rows] == [placeholder.id]
+    assert rows[0].status == "posted"
+    assert rows[0].source == "ofx"
+    assert rows[0].category_id == category.id
+    assert rows[0].notes == "Rule applied"
+
+
+# ---------------------------------------------------------------------------
+# QIF and CAMT records reported instead of dropped (issue #850)
+# ---------------------------------------------------------------------------
+
+
+class TestCamtCdtDbtIndValidation:
+    """A CAMT entry whose CdtDbtInd is neither CRDT nor DBIT is not a
+    direction: importing it as a debit would flip the amount's sign, so the
+    entry is skipped like the other malformed ones (issue #850)."""
+
+    def _wrap(self, entries: str) -> bytes:
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">'
+            '<BkToCstmrStmt><Stmt>'
+            f'{entries}'
+            '</Stmt></BkToCstmrStmt>'
+            '</Document>'
+        ).encode("utf-8")
+
+    def test_invalid_indicator_skipped(self):
+        entries = (
+            '<Ntry><Amt Ccy="BRL">100.00</Amt>'
+            '<CdtDbtInd>CRDT</CdtDbtInd>'
+            '<BookgDt><Dt>2026-01-16</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>Valid credit</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+            '<Ntry><Amt Ccy="BRL">200.00</Amt>'
+            '<CdtDbtInd>CREDIT</CdtDbtInd>'
+            '<BookgDt><Dt>2026-01-17</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>Wrong word</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+        )
+        transactions, failed_rows = parse_camt(self._wrap(entries))
+        assert [t.description for t in transactions] == ["Valid credit"]
+        assert transactions[0].type == "credit"
+        assert [r.error_reason for r in failed_rows] == ["invalid_direction"]
+        assert failed_rows[0].description == "Wrong word"
+        assert failed_rows[0].raw_value == "CREDIT"
+
+    def test_missing_indicator_skipped(self):
+        entries = (
+            '<Ntry><Amt Ccy="BRL">300.00</Amt>'
+            '<BookgDt><Dt>2026-01-18</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>No direction</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+        )
+        transactions, failed_rows = parse_camt(self._wrap(entries))
+        assert transactions == []
+        # A missing indicator is no direction either, and it now shows up
+        # in the preview instead of vanishing.
+        assert [r.error_reason for r in failed_rows] == ["invalid_direction"]
+        assert failed_rows[0].description == "No direction"
+
+    def test_missing_amount_reported(self):
+        entries = (
+            '<Ntry><CdtDbtInd>CRDT</CdtDbtInd>'
+            '<BookgDt><Dt>2026-01-18</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>No amount</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+        )
+        transactions, failed_rows = parse_camt(self._wrap(entries))
+        assert transactions == []
+        assert [r.error_reason for r in failed_rows] == ["no_amount"]
+
+    def test_bad_amount_reported(self):
+        entries = (
+            '<Ntry><Amt Ccy="BRL">abc</Amt>'
+            '<CdtDbtInd>DBIT</CdtDbtInd>'
+            '<BookgDt><Dt>2026-01-18</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>Bad amount</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+        )
+        transactions, failed_rows = parse_camt(self._wrap(entries))
+        assert transactions == []
+        assert [r.error_reason for r in failed_rows] == ["invalid_amount"]
+        assert failed_rows[0].raw_value == "abc"
+
+    def test_bad_date_reported(self):
+        entries = (
+            '<Ntry><Amt Ccy="BRL">100.00</Amt>'
+            '<CdtDbtInd>CRDT</CdtDbtInd>'
+            '<BookgDt><Dt>not-a-date</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>Bad date</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+        )
+        transactions, failed_rows = parse_camt(self._wrap(entries))
+        assert transactions == []
+        assert [r.error_reason for r in failed_rows] == ["invalid_date"]
+        assert failed_rows[0].raw_value == "not-a-date"
+
+    def test_pending_entries_stay_silent(self):
+        # PDNG entries are deliberately invisible (they reappear as BOOK);
+        # they must not show up as failed rows.
+        entries = (
+            '<Ntry><Sts><Cd>PDNG</Cd></Sts>'
+            '<Amt Ccy="BRL">100.00</Amt>'
+            '<CdtDbtInd>CRDT</CdtDbtInd>'
+            '<BookgDt><Dt>2026-01-18</Dt></BookgDt>'
+            '</Ntry>'
+            '<Ntry><Sts><Cd>BOOK</Cd></Sts>'
+            '<Amt Ccy="BRL">100.00</Amt>'
+            '<CdtDbtInd>CRDT</CdtDbtInd>'
+            '<BookgDt><Dt>2026-01-18</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>Settled</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+        )
+        transactions, failed_rows = parse_camt(self._wrap(entries))
+        assert [t.description for t in transactions] == ["Settled"]
+        assert failed_rows == []
+
+
+class TestQifMalformedRecords:
+    """QIF records that used to be dropped or silently resolved now come
+    back as failed rows (issue #850)."""
+
+    def test_conflicting_amount_fields_reported(self):
+        qif_content = (
+            "!Type:bank\n"
+            "Date:January 2026\n"
+            "^\n"
+            "D01/15/2026\n"
+            "T100.00\n"
+            "U-200.00\n"
+            "PConflict\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert transactions == []
+        assert [r.error_reason for r in failed_rows] == ["conflicting_amount"]
+        assert failed_rows[0].description == "Conflict"
+        assert failed_rows[0].raw_value == "100.00, -200.00"
+
+    def test_repeated_same_amount_still_imports(self):
+        qif_content = (
+            "!Type:bank\n"
+            "^\n"
+            "D01/15/2026\n"
+            "T100.00\n"
+            "T100.00\n"
+            "PRepeat\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert len(transactions) == 1
+        assert transactions[0].amount == Decimal("100.00")
+        assert failed_rows == []
+
+    def test_unparseable_amount_reported(self):
+        qif_content = (
+            "!Type:bank\n"
+            "^\n"
+            "D01/21/2026\n"
+            "Tbad\n"
+            "PBad value\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert transactions == []
+        assert [r.error_reason for r in failed_rows] == ["invalid_amount"]
+        assert failed_rows[0].raw_value == "bad"
+        # line_number points at the record start (its D tag), line 3
+        assert failed_rows[0].line_number == 3
+
+    def test_missing_date_reported(self):
+        qif_content = (
+            "!Type:bank\n"
+            "^\n"
+            "T50.00\n"
+            "PNo date\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert transactions == []
+        assert [r.error_reason for r in failed_rows] == ["invalid_date"]
+        assert failed_rows[0].description == "No date"
+
+    def test_missing_amount_reported(self):
+        qif_content = (
+            "!Type:bank\n"
+            "^\n"
+            "D01/15/2026\n"
+            "PNo money\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert transactions == []
+        assert [r.error_reason for r in failed_rows] == ["no_amount"]
+
+    def test_preamble_stays_silent(self):
+        # The file preamble ("!Type:bank", "Date:January 2026" - whose tag
+        # looks like a date line but is not) must not be reported.
+        qif_content = (
+            "!Type:bank\n"
+            "Date:January 2026\n"
+            "^\n"
+            "D01/15/2026\n"
+            "T-250.00\n"
+            "PElectric Company\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert len(transactions) == 1
+        assert transactions[0].description == "Electric Company"
+        assert failed_rows == []
+
+    def test_good_file_unchanged_with_line_numbers(self):
+        qif_content = (
+            "!Type:bank\n"
+            "^\n"
+            "D01/15/2026\n"
+            "T-250.00\n"
+            "PElectric Company\n"
+            "^\n"
+            "D01/16/2026\n"
+            "T-30.00\n"
+            "PMilk store\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert [t.description for t in transactions] == ["Electric Company", "Milk store"]
+        assert failed_rows == []
+
+    def test_account_header_blocks_are_not_records(self):
+        # An account header block reuses transaction tags ("TBank" is the
+        # account type), so it must be skipped, not reported as a failed
+        # row with an invalid date.
+        qif_content = (
+            "!Option:AutoSwitch\n"
+            "!Account\n"
+            "NChecking\n"
+            "TBank\n"
+            "^\n"
+            "!Clear:AutoSwitch\n"
+            "!Account\n"
+            "NChecking\n"
+            "TBank\n"
+            "^\n"
+            "!Type:Bank\n"
+            "D01/15/2026\n"
+            "T-250.00\n"
+            "PElectric Company\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert [t.description for t in transactions] == ["Electric Company"]
+        assert failed_rows == []
+
+    def test_category_list_blocks_are_not_records(self):
+        qif_content = (
+            "!Type:Cat\n"
+            "NGroceries\n"
+            "DFood and supplies\n"
+            "E\n"
+            "^\n"
+            "!Type:Memorized\n"
+            "KC\n"
+            "T-50.00\n"
+            "PGym\n"
+            "^\n"
+            "!Type:Bank\n"
+            "D01/15/2026\n"
+            "T-250.00\n"
+            "PElectric Company\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert [t.description for t in transactions] == ["Electric Company"]
+        assert failed_rows == []
+
+    def test_caret_inside_a_field_does_not_split_the_record(self):
+        # "^" only ends a record on a line of its own; inside a payee or memo
+        # it is text. A malformed record after it still gets its own line.
+        qif_content = (
+            "!Type:Bank\n"
+            "D01/15/2026\n"
+            "T-250.00\n"
+            "PSTORE ^A^B^\n"
+            "MRef ^ 42\n"
+            "^\n"
+            "D01/16/2026\n"
+            "Tbad\n"
+            "PBad value\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert [t.description for t in transactions] == ["STORE ^A^B^"]
+        assert transactions[0].amount == Decimal("250.00")
+        assert [(r.error_reason, r.line_number) for r in failed_rows] == [
+            ("invalid_amount", 7),
+        ]
+
+
+class TestCamtFailedRowLineNumbers:
+    """CAMT failed rows carry the line of the entry's <Ntry> tag, matching
+    the "Line" column of the preview."""
+
+    def test_line_points_at_the_entry(self):
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">\n'
+            '  <BkToCstmrStmt>\n'
+            '    <Stmt>\n'
+            '      <Ntry>\n'
+            '        <Amt Ccy="EUR">10.00</Amt>\n'
+            '        <CdtDbtInd>DBIT</CdtDbtInd>\n'
+            '        <BookgDt><Dt>2026-01-15</Dt></BookgDt>\n'
+            '      </Ntry>\n'
+            '      <Ntry>\n'
+            '        <Amt Ccy="EUR">20.00</Amt>\n'
+            '        <CdtDbtInd>XXXX</CdtDbtInd>\n'
+            '        <BookgDt><Dt>2026-01-16</Dt></BookgDt>\n'
+            '        <NtryDtls><TxDtls><RmtInf><Ustrd>Second</Ustrd></RmtInf></TxDtls></NtryDtls>\n'
+            '      </Ntry>\n'
+            '    </Stmt>\n'
+            '  </BkToCstmrStmt>\n'
+            '</Document>\n'
+        ).encode("utf-8")
+        transactions, failed_rows = parse_camt(xml)
+        assert len(transactions) == 1
+        assert [(r.description, r.line_number) for r in failed_rows] == [("Second", 10)]
+
+
+# ---------------------------------------------------------------------------
+# Split-mode amount and fx_rate validation (issue #850)
+# ---------------------------------------------------------------------------
+
+
+class TestSplitModeValidation:
+    """Split inflow/outflow columns must report bad rows, not import them."""
+
+    CSV = (
+        "date,description,inflow,outflow\n"
+        "2026-01-10,Salary,1000,\n"
+        "2026-01-11,Rent,,800\n"
+        "2026-01-12,Bad inflow,abc,\n"
+        "2026-01-13,Bad outflow,,xyz\n"
+        "2026-01-14,Both filled,5,7\n"
+        "2026-01-15,Neither filled,,\n"
+    )
+
+    def _parse(self):
+        return parse_csv(
+            self.CSV.encode("utf-8"), inflow_column="inflow", outflow_column="outflow"
+        )
+
+    def test_good_rows_still_import(self):
+        transactions, _ = self._parse()
+        assert [(t.description, t.type, t.amount) for t in transactions] == [
+            ("Salary", "credit", Decimal("1000")),
+            ("Rent", "debit", Decimal("800")),
+        ]
+
+    def test_bad_rows_are_reported_row_by_row(self):
+        _, failed = self._parse()
+        assert [(f.description, f.error_reason, f.raw_value) for f in failed] == [
+            ("Bad inflow", "invalid_amount", "inflow: abc"),
+            ("Bad outflow", "invalid_amount", "outflow: xyz"),
+            ("Both filled", "ambiguous_amount", "inflow: 5, outflow: 7"),
+            ("Neither filled", "no_amount", "inflow: , outflow: "),
+        ]
+
+
+class TestCsvFxRateValidation:
+    """A typed fx_rate that is not a rate must fail the row, not vanish."""
+
+    CSV = (
+        "date,description,amount,currency,fx_rate\n"
+        "2026-01-10,USD wire,100,USD,5.4\n"
+        "2026-01-11,Bad rate,100,USD,abc\n"
+        "2026-01-12,Negative rate,100,USD,-1\n"
+        "2026-01-13,Blank rate,100,BRL,   \n"
+        "2026-01-14,Zero rate,100,BRL,0\n"
+        "2026-01-15,Empty rate,100,BRL,\n"
+    )
+
+    def _parse(self):
+        return parse_csv(self.CSV.encode("utf-8"))
+
+    def test_valid_rate_kept(self):
+        transactions, _ = self._parse()
+        assert transactions[0].description == "USD wire"
+        assert transactions[0].currency == "USD"
+        assert transactions[0].fx_rate == Decimal("5.4")
+
+    def test_blank_or_zero_rate_means_no_rate(self):
+        # Rows in the account's own currency often leave the column blank,
+        # pad it with spaces, or fill it with 0: none of them is a bad rate.
+        transactions, _ = self._parse()
+        rest = [(t.description, t.fx_rate) for t in transactions[1:]]
+        assert rest == [("Blank rate", None), ("Zero rate", None), ("Empty rate", None)]
+
+    def test_bad_rates_reported(self):
+        _, failed = self._parse()
+        assert [(f.description, f.error_reason) for f in failed] == [
+            ("Bad rate", "invalid_fx_rate"),
+            ("Negative rate", "invalid_fx_rate"),
+        ]

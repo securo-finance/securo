@@ -1,0 +1,4 @@
+# Azerbaijan. The VÖEN is the taxpayer identification number, issued to
+# companies and individuals alike; ten digits, with no checksum to verify.
+code = "AZ"
+kinds = ["az_voen"]

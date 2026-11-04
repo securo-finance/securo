@@ -1,0 +1,4 @@
+# Romania. The CUI is the company id; prefixed with RO it becomes the VAT
+# number, and only VAT-registered companies have one.
+code = "RO"
+kinds = ["ro_cui", "vat"]

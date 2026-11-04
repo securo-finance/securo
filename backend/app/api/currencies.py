@@ -5,6 +5,7 @@ from app.core.config import get_settings
 router = APIRouter(prefix="/api/currencies", tags=["currencies"])
 
 CURRENCY_META = {
+    "AZN": {"symbol": "₼", "name": "Azerbaijani Manat", "flag": "\U0001F1E6\U0001F1FF"},
     "BRL": {"symbol": "R$", "name": "Real Brasileiro", "flag": "\U0001F1E7\U0001F1F7"},
     "USD": {"symbol": "$", "name": "US Dollar", "flag": "\U0001F1FA\U0001F1F8"},
     "EUR": {"symbol": "\u20ac", "name": "Euro", "flag": "\U0001F1EA\U0001F1FA"},
@@ -31,9 +32,30 @@ CURRENCY_META = {
     "CRC": {"symbol": "₡", "name": "Costa Rican Colón", "flag": "\U0001F1E8\U0001F1F7"},
     "IDR": {"symbol": "Rp", "name": "Indonesian Rupiah", "flag": "\U0001F1EE\U0001F1E9"},
     "DOP": {"symbol": "RD$", "name": "Peso Dominicano", "flag": "\U0001F1E9\U0001F1F4"},
+    "KZT": {"symbol": "₸", "name": "Kazakhstani Tenge", "flag": "\U0001F1F0\U0001F1FF"},
     "RUB": {"symbol": "₽", "name": "Russian Ruble", "flag": "\U0001F1F7\U0001F1FA"},
     "GTQ": {"symbol": "Q", "name": "Guatemalan Quetzal", "flag": "\U0001F1EC\U0001F1F9"},
     "PHP": {"symbol": "₱", "name": "Philippine Peso", "flag": "\U0001F1F5\U0001F1ED"},
+    "UAH": {"symbol": "₴", "name": "Ukrainian Hryvnia", "flag": "\U0001F1FA\U0001F1E6"},
+    "NZD": {"symbol": "NZ$", "name": "New Zealand Dollar", "flag": "\U0001F1F3\U0001F1FF"},
+    "VND": {"symbol": "₫", "name": "Vietnamese Dong", "flag": "\U0001F1FB\U0001F1F3"},
+    "SGD": {"symbol": "S$", "name": "Singapore Dollar", "flag": "\U0001F1F8\U0001F1EC"},
+    "TRY": {"symbol": "₺", "name": "Turkish Lira", "flag": "\U0001F1F9\U0001F1F7"},
+    "PKR": {"symbol": "₨", "name": "Pakistani Rupee", "flag": "\U0001F1F5\U0001F1F0"},
+    "MDL": {"symbol": "L", "name": "Moldovan Leu", "flag": "\U0001F1F2\U0001F1E9"},
+    "AED": {"symbol": "د.إ", "name": "UAE Dirham", "flag": "\U0001F1E6\U0001F1EA"},
+    "THB": {"symbol": "\u0e3f", "name": "Thai Baht", "flag": "\U0001F1F9\U0001F1ED"},
+    "EGP": {"symbol": "E£", "name": "Egyptian Pound", "flag": "\U0001F1EA\U0001F1EC"},
+    "MYR": {"symbol": "RM", "name": "Malaysian Ringgit", "flag": "\U0001F1F2\U0001F1FE"},
+    "SAR": {"symbol": "ر.س", "name": "Saudi Riyal", "flag": "\U0001F1F8\U0001F1E6"},
+    "QAR": {"symbol": "ر.ق", "name": "Qatari Riyal", "flag": "\U0001F1F6\U0001F1E6"},
+    "JMD": {"symbol": "J$", "name": "Jamaican Dollar", "flag": "\U0001F1EF\U0001F1F2"},
+    "RSD": {"symbol": "RSD", "name": "Serbian Dinar", "flag": "\U0001F1F7\U0001F1F8"},
+    "MKD": {"symbol": "ден", "name": "Macedonian Denar", "flag": "\U0001F1F2\U0001F1F0"},
+    "HKD": {"symbol": "HK$", "name": "Hong Kong Dollar", "flag": "\U0001F1ED\U0001F1F0"},
+    "TWD": {"symbol": "NT$", "name": "New Taiwan Dollar", "flag": "\U0001F1F9\U0001F1FC"},
+    "ZAR": {"symbol": "R", "name": "South African Rand", "flag": "\U0001F1FF\U0001F1E6"},
+    "GEL": {"symbol": "₾", "name": "Georgian Lari", "flag": "\U0001F1EC\U0001F1EA"},
 }
 
 

@@ -81,7 +81,7 @@ export function ConversationRow({ conv, agentId, active, onPick, onDeleted }: Pr
               setEditing(false)
             }
           }}
-          className="flex-1 min-w-0 rounded-sm border bg-background px-1.5 py-0.5 text-sm"
+          className="flex-1 min-w-0 rounded-sm border bg-card px-1.5 py-0.5 text-sm"
         />
         <button
           type="button"

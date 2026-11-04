@@ -42,6 +42,23 @@ async def test_create_admin_success(client: AsyncClient, clean_db):
 
 
 @pytest.mark.asyncio
+async def test_create_admin_forbidden_when_local_auth_disabled(
+    client: AsyncClient,
+    clean_db,
+    oidc_only_settings,
+):
+    response = await client.post(
+        "/api/setup/create-admin",
+        json={"email": "admin@test.com", "password": "StrongPass123!"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "LOCAL_AUTH_DISABLED"
+    status_response = await client.get("/api/setup/status")
+    assert status_response.json()["has_users"] is False
+
+
+@pytest.mark.asyncio
 async def test_create_admin_already_exists(client: AsyncClient, test_user):
     """Create admin fails when users already exist."""
     response = await client.post(

@@ -116,3 +116,12 @@ async def test_path_traversal_download_blocked(local_storage):
 async def test_path_traversal_delete_blocked(local_storage):
     with pytest.raises(ValueError, match="Invalid storage key"):
         await local_storage.delete("../../etc/passwd")
+
+
+@pytest.mark.asyncio
+async def test_path_traversal_prefix_collision_blocked(local_storage, storage_dir):
+    # Test sibling folder sharing the same prefix name
+    sibling_evil = f"../{Path(storage_dir).name}_evil/stolen.txt"
+    with pytest.raises(ValueError, match="Invalid storage key"):
+        await local_storage.upload(sibling_evil, b"evil", "text/plain")
+

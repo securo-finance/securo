@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.payee import Payee
 from app.models.transaction import Transaction
 from app.models.user import User
 
@@ -79,8 +80,39 @@ async def test_list_payees(client: AsyncClient, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_list_payees_coerces_legacy_types_to_null(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+):
+    legacy_types = ("transfer", "employer", "merchant")
+    session.add_all(
+        [
+            Payee(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                name=f"Legacy {legacy_type}",
+                type=legacy_type,
+            )
+            for legacy_type in legacy_types
+        ]
+    )
+    await session.commit()
+
+    resp = await client.get("/api/payees", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert {payee["name"]: payee["type"] for payee in resp.json()} == {
+        f"Legacy {legacy_type}": None for legacy_type in legacy_types
+    }
+
+
+@pytest.mark.asyncio
 async def test_list_payees_filters(client: AsyncClient, auth_headers):
-    mcd = await _create_payee(client, auth_headers, "McDonalds", type="merchant", notes="Burgers")
+    mcd = await _create_payee(client, auth_headers, "McDonalds", type="company", notes="Burgers")
     # Toggle favorite via PATCH since PayeeCreate doesn't take is_favorite
     patch_resp = await client.patch(f"/api/payees/{mcd['id']}", headers=auth_headers, json={"is_favorite": True})
     assert patch_resp.status_code == 200
@@ -132,12 +164,13 @@ async def test_list_payees_filters(client: AsyncClient, auth_headers):
 async def test_create_payee(client: AsyncClient, auth_headers):
     resp = await client.post(
         "/api/payees", headers=auth_headers,
-        json={"name": "Starbucks", "type": "merchant", "notes": "Coffee"},
+        json={"name": "Starbucks", "type": "company", "notes": "Coffee"},
     )
     assert resp.status_code == 201
     data = resp.json()
     assert data["name"] == "Starbucks"
-    assert data["type"] == "merchant"
+    assert data["type"] == "company"
+    assert data["source"] == "manual"
     assert data["notes"] == "Coffee"
     assert data["is_favorite"] is False
     assert data["transaction_count"] == 0
@@ -152,6 +185,21 @@ async def test_create_payee_duplicate(client: AsyncClient, auth_headers):
         json={"name": "unique"},  # case-insensitive duplicate
     )
     assert resp.status_code == 400
+    # A code, not prose: the client owns the wording and the language.
+    assert resp.json()["detail"] == "duplicate_payee_name"
+
+
+@pytest.mark.asyncio
+async def test_rename_payee_onto_existing_name_rejected(client: AsyncClient, auth_headers):
+    await _create_payee(client, auth_headers, "Taken")
+    other = await _create_payee(client, auth_headers, "Free")
+
+    resp = await client.patch(
+        f"/api/payees/{other['id']}", headers=auth_headers,
+        json={"name": "taken"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "duplicate_payee_name"
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +239,7 @@ async def test_update_payee(client: AsyncClient, auth_headers):
     data = resp.json()
     assert data["name"] == "NewName"
     assert data["is_favorite"] is True
-    assert data["type"] == "merchant"  # unchanged
+    assert data["type"] is None  # unchanged, and never stated
 
 
 @pytest.mark.asyncio
@@ -227,6 +275,42 @@ async def test_delete_payee_not_found(client: AsyncClient, auth_headers):
         f"/api/payees/{uuid.uuid4()}", headers=auth_headers,
     )
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Bulk Delete
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_payees(client: AsyncClient, auth_headers):
+    created1 = await _create_payee(client, auth_headers, "BulkDelete1")
+    created2 = await _create_payee(client, auth_headers, "BulkDelete2")
+    created3 = await _create_payee(client, auth_headers, "BulkDelete3")
+
+    resp = await client.post(
+        "/api/payees/bulk-delete", headers=auth_headers,
+        json={"ids": [created1['id'], created2['id']]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 2
+
+    # Confirm deleted
+    assert (await client.get(f"/api/payees/{created1['id']}", headers=auth_headers)).status_code == 404
+    assert (await client.get(f"/api/payees/{created2['id']}", headers=auth_headers)).status_code == 404
+    
+    # Confirm not deleted
+    assert (await client.get(f"/api/payees/{created3['id']}", headers=auth_headers)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_payees_empty(client: AsyncClient, auth_headers):
+    resp = await client.post(
+        "/api/payees/bulk-delete", headers=auth_headers,
+        json={"ids": []},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 0
 
 
 # ---------------------------------------------------------------------------

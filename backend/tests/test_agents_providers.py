@@ -26,13 +26,11 @@ from app.agents.providers.base import (
     Usage,
 )
 from app.agents.providers.openai import (
+    OpenAIProvider,
     _serialize_messages as openai_serialize,
     _serialize_tools as openai_tools,
     normalize_openai_base_url,
 )
-
-
-pytestmark = pytest.mark.asyncio
 
 
 def test_registry_lists_all_four_providers():
@@ -123,6 +121,7 @@ def test_anthropic_tool_result_block():
     ("http://lmstudio:1234/v1/", "http://lmstudio:1234/v1"),
     ("https://api.openai.com/v1", "https://api.openai.com/v1"),
     ("https://api.groq.com/openai/v1", "https://api.groq.com/openai/v1"),
+    ("https://generativelanguage.googleapis.com/v1beta/openai/", "https://generativelanguage.googleapis.com/v1beta/openai"),
     ("https://api.example.com/v2", "https://api.example.com/v2"),
     ("https://api.example.com/beta", "https://api.example.com/beta"),
     ("https://api.example.com/", "https://api.example.com/v1"),
@@ -178,7 +177,7 @@ async def test_openai_parser_handles_index_keyed_tool_call_chunks():
         def stream(self, *_a, **_kw): return _StreamResp()
 
     p = OpenAIProvider(api_key="x", base_url="http://lmstudio:1234")
-    chunks = []
+    chunks: list[ChatChunk] = []
     with patch("httpx.AsyncClient", return_value=_Client()):
         async for c in p.chat_stream([ChatMessage(role="user", content="hi")], model="m"):
             chunks.append(c)
@@ -188,7 +187,11 @@ async def test_openai_parser_handles_index_keyed_tool_call_chunks():
     assert starts[0].tool_name == "propose_categorize"
     assert starts[0].tool_call_id == "call_abc"
 
-    arg_deltas = [c.args_delta for c in chunks if c.type == "tool_call_args_delta"]
+    arg_deltas = [
+        c.args_delta for c in chunks
+        if c.type == "tool_call_args_delta"
+        and c.args_delta is not None
+    ]
     assert "".join(arg_deltas) == '{"transaction_ids":["abc"],"category_id":"def"}'
 
     ends = [c for c in chunks if c.type == "tool_call_end"]
@@ -232,3 +235,39 @@ async def test_chat_helper_aggregates_text_and_tool_calls():
     assert len(res.tool_calls) == 1
     assert res.tool_calls[0].name == "list_accounts"
     assert res.tool_calls[0].arguments == {"x": 1}
+
+
+# --- Outbound request headers ----------------------------------------------
+#
+# A few OpenAI-compatible backends identify the client by user agent and
+# route on a per-conversation session id. These tests pin the wire headers
+# so the client keeps sending both.
+
+
+def test_openai_headers_identify_securo_and_omit_session_by_default():
+    provider = OpenAIProvider(api_key="k")
+    h = provider._headers()
+    assert h["Content-Type"] == "application/json"
+    assert h["Authorization"] == "Bearer k"
+    # The client identifies as securo; the version suffix is present when
+    # the distribution metadata is available and the bare name otherwise.
+    ua = h["User-Agent"]
+    assert ua == "securo" or ua.startswith("securo/")
+    assert "x-opencode-session" not in h
+
+
+def test_openai_headers_carry_conversation_session_when_set():
+    provider = OpenAIProvider(api_key="k")
+    provider.session_id = "conv-42"
+    h = provider._headers()
+    assert h["x-opencode-session"] == "conv-42"
+
+
+def test_openai_user_agent_falls_back_without_distribution(monkeypatch):
+    import app.agents.providers.openai as mod
+
+    def _missing(*args, **kwargs):
+        raise mod.PackageNotFoundError("securo-backend")
+
+    monkeypatch.setattr(mod, "_pkg_version", _missing)
+    assert mod._app_user_agent() == "securo"

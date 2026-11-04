@@ -1,9 +1,13 @@
 import uuid
 from datetime import date as _Date
 from decimal import Decimal
-from typing import Optional
+from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+WeekendAdjustment = Literal["none", "previous_friday", "next_monday"]
+RecurringFrequency = Literal["weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly"]
+DayOfMonth = Annotated[int, Field(ge=1, le=31)]
 
 
 class RecurringTransactionCreate(BaseModel):
@@ -11,8 +15,9 @@ class RecurringTransactionCreate(BaseModel):
     amount: Decimal
     currency: str = "USD"
     type: str  # debit, credit
-    frequency: str  # monthly, weekly, yearly
-    day_of_month: Optional[int] = None
+    frequency: str  # weekly, biweekly, monthly, quarterly, semiannual, yearly
+    weekend_adjustment: WeekendAdjustment = "none"
+    day_of_month: Optional[DayOfMonth] = None
     start_date: _Date
     end_date: Optional[_Date] = None
     account_id: uuid.UUID
@@ -26,8 +31,9 @@ class RecurringTransactionUpdate(BaseModel):
     amount: Optional[Decimal] = None
     currency: Optional[str] = None
     type: Optional[str] = None
-    frequency: Optional[str] = None
-    day_of_month: Optional[int] = None
+    frequency: Optional[RecurringFrequency] = None
+    weekend_adjustment: Optional[WeekendAdjustment] = None
+    day_of_month: Optional[DayOfMonth] = None
     start_date: Optional[_Date] = None
     end_date: Optional[_Date] = None
     account_id: Optional[uuid.UUID] = None
@@ -46,6 +52,7 @@ class RecurringTransactionRead(BaseModel):
     currency: str
     type: str
     frequency: str
+    weekend_adjustment: WeekendAdjustment = "none"
     day_of_month: Optional[int] = None
     start_date: _Date
     end_date: Optional[_Date] = None

@@ -10,12 +10,13 @@
  * Conversation persistence: the active conversationId is kept in
  * localStorage keyed by agent. Re-opening the panel resumes the same
  * thread instead of starting fresh — the explicit "+" button is the
- * only way to start a new one.
+ * only way to start a new one, unless the stored conversation was deleted
+ * elsewhere, in which case it is forgotten and the next message starts one.
  *
  * Page context: each send forwards a `page_context` snapshot built
  * from the active page's registration (or a synthesized fallback).
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -140,12 +141,14 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
   // When the panel opens, default the inner view to chat (history view
   // is opt-in). Conversation itself is NOT reset — the user explicitly
   // clicks + to start a new one.
-  useEffect(() => {
+  const [panelSource, setPanelSource] = useState<{ open: typeof open } | null>(null)
+  if (!panelSource || panelSource.open !== open) {
+    setPanelSource({ open })
     if (open) {
       setView('chat')
       setFocusBump((n) => n + 1)
     }
-  }, [open])
+  }
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -183,7 +186,7 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                     variant="ghost"
                     className="-ml-1 px-1.5"
                     onClick={() => setView('chat')}
-                    aria-label="Back to chat"
+                    aria-label={t('agents.globalChat.backToChat')}
                   >
                     <ArrowLeft className="h-4 w-4" />
                   </Button>
@@ -289,7 +292,7 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                 </Link>
               </Button>
               <DialogPrimitive.Close asChild>
-                <Button size="sm" variant="ghost" aria-label="Close">
+                <Button size="sm" variant="ghost" aria-label={t('common.close')}>
                   <X className="h-4 w-4" />
                 </Button>
               </DialogPrimitive.Close>
@@ -327,6 +330,11 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                 agent={activeAgent}
                 conversationId={conversationId}
                 onConversationCreated={(id) => setConversationForActive(id)}
+                // The stored conversation was deleted (e.g. from the Agents
+                // page): forget it so the next message starts a new one.
+                onConversationMissing={(id) => {
+                  if (id === conversationId) setConversationForActive(null)
+                }}
                 focusSignal={focusBump}
                 getPageContext={() => getEffectivePageChatContext()}
               />

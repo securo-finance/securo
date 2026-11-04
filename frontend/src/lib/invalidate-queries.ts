@@ -8,6 +8,14 @@ import type { QueryClient } from '@tanstack/react-query'
 // balances. Pages that also need to refresh entity-specific lists
 // (recurring, payees, connections, etc.) should invalidate those keys
 // on top of this call.
+export function invalidateCategoryQueries(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ['categories'] })
+  // Both key families are currently used across the frontend. Invalidate both
+  // until callers have been migrated to a single convention.
+  queryClient.invalidateQueries({ queryKey: ['categoryGroups'] })
+  queryClient.invalidateQueries({ queryKey: ['category-groups'] })
+}
+
 export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['transactions'] })
   queryClient.invalidateQueries({ queryKey: ['dashboard'] })

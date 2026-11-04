@@ -6,6 +6,7 @@ from sqlalchemy import select, func, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_jwt_strategy, get_user_manager, UserManager
+from app.core.auth_policy import require_local_auth_enabled
 from app.core.database import get_async_session
 from app.models.account import Account
 from app.models.user import User
@@ -32,7 +33,7 @@ async def get_setup_status(session: AsyncSession = Depends(get_async_session)):
     return SetupStatus(has_users=count > 0)
 
 
-@router.post("/create-admin")
+@router.post("/create-admin", dependencies=[Depends(require_local_auth_enabled)])
 async def create_admin(
     body: CreateAdminRequest,
     session: AsyncSession = Depends(get_async_session),

@@ -46,7 +46,7 @@ class _FakeAsyncClient:
         pass
 
     queue: list[_FakeResponse] = []
-    calls: list[tuple[str, dict, dict]] = []
+    calls: list[tuple[str, dict | None, dict | None]] = []
 
     async def __aenter__(self):
         return self
@@ -143,6 +143,8 @@ async def test_list_tools_parses_securo_extras_and_defaults_schema():
     assert by_name["create_payee"].parameters == {"type": "object", "properties": {}}
     # Bearer header is propagated.
     _, _, headers = _FakeAsyncClient.calls[0]
+
+    assert headers is not None
     assert headers["Authorization"] == "Bearer fake"
 
 
@@ -237,7 +239,7 @@ def test_to_provider_tools_namespaces_and_filters():
     filtered = MCPRegistry.to_provider_tools(handles, allowed={("securo", "list_accounts")})
     assert [t.name for t in filtered] == ["securo__list_accounts"]
     # Defaults a missing parameters schema to an empty object schema.
-    handle_no_schema = ToolHandle(server="x", name="y", description="d", parameters=None)  # type: ignore[arg-type]
+    handle_no_schema = ToolHandle(server="x", name="y", description="d", parameters={})
     out = MCPRegistry.to_provider_tools([handle_no_schema], allowed=None)
     assert out[0].parameters == {"type": "object", "properties": {}}
 
@@ -280,6 +282,26 @@ async def test_registry_discover_swallows_per_server_errors(monkeypatch):
     reg = MCPRegistry()
     handles = await reg.discover(user_id=uuid.uuid4())
     assert {h.name for h in handles} == {"a"}
+
+
+@pytest.mark.asyncio
+async def test_registry_discover_warns_when_a_server_is_unreachable(monkeypatch, caplog):
+    """An unreachable server leaves the agent with no tools while the chat
+    still answers, so the log has to name the server and its URL. Otherwise
+    the only symptom is an assistant saying it can't see any data."""
+    from app.agents.config import get_agent_settings
+
+    monkeypatch.setattr(get_agent_settings(), "extra_mcp_servers", "")
+    monkeypatch.setattr(get_agent_settings(), "builtin_mcp_url", "http://mcp-server:8765/mcp")
+    _FakeAsyncClient.queue.append(_FakeResponse(status_code=500, json_body={}))
+
+    reg = MCPRegistry()
+    with caplog.at_level("WARNING", logger="app.agents.mcp.client"):
+        handles = await reg.discover(user_id=uuid.uuid4())
+
+    assert handles == []
+    assert "http://mcp-server:8765/mcp" in caplog.text
+    assert "securo" in caplog.text
 
 
 @pytest.mark.asyncio

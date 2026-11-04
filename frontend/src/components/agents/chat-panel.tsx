@@ -1,3 +1,4 @@
+import { isProposalData, isProposalToolName } from '@/lib/agent-proposals'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ShellLogo } from '@/components/shell-logo'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -9,7 +10,7 @@ import type { Agent, AgentMessage } from '@/lib/api'
 import { streamChat, type AgentStreamEvent } from '@/lib/agents-stream'
 import { Markdown } from '@/components/agents/markdown'
 import { ToolDebugChip } from '@/components/agents/tool-debug-chip'
-import { ProposalCard, isProposalData, isProposalToolName } from '@/components/agents/proposal-card'
+import { ProposalCard } from '@/components/agents/proposal-card'
 
 interface Props {
   agent: Agent
@@ -24,6 +25,14 @@ interface Props {
   // the agent can reason about "this row" / "the filters above".
   // Re-read on each send so we always pick up the latest state.
   getPageContext?: () => Record<string, unknown> | null
+  // Called when conversationId no longer exists (deleted elsewhere, e.g.
+  // from the Agents page), so the parent can drop it instead of sending
+  // every new message into a 404.
+  onConversationMissing?: (id: string) => void
+}
+
+function isNotFound(err: unknown): boolean {
+  return (err as { response?: { status?: number } } | null)?.response?.status === 404
 }
 
 interface DraftMessage {
@@ -35,7 +44,7 @@ interface DraftMessage {
   pending?: boolean
 }
 
-export function ChatPanel({ agent, conversationId, onConversationCreated, focusSignal, getPageContext }: Props) {
+export function ChatPanel({ agent, conversationId, onConversationCreated, focusSignal, getPageContext, onConversationMissing }: Props) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [input, setInput] = useState('')
@@ -52,12 +61,18 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
   // streaming deltas no longer yank them back down.
   const isAtBottomRef = useRef(true)
 
-  const { data: history } = useQuery({
+  const { data: history, error: historyError } = useQuery({
     queryKey: ['agent-conv-messages', conversationId],
     queryFn: () => (conversationId ? agents.conversations.messages(conversationId) : Promise.resolve([])),
     enabled: !!conversationId,
     staleTime: 1000 * 5,
+    // A deleted conversation stays deleted; retrying only delays the reset.
+    retry: (count, err) => !isNotFound(err) && count < 1,
   })
+
+  useEffect(() => {
+    if (conversationId && isNotFound(historyError)) onConversationMissing?.(conversationId)
+  }, [conversationId, historyError, onConversationMissing])
 
   // Snap to bottom when the conversation switches (it should look fresh)
   // and move keyboard focus to the input — covers both "+" (null) and
@@ -312,7 +327,7 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
           // h-10 matches the default Button height so the input + send
           // button line up when empty. Auto-grow above lifts it as the
           // user types more lines.
-          className="flex-1 h-10 max-h-[200px] rounded-md border bg-background px-3 py-2 text-sm resize-none leading-5 overflow-y-auto"
+          className="flex-1 h-10 max-h-[200px] rounded-md border bg-card px-3 py-2 text-sm resize-none leading-5 overflow-y-auto"
           onKeyDown={(e) => {
             // Enter sends; Shift+Enter inserts a newline. IME composition
             // (e.g. accented chars on Mac, CJK input) must not be hijacked.
@@ -440,25 +455,27 @@ function ChatEmptyState({ agent, onPick }: { agent: Agent; onPick: (text: string
     return null
   }, [agent.connection_id, agent.provider, agent.model, connections])
 
-  // Pull the localized prompt pool. Each locale ships ~10 short tips;
-  // we shuffle and take the first 6 so reopening a fresh chat doesn't
-  // always show the same chips.
+  // Pull the localized prompt pool. Each locale ships ~10 short tips.
   const allPrompts = useMemo<string[]>(() => {
     const raw = t('agents.emptyState.suggestions', { returnObjects: true })
     return Array.isArray(raw) ? (raw as string[]) : []
-    // Re-randomize each time the agent changes so switching agents
-    // refreshes the suggestion set too.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t, agent.id])
+  }, [t])
 
+  // Each agent gets its own slice of the pool, taken by rotating the list
+  // from an offset derived from its id. Deriving instead of shuffling keeps
+  // the render pure, so the chips stay put instead of swapping themselves
+  // out on an unrelated re-render.
   const picks = useMemo(() => {
-    const pool = [...allPrompts]
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[pool[i], pool[j]] = [pool[j], pool[i]]
+    if (allPrompts.length === 0) return []
+    let hash = 0
+    for (let i = 0; i < agent.id.length; i++) {
+      hash = (hash * 31 + agent.id.charCodeAt(i)) | 0
     }
-    return pool.slice(0, 3)
-  }, [allPrompts])
+    const start = Math.abs(hash) % allPrompts.length
+    return Array.from({ length: Math.min(3, allPrompts.length) }, (_, i) =>
+      allPrompts[(start + i) % allPrompts.length],
+    )
+  }, [allPrompts, agent.id])
 
   return (
     <div className="flex flex-col items-center justify-center text-center gap-5 py-12 min-h-[65vh]">

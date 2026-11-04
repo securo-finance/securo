@@ -25,22 +25,28 @@ interface ConnectorSelectDialogProps {
   onSelect: (provider: Provider) => void
 }
 
-export function ConnectorSelectDialog({ open, onClose, onSelect }: ConnectorSelectDialogProps) {
+export function ConnectorSelectDialog(props: ConnectorSelectDialogProps) {
+  return props.open ? <ConnectorSelectSession {...props} /> : null
+}
+
+function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDialogProps) {
   const { t } = useTranslation()
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!open) return
-    setLoading(true)
+    let cancelled = false
     connections.getProviders().then((data) => {
+      if (cancelled) return
       setProviders(data)
       setLoading(false)
     }).catch(() => {
+      if (cancelled) return
       setProviders([])
       setLoading(false)
     })
-  }, [open])
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>

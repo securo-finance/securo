@@ -4,6 +4,8 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
+import { useWorkspace } from '@/contexts/workspace-context'
+import type { ModuleId } from '@/lib/modules'
 import { useQuery } from '@tanstack/react-query'
 import {
   Search,
@@ -34,6 +36,7 @@ import {
 
 import { search as searchApi, type SearchHit, type SearchHitType } from '@/lib/api'
 import { cn, normalizeText } from '@/lib/utils'
+import { transactionDescription } from '@/lib/transaction-description'
 
 // ---------------------------------------------------------------------------
 // Static actions & navigation registry
@@ -46,21 +49,25 @@ type StaticItem = {
   path?: string
   onSelect?: (nav: (to: string) => void) => void
   keywords?: string[]
+  /** Gate this destination on the workspace showing that module.
+   *  Omitted for surfaces outside the module concept (the dashboard). */
+  module?: ModuleId
 }
 
 const NAV_ITEMS: StaticItem[] = [
   { id: 'nav-dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard, path: '/', keywords: ['home', 'inicio', 'início'] },
-  { id: 'nav-transactions', labelKey: 'nav.transactions', icon: ArrowLeftRight, path: '/transactions', keywords: ['tx', 'transacoes', 'transações'] },
-  { id: 'nav-accounts', labelKey: 'nav.accounts', icon: Building2, path: '/accounts', keywords: ['contas'] },
-  { id: 'nav-import', labelKey: 'nav.import', icon: Upload, path: '/import', keywords: ['csv', 'ofx', 'importar'] },
-  { id: 'nav-reports', labelKey: 'nav.reports', icon: BarChart3, path: '/reports', keywords: ['relatorios', 'relatórios', 'charts'] },
-  { id: 'nav-assets', labelKey: 'nav.assets', icon: Landmark, path: '/assets', keywords: ['patrimonio', 'patrimônio'] },
-  { id: 'nav-budgets', labelKey: 'nav.budgets', icon: PiggyBank, path: '/budgets', keywords: ['orcamentos', 'orçamentos'] },
-  { id: 'nav-goals', labelKey: 'nav.goals', icon: Target, path: '/goals', keywords: ['metas'] },
-  { id: 'nav-recurring', labelKey: 'nav.recurring', icon: Repeat, path: '/recurring', keywords: ['recorrentes'] },
-  { id: 'nav-categories', labelKey: 'nav.categories', icon: Tag, path: '/categories', keywords: ['categorias'] },
-  { id: 'nav-payees', labelKey: 'nav.payees', icon: Users, path: '/payees', keywords: ['beneficiarios', 'beneficiários'] },
-  { id: 'nav-rules', labelKey: 'nav.rules', icon: SlidersHorizontal, path: '/rules', keywords: ['regras'] },
+  { id: 'nav-transactions', labelKey: 'nav.transactions', icon: ArrowLeftRight, path: '/transactions', keywords: ['tx', 'transacoes', 'transações'], module: 'transactions' },
+  { id: 'nav-invoices', labelKey: 'nav.invoices', icon: Receipt, path: '/invoices', keywords: ['cobrancas', 'cobranças', 'faturas', 'clientes', 'recebimentos'], module: 'invoices' },
+  { id: 'nav-accounts', labelKey: 'nav.accounts', icon: Building2, path: '/accounts', keywords: ['contas'], module: 'accounts' },
+  { id: 'nav-import', labelKey: 'nav.import', icon: Upload, path: '/import', keywords: ['csv', 'ofx', 'importar'], module: 'import' },
+  { id: 'nav-reports', labelKey: 'nav.reports', icon: BarChart3, path: '/reports', keywords: ['relatorios', 'relatórios', 'charts'], module: 'reports' },
+  { id: 'nav-assets', labelKey: 'nav.assets', icon: Landmark, path: '/assets', keywords: ['patrimonio', 'patrimônio'], module: 'assets' },
+  { id: 'nav-budgets', labelKey: 'nav.budgets', icon: PiggyBank, path: '/budgets', keywords: ['orcamentos', 'orçamentos'], module: 'budgets' },
+  { id: 'nav-goals', labelKey: 'nav.goals', icon: Target, path: '/goals', keywords: ['metas'], module: 'goals' },
+  { id: 'nav-recurring', labelKey: 'nav.recurring', icon: Repeat, path: '/recurring', keywords: ['recorrentes'], module: 'recurring' },
+  { id: 'nav-categories', labelKey: 'nav.categories', icon: Tag, path: '/categories', keywords: ['categorias'], module: 'categories' },
+  { id: 'nav-payees', labelKey: 'nav.payees', icon: Users, path: '/payees', keywords: ['beneficiarios', 'beneficiários'], module: 'payees' },
+  { id: 'nav-rules', labelKey: 'nav.rules', icon: SlidersHorizontal, path: '/rules', keywords: ['regras'], module: 'rules' },
 ]
 
 const QUICK_ACTIONS: StaticItem[] = [
@@ -164,6 +171,7 @@ type RecentItem = {
   path: string
   icon: string // lucide name, stored as string; resolved via fallback icon
   sublabel?: string | null
+  source?: 'opening_balance'
 }
 
 const RECENT_KEY = 'securo.cmdk.recent'
@@ -256,6 +264,7 @@ export interface CommandPaletteProps {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { hasModule } = useWorkspace()
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const recents = useSyncExternalStore(subscribeRecents, getRecentSnapshot, getRecentSnapshot)
@@ -311,11 +320,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   // Client-side filtered nav + quick actions so typing "regras" or "nova"
   // narrows the in-app items alongside the backend entity search.
   const filteredNavItems = useMemo(() => {
-    if (debounced.trim().length === 0) return NAV_ITEMS
-    return NAV_ITEMS.filter((n) =>
+    // Same question the sidebar asks, so the palette can't offer a
+    // destination the workspace doesn't show.
+    const available = NAV_ITEMS.filter((n) => !n.module || hasModule(n.module))
+    if (debounced.trim().length === 0) return available
+    return available.filter((n) =>
       matchesQuery(debounced, [t(n.labelKey), n.path, ...(n.keywords ?? [])])
     )
-  }, [debounced, t])
+  }, [debounced, t, hasModule])
 
   const filteredQuickActions = useMemo(() => {
     if (debounced.trim().length === 0) return QUICK_ACTIONS
@@ -325,13 +337,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   }, [debounced, t])
 
   const runAndClose = useCallback(
-    (item: { id: string; label: string; path: string; iconName: string; sublabel?: string | null }) => {
+    (item: { id: string; label: string; path: string; iconName: string; sublabel?: string | null; source?: RecentItem['source'] }) => {
       saveRecent({
         id: item.id,
         label: item.label,
         path: item.path,
         icon: item.iconName,
         sublabel: item.sublabel,
+        source: item.source,
       })
       handleOpenChange(false)
       // Slight delay so dialog closes before navigation animation
@@ -424,7 +437,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                       {recents.map((r) => (
                         <Command.Item
                           key={`recent-${r.id}`}
-                          value={`recent ${r.label}`}
+                          value={`recent ${transactionDescription(r.label, r.icon === 'transaction' ? r.source : undefined, t)}`}
                           onSelect={() =>
                             runAndClose({
                               id: r.id,
@@ -432,6 +445,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                               path: r.path,
                               iconName: r.icon,
                               sublabel: r.sublabel,
+                              source: r.source,
                             })
                           }
                           className={itemClasses()}
@@ -440,7 +454,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                             <Compass size={14} />
                           </ItemIcon>
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-[13.5px] text-foreground">{r.label}</div>
+                            <div className="truncate text-[13.5px] text-foreground">{transactionDescription(r.label, r.icon === 'transaction' ? r.source : undefined, t)}</div>
                             {r.sublabel && (
                               <div className="truncate text-[11.5px] text-muted-foreground">{r.sublabel}</div>
                             )}
@@ -539,6 +553,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                         labelKey={meta.labelKey}
                       >
                         {items.map((hit) => {
+                          const source = hit.type === 'transaction' && hit.meta?.source === 'opening_balance'
+                            ? 'opening_balance' : undefined
+                          const label = transactionDescription(hit.label, source, t)
                           const amount = formatHitAmount(hit.amount, hit.currency, locale)
                           const dateLabel = formatHitDate(hit.date, locale)
                           const isPositive = (hit.amount ?? 0) > 0 && hit.type === 'transaction' && (hit.meta?.tx_type === 'credit' || hit.amount! > 0)
@@ -546,7 +563,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                           return (
                             <Command.Item
                               key={`${hit.type}-${hit.id}`}
-                              value={`${hit.type} ${hit.label} ${hit.subtitle ?? ''}`}
+                              value={`${hit.type} ${label} ${hit.subtitle ?? ''}`}
                               onSelect={() =>
                                 runAndClose({
                                   id: `${hit.type}-${hit.id}`,
@@ -554,6 +571,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                                   path: meta.pathFor(hit),
                                   iconName: hit.type,
                                   sublabel: hit.subtitle,
+                                  source,
                                 })
                               }
                               className={itemClasses()}
@@ -562,7 +580,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                                 <GroupIcon size={14} />
                               </ItemIcon>
                               <div className="min-w-0 flex-1">
-                                <div className="truncate text-[13.5px] text-foreground">{hit.label}</div>
+                                <div className="truncate text-[13.5px] text-foreground">{label}</div>
                                 {hit.subtitle && (
                                   <div className="truncate text-[11.5px] text-muted-foreground/90">
                                     {hit.subtitle}

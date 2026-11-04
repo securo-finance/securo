@@ -43,6 +43,8 @@ secret:
 # Non-sensitive configuration
 config:
   debug: "false"
+  # Set false only when oidc.enabled, oidc.clientId, and oidc.discoveryUrl are configured.
+  localAuthEnabled: "true"
   # Leave empty to auto-compute from global.domain (e.g. http://securo.local/oauth/callback)
   pluggyOauthRedirectUri: ""
   enableBankingApiUrl: "https://api.enablebanking.com"
@@ -56,6 +58,7 @@ config:
   oidcRedirectUri: ""
   oidcScopes: "openid email profile"
   oidcAutoRegister: "true"
+  # Link OIDC logins to existing accounts with the same email: disabled, verified_email, or email
   oidcExistingUserLinkMode: "disabled"
   oidcRequireVerifiedEmail: "true"
   oidcSyncRoles: "false"
@@ -108,6 +111,7 @@ backend:
 
 # Frontend configuration
 frontend:
+  backendUrl: ""
   replicaCount: 1
   image:
     repository: ghcr.io/securo-finance/securo-frontend
@@ -179,6 +183,9 @@ persistence:
     size: 5Gi
     storageClass: ""
     accessMode: ReadWriteOnce
+  # Both agent volumes are created only when config.agentsEnabled is true,
+  # so leaving these on costs a workspace that never enabled agents nothing,
+  # and a workspace that did keeps the volume it already has across upgrades.
   agentKnowledge:
     enabled: true
     size: 5Gi
@@ -223,7 +230,7 @@ redis:
   enabled: true
   image:
     repository: docker.io/library/redis
-    tag: 7-alpine
+    tag: 8-alpine
     pullPolicy: IfNotPresent
   resources: {}
 

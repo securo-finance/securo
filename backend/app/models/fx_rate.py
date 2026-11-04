@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date as _date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import Date, DateTime, Index, Numeric, String, UniqueConstraint
@@ -19,7 +19,7 @@ class FxRate(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     base_currency: Mapped[str] = mapped_column(String(3))  # Always "USD" for OER
     quote_currency: Mapped[str] = mapped_column(String(3))
-    date: Mapped[date] = mapped_column(Date)
+    date: Mapped[_date] = mapped_column(Date)
     rate: Mapped[Decimal] = mapped_column(Numeric(precision=20, scale=10))
     source: Mapped[str] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

@@ -22,7 +22,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Literal, Optional
+from typing import Any, AsyncIterator, Literal, Optional, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +37,7 @@ from app.agents.providers.base import (
     LLMNotSupportedError,
     LLMRateLimitError,
     LLMUnavailableError,
+    Role,
     ToolCall,
 )
 from app.agents.providers.registry import build_provider
@@ -345,6 +346,12 @@ class AgentExecutor:
         #      6. Conversation history
         #      7. The new user message (appended in step 4 below)
         history = await conversation_service.list_messages(session, conversation_id, limit=agent.max_history_messages * 2 + 2)
+        # The window can open mid-turn: a turn with parallel tool calls has an
+        # odd number of rows, so the cut can land on a tool result whose
+        # assistant call fell outside it. Providers reject an orphaned tool
+        # result, so replay from the first user message in the window.
+        while history and history[0].role != "user":
+            history.pop(0)
         messages: list[ChatMessage] = []
         # Runtime guardrail goes FIRST and applies to every conversation,
         # regardless of agent settings or per-agent system prompt. Locks
@@ -385,7 +392,10 @@ class AgentExecutor:
         for m in history:
             tcs = []
             for raw in (m.tool_calls or []):
-                tcs.append(ToolCall(id=raw.get("id"), name=raw.get("name"), arguments=raw.get("arguments") or {}))
+                tcs.append(ToolCall(
+                    id=raw.get("id"), name=raw.get("name"), arguments=raw.get("arguments") or {},
+                    thought_signature=raw.get("thought_signature"),
+                ))
             tool_call_id = (m.tool_result or {}).get("tool_call_id") if m.role == "tool" else None
             content = m.content
             if m.role == "tool":
@@ -393,7 +403,7 @@ class AgentExecutor:
                 tr = m.tool_result or {}
                 content = tr.get("text") or _safe_json(tr.get("data"))
             messages.append(ChatMessage(
-                role=m.role,  # type: ignore[arg-type]
+                role=cast(Role, m.role),
                 content=content,
                 tool_calls=tcs,
                 tool_call_id=tool_call_id,
@@ -421,6 +431,9 @@ class AgentExecutor:
             logger.exception("provider resolution failed; falling back to legacy path")
             provider = _provider_for(agent)
             model = _model_for(agent)
+        # Some OpenAI-compatible backends route on a per-conversation
+        # session id; providers that support it read this as a header.
+        provider.session_id = str(conversation_id)
         if not model:
             yield ExecutorEvent(
                 type="error",
@@ -476,7 +489,10 @@ class AgentExecutor:
                     args = json.loads(tc["args_buf"]) if tc["args_buf"] else {}
                 except json.JSONDecodeError:
                     args = {"_raw": tc["args_buf"]}
-                assembled_calls.append(ToolCall(id=tc["id"], name=tc["name"], arguments=args))
+                assembled_calls.append(ToolCall(
+                    id=tc["id"], name=tc["name"], arguments=args,
+                    thought_signature=tc.get("thought_signature"),
+                ))
 
             # Persist assistant turn.
             assistant_msg = await conversation_service.append_message(
@@ -484,7 +500,11 @@ class AgentExecutor:
                 conversation_id=conversation_id,
                 role="assistant",
                 content=assistant_text or None,
-                tool_calls=[{"id": c.id, "name": c.name, "arguments": c.arguments} for c in assembled_calls] or None,
+                tool_calls=[{
+                    "id": c.id, "name": c.name, "arguments": c.arguments,
+                    **({"thought_signature": c.thought_signature}
+                       if c.thought_signature is not None else {}),
+                } for c in assembled_calls] or None,
                 input_tokens=usage_input or None,
                 output_tokens=usage_output or None,
             )
@@ -598,6 +618,8 @@ async def _process_chunk(chunk: ChatChunk, text_buf: list[str], open_calls: dict
     elif chunk.type == "tool_call_args_delta" and chunk.tool_call_id:
         tc = open_calls.setdefault(chunk.tool_call_id, {"id": chunk.tool_call_id, "name": "", "args_buf": ""})
         tc["args_buf"] += chunk.args_delta or ""
+    elif chunk.type == "tool_call_end" and chunk.tool_call_id in open_calls:
+        open_calls[chunk.tool_call_id]["thought_signature"] = chunk.thought_signature
 
 
 async def _safe_call_tool(

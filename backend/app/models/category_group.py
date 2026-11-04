@@ -25,6 +25,7 @@ class CategoryGroup(Base):
     color: Mapped[str] = mapped_column(String(7), default="#6B7280")
     position: Mapped[int] = mapped_column(Integer, default=0)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     user: Mapped["User"] = relationship(back_populates="category_groups")
     categories: Mapped[list["Category"]] = relationship(

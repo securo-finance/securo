@@ -26,15 +26,26 @@ class TransactionCalendarItem(BaseModel):
     transfer_pair_id: Optional[uuid.UUID] = None
     is_transfer: bool = False
     is_ignored: bool = False
+    #: Kept out of the day's income/expense totals but still moving the
+    #: balance, so the row needs its own marker: without one the day card
+    #: shows 0/0 while its ending balance jumps, and nothing explains why.
+    exclude_from_pnl: bool = False
 
 
 class TransactionCalendarDay(BaseModel):
     date: date
     in_month: bool
     ending_balance: float
+    # Combined totals kept for backwards compatibility with existing consumers.
     income: float = 0.0
     expense: float = 0.0
     transfer_net: float = 0.0
+    actual_income: float = 0.0
+    actual_expense: float = 0.0
+    actual_transfer_net: float = 0.0
+    projected_income: float = 0.0
+    projected_expense: float = 0.0
+    projected_transfer_net: float = 0.0
     actual_count: int = 0
     projected_count: int = 0
     has_income: bool = False

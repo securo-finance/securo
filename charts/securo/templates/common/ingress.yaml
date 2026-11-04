@@ -27,6 +27,13 @@ spec:
     - host: {{ .Values.global.domain | quote }}
       http:
         paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "securo.fullname" $ }}-backend
+                port:
+                  name: http
           - path: /
             pathType: Prefix
             backend:

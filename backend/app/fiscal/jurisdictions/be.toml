@@ -1,0 +1,13 @@
+# Belgium. One enterprise number, quoted as the VAT number with a BE
+# prefix.
+code = "BE"
+kinds = ["vat"]
+
+# Goods crossing a border carry a Harmonized System code; a barcode is
+# what most catalogs already have.
+[[product_fields]]
+key = "hs_code"
+kinds = ["product"]
+[[product_fields]]
+key = "gtin"
+kinds = ["product"]

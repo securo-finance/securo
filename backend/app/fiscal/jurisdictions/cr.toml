@@ -1,0 +1,3 @@
+# Costa Rica. One cedula, juridica for a company and fisica for a person.
+code = "CR"
+kinds = ["cr_cedula"]

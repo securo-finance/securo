@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
 from app.schemas.category_group import CategoryGroupCreate, CategoryGroupUpdate
+from app.services.category_defaults import DEFAULT_GROUPS
 from app.services.category_group_service import (
-    DEFAULT_GROUPS_I18N,
     create_default_groups,
     create_group,
     delete_group,
@@ -27,7 +27,7 @@ async def test_create_default_groups(session: AsyncSession, test_user, test_work
     groups = await create_default_groups(session, test_user.id, lang="pt-BR")
     await session.commit()
 
-    assert len(groups) == len(DEFAULT_GROUPS_I18N)
+    assert len(groups) == len(DEFAULT_GROUPS)
     assert "housing" in groups
     assert "food" in groups
     assert "income" in groups
@@ -113,7 +113,7 @@ async def test_get_groups_ordered_by_position(session: AsyncSession, test_user, 
     await session.commit()
 
     groups = await get_groups(session, test_workspace.id)
-    assert len(groups) == len(DEFAULT_GROUPS_I18N)
+    assert len(groups) == len(DEFAULT_GROUPS)
 
     positions = [g.position for g in groups]
     assert positions == sorted(positions)
@@ -222,15 +222,15 @@ async def test_delete_custom_group(session: AsyncSession, test_user, test_worksp
 
 
 @pytest.mark.asyncio
-async def test_delete_system_group_rejected(session: AsyncSession, test_user, test_workspace):
+async def test_delete_system_group(session: AsyncSession, test_user, test_workspace):
     groups = await create_default_groups(session, test_user.id)
     await session.commit()
 
     # Try deleting a system group
     system_group = groups["housing"]
-    assert await delete_group(session, system_group.id, test_workspace.id) is False
-    # Should still exist
-    assert await get_group(session, system_group.id, test_workspace.id) is not None
+    assert await delete_group(session, system_group.id, test_workspace.id) is True
+    assert await get_group(session, system_group.id, test_workspace.id) is None
+
 
 
 @pytest.mark.asyncio

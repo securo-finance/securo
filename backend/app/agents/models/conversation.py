@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -8,6 +8,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.agents.models.agent import Agent
 
 
 class Conversation(Base):
@@ -28,7 +31,7 @@ class Conversation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    agent: Mapped["Agent"] = relationship(back_populates="conversations")  # noqa: F821
+    agent: Mapped["Agent"] = relationship(back_populates="conversations")
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
@@ -47,7 +50,7 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # When role="assistant" with tool calls, list of {id,name,arguments}.
+    # When role="assistant", list of {id,name,arguments,thought_signature?}.
     tool_calls: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     # When role="tool", payload is {tool_call_id, server, name, result, error?}.
     tool_result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

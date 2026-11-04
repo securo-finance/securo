@@ -23,6 +23,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from app.models.account import Account
+from app.models.category import Category
 from app.models.transaction import Transaction
 from app.services import (
     account_service,
@@ -488,6 +489,35 @@ class TestDashboardSummary:
 
 class TestSpendingByCategory:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["cash", "accrual"])
+    async def test_pending_credit_card_spend_is_available_in_projected_total(
+        self, session, test_user, test_workspace, cc_account, test_categories, mode
+    ):
+        """The dashboard category widget can include pending card spend.
+
+        ``total`` remains the settled-only value used by the actual/forecast
+        split, while ``projected_total`` is the all-in value that must match
+        the dashboard drill-down.
+        """
+        food = test_categories[0]
+        today = date.today()
+        pending = await _make_tx(
+            session, test_user.id, cc_account.id, today,
+            Decimal("100"), effective_date=today, category_id=food.id,
+        )
+        pending.status = "pending"
+        await session.commit()
+        await _set_mode(session, mode)
+
+        spending = await dashboard_service.get_spending_by_category(
+            session, test_workspace.id, test_user.id, month=today.replace(day=1)
+        )
+        food_row = next(row for row in spending if row.category_id == str(food.id))
+
+        assert food_row.total == 0.0
+        assert food_row.projected_total == 100.0
+
+    @pytest.mark.asyncio
     async def test_category_breakdown_follows_mode(
         self, session, test_user, test_workspace, cc_account, test_categories
     ):
@@ -652,19 +682,6 @@ class TestBudgetVsActual:
 # ---------------------------------------------------------------------------
 # Reports: income/expenses monthly report.
 # ---------------------------------------------------------------------------
-
-
-class TestIncomeExpensesReport:
-    @pytest.mark.asyncio
-    async def test_monthly_report_follows_mode(
-        self, session, test_user, cc_account, test_categories
-    ):
-        # This path uses Postgres-specific `to_char`, which SQLite (the test DB)
-        # doesn't implement. Rather than duplicate the query, we skip here and
-        # rely on the fact that `get_income_expenses_report` uses the exact
-        # same `report_date` expression as the dashboard queries above — if
-        # those tests pass, this one is wired identically.
-        pytest.skip("get_income_expenses_report uses Postgres to_char — SQLite test DB doesn't support it")
 
 
 # ---------------------------------------------------------------------------
@@ -1425,6 +1442,8 @@ class TestEffectiveBillDateFiltersList:
             date_from=date(2026, 3, 17), date_to=date(2026, 4, 16),
             bill_id=bill.id,
         )
+
+        assert summary is not None
         assert summary["monthly_income"] == 80.0
 
     @pytest.mark.asyncio
@@ -1482,6 +1501,8 @@ class TestEffectiveBillDateFiltersList:
             bill_id=bill.id,
         )
         # 44.90 (charge) - 44.90 (refund) + 32.50 (other) = 32.50
+
+        assert summary is not None
         assert summary["monthly_expenses"] == 32.50
 
     @pytest.mark.asyncio
@@ -1520,6 +1541,8 @@ class TestEffectiveBillDateFiltersList:
             session, checking.id, test_workspace.id,
             date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
         )
+
+        assert summary is not None
         assert summary["monthly_expenses"] == 50.0
         assert summary["monthly_income"] == 3000.0
 
@@ -1603,6 +1626,8 @@ class TestEffectiveBillDateFiltersList:
             bill_id=bill.id,
         )
         # Manual 50 counted, pending 99 excluded
+
+        assert summary is not None
         assert summary["monthly_expenses"] == 50.0
 
     @pytest.mark.asyncio
@@ -1678,14 +1703,15 @@ class TestEffectiveBillDateFiltersList:
         )
 
     @pytest.mark.asyncio
-    async def test_summary_includes_pending_sync_with_override(
+    async def test_summary_forecast_includes_pending_sync_with_override(
         self, session, test_user, test_workspace, cc_account
     ):
         """get_account_summary mirrors get_transactions: a pending sync tx
         with `effective_bill_date` in the cycle window must contribute to
-        the totals card and bar chart even when the override doesn't snap
-        to a bill's due_date (so bill_id stays null). Without this the
-        strip pill totals diverge from the tx list (issue #162)."""
+        the projected totals even when the override doesn't snap to a bill's
+        due_date (so bill_id stays null). Actual totals remain posted-only.
+        Without this the projected bill total diverges from the tx list
+        (issue #162)."""
         from app.services.account_service import get_account_summary
         from app.models.credit_card_bill import CreditCardBill
         from datetime import datetime, timezone
@@ -1715,7 +1741,10 @@ class TestEffectiveBillDateFiltersList:
             date_from=date(2026, 4, 17), date_to=date(2026, 5, 16),
             bill_id=may.id,
         )
-        assert summary["monthly_expenses"] == 105.0
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 0.0
+        assert summary["projected_expenses"] == 105.0
 
     @pytest.mark.asyncio
     async def test_override_past_in_progress_window_lands_in_in_progress(
@@ -1759,4 +1788,543 @@ class TestEffectiveBillDateFiltersList:
             date_from=date(2026, 4, 12), date_to=date(2026, 5, 11),
             unbilled_only=True,
         )
+
+        assert summary is not None
         assert summary["monthly_expenses"] == 59.90
+
+
+# ---------------------------------------------------------------------------
+# Bill totals answer to the bank, not to the reporting filters.
+# ---------------------------------------------------------------------------
+
+
+class TestBillTotalIgnoresReportingExclusions:
+    """A credit-card bill total is an amount *owed*, so it does not inherit
+    the judgments `counts_as_pnl` makes about what counts as spending.
+
+    The card's own numbers used to disagree: a purchase in a
+    `treat_as_transfer` category (Investimentos ships as one) dropped out
+    of the cycle total while still moving the card's balance, so the bill
+    card matched neither the bank's statement nor the running balance
+    rendered beside it.
+    """
+
+    @pytest_asyncio.fixture
+    async def transfer_category(self, session, test_user):
+        cat = Category(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="Investimentos",
+            icon="trending-up",
+            color="#0EA5E9",
+            treat_as_transfer=True,
+        )
+        session.add(cat)
+        await session.commit()
+        await session.refresh(cat)
+        return cat
+
+    @pytest.mark.asyncio
+    async def test_treat_as_transfer_purchase_stays_on_the_bill(
+        self, session, test_user, test_workspace, cc_account, transfer_category
+    ):
+        """The bank billed for it, so the cycle total has to show it."""
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+            category_id=transfer_category.id,
+        )
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 300.0
+
+    @pytest.mark.asyncio
+    async def test_treat_as_transfer_still_leaves_pnl_on_a_regular_account(
+        self, session, test_user, test_workspace, test_account, transfer_category
+    ):
+        """The contrast that makes the rule readable: the same category on a
+        checking account is still a transfer-like flow, not spending."""
+        await _make_tx(
+            session, test_user.id, test_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        await _make_tx(
+            session, test_user.id, test_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+            category_id=transfer_category.id,
+        )
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, test_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_treat_as_transfer_purchase_stays_in_the_forecast_total(
+        self, session, test_user, test_workspace, cc_account, transfer_category
+    ):
+        """The payable shown on the bill card follows the same rule."""
+        pending = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+            category_id=transfer_category.id,
+        )
+        pending.status = "pending"
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["projected_expenses"] == 200.0
+
+    @pytest.mark.asyncio
+    async def test_ignored_purchase_still_leaves_the_bill(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        """Regression guard on the clause that must NOT change: `is_ignored`
+        leaves the account balance too, so dropping it from the bill keeps
+        the card's two numbers telling one story."""
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        ignored = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+        )
+        ignored.is_ignored = True
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_transfer_like_credit_does_not_shrink_the_bill(
+        self, session, test_user, test_workspace, cc_account, transfer_category
+    ):
+        """An unpaired card payment (no matching transfer leg) is normally
+        filed under a transfer-like category. Unlike a debit in that same
+        category, the credit must not net against the bill or an ordinary
+        repayment would read as new debt shrinking, cycle after cycle."""
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("50"), tx_type="credit",
+            category_id=transfer_category.id,
+        )
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_income"] == 0.0
+        assert summary["monthly_expenses"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_ignored_category_purchase_also_leaves_the_bill(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        """The ignore signal counts from either side. A category the user
+        ignored leaves the account balance exactly like a row-level ignore,
+        so the bill has to drop it too or the card's numbers split apart."""
+        ignored_category = Category(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="Reembolsáveis",
+            icon="receipt",
+            color="#94A3B8",
+            is_ignored=True,
+        )
+        session.add(ignored_category)
+        await session.flush()
+
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+            category_id=ignored_category.id,
+        )
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_exclude_from_pnl_purchase_stays_on_the_bill(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        """`exclude_from_pnl` says "do not report this as spending", not
+        "the bank did not bill me". Its canonical use — a work expense on a
+        personal card, reimbursed later — is a card case, so the bill total
+        has to stay whole or the card's own numbers split apart."""
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        reimbursed = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+        )
+        reimbursed.exclude_from_pnl = True
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 300.0
+
+
+# ---------------------------------------------------------------------------
+# Bill-based membership for single-cycle windows (issue #563).
+#
+# A manual effective_bill_date names a bill by that bill's DUE date, but the
+# cycle view used to bucket by the purchase window containing the date. With
+# close=24 / due=18 the Aug bill is due 08-18, which sits inside the Sep
+# cycle's purchase window 07-24..08-23, so a tx overridden onto the Aug bill
+# showed up in the Sep bill and left the Aug bill empty.
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def cc_account_due_before_close(session, test_user, test_connection):
+    """A credit card account with close=24, due=18: the previous bill's due
+    date (the 18th) falls INSIDE the next cycle's purchase window."""
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        connection_id=test_connection.id,
+        external_id="cc-563",
+        name="late due card",
+        type="credit_card",
+        balance=Decimal("0"),
+        currency="BRL",
+        statement_close_day=24,
+        payment_due_day=18,
+        credit_limit=Decimal("5000"),
+    )
+    session.add(account)
+    await session.commit()
+    await session.refresh(account)
+    return account
+
+
+class TestCycleBillDueDates:
+    """Unit tests for cc_cycle_bill_due_dates, the pure window-shape check."""
+
+    def test_detects_cycle_window_and_returns_due_dates(self):
+        from app.services.credit_card_service import cc_cycle_bill_due_dates
+        r = cc_cycle_bill_due_dates(date(2026, 7, 24), date(2026, 8, 23), 24, 18)
+        assert r == {
+            "this": date(2026, 9, 18),
+            "prev": date(2026, 8, 18),
+            "next": date(2026, 10, 18),
+            "degenerate": False,
+        }
+
+    def test_rejects_non_cycle_windows(self):
+        from app.services.credit_card_service import cc_cycle_bill_due_dates
+        # Calendar month, not a cycle of this account:
+        assert cc_cycle_bill_due_dates(date(2026, 7, 1), date(2026, 7, 31), 24, 18) is None
+        # Half-window (one bound missing):
+        assert cc_cycle_bill_due_dates(date(2026, 7, 24), None, 24, 18) is None
+        # Account without both cycle days set:
+        assert cc_cycle_bill_due_dates(date(2026, 7, 24), date(2026, 8, 23), None, 18) is None
+
+    def test_clamped_close_day_across_months(self):
+        from app.services.credit_card_service import cc_cycle_bill_due_dates
+        # close=31 clamps to 01-31 then 02-28 (2026 is not a leap year).
+        r = cc_cycle_bill_due_dates(date(2026, 1, 31), date(2026, 2, 27), 31, 30)
+        assert r is not None
+        assert r["this"] == date(2026, 3, 30)
+        assert r["prev"] == date(2026, 2, 28)
+        assert r["degenerate"] is False
+
+    def test_degenerate_shared_due_date_is_flagged(self):
+        from app.services.credit_card_service import cc_cycle_bill_due_dates
+        # close=29 / due=30: the bill closing 02-28 and the bill closing
+        # 03-28 both clamp to a 03-30 due date, so an override of 03-30
+        # cannot name exactly one bill. Callers keep the historical window
+        # behavior when this flag is set.
+        r = cc_cycle_bill_due_dates(date(2026, 2, 28), date(2026, 3, 28), 29, 30)
+        assert r is not None
+        assert r["this"] == date(2026, 3, 30)
+        assert r["prev"] == date(2026, 3, 30)
+        assert r["degenerate"] is True
+
+
+class TestCycleWindowBillMembership:
+    """Integration tests: the cycle view must group by the bill an override
+    names, not by the purchase window that contains the due date."""
+
+    @pytest.mark.asyncio
+    async def test_override_to_previous_bill_lands_in_previous_cycle_list(
+        self, session, test_user, test_workspace, cc_account_due_before_close
+    ):
+        """The issue scenario: a tx overridden onto the previous bill (due
+        08-18) must show in the Aug cycle (window 06-24..07-23) and leave
+        the Sep cycle (window 07-24..08-23) alone."""
+        from app.services.transaction_service import get_transactions
+        account = cc_account_due_before_close
+        moved = await _make_tx(
+            session, test_user.id, account.id,
+            date(2026, 7, 25), Decimal("100.00"),
+        )
+        moved.effective_bill_date = date(2026, 8, 18)  # Aug bill's due date
+        natural = await _make_tx(
+            session, test_user.id, account.id,
+            date(2026, 7, 1), Decimal("10.00"),
+        )
+        await session.commit()
+
+        aug_txs, _, _ = await get_transactions(
+            session, test_workspace.id, test_user.id, account_id=account.id,
+            from_date=date(2026, 6, 24), to_date=date(2026, 7, 23),
+            accounting_mode="cash",
+        )
+        aug_ids = {t.id for t in aug_txs}
+        assert moved.id in aug_ids       # override names the Aug bill
+        assert natural.id in aug_ids     # non-overridden txs are untouched
+
+        sep_txs, _, _ = await get_transactions(
+            session, test_workspace.id, test_user.id, account_id=account.id,
+            from_date=date(2026, 7, 24), to_date=date(2026, 8, 23),
+            accounting_mode="cash",
+        )
+        sep_ids = {t.id for t in sep_txs}
+        assert moved.id not in sep_ids   # no longer shown in the Sep bill
+        assert natural.id not in sep_ids
+
+    @pytest.mark.asyncio
+    async def test_override_to_own_bill_due_date_stays_in_own_cycle_list(
+        self, session, test_user, test_workspace, cc_account_due_before_close
+    ):
+        """Forward case: a tx in the Sep cycle (window 07-24..08-23) whose
+        override points at its own bill's due date (09-18, after the window)
+        must stay on the Sep bill instead of vanishing from it, and must not
+        leak into the Oct cycle (window 08-24..09-23)."""
+        from app.services.transaction_service import get_transactions
+        account = cc_account_due_before_close
+        tx = await _make_tx(
+            session, test_user.id, account.id,
+            date(2026, 8, 1), Decimal("42.00"),
+        )
+        tx.effective_bill_date = date(2026, 9, 18)
+        await session.commit()
+
+        sep_txs, _, _ = await get_transactions(
+            session, test_workspace.id, test_user.id, account_id=account.id,
+            from_date=date(2026, 7, 24), to_date=date(2026, 8, 23),
+            accounting_mode="cash",
+        )
+        assert any(t.id == tx.id for t in sep_txs)
+
+        oct_txs, _, _ = await get_transactions(
+            session, test_workspace.id, test_user.id, account_id=account.id,
+            from_date=date(2026, 8, 24), to_date=date(2026, 9, 23),
+            accounting_mode="cash",
+        )
+        assert not any(t.id == tx.id for t in oct_txs)
+
+    @pytest.mark.asyncio
+    async def test_summary_totals_follow_override_into_named_bill(
+        self, session, test_user, test_workspace, cc_account_due_before_close
+    ):
+        """The totals card (get_account_summary plain path) must agree with
+        the list: the Aug bill shows the overridden charge, the Sep bill
+        shows nothing for it."""
+        account = cc_account_due_before_close
+        moved = await _make_tx(
+            session, test_user.id, account.id,
+            date(2026, 7, 25), Decimal("100.00"),
+        )
+        moved.effective_bill_date = date(2026, 8, 18)
+        await session.commit()
+
+        aug = await account_service.get_account_summary(
+            session, account.id, test_workspace.id,
+            date_from=date(2026, 6, 24), date_to=date(2026, 7, 23),
+        )
+        assert aug is not None
+        assert aug["monthly_expenses"] == 100.0
+
+        sep = await account_service.get_account_summary(
+            session, account.id, test_workspace.id,
+            date_from=date(2026, 7, 24), date_to=date(2026, 8, 23),
+        )
+        assert sep is not None
+        assert sep["monthly_expenses"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_override_rule_applies_to_endpoint_account_ids_shape(
+        self, session, test_user, test_workspace, cc_account_due_before_close
+    ):
+        """The list endpoint (api/transactions) funnels its single
+        account_id param into account_ids, leaving account_id None. The
+        bill-based rule must fire for that shape too, or the cycle list
+        silently falls back to window bucketing while the totals follow
+        the override."""
+        from app.services.transaction_service import get_transactions
+        account = cc_account_due_before_close
+        moved = await _make_tx(
+            session, test_user.id, account.id,
+            date(2026, 7, 25), Decimal("100.00"),
+        )
+        moved.effective_bill_date = date(2026, 8, 18)
+        await session.commit()
+
+        aug_txs, _, _ = await get_transactions(
+            session, test_workspace.id, test_user.id, account_ids=[account.id],
+            from_date=date(2026, 6, 24), to_date=date(2026, 7, 23),
+            accounting_mode="cash",
+        )
+        assert any(t.id == moved.id for t in aug_txs)
+
+        sep_txs, _, _ = await get_transactions(
+            session, test_workspace.id, test_user.id, account_ids=[account.id],
+            from_date=date(2026, 7, 24), to_date=date(2026, 8, 23),
+            accounting_mode="cash",
+        )
+        assert not any(t.id == moved.id for t in sep_txs)
+
+
+# Bills of the close=24 / due=18 card in 2025, keyed by name:
+# (cycle window start, cycle window end, due date). Each bill owns the
+# overrides in (previous due date, its due date].
+_CYCLES_2025 = {
+    "aug": (date(2025, 6, 24), date(2025, 7, 23)),   # due 08-18, owns (07-18, 08-18]
+    "sep": (date(2025, 7, 24), date(2025, 8, 23)),   # due 09-18, owns (08-18, 09-18]
+    "oct": (date(2025, 8, 24), date(2025, 9, 23)),   # due 10-18, owns (09-18, 10-18]
+}
+
+
+class TestOverrideRangeRule:
+    """An override belongs to the bill whose (previous due date, due date]
+    range contains it, whether or not it is an exact due date. It must show
+    in that bill's list and totals and in no other bill."""
+
+    @pytest.mark.parametrize(
+        "purchase, override, expected",
+        [
+            # Exact due dates: the bill with that due date.
+            (date(2025, 7, 25), date(2025, 8, 18), "aug"),
+            (date(2025, 8, 1), date(2025, 9, 18), "sep"),
+            # Inside (previous due, due] but not a due date.
+            (date(2025, 8, 1), date(2025, 8, 20), "sep"),
+            (date(2025, 8, 1), date(2025, 9, 1), "sep"),
+            (date(2025, 9, 1), date(2025, 10, 1), "oct"),
+            # Right after a due date: the next bill.
+            (date(2025, 7, 10), date(2025, 7, 19), "aug"),
+            (date(2025, 8, 1), date(2025, 8, 19), "sep"),
+            # Inside the Sep purchase window but within (07-18, 08-18],
+            # so it belongs to the Aug bill.
+            (date(2025, 7, 25), date(2025, 7, 25), "aug"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_override_shows_in_exactly_one_bill(
+        self, session, test_user, test_workspace, cc_account_due_before_close,
+        purchase, override, expected,
+    ):
+        from app.services.transaction_service import get_transactions
+        account = cc_account_due_before_close
+        tx = await _make_tx(
+            session, test_user.id, account.id, purchase, Decimal("25.00"),
+        )
+        tx.effective_bill_date = override
+        await session.commit()
+
+        for name, (start, end) in _CYCLES_2025.items():
+            txs, _, _ = await get_transactions(
+                session, test_workspace.id, test_user.id, account_id=account.id,
+                from_date=start, to_date=end, accounting_mode="cash",
+            )
+            summary = await account_service.get_account_summary(
+                session, account.id, test_workspace.id,
+                date_from=start, date_to=end,
+            )
+            assert summary is not None
+            listed = any(t.id == tx.id for t in txs)
+            if name == expected:
+                assert listed, f"missing from the {name} bill list"
+                assert summary["monthly_expenses"] == 25.0, name
+            else:
+                assert not listed, f"leaked into the {name} bill list"
+                assert summary["monthly_expenses"] == 0.0, name
+
+
+@pytest.mark.asyncio
+async def test_charge_moved_to_previous_bill_counts_as_prior_debt(
+    session, test_user, test_workspace, cc_account_due_before_close
+):
+    """A charge whose override moves it onto the previous bill must count
+    as older debt for that bill's payment inside this window. Otherwise the
+    payment settles less older debt than it really does, and the excess is
+    netted against this cycle's own charges."""
+    account = cc_account_due_before_close
+    # Aug bill (window 06-24 to 07-23, due 08-18): 200 in its window plus a
+    # 100 charge from the Sep window overridden onto it.
+    await _make_tx(session, test_user.id, account.id, date(2025, 7, 1), Decimal("200.00"))
+    moved = await _make_tx(
+        session, test_user.id, account.id, date(2025, 7, 25), Decimal("100.00"),
+    )
+    moved.effective_bill_date = date(2025, 8, 18)
+    # The Aug bill paid in full on its due date, inside the Sep window.
+    payment = await _make_tx(
+        session, test_user.id, account.id, date(2025, 8, 18), Decimal("300.00"),
+        tx_type="credit",
+    )
+    payment.transfer_pair_id = uuid.uuid4()
+    # The Sep cycle's own charges.
+    await _make_tx(session, test_user.id, account.id, date(2025, 8, 1), Decimal("50.00"))
+    await session.commit()
+
+    aug = await account_service.get_account_summary(
+        session, account.id, test_workspace.id,
+        date_from=date(2025, 6, 24), date_to=date(2025, 7, 23),
+    )
+    sep = await account_service.get_account_summary(
+        session, account.id, test_workspace.id,
+        date_from=date(2025, 7, 24), date_to=date(2025, 8, 23),
+    )
+    assert aug is not None and sep is not None
+    assert aug["monthly_expenses"] == pytest.approx(300.0)
+    assert sep["monthly_expenses"] == pytest.approx(50.0)

@@ -6,7 +6,7 @@ If you discover a security vulnerability in Securo, please report it responsibly
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email: **contact@usesecuro.com** (or open a private security advisory on GitHub)
+Instead, please email: **info@usesecuro.com** (or open a private security advisory on GitHub)
 
 ### What to include
 

@@ -3,11 +3,16 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
-import { AlertTriangle, Info, Paperclip, X } from 'lucide-react'
+import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
+import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { sumDrillDownTotals } from '@/lib/drill-down-totals'
+import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { Transaction } from '@/types'
+import { formatCurrency } from '@/lib/format'
 
 export type DrillDownFilter = {
   title: string
@@ -33,12 +38,9 @@ type DisplayItem = {
   categoryName: string | null
   categoryColor: string | null
   isProjected: boolean
+  isPending: boolean
   attachmentCount: number
   transaction: Transaction | null
-}
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
 
 export function TransactionDrillDown({
@@ -80,7 +82,7 @@ export function TransactionDrillDown({
 
   const { data: projectedTxs } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
-    queryFn: () => dashboard.projectedTransactions(monthParam),
+    queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
     enabled: !!filter && !!monthParam,
   })
 
@@ -108,6 +110,7 @@ export function TransactionDrillDown({
         categoryName: tx.category?.name ?? null,
         categoryColor: tx.category?.color ?? null,
         isProjected: false,
+        isPending: tx.status === 'pending',
         attachmentCount: tx.attachment_count ?? 0,
         transaction: tx,
       })
@@ -133,6 +136,7 @@ export function TransactionDrillDown({
         categoryName: pt.category_name,
         categoryColor: pt.category_color ?? null,
         isProjected: true,
+        isPending: false,
         attachmentCount: 0,
         transaction: null,
       })
@@ -142,23 +146,27 @@ export function TransactionDrillDown({
     return items
   }, [data, projectedTxs, filter])
 
-  // Close on Escape
+  // Close on Escape, unless the key belongs to a dialog opened from the
+  // panel (Radix marks the Escape it handled as defaultPrevented).
   useEffect(() => {
     if (!filter) return
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape' || e.defaultPrevented || hasOpenDialog()) return
+      onClose()
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
   }, [filter, onClose])
 
-  // Close on click outside
+  // Close on click outside. The transaction dialog opened from a row, and its
+  // popovers and selects, are portaled to the body; clicks there keep the
+  // panel open so the next row can be edited once the dialog closes.
   useEffect(() => {
     if (!filter) return
     const handleClick = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose()
-      }
+      if (!panelRef.current || panelRef.current.contains(e.target as Node)) return
+      if (isInsideOverlayLayer(e.target) || hasOpenDialog()) return
+      onClose()
     }
     // Delay to avoid closing immediately from the click that opened it
     const timer = setTimeout(() => {
@@ -174,15 +182,14 @@ export function TransactionDrillDown({
   // amount_primary; if it's missing we can't convert, so skip the row
   // instead of adding a raw foreign amount as if it were primary. This
   // matches how get_summary computes monthly_*_primary on the backend.
-  const absTotal = displayItems.reduce((sum, item) => {
-    if (item.currency === userCurrency) {
-      return sum + Math.abs(item.amount)
-    }
-    if (item.amountPrimary != null) {
-      return sum + Math.abs(item.amountPrimary)
-    }
-    return sum
-  }, 0)
+  const { absTotal, postedTotal, pendingTotal, projectedTotal } =
+    sumDrillDownTotals(displayItems, userCurrency)
+
+  // Break the total down whenever some of it is money that has not settled,
+  // whether it is pending or still only projected. Gating on pending alone
+  // hid the projected line from a panel that happened to have no pending row,
+  // even though the total it sits under already counted the projection.
+  const hasUnsettledTotal = pendingTotal > 0 || projectedTotal > 0
 
   return (
     <>
@@ -254,9 +261,17 @@ export function TransactionDrillDown({
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
                       {item.isProjected && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-600 shrink-0">
-                          {t('transactions.recurringBadge')}
-                        </span>
+                        <ProjectedTransactionBadge />
+                      )}
+                      {item.isPending && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10">
+                              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('transactions.pending')}</TooltipContent>
+                        </Tooltip>
                       )}
                       {item.attachmentCount > 0 && (
                         <Paperclip size={12} className="text-muted-foreground shrink-0" />
@@ -296,17 +311,40 @@ export function TransactionDrillDown({
         {/* Footer */}
         {displayItems.length > 0 && (
           <div className="px-5 py-3 border-t border-border bg-muted/50 shrink-0">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                {t('dashboard.drillDownTotal', {
-                  count: displayItems.length,
-                  total: mask(formatCurrency(absTotal, userCurrency, locale)),
-                })}
-              </span>
-              <span className="text-sm font-bold tabular-nums text-foreground">
-                {mask(formatCurrency(absTotal, userCurrency, locale))}
-              </span>
-            </div>
+            {hasUnsettledTotal ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+                  <span>{t('dashboard.drillDownSettledTotal')}</span>
+                  <span className="tabular-nums text-foreground">{mask(formatCurrency(postedTotal, userCurrency, locale))}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+                  <span>{t('dashboard.drillDownPendingTotal')}</span>
+                  <span className="tabular-nums text-foreground">{mask(formatCurrency(pendingTotal, userCurrency, locale))}</span>
+                </div>
+                {projectedTotal > 0 && (
+                  <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+                    <span>{t('transactions.projected')}</span>
+                    <span className="tabular-nums text-foreground">{mask(formatCurrency(projectedTotal, userCurrency, locale))}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-4 border-t border-border pt-2 mt-2">
+                  <span className="text-xs font-medium text-muted-foreground">{t('dashboard.drillDownShownTotal')}</span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(absTotal, userCurrency, locale))}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {t('dashboard.drillDownTotal', {
+                    count: displayItems.length,
+                    total: mask(formatCurrency(absTotal, userCurrency, locale)),
+                  })}
+                </span>
+                <span className="text-sm font-bold tabular-nums text-foreground">
+                  {mask(formatCurrency(absTotal, userCurrency, locale))}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>

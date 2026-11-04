@@ -1,8 +1,10 @@
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from math import isfinite
 from os import getenv
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -22,6 +24,7 @@ class Settings(BaseSettings):
 
     # Auth
     secret_key: SecretStr = SecretStr("change-me-in-production")
+    local_auth_enabled: bool = True
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
 
@@ -32,6 +35,9 @@ class Settings(BaseSettings):
     # Set explicitly only when the URL registered in the provider dashboard
     # differs from where the app is served.
     pluggy_oauth_redirect_uri: str = ""
+    # Gates the BrasilAPI outbound lookup in _lookup_bank_info (pluggy.py).
+    # Off by default: no third-party call happens until a deploy opts in.
+    brasilapi_institution_lookup_enabled: bool = False
 
     # Enable Banking (European PSD2 banks)
     enable_banking_app_id: str = ""
@@ -48,6 +54,9 @@ class Settings(BaseSettings):
 
     # Frontend
     frontend_url: str = "http://localhost:5173"
+    # Docker Compose passes FRONTEND_URL empty when it is not set, plus the
+    # published port; an empty FRONTEND_URL becomes http://localhost:<port>.
+    frontend_port: int = 3000
 
     # WebAuthn / passkeys
     webauthn_rp_name: str = "Securo"
@@ -65,7 +74,7 @@ class Settings(BaseSettings):
 
     # FX Rates
     openexchangerates_app_id: str = ""
-    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP"  # comma-separated list
+    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR,GEL"  # comma-separated list
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage
@@ -74,6 +83,10 @@ class Settings(BaseSettings):
     storage_max_file_size_mb: int = 10
     storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf"
     storage_max_attachments_per_transaction: int = 10
+    # An invoice gathers more paper than a transaction does: the bill, the
+    # fiscal document, a receipt, the contract behind it, and a correction
+    # of any of them.
+    storage_max_attachments_per_invoice: int = 20
 
     # S3 Storage (for future use)
     storage_s3_bucket: str = ""
@@ -110,8 +123,43 @@ class Settings(BaseSettings):
     oidc_admin_roles: str = ""  # comma-separated provider roles/groups that grant Securo admin
     oidc_workspace_role_map: str = ""  # JSON: {"provider-role": "owner|editor|viewer"}
 
+    # Deploy scripts that source the .env file with a shell need values with
+    # spaces to be quoted, and some panels (PaaS env vars, manual exports)
+    # keep those quotes in the value. Drop one pair of surrounding quotes so
+    # the provider always receives clean scope tokens (#887).
+    @field_validator("oidc_scopes")
+    @classmethod
+    def _strip_oidc_scopes_quotes(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1].strip()
+        return value
+
     # Celery
     redis_url: str = "redis://localhost:6379/0"
+    # Minimum age of a successful sync before automatic polling retries it.
+    # Set to 6 for banks limiting unattended account access to four times/day.
+    bank_sync_min_interval_hours: float = 4
+
+    @model_validator(mode="after")
+    def validate_bank_sync_interval(self):
+        if not isfinite(self.bank_sync_min_interval_hours) or self.bank_sync_min_interval_hours <= 0:
+            raise ValueError("BANK_SYNC_MIN_INTERVAL_HOURS must be finite and positive")
+        try:
+            datetime.now(timezone.utc) - timedelta(hours=self.bank_sync_min_interval_hours)
+        except OverflowError as exc:
+            raise ValueError("BANK_SYNC_MIN_INTERVAL_HOURS exceeds the supported date range") from exc
+        return self
+
+    # Reverse-proxy trust for client-IP-based rate limiting. 0 (default) means
+    # request.client.host is used as-is, which is only correct when nothing
+    # sits between the client and this service. In the shipped docker-compose
+    # topology the backend is reached through the bundled nginx frontend, so
+    # request.client.host is always nginx's container address. Set this to the
+    # number of trusted reverse proxies in front of the backend (usually 1) to
+    # derive the client IP from X-Forwarded-For instead, trusting only that
+    # many hops from the right; a chain shorter than expected is not trusted.
+    trusted_proxy_hops: int = 0
 
     # Logo size for market-priced asset icons. The logo URL is built from
     # the company website we get from the market-price provider; no API
@@ -127,7 +175,49 @@ class Settings(BaseSettings):
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
 
-    model_config = SettingsConfigDict(env_file=".env", secrets_dir=CREDENTIALS_DIRECTORY)
+    @property
+    def oidc_login_available(self) -> bool:
+        return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)
+
+    @model_validator(mode="after")
+    def default_frontend_url(self) -> "Settings":
+        if not self.frontend_url:
+            self.frontend_url = f"http://localhost:{self.frontend_port}"
+        return self
+
+    @model_validator(mode="after")
+    def validate_auth_settings(self) -> "Settings":
+        if not self.local_auth_enabled and not self.oidc_login_available:
+            missing = []
+            if not self.oidc_enabled:
+                missing.append("OIDC_ENABLED=true")
+            if not self.oidc_client_id:
+                missing.append("OIDC_CLIENT_ID")
+            if not self.oidc_discovery_url:
+                missing.append("OIDC_DISCOVERY_URL")
+            raise ValueError(
+                "LOCAL_AUTH_ENABLED=false requires a complete OIDC configuration; "
+                f"missing: {', '.join(missing)}"
+            )
+        return self
+
+    # The CWD-relative ".env" is kept for backward compatibility; the anchored
+    # backend/.env guarantees the API and the Celery worker/beat resolve the
+    # same file no matter which working directory each service is launched
+    # from (a systemd unit without WorkingDirectory= used to leave the worker
+    # with default settings, silently disabling every bank-sync provider).
+    #
+    # extra="ignore" because the same .env is shared with Docker Compose and with
+    # the optional modules: it legitimately holds keys this model doesn't declare
+    # (COMPOSE_PROFILES, FRONTEND_PORT, AGENTS_*, ...). Unknown keys coming from
+    # the process environment are ignored by pydantic-settings anyway; without
+    # this, the very same key written into the .env file aborted startup with
+    # "Extra inputs are not permitted".
+    model_config = SettingsConfigDict(
+        env_file=(".env", Path(__file__).resolve().parents[2] / ".env"),
+        secrets_dir=CREDENTIALS_DIRECTORY,
+        extra="ignore",
+    )
 
 
 @lru_cache

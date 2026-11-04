@@ -3,31 +3,26 @@
 Tells the frontend which optional features are enabled so it can hide
 nav items, routes, etc. Lightweight — no auth required.
 """
-import os
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_jwt_strategy, get_user_manager, UserManager
+from app.core.auth import UserManager, get_jwt_strategy, get_user_manager
 from app.core.config import get_settings
 from app.core.database import get_async_session
+from app.core.feature_flags import feature_flag
 from app.models.user import User
 
 router = APIRouter(prefix="/api", tags=["info"])
-
-
-def _flag(name: str, default: str = "false") -> bool:
-    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
 
 
 @router.get("/info")
 async def get_app_info():
     return {
         "features": {
-            "agents": _flag("AGENTS_ENABLED"),
-            "demo": _flag("DEMO_MODE"),
-            "tesouro_direto": _flag("TESOURO_DIRETO_ENABLED"),
+            "agents": feature_flag("AGENTS_ENABLED"),
+            "demo": feature_flag("DEMO_MODE"),
+            "tesouro_direto": feature_flag("TESOURO_DIRETO_ENABLED"),
         },
     }
 

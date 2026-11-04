@@ -96,6 +96,10 @@ async def get_group_balances(
     group_id: str,
 ) -> dict[str, Any]:
     gid = parse_uuid(group_id)
+    if gid is None:
+        return dict(error="group not found or not visible to this user")
+
+
     ws_id = await resolve_workspace_id(session, ctx)
     result = await balance_service.compute_balances(session, gid, ws_id, ctx.user_id)
     if result is None:
@@ -156,6 +160,9 @@ async def list_group_settlements(
     group_id: str,
 ) -> dict[str, Any]:
     gid = parse_uuid(group_id)
+    if gid is None:
+        return dict(error="group not found or not visible to this user")
+
     ws_id = await resolve_workspace_id(session, ctx)
     rows = await settlement_service.list_settlements(session, gid, ws_id, ctx.user_id)
     if rows is None:

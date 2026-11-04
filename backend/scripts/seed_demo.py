@@ -305,9 +305,9 @@ async def seed(email: str, password: str, months: int) -> None:
         # checking; Cartão Nubank carries credit-card-style spending
         # (subscriptions, dining, shopping); Carteira USD handles travel.
         brl_checking = accounts[0]
-        brl_savings  = accounts[1]  # noqa: F841 — kept for clarity / future use
+        brl_savings  = accounts[1]  # noqa: F841 (kept for clarity / future use)
         brl_credit   = accounts[2]
-        usd_checking = accounts[3]
+        usd_checking = accounts[3]  # noqa: F841 (kept for clarity / future use)
 
         # 3. Categories ------------------------------------------------------
         cat_by_name: dict[str, Category] = {}

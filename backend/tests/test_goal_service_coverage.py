@@ -7,6 +7,7 @@ each tracking_type, enrich currency conversion, get/update/delete/summary).
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,7 @@ from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
+from app.models.bank_connection import BankConnection
 from app.models.fx_rate import FxRate
 from app.models.goal import Goal
 from app.models.transaction import Transaction
@@ -54,11 +56,15 @@ async def _make_account(
     return acc
 
 
-async def _add_txn(session, user_id, account_id, workspace_id, amount, typ, dt, currency="BRL"):
+async def _add_txn(
+    session, user_id, account_id, workspace_id, amount, typ, dt,
+    currency="BRL", status="posted",
+):
     txn = Transaction(
         id=uuid.uuid4(), user_id=user_id, account_id=account_id,
         workspace_id=workspace_id, description="t", amount=Decimal(str(amount)),
         date=dt, type=typ, source="manual", currency=currency,
+        status=status,
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -152,19 +158,9 @@ def test_monthly_contribution_normal():
 def test_monthly_contribution_months_clamped_to_one():
     # Target date in the same calendar month but a later day -> months == 0,
     # clamped to 1 (line 111). today < target_date so we don't hit the past branch.
-    today = date.today()
-    if today.day < 28:
-        target = today.replace(day=28)
-        val = _compute_monthly_contribution(Decimal("0"), Decimal("500"), target)
-        assert val == 500.0  # remaining / 1 month
-    else:
-        # Last days of month: just assert it returns a value (same-month edge)
-        target = today + timedelta(days=1)
-        if target.month == today.month:
-            val = _compute_monthly_contribution(Decimal("0"), Decimal("500"), target)
-            assert val == 500.0
-        else:
-            pytest.skip("month boundary makes same-month clamp untestable today")
+    with patch("app.services.goal_service.app_today", return_value=date(2026, 1, 15)):
+        val = _compute_monthly_contribution(Decimal("0"), Decimal("500"), date(2026, 1, 28))
+    assert val == 500.0  # remaining / 1 month
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +263,30 @@ async def test_resolve_manual(session: AsyncSession, test_user, test_workspace):
 async def test_resolve_account_same_currency(session, test_user, test_workspace):
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1500, "credit", date.today())
+    goal = await _make_goal(
+        session, test_user.id, test_workspace.id,
+        tracking_type="account", account_id=acc.id, currency="BRL",
+    )
+    val = await _resolve_current_amount(session, goal, test_user.id)
+    assert val == pytest.approx(Decimal("1500"))
+
+
+@pytest.mark.asyncio
+async def test_resolve_account_excludes_pending_and_future_rows(
+    session, test_user, test_workspace
+):
+    """Goal current amount follows posted balance, including for forecast rows."""
+    today = date.today()
+    acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
+    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1500, "credit", today)
+    await _add_txn(
+        session, test_user.id, acc.id, test_workspace.id, 200, "debit", today,
+        status="pending",
+    )
+    await _add_txn(
+        session, test_user.id, acc.id, test_workspace.id, 300, "debit",
+        today + timedelta(days=3),
+    )
     goal = await _make_goal(
         session, test_user.id, test_workspace.id,
         tracking_type="account", account_id=acc.id, currency="BRL",
@@ -444,6 +464,34 @@ async def test_resolve_net_worth_same_currency(session, test_user, test_workspac
     val = await _resolve_current_amount(session, goal, test_user.id)
     # 2000 account + 3000 asset
     assert float(val) == pytest.approx(5000.0, abs=1.0)
+
+
+@pytest.mark.asyncio
+async def test_resolve_net_worth_counts_shared_credit_line_once(session, test_user, test_workspace):
+    acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
+    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 2000, "credit", date.today())
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="pluggy",
+        external_id="ext-goal-shared", institution_name="Shared line",
+        credentials={}, status="active", created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    for name in ("Shared Visa", "Shared Mastercard"):
+        session.add(Account(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            connection_id=conn.id, name=name, type="credit_card",
+            balance=Decimal("500"), currency="BRL",
+            shared_balance_group=f"{conn.id}:shared-credit",
+        ))
+    await session.commit()
+    goal = await _make_goal(
+        session, test_user.id, test_workspace.id,
+        tracking_type="net_worth", currency="BRL",
+    )
+    val = await _resolve_current_amount(session, goal, test_user.id)
+    # 2000 account - 500 shared credit line (not 1000)
+    assert float(val) == pytest.approx(1500.0, abs=1.0)
 
 
 @pytest.mark.asyncio

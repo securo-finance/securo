@@ -1,12 +1,21 @@
 import uuid
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, current_active_user, current_superuser, get_user_manager
+from app.core.auth_policy import require_local_auth_enabled
 from app.core.config import get_settings
 from app.core.database import get_async_session
+from app.core.app_clock import (
+    app_timezone,
+    environment_timezone,
+    invalidate_timezone_cache,
+    is_valid_timezone,
+    saved_timezone_name,
+    timezone_names,
+)
 from app.models.user import User
 from app.schemas.admin import (
     AdminUserCreate,
@@ -15,6 +24,7 @@ from app.schemas.admin import (
     AdminUserUpdate,
     AppSettingRead,
     AppSettingUpdate,
+    TimezoneSettingRead,
 )
 from app.services import admin_service
 
@@ -28,6 +38,7 @@ ALLOWED_SETTINGS = {
     "theme_color_dark",
     "number_format",
     "date_format",
+    "timezone",
 }
 
 
@@ -46,7 +57,12 @@ async def list_users(
     )
 
 
-@router.post("/users", response_model=AdminUserRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/users",
+    response_model=AdminUserRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_local_auth_enabled)],
+)
 async def create_user(
     data: AdminUserCreate,
     session: AsyncSession = Depends(get_async_session),
@@ -79,6 +95,8 @@ async def update_user(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(current_superuser),
 ):
+    if data.password is not None:
+        require_local_auth_enabled()
     try:
         user = await admin_service.update_user(session, user_id, data, current_user.id)
     except ValueError as e:
@@ -126,6 +144,8 @@ async def update_setting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Setting '{key}' is not configurable",
         )
+    if key == "timezone" and not is_valid_timezone(data.value):
+        raise HTTPException(status_code=400, detail="Invalid IANA timezone")
     SETTING_VALIDATORS = {
         "registration_enabled": {"true", "false"},
         "credit_card_accounting_mode": {"cash", "accrual"},
@@ -148,7 +168,40 @@ async def update_setting(
             )
 
     setting = await admin_service.set_app_setting(session, key, data.value)
+    if key == "timezone":
+        invalidate_timezone_cache()
     return AppSettingRead.model_validate(setting)
+
+
+@router.delete("/settings/{key}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_setting(
+    key: str,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    """Forget a saved setting so the application falls back to its default."""
+    if key not in ALLOWED_SETTINGS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Setting '{key}' is not configurable",
+        )
+    await admin_service.delete_app_setting(session, key)
+    if key == "timezone":
+        invalidate_timezone_cache()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/timezone", response_model=TimezoneSettingRead)
+async def timezone_setting(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    return TimezoneSettingRead(
+        timezone=str(app_timezone()),
+        saved=await saved_timezone_name(session),
+        fallback=str(environment_timezone()),
+        available=sorted(timezone_names()),
+    )
 
 
 @router.get("/registration-status")

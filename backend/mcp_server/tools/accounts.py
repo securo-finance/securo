@@ -44,7 +44,7 @@ async def list_accounts(
             "balance": num(r.get("balance")),
             "balance_primary": num(r.get("balance_primary")),
             "is_closed": bool(r.get("is_closed", False)),
-            "institution": r.get("institution"),
+            "institution": r.get("institution_name"),
         })
     return {"items": items, "total": len(items)}
 
@@ -76,18 +76,25 @@ async def get_account_summary(
     to_date: str | None = None,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
+    account_uuid = parse_uuid(account_id)
+    if account_uuid is None:
+        return dict(error="account not found")
+
     summary = await account_service.get_account_summary(
         session,
-        parse_uuid(account_id),
+        account_uuid,
         ws_id,
         date_from=parse_date(from_date),
         date_to=parse_date(to_date),
     )
     if summary is None:
         return {"error": "account not found"}
-    # Normalize numeric fields.
-    for k in list(summary.keys()):
-        v = summary[k]
-        if hasattr(v, "isoformat"):
-            summary[k] = v.isoformat()
-    return summary
+    return {
+        "account_id": str(summary["account_id"]),
+        "current_balance": num(summary.get("current_balance")),
+        "opening_balance": num(summary.get("opening_balance")),
+        "monthly_income": num(summary.get("monthly_income")),
+        "monthly_expenses": num(summary.get("monthly_expenses")),
+        "projected_income": num(summary.get("projected_income")),
+        "projected_expenses": num(summary.get("projected_expenses")),
+    }

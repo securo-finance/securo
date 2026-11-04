@@ -1,14 +1,16 @@
 # backend/tests/test_rule_engine.py
-import types
 import uuid
 from decimal import Decimal
 from datetime import date
 
 
+import pytest
+
+from app.models import Transaction
 from app.services.rule_engine import evaluate_conditions, apply_rule_actions
 
 
-def make_tx(**kwargs) -> types.SimpleNamespace:
+def make_tx(**kwargs) -> Transaction:
     defaults = dict(
         id=uuid.uuid4(),
         user_id=uuid.uuid4(),
@@ -24,10 +26,11 @@ def make_tx(**kwargs) -> types.SimpleNamespace:
         notes=None,
     )
     defaults.update(kwargs)
-    return types.SimpleNamespace(**defaults)
+    return Transaction(**defaults)
 
 
 # --- evaluate_conditions tests ---
+
 
 def test_contains_match():
     conditions = [{"field": "description", "op": "contains", "value": "UBER"}]
@@ -127,15 +130,48 @@ def test_regex_accented_pattern_still_matches():
     assert evaluate_conditions("and", conditions, tx) is True
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    ["foo|", "|foo", "(foo|)", "(?:foo|)", "a*", ".*", "^", "$"],
+)
+def test_unsafe_persisted_regex_does_not_match_unrelated_transaction(pattern):
+    conditions = [{"field": "description", "op": "regex", "value": pattern}]
+    tx = make_tx(description="UNRELATED TRANSACTION")
+
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_empty_only_regex_is_inert_for_empty_transaction_field():
+    conditions = [{"field": "description", "op": "regex", "value": "^$"}]
+    tx = make_tx(description="")
+
+    # Empty-matching regexes are disallowed for rule safety. Keeping legacy
+    # definitions inert aligns runtime behavior with future save-time validation.
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_safe_alternation_regex_remains_selective():
+    conditions = [{"field": "description", "op": "regex", "value": "foo|bar"}]
+
+    assert evaluate_conditions("and", conditions, make_tx(description="foo")) is True
+    assert evaluate_conditions("and", conditions, make_tx(description="bar")) is True
+    assert (
+        evaluate_conditions(
+            "and", conditions, make_tx(description="UNRELATED TRANSACTION")
+        )
+        is False
+    )
+
+
 def test_amount_lt():
     conditions = [{"field": "amount", "op": "lt", "value": 50}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_amount_gt_no_match():
     conditions = [{"field": "amount", "op": "gt", "value": 100}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is False
 
 
@@ -160,13 +196,14 @@ def test_and_partial_match():
 def test_or_one_match():
     conditions = [
         {"field": "description", "op": "contains", "value": "IFOOD"},  # fails
-        {"field": "description", "op": "contains", "value": "UBER"},   # passes
+        {"field": "description", "op": "contains", "value": "UBER"},  # passes
     ]
     tx = make_tx(description="UBER TRIP")
     assert evaluate_conditions("or", conditions, tx) is True
 
 
 # --- apply_rule_actions tests ---
+
 
 def test_set_category():
     cat_id = uuid.uuid4()
@@ -203,6 +240,8 @@ def test_append_notes_accumulates():
     tx = make_tx(notes=None)
     apply_rule_actions(actions1, tx, category_already_set=False)
     apply_rule_actions(actions2, tx, category_already_set=False)
+
+    assert tx.notes is not None
     assert "#work" in tx.notes
     assert "#small" in tx.notes
 
@@ -211,6 +250,8 @@ def test_append_notes_no_duplicate():
     actions = [{"op": "append_notes", "value": "#work"}]
     tx = make_tx(notes="#work")
     apply_rule_actions(actions, tx, category_already_set=False)
+
+    assert tx.notes is not None
     assert tx.notes.count("#work") == 1
 
 
@@ -220,8 +261,49 @@ def test_ignore_action_sets_flag():
     apply_rule_actions(actions, tx, category_already_set=False)
     assert tx.is_ignored is True
 
+def test_set_description_preserves_first_original_and_is_idempotent():
+    tx = make_tx(description="|fd*f|ood Club", original_description=None)
+
+    apply_rule_actions(
+        [{"op": "set_description", "value": "iFood"}],
+        tx,
+        category_already_set=False,
+    )
+    assert tx.description == "iFood"
+    assert tx.original_description == "|fd*f|ood Club"
+    assert tx.description_is_rule_managed is True
+
+    apply_rule_actions(
+        [{"op": "set_description", "value": "iFood Delivery"}],
+        tx,
+        category_already_set=False,
+    )
+    assert tx.description == "iFood Delivery"
+    assert tx.original_description == "|fd*f|ood Club"
+    assert tx.description_is_rule_managed is True
+
+
+def test_raw_payee_condition_is_case_and_accent_insensitive():
+    tx = make_tx(payee="IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A.")
+    conditions = [
+        {"field": "payee", "op": "contains", "value": "ifood.com agencia"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_payee_id_condition_remains_compatible():
+    payee_id = uuid.uuid4()
+    tx = make_tx(payee_id=payee_id)
+    conditions = [
+        {"field": "payee_id", "op": "equals", "value": str(payee_id)}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
 
 # --- Edge-case: evaluate_conditions ---
+
 
 def test_not_equals():
     conditions = [{"field": "type", "op": "not_equals", "value": "credit"}]
@@ -237,38 +319,92 @@ def test_not_equals_same_value():
 
 def test_gte_equal():
     conditions = [{"field": "amount", "op": "gte", "value": 25.50}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_gte_greater():
     conditions = [{"field": "amount", "op": "gte", "value": 20}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_gte_less():
     conditions = [{"field": "amount", "op": "gte", "value": 30}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is False
 
 
 def test_lte_equal():
     conditions = [{"field": "amount", "op": "lte", "value": 25.50}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_lte_less():
     conditions = [{"field": "amount", "op": "lte", "value": 30}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_lte_greater():
     conditions = [{"field": "amount", "op": "lte", "value": 20}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is False
+
+
+# --- signed amount: debits are negative, credits positive (issue #981) ---
+
+
+def test_amount_gt_zero_matches_credits_only():
+    conditions = [{"field": "amount", "op": "gt", "value": 0}]
+    assert evaluate_conditions("and", conditions, make_tx(type="credit", amount=Decimal("100"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("100"))) is False
+
+
+def test_amount_lt_zero_matches_debits_only():
+    conditions = [{"field": "amount", "op": "lt", "value": 0}]
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("100"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="credit", amount=Decimal("100"))) is False
+
+
+def test_amount_negative_threshold_selects_large_expenses():
+    conditions = [{"field": "amount", "op": "lte", "value": -50}]
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("75"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("25"))) is False
+    assert evaluate_conditions("and", conditions, make_tx(type="credit", amount=Decimal("75"))) is False
+
+
+def test_amount_positive_threshold_selects_large_income():
+    conditions = [{"field": "amount", "op": "gte", "value": 1000}]
+    assert evaluate_conditions("and", conditions, make_tx(type="credit", amount=Decimal("1200"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("1200"))) is False
+
+
+def test_amount_equals_compares_numeric_and_signed():
+    conditions = [{"field": "amount", "op": "equals", "value": "25.5"}]
+    assert evaluate_conditions("and", conditions, make_tx(type="credit", amount=Decimal("25.50"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("25.50"))) is False
+    negative = [{"field": "amount", "op": "equals", "value": "-25.50"}]
+    assert evaluate_conditions("and", negative, make_tx(type="debit", amount=Decimal("25.50"))) is True
+
+
+def test_amount_not_equals_signed():
+    conditions = [{"field": "amount", "op": "not_equals", "value": "-25.50"}]
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("30"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("25.50"))) is False
+
+
+def test_amount_sign_comes_from_type_even_when_stored_negative():
+    # A row saved with an already-negative amount must not flip the sign twice.
+    expense = make_tx(type="debit", amount=Decimal("-100"))
+    income = make_tx(type="credit", amount=Decimal("-100"))
+    gt_zero = [{"field": "amount", "op": "gt", "value": 0}]
+    assert evaluate_conditions("and", gt_zero, expense) is False
+    assert evaluate_conditions("and", gt_zero, income) is True
+    equals = [{"field": "amount", "op": "equals", "value": "-100"}]
+    assert evaluate_conditions("and", equals, expense) is True
+    assert evaluate_conditions("and", equals, income) is False
 
 
 def test_date_gt():
@@ -332,6 +468,7 @@ def test_invalid_regex_returns_false():
 
 
 # --- Edge-case: apply_rule_actions ---
+
 
 def test_invalid_uuid_set_category_skips():
     actions = [{"op": "set_category", "value": "not-a-uuid"}]
@@ -459,3 +596,257 @@ def test_set_payee_combined_with_category():
     apply_rule_actions(actions, tx, category_already_set=False)
     assert tx.category_id == cat_id
     assert tx.payee_id == payee_id
+
+
+# --- blank condition values (issue #438) ---
+
+def test_blank_value_never_matches():
+    """A blank value must not turn a condition into a match-everything rule."""
+    tx = make_tx(description="UBER TRIP")
+    for op in ("contains", "starts_with", "ends_with", "regex", "equals", "not_equals"):
+        conditions = [{"field": "description", "op": op, "value": ""}]
+        assert evaluate_conditions("and", conditions, tx) is False, op
+
+
+def test_whitespace_and_none_values_never_match():
+    tx = make_tx(description="UBER TRIP")
+    for value in ("   ", None):
+        conditions = [{"field": "description", "op": "contains", "value": value}]
+        assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_blank_numeric_value_never_matches():
+    """Blank numeric values used to fall back to 0, matching every amount."""
+    tx = make_tx(amount=Decimal("25.50"))
+    conditions = [{"field": "amount", "op": "gt", "value": ""}]
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_zero_value_still_matches():
+    """0 is a real value, not a blank one — it must keep working."""
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
+    conditions = [{"field": "amount", "op": "gt", "value": 0}]
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+# --- nested condition groups (mixing AND and OR) ---
+
+def _group(op, *conditions):
+    return {"op": op, "conditions": list(conditions)}
+
+
+def test_and_of_or_group_matches():
+    """`type is debit AND (description contains UBER OR contains 99POP)`."""
+    conditions = [
+        {"field": "type", "op": "equals", "value": "debit"},
+        _group(
+            "or",
+            {"field": "description", "op": "contains", "value": "UBER"},
+            {"field": "description", "op": "contains", "value": "99POP"},
+        ),
+    ]
+    assert evaluate_conditions("and", conditions, make_tx(description="99POP VIAGEM")) is True
+    assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is True
+
+
+def test_and_of_or_group_outer_condition_fails():
+    conditions = [
+        {"field": "type", "op": "equals", "value": "debit"},
+        _group(
+            "or",
+            {"field": "description", "op": "contains", "value": "UBER"},
+            {"field": "description", "op": "contains", "value": "99POP"},
+        ),
+    ]
+    tx = make_tx(description="UBER TRIP", type="credit")
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_and_of_or_group_no_leaf_matches():
+    conditions = [
+        {"field": "type", "op": "equals", "value": "debit"},
+        _group(
+            "or",
+            {"field": "description", "op": "contains", "value": "UBER"},
+            {"field": "description", "op": "contains", "value": "99POP"},
+        ),
+    ]
+    assert evaluate_conditions("and", conditions, make_tx(description="IFOOD")) is False
+
+
+def test_or_of_and_group():
+    """`description contains IFOOD OR (contains MERCADO AND amount > 100)`."""
+    conditions = [
+        {"field": "description", "op": "contains", "value": "IFOOD"},
+        _group(
+            "and",
+            {"field": "description", "op": "contains", "value": "MERCADO"},
+            {"field": "amount", "op": "gt", "value": 100},
+        ),
+    ]
+    assert evaluate_conditions("or", conditions, make_tx(description="IFOOD PEDIDO")) is True
+    assert evaluate_conditions(
+        "or",
+        conditions,
+        make_tx(type="credit", description="MERCADO X", amount=Decimal("250.00")),
+    ) is True
+    assert evaluate_conditions(
+        "or",
+        conditions,
+        make_tx(type="credit", description="MERCADO X", amount=Decimal("30.00")),
+    ) is False
+
+
+def test_group_defaults_to_and_without_op():
+    conditions = [
+        _group(
+            None,
+            {"field": "description", "op": "contains", "value": "UBER"},
+            {"field": "type", "op": "equals", "value": "debit"},
+        ),
+    ]
+    assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is True
+    conditions[0]["conditions"][1]["value"] = "credit"
+    assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is False
+
+
+def test_empty_group_never_matches():
+    """An empty group has nothing to match, like an empty condition list."""
+    conditions = [_group("or")]
+    assert evaluate_conditions("and", conditions, make_tx()) is False
+    assert evaluate_conditions("or", conditions, make_tx()) is False
+
+
+def test_blank_value_inside_group_never_matches():
+    conditions = [
+        _group(
+            "or",
+            {"field": "description", "op": "contains", "value": ""},
+            {"field": "description", "op": "contains", "value": "IFOOD"},
+        ),
+    ]
+    assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is False
+
+
+def test_flat_conditions_still_evaluate_unchanged():
+    """Rules saved before groups existed keep their exact meaning."""
+    conditions = [
+        {"field": "description", "op": "contains", "value": "UBER"},
+        {"field": "type", "op": "equals", "value": "debit"},
+    ]
+    assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is True
+    assert evaluate_conditions("or", conditions, make_tx(description="IFOOD")) is True
+
+
+# --- status condition ---
+
+
+def test_status_equals_pending_matches_only_pending():
+    conditions = [{"field": "status", "op": "equals", "value": "pending"}]
+    assert evaluate_conditions("and", conditions, make_tx(status="pending")) is True
+    assert evaluate_conditions("and", conditions, make_tx(status="posted")) is False
+
+
+def test_status_not_equals_posted_matches_pending():
+    conditions = [{"field": "status", "op": "not_equals", "value": "posted"}]
+    assert evaluate_conditions("and", conditions, make_tx(status="pending")) is True
+    assert evaluate_conditions("and", conditions, make_tx(status="posted")) is False
+
+
+def test_set_category_skips_a_category_the_workspace_no_longer_offers():
+    """Hidden or deleted, an id that is not on the list is never written.
+
+    A rule keeps its category id inside a JSON action with no foreign key
+    behind it, so it can outlive the category. Writing that id would fail the
+    insert and take the whole import or sync batch with it.
+    """
+    gone = uuid.uuid4()
+    usable = uuid.uuid4()
+    actions = [
+        {"op": "set_category", "value": str(gone)},
+        {"op": "append_notes", "value": "still applied"},
+    ]
+    tx = make_tx()
+
+    category_set = apply_rule_actions(
+        actions, tx, category_already_set=False, assignable_category_ids={usable}
+    )
+
+    assert tx.category_id is None
+    assert category_set is False
+    # Only the categorization is dropped: the rest of the rule still runs.
+    assert tx.notes == "still applied"
+
+
+def test_set_category_writes_a_category_that_is_on_the_list():
+    usable = uuid.uuid4()
+    actions = [{"op": "set_category", "value": str(usable)}]
+    tx = make_tx()
+
+    category_set = apply_rule_actions(
+        actions, tx, category_already_set=False, assignable_category_ids={usable}
+    )
+
+    assert tx.category_id == usable
+    assert category_set is True
+
+
+def test_an_empty_list_of_assignable_categories_blocks_every_categorization():
+    """Distinct from passing nothing, which means the caller has no list."""
+    actions = [{"op": "set_category", "value": str(uuid.uuid4())}]
+    tx = make_tx()
+
+    assert (
+        apply_rule_actions(
+            actions, tx, category_already_set=False, assignable_category_ids=set()
+        )
+        is False
+    )
+    assert tx.category_id is None
+
+
+# --- equals / not_equals on amounts (issue #850) ---
+#
+# Amounts are stored at a fixed scale (100.00) while the rule form submits
+# the number as typed (100); a string comparison of the two forms never
+# agrees, so equals on amount must compare numerically. Since issue #981 the
+# comparison is also signed, so the examples below pin the direction: a
+# credit of 100.00 equals the typed 100.
+
+
+def test_equals_amount_different_scales():
+    conditions = [{"field": "amount", "op": "equals", "value": "100"}]
+    tx = make_tx(type="credit", amount=Decimal("100.00"))
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_equals_amount_value_with_trailing_zeros():
+    conditions = [{"field": "amount", "op": "equals", "value": "25.50"}]
+    tx = make_tx(type="credit", amount=Decimal("25.5"))
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_equals_amount_no_match():
+    conditions = [{"field": "amount", "op": "equals", "value": "100.01"}]
+    tx = make_tx(type="credit", amount=Decimal("100.00"))
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_not_equals_amount_different_scales():
+    conditions = [{"field": "amount", "op": "not_equals", "value": "100"}]
+    tx = make_tx(type="credit", amount=Decimal("100.00"))
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_not_equals_amount_no_match():
+    conditions = [{"field": "amount", "op": "not_equals", "value": "100.01"}]
+    tx = make_tx(type="credit", amount=Decimal("100.00"))
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_equals_amount_non_numeric_falls_back_to_text():
+    # A value that is not a number keeps the old text comparison: it cannot
+    # agree with a stored amount, which is what it did before the fix.
+    conditions = [{"field": "amount", "op": "equals", "value": "abc"}]
+    tx = make_tx(type="credit", amount=Decimal("100.00"))
+    assert evaluate_conditions("and", conditions, tx) is False

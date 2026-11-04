@@ -63,6 +63,8 @@ async def test_do_ingest_happy_path_writes_chunks_and_marks_ready(
 
     assert result == {"ok": True, "chunks": 2}
     refreshed = await knowledge_service.get_doc(session, doc.id, test_user.id)
+
+    assert refreshed is not None
     # The session_maker inside _do_ingest commits — we need a fresh read.
     await session.refresh(refreshed)
     assert refreshed.status == "ready"
@@ -97,6 +99,8 @@ async def test_do_ingest_marks_failed_when_storage_unreadable(
     assert result == {"ok": False, "reason": "read failed"}
 
     refreshed = await knowledge_service.get_doc(session, doc.id, test_user.id)
+
+    assert refreshed is not None
     await session.refresh(refreshed)
     assert refreshed.status == "failed"
     assert "read failed" in (refreshed.error or "")
@@ -123,6 +127,8 @@ async def test_do_ingest_marks_failed_when_no_extractable_text(
     assert result == {"ok": False, "reason": "no text"}
 
     refreshed = await knowledge_service.get_doc(session, doc.id, test_user.id)
+
+    assert refreshed is not None
     await session.refresh(refreshed)
     assert refreshed.status == "failed"
     assert "no extractable text" in (refreshed.error or "")
@@ -155,6 +161,8 @@ async def test_do_ingest_marks_failed_when_embedding_fails(
     assert result == {"ok": False, "reason": "embed failed"}
 
     refreshed = await knowledge_service.get_doc(session, doc.id, test_user.id)
+
+    assert refreshed is not None
     await session.refresh(refreshed)
     assert refreshed.status == "failed"
     assert "embed failed" in (refreshed.error or "")

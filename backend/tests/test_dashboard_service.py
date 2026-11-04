@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
@@ -12,16 +13,20 @@ from app.models.transaction import Transaction
 from app.models.bank_connection import BankConnection
 from app.services.dashboard_service import (
     _balance_at,
+    _baseline_from_deltas,
     _get_recurring_projections,
     _month_range,
     _get_open_accounts,
     _account_balance_at,
     _total_balance_by_currency,
     get_balance_history,
+    get_balance_history_months,
+    get_monthly_trend,
     get_summary,
     get_spending_by_category,
     get_projected_transactions,
 )
+
 from app.services.transaction_service import get_transactions
 
 
@@ -52,7 +57,7 @@ async def _add_txn(
     session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
     amount: float, txn_type: str, txn_date: date,
     source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
-    category_id: uuid.UUID | None = None,
+    category_id: uuid.UUID | None = None, status: str = "posted",
 ) -> Transaction:
     from datetime import datetime, timezone
     txn = Transaction(
@@ -60,6 +65,7 @@ async def _add_txn(
         description=f"Test {txn_type} {amount}", amount=Decimal(str(amount)),
         date=txn_date, type=txn_type, source=source, currency="BRL",
         transfer_pair_id=transfer_pair_id, category_id=category_id,
+        status=status,
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -178,6 +184,98 @@ async def test_account_balance_at_bank_connected(session: AsyncSession, test_use
 
 
 @pytest.mark.asyncio
+async def test_account_balance_at_manual_excludes_ignored_categories(
+    session: AsyncSession, test_user
+):
+    account = await _make_account(session, test_user.id, "Manual ignored")
+    ignored = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Ignored",
+        is_ignored=True,
+    )
+    ordinary = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Ordinary",
+        is_ignored=False,
+    )
+    session.add_all([ignored, ordinary])
+    await session.commit()
+
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit",
+        date(2026, 7, 1), source="opening_balance",
+    )
+    await _add_txn(
+        session, test_user.id, account.id, 100, "debit",
+        date(2026, 8, 3), category_id=ignored.id,
+    )
+    await _add_txn(
+        session, test_user.id, account.id, 40, "debit",
+        date(2026, 8, 4), category_id=ordinary.id,
+    )
+    await _add_txn(
+        session, test_user.id, account.id, 10, "debit",
+        date(2026, 8, 5),
+    )
+
+    balance = await _account_balance_at(session, account, date(2026, 9, 1))
+
+    assert balance == pytest.approx(950.0)
+
+
+@pytest.mark.asyncio
+async def test_account_balance_at_connected_excludes_ignored_categories(
+    session: AsyncSession, test_user, test_connection
+):
+    account = await _make_account(
+        session,
+        test_user.id,
+        "Connected ignored",
+        balance="850.00",
+        connection_id=test_connection.id,
+    )
+    ignored = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Ignored",
+        is_ignored=True,
+    )
+    ordinary = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Ordinary",
+        is_ignored=False,
+    )
+    session.add_all([ignored, ordinary])
+    await session.commit()
+
+    await _add_txn(
+        session, test_user.id, account.id, 100, "debit",
+        date(2026, 8, 2), category_id=ignored.id,
+    )
+    individually_ignored = await _add_txn(
+        session, test_user.id, account.id, 50, "debit",
+        date(2026, 8, 3),
+    )
+    individually_ignored.is_ignored = True
+    await _add_txn(
+        session, test_user.id, account.id, 200, "credit",
+        date(2026, 8, 4),
+    )
+    await _add_txn(
+        session, test_user.id, account.id, 50, "debit",
+        date(2026, 8, 5), category_id=ordinary.id,
+    )
+    await session.commit()
+
+    balance = await _account_balance_at(session, account, date(2026, 8, 1))
+
+    assert balance == pytest.approx(700.0)
+
+
+@pytest.mark.asyncio
 async def test_account_balance_at_credit_card_connected(session: AsyncSession, test_user, test_connection):
     """Bank-connected credit_card negates balance."""
     account = await _make_account(
@@ -212,6 +310,57 @@ async def test_total_balance_by_currency(session: AsyncSession, test_user, test_
     assert totals.get("USD", 0) == pytest.approx(500.0)
 
 
+@pytest.mark.asyncio
+async def test_total_balance_counts_shared_credit_balance_once(
+    session, test_user, test_workspace, test_connection,
+):
+    group = "pluggy:connection:shared-credit"
+    first = await _make_account(
+        session, test_user.id, "Shared Visa", acc_type="credit_card", balance="300.00",
+        connection_id=test_connection.id,
+    )
+    second = await _make_account(
+        session, test_user.id, "Shared Mastercard", acc_type="credit_card", balance="300.00",
+        connection_id=test_connection.id,
+    )
+    first.workspace_id = test_workspace.id
+    second.workspace_id = test_workspace.id
+    first.shared_balance_group = group
+    second.shared_balance_group = group
+    await session.commit()
+
+    totals = await _total_balance_by_currency(session, test_workspace.id, date.today())
+
+    assert totals["BRL"] == pytest.approx(-300.0)
+
+
+@pytest.mark.asyncio
+async def test_total_balance_backtracks_shared_credit_balance_across_all_cards(
+    session, test_user, test_workspace, test_connection,
+):
+    group = "pluggy:connection:shared-credit"
+    first = await _make_account(
+        session, test_user.id, "Shared Visa", acc_type="credit_card", balance="300.00",
+        connection_id=test_connection.id,
+    )
+    second = await _make_account(
+        session, test_user.id, "Shared Mastercard", acc_type="credit_card", balance="300.00",
+        connection_id=test_connection.id,
+    )
+    for account in (first, second):
+        account.workspace_id = test_workspace.id
+        account.shared_balance_group = group
+    await session.commit()
+    await _add_txn(session, test_user.id, first.id, 50, "debit", date.today())
+    await _add_txn(session, test_user.id, second.id, 25, "debit", date.today())
+
+    totals = await _total_balance_by_currency(
+        session, test_workspace.id, date.today() - timedelta(days=1)
+    )
+
+    assert totals["BRL"] == pytest.approx(-225.0)
+
+
 # ---------------------------------------------------------------------------
 # get_summary
 # ---------------------------------------------------------------------------
@@ -233,10 +382,127 @@ async def test_get_summary_basic(session: AsyncSession, test_user, test_workspac
     assert summary.accounts_count >= 1
 
 
+# ---------------------------------------------------------------------------
+# get_summary: mixed currencies and the FX fallback flag (issue #1165)
+# ---------------------------------------------------------------------------
+
+
+async def _fund_manual(
+    session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
+    amount: float, currency: str,
+) -> Transaction:
+    """Opening credit for a manual account, in the account's own currency.
+
+    Manual account totals count transactions, not the balance field.
+    """
+    txn = Transaction(
+        id=uuid.uuid4(), user_id=user_id, account_id=account_id,
+        description="Opening balance", amount=Decimal(str(amount)),
+        date=app_today(), type="credit", source="opening_balance",
+        currency=currency, status="posted",
+    )
+    session.add(txn)
+    await session.commit()
+    return txn
+
+
 @pytest.mark.asyncio
-async def test_summary_matches_drilldown_and_excludes_closed_accounts(
+async def test_get_summary_mixed_currency_missing_rate_flags_fallback(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """No FX rate: foreign buckets stay at 1:1 and the summary is flagged.
+
+    The total keeps the native amounts (same rule as the available balance
+    headline) but must carry fx_fallback, so the UI shows the estimate
+    instead of presenting foreign money as converted (issue #1165).
+    """
+    from unittest.mock import AsyncMock
+    import app.services.fx_rate_service as fx
+
+    # Hermetic: never touch the network, even if a provider API key is set.
+    monkeypatch.setattr(fx, "sync_rates", AsyncMock(return_value=0))
+
+    home = await _make_account(session, test_user.id, "Home", currency="BRL")
+    abroad = await _make_account(session, test_user.id, "Abroad", currency="EUR")
+    await _fund_manual(session, test_user.id, home.id, 100.0, "BRL")
+    await _fund_manual(session, test_user.id, abroad.id, 50.0, "EUR")
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+
+    assert summary.primary_currency == "BRL"
+    assert summary.total_balance == {"BRL": 100.0, "EUR": 50.0}
+    # Summed at 1:1 (not silently converted) and flagged as an estimate.
+    assert summary.total_balance_primary == pytest.approx(150.0)
+    assert summary.fx_fallback is True
+
+
+@pytest.mark.asyncio
+async def test_get_summary_zero_foreign_balance_without_rate_is_not_flagged(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """A foreign account at zero needs no rate: the total is exact, so the
+    summary must not be flagged as an estimate (issue #1165)."""
+    from unittest.mock import AsyncMock
+    import app.services.fx_rate_service as fx
+
+    monkeypatch.setattr(fx, "sync_rates", AsyncMock(return_value=0))
+
+    home = await _make_account(session, test_user.id, "Home", currency="BRL")
+    abroad = await _make_account(session, test_user.id, "Abroad", currency="EUR")
+    await _fund_manual(session, test_user.id, home.id, 100.0, "BRL")
+    await _fund_manual(session, test_user.id, abroad.id, 50.0, "EUR")
+    session.add(Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=abroad.id,
+        description="Spent it all", amount=Decimal("50"), date=app_today(),
+        type="debit", source="manual", currency="EUR", status="posted",
+    ))
+    await session.commit()
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+
+    assert summary.total_balance_primary == pytest.approx(100.0)
+    assert summary.fx_fallback is False
+
+
+@pytest.mark.asyncio
+async def test_get_summary_mixed_currency_with_rate_converts(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """A real stored rate converts the bucket and no fallback flag is set."""
+    from unittest.mock import AsyncMock
+    import app.core.app_clock as clock
+    import app.services.fx_rate_service as fx
+    from app.models.fx_rate import FxRate
+
+    # Hermetic: never touch the network, even if a provider API key is set.
+    monkeypatch.setattr(fx, "sync_rates", AsyncMock(return_value=0))
+
+    home = await _make_account(session, test_user.id, "Home", currency="BRL")
+    abroad = await _make_account(session, test_user.id, "Abroad", currency="EUR")
+    await _fund_manual(session, test_user.id, home.id, 100.0, "BRL")
+    await _fund_manual(session, test_user.id, abroad.id, 50.0, "EUR")
+
+    today = clock.app_today()
+    session.add(FxRate(base_currency="USD", quote_currency="EUR", date=today, rate=Decimal("1.10"), source="test"))
+    session.add(FxRate(base_currency="USD", quote_currency="BRL", date=today, rate=Decimal("5.50"), source="test"))
+    await session.commit()
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+
+    # EUR -> BRL cross rate = 5.50 / 1.10 = 5.00, so 50 EUR counts as 250 BRL.
+    assert summary.total_balance_primary == pytest.approx(350.0)
+    assert summary.fx_fallback is False
+
+
+@pytest.mark.asyncio
+async def test_summary_keeps_closed_account_history_and_matches_drilldown(
     session: AsyncSession, test_user, test_workspace
 ):
+    """Closing an account stops it counting as current money, not as history.
+
+    Past income and expenses of a closed account stay in the month's totals
+    (issue #1112), and the drill-down behind those totals lists the same rows.
+    """
     month = (date.today().replace(day=1) - timedelta(days=1)).replace(day=1)
     month_start, month_end = _month_range(month)
     open_account = await _make_account(session, test_user.id, "Open")
@@ -260,13 +526,55 @@ async def test_summary_matches_drilldown_and_excludes_closed_accounts(
         user_pnl_only=True,
     )
 
-    assert {row.account_id for row in rows} == {open_account.id}
+    assert {row.account_id for row in rows} == {open_account.id, closed_account.id}
+    assert summary.monthly_income == pytest.approx(1000.0)
+    assert summary.monthly_expenses == pytest.approx(840.0)
     assert summary.monthly_income == pytest.approx(
         sum(float(row.amount) for row in rows if row.type == "credit")
     )
     assert summary.monthly_expenses == pytest.approx(
         sum(float(row.amount) for row in rows if row.type == "debit")
     )
+
+
+@pytest.mark.asyncio
+async def test_closed_account_balance_stays_out_of_current_totals(
+    session: AsyncSession, test_user, test_workspace
+):
+    """History of a closed account counts; its balance does not."""
+    month = date.today().replace(day=1)
+    open_account = await _make_account(session, test_user.id, "Open")
+    closed_account = await _make_account(
+        session, test_user.id, "Closed", is_closed=True
+    )
+    await _add_txn(session, test_user.id, open_account.id, 100, "credit", month)
+    await _add_txn(session, test_user.id, closed_account.id, 250, "credit", month)
+
+    summary = await get_summary(session, test_workspace.id, test_user.id, month=month)
+
+    assert summary.monthly_income == pytest.approx(350.0)
+    assert summary.total_balance.get("BRL", 0.0) == pytest.approx(100.0)
+    accounts = await _get_open_accounts(session, test_workspace.id)
+    assert {a.id for a in accounts} == {open_account.id}
+
+
+@pytest.mark.asyncio
+async def test_spending_and_trend_keep_closed_account_history(
+    session: AsyncSession, test_user, test_workspace
+):
+    cat = await _make_category(session, test_user.id, "Savings fees")
+    closed_account = await _make_account(
+        session, test_user.id, "Closed saver", is_closed=True
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, closed_account.id, 60, "debit", today, category_id=cat.id)
+
+    spending = await get_spending_by_category(session, test_workspace.id, test_user.id)
+    fees = next((s for s in spending if s.category_id == str(cat.id)), None)
+    assert fees is not None and fees.total == pytest.approx(60.0)
+
+    trend = await get_monthly_trend(session, test_workspace.id, test_user.id, months=1)
+    assert sum(point.expenses for point in trend) == pytest.approx(60.0)
 
 
 @pytest.mark.asyncio
@@ -294,6 +602,24 @@ async def test_get_summary_excludes_transfers(session: AsyncSession, test_user, 
 
 
 @pytest.mark.asyncio
+async def test_get_summary_excludes_pending_from_period_totals(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Pending (not yet settled) transactions stay out of monthly income/expenses."""
+    account = await _make_account(session, test_user.id, "Pending Excl")
+    today = date.today()
+
+    await _add_txn(session, test_user.id, account.id, 100, "debit", today)
+    await _add_txn(session, test_user.id, account.id, 50, "credit", today)
+    await _add_txn(session, test_user.id, account.id, 10000, "debit", today, status="pending")
+    await _add_txn(session, test_user.id, account.id, 9000, "credit", today, status="pending")
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+    assert summary.monthly_expenses == pytest.approx(100.0)
+    assert summary.monthly_income == pytest.approx(50.0)
+
+
+@pytest.mark.asyncio
 async def test_get_summary_pending_categorization(session: AsyncSession, test_user, test_workspace):
     """Summary counts uncategorized transactions."""
     account = await _make_account(session, test_user.id, "Pending Cat")
@@ -306,6 +632,36 @@ async def test_get_summary_pending_categorization(session: AsyncSession, test_us
 
     summary = await get_summary(session, test_workspace.id, test_user.id)
     assert summary.pending_categorization >= 2
+
+
+@pytest.mark.asyncio
+async def test_pending_categorization_matches_the_uncategorized_list(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Ignored rows and rows excluded from P/L are not pending categorization (#1336).
+
+    The dashboard counter opens the uncategorized list, which hides them, so
+    counting them made the counter promise rows the list never shows."""
+    account = await _make_account(session, test_user.id, "Pending Ignored")
+    today = date.today()
+
+    await _add_txn(session, test_user.id, account.id, 100, "debit", today)
+    ignored = await _add_txn(session, test_user.id, account.id, 40, "debit", today)
+    ignored.is_ignored = True
+    adjustment = await _add_txn(session, test_user.id, account.id, 7, "credit", today)
+    adjustment.exclude_from_pnl = True
+    await session.commit()
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+    assert summary.pending_categorization == 1
+    assert summary.pending_categorization_amount == pytest.approx(100.0)
+
+    rows, total, _ = await get_transactions(
+        session, test_workspace.id, test_user.id,
+        uncategorized=True, user_pnl_only=True, skip_pagination=True,
+    )
+    assert total == summary.pending_categorization
+    assert [float(r.amount) for r in rows] == [100.0]
 
 
 @pytest.mark.asyncio
@@ -408,6 +764,25 @@ async def test_spending_excludes_transfers(session: AsyncSession, test_user, tes
 
 
 @pytest.mark.asyncio
+async def test_spending_excludes_opening_balance(session: AsyncSession, test_user, test_workspace):
+    """A debt carried in as an opening balance is not spending, so the
+    breakdown still adds up to the expenses card."""
+    cat = await _make_category(session, test_user.id, "Groceries")
+    account = await _make_account(session, test_user.id, "OB Card", acc_type="credit_card")
+    today = date.today()
+
+    await _add_txn(session, test_user.id, account.id, 2500, "debit", today, source="opening_balance")
+    await _add_txn(session, test_user.id, account.id, 40, "debit", today, category_id=cat.id)
+
+    spending = await get_spending_by_category(session, test_workspace.id, test_user.id)
+    assert next((s for s in spending if s.category_id is None), None) is None
+    assert sum(s.total for s in spending) == pytest.approx(40.0)
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+    assert sum(s.total for s in spending) == pytest.approx(summary.monthly_expenses)
+
+
+@pytest.mark.asyncio
 async def test_spending_percentage(session: AsyncSession, test_user, test_workspace):
     """Percentages sum to approximately 100%."""
     cat1 = await _make_category(session, test_user.id, "Cat A")
@@ -487,6 +862,58 @@ async def test_get_projected_transactions_no_category(session: AsyncSession, tes
     proj = projections[0]
     assert proj.category_name is None
     assert proj.category_id is None
+
+
+@pytest.mark.asyncio
+async def test_get_projected_transactions_shows_transfer_like_but_not_ignored_categories(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Transfer/investment rows are visible projections without becoming P&L."""
+    month_start = date.today().replace(day=1)
+    transfer_like = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Investments",
+        icon="trending-up",
+        color="#0EA5E9",
+        treat_as_transfer=True,
+    )
+    ignored = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ignored",
+        is_ignored=True,
+    )
+    session.add_all([transfer_like, ignored])
+    for description, category_id in (
+        ("Monthly investment", transfer_like.id),
+        ("Hidden recurring", ignored.id),
+    ):
+        session.add(RecurringTransaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            description=description,
+            amount=Decimal("100"),
+            currency="BRL",
+            type="debit",
+            frequency="monthly",
+            start_date=month_start,
+            next_occurrence=month_start,
+            is_active=True,
+            category_id=category_id,
+        ))
+    await session.commit()
+
+    projections = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=month_start
+    )
+
+    by_description = {p.description: p for p in projections}
+    assert by_description["Monthly investment"].category_name == "Investments"
+    assert "Hidden recurring" not in by_description
 
 
 @pytest.mark.asyncio
@@ -629,7 +1056,7 @@ async def test_get_recurring_projections(session, test_user, test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_get_recurring_projections_excludes_ignored_categories(
+async def test_get_recurring_projections_filters_non_pnl_categories_by_default(
     session, test_user, test_workspace
 ):
     month_start = date.today().replace(day=1)
@@ -678,8 +1105,16 @@ async def test_get_recurring_projections_excludes_ignored_categories(
     projections = await _get_recurring_projections(
         session, test_workspace.id, month_start, month_end
     )
+    balance_projections = await _get_recurring_projections(
+        session,
+        test_workspace.id,
+        month_start,
+        month_end,
+        include_transfer_like=True,
+    )
 
     assert [p["amount"] for p in projections] == [100.0]
+    assert {p["amount"] for p in balance_projections} == {100.0, 300.0}
 
 
 @pytest.mark.asyncio
@@ -702,7 +1137,397 @@ async def test_balance_history_basic(session, test_user, test_workspace):
 
     history = await get_balance_history(session, test_workspace.id, test_user.id)
     assert len(history.current) > 0
-    assert len(history.previous) > 0
+    assert 28 <= len(history.baseline) <= 31
+
+
+@pytest.mark.asyncio
+async def test_balance_history_single_comparison_reuses_month_daily_balances(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = await _make_account(session, test_user.id, "Single comparison")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit", date(2026, 1, 1),
+        source="opening_balance",
+    )
+    await _add_txn(session, test_user.id, account.id, 50, "credit", date(2026, 2, 5))
+    await _add_txn(
+        session, test_user.id, account.id, 5000, "credit", date(2026, 2, 10),
+        source="opening_balance",
+    )
+    await _add_txn(session, test_user.id, account.id, 5, "debit", date(2026, 2, 20))
+
+    history = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 4, 1),
+        account_ids=[account.id],
+        comparison_months=[date(2026, 2, 1)],
+    )
+
+    assert history.comparison_month == "2026-02"
+    assert history.comparison_opening_balance == 1000.0
+    assert history.comparison is not None
+    assert len(history.comparison) == 28
+    assert history.comparison[0].balance == 1000.0
+    assert history.comparison[4].balance == 1050.0
+    assert history.comparison[9].balance == 1050.0
+    assert history.comparison[5].balance == 1050.0
+    assert history.comparison[19].balance == 1045.0
+    assert history.baseline == []
+
+
+@pytest.mark.asyncio
+async def test_midmonth_opening_balances_are_excluded_from_current_and_baseline(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = await _make_account(session, test_user.id, "Opening balance consistency")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+
+    for month, amount in ((1, 10), (2, 20), (3, 30), (4, 40)):
+        await _add_txn(
+            session, test_user.id, account.id, 1000, "credit", date(2026, month, 15),
+            source="opening_balance",
+        )
+        await _add_txn(
+            session, test_user.id, account.id, amount, "credit", date(2026, month, 20)
+        )
+
+    history = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 4, 1),
+        account_ids=[account.id],
+        comparison_months=[date(2026, month, 1) for month in (1, 2, 3)],
+    )
+
+    current_change = [
+        point.balance - history.opening_balance
+        for point in history.current
+        if point.balance is not None
+    ]
+    assert current_change[14] == 0.0
+    assert current_change[19] == 40.0
+    assert history.baseline[14].median == 0.0
+    assert history.baseline[19].median == 20.0
+
+
+@pytest.mark.asyncio
+async def test_balance_history_single_comparison_stops_at_today(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.services.dashboard_service.app_today", lambda: date(2026, 10, 18)
+    )
+    account = await _make_account(session, test_user.id, "In-progress comparison")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(session, test_user.id, account.id, 50, "credit", date(2026, 10, 5))
+
+    history = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 11, 1),
+        account_ids=[account.id],
+        comparison_months=[date(2026, 10, 1)],
+    )
+
+    assert history.comparison is not None
+    assert len(history.comparison) == 31
+    assert history.comparison[17].balance is not None
+    assert all(point.balance is None for point in history.comparison[18:])
+
+
+@pytest.mark.asyncio
+async def test_balance_history_sparse_month_selection_excludes_gap_month(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = await _make_account(session, test_user.id, "Sparse comparisons")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(session, test_user.id, account.id, 10, "credit", date(2026, 1, 1))
+    await _add_txn(session, test_user.id, account.id, 1000, "credit", date(2026, 2, 1))
+    await _add_txn(session, test_user.id, account.id, 30, "credit", date(2026, 3, 1))
+
+    history = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 4, 1),
+        account_ids=[account.id],
+        comparison_months=[date(2026, 3, 1), date(2026, 1, 1)],
+    )
+
+    assert history.comparison is None
+    assert history.baseline[0].median == 20.0
+    assert history.baseline[0].lower_quartile is None
+    assert history.baseline[0].upper_quartile is None
+
+
+@pytest.mark.asyncio
+async def test_balance_history_month_options_are_scoped_and_exclude_openings(
+    session: AsyncSession, test_user, test_workspace
+):
+    first = await _make_account(session, test_user.id, "Month options one")
+    second = await _make_account(session, test_user.id, "Month options two")
+    first.workspace_id = test_workspace.id
+    second.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(
+        session, test_user.id, first.id, 500, "credit", date(2026, 1, 1),
+        source="opening_balance",
+    )
+    await _add_txn(session, test_user.id, first.id, 25, "credit", date(2026, 2, 1))
+    await _add_txn(session, test_user.id, second.id, 75, "credit", date(2026, 3, 1))
+
+    all_months = await get_balance_history_months(session, test_workspace.id)
+    first_account_months = await get_balance_history_months(
+        session, test_workspace.id, [first.id]
+    )
+
+    assert all_months == ["2026-02", "2026-03"]
+    assert first_account_months == ["2026-02"]
+
+
+@pytest.mark.asyncio
+async def test_balance_history_month_options_exclude_loans(
+    session: AsyncSession, test_user, test_workspace
+):
+    # Loans are left out of the balance curve, so their months have no data to plot.
+    checking = await _make_account(session, test_user.id, "Months checking")
+    loan = await _make_account(session, test_user.id, "Months loan", acc_type="loan")
+    checking.workspace_id = test_workspace.id
+    loan.workspace_id = test_workspace.id
+    await session.commit()
+    await _add_txn(session, test_user.id, checking.id, 25, "credit", date(2026, 2, 1))
+    await _add_txn(session, test_user.id, loan.id, 300, "debit", date(2026, 3, 1))
+
+    assert await get_balance_history_months(session, test_workspace.id) == ["2026-02"]
+    assert await get_balance_history_months(
+        session, test_workspace.id, [checking.id, loan.id]
+    ) == ["2026-02"]
+
+
+def test_baseline_from_deltas_median_and_quartiles():
+
+    # Four months; day-1 changes are -10, -20, -30, -40.
+    deltas = {
+        date(2026, 1, 1): -10.0,
+        date(2026, 2, 1): -20.0,
+        date(2026, 3, 1): -30.0,
+        date(2026, 4, 1): -40.0,
+    }
+    month_starts = [date(2026, month, 1) for month in range(1, 5)]
+    baseline = _baseline_from_deltas(deltas, month_starts, 31, date.max)
+    assert len(baseline) == 31
+    day1 = baseline[0]
+    assert day1.median == -25.0
+    assert day1.lower_quartile == -32.5
+    assert day1.upper_quartile == -17.5
+    assert baseline[1].median == -25.0
+
+
+def test_baseline_three_contributors_include_quartiles():
+    deltas = {
+        date(2026, 1, 1): 10.0,
+        date(2026, 2, 1): 20.0,
+        date(2026, 3, 1): 30.0,
+    }
+
+    baseline = _baseline_from_deltas(
+        deltas,
+        [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)],
+        30,
+        date.max,
+    )
+
+    assert baseline[0].median == 20.0
+    assert baseline[0].lower_quartile == 15.0
+    assert baseline[0].upper_quartile == 25.0
+
+
+def test_normalize_comparison_months_defaults_and_deduplicates():
+    from app.services.dashboard_service import _normalize_comparison_months
+
+    default = _normalize_comparison_months(None, date(2026, 10, 1))
+    selected = _normalize_comparison_months(
+        [date(2026, 3, 15), date(2026, 1, 1), date(2026, 3, 1)],
+        date(2026, 10, 1),
+    )
+
+    assert len(default) == 12
+    assert selected == [date(2026, 1, 1), date(2026, 3, 1)]
+
+
+@pytest.mark.parametrize(
+    "months",
+    [
+        pytest.param([], id="empty"),
+        pytest.param([date(2026, 10, 1)], id="not-before-viewed-month"),
+        pytest.param(
+            [date(2024 + index // 12, index % 12 + 1, 1) for index in range(25)],
+            id="more-than-24-months",
+        ),
+    ],
+)
+def test_normalize_comparison_months_rejects_invalid_selections(months):
+    from app.services.dashboard_service import _normalize_comparison_months
+
+    with pytest.raises(ValueError):
+        _normalize_comparison_months(months, date(2026, 10, 1))
+
+
+def test_baseline_aligns_month_end_income():
+    # Salary of +100 on the last day of Jan (31), Feb (28), Mar (31), Apr (30).
+    deltas = {
+        date(2026, 1, 31): 100.0,
+        date(2026, 2, 28): 100.0,
+        date(2026, 3, 31): 100.0,
+        date(2026, 4, 30): 100.0,
+    }
+    for target_days in (28, 30, 31):
+        month_starts = [date(2026, month, 1) for month in range(1, 5)]
+        baseline = _baseline_from_deltas(deltas, month_starts, target_days, date.max)
+        assert len(baseline) == target_days
+        assert baseline[-1].median == 100.0
+        assert baseline[0].median == 0.0
+
+
+def test_baseline_two_months_has_median_without_quartiles():
+    deltas = {date(2026, 1, 5): 10.0, date(2026, 2, 5): 20.0}
+    month_starts = [date(2026, month, 1) for month in range(1, 13)]
+    baseline = _baseline_from_deltas(deltas, month_starts, 30, date.max)
+    assert baseline[4].median == 15.0
+    assert baseline[4].lower_quartile is None
+    assert baseline[4].upper_quartile is None
+
+
+def test_baseline_omits_source_days_after_today():
+    # Viewing a future month: the in-progress month must not carry its
+    # balance flat past today and drag the median.
+    deltas = {
+        date(2026, 8, 1): 10.0,
+        date(2026, 9, 1): 20.0,
+        date(2026, 10, 1): 30.0,
+        date(2026, 10, 20): 1000.0,
+    }
+    month_starts = [date(2026, 8, 1), date(2026, 9, 1), date(2026, 10, 1)]
+    baseline = _baseline_from_deltas(deltas, month_starts, 30, date(2026, 10, 18))
+
+    assert baseline[17].median == 20.0  # day 18: Aug, Sep, Oct all count
+    assert baseline[18].median == 15.0  # day 19: only Aug and Sep
+    assert baseline[18].lower_quartile is None
+
+
+@pytest.mark.asyncio
+async def test_future_balance_history_carries_pending_into_projected_opening(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Future balance", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    opening = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Opening", amount=Decimal("1000"),
+        currency="BRL", date=date.today(), type="credit", source="opening_balance",
+        status="posted",
+    )
+    pending = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Pending bill", amount=Decimal("100"),
+        currency="BRL", date=date.today(), type="debit", source="sync",
+        status="pending",
+    )
+    session.add_all([account, opening, pending])
+    await session.commit()
+
+    next_month = (date.today().replace(day=1) + timedelta(days=32)).replace(day=1)
+    history = await get_balance_history(
+        session, test_workspace.id, test_user.id,
+        month=next_month, account_ids=[account.id],
+    )
+
+    assert history.current[0].balance == 900.0
+
+
+@pytest.mark.asyncio
+async def test_balance_history_ignored_category_is_consistent_across_months(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ignored boundary",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    ignored = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ignored",
+        is_ignored=True,
+    )
+    session.add_all([account, ignored])
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Opening",
+            amount=Decimal("1000"),
+            currency="BRL",
+            date=date(2026, 7, 1),
+            type="credit",
+            source="opening_balance",
+        ),
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            category_id=ignored.id,
+            description="Ignored debit",
+            amount=Decimal("100"),
+            currency="BRL",
+            date=date(2026, 8, 3),
+            type="debit",
+            source="manual",
+            is_ignored=False,
+        ),
+    ])
+    await session.commit()
+
+    august = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 8, 1),
+        account_ids=[account.id],
+    )
+    september = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 9, 1),
+        account_ids=[account.id],
+    )
+
+    august_balance = next(
+        point.balance for point in reversed(august.current) if point.balance is not None
+    )
+    assert august_balance == 1000.0
+    assert september.current[0].balance == 1000.0
 
 
 @pytest.mark.asyncio
@@ -750,6 +1575,39 @@ async def test_get_projected_transactions_with_recurring(session, test_user, tes
     assert result[0].amount == 2500.0
 
 
+@pytest.mark.asyncio
+async def test_projected_transactions_use_effective_month_without_duplicates(
+    session, test_user, test_workspace
+):
+    rec = RecurringTransaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        description="Month boundary rent",
+        amount=Decimal("1000"),
+        type="debit",
+        frequency="monthly",
+        currency="BRL",
+        start_date=date(2026, 8, 1),
+        next_occurrence=date(2026, 8, 1),
+        weekend_adjustment="previous_friday",
+    )
+    session.add(rec)
+    await session.commit()
+
+    july = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+    august = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 8, 1)
+    )
+
+    july_dates = [item.date for item in july if item.recurring_id == str(rec.id)]
+    august_dates = [item.date for item in august if item.recurring_id == str(rec.id)]
+    assert july_dates == ["2026-07-31"]
+    assert august_dates == []
+
+
 # ---------------------------------------------------------------------------
 # get_summary with recurring projections
 # ---------------------------------------------------------------------------
@@ -775,7 +1633,8 @@ async def test_get_summary_includes_recurring_projections(session, test_user, te
     await session.commit()
 
     summary = await get_summary(session, test_workspace.id, test_user.id, month=month_start)
-    assert summary.monthly_income >= 10000.0
+    assert summary.monthly_income == pytest.approx(0.0)
+    assert summary.projected_income >= 10000.0
 
 
 # ---------------------------------------------------------------------------
@@ -814,7 +1673,10 @@ async def test_spending_by_category_includes_recurring(session, test_user, test_
     assert len(spending) >= 1
     transport = next((s for s in spending if s.category_name == "Transport"), None)
     assert transport is not None
-    assert transport.total >= 200.0
+    # Recurring projections are forecast: they live in projected_total so the
+    # posted-only `total` keeps matching the expenses card.
+    assert transport.total == 0.0
+    assert transport.projected_total >= 200.0
 
 
 # ---------------------------------------------------------------------------

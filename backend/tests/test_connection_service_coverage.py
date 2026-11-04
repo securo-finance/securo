@@ -19,14 +19,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.asset import Asset
+from app.models.asset_group import AssetGroup
 from app.models.bank_connection import BankConnection
+from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
+from app.models.user import User
+from app.models.workspace import WorkspaceMember
 from app.providers.base import (
     AccountData,
     ConnectionData,
     HoldingData,
     InstitutionData,
     InstitutionListData,
+    ProviderNotConfiguredError,
     ProviderUserActionRequired,
     SessionExpiredError,
     TransactionData,
@@ -64,6 +69,107 @@ def _patch_helpers():
         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock),
         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock),
     )
+
+
+@pytest.mark.asyncio
+async def test_shared_workspace_sync_imports_as_connection_owner(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A workspace member may trigger sync without owning imported rows."""
+    requester = User(
+        id=uuid.uuid4(),
+        email="requester@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        preferences={"currency_display": "BRL"},
+    )
+    session.add(requester)
+    await session.flush()
+
+    conn = await _make_connection(session, test_user.id, "Shared Broker")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="shared-account",
+            name="Brokerage",
+            type="checking",
+            balance=Decimal("100"),
+            currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="shared-tx",
+            description="DIVIDEND",
+            amount=Decimal("10"),
+            date=date.today(),
+            type="credit",
+            currency="BRL",
+        ),
+    ])
+    mock_provider.get_holdings = AsyncMock(return_value=[
+        HoldingData(
+            external_id="shared-holding",
+            name="Shared Fund",
+            currency="BRL",
+            current_value=Decimal("500"),
+        ),
+    ])
+
+    p1, p2, p3 = _patch_helpers()
+    q1, q2, q3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         q1, q2, q3:
+        await sync_connection(session, conn.id, test_workspace.id, requester.id)
+
+    account = await session.scalar(select(Account).where(Account.external_id == "shared-account"))
+    transaction = await session.scalar(
+        select(Transaction).where(Transaction.external_id == "shared-tx")
+    )
+    asset = await session.scalar(select(Asset).where(Asset.external_id == "shared-holding"))
+    assert asset is not None
+    wallet = await session.get(AssetGroup, asset.group_id)
+
+    assert account is not None and account.user_id == test_user.id
+    assert transaction is not None and transaction.user_id == test_user.id
+    assert asset.user_id == test_user.id
+    assert wallet is not None and wallet.user_id == test_user.id
+
+    account.user_id = requester.id
+    transaction.user_id = requester.id
+    asset.user_id = requester.id
+    wallet.user_id = requester.id
+    bill = CreditCardBill(
+        id=uuid.uuid4(),
+        user_id=requester.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        external_id="legacy-bill",
+        due_date=date.today(),
+        total_amount=Decimal("100"),
+        currency="BRL",
+    )
+    session.add(bill)
+    await session.commit()
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, requester.id)
+
+    await session.refresh(account)
+    await session.refresh(transaction)
+    await session.refresh(asset)
+    await session.refresh(wallet)
+    await session.refresh(bill)
+    assert account.user_id == test_user.id
+    assert transaction.user_id == test_user.id
+    assert asset.user_id == test_user.id
+    assert wallet.user_id == test_user.id
+    assert bill.user_id == test_user.id
+    assert bill.workspace_id == test_workspace.id
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +263,163 @@ async def test_sync_holdings_creates_asset(session: AsyncSession, test_user):
     assert asset.name == "VWCE ETF"
     assert asset.type == "investment"
     assert asset.connection_id == conn.id
+    assert asset.workspace_id == conn.workspace_id
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_matches_asset_across_workspace_members(
+    session: AsyncSession, test_user, test_workspace
+):
+    other_member = User(
+        id=uuid.uuid4(),
+        email="other-member@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(other_member)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=test_workspace.id,
+            user_id=other_member.id,
+            role="editor",
+        )
+    )
+    conn = await _make_connection(session, test_user.id, "Shared Broker")
+    existing = Asset(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        source="test",
+        external_id="shared-holding-id",
+        name="Existing holding",
+        type="investment",
+        currency="USD",
+        valuation_method="manual",
+    )
+    existing_group = AssetGroup(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        connection_id=None,
+        source="test",
+        external_id=conn.external_id,
+        name="Legacy wallet",
+        position=0,
+    )
+    session.add(existing_group)
+    await session.flush()
+    existing.group_id = existing_group.id
+    session.add(existing)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings = AsyncMock(
+        return_value=[
+            HoldingData(
+                external_id="shared-holding-id",
+                name="Updated holding",
+                currency="USD",
+                current_value=Decimal("500"),
+            )
+        ]
+    )
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+    await session.commit()
+
+    matching = (
+        await session.execute(
+            select(Asset).where(
+                Asset.workspace_id == test_workspace.id,
+                Asset.source == "test",
+                Asset.external_id == "shared-holding-id",
+            )
+        )
+    ).scalars().all()
+    assert [asset.id for asset in matching] == [existing.id]
+    assert matching[0].connection_id == conn.id
+    assert matching[0].name == "Updated holding"
+    assert matching[0].user_id == test_user.id
+    await session.refresh(existing_group)
+    assert existing_group.user_id == test_user.id
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_does_not_adopt_another_connections_wallet(
+    session: AsyncSession, test_user, test_workspace
+):
+    other_member = User(
+        id=uuid.uuid4(),
+        email="other-connection-owner@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(other_member)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=test_workspace.id,
+            user_id=other_member.id,
+            role="editor",
+        )
+    )
+    current = await _make_connection(session, test_user.id, "Current Broker")
+    other = await _make_connection(session, other_member.id, "Other Broker")
+    other_group = AssetGroup(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        connection_id=other.id,
+        source="test",
+        external_id=other.external_id,
+        name="Other connection wallet",
+        position=0,
+    )
+    existing = Asset(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        connection_id=other.id,
+        group_id=other_group.id,
+        source="test",
+        external_id="shared-provider-holding",
+        name="Existing holding",
+        type="investment",
+        currency="USD",
+        valuation_method="manual",
+    )
+    session.add_all([other_group, existing])
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings = AsyncMock(
+        return_value=[
+            HoldingData(
+                external_id="shared-provider-holding",
+                name="Updated holding",
+                currency="USD",
+                current_value=Decimal("500"),
+            )
+        ]
+    )
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, current, {"token": "t"})
+    await session.commit()
+
+    await session.refresh(other_group)
+    await session.refresh(existing)
+    assert other_group.user_id == other_member.id
+    assert other_group.connection_id == other.id
+    assert existing.group_id == other_group.id
 
 
 @pytest.mark.asyncio
@@ -224,16 +487,19 @@ async def test_sync_trigger_refresh_needs_user_action(session: AsyncSession, tes
     mock_provider.trigger_refresh = AsyncMock(return_value="needs_user_action")
 
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        with pytest.raises(RuntimeError, match="reconnect"):
+        with pytest.raises(ProviderUserActionRequired, match="reconnect") as exc:
             await sync_connection(
                 session, conn.id, test_workspace.id, test_user.id,
                 trigger_provider_refresh=True,
             )
+    assert exc.value.code == "credentials_invalid"
     # status marked error and committed
     refreshed = (await session.execute(
         select(BankConnection).where(BankConnection.id == conn.id)
     )).scalar_one()
     assert refreshed.status == "error"
+    assert refreshed.settings is not None
+    assert "last_provider_refresh_at" in refreshed.settings
 
 
 @pytest.mark.asyncio
@@ -251,11 +517,13 @@ async def test_sync_trigger_refresh_refreshed_then_reads(session: AsyncSession, 
     p1, p2, p3 = _patch_helpers()
     with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
          p1, p2, p3:
-        result, _ = await sync_connection(
+        result, _, _ = await sync_connection(
             session, conn.id, test_workspace.id, test_user.id,
             trigger_provider_refresh=True,
         )
     assert result.status == "active"
+    assert result.settings is not None
+    assert "last_provider_refresh_at" in result.settings
     mock_provider.trigger_refresh.assert_awaited_once()
 
 
@@ -302,7 +570,7 @@ async def test_sync_fuzzy_matches_manual_transaction(session: AsyncSession, test
     p1, p2, p3 = _patch_helpers()
     with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
          p1, p2, p3:
-        result, merged = await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+        result, merged, _ = await sync_connection(session, conn.id, test_workspace.id, test_user.id)
 
     assert result.status == "active"
     assert merged == 1
@@ -312,9 +580,214 @@ async def test_sync_fuzzy_matches_manual_transaction(session: AsyncSession, test
     assert manual.payee == "Starbucks"
 
 
+@pytest.mark.asyncio
+async def test_sync_rematches_rekeyed_account_by_stable_external_id(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Reauthorising a provider re-keys its accounts; reuse the row, don't duplicate.
+
+    Enable Banking's `uid` is scoped to a single session, so reauth hands back a
+    new uid for the same real account. Matching only on external_id inserted a
+    second account row and left the original (with its transactions) behind.
+    `identification_hash` survives the reauth, so the sync must rebind the
+    existing row to the new uid.
+    """
+    conn = await _make_connection(session, test_user.id, "ReauthBank")
+    conn_id, workspace_id, user_id = conn.id, test_workspace.id, test_user.id
+    existing = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
+        connection_id=conn_id, external_id="old-uid", stable_external_id="hash-1",
+        name="Checking", type="checking", balance=Decimal("10"), currency="EUR",
+    )
+    session.add(existing)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(external_id="new-uid", stable_external_id="hash-1", name="Checking",
+                    type="checking", balance=Decimal("25"), currency="EUR"),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn_id, workspace_id, user_id)
+
+    rows = (await session.execute(
+        select(Account).where(Account.connection_id == conn_id)
+    )).scalars().all()
+    assert len(rows) == 1, f"re-keyed account was duplicated: {len(rows)} rows"
+    assert rows[0].id == existing.id
+    assert rows[0].external_id == "new-uid"
+    assert rows[0].stable_external_id == "hash-1"
+
+
+@pytest.mark.asyncio
+async def test_sync_rematches_legacy_account_by_masked_number(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Rows predating `stable_external_id` must survive a reauth too.
+
+    A user whose bank was failing never had a stable_external_id backfilled; the sync
+    that would have done it is the one that was failing. When the bank recovers
+    after a reconnect the uid is new and the hash is unknown to us, so the
+    masked identifier is the last thing that still identifies the account.
+    Match on it rather than insert a duplicate.
+    """
+    conn = await _make_connection(session, test_user.id, "LegacyBank")
+    conn.provider = "enable_banking"
+    conn_id, workspace_id, user_id = conn.id, test_workspace.id, test_user.id
+    existing = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
+        connection_id=conn_id, external_id="old-uid", stable_external_id=None,
+        masked_number="5531", name="CUENTA CORRIENTE", type="checking",
+        balance=Decimal("10"), currency="EUR",
+    )
+    session.add(existing)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(external_id="new-uid", stable_external_id="hash-1", masked_number="5531",
+                    name="CUENTA CORRIENTE", type="checking",
+                    balance=Decimal("25"), currency="EUR"),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn_id, workspace_id, user_id)
+
+    rows = (await session.execute(
+        select(Account).where(Account.connection_id == conn_id)
+    )).scalars().all()
+    assert len(rows) == 1, f"legacy account was duplicated: {len(rows)} rows"
+    assert rows[0].id == existing.id
+    assert rows[0].external_id == "new-uid"
+    # The sync also backfills the hash it just learned, so the next reauth
+    # matches on the exact id instead of falling back to the mask.
+    assert rows[0].stable_external_id == "hash-1"
+
+
+@pytest.mark.asyncio
+async def test_sync_ambiguous_stable_external_id_does_not_match(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Two unclaimed rows with the same stable_external_id must not match.
+
+    EB does not guarantee the hash is unique. If two rows share the same
+    stable_external_id, the sync must fail closed (return None) rather than
+    fall through to the masked-number tier, which could merge unrelated
+    account histories.
+    """
+    conn = await _make_connection(session, test_user.id, "AmbiguousBank")
+    conn_id, workspace_id, user_id = conn.id, test_workspace.id, test_user.id
+    existing1 = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
+        connection_id=conn_id, external_id="uid-1", stable_external_id="hash-dup",
+        masked_number="1234", name="Checking A", type="checking", balance=Decimal("10"), currency="EUR",
+    )
+    existing2 = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
+        connection_id=conn_id, external_id="uid-2", stable_external_id="hash-dup",
+        masked_number="5678", name="Checking B", type="checking", balance=Decimal("20"), currency="EUR",
+    )
+    session.add_all([existing1, existing2])
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(external_id="new-uid", stable_external_id="hash-dup",
+                    masked_number="1234", name="Checking A", type="checking",
+                    balance=Decimal("25"), currency="EUR"),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn_id, workspace_id, user_id)
+
+    rows = (await session.execute(
+        select(Account).where(Account.connection_id == conn_id)
+    )).scalars().all()
+    # Must insert a new row, not rebind either existing one
+    assert len(rows) == 3, f"ambiguous stable_external_id should not match: {len(rows)} rows"
+    assert all(r.external_id != "new-uid" for r in rows if r.id in (existing1.id, existing2.id))
+
+
+@pytest.mark.asyncio
+async def test_sync_masked_number_fallback_not_used_for_pluggy(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The masked-number fallback must be limited to Enable Banking.
+
+    Pluggy keeps external_id stable across syncs, so a missing account is
+    genuinely missing. The fallback should not apply to non-EB providers.
+    """
+    conn = await _make_connection(session, test_user.id, "PluggyBank")
+    conn.provider = "pluggy"
+    conn_id, workspace_id, user_id = conn.id, test_workspace.id, test_user.id
+    existing = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
+        connection_id=conn_id, external_id="pluggy-uid-1", stable_external_id=None,
+        masked_number="5531", name="CUENTA CORRIENTE", type="checking",
+        balance=Decimal("10"), currency="EUR",
+    )
+    session.add(existing)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(external_id="pluggy-uid-2", stable_external_id=None,
+                    masked_number="5531", name="CUENTA CORRIENTE", type="checking",
+                    balance=Decimal("25"), currency="EUR"),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn_id, workspace_id, user_id)
+
+    rows = (await session.execute(
+        select(Account).where(Account.connection_id == conn_id)
+    )).scalars().all()
+    # Must insert a new row, not rebind the existing one
+    assert len(rows) == 2, f"masked-number fallback should not apply to Pluggy: {len(rows)} rows"
+    assert rows[0].id == existing.id
+    assert rows[0].external_id == "pluggy-uid-1"
+
+
 # ---------------------------------------------------------------------------
 # sync_connection: SessionExpired / ProviderUserActionRequired
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sync_unregistered_provider_keeps_status(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A provider missing from the registry is a server misconfiguration (e.g.
+    the Celery worker not loading .env) — the connection must keep its status
+    instead of flipping to "error", which would show a misleading reconnect
+    banner for perfectly healthy credentials."""
+    conn = await _make_connection(session, test_user.id, "GhostBank")
+    conn_id = conn.id
+
+    with pytest.raises(ProviderNotConfiguredError, match="not configured"):
+        await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+
+    refreshed = (await session.execute(
+        select(BankConnection).where(BankConnection.id == conn_id)
+    )).scalar_one()
+    assert refreshed.status == "active"
 
 
 @pytest.mark.asyncio

@@ -125,7 +125,13 @@ async def test_detect_no_credits(session: AsyncSession, test_user, test_workspac
 
 @pytest.mark.asyncio
 async def test_detect_respects_date_tolerance(session: AsyncSession, test_user, test_workspace):
-    """Only pairs transactions within date_tolerance_days."""
+    """Only pairs transactions inside the window the rules ask for.
+
+    The window used to be an argument to this function and is now a
+    condition on a rule somebody can read and change. Two days is what
+    ships, and what this asserts, because the point of moving it was to
+    keep the behaviour and expose the number.
+    """
     acc1 = await _make_account(session, test_user.id, "Tol A")
     acc2 = await _make_account(session, test_user.id, "Tol B")
     today = date.today()
@@ -134,7 +140,7 @@ async def test_detect_respects_date_tolerance(session: AsyncSession, test_user, 
     # Credit too far away (5 days)
     await _add_txn(session, test_user.id, acc2.id, 300, "credit", today + timedelta(days=5))
 
-    pairs = await detect_transfer_pairs(session, test_workspace.id, date_tolerance_days=2)
+    pairs = await detect_transfer_pairs(session, test_workspace.id)
     assert pairs == 0
 
 
@@ -148,7 +154,7 @@ async def test_detect_within_tolerance(session: AsyncSession, test_user, test_wo
     debit = await _add_txn(session, test_user.id, acc1.id, 400, "debit", today)
     credit = await _add_txn(session, test_user.id, acc2.id, 400, "credit", today + timedelta(days=1))
 
-    pairs = await detect_transfer_pairs(session, test_workspace.id, date_tolerance_days=2)
+    pairs = await detect_transfer_pairs(session, test_workspace.id)
     await session.commit()
     assert pairs == 1
 

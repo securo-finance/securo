@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.services import dashboard_service, report_service
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
@@ -125,7 +125,7 @@ async def get_dashboard_snapshot(
     ctx: CallContext,
     month: str | None = None,
 ) -> dict[str, Any]:
-    target = parse_date(month) or date.today().replace(day=1)
+    target = parse_date(month) or app_today().replace(day=1)
     ws_id = await resolve_workspace_id(session, ctx)
     summary = await dashboard_service.get_summary(session, ws_id, ctx.user_id, month=target)
     if hasattr(summary, "model_dump"):

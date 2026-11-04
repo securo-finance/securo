@@ -1,0 +1,4 @@
+# Russia. The INN is ten digits for an organisation and twelve for a
+# person; the KPP that accompanies it identifies the branch, not the entity.
+code = "RU"
+kinds = ["inn"]

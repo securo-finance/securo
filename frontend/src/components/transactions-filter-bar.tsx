@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { startOfMonth, startOfYear, subDays } from 'date-fns'
@@ -9,6 +9,8 @@ import {
   Check,
   ChevronRight,
   Coins,
+  EyeClosed,
+  ListChecks,
   ListFilter,
   Search,
   Store,
@@ -40,6 +42,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { localDateString } from '@/lib/date-utils'
+import { formatDateRange } from '@/lib/date-range-format'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { CategoryFilterContent } from '@/components/category-filter-content'
 import {
@@ -65,6 +68,10 @@ interface TransactionsFilterBarProps {
   onGroupIdChange: (value: string) => void
   filterType: string
   onTypeChange: (value: string) => void
+  filterStatus: string
+  onStatusChange: (value: string) => void
+  hideIgnored: boolean
+  onHideIgnoredChange: (value: boolean) => void
   filterFrom: string
   filterTo: string
   onDateRangeChange: (from: string, to: string) => void
@@ -74,6 +81,10 @@ interface TransactionsFilterBarProps {
   onClearAll: () => void
   accounts: Account[]
   categories: Category[]
+  /** Catalog used only to label active filters, so a filter kept in the URL
+   * still names its category after that category is hidden. Selectable
+   * options always come from `categories`. */
+  referenceCategories?: Category[]
   categoryGroups: CategoryGroup[]
   payees: Payee[]
   groups: Group[]
@@ -100,6 +111,10 @@ export function TransactionsFilterBar({
   onGroupIdChange,
   filterType,
   onTypeChange,
+  filterStatus,
+  onStatusChange,
+  hideIgnored,
+  onHideIgnoredChange,
   filterFrom,
   filterTo,
   onDateRangeChange,
@@ -109,6 +124,7 @@ export function TransactionsFilterBar({
   onClearAll,
   accounts,
   categories,
+  referenceCategories,
   categoryGroups,
   payees,
   groups,
@@ -130,6 +146,7 @@ export function TransactionsFilterBar({
   const [draftMaxAmount, setDraftMaxAmount] = useState<string>(filterMaxAmount)
   const [mobileFilterView, setMobileFilterView] = useState<MobileFilterView>('root')
   const searchRef = useRef<HTMLInputElement>(null)
+  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
 
   // When a CheckRow is clicked inside a submenu, Radix tries to close the submenu
   // even if we preventDefault in onSelect. We intercept the close request so the
@@ -170,8 +187,9 @@ export function TransactionsFilterBar({
   const categoryById = useMemo(() => {
     const map = new Map<string, Category>()
     categories.forEach((c) => map.set(c.id, c))
+    referenceCategories?.forEach((c) => map.set(c.id, c))
     return map
-  }, [categories])
+  }, [categories, referenceCategories])
 
   const selectedPayee = useMemo(
     () => payees.find((p) => p.id === filterPayee),
@@ -190,6 +208,8 @@ export function TransactionsFilterBar({
     !!filterPayee ||
     !!filterGroupId ||
     !!filterType ||
+    !!filterStatus ||
+    hideIgnored ||
     !!filterFrom ||
     !!filterTo ||
     !!filterMinAmount ||
@@ -201,18 +221,20 @@ export function TransactionsFilterBar({
       ? t('transactions.income')
       : filterType === 'debit'
         ? t('transactions.expense')
+        : filterType === 'transfer'
+          ? t('transactions.transfer')
+          : ''
+
+  const statusLabel =
+    filterStatus === 'pending'
+      ? t('transactions.statusPending')
+      : filterStatus === 'posted'
+        ? t('transactions.statusPosted')
         : ''
 
   const dateLabel = useMemo(() => {
     if (!filterFrom && !filterTo) return null
-    const fmt = (iso: string) =>
-      new Date(iso + 'T00:00:00').toLocaleDateString(dateLocale, {
-        day: '2-digit',
-        month: 'short',
-      })
-    if (filterFrom && filterTo) return `${fmt(filterFrom)} — ${fmt(filterTo)}`
-    if (filterFrom) return `≥ ${fmt(filterFrom)}`
-    return `≤ ${fmt(filterTo)}`
+    return formatDateRange(filterFrom, filterTo, dateLocale, { compact: true })
   }, [filterFrom, filterTo, dateLocale])
 
   const amountLabel = useMemo(() => {
@@ -365,7 +387,7 @@ export function TransactionsFilterBar({
                 type="button"
                 aria-label={t('transactions.filtersBar.filters')}
                 className={cn(
-                  'inline-flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-background px-2.5 text-[12px] font-medium text-muted-foreground transition-colors',
+                  'inline-flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-card px-2.5 text-[12px] font-medium text-muted-foreground transition-colors',
                   'hover:bg-muted hover:text-foreground',
                   menuOpen && 'bg-muted text-foreground',
                   hasAnyFilter && 'border-primary/30 text-primary hover:text-primary',
@@ -386,7 +408,7 @@ export function TransactionsFilterBar({
                 view={mobileFilterView}
                 setView={setMobileFilterView}
                 setMenuOpen={setMenuOpen}
-                accounts={accounts}
+                accounts={sortedAccounts}
                 categories={categories}
                 categoryGroups={categoryGroups}
                 payees={payees}
@@ -411,6 +433,8 @@ export function TransactionsFilterBar({
                   payee: selectedPayee?.name,
                   group: selectedGroup?.name,
                   type: typeLabel,
+                  status: statusLabel,
+                  ignored: hideIgnored ? t('transactions.ignoredHide') : undefined,
                   date: dateLabel,
                   amount: amountLabel,
                 }}
@@ -422,6 +446,10 @@ export function TransactionsFilterBar({
                 onPayeeChange={onPayeeChange}
                 onGroupIdChange={onGroupIdChange}
                 onTypeChange={onTypeChange}
+                status={filterStatus}
+                onStatusChange={onStatusChange}
+                hideIgnored={hideIgnored}
+                onHideIgnoredChange={onHideIgnoredChange}
                 onDateRangeChange={onDateRangeChange}
                 onAmountRangeChange={onAmountRangeChange}
                 onApplyAmountRange={applyAmountRange}
@@ -472,12 +500,12 @@ export function TransactionsFilterBar({
                           <div className="my-1 h-px bg-border/60" />
                         </>
                       )}
-                      {accounts.length === 0 ? (
+                      {sortedAccounts.length === 0 ? (
                         <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
                           {t('transactions.filtersBar.noOptions')}
                         </div>
                       ) : accountSelectionMode === 'single' ? (
-                        accounts.map((a) => {
+                        sortedAccounts.map((a) => {
                           const checked = filterAccountIds[0] === a.id
                           return (
                             <DropdownMenuItem
@@ -503,7 +531,7 @@ export function TransactionsFilterBar({
                           )
                         })
                       ) : (
-                        accounts.map((a) => (
+                        sortedAccounts.map((a) => (
                           <DropdownMenuCheckboxItem
                             key={a.id}
                             checked={filterAccountIds.includes(a.id)}
@@ -695,7 +723,7 @@ export function TransactionsFilterBar({
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
 
-                {/* Type submenu (single — income vs expense) */}
+                {/* Type submenu (single: income, expense or transfer) */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 text-[13px]">
                     <ArrowUpDown size={14} className="text-muted-foreground" />
@@ -715,6 +743,7 @@ export function TransactionsFilterBar({
                         { value: '', label: t('transactions.all') },
                         { value: 'credit', label: t('transactions.income') },
                         { value: 'debit', label: t('transactions.expense') },
+                        { value: 'transfer', label: t('transactions.transfer') },
                       ].map((opt) => (
                         <DropdownMenuItem
                           key={opt.value || 'all'}
@@ -736,6 +765,62 @@ export function TransactionsFilterBar({
                     </DropdownMenuSubContent>
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
+
+                {/* Status submenu (single — posted vs pending) */}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="gap-2 text-[13px]">
+                    <ListChecks size={14} className="text-muted-foreground" />
+                    <span className="flex-1">{t('transactions.status')}</span>
+                    {statusLabel && (
+                      <span className="max-w-[90px] truncate text-[11px] text-muted-foreground">
+                        {statusLabel}
+                      </span>
+                    )}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuPortal>
+                    <DropdownMenuSubContent
+                      sideOffset={8}
+                      className="w-[200px] p-1"
+                    >
+                      {[
+                        { value: '', label: t('transactions.all') },
+                        { value: 'pending', label: t('transactions.statusPending') },
+                        { value: 'posted', label: t('transactions.statusPosted') },
+                      ].map((opt) => (
+                        <DropdownMenuItem
+                          key={opt.value || 'all'}
+                          onSelect={() => onStatusChange(opt.value)}
+                          className={cn(
+                            'gap-2 rounded-sm px-2 py-1.5 text-[13px]',
+                            filterStatus === opt.value && 'bg-primary/5',
+                          )}
+                        >
+                          <span className="size-2.5 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-left">
+                            {opt.label}
+                          </span>
+                          {filterStatus === opt.value && (
+                            <Check size={13} className="text-primary" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuPortal>
+                </DropdownMenuSub>
+
+                {/* Ignored rows: a visibility switch rather than a filter
+                    value, so it reads as one line instead of a submenu. */}
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    onHideIgnoredChange(!hideIgnored)
+                  }}
+                  className="gap-2 text-[13px]"
+                >
+                  <EyeClosed size={14} className="text-muted-foreground" />
+                  <span className="flex-1">{t('transactions.hideIgnored')}</span>
+                  {hideIgnored && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
 
                 {/* Date range submenu with presets */}
                 <DropdownMenuSub>
@@ -848,7 +933,7 @@ export function TransactionsFilterBar({
                                 applyAmountRange()
                               }
                             }}
-                            className="h-8 w-full rounded-md border border-border bg-background px-2 text-[13px] outline-none focus:border-primary/60 focus:ring-[2px] focus:ring-primary/15"
+                            className="h-8 w-full rounded-md border border-border bg-card px-2 text-[13px] outline-none focus:border-primary/60 focus:ring-[2px] focus:ring-primary/15"
                           />
                         </div>
                         <div className="flex-1">
@@ -869,7 +954,7 @@ export function TransactionsFilterBar({
                                 applyAmountRange()
                               }
                             }}
-                            className="h-8 w-full rounded-md border border-border bg-background px-2 text-[13px] outline-none focus:border-primary/60 focus:ring-[2px] focus:ring-primary/15"
+                            className="h-8 w-full rounded-md border border-border bg-card px-2 text-[13px] outline-none focus:border-primary/60 focus:ring-[2px] focus:ring-primary/15"
                           />
                         </div>
                       </div>
@@ -931,6 +1016,7 @@ export function TransactionsFilterBar({
           filterUncategorized ||
           !!selectedPayee ||
           !!typeLabel ||
+          !!statusLabel ||
           !!dateLabel ||
           !!amountLabel) && (
           <div className="flex flex-wrap items-center gap-1 border-t border-border/60 px-2 py-1.5">
@@ -991,6 +1077,22 @@ export function TransactionsFilterBar({
                 onRemove={() => onTypeChange('')}
               />
             )}
+            {statusLabel && (
+              <FilterChip
+                icon={<ListChecks size={12} />}
+                label={t('transactions.status')}
+                value={statusLabel}
+                onRemove={() => onStatusChange('')}
+              />
+            )}
+            {hideIgnored && (
+              <FilterChip
+                icon={<EyeClosed size={12} />}
+                label={t('transactions.hideIgnored')}
+                value={t('transactions.ignoredHiddenValue')}
+                onRemove={() => onHideIgnoredChange(false)}
+              />
+            )}
             {dateLabel && (
               <FilterChip
                 icon={<CalendarIcon size={12} />}
@@ -1025,7 +1127,7 @@ export function TransactionsFilterBar({
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground/70">
               {draftFrom || draftTo
-                ? formatRange(draftFrom, draftTo, dateLocale)
+                ? formatDateRange(draftFrom, draftTo, dateLocale)
                 : t('transactions.filtersBar.pickRange')}
             </p>
           </div>
@@ -1105,18 +1207,6 @@ export function TransactionsFilterBar({
       </Popover>
     </div>
   )
-}
-
-function formatRange(from: string, to: string, locale: string): string {
-  const fmt = (iso: string) =>
-    new Date(iso + 'T00:00:00').toLocaleDateString(locale, {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    })
-  if (from && to) return `${fmt(from)} — ${fmt(to)}`
-  if (from) return `≥ ${fmt(from)}`
-  return `≤ ${fmt(to)}`
 }
 
 interface FilterChipProps {

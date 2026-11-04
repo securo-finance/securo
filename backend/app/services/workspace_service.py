@@ -36,8 +36,14 @@ async def create_personal_workspace_for_user(
 ) -> Workspace:
     """Create the user's auto-default Personal workspace + owner membership.
 
-    Idempotent: if the user already owns a personal workspace (e.g. the
-    migration ran), returns the existing one.
+    Idempotent: if the user already has a workspace they created and
+    belong to (e.g. the migration ran), returns the oldest one.
+
+    The guard matches on identity, not on `kind`: the bootstrap
+    workspace is the first one the user created and belongs to. Keying
+    off `kind == "personal"` would also match a second personal
+    workspace they made by hand, and which of the two came back would
+    depend on row order.
 
     Caller is responsible for committing unless `commit=True`. Defaults
     to flush-only because callers often want to bundle this with the
@@ -48,9 +54,9 @@ async def create_personal_workspace_for_user(
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
         .where(
             WorkspaceMember.user_id == user.id,
-            Workspace.kind == "personal",
             Workspace.created_by_user_id == user.id,
         )
+        .order_by(Workspace.created_at.asc())
         .limit(1)
     )
     found = existing.scalar_one_or_none()
@@ -209,6 +215,7 @@ async def create_workspace(
     kind: str = "personal",
     default_currency: Optional[str] = None,
     locale: Optional[str] = None,
+    tax_jurisdiction: Optional[str] = None,
     icon: Optional[str] = None,
     color: Optional[str] = None,
     self_membership: bool = False,
@@ -235,6 +242,7 @@ async def create_workspace(
         managed_by_user_id=creator.id,
         default_currency=default_currency or prefs.get("currency_display", "USD"),
         locale=workspace_locale,
+        tax_jurisdiction=tax_jurisdiction,
         icon=icon,
         color=color,
     )

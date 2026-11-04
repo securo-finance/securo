@@ -198,6 +198,9 @@ async def test_create_settlement_receiver_self_member_owner_fallback(session: As
     friend = await group_service.create_member(
         session, group.id, test_workspace.id, GroupMemberCreate(name="Friend")
     )
+    assert owner_self is not None
+
+    assert friend is not None
     s = await settlement_service.create_settlement(
         session, group.id, test_workspace.id, test_user.id,
         GroupSettlementCreate(
@@ -205,9 +208,12 @@ async def test_create_settlement_receiver_self_member_owner_fallback(session: As
             amount=Decimal("8.00"), currency="USD", date=date.today(),
         ),
     )
+
     assert s is not None
+
     assert s.receiver_transaction_id is not None
     rx = await session.get(Transaction, s.receiver_transaction_id)
+    assert rx is not None
     assert rx.account_id == owner_account.id
     assert rx.type == "credit"
 
@@ -238,10 +244,13 @@ async def test_update_settlement_change_only_from_member(session: AsyncSession, 
             amount=Decimal("10.00"), currency="USD", date=date.today(),
         ),
     )
+
+    assert s is not None
     updated = await settlement_service.update_settlement(
         session, group.id, s.id, test_workspace.id, test_user.id,
         GroupSettlementUpdate(from_member_id=c.id),
     )
+
     assert updated is not None
     assert updated.from_member_id == c.id
 
@@ -278,11 +287,14 @@ async def test_update_settlement_revalidates_members_and_transaction(session: As
             amount=Decimal("10.00"), currency="USD", date=date.today(),
         ),
     )
+
+    assert s is not None
     # Change to_member to Carol and link the transaction.
     updated = await settlement_service.update_settlement(
         session, group.id, s.id, test_workspace.id, test_user.id,
         GroupSettlementUpdate(to_member_id=c.id, transaction_id=tx.id),
     )
+
     assert updated is not None
     assert updated.to_member_id == c.id
     assert updated.transaction_id == tx.id
@@ -298,6 +310,8 @@ async def test_update_settlement_invalid_member(session: AsyncSession, test_user
             amount=Decimal("10.00"), currency="USD", date=date.today(),
         ),
     )
+
+    assert s is not None
     with pytest.raises(ValueError, match="must belong to the group"):
         await settlement_service.update_settlement(
             session, group.id, s.id, test_workspace.id, test_user.id,
@@ -315,6 +329,8 @@ async def test_delete_settlement(session: AsyncSession, test_user, test_workspac
             amount=Decimal("10.00"), currency="USD", date=date.today(),
         ),
     )
+
+    assert s is not None
     assert await settlement_service.delete_settlement(
         session, group.id, s.id, test_workspace.id, test_user.id
     ) is True
@@ -360,6 +376,10 @@ async def test_settlement_permission_for_linked_member(session: AsyncSession, te
         GroupMemberCreate(name="Payer", linked_user_id=payer_user.id),
     )
 
+    assert me is not None
+
+    assert payer is not None
+
     # The linked payer can record a payment where they are the from_member.
     s = await settlement_service.create_settlement(
         session, group.id, payer_ws.id, payer_user.id,
@@ -368,6 +388,7 @@ async def test_settlement_permission_for_linked_member(session: AsyncSession, te
             amount=Decimal("3.00"), currency="USD", date=date.today(),
         ),
     )
+
     assert s is not None
 
     # But NOT one where someone else is the from_member.
@@ -409,6 +430,10 @@ async def test_update_settlement_permission_denied(session: AsyncSession, test_u
         session, group.id, test_workspace.id,
         GroupMemberCreate(name="Intruder", linked_user_id=intruder.id),
     )
+
+    assert a is not None
+
+    assert b is not None
     # Owner creates a settlement from a -> b.
     s = await settlement_service.create_settlement(
         session, group.id, test_workspace.id, test_user.id,
@@ -417,6 +442,8 @@ async def test_update_settlement_permission_denied(session: AsyncSession, test_u
             amount=Decimal("10.00"), currency="USD", date=date.today(),
         ),
     )
+
+    assert s is not None
     # Intruder (linked to b, not the from_member) can't edit it.
     with pytest.raises(PermissionError, match="settlements you created"):
         await settlement_service.update_settlement(

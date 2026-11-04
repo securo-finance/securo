@@ -14,6 +14,7 @@ work across several distinct sets of books).
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "053"
@@ -27,7 +28,7 @@ def upgrade() -> None:
         "workspaces",
         sa.Column(
             "managed_by_user_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey("users.id", ondelete="SET NULL"),
             nullable=True,
         ),

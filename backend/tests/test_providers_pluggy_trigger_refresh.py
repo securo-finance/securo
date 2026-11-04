@@ -35,10 +35,10 @@ def _client_with(patch_resp: MagicMock, get_responses: list[MagicMock]) -> Magic
 
 async def _run(client: MagicMock) -> str:
     provider = PluggyProvider()
-    with patch.object(
-        PluggyProvider, "_headers", new=AsyncMock(return_value={"X-API-KEY": "k"})
-    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=client), patch(
-        "app.providers.pluggy.asyncio.sleep", new=AsyncMock(return_value=None)
+    with (
+        patch.object(PluggyProvider, "_headers", new=AsyncMock(return_value={"X-API-KEY": "k"})),
+        patch("app.providers.pluggy.httpx.AsyncClient", return_value=client),
+        patch("app.providers.pluggy.asyncio.sleep", new=AsyncMock(return_value=None)),
     ):
         return await provider.trigger_refresh({"item_id": "item-1"})
 
@@ -62,7 +62,6 @@ async def test_refresh_missing_item_id_skipped():
     """Connections without an item_id (non-Pluggy, malformed) skip refresh."""
     provider = PluggyProvider()
     assert await provider.trigger_refresh({}) == "skipped"
-    assert await provider.trigger_refresh(None) == "skipped"  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -161,9 +160,10 @@ async def test_refresh_patch_http_error_returns_failed():
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=None)
     provider = PluggyProvider()
-    with patch.object(
-        PluggyProvider, "_headers", new=AsyncMock(return_value={"X-API-KEY": "k"})
-    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=client):
+    with (
+        patch.object(PluggyProvider, "_headers", new=AsyncMock(return_value={"X-API-KEY": "k"})),
+        patch("app.providers.pluggy.httpx.AsyncClient", return_value=client),
+    ):
         assert await provider.trigger_refresh({"item_id": "item-1"}) == "failed"
 
 
@@ -185,11 +185,12 @@ async def test_refresh_poll_eventually_times_out():
         except StopIteration:
             return 999.0
 
-    with patch.object(
-        PluggyProvider, "_headers", new=AsyncMock(return_value={"X-API-KEY": "k"})
-    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=client), patch(
-        "app.providers.pluggy.asyncio.sleep", new=AsyncMock(return_value=None)
-    ), patch("app.providers.pluggy.time.monotonic", side_effect=fake_monotonic):
+    with (
+        patch.object(PluggyProvider, "_headers", new=AsyncMock(return_value={"X-API-KEY": "k"})),
+        patch("app.providers.pluggy.httpx.AsyncClient", return_value=client),
+        patch("app.providers.pluggy.asyncio.sleep", new=AsyncMock(return_value=None)),
+        patch("app.providers.pluggy.time.monotonic", side_effect=fake_monotonic),
+    ):
         assert await provider.trigger_refresh({"item_id": "item-1"}) == "failed"
 
 

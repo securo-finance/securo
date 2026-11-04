@@ -1,0 +1,4 @@
+# New Zealand. The NZBN identifies the entity; GST registration uses the
+# IRD number, which is not a separate field on an invoice.
+code = "NZ"
+kinds = ["nzbn"]

@@ -1,0 +1,58 @@
+name: label guard
+
+# GitHub has no per-label ACL: anyone with triage can apply any label. This
+# restores the previous state whenever someone outside the list changes one of
+# the decision axes. It is after the fact, not prevention: the label stays
+# applied for a few seconds until the job runs.
+
+on:
+  issues:
+    types: [labeled, unlabeled]
+  # pull_request_target so the token can write on fork PRs too. Safe here
+  # because this job never checks out PR code.
+  pull_request_target:
+    types: [labeled, unlabeled]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  revert:
+    if: >-
+      startsWith(github.event.label.name, 'prio:') ||
+      startsWith(github.event.label.name, 'risk:') ||
+      startsWith(github.event.label.name, 'roadmap:')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const OWNERS = ['tassionoronha'];   // who decides the axes
+
+            const actor = context.payload.sender.login;
+            // Without this it is an infinite loop: the revert itself fires
+            // `unlabeled`, which would trigger another revert.
+            if (actor === 'github-actions[bot]' || OWNERS.includes(actor)) return;
+
+            const target = context.payload.issue || context.payload.pull_request;
+            const label = context.payload.label.name;
+            const repo = context.repo;
+            const n = target.number;
+
+            // Tolerate the label already being gone: two people editing at
+            // once should not turn this into a red X on the issue.
+            if (context.payload.action === 'labeled') {
+              await github.rest.issues.removeLabel(
+                { ...repo, issue_number: n, name: label }).catch(() => {});
+            } else {
+              await github.rest.issues.addLabels(
+                { ...repo, issue_number: n, labels: [label] }).catch(() => {});
+            }
+
+            await github.rest.issues.createComment({
+              ...repo, issue_number: n,
+              body: `Reverted \`${label}\`. The **prio**, **risk** and **roadmap** ` +
+                    `axes are set during triage only, so that the priority shown here ` +
+                    `always matches the published criteria. See PRIORITIZATION.md.`
+            });

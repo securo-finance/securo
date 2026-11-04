@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -61,7 +61,9 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
     setDefaultModel(KIND_LABELS[newKind].defaultModel ?? '')
   }
 
-  useEffect(() => {
+  const [formSource, setFormSource] = useState<{ connection: typeof connection; open: typeof open } | null>(null)
+  if (!formSource || formSource.connection !== connection || formSource.open !== open) {
+    setFormSource({ connection, open })
     if (connection) {
       setName(connection.name)
       setKind(connection.kind)
@@ -86,7 +88,7 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
       setModelTouched(false)
       setIsDefault(false)
     }
-  }, [connection, open])
+  }
 
   const meta = KIND_LABELS[kind]
 

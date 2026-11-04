@@ -1,0 +1,13 @@
+# Netherlands. The BTW-id is the VAT number; the older BTW-nummer is not
+# used on invoices any more.
+code = "NL"
+kinds = ["vat"]
+
+# Goods crossing a border carry a Harmonized System code; a barcode is
+# what most catalogs already have.
+[[product_fields]]
+key = "hs_code"
+kinds = ["product"]
+[[product_fields]]
+key = "gtin"
+kinds = ["product"]

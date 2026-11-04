@@ -1,9 +1,13 @@
 import json
+import uuid
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.transaction import Transaction
 
 
 @pytest.mark.asyncio
@@ -261,6 +265,46 @@ async def test_list_import_logs(client: AsyncClient, auth_headers, test_account:
 
 
 @pytest.mark.asyncio
+async def test_list_import_logs_returns_account_currency(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_workspace
+):
+    """Totals are in the account's currency, not the user's display one (#881)."""
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    test_workspace.default_currency = "USD"
+    eur_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Euro Account",
+        type="checking",
+        balance=0,
+        currency="EUR",
+    )
+    session.add(eur_account)
+    await session.commit()
+
+    resp = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(eur_account.id),
+            "transactions": [
+                {"description": "EUR TXN", "amount": "25.00", "date": "2026-02-20", "type": "debit"},
+            ],
+            "filename": "eur.csv",
+            "detected_format": "csv",
+        },
+    )
+    assert resp.status_code == 201
+
+    logs = (await client.get("/api/import-logs", headers=auth_headers)).json()
+    log = next(entry for entry in logs if entry["filename"] == "eur.csv")
+    assert log["account_currency"] == "EUR"
+    assert log["account_name"] == "Euro Account"
+    assert float(log["total_debit"]) == 25.0
+
+
+@pytest.mark.asyncio
 async def test_delete_import_log(client: AsyncClient, auth_headers, test_account: Account):
     # Create an import
     resp = await client.post(
@@ -312,6 +356,46 @@ async def test_preview_returns_suggested_categories(
     assert unknown["suggested_category_name"] is None
 
 
+async def test_preview_uses_csv_category_as_default(
+    client: AsyncClient, auth_headers, test_categories
+):
+    csv_content = (
+        "data,descricao,valor,categoria\n"
+        "10/02/2026,COMPRA QUALQUER,-25.50,Alimenta\u00e7\u00e3o\n"
+    ).encode("utf-8")
+
+    response = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("extrato.csv", csv_content, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    txn = response.json()["transactions"][0]
+    assert txn["suggested_category_id"] == str(test_categories[0].id)
+    assert txn["suggested_category_name"] == "Alimenta\u00e7\u00e3o"
+
+
+async def test_preview_rule_overrides_csv_category_default(
+    client: AsyncClient, auth_headers, test_categories, test_rules
+):
+    csv_content = (
+        "data,descricao,valor,categoria\n"
+        "10/02/2026,UBER TRIP,-25.50,Alimenta\u00e7\u00e3o\n"
+    ).encode("utf-8")
+
+    response = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("extrato.csv", csv_content, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    txn = response.json()["transactions"][0]
+    assert txn["suggested_category_id"] == str(test_categories[1].id)
+    assert txn["suggested_category_name"] == "Transporte"
+
+
 async def test_import_with_excluded_transactions(
     client: AsyncClient, auth_headers, test_account: Account
 ):
@@ -353,7 +437,12 @@ async def test_import_with_excluded_transactions(
 
 
 async def test_import_with_category_override(
-    client: AsyncClient, auth_headers, test_account: Account, test_categories: list
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    test_categories: list,
+    test_rules,
+    session: AsyncSession,
 ):
     override_cat_id = str(test_categories[0].id)
     response = await client.post(
@@ -363,7 +452,7 @@ async def test_import_with_category_override(
             "account_id": str(test_account.id),
             "transactions": [
                 {
-                    "description": "GROCERY",
+                    "description": "UBER EXPLICIT OVERRIDE",
                     "amount": "25.50",
                     "date": "2026-02-10",
                     "type": "debit",
@@ -380,3 +469,79 @@ async def test_import_with_category_override(
     logs_resp = await client.get("/api/import-logs", headers=auth_headers)
     log = next(entry for entry in logs_resp.json() if entry["id"] == import_log_id)
     assert log["transaction_count"] == 1
+
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.import_id == uuid.UUID(import_log_id),
+        )
+    )
+    imported = result.scalar_one()
+    assert imported.category_id == test_categories[0].id
+
+
+async def test_import_rule_overrides_csv_category_default(
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    test_categories: list,
+    test_rules,
+    session: AsyncSession,
+):
+    response = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "transactions": [
+                {
+                    "description": "UBER CSV DEFAULT",
+                    "amount": "25.50",
+                    "date": "2026-02-11",
+                    "type": "debit",
+                    "category_name": test_categories[0].name,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    import_log_id = uuid.UUID(response.json()["import_log_id"])
+    result = await session.execute(
+        select(Transaction).where(Transaction.import_id == import_log_id)
+    )
+    imported = result.scalar_one()
+    assert imported.category_id == test_categories[1].id
+
+
+async def test_import_uses_csv_category_when_no_rule_matches(
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    test_categories: list,
+    test_rules,
+    session: AsyncSession,
+):
+    response = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "transactions": [
+                {
+                    "description": "NO MATCH CSV DEFAULT",
+                    "amount": "25.50",
+                    "date": "2026-02-12",
+                    "type": "debit",
+                    "category_name": test_categories[0].name,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    import_log_id = uuid.UUID(response.json()["import_log_id"])
+    result = await session.execute(
+        select(Transaction).where(Transaction.import_id == import_log_id)
+    )
+    imported = result.scalar_one()
+    assert imported.category_id == test_categories[0].id

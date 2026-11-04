@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -61,6 +61,7 @@ export function TransactionAttachments({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const nextUploadId = useRef(0)
   const lastClickedRef = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -79,7 +80,7 @@ export function TransactionAttachments({
     staleTime: 5 * 60 * 1000,
   })
 
-  const allowedExtensions = attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf']
+  const allowedExtensions = useMemo(() => attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf'], [attachmentSettings?.allowed_extensions])
   const maxFileSize = (attachmentSettings?.max_file_size_mb ?? 10) * 1024 * 1024
   const maxAttachments = attachmentSettings?.max_attachments_per_transaction ?? 10
 
@@ -280,7 +281,7 @@ export function TransactionAttachments({
         toast.error(t('transactions.attachmentTooLarge'))
         continue
       }
-      const optimisticId = `optimistic-${crypto.randomUUID()}`
+      const optimisticId = `optimistic-${nextUploadId.current++}`
       uploadMutation.mutate({ file, optimisticId })
       uploaded++
     }
@@ -453,7 +454,7 @@ export function TransactionAttachments({
                               : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                           }`}
                           onClick={(e) => { e.stopPropagation(); handlePreview(att as Attachment) }}
-                          title="Preview"
+                          title={t('common.preview')}
                         >
                           <Eye size={14} />
                         </button>
@@ -469,7 +470,7 @@ export function TransactionAttachments({
                           type="button"
                           className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer transition-colors"
                           onClick={(e) => { e.stopPropagation(); handleDownload(att as Attachment) }}
-                          title="Download"
+                          title={t('common.download')}
                         >
                           <Download size={14} />
                         </button>

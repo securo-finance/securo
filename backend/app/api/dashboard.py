@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -56,20 +56,48 @@ async def get_monthly_trend(
 async def get_balance_history(
     month: Optional[date] = Query(None),
     account_ids: Optional[list[uuid.UUID]] = Query(None),
+    comparison_months: Optional[list[date]] = Query(None),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+) -> BalanceHistory:
+    try:
+        return await dashboard_service.get_balance_history(
+            session, ctx.workspace.id, ctx.user_id, month, account_ids, comparison_months
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/balance-history/months", response_model=list[str])
+async def get_balance_history_months(
+    account_ids: Optional[list[uuid.UUID]] = Query(None),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await dashboard_service.get_balance_history(
-        session, ctx.workspace.id, ctx.user_id, month, account_ids
+    return await dashboard_service.get_balance_history_months(
+        session, ctx.workspace.id, account_ids
     )
 
 
 @router.get("/projected-transactions", response_model=list[ProjectedTransaction])
 async def get_projected_transactions(
     month: Optional[date] = Query(None),
+    account_id: Optional[uuid.UUID] = Query(None),
+    from_date: Optional[date] = Query(None, alias="from"),
+    to_date: Optional[date] = Query(None, alias="to"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await dashboard_service.get_projected_transactions(
-        session, ctx.workspace.id, ctx.user_id, month
-    )
+    try:
+        return await dashboard_service.get_projected_transactions(
+            session,
+            ctx.workspace.id,
+            ctx.user_id,
+            month,
+            account_id=account_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+    except ValueError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

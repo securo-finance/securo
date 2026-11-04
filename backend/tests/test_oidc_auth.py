@@ -116,7 +116,22 @@ async def test_decode_id_token_accepts_google_style_at_hash(monkeypatch, oidc_se
 async def test_oidc_config_disabled_by_default(client: AsyncClient, clean_db):
     response = await client.get("/api/auth/oidc/config")
     assert response.status_code == 200
-    assert response.json()["enabled"] is False
+    data = response.json()
+    assert data["enabled"] is False
+    assert data["local_auth_enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_oidc_config_exposes_local_auth_disabled(client: AsyncClient, clean_db, oidc_settings):
+    oidc_settings.local_auth_enabled = False
+
+    response = await client.get("/api/auth/oidc/config")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["enabled"] is True
+    assert data["provider_name"] == "Pocket ID"
+    assert data["local_auth_enabled"] is False
 
 
 @pytest.mark.asyncio

@@ -56,9 +56,31 @@ const CURRENCY_LOCALE: Record<string, string> = {
   CRC: 'es-CR',
   IDR: 'id-ID',
   DOP: 'es-DO',
+  KZT: 'ru-KZ',
   RUB: 'ru-RU',
   GTQ: 'es-GT',
   PHP: 'en-PH',
+  UAH: 'uk-UA',
+  NZD: 'en-NZ',
+  VND: 'vi-VN',
+  SGD: 'en-SG',
+  AZN: 'az-AZ',
+  TRY: 'tr-TR',
+  PKR: 'en-PK',
+  MDL: 'ro-MD',
+  AED: 'ar-AE',
+  THB: 'th-TH',
+  EGP: 'en-EG',
+  MYR: 'ms-MY',
+  SAR: 'en-SA',
+  QAR: 'en-QA',
+  JMD: 'en-JM',
+  RSD: 'sr-RS',
+  MKD: 'mk-MK',
+  HKD: 'zh-HK',
+  TWD: 'zh-TW',
+  ZAR: 'en-ZA',
+  GEL: 'en-GE',
 }
 
 /**
@@ -137,7 +159,41 @@ export function resolveDateLocale(
 }
 
 /**
+ * Build a currency formatter, falling back to a known-good locale *and*
+ * currency. A malformed locale throws just like a malformed currency code
+ * does, and `useDisplayLocale` can surface one (i18next reads `?lng=` from
+ * the querystring), so the fallback has to replace both.
+ */
+function currencyFormatter(currency: string, locale: string): Intl.NumberFormat {
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: currency || 'USD',
+    })
+  } catch {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+  }
+}
+
+function compactCurrencyFormatter(currency: string, locale: string): Intl.NumberFormat {
+  const options: Intl.NumberFormatOptions = {
+    style: 'currency',
+    currency: currency || 'USD',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }
+  try {
+    return new Intl.NumberFormat(locale, options)
+  } catch {
+    return new Intl.NumberFormat('en-US', { ...options, currency: 'USD' })
+  }
+}
+
+/**
  * Format a numeric value as currency using Intl.NumberFormat.
+ *
+ * Fraction digits are left to Intl so each currency keeps its own precision:
+ * pinning two would render JPY as "￥1,000.00" and CLP as "$1.000,00".
  */
 export function formatCurrency(
   value: number | null | undefined,
@@ -145,10 +201,117 @@ export function formatCurrency(
   locale = 'en-US',
 ): string {
   if (value == null) return '—'
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value)
+  const formatter = currencyFormatter(currency, locale)
+  // Anything that rounds to zero at the currency's own precision would render
+  // with a stray minus ("-R$ 0,00"), which covers -0 as well as the sub-cent
+  // residue that summed balances and FX conversions leave behind.
+  const factor = 10 ** (formatter.resolvedOptions().maximumFractionDigits ?? 2)
+  return formatter.format(Math.round(value * factor) === 0 ? 0 : value)
+}
+
+/**
+ * Format a value as currency in compact notation ("-R$340 mil", "$1.2M").
+ *
+ * Chart axes give a tick a fixed width, and a full amount outgrows it as soon
+ * as the balance reaches six figures: the label then renders past the axis and
+ * the browser clips its leading characters, which costs a negative balance its
+ * minus sign. Compact notation keeps the tick inside its width at any
+ * magnitude, and the tooltip still carries the exact amount.
+ */
+export function formatCompactCurrency(
+  value: number | null | undefined,
+  currency = 'USD',
+  locale = 'en-US',
+): string {
+  if (value == null) return '\u2014'
+  return compactCurrencyFormatter(currency, locale).format(value)
+}
+
+/**
+ * Format a transaction amount with its direction: `+` for a credit, `-` for
+ * a debit, in front of the magnitude. Amounts that round to zero at the
+ * currency's precision carry no sign, so a zero debit never reads "-$0.00".
+ */
+export function formatSignedAmount(
+  amount: number,
+  type: string,
+  currency = 'USD',
+  locale = 'en-US',
+): string {
+  const magnitude = Math.abs(amount)
+  const formatted = formatCurrency(magnitude, currency, locale)
+  const factor = 10 ** (currencyFormatter(currency, locale).resolvedOptions().maximumFractionDigits ?? 2)
+  if (Math.round(magnitude * factor) === 0) return formatted
+  // Same rule as the backend rule engine: only a debit is negative.
+  return `${type === 'debit' ? '-' : '+'}${formatted}`
+}
+
+/**
+ * Separators the display locale writes numbers with, derived from Intl so
+ * they always agree with what `formatCurrency` renders.
+ */
+function localeSeparators(locale: string): { group: string; decimal: string } {
+  try {
+    const parts = new Intl.NumberFormat(locale).formatToParts(12345.6)
+    return {
+      group: parts.find((p) => p.type === 'group')?.value ?? ',',
+      decimal: parts.find((p) => p.type === 'decimal')?.value ?? '.',
+    }
+  } catch {
+    return { group: ',', decimal: '.' }
+  }
+}
+
+/**
+ * Parse an amount typed by the user under the display locale's separator
+ * convention: "1.234,56" on dot_comma, "1,234.56" on comma_dot, "1 234,56"
+ * on space_comma. The same setting that decides how amounts are *shown*
+ * (see `resolveDisplayLocale`) decides how typed input is read, so what the
+ * user sees round-trips.
+ *
+ * Group separators are stripped, the locale's decimal separator becomes the
+ * decimal point, and anything left that isn't a plain number is rejected.
+ * Returns null for empty or unparseable input — never NaN, so callers can't
+ * accidentally persist one.
+ */
+export function parseAmountInput(value: string, locale = 'en-US'): number | null {
+  const { group, decimal } = localeSeparators(locale)
+  // Spaces only ever appear as grouping — drop them up front. JS \s covers
+  // the NBSP and narrow-NBSP that Intl emits for space_comma locales.
+  let text = value.trim().replace(/\s/g, '')
+  if (!text) return null
+  let sign = 1
+  if (text.startsWith('-')) {
+    sign = -1
+    text = text.slice(1)
+  }
+  const decimalIndex = text.lastIndexOf(decimal)
+  const integerPart = (decimalIndex >= 0 ? text.slice(0, decimalIndex) : text)
+    .split(group)
+    .join('')
+  const fractionPart = decimalIndex >= 0 ? text.slice(decimalIndex + 1) : ''
+  if (!/^\d*$/.test(integerPart) || !/^\d*$/.test(fractionPart)) return null
+  if (integerPart === '' && fractionPart === '') return null
+  const parsed = Number(`${integerPart || '0'}.${fractionPart || '0'}`)
+  return Number.isFinite(parsed) ? sign * parsed : null
+}
+
+/**
+ * Render a number into an amount input using the display locale's decimal
+ * separator. No grouping: a group separator inside an editable field would
+ * read back as noise, and `parseAmountInput` never needs it.
+ */
+export function formatAmountInput(
+  value: number,
+  locale = 'en-US',
+  maximumFractionDigits = 2,
+): string {
+  try {
+    return new Intl.NumberFormat(locale, {
+      useGrouping: false,
+      maximumFractionDigits,
+    }).format(value)
+  } catch {
+    return value.toFixed(2)
+  }
 }

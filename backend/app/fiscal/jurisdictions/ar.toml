@@ -1,0 +1,4 @@
+# Argentina. The CUIT identifies companies and the self-employed alike;
+# the CUIL is the same number issued to an employee.
+code = "AR"
+kinds = ["cuit"]

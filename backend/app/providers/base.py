@@ -55,6 +55,11 @@ def mask_last4(value: Optional[str]) -> Optional[str]:
 
 @dataclass
 class AccountData:
+    # The provider's identifier for this account. It is expected to be stable
+    # across re-syncs, and the sync matches an incoming account on it first. A
+    # provider that re-keys it (Enable Banking mints a `uid` scoped to a single
+    # session) must also set `stable_external_id`, or re-syncing inserts a
+    # duplicate instead of recognising the account it already imported.
     external_id: str
     name: str
     type: str  # checking, savings, credit_card
@@ -70,6 +75,28 @@ class AccountData:
     # provider exposes one. Disambiguates accounts a bank reports under an
     # identical name (issue #408). Never the full identifier — see mask_last4.
     masked_number: Optional[str] = None
+    shared_balance_group: Optional[str] = None
+    # The provider's session-independent identifier for this account, when it
+    # offers one. See `external_id` above: it is *supposed* to be stable, and
+    # Enable Banking is the provider that breaks that. This is the value that
+    # survives (EB's `identification_hash`), and the sync uses it to rebind the
+    # existing row to the new uid instead of duplicating the account.
+    stable_external_id: Optional[str] = None
+    # Per-account institution override (SimpleFIN — issue #345). None = same
+    # as connection. The external id is the provider's stable org id
+    # (SimpleFIN conn_id) so a renamed bank updates its row instead of
+    # minting a new one; name-only hints fall back to name identity.
+    institution_external_id: Optional[str] = None
+    institution_name: Optional[str] = None
+    institution_logo_url: Optional[str] = None
+    # Part of `balance` that the bank has auto-applied to an investment which
+    # the provider also reports as a holding (Pluggy
+    # `bankData.automaticallyInvestedBalance`, issue #843). Zero when unknown.
+    # The sync subtracts it only when a live holding is counted for this
+    # account (see connection_service._auto_invested_deductions), so the
+    # money is counted once: as the asset when one mirrors it, as cash
+    # otherwise.
+    auto_invested_balance: Decimal = Decimal(0)
 
 
 @dataclass
@@ -158,6 +185,12 @@ class HoldingData:
     maturity_date: Optional[date] = None
     is_withdrawn: bool = False  # provider signaled the position was sold/transferred
     metadata: Optional[dict] = None
+    # Owning-account hint (SimpleFIN — issue #345): holdings are reported per
+    # account, so each investment account gets its own wallet ("401(k)" apart
+    # from "Rollover IRA"). None = the connection-default wallet, for
+    # providers whose holdings aren't attributable to an account.
+    account_external_id: Optional[str] = None
+    account_name: Optional[str] = None
 
 
 @dataclass
@@ -206,6 +239,17 @@ class ProviderRateLimited(Exception):
     access (commonly ~4/day per resource), so a burst of syncs returns HTTP
     429. The connection is healthy; callers should skip this run and retry
     later rather than flag it as errored.
+    """
+
+
+class ProviderNotConfiguredError(Exception):
+    """Raised when a connection references a provider missing from the registry.
+
+    This is a server configuration problem, not a bank problem — typically one
+    process (e.g. the Celery worker) is not loading the environment that
+    enables the provider while the API process is. The credentials are fine,
+    so callers must not flip the connection to "error": the reconnect banner
+    would send the user chasing the wrong fix (and burning setup tokens).
     """
 
 
@@ -326,7 +370,7 @@ class BankProvider(ABC):
         """Refresh access token if needed."""
         ...
 
-    async def trigger_refresh(self, credentials: dict) -> RefreshOutcome:
+    async def trigger_refresh(self, credentials: dict | None) -> RefreshOutcome:
         """Ask the provider to pull fresh data from the underlying institution.
 
         Some aggregator providers cache the bank's data on their own side and

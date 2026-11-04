@@ -7,6 +7,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Coins,
+  EyeClosed,
+  ListChecks,
   Store,
   Tag,
   Users,
@@ -32,6 +34,8 @@ export type MobileFilterView =
   | 'payee'
   | 'group'
   | 'type'
+  | 'status'
+  | 'ignored'
   | 'date'
   | 'amount'
 
@@ -57,6 +61,8 @@ interface MobileTransactionsFilterMenuProps {
   payeeId: string
   groupId: string
   type: string
+  status: string
+  hideIgnored: boolean
   from: string
   to: string
   minAmount: string
@@ -74,6 +80,8 @@ interface MobileTransactionsFilterMenuProps {
   onPayeeChange: (value: string) => void
   onGroupIdChange: (value: string) => void
   onTypeChange: (value: string) => void
+  onStatusChange: (value: string) => void
+  onHideIgnoredChange: (value: boolean) => void
   onDateRangeChange: (from: string, to: string) => void
   onAmountRangeChange: (min: string, max: string) => void
   onApplyAmountRange: () => void
@@ -363,7 +371,7 @@ function MobileAmountField({
         placeholder="0.00"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2 text-[13px] font-normal tracking-normal text-foreground outline-none focus:border-primary/60"
+        className="mt-1 h-9 w-full rounded-md border border-border bg-card px-2 text-[13px] font-normal tracking-normal text-foreground outline-none focus:border-primary/60"
       />
     </label>
   )
@@ -433,6 +441,8 @@ function buildRootOptions(
     { view: 'payee', icon: Store, label: labels.payee, summary: summaries.payee },
     { view: 'group', icon: Users, label: labels.group, summary: summaries.group },
     { view: 'type', icon: ArrowUpDown, label: labels.type, summary: summaries.type },
+    { view: 'status', icon: ListChecks, label: labels.status, summary: summaries.status },
+    { view: 'ignored', icon: EyeClosed, label: labels.ignored, summary: summaries.ignored },
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
   ]
@@ -447,6 +457,8 @@ function buildLabels(
     payee: t('payees.payee'),
     group: t('splitGroups.group'),
     type: t('transactions.type'),
+    status: t('transactions.status'),
+    ignored: t('transactions.ignoredRows'),
     date: t('transactions.filtersBar.date'),
     amount: t('transactions.filtersBar.amount'),
   }
@@ -474,8 +486,19 @@ function MobileFilterDetail({
     return <MobileSelectionView options={[allOption, ...menu.groups.map(({ id, name }) => ({ value: id, label: name }))]} selectedValue={menu.groupId} onChange={menu.onGroupIdChange} />
   }
   if (menu.view === 'type') {
-    const options = [allOption, { value: 'credit', label: t('transactions.income') }, { value: 'debit', label: t('transactions.expense') }]
+    const options = [allOption, { value: 'credit', label: t('transactions.income') }, { value: 'debit', label: t('transactions.expense') }, { value: 'transfer', label: t('transactions.transfer') }]
     return <MobileSelectionView options={options} selectedValue={menu.type} onChange={menu.onTypeChange} />
+  }
+  if (menu.view === 'status') {
+    const options = [allOption, { value: 'pending', label: t('transactions.statusPending') }, { value: 'posted', label: t('transactions.statusPosted') }]
+    return <MobileSelectionView options={options} selectedValue={menu.status} onChange={menu.onStatusChange} />
+  }
+  if (menu.view === 'ignored') {
+    const options = [
+      { value: 'show', label: t('transactions.ignoredShow') },
+      { value: 'hide', label: t('transactions.ignoredHide') },
+    ]
+    return <MobileSelectionView options={options} selectedValue={menu.hideIgnored ? 'hide' : 'show'} onChange={(value) => menu.onHideIgnoredChange(value === 'hide')} />
   }
   if (menu.view === 'date') {
     return <MobileDateView from={menu.from} to={menu.to} presets={menu.datePresets} onChange={menu.onDateRangeChange} onOpenCustomRange={menu.onOpenCustomRange} />

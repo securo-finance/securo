@@ -1,0 +1,3 @@
+# Uruguay. The RUT is what DGI invoices are issued against.
+code = "UY"
+kinds = ["uy_rut"]

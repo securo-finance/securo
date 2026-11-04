@@ -103,12 +103,16 @@ async def test_update_title_if_empty_only_writes_when_blank(session, test_user, 
     # First call: title is None → should fill in.
     await svc.update_title_if_empty(session, conv.id, "Auto generated")
     refreshed = await svc.get_conversation(session, conv.id, test_workspace.id)
+
+    assert refreshed is not None
     await session.refresh(refreshed)
     assert refreshed.title == "Auto generated"
 
     # Second call: title already set → should NOT overwrite.
     await svc.update_title_if_empty(session, conv.id, "Different title")
     refreshed = await svc.get_conversation(session, conv.id, test_workspace.id)
+
+    assert refreshed is not None
     await session.refresh(refreshed)
     assert refreshed.title == "Auto generated"
 
@@ -126,7 +130,9 @@ async def test_update_title_truncates_to_200_chars(session, test_user, test_work
     )
     long_title = "x" * 500
     out = await svc.update_title(session, conv.id, test_workspace.id,long_title)
+
     assert out is not None
+    assert out.title is not None
     assert len(out.title) == 200
 
 
@@ -158,3 +164,27 @@ async def test_delete_conversation_removes_row(session, test_user, test_workspac
     )
     assert await svc.delete_conversation(session, conv.id, test_workspace.id) is True
     assert await svc.get_conversation(session, conv.id, test_workspace.id) is None
+
+
+@pytest.mark.asyncio
+async def test_list_messages_window_keeps_newest_turns(session, test_user, test_workspace, test_agent):
+    """Regression: with more messages than `limit`, the returned window must
+    end at the NEWEST message. The executor replays this window to the LLM —
+    when the limit selected the oldest rows instead, the model never saw the
+    user's latest question in long conversations and re-answered stale ones."""
+    conv = await svc.create_conversation(
+        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
+    )
+    for i in range(30):
+        await svc.append_message(
+            session, conversation_id=conv.id,
+            role="user" if i % 2 == 0 else "assistant",
+            content=f"msg-{i}",
+        )
+
+    msgs = await svc.list_messages(session, conv.id, limit=10)
+
+    assert len(msgs) == 10
+    assert [m.content for m in msgs] == [f"msg-{i}" for i in range(20, 30)]
+    ordinals = [m.ordinal for m in msgs]
+    assert ordinals == sorted(ordinals)

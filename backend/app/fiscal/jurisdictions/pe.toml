@@ -1,0 +1,4 @@
+# Peru. The RUC prefix says what kind of taxpayer it is: 10 for a person,
+# 20 for a company.
+code = "PE"
+kinds = ["pe_ruc"]

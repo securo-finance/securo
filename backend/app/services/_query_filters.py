@@ -6,13 +6,69 @@ signal) only need to be made here.
 """
 import uuid
 from datetime import date
-from typing import Optional
+from decimal import Decimal
+from typing import Iterable, Optional
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
+from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
+
+
+def is_confirmed():
+    """SQL filter: the charge is settled rather than merely authorized.
+
+    One of the two independent axes a transaction sits on. This one is about
+    *confirmation*: a pending row is real money already committed, it just
+    has not cleared yet. It says nothing about when the row is dated.
+    """
+    return Transaction.status == "posted"
+
+
+def is_not_future(as_of: date):
+    """SQL filter: the transaction has already happened by ``as_of``.
+
+    The other axis, and a pure date question. A future-dated row is forecast
+    no matter how confirmed it is; a past-dated row has happened no matter
+    whether the bank has cleared it.
+    """
+    return Transaction.date <= as_of
+
+
+def is_inside_provider_snapshot():
+    """SQL filter: the provider's balance already accounts for this row.
+
+    A connected account's current balance is the number the provider sends,
+    not a sum of our rows, and providers net out the pending charges they
+    report. A row typed by hand is ambiguous the same way, since the user is
+    usually copying a charge the bank is already showing them.
+
+    A recurring placeholder is the one case we can be sure about: we invented
+    the row from a schedule, so no provider has ever seen it. Treating it as
+    already counted makes it cancel itself out, leaving a charge that shows up
+    in the forecast totals but moves no balance.
+    """
+    return Transaction.source != "recurring"
+
+
+def counts_in_current_balance(as_of: date):
+    """SQL filter: the row belongs in the balance labelled "current".
+
+    Composed from the two axes above so the definition lives in one place and
+    moving the line later is a change here rather than at every query site.
+
+    Today the line sits at "confirmed and not future", with one exception:
+    a credit card's balance is the debt owed, and an authorized purchase is
+    already owed, so pending card rows stay in. Without that carve-out the
+    card's balance understates the debt while its own bill total includes it.
+    """
+    return and_(
+        is_not_future(as_of),
+        or_(is_confirmed(), Account.type == "credit_card"),
+    )
 
 
 def reporting_date_col(accounting_mode: str):
@@ -40,6 +96,63 @@ def reporting_date_col(accounting_mode: str):
     return func.coalesce(Transaction.effective_bill_date, base)
 
 
+def is_not_ignored():
+    """SQL filter: the row is not one the user told us to disregard.
+
+    Only the ignore signal, without the transfer/settlement family that
+    `counts_as_pnl` folds in, because hiding rows from a *list* is a
+    different question from leaving them out of a *total*: a transfer still
+    belongs in the ledger the user is reading.
+
+    Matches what the UI badges as ignored, which is the transaction flag or
+    its category's — see `TransactionRead.reflect_ignored_category`. A list
+    that hid one but not the other would leave visibly-ignored rows behind
+    and look broken.
+    """
+    return and_(
+        Transaction.is_ignored.is_(False),
+        or_(
+            Transaction.category_id.is_(None),
+            Transaction.category_id.not_in(
+                select(Category.id).where(Category.is_ignored.is_(True))
+            ),
+        ),
+    )
+
+
+def is_transfer():
+    """SQL filter: the row is a transfer rather than income or expense.
+
+    Either both legs were matched (`transfer_pair_id` set), or the row sits
+    in a category flagged `treat_as_transfer` (one-sided movements such as
+    an investment application). Same reading the transactions calendar uses
+    when it marks a day as having a transfer.
+    """
+    return or_(
+        Transaction.transfer_pair_id.is_not(None),
+        Transaction.category_id.in_(
+            select(Category.id).where(Category.treat_as_transfer.is_(True))
+        ),
+    )
+
+
+def is_not_transfer():
+    """SQL filter: the negation of `is_transfer`, safe for uncategorized rows.
+
+    `~is_transfer()` would also drop rows with no category: their
+    `category_id IN (...)` is NULL, so the whole negation is NULL.
+    """
+    return and_(
+        Transaction.transfer_pair_id.is_(None),
+        or_(
+            Transaction.category_id.is_(None),
+            Transaction.category_id.not_in(
+                select(Category.id).where(Category.treat_as_transfer.is_(True))
+            ),
+        ),
+    )
+
+
 def counts_as_pnl():
     """SQL filter: True when a transaction should contribute to income/expense totals.
 
@@ -49,6 +162,8 @@ def counts_as_pnl():
         movements like investment applications where the counterpart is
         an Asset/Holding, not another Account),
       - transactions flagged `is_ignored=True` (user-marked as not to be reported),
+      - transactions flagged `exclude_from_pnl=True` (kept in balance,
+        omitted from income and expense calculations),
       - transactions in categories flagged `is_ignored=True` (user-marked as not to be reported).
 
     Does NOT exclude `source='opening_balance'` — callers that already
@@ -58,6 +173,7 @@ def counts_as_pnl():
     return and_(
         Transaction.transfer_pair_id.is_(None),
         Transaction.is_ignored.is_(False),
+        Transaction.exclude_from_pnl.is_(False),
         # Settlement *debits* are repayments of debts that were already
         # booked as an expense via the share. Counting them would
         # double-count. Settlement *credits*, however, represent the
@@ -76,6 +192,95 @@ def counts_as_pnl():
                 )
             ),
         ),
+    )
+
+
+def counts_on_bill(net_payments: bool = False):
+    """SQL filter: True when a transaction belongs on a credit-card bill.
+
+    A bill total is an *amount owed*, not a reporting figure, and the two
+    answer to different authorities: the bill has to match what the bank
+    says you owe, while P/L answers to how the user chose to categorize
+    their spending. So the card's cycle total cannot reuse
+    `counts_as_pnl`. Every judgment that helper makes about what counts
+    as *spending* is a judgment the bank never made.
+
+    Kept out, because they are genuinely not charges on this bill:
+      - paired transfers, by default (the bill *payment* is not a
+        purchase). With ``net_payments=True`` the *credit* leg of a
+        paired transfer counts instead: an intermediate payment into the
+        card shrinks the amount owed, the way a refund does. Callers
+        net only what is left after the payment settles any debt that
+        was already outstanding (banks apply repayments oldest first),
+        see `get_account_summary`.
+      - settlement debits (a repayment of a share already booked),
+      - rows the user flagged `is_ignored`, on the transaction or its
+        category. Those leave the account balance too, so dropping them
+        from the bill keeps the card's two numbers telling one story.
+
+    `treat_as_transfer` categories are handled asymmetrically, and this is
+    the whole point of the helper:
+      - kept in for *debits*: buying an investment or paying a consortium
+        installment with the card still lands on the statement, so a
+        charge doesn't stop being owed to the bank because of how it was
+        tagged afterwards (issue #647).
+      - dropped for *credits*: an unpaired card payment (the payer's
+        account isn't connected, the amount doesn't match exactly, or it
+        was a partial payment) is normally filed under a transfer-like
+        category, and letting it through here would net it against new
+        debt instead of being a repayment of it.
+
+    Neither reading is exactly right — there's no field today that tells
+    a genuine merchant refund apart from an unpaired bill payment once
+    both land as a credit in a transfer-like category, so this is a
+    judgment call, not a derived fact. Dropping transfer-tagged credits
+    errs toward the more common case (an unmatched payment silently
+    shrinking the bill every cycle) over the rarer one (a refund of a
+    transfer-tagged purchase failing to shrink it back).
+
+    Deliberately spelled out rather than defined as "`counts_as_pnl`
+    minus a clause": a filter for what a *report* excludes will keep
+    growing as the product learns new ways to say "don't count this",
+    and a bill total must not inherit those. Every clause here is one
+    somebody chose for the bill.
+    """
+    ignored_category = Transaction.category_id.in_(
+        select(Category.id).where(Category.is_ignored.is_(True))
+    )
+    transfer_category = Transaction.category_id.in_(
+        select(Category.id).where(Category.treat_as_transfer.is_(True))
+    )
+    if net_payments:
+        # The credit leg of a paired transfer is a payment by
+        # construction: the pair proves the money moved between the
+        # user's own accounts, so the pair itself and a transfer-like
+        # category tag on it cannot keep it off the bill.
+        paired_payment = and_(
+            Transaction.type == "credit",
+            Transaction.transfer_pair_id.is_not(None),
+        )
+        transfer_clause = or_(
+            Transaction.transfer_pair_id.is_(None), paired_payment,
+        )
+        category_clause = or_(
+            Transaction.type == "debit",
+            Transaction.category_id.is_(None),
+            ~transfer_category,
+            paired_payment,
+        )
+    else:
+        transfer_clause = Transaction.transfer_pair_id.is_(None)
+        category_clause = or_(
+            Transaction.type == "debit",
+            Transaction.category_id.is_(None),
+            ~transfer_category,
+        )
+    return and_(
+        transfer_clause,
+        Transaction.is_ignored.is_(False),
+        ~and_(Transaction.source == "settlement", Transaction.type == "debit"),
+        or_(Transaction.category_id.is_(None), ~ignored_category),
+        category_clause,
     )
 
 
@@ -157,6 +362,8 @@ async def owner_split_offset_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
+            date_col <= app_today(),
+            Transaction.status == "posted",
             counts_as_user_pnl(),
         )
         .group_by(Transaction.currency)
@@ -235,6 +442,8 @@ async def owner_split_offset_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
+            date_col <= app_today(),
+            Transaction.status == "posted",
             counts_as_user_pnl(),
         )
         .group_by(Transaction.category_id, Transaction.currency)
@@ -256,6 +465,61 @@ async def owner_split_offset_by_category(
         converted, _ = await _convert(session, _Decimal(str(total)), cur, primary_currency)
         out[cat_id] = out.get(cat_id, 0.0) + float(converted)
     return out
+
+
+async def forecast_owner_share_fractions(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    transactions: Iterable[Transaction],
+) -> dict[uuid.UUID, Decimal]:
+    """Map the user's own split forecast rows to the fraction that is their cost.
+
+    The `owner_split_offset_*` helpers only see posted rows dated up to today.
+    Pending and future-dated rows reach the projections one by one through
+    `_get_forecast_transactions`, so the share-only rule is applied per row
+    instead. The fraction comes from the split amounts in the row's own
+    currency, so multiplying it into `amount_primary` keeps the conversion
+    already stored on the row and needs no FX lookup.
+
+    Rows without non-owner shares are left out; callers treat a missing id
+    as 1.
+    """
+    from app.models.group import Group, GroupMember
+    from app.models.transaction_split import TransactionSplit
+
+    own_rows = {tx.id: tx for tx in transactions if tx.user_id == user_id}
+    if not own_rows:
+        return {}
+
+    viewer_member_ids = (
+        select(GroupMember.id)
+        .outerjoin(Group, Group.id == GroupMember.group_id)
+        .where(
+            or_(
+                GroupMember.linked_user_id == user_id,
+                and_(GroupMember.is_self == True, Group.user_id == user_id),
+            )
+        )
+    )
+    result = await session.execute(
+        select(TransactionSplit.transaction_id, func.sum(TransactionSplit.share_amount))
+        .where(
+            TransactionSplit.transaction_id.in_(list(own_rows)),
+            TransactionSplit.group_member_id.notin_(viewer_member_ids),
+        )
+        .group_by(TransactionSplit.transaction_id)
+    )
+
+    fractions: dict[uuid.UUID, Decimal] = {}
+    for tx_id, others in result.all():
+        full = abs(Decimal(str(own_rows[tx_id].amount)))
+        if not full:
+            continue
+        # Signed and unclamped, like the posted offset: an exact split may
+        # give a member a negative share, and the owner's share then exceeds
+        # the row.
+        fractions[tx_id] = 1 - Decimal(str(others or 0)) / full
+    return fractions
 
 
 async def viewer_shared_pnl(
@@ -317,6 +581,8 @@ async def viewer_shared_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
+            date_col <= app_today(),
+            Transaction.status == "posted",
             counts_as_pnl(),
         )
         .group_by(Transaction.currency)
@@ -394,6 +660,8 @@ async def viewer_shared_spending_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
+            date_col <= app_today(),
+            Transaction.status == "posted",
             counts_as_pnl(),
         )
         .group_by(Transaction.category_id, Transaction.currency)

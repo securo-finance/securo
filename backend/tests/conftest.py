@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import AsyncGenerator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # --- Agents test setup (must run BEFORE app.main is imported) ---------------
 # Force the optional agents feature on for the test process so the routes
@@ -12,6 +12,10 @@ from unittest.mock import AsyncMock, patch
 os.environ.setdefault("AGENTS_ENABLED", "true")
 os.environ.setdefault("AGENTS_MCP_JWT_SECRET", "test-secret-not-for-production")
 os.environ.setdefault("AGENTS_BUILTIN_MCP_URL", "http://test-mcp:8765/mcp")
+# Tests use synthetic credentials, never local deployment secrets. Explicit
+# Settings(_secrets_dir=...) tests still exercise secret-file loading.
+os.environ["SECRET_KEY"] = "synthetic-test-signing-key-not-for-production"
+os.environ["CREDENTIALS_DIRECTORY"] = ""
 
 # pgvector's Vector type only compiles on PostgreSQL. Tests use SQLite, so
 # we shim it with JSON before any model module imports it. Production runs
@@ -35,12 +39,15 @@ class _VectorJSON(sqlalchemy.types.JSON):
         return literal(0.5)
 
 
-_pgv.Vector = _VectorJSON  # type: ignore[attr-defined]
+setattr(_pgv, "Vector", _VectorJSON)
 # ---------------------------------------------------------------------------
 
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy import text  # noqa: E402
+from sqlalchemy.dialects.postgresql import UUID  # noqa: E402
+from sqlalchemy.ext.compiler import compiles  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker  # noqa: E402
 
 from app.core.database import Base, get_async_session  # noqa: E402
@@ -74,12 +81,9 @@ from app.agents.models import (  # noqa: E402,F401
     LlmUsage,
 )
 
-# Use SQLite for tests — fast, no external dependency.
-# Keep the DB file off the bind-mounted project dir (macOS bind mounts
-# have known SQLite locking/journal quirks under aiosqlite) — /tmp is a
-# tmpfs inside the container. StaticPool + a single shared connection
-# is required so async fixtures and tests running on the shared
-# session-scoped event loop see the same in-memory schema state.
+# In-memory SQLite keeps tests independent of external databases and other
+# workers. StaticPool shares the connection across fixtures and tests on the
+# session-scoped event loop so they see the same schema state.
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -93,10 +97,12 @@ engine = create_async_engine(
 TestSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-# SQLite doesn't support PostgreSQL UUID type natively — SQLAlchemy handles the
-# mapping automatically when we create tables via Base.metadata (it converts
-# PostgreSQL UUID to CHAR(32)). We just need to make sure we use string-based
-# UUID comparisons.
+# SQLite gives the PostgreSQL UUID type numeric affinity, corrupting UUID hex
+# that looks like a number. Keep its normal bind/result handling but store text;
+# the dialect-specific hook leaves PostgreSQL's native UUID DDL unchanged.
+@compiles(UUID, "sqlite")
+def _compile_sqlite_uuid(type_, compiler, **kw):
+    return "CHAR(32)"
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
@@ -107,12 +113,6 @@ async def setup_database():
     yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-    # Clean up test db file
-    import os
-    try:
-        os.remove("/tmp/securo_test.db")
-    except FileNotFoundError:
-        pass
 
 
 @pytest_asyncio.fixture
@@ -125,16 +125,86 @@ async def session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture
+async def postgres_sessions():
+    """Give each PostgreSQL test its own schema, including under xdist."""
+    url = os.environ.get("POSTGRES_TEST_URL")
+    if not url:
+        if os.environ.get("CI"):
+            pytest.fail("CI must supply POSTGRES_TEST_URL for PostgreSQL tests")
+        pytest.skip("isolated PostgreSQL not configured")
+    schema = f"postgres_test_{uuid.uuid4().hex}"
+    pg_engine = create_async_engine(url)
+    scoped = pg_engine.execution_options(schema_translate_map={None: schema})
+    try:
+        async with pg_engine.begin() as conn:
+            await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        async with scoped.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        yield async_sessionmaker(scoped, expire_on_commit=False)
+    finally:
+        try:
+            async with pg_engine.begin() as conn:
+                await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        finally:
+            await pg_engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def clean_db(session: AsyncSession):
     """Clean all data between tests."""
-    for table in reversed(Base.metadata.sorted_tables):
-        await session.execute(table.delete())
+    import aiosqlite
+
+    assert not (session.new or session.dirty or session.deleted), (
+        "clean_db requires a fresh session without pending ORM changes"
+    )
+    # Batch the same deletes into one driver round trip. An explicit BEGIN keeps
+    # cleanup atomic: executescript otherwise runs each delete in autocommit.
+    statements = ";\n".join(
+        str(table.delete().compile(dialect=engine.dialect))
+        for table in reversed(Base.metadata.sorted_tables)
+    )
+    connection = await session.connection()
+    raw = await connection.get_raw_connection()
+    driver = raw.driver_connection
+    assert isinstance(driver, aiosqlite.Connection)
+    # executescript implicitly commits an existing SQLite transaction. Fail
+    # before touching data if a caller violates this fixture's fresh-session contract.
+    assert not driver.in_transaction, "clean_db requires a fresh session without a transaction"
+    async with driver.executescript("BEGIN;\n" + statements):
+        pass
     await session.commit()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _fast_password_hashes():
+    """Exercise real password hashing, verification and upgrades at test-only costs."""
+    import bcrypt
+    from pwdlib.hashers.argon2 import Argon2Hasher
+
+    gensalt = bcrypt.gensalt
+
+    def _test_gensalt(*args, **kwargs):
+        if args or kwargs:
+            return gensalt(*args, **kwargs)
+        return gensalt(rounds=4)
+
+    def _test_argon2_hasher(*args, **kwargs):
+        # Explicit constructor calls retain all production parameter defaults.
+        if args or kwargs:
+            return Argon2Hasher(*args, **kwargs)
+        return Argon2Hasher(time_cost=1, memory_cost=8, parallelism=1)
+
+    with patch("bcrypt.gensalt", _test_gensalt), \
+         patch("fastapi_users.password.Argon2Hasher", _test_argon2_hasher):
+        yield
+
+
 async def override_get_async_session() -> AsyncGenerator[AsyncSession, None]:
+    from app.core.app_clock import use_timezone
+
     async with TestSessionLocal() as session:
-        yield session
+        async with use_timezone(session):
+            yield session
 
 
 # Override the dependency
@@ -147,6 +217,27 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+def oidc_only_settings():
+    """Enable a complete OIDC-only policy and restore only changed keys."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    previous = {
+        "oidc_enabled": settings.oidc_enabled,
+        "oidc_discovery_url": settings.oidc_discovery_url,
+        "oidc_client_id": settings.oidc_client_id,
+        "local_auth_enabled": settings.local_auth_enabled,
+    }
+    settings.oidc_enabled = True
+    settings.oidc_discovery_url = "https://id.example.com/.well-known/openid-configuration"
+    settings.oidc_client_id = "securo"
+    settings.local_auth_enabled = False
+    yield settings
+    for key, value in previous.items():
+        setattr(settings, key, value)
 
 
 @pytest_asyncio.fixture
@@ -227,7 +318,7 @@ async def auth_token(client: AsyncClient, test_user: User) -> str:
 
 
 @pytest_asyncio.fixture
-def auth_headers(auth_token: str) -> dict:
+async def auth_headers(auth_token: str) -> dict:
     """Auth headers for authenticated requests."""
     return {"Authorization": f"Bearer {auth_token}"}
 
@@ -271,9 +362,57 @@ async def admin_auth_token(client: AsyncClient, test_superuser: User) -> str:
 
 
 @pytest_asyncio.fixture
-def admin_auth_headers(admin_auth_token: str) -> dict:
+async def admin_auth_headers(admin_auth_token: str) -> dict:
     """Auth headers for admin requests."""
     return {"Authorization": f"Bearer {admin_auth_token}"}
+
+
+@pytest_asyncio.fixture
+async def viewer_auth_headers(
+    session: AsyncSession, client: AsyncClient, test_workspace: Workspace
+) -> dict:
+    """A second user who is a `viewer` member of the test workspace.
+
+    Read-only by role. Exists so the write gate can be exercised over HTTP:
+    the enforcement is a dependency wrapper, so asserting it at the service
+    layer alone leaves the wiring between route and role untested — which is
+    exactly the gap that let an audit conclude the gate was missing when it
+    was not.
+    """
+    import bcrypt as _bcrypt
+
+    user = User(
+        id=uuid.uuid4(),
+        email="viewer-role@example.com",
+        hashed_password=_bcrypt.hashpw(b"viewerpass123", _bcrypt.gensalt()).decode(),
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(user)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=test_workspace.id,
+            user_id=user.id,
+            role="viewer",
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/auth/login",
+        data={"username": "viewer-role@example.com", "password": "viewerpass123"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == 200, f"Viewer login failed: {response.text}"
+    return {
+        "Authorization": f"Bearer {response.json()['access_token']}",
+        # Explicit, because the viewer's *default* workspace resolution would
+        # otherwise decide which workspace this request lands in.
+        "X-Workspace-Id": str(test_workspace.id),
+    }
 
 
 @pytest_asyncio.fixture
@@ -487,15 +626,27 @@ async def test_user_with_2fa(session: AsyncSession, clean_db) -> User:
 
 
 @pytest.fixture(autouse=True)
+def _fresh_timezone_cache():
+    """One test's saved timezone must never leak into the next through the cache."""
+    from app.core.app_clock import invalidate_timezone_cache
+
+    invalidate_timezone_cache()
+    yield
+    invalidate_timezone_cache()
+
+
+@pytest.fixture(autouse=True)
 def _mock_redis():
     """Provide a no-op Redis mock so rate limiting never blocks tests."""
     mock = AsyncMock()
-    # Pipeline mock that always reports 0 prior requests (never rate-limits)
-    pipe_mock = AsyncMock()
-    pipe_mock.zremrangebyscore = AsyncMock()
-    pipe_mock.zcard = AsyncMock()
-    pipe_mock.zadd = AsyncMock()
-    pipe_mock.expire = AsyncMock()
+    # Pipeline commands are synchronous/chained on redis-py's pipeline; only
+    # execute() is awaited. Match that contract so requests create no unawaited
+    # mock coroutines, while still reporting zero prior requests.
+    pipe_mock = MagicMock()
+    pipe_mock.zremrangebyscore = MagicMock(return_value=pipe_mock)
+    pipe_mock.zcard = MagicMock(return_value=pipe_mock)
+    pipe_mock.zadd = MagicMock(return_value=pipe_mock)
+    pipe_mock.expire = MagicMock(return_value=pipe_mock)
     pipe_mock.execute = AsyncMock(return_value=[0, 0, True, True])
     mock.pipeline = lambda: pipe_mock
     # Key-value ops for 2FA temp tokens

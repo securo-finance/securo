@@ -6,7 +6,7 @@ idiomatic_version_file_enable_tools = ["python"]
 
 [tasks.install]
 alias = "i"
-run = "uv pip install -e '.[dev]'"
+run = "uv sync --all-extras"
 
 [tasks.lint]
 run = "ruff check ."

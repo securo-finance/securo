@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import AsyncIterator, Optional
 from urllib.parse import urlparse
 
@@ -30,7 +32,7 @@ def normalize_openai_base_url(url: str) -> str:
     Rules:
       - empty → returned as-is
       - trailing slashes stripped
-      - if any path segment looks like a version (`v1`, `v2`, `beta`,
+      - if any path segment looks like a version (`v1`, `v2`, `v1beta`, `beta`,
         `latest`, `api/v3`, etc.), leave the URL alone
       - otherwise, append `/v1`
     """
@@ -40,7 +42,7 @@ def normalize_openai_base_url(url: str) -> str:
     path_segments = [s for s in (urlparse(url).path or "").split("/") if s]
     for seg in path_segments:
         if (
-            (seg.startswith("v") and seg[1:].isdigit())
+            re.fullmatch(r"v\d+(?:(?:alpha|beta)\d*)?", seg)
             or seg in {"beta", "latest"}
         ):
             return url
@@ -59,6 +61,8 @@ def _serialize_messages(messages: list[ChatMessage]) -> list[dict]:
                     "id": tc.id,
                     "type": "function",
                     "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    **({"extra_content": {"google": {"thought_signature": tc.thought_signature}}}
+                       if tc.thought_signature is not None else {}),
                 }
                 for tc in m.tool_calls
             ]
@@ -92,6 +96,22 @@ def _raise_for_status(status: int, body: str) -> None:
         raise LLMUnavailableError(f"OpenAI {status}: {body}", status=status)
 
 
+def _app_user_agent() -> str:
+    """Client identity for model backends.
+
+    Backends see the HTTP library name by default (e.g. `python-httpx/0.x`);
+    a few of them ask for the real client instead. Identifying as
+    `securo/<version>` keeps the logs on their side meaningful.
+    """
+    try:
+        return f"securo/{_pkg_version('securo-backend')}"
+    except PackageNotFoundError:
+        return "securo"
+
+
+_APP_USER_AGENT = _app_user_agent()
+
+
 class OpenAIProvider(LLMProvider):
     name = "openai"
 
@@ -107,6 +127,11 @@ class OpenAIProvider(LLMProvider):
         h = {"Content-Type": "application/json"}
         if self.api_key:
             h["Authorization"] = f"Bearer {self.api_key}"
+        # Identify the client to model backends; a few OpenAI-compatible
+        # endpoints also route on a per-conversation session id.
+        h["User-Agent"] = _APP_USER_AGENT
+        if self.session_id:
+            h["x-opencode-session"] = self.session_id
         return h
 
     async def chat_stream(
@@ -174,6 +199,13 @@ class OpenAIProvider(LLMProvider):
                                     "started": False,
                                     "pending_args": "",
                                 })
+                                # Gemini's OpenAI endpoint puts the opaque signature
+                                # beside function, potentially in a later delta.
+                                extra = tc.get("extra_content")
+                                google = extra.get("google") if isinstance(extra, dict) else None
+                                signature = google.get("thought_signature") if isinstance(google, dict) else None
+                                if isinstance(signature, str):
+                                    state["thought_signature"] = signature
                                 # First chunk usually carries both id and name;
                                 # some servers split the name across chunks.
                                 if tc.get("id") and not state["id"]:
@@ -212,7 +244,10 @@ class OpenAIProvider(LLMProvider):
                                 finish_reason = choice["finish_reason"]
                     for state in idx_state.values():
                         if state["started"]:
-                            yield ChatChunk(type="tool_call_end", tool_call_id=state["id"])
+                            yield ChatChunk(
+                                type="tool_call_end", tool_call_id=state["id"],
+                                thought_signature=state.get("thought_signature"),
+                            )
                     if usage:
                         yield ChatChunk(type="usage", usage=usage)
                     yield ChatChunk(type="finish", finish_reason=finish_reason or "stop")

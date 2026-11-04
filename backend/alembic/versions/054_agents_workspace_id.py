@@ -16,6 +16,7 @@ and indexed.
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "054"
@@ -30,7 +31,7 @@ def upgrade() -> None:
             table,
             sa.Column(
                 "workspace_id",
-                sa.dialects.postgresql.UUID(as_uuid=True),
+                postgresql.UUID(as_uuid=True),
                 sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
                 nullable=True,
             ),
