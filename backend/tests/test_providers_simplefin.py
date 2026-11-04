@@ -882,3 +882,73 @@ async def test_get_holdings_carries_the_owning_account():
     assert by_id["h-1"].account_name == "Employer 401(k)"
     assert by_id["h-2"].account_external_id == "acc-2"
     assert by_id["h-2"].account_name == "Rollover IRA"
+
+
+# --- Brokerage balance vs. positions (issue #343) -------------------------
+
+
+def _brokerage_payload(**account_overrides):
+    account = {
+        "id": "brk-1", "name": "Brokerage", "currency": "USD", "balance": "1057.20",
+        "holdings": [
+            {"id": "h-1", "symbol": "MPC", "description": "Marathon Petroleum",
+             "currency": "USD", "shares": "1.011168", "market_value": "425.96"},
+            {"id": "h-2", "symbol": "BP", "description": "BP PLC",
+             "currency": "USD", "shares": "3.106678", "market_value": "147.64"},
+        ],
+    }
+    account.update(account_overrides)
+    return {"accounts": [account]}
+
+
+def test_parse_accounts_reports_positions_value_as_auto_invested():
+    """A SimpleFIN brokerage's balance is the whole portfolio and its
+    positions arrive as holdings, so the positions' value is the part the
+    sync may subtract once those holdings are counted as assets."""
+    _, accounts = SimpleFinProvider._parse_accounts(_brokerage_payload())
+    assert accounts[0].balance == Decimal("1057.20")
+    assert accounts[0].auto_invested_balance == Decimal("573.60")
+
+
+def test_parse_accounts_without_holdings_reports_nothing_to_deduct():
+    _, accounts = SimpleFinProvider._parse_accounts(
+        {"accounts": [{"id": "chk", "name": "Checking", "currency": "USD", "balance": "889.92"}]}
+    )
+    assert accounts[0].auto_invested_balance == Decimal("0")
+
+
+def test_parse_accounts_caps_positions_value_at_the_balance():
+    """Positions worth more than the balance (a margin debit) must not push
+    the cash residual below zero; the account then shows zero cash."""
+    _, accounts = SimpleFinProvider._parse_accounts(_brokerage_payload(balance="400"))
+    assert accounts[0].auto_invested_balance == Decimal("400")
+
+
+def test_parse_accounts_reports_nothing_to_deduct_without_positive_balance():
+    for balance in ("0", "-12.50"):
+        _, accounts = SimpleFinProvider._parse_accounts(_brokerage_payload(balance=balance))
+        assert accounts[0].auto_invested_balance == Decimal("0"), balance
+
+
+def test_parse_accounts_skips_positions_get_holdings_would_not_import():
+    """No id or no market value means get_holdings never stores the position,
+    so nothing will be counted for it and nothing may be subtracted."""
+    payload = _brokerage_payload(holdings=[
+        {"symbol": "NOID", "currency": "USD", "market_value": "100"},
+        {"id": "h-nv", "symbol": "NOVAL", "currency": "USD"},
+        {"id": "h-neg", "symbol": "NEG", "currency": "USD", "market_value": "-5"},
+        {"id": "h-ok", "symbol": "OK", "currency": "USD", "market_value": "50.25"},
+    ])
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+    assert accounts[0].auto_invested_balance == Decimal("50.25")
+
+
+def test_parse_accounts_leaves_positions_in_another_currency_in_the_balance():
+    """A position quoted in another currency cannot be subtracted from this
+    balance, so it stays counted on the account side rather than guessed."""
+    payload = _brokerage_payload(holdings=[
+        {"id": "h-usd", "symbol": "VTI", "currency": "USD", "market_value": "506.17"},
+        {"id": "h-eur", "symbol": "VWCE", "currency": "EUR", "market_value": "100"},
+    ])
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+    assert accounts[0].auto_invested_balance == Decimal("506.17")

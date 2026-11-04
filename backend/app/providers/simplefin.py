@@ -183,6 +183,42 @@ def _surface_errors(
     return reauth
 
 
+def _positions_value(raw_acc: dict) -> Decimal:
+    """Market value of the positions SimpleFIN lists inside this account,
+    clamped to [0, balance].
+
+    SimpleFIN returns a brokerage as one account whose ``balance`` is the
+    whole portfolio (positions plus cash), with the positions themselves
+    under ``holdings``. The holdings sync stores those as assets, so the
+    account balance would count the same money again (issue #343, the
+    SimpleFIN shape of #843). The provider only reports the portion here;
+    the sync decides whether to subtract it, and only while a live holding
+    is counted for this account (connection_service._auto_invested_deductions).
+
+    Counts a position only when it carries an id and a market value (the
+    same two things get_holdings requires before importing it) and is
+    quoted in the account's currency; a position in another currency cannot
+    be subtracted from this balance, so it is left in. Clamped to the
+    balance so the cash residual never turns negative: a margin debit is
+    not modelled, and the account then shows zero cash rather than debt.
+    """
+    balance = _to_decimal(raw_acc.get("balance")) or Decimal("0")
+    if balance <= 0:
+        return Decimal("0")
+    acc_currency = _iso_currency(raw_acc.get("currency"), "USD") or "USD"
+    total = Decimal("0")
+    for raw in raw_acc.get("holdings") or []:
+        if not str(raw.get("id") or ""):
+            continue
+        value = _to_decimal(raw.get("market_value"))
+        if value is None or value <= 0:
+            continue
+        if (_iso_currency(raw.get("currency"), acc_currency) or acc_currency) != acc_currency:
+            continue
+        total += value
+    return min(total, balance)
+
+
 class SimpleFinProvider(BankProvider):
     """SimpleFIN Bridge connector."""
 
@@ -451,6 +487,7 @@ class SimpleFinProvider(BankProvider):
                     institution_external_id=inst_ext,
                     institution_name=inst_name,
                     institution_logo_url=inst_logo,
+                    auto_invested_balance=_positions_value(raw),
                 )
             )
         return institution_name or "SimpleFIN Connection", accounts

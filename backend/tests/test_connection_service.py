@@ -6974,3 +6974,67 @@ async def test_ensure_group_relocates_wallet_when_connection_moves_workspaces(
     assert group.connection_id == conn.id
     assert group.workspace_id == test_workspace.id
     assert group.name == "Moved Wallet"
+
+
+@pytest.mark.asyncio
+async def test_sync_simplefin_brokerage_counts_portfolio_once(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Issue #343: a SimpleFIN brokerage arrives as an account whose balance
+    is the whole portfolio plus the positions as holdings. After the sync the
+    account keeps only the cash residual, the positions are assets, and net
+    worth equals the balances the provider reported."""
+    from datetime import date
+
+    from app.models.account import Account
+    from app.providers.simplefin import SimpleFinProvider
+    from app.services.report_service import _net_worth_at
+
+    payload = {
+        "accounts": [
+            {
+                "id": "brk-1", "name": "Brokerage", "currency": "USD", "balance": "1057.20",
+                "holdings": [
+                    {"id": "h-mpc", "symbol": "MPC", "description": "Marathon Petroleum",
+                     "currency": "USD", "shares": "1.011168", "market_value": "425.96"},
+                    {"id": "h-bp", "symbol": "BP", "description": "BP PLC",
+                     "currency": "USD", "shares": "3.106678", "market_value": "147.64"},
+                ],
+            },
+            {"id": "chk-1", "name": "Checking", "currency": "USD", "balance": "889.92"},
+        ],
+    }
+    real = SimpleFinProvider()
+    with patch.object(SimpleFinProvider, "_fetch_accounts", AsyncMock(return_value=payload)):
+        accounts_data = await real.get_accounts({"access_url": "https://u:p@bridge.example/x"})
+        holdings_data = await real.get_holdings({"access_url": "https://u:p@bridge.example/x"})
+
+    conn = await _make_connection(session, test_user.id, "SimpleFIN Brokerage")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_institution_logo = AsyncMock(return_value=None)
+    mock_provider.get_accounts = AsyncMock(return_value=accounts_data)
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    mock_provider.get_holdings = AsyncMock(return_value=holdings_data)
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        result_conn, _, _ = await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+    assert result_conn.status == "active"
+
+    by_ext = {
+        a.external_id: a
+        for a in (await session.execute(select(Account).where(Account.connection_id == conn.id))).scalars()
+    }
+    # Cash residual: 1057.20 - (425.96 + 147.64). The checking account is untouched.
+    assert by_ext["brk-1"].balance == Decimal("483.60")
+    assert by_ext["chk-1"].balance == Decimal("889.92")
+    assets = (await session.execute(select(Asset).where(Asset.connection_id == conn.id))).scalars().all()
+    assert sorted(a.external_id for a in assets) == ["h-bp", "h-mpc"]
+
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
+    assert dp.breakdowns["accounts"] == pytest.approx(483.60 + 889.92)
+    assert dp.breakdowns["assets"] == pytest.approx(573.60)
+    assert dp.value == pytest.approx(1057.20 + 889.92)
