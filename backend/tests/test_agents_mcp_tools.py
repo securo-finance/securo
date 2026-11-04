@@ -262,6 +262,54 @@ async def test_aggregate_currency_filter(
     assert "error" not in eur and eur["items"] == []
 
 
+async def test_aggregate_exclude_transfers_drops_treat_as_transfer_categories(
+    session: AsyncSession, ctx: CallContext, test_user, test_account
+):
+    """exclude_transfers leaves out rows in a treat_as_transfer category, not
+    only paired legs, and still keeps uncategorized rows (#1342)."""
+    from datetime import date, datetime, timezone
+    from decimal import Decimal
+
+    from app.models.category import Category
+    from app.models.transaction import Transaction
+
+    investing = Category(
+        id=uuid.uuid4(), user_id=test_user.id, name="Investing",
+        icon="tag", color="#000", is_system=False, treat_as_transfer=True,
+    )
+    groceries = Category(
+        id=uuid.uuid4(), user_id=test_user.id, name="Groceries",
+        icon="tag", color="#000", is_system=False,
+    )
+    session.add_all([investing, groceries])
+    await session.commit()
+
+    def tx(amount: str, category_id=None, transfer_pair_id=None) -> Transaction:
+        return Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, account_id=test_account.id,
+            category_id=category_id, transfer_pair_id=transfer_pair_id,
+            description="row", amount=Decimal(amount), date=date(2026, 3, 10),
+            type="debit", source="manual", created_at=datetime.now(timezone.utc),
+        )
+
+    session.add_all([
+        tx("500", investing.id),  # unpaired, in a treat_as_transfer category
+        tx("40", groceries.id),
+        tx("15"),  # uncategorized
+        tx("200", transfer_pair_id=uuid.uuid4()),  # paired leg
+    ])
+    await session.commit()
+
+    handler = REGISTRY["aggregate"].handler
+    period = {"from_date": "2026-03-01", "to_date": "2026-03-31", "group_by": "account"}
+
+    excluded = await handler(session=session, ctx=ctx, exclude_transfers=True, **period)
+    assert [(i["value"], i["count"]) for i in excluded["items"]] == [(55.0, 2)]
+
+    included = await handler(session=session, ctx=ctx, exclude_transfers=False, **period)
+    assert [(i["value"], i["count"]) for i in included["items"]] == [(755.0, 4)]
+
+
 async def test_list_transactions_account_types_filter(
     session: AsyncSession, ctx: CallContext, test_transactions, test_account
 ):
@@ -418,6 +466,16 @@ async def test_propose_create_category_no_collision(
     result = await handler(session=session, ctx=ctx, name="UniqueNewCategoryX9Z")
     assert result["name_collision"] is None
     assert result["proposed"]["name"] == "UniqueNewCategoryX9Z"
+
+
+async def test_propose_create_category_wildcard_name_is_no_collision(
+    session: AsyncSession, ctx: CallContext, test_categories
+):
+    handler = REGISTRY["propose_create_category"].handler
+    # Unescaped, `%` would match every category and `_` any one character.
+    for name in ("%", "_" * len(test_categories[0].name)):
+        result = await handler(session=session, ctx=ctx, name=name)
+        assert result["name_collision"] is None, name
 
 
 async def test_propose_create_budget(

@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState } from 'react'
 import { loadReportsRange, saveReportsRange, type ReportsRange } from '@/lib/remembered-range'
 import { useTranslation } from 'react-i18next'
-import { useDisplayLocale } from '@/hooks/use-display-locale'
+import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import {
   AreaChart,
@@ -17,9 +17,11 @@ import {
   Tooltip,
   Legend,
   ReferenceLine,
+  Rectangle,
   ResponsiveContainer,
+  type BarShapeProps,
 } from 'recharts'
-import { AlertCircle, ChevronLeft, ChevronRight, HelpCircle, X } from 'lucide-react'
+import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, HelpCircle, X } from 'lucide-react'
 import { reports } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -34,7 +36,8 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
-import { formatCurrency } from '@/lib/format'
+import { formatCompactCurrency, formatCurrency } from '@/lib/format'
+import { cashFlowBar, cashFlowTopSeries } from '@/lib/cash-flow-bars'
 import { localDateString, todayInTimezone } from '@/lib/date-utils'
 import { monthLabel } from '@/lib/month-utils'
 import { periodWindow, windowMonths, type PeriodPreset } from '@/lib/report-period'
@@ -66,16 +69,7 @@ const SLICE_COLORS = [
 ]
 const OTHER_SLICE_COLOR = '#9CA3AF'
 
-function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(value)
-}
-
-/** "Apr 2026" from a YYYY-MM-DD date, in the display locale. */
+/** "Apr 2026" from a YYYY-MM-DD date, in the date locale. */
 function formatShortMonth(isoDate: string, locale: string) {
   const [y, m] = isoDate.split('-').map(Number)
   return new Date(y, m - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' })
@@ -235,6 +229,9 @@ export default function ReportsPage() {
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
+  // Month and day words follow the app language, not the currency locale: a
+  // Portuguese UI showing US dollars still reads "Setembro de 2026".
+  const dateLocale = useDateLocale()
 
   const customDefaults = defaultCustomRange()
   // The page opens on the first tab with the range last used there (issue
@@ -346,9 +343,9 @@ export default function ReportsPage() {
     isCustomRange && !activeWindow
       ? t('reports.customRange')
       : activeWindow && selectedRange.monthAnchor !== undefined
-        ? monthLabel(activeWindow.from.slice(0, 7), locale)
+        ? monthLabel(activeWindow.from.slice(0, 7), dateLocale)
         : activeWindow
-          ? `${formatShortMonth(activeWindow.from, locale)} - ${formatShortMonth(activeWindow.to, locale)}`
+          ? `${formatShortMonth(activeWindow.from, dateLocale)} - ${formatShortMonth(activeWindow.to, dateLocale)}`
           : t(`reports.${RANGE_LABELS[selectedRange.key]}`)
 
   const handleSelectTab = (key: string) => {
@@ -381,6 +378,38 @@ export default function ReportsPage() {
     if (!nextTab.intervalOptions.some((i) => i.value === interval)) {
       setInterval(nextTab.fallbackInterval)
     }
+  }
+
+  // Year picker (issue #765): one entry per year the workspace's data
+  // covers, from this year back to the oldest transaction. Hidden until the
+  // data spans at least two years, and never on Cash Flow, which has no
+  // custom range a picked year can be committed into.
+  const { data: dataRange } = useQuery({
+    queryKey: ['reports', 'data-range'],
+    queryFn: reports.dataRange,
+    staleTime: 5 * 60 * 1000,
+  })
+  const todayStr = todayInTimezone(timeZone)
+  const currentYear = Number(todayStr.slice(0, 4))
+  const minYear = dataRange?.min_date ? Number(dataRange.min_date.slice(0, 4)) : null
+  const yearOptions =
+    minYear !== null && minYear < currentYear
+      ? Array.from({ length: currentYear - minYear + 1 }, (_, i) => currentYear - i)
+      : []
+  // The year a committed custom range covers exactly: Jan 1 through
+  // Dec 31, or through today for the current year.
+  const activeYear = yearOptions.find(
+    (year) =>
+      isCustomRange &&
+      customFrom === `${year}-01-01` &&
+      customTo === (year === currentYear ? todayStr : `${year}-12-31`),
+  )
+  const handleYearPick = (year: number) => {
+    setCustomFrom(`${year}-01-01`)
+    setCustomTo(year === currentYear ? todayStr : `${year}-12-31`)
+    setRangeKey(CUSTOM_RANGE_KEY)
+    setPeriodOffset(0)
+    setSelectedDate(null)
   }
 
   const { data, isLoading, isError, error, refetch } = useQuery<ReportResponse>({
@@ -419,8 +448,13 @@ export default function ReportsPage() {
       valuePast: isPast || isBoundary ? dp.value : null,
       valueForecast: !isPast ? dp.value : null,
       ...breakdowns,
-    } as Record<string, string | number | null>
+    } as Record<string, string | number | null> & { date: string }
   })
+  // Cash-flow columns are drawn as ranges ending at net flow; see cashFlowBar.
+  type BarChartDatum = Record<string, string | number | null | [number, number]> & { date: string }
+  const barChartData: BarChartDatum[] = chartData.map((point): BarChartDatum =>
+    meta?.type === 'cash_flow' ? { ...point, ...cashFlowBar(point.inflow, point.outflow) } : point,
+  )
   const netWorthDomain = getNetWorthDomain(
     chartData
       .map((point) => point.value)
@@ -443,7 +477,7 @@ export default function ReportsPage() {
   const formatDay = (iso: string) => {
     const day = new Date(iso + 'T00:00:00')
     const sameYear = day.getFullYear() === new Date().getFullYear()
-    return day.toLocaleDateString(locale, {
+    return day.toLocaleDateString(dateLocale, {
       day: 'numeric',
       month: 'short',
       ...(sameYear ? {} : { year: 'numeric' }),
@@ -757,6 +791,43 @@ export default function ReportsPage() {
                   placeholder={t('reports.pickCustomRange')}
                 />
               )}
+              {supportsCustomRange && yearOptions.length > 1 && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={activeYear !== undefined ? `${t('reports.year')} ${activeYear}` : t('reports.year')}
+                      title={t('reports.yearPickerHelp')}
+                      className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        activeYear !== undefined
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      <CalendarDays className="mr-1 inline h-3.5 w-3.5" />
+                      {activeYear !== undefined ? activeYear : t('reports.year')}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-auto p-1">
+                    <div className="max-h-64 overflow-y-auto">
+                      {yearOptions.map((year) => (
+                        <button
+                          key={year}
+                          type="button"
+                          onClick={() => handleYearPick(year)}
+                          className={`block w-full px-3 py-1.5 text-left text-xs font-semibold transition-colors ${
+                            activeYear === year
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                          }`}
+                        >
+                          {year}
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
             </div>
             {/* Period navigation (issue #519): step the active window back and
                 forward through history, labeled with the period it shows. The
@@ -1065,7 +1136,7 @@ export default function ReportsPage() {
                       tickFormatter={(v) => {
                         if (privacyMode) return ''
                         if (v === 0) return '0'
-                        return formatCompact(v, userCurrency, locale)
+                        return formatCompactCurrency(v, userCurrency, locale)
                       }}
                       tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                       axisLine={false}
@@ -1165,7 +1236,7 @@ export default function ReportsPage() {
                   tickFormatter={(v) => {
                     if (privacyMode) return ''
                     if (v === 0) return '0'
-                    return formatCompact(v, userCurrency, locale)
+                    return formatCompactCurrency(v, userCurrency, locale)
                   }}
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                   axisLine={false}
@@ -1416,7 +1487,7 @@ export default function ReportsPage() {
                                 : t(currentTab.labelKey)}
                           </span>
                           <span className="text-base font-bold text-foreground tabular-nums">
-                            {mask(formatCompact(
+                            {mask(formatCompactCurrency(
                               snapshotTrendPoint
                                 ? compositionView === 'netWorth' || compositionView === 'net' || !compositionView
                                   ? snapshotTrendPoint.value
@@ -1625,7 +1696,7 @@ export default function ReportsPage() {
                                 </span>
                               </div>
                               <p className="text-xs font-bold tabular-nums text-foreground mb-1">
-                                {mask(formatCompact(item.total, userCurrency, locale))}
+                                {mask(formatCompactCurrency(item.total, userCurrency, locale))}
                               </p>
                               <div style={{ height: 48 }}>
                                 <ResponsiveContainer width="100%" height="100%">
@@ -1675,9 +1746,9 @@ export default function ReportsPage() {
             ) : chartData.length > 0 && meta ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
-                  data={chartData}
+                  data={barChartData}
                   margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
-                  stackOffset="sign"
+                  stackOffset={meta.type === 'cash_flow' ? 'none' : 'sign'}
                   onClick={(payload) => {
                     const date = payload?.activeLabel as string | undefined
                     if (!date) return
@@ -1696,7 +1767,7 @@ export default function ReportsPage() {
                     tickFormatter={(v) => {
                       if (privacyMode) return ''
                       if (v === 0) return '0'
-                      return formatCompact(v, userCurrency, locale)
+                      return formatCompactCurrency(v, userCurrency, locale)
                     }}
                     tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                     axisLine={false}
@@ -1708,17 +1779,55 @@ export default function ReportsPage() {
                   <Tooltip
                     content={({ active, payload, label }) => {
                       if (!active || !payload) return null
-                      const items = payload.filter((p) => p.value !== null && p.value !== undefined && (p.value as number) !== 0)
+                      const items = payload.filter((p) => {
+                        if (p.value === null || p.value === undefined) return false
+                        return Array.isArray(p.value)
+                          ? p.value[0] !== p.value[1]
+                          : (p.value as number) !== 0
+                      })
+                      // A period with nothing to draw, e.g. a month with no
+                      // cash flow at all, gets no tooltip.
                       if (items.length === 0) return null
+                      const hovered = items[0].payload as BarChartDatum
+                      const cashFlowPoint = meta.type === 'cash_flow'
+                        ? cashFlowBar(hovered.inflowAmount, hovered.outflowAmount)
+                        : null
+                      const netFlowColor = !cashFlowPoint || cashFlowPoint.netFlow === 0
+                        ? 'var(--muted-foreground)'
+                        : cashFlowPoint.netFlow > 0 ? '#10B981' : '#F43F5E'
+                      // Cash-flow bars carry ranges, and a zero-height segment
+                      // drops out of `items`; list both amounts from the period
+                      // itself so the net flow always has both of its terms.
+                      const rows = cashFlowPoint
+                        ? [
+                            { key: 'inflow', name: 'inflow', color: '#10B981', value: cashFlowPoint.inflowAmount },
+                            { key: 'outflow', name: 'outflow', color: '#F43F5E', value: -cashFlowPoint.outflowAmount },
+                          ]
+                        : items.map((p) => ({
+                            key: p.dataKey as string,
+                            name: p.name,
+                            color: p.color,
+                            value: p.value as number,
+                          }))
                       return (
                         <div style={tooltipStyle} className="px-3 py-2">
                           <p className="text-xs font-medium mb-1">{label}</p>
-                          {items.map((p) => (
-                            <p key={p.dataKey as string} className="text-xs" style={{ color: p.color }}>
-                              {t(`reports.${p.dataKey}`, { defaultValue: p.name })}:{' '}
-                              {privacyMode ? MASK : formatCurrency(p.value as number, userCurrency, locale)}
+                          {rows.map((row) => (
+                            <p key={row.key} className="text-xs" style={{ color: row.color }}>
+                              {t(`reports.${row.key}`, { defaultValue: row.name })}:{' '}
+                              {privacyMode ? MASK : formatCurrency(row.value, userCurrency, locale)}
                             </p>
                           ))}
+                          {cashFlowPoint && (
+                            <p
+                              data-testid="cash-flow-net"
+                              className="text-xs font-medium"
+                              style={{ color: netFlowColor }}
+                            >
+                              {t('reports.netFlow')}:{' '}
+                              {privacyMode ? MASK : formatCurrency(cashFlowPoint.netFlow, userCurrency, locale)}
+                            </p>
+                          )}
                         </div>
                       )
                     }}
@@ -1738,17 +1847,23 @@ export default function ReportsPage() {
                         ]
                       : meta.series_keys.map((k) => ({ key: k, color: colorMap[k] || '#6366F1' }))
                     const filteredSeries = allSeries.filter(({ key }) =>
-                      chartData.some((d) => { const v = d[key]; return typeof v === 'number' && v !== 0 })
+                      barChartData.some((d) => {
+                        const v = d[key]
+                        return Array.isArray(v)
+                          ? v[0] !== v[1]
+                          : typeof v === 'number' && v !== 0
+                      })
                     )
                     const positiveKeys = isNetWorth ? filteredSeries.filter(({ key }) => !NEGATIVE_SERIES.has(key)) : filteredSeries
                     const negativeKeys = isNetWorth ? filteredSeries.filter(({ key }) => NEGATIVE_SERIES.has(key)) : []
                     const lastPositiveKey = positiveKeys.at(-1)?.key ?? null
                     const lastNegativeKey = negativeKeys.at(-1)?.key ?? null
                     return filteredSeries.map(({ key, color }) => {
+                      const isCashFlowChart = meta.type === 'cash_flow'
                       let radius: [number, number, number, number] = [0, 0, 0, 0]
                       if (isNetWorth && NEGATIVE_SERIES.has(key) && key === lastNegativeKey) {
                         radius = [4, 4, 0, 0]
-                      } else if (key === lastPositiveKey) {
+                      } else if (!isCashFlowChart && key === lastPositiveKey) {
                         radius = [4, 4, 0, 0]
                       }
                       return (
@@ -1759,8 +1874,16 @@ export default function ReportsPage() {
                           fill={color}
                           radius={radius}
                           maxBarSize={32}
+                          shape={isCashFlowChart
+                            ? (props: BarShapeProps) => (
+                                <Rectangle
+                                  {...props}
+                                  radius={cashFlowTopSeries(props.payload) === key ? [4, 4, 0, 0] : 0}
+                                />
+                              )
+                            : undefined}
                         >
-                          {selectedDate && chartData.map((d) => (
+                          {selectedDate && barChartData.map((d) => (
                             <Cell
                               key={d.date}
                               fill={color}

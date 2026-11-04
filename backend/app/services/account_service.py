@@ -3,7 +3,17 @@ from datetime import date as _Date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import ColumnElement, Select, case, delete, func, select, or_, update
+from sqlalchemy import (
+    ColumnElement,
+    Select,
+    and_,
+    case,
+    delete,
+    func,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
@@ -12,8 +22,9 @@ from app.models.account import Account
 from app.models.asset import LOAN_COLLATERAL_TYPES, Asset
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
+from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
 from app.models.transaction import Transaction
-from app.schemas.account import AccountCreate, AccountUpdate
+from app.schemas.account import AccountCreate, AccountUpdate, LoanBalanceUpdate
 from app.services._query_filters import (
     counts_as_pnl,
     counts_in_current_balance,
@@ -24,25 +35,45 @@ from app.services._query_filters import (
     is_not_ignored,
     reporting_date_col,
 )
-from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
-from app.services.fx_rate_service import _resolve_rate
+from app.services import loan_schedule, mortgage_service
+from app.services.credit_card_service import (
+    apply_effective_date,
+    cc_cycle_bill_due_dates,
+    compute_available_credit,
+    get_cycle_dates,
+)
+from app.services.fx_rate_service import _resolve_rate, stamp_primary_amount
 from app.models.category import Category
+
+# Loan accounts only: contract terms the payment schedule is computed from.
+LOAN_TERM_FIELDS = (
+    "loan_kind",
+    "loan_original_amount",
+    "loan_interest_rate",
+    "loan_rate_period",
+    "loan_term_months",
+    "loan_first_payment_date",
+    "loan_amortization",
+)
 
 
 def get_account_name(account: Account) -> str:
     return account.display_name or account.name
 
 
-def _simplefin_to_internal_balance(provider: str, account_type: str, balance: Decimal) -> Decimal:
-    """Normalize a SimpleFIN balance to Securo's positive-for-debt convention.
+LIABILITY_ACCOUNT_TYPES = frozenset({"credit_card", "loan"})
 
-    SimpleFIN reports a credit card's balance as negative debt and exposes no
-    account type, so the provider stores it raw and labels every account
-    "checking". Pluggy/Enable report card debt as a positive number, which is
-    the convention every downstream site (serialize_account, _account_balance_at,
-    sync_opening_balance_for_connected_account, ...) assumes. Flip SimpleFIN card
-    balances to match so those sites stay provider-agnostic.
+
+def _provider_to_internal_balance(provider: str, account_type: str, balance: Decimal) -> Decimal:
+    """Normalize provider balances to positive-for-debt for liabilities.
+
+    A loan's balance is always debt, whichever type the provider reported and
+    whatever sign it used, so the magnitude is the whole answer. SimpleFIN
+    reports credit card debt as a negative value and exposes no account type,
+    so only that combination needs a sign flip.
     """
+    if account_type == "loan":
+        return abs(balance)
     if provider == "simplefin" and account_type == "credit_card":
         return -balance
     return balance
@@ -141,11 +172,35 @@ def _balance_subqueries(today: _Date):
         .subquery()
     )
 
-    return balance_sq, prev_balance_sq, future_charges_sq
+    # Subquery: the open bill of each card on a shared credit line (earliest
+    # due_date on or after today; one row per account via rn = 1). Every card
+    # on one consolidated line repeats the contract-wide balance, so the
+    # sidebar shows the card's own bill instead (issue #684).
+    open_bill_sq = (
+        select(
+            CreditCardBill.account_id,
+            CreditCardBill.total_amount,
+            func.row_number()
+            .over(
+                partition_by=CreditCardBill.account_id,
+                order_by=CreditCardBill.due_date,
+            )
+            .label("rn"),
+        )
+        .join(Account, CreditCardBill.account_id == Account.id)
+        .where(
+            Account.type == "credit_card",
+            Account.shared_balance_group.isnot(None),
+            CreditCardBill.due_date >= today,
+        )
+        .subquery()
+    )
+
+    return balance_sq, prev_balance_sq, future_charges_sq, open_bill_sq
 
 
 def _accounts_with_balances_query(
-    workspace_id: uuid.UUID, balance_sq, prev_balance_sq, future_charges_sq
+    workspace_id: uuid.UUID, balance_sq, prev_balance_sq, future_charges_sq, open_bill_sq
 ):
     return (
         select(
@@ -154,6 +209,7 @@ def _accounts_with_balances_query(
             func.coalesce(balance_sq.c.current_balance, 0).label("current_balance"),
             func.coalesce(prev_balance_sq.c.previous_balance, 0).label("previous_balance"),
             func.coalesce(future_charges_sq.c.future_charges, 0).label("future_charges"),
+            open_bill_sq.c.total_amount.label("open_bill_total"),
             # The opening balance's date, so the edit form can show it and
             # leave it alone (issue #1204).
             select(func.min(Transaction.date))
@@ -169,6 +225,10 @@ def _accounts_with_balances_query(
         .outerjoin(balance_sq, Account.id == balance_sq.c.account_id)
         .outerjoin(prev_balance_sq, Account.id == prev_balance_sq.c.account_id)
         .outerjoin(future_charges_sq, Account.id == future_charges_sq.c.account_id)
+        .outerjoin(
+            open_bill_sq,
+            and_(Account.id == open_bill_sq.c.account_id, open_bill_sq.c.rn == 1),
+        )
         .where(
             or_(
                 Account.workspace_id == workspace_id,
@@ -191,6 +251,7 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
                 previous_balance,
                 connection,
                 future_charges=future_charges,
+                open_bill_total=open_bill_total,
                 balance_date=balance_date,
             )
             for (
@@ -199,6 +260,7 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
                 current_balance,
                 previous_balance,
                 future_charges,
+                open_bill_total,
                 balance_date,
             ) in result.all()
         ]
@@ -214,13 +276,14 @@ async def get_account_with_balances(
     row = (await session.execute(query)).first()
     if row is None:
         return None
-    acc, connection, current_balance, previous_balance, future_charges, balance_date = row
+    acc, connection, current_balance, previous_balance, future_charges, open_bill_total, balance_date = row
     return serialize_account(
         acc,
         current_balance,
         previous_balance,
         connection,
         future_charges=future_charges,
+        open_bill_total=open_bill_total,
         balance_date=balance_date,
     )
 
@@ -254,12 +317,13 @@ def serialize_account(
     connection: Optional[BankConnection] = None,
     *,
     future_charges: Optional[Decimal] = None,
+    open_bill_total: Optional[Decimal] = None,
     balance_date: Optional[_Date] = None,
 ) -> dict:
-    # Connected CC: provider stores positive for debt → negate.
+    # Connected credit cards and loans store positive for debt → negate.
     # Manual accounts: transaction math already gives correct sign.
     if acc.connection_id:
-        resolved_balance = float(acc.balance) * (-1 if acc.type == "credit_card" else 1)
+        resolved_balance = float(acc.balance) * (-1 if acc.type in LIABILITY_ACCOUNT_TYPES else 1)
     else:
         resolved_balance = float(current_balance or 0)
 
@@ -286,7 +350,18 @@ def serialize_account(
         "minimum_payment": float(acc.minimum_payment) if acc.minimum_payment is not None else None,
         "card_brand": acc.card_brand,
         "card_level": acc.card_level,
+        "loan_kind": acc.loan_kind,
+        "loan_original_amount": float(acc.loan_original_amount) if acc.loan_original_amount is not None else None,
+        "loan_interest_rate": float(acc.loan_interest_rate) if acc.loan_interest_rate is not None else None,
+        "loan_rate_period": acc.loan_rate_period,
+        "loan_term_months": acc.loan_term_months,
+        "loan_first_payment_date": acc.loan_first_payment_date,
+        "loan_amortization": acc.loan_amortization,
         "shared_balance_group": acc.shared_balance_group,
+        # The card's own open bill, when it sits on a shared credit line.
+        # Null for every other account and for shared cards without one.
+        "open_bill_total": float(open_bill_total) if open_bill_total is not None else None,
+        "open_bill_total_primary": None,
         "institution_name": institution_name,
         "institution_logo_url": institution_logo_url,
         "balance_date": balance_date,
@@ -377,6 +452,7 @@ async def create_account(
         minimum_payment=data.minimum_payment if is_cc else None,
         card_brand=data.card_brand if is_cc else None,
         card_level=data.card_level if is_cc else None,
+        **{field: getattr(data, field) if data.type == "loan" else None for field in LOAN_TERM_FIELDS},
     )
     session.add(account)
     await session.flush()  # get account.id without committing
@@ -412,12 +488,18 @@ async def update_account(
     update_data = data.model_dump(exclude_unset=True)
     balance_date = update_data.pop("balance_date", None)
     new_type = update_data.get("type", account.type)
-    if account.connection_id is not None and new_type == "loan":
-        raise ValueError("Bank-connected accounts cannot be loans yet")
-    # Switching between a loan and any other type flips what the balance means
+    if account.type == "loan" and new_type != "loan" and await _has_mortgage_allocations(session, account):
+        raise ValueError("Remove this loan's mortgage payment breakdowns before changing its type")
+    # Switching a manual account to or from a loan flips what the balance means
     # (money held vs. money owed). That is safe for an account that only has
     # its opening balance; with real history it would silently reinterpret it.
-    if new_type != account.type and "loan" in {account.type, new_type}:
+    # A connected account keeps its provider balance and history: the sync
+    # renormalizes the balance to the new type on its next run.
+    if (
+        account.connection_id is None
+        and new_type != account.type
+        and "loan" in {account.type, new_type}
+    ):
         has_history = await session.scalar(
             select(Transaction.id)
             .where(
@@ -455,43 +537,57 @@ async def update_account(
     # account creation and never overwrites it afterwards, so the override
     # survives subsequent syncs without a separate field.
     if account.connection_id is not None:
+        # The contract terms describe the agreement with the lender, not
+        # anything the provider reports, so a connected loan can carry them
+        # and the sync has nothing to say about them.
         editable_fields = {
             "display_name",
             "type",
+            "secured_asset_id",
             "credit_limit",
             "statement_close_day",
             "payment_due_day",
             "minimum_payment",
             "card_brand",
             "card_level",
+            *LOAN_TERM_FIELDS,
         }
         disallowed = set(update_data.keys()) - editable_fields
         if disallowed:
             raise ValueError("Cannot edit bank-connected accounts")
         old_type = account.type
         new_type = update_data.get("type", account.type)
-        cc_fields = editable_fields - {"display_name", "type"}
+        cc_fields = editable_fields - {"display_name", "type", "secured_asset_id", *LOAN_TERM_FIELDS}
         cc_update = {k: v for k, v in update_data.items() if k in cc_fields}
         if cc_update and new_type != "credit_card":
             raise ValueError("Credit card fields can only be set on credit card accounts")
+        loan_update = {k: v for k, v in update_data.items() if k in LOAN_TERM_FIELDS}
+        if loan_update and new_type != "loan":
+            raise ValueError("Loan contract terms can only be set on loan accounts")
         for key, value in update_data.items():
             setattr(account, key, value)
         # SimpleFIN stores a card's balance with the raw provider sign (negative
         # for debt) under type="checking". When the user flips the type across
-        # the credit_card boundary, the downstream display sites start (or stop)
+        # a liability boundary, the downstream display sites start (or stop)
         # applying the positive-for-debt negation, so the stored value must flip
-        # too — otherwise the card double-counts. Mirror the ingestion-time
-        # normalization (_simplefin_to_internal_balance) here so the correction
+        # too, otherwise the card double-counts. Mirror the ingestion-time
+        # normalization (_provider_to_internal_balance) here so the correction
         # is immediate, not deferred to the next sync. Load the provider via
         # session.get (identity-map hit, never a lazy-load that throws).
-        if old_type != new_type and "credit_card" in (old_type, new_type):
+        #
+        # Leaving a loan needs that flip for every provider, so the debt the
+        # account showed survives the way back. Entering one does not: the
+        # normalization below takes the magnitude, which makes the flip moot.
+        if (old_type in LIABILITY_ACCOUNT_TYPES) != (new_type in LIABILITY_ACCOUNT_TYPES):
             conn = (
                 await session.get(BankConnection, account.connection_id)
                 if account.connection_id is not None
                 else None
             )
-            if conn is not None and conn.provider == "simplefin":
+            if "loan" in (old_type, new_type) or (conn is not None and conn.provider == "simplefin"):
                 account.balance = -account.balance
+        if new_type == "loan":
+            account.balance = _provider_to_internal_balance("", "loan", account.balance)
         # If the override moves the account away from credit_card, drop any
         # stale card metadata so it isn't left half credit-card.
         if new_type != "credit_card":
@@ -501,6 +597,8 @@ async def update_account(
             account.minimum_payment = None
             account.card_brand = None
             account.card_level = None
+        if new_type != "loan":
+            account.secured_asset_id = None
         if cycle_fields_changed:
             await _recompute_effective_dates(session, account)
         await session.commit()
@@ -519,6 +617,8 @@ async def update_account(
         account.card_level = None
     if account.type != "loan":
         account.secured_asset_id = None
+        for field in LOAN_TERM_FIELDS:
+            setattr(account, field, None)
 
     opening_balance_type_changed = old_type != account.type and "loan" in {old_type, account.type}
     # When balance changes, sync the opening_balance transaction
@@ -574,6 +674,10 @@ async def update_account(
     if cycle_fields_changed:
         await _recompute_effective_dates(session, account)
 
+    if account.type == "loan" and ("balance" in update_data or balance_date):
+        await session.flush()
+        await mortgage_service.resync_principal_entries(session, account)
+
     await session.commit()
     await session.refresh(account)
     return account
@@ -594,6 +698,15 @@ async def _validate_secured_asset(
     )
     if asset is None or asset.type not in LOAN_COLLATERAL_TYPES:
         raise ValueError("Linked asset must be a property or vehicle in the same workspace")
+
+
+async def _has_mortgage_allocations(session: AsyncSession, account: Account) -> bool:
+    linked = await session.scalar(
+        select(MortgagePaymentAllocation.id)
+        .where(MortgagePaymentAllocation.loan_account_id == account.id)
+        .limit(1)
+    )
+    return linked is not None
 
 
 async def _recompute_effective_dates(session: AsyncSession, account: Account) -> None:
@@ -637,8 +750,8 @@ async def sync_opening_balance_for_connected_account(
     # transaction amounts on a CC trends negative as debt accrues, so the target
     # we want SUM(signed txs) to hit is -balance. For every other account type
     # the target is simply the stored balance.
-    is_cc = account.type == "credit_card"
-    target = -account.balance if is_cc else account.balance
+    is_liability = account.type in LIABILITY_ACCOUNT_TYPES
+    target = -account.balance if is_liability else account.balance
 
     effective_amount = case(
         (Transaction.currency == account.currency, Transaction.amount),
@@ -735,6 +848,8 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
     # Only allow deleting manual accounts
     if account.connection_id is not None:
         raise ValueError("Cannot delete bank-connected accounts")
+    if await _has_mortgage_allocations(session, account):
+        raise ValueError("Remove this loan's mortgage payment breakdowns before deleting it")
 
     # Clean up attachment files for all transactions in this account
     from app.services.attachment_service import cleanup_attachment_files
@@ -833,6 +948,10 @@ async def get_account_summary(
         return None
 
     today = app_today()
+    # Captured before the defaults below fill in None dates, so the
+    # bill-based window rule only applies to windows the caller actually
+    # sent (issue #563).
+    explicit_window = date_from is not None and date_to is not None
     if not date_from:
         date_from = today.replace(day=1)
     if not date_to:
@@ -878,15 +997,68 @@ async def get_account_summary(
         )
         current_balance = float(balance_result.scalar() or 0)
 
-    # Connected CC: provider balance is positive for debt → negate.
-    # Manual CC: transaction math already gives negative for debt.
-    if account.type == "credit_card" and account.connection_id:
+    # Connected liabilities store positive for debt; transaction math already
+    # gives a negative balance for manual accounts.
+    if account.type in LIABILITY_ACCOUNT_TYPES and account.connection_id:
         current_balance = -current_balance
 
     # Bucketing date: for credit-card txs the user can override which cycle
     # a tx belongs to via `effective_bill_date`. We honor that first so the
     # totals card and bar chart agree with the transactions list (issue #92).
     bucket_date = func.coalesce(Transaction.effective_bill_date, Transaction.date)
+
+    # Bill-based membership for the plain (cycle-math) window: when the
+    # caller sent a window that is exactly one bill cycle of this credit
+    # card account, an overridden tx belongs to the bill whose
+    # (previous due date, due date] range contains the override, not to the
+    # purchase window that contains it (for due-before-close cards a due
+    # date sits in the NEXT cycle's window, issue #563).
+    cycle = None
+    if (
+        explicit_window
+        and bill_id is None
+        and not unbilled_only
+        and account.type == "credit_card"
+    ):
+        cycle = cc_cycle_bill_due_dates(
+            date_from, date_to,
+            account.statement_close_day, account.payment_due_day,
+        )
+
+    def _membership():
+        """Window predicate for these totals: the plain date window, or
+        the bill-based rule above when the window is one of this
+        account's cycles. The actuals cap (bucket_date <= today) and the
+        forecast condition stay on the queries, so a tx in one bill's
+        window can still not leak into another bill's totals."""
+        if cycle is None or cycle["degenerate"]:
+            return and_(bucket_date >= date_from, bucket_date <= date_to)
+        override = Transaction.effective_bill_date
+        return or_(
+            and_(
+                override.is_(None),
+                bucket_date >= date_from,
+                bucket_date <= date_to,
+            ),
+            # (previous due date, this due date]: each override date maps
+            # to exactly one bill.
+            and_(override > cycle["prev"], override <= cycle["this"]),
+        )
+
+    def _before_window():
+        """Rows that belong to an earlier cycle than this one, under the
+        same rule as `_membership`: without a cycle, anything bucketed
+        before the window; with one, rows without an override bucketed
+        before the window plus overrides on or before the previous bill's
+        due date. Keeps older debt and this cycle's rows disjoint, so a
+        charge moved onto the previous bill counts as older debt."""
+        if cycle is None or cycle["degenerate"]:
+            return bucket_date < date_from
+        override = Transaction.effective_bill_date
+        return or_(
+            and_(override.is_(None), bucket_date < date_from),
+            override <= cycle["prev"],
+        )
 
     # Bill-driven filter (issue #92): when the caller passes bill_id, include
     #   (a) txs linked to this bill via Pluggy's billId mapping, AND
@@ -950,7 +1122,11 @@ async def get_account_summary(
                     future_override,
                 ),
             )
-        return query.where(bucket_date >= date_from, bucket_date <= date_to)
+        # Plain cycle-math window: bill-based membership when the window is
+        # one of this credit card account's cycles (issue #563), plain date
+        # window otherwise (non-CC accounts, wider ranges, degenerate
+        # close/due pairs).
+        return query.where(_membership())
 
     # Which exclusions these totals answer to. A credit card's four summary
     # numbers are all bill-side — they describe what the bank put on the
@@ -961,6 +1137,69 @@ async def get_account_summary(
     summary_filter = (
         counts_on_bill() if account.type == "credit_card" else counts_as_pnl()
     )
+
+    # Intermediate payments into the card (the credit leg of a paired
+    # transfer) reduce the bill total, but only by what is left after
+    # they settle the debt that was already outstanding when the window
+    # opened. Banks apply repayments oldest first: paying last cycle's
+    # bill inside this window must not read as this cycle's charges
+    # disappearing, while anything paid beyond that older debt can only
+    # settle this cycle's charges, so the bank bills the net (issue #668).
+    prior_debt = 0.0
+    paid_now = 0.0
+    paid_later = 0.0
+    if account.type == "credit_card":
+        prior_result = await session.execute(
+            select(func.coalesce(func.sum(
+                case(
+                    (Transaction.type == "credit", effective_amount),
+                    else_=-effective_amount,
+                )
+            ), 0)).where(
+                Transaction.account_id == account_id,
+                _before_window(),
+                # Rows linked to the selected bill belong to it whatever
+                # their date (see `_scope`), so they are not older debt.
+                *([] if bill_id is None else [or_(
+                    Transaction.bill_id.is_(None), Transaction.bill_id != bill_id,
+                )]),
+                Transaction.is_ignored == False,
+                or_(
+                    Transaction.category_id.is_(None),
+                    Transaction.category_id.not_in(
+                        select(Category.id).where(Category.is_ignored == True)
+                    ),
+                ),
+            )
+        )
+        prior_debt = max(0.0, -float(prior_result.scalar() or 0))
+        paired_payment = and_(
+            counts_on_bill(net_payments=True),
+            Transaction.type == "credit",
+            Transaction.transfer_pair_id.is_not(None),
+            Transaction.source != "opening_balance",
+        )
+        paid_now_result = await session.execute(
+            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+                Transaction.account_id == account_id,
+                bucket_date <= today,
+                Transaction.status == "posted",
+                paired_payment,
+            ))
+        )
+        paid_now = float(paid_now_result.scalar() or 0)
+        paid_later_result = await session.execute(
+            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+                Transaction.account_id == account_id,
+                or_(Transaction.status == "pending", bucket_date > today),
+                paired_payment,
+            ))
+        )
+        paid_later = float(paid_later_result.scalar() or 0)
+    # What the posted payments leave over after the older debt, and what
+    # the pending/future ones add on top of that.
+    netted_now = max(0.0, paid_now - prior_debt)
+    netted_total = max(0.0, paid_now + paid_later - prior_debt)
 
     # Income = SUM of credit transactions in window (excluding opening_balance
     # and paired transfers).
@@ -978,11 +1217,12 @@ async def get_account_summary(
 
     # Expenses = SUM of debit transactions in window (same exclusions).
     # For credit-card accounts, NET refund credits against debits so the
-    # cycle's "Total da fatura" matches the bank's bill (refunds reduce the
-    # invoice amount). Paired transfers are dropped by `transfer_pair_id`;
-    # unpaired card payments are dropped by the credit-side `treat_as_transfer`
-    # exclusion in `counts_on_bill` (see its docstring for why that's
-    # asymmetric with the debit side).
+    # cycle's "Total da fatura" matches the bank's bill (refunds reduce
+    # the invoice amount). Paired transfers are dropped by `transfer_pair_id`
+    # and netted separately below (see `netted_now`); unpaired card payments
+    # are dropped by the credit-side `treat_as_transfer` exclusion in
+    # `counts_on_bill` (see its docstring for why that's asymmetric with the
+    # debit side).
     if account.type == "credit_card":
         signed_for_bill = case(
             (Transaction.type == "credit", -func.abs(effective_amount)),
@@ -1007,7 +1247,7 @@ async def get_account_summary(
                 summary_filter,
             ))
         )
-    monthly_expenses = float(expenses_result.scalar())
+    monthly_expenses = float(expenses_result.scalar()) - netted_now
 
     # Forecast values use the same cycle/date scope as the actual totals, but
     # include every pending row and every row bucketed after today. The current
@@ -1047,7 +1287,9 @@ async def get_account_summary(
                 summary_filter,
             ))
         )
-    forecast_expenses = float(forecast_expense_result.scalar() or 0)
+    forecast_expenses = float(forecast_expense_result.scalar() or 0) - (
+        netted_total - netted_now
+    )
 
     opening_balance = (
         await get_period_opening_balance(session, account, date_from)
@@ -1127,7 +1369,13 @@ async def get_period_opening_balance(
                 is_inside_provider_snapshot(),
             )
         )
-        opening_balance = float(account.balance) - float(posted_result.scalar() or 0)
+        # The snapshot stores a liability's debt positive, while the walk this
+        # seeds is signed like every other balance on screen. Only a loan
+        # reaches this: a connected card returns 0.0 above.
+        snapshot = float(account.balance)
+        if account.type in LIABILITY_ACCOUNT_TYPES:
+            snapshot = -snapshot
+        opening_balance = snapshot - float(posted_result.scalar() or 0)
         opening_balance -= float(pending_result.scalar() or 0)
 
         if date_from > today:
@@ -1258,7 +1506,7 @@ async def get_account_balance_history(
     if not date_to:
         date_to = today
 
-    sign = -1.0 if (account.type == "credit_card" and account.connection_id) else 1.0
+    sign = -1.0 if (account.type in LIABILITY_ACCOUNT_TYPES and account.connection_id) else 1.0
 
     series = await _account_daily_balance_series(session, account_id, date_from, date_to, account.currency)
 
@@ -1411,3 +1659,145 @@ async def get_account_running_balance(
         })
         current += timedelta(days=1)
     return series
+
+
+async def get_loan_schedule(
+    session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[dict]:
+    """The loan's contract schedule next to what its ledger says is owed.
+
+    None when the account does not exist in this workspace or is not a loan.
+    """
+    account = await get_account_with_balances(session, account_id, workspace_id)
+    if not account or account["type"] != "loan":
+        return None
+    current_debt = max(Decimal("0"), -Decimal(str(account["current_balance"])))
+    payload: dict = {
+        "account_id": account["id"],
+        "currency": account["currency"],
+        "current_debt": float(current_debt),
+        "configured": False,
+    }
+    required = (
+        "loan_original_amount",
+        "loan_interest_rate",
+        "loan_rate_period",
+        "loan_term_months",
+        "loan_first_payment_date",
+        "loan_amortization",
+    )
+    missing = [field for field in required if account.get(field) is None]
+    if missing:
+        payload["missing"] = missing
+        return payload
+
+    method = account["loan_amortization"]
+    schedule = loan_schedule.build_schedule(
+        principal=Decimal(str(account["loan_original_amount"])),
+        rate_percent=Decimal(str(account["loan_interest_rate"])),
+        rate_period=account["loan_rate_period"],
+        term_months=account["loan_term_months"],
+        first_payment_date=account["loan_first_payment_date"],
+        method=method,
+    )
+    summary = loan_schedule.summarize(
+        schedule,
+        actual_balance=current_debt,
+        today=app_today(),
+        method=method,
+        rate=loan_schedule.monthly_rate(
+            Decimal(str(account["loan_interest_rate"])), account["loan_rate_period"]
+        ),
+    )
+
+    def installment(row: loan_schedule.Installment) -> dict:
+        return {
+            "number": row.number,
+            "due_date": row.due_date,
+            "payment": float(row.payment),
+            "interest": float(row.interest),
+            "principal": float(row.principal),
+            "balance": float(row.balance),
+        }
+
+    payload.update(
+        configured=True,
+        monthly_payment=float((summary.next_payment or schedule[0]).payment),
+        payments_due=summary.payments_due,
+        remaining_payments=summary.remaining_payments,
+        next_payment=installment(summary.next_payment) if summary.next_payment else None,
+        scheduled_balance=float(summary.scheduled_balance),
+        ahead_by=float(summary.ahead_by),
+        total_interest=float(summary.total_interest),
+        total_paid=float(summary.total_paid),
+        payoff_date=summary.payoff_date,
+        projected_payoff_date=summary.projected_payoff_date,
+        paid_off=summary.paid_off,
+        installments=[installment(row) for row in schedule],
+    )
+    return payload
+
+
+async def adjust_loan_balance(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    data: LoanBalanceUpdate,
+) -> Optional[dict]:
+    """Record the gap between the lender's balance and the ledger's.
+
+    Indexed or renegotiated contracts move in ways the schedule cannot
+    compute, so the lender's statement wins: the difference becomes one
+    ordinary transaction on the loan. A debt that grew is a cost of the loan
+    (indexation, interest, fees) and counts as an expense. A debt that fell
+    without a recorded payment is most often a payment missing from the
+    ledger, so it moves the balance but stays out of income.
+
+    None when the account does not exist in this workspace or is not a loan.
+    """
+    account = await get_account(session, account_id, workspace_id)
+    if not account or account.type != "loan":
+        return None
+    if data.date > app_today():
+        raise ValueError("The statement date cannot be in the future")
+
+    owed = -Decimal(str(await _account_balance_at(session, account.id, data.date, account.currency)))
+    difference = (data.balance - owed).quantize(Decimal("0.01"))
+    transaction = None
+    if difference != 0:
+        grew = difference > 0
+        category_id = data.category_id if grew else None
+        if category_id is not None:
+            found = await session.execute(
+                select(Category.id).where(Category.id == category_id, Category.workspace_id == workspace_id)
+            )
+            if found.scalar_one_or_none() is None:
+                raise ValueError("Category not found")
+        transaction = Transaction(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            account_id=account.id,
+            category_id=category_id,
+            description=data.description,
+            amount=abs(difference),
+            currency=account.currency,
+            date=data.date,
+            type="debit" if grew else "credit",
+            source="manual",
+            status="posted",
+            exclude_from_pnl=not grew,
+        )
+        apply_effective_date(transaction, account)
+        session.add(transaction)
+        await session.flush()
+        await stamp_primary_amount(session, user_id, transaction)
+        await session.commit()
+
+    refreshed = await get_account_with_balances(session, account.id, workspace_id)
+    assert refreshed is not None
+    return {
+        "adjustment": float(difference),
+        "current_debt": float(max(Decimal("0"), -Decimal(str(refreshed["current_balance"])))),
+        "transaction_id": transaction.id if transaction else None,
+    }

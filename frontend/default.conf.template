@@ -2,6 +2,8 @@ server {
     listen 8080;
     root /usr/share/nginx/html;
     index index.html;
+    # Attachments go up to STORAGE_MAX_FILE_SIZE_MB (10 MB); nginx's default limit is 1 MB.
+    client_max_body_size 15m;
 
     # API proxy to backend.
     # Resolve the backend hostname at request time via Docker's embedded DNS

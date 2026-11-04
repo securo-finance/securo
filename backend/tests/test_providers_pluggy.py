@@ -515,6 +515,151 @@ def test_build_account_data_maps_bank_savings_subtype_to_savings():
     assert out.type == "savings"
 
 
+# ----- issue #843: auto-invested balance must not be double-counted -----
+# Pluggy reports the bank's auto-withdrawal investment inside the account
+# balance (bankData.automaticallyInvestedBalance) and as an investment
+# holding. The mapping keeps the reported balance and exposes the invested
+# portion; the sync decides whether to subtract it (see connection tests).
+
+
+def _bb_account(balance, bank_data):
+    return {
+        "id": "acc-bb",
+        "name": "Conta Corrente",
+        "type": "BANK",
+        "subtype": "CHECKING_ACCOUNT",
+        "number": "1234-5678",
+        "currencyCode": "BRL",
+        "balance": balance,
+        "bankData": bank_data,
+    }
+
+
+def test_build_account_data_exposes_fully_auto_invested_balance():
+    """The reported case: the whole available balance is auto-applied to a
+    short-term investment, which also appears in /investments."""
+    from app.providers.pluggy import _build_account_data
+
+    acc = _bb_account(
+        5000.00,
+        {
+            "transferNumber": "0001/0001/12345678-9",
+            "closingBalance": 5000.00,
+            "automaticallyInvestedBalance": 5000.00,
+        },
+    )
+
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+
+    assert out.balance == Decimal("5000.00")
+    assert out.auto_invested_balance == Decimal("5000.00")
+
+
+def test_build_account_data_exposes_partial_auto_invested_balance():
+    from app.providers.pluggy import _build_account_data
+
+    acc = _bb_account(
+        1000,
+        {
+            "transferNumber": "0001/0001/12345678-9",
+            "closingBalance": 1000,
+            "automaticallyInvestedBalance": 250.50,
+        },
+    )
+
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+
+    assert out.balance == Decimal("1000")
+    assert out.auto_invested_balance == Decimal("250.50")
+
+
+def test_build_account_data_ignores_auto_invested_without_positive_balance():
+    """An overdraft cannot have money auto-invested; keep the balance as-is
+    instead of making it more negative."""
+    from app.providers.pluggy import _build_account_data
+
+    acc = _bb_account(
+        -50,
+        {
+            "transferNumber": "0001/0001/12345678-9",
+            "closingBalance": -50,
+            "automaticallyInvestedBalance": 20,
+        },
+    )
+
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+
+    assert out.balance == Decimal("-50")
+    assert out.auto_invested_balance == Decimal("0")
+
+
+def test_build_account_data_caps_auto_invested_at_the_reported_balance():
+    """A malformed payload (auto-invested > balance) must never produce a
+    negative cash balance."""
+    from app.providers.pluggy import _build_account_data
+
+    acc = _bb_account(
+        100,
+        {
+            "transferNumber": "0001/0001/12345678-9",
+            "closingBalance": 100,
+            "automaticallyInvestedBalance": 500,
+        },
+    )
+
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+
+    assert out.balance == Decimal("100")
+    assert out.auto_invested_balance == Decimal("100")
+
+
+@pytest.mark.parametrize(
+    "bank_data",
+    [
+        None,  # no bankData at all
+        {},  # bankData without the field
+        {"transferNumber": "0001/0001/12345678-9", "closingBalance": 100},
+        {"automaticallyInvestedBalance": None},
+        {"automaticallyInvestedBalance": "not-a-number"},
+        {"automaticallyInvestedBalance": True},
+        {"automaticallyInvestedBalance": -10},
+    ],
+    ids=[
+        "no-bank-data",
+        "empty-bank-data",
+        "field-absent",
+        "null-field",
+        "non-numeric-field",
+        "bool-field",
+        "negative-field",
+    ],
+)
+def test_build_account_data_keeps_balance_when_field_missing_or_invalid(
+    bank_data,
+):
+    """Missing or invalid automaticallyInvestedBalance keeps the historical
+    behaviour (balance as reported)."""
+    from app.providers.pluggy import _build_account_data
+
+    acc = _bb_account(100, bank_data)
+
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+
+    assert out.balance == Decimal("100")
+    assert out.auto_invested_balance == Decimal("0")
+
+
+def test_auto_invested_balance_accepts_string_numbers():
+    """Pluggy documents the field as a number, but some partners send
+    strings; both must parse."""
+    from app.providers.pluggy import _auto_invested_balance
+
+    assert _auto_invested_balance({"bankData": {"automaticallyInvestedBalance": "100.00"}}) == Decimal("100.00")
+    assert _auto_invested_balance({"bankData": {"automaticallyInvestedBalance": 100.00}}) == Decimal("100.00")
+    assert _auto_invested_balance({}) == Decimal("0")
+    assert _auto_invested_balance({"bankData": "oops"}) == Decimal("0")
+
+
 @pytest.mark.parametrize(
     "pluggy_type,pluggy_subtype,expected",
     [

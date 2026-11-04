@@ -7,6 +7,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { transactionDescription } from '@/lib/transaction-description'
 
 /** Keep long merchant references on one line when there are no word breaks. */
@@ -117,8 +118,11 @@ export function MobileTransactionRow({
               {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
             </span>
           )}
-          {!!tx.transfer_pair_id && (
-            <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" />
+          {isTransferTransaction(tx) && (
+            <ArrowLeftRight
+              className="h-3 w-3 text-blue-600 shrink-0"
+              aria-label={t('transactions.transfer')}
+            />
           )}
           {virtual && (
             <CalendarClock className="h-3 w-3 text-primary shrink-0" />
@@ -169,6 +173,14 @@ export function MobileTransactionRow({
               <span className="text-xs text-muted-foreground truncate">
                 {getAccountName(account)}
               </span>
+              {tx.transfer_counterpart && (
+                <>
+                  <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" aria-hidden="true" />
+                  <span className="text-xs text-muted-foreground truncate">
+                    {tx.transfer_counterpart.account_name}
+                  </span>
+                </>
+              )}
             </div>
           )
         )}

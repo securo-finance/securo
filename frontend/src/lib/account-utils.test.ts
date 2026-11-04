@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { sortAccountsByAbsoluteBalance, sortAccountsByDisplayName, sumAccountsTotal } from './account-utils'
+import {
+  sidebarAccountBalance,
+  sidebarAccounts,
+  sortAccountsByAbsoluteBalance,
+  sortAccountsByDisplayName,
+  sumAccountsTotal,
+} from './account-utils'
 
 describe('sortAccountsByDisplayName', () => {
   it('orders accounts by display name when present and falls back to name', () => {
@@ -88,5 +94,72 @@ describe('sumAccountsTotal', () => {
     ]
 
     expect(sumAccountsTotal(accounts)).toBe(3500)
+  })
+})
+
+describe('sidebarAccounts', () => {
+  it('leaves loans out of the sidebar list', () => {
+    const accounts = [
+      { id: 'checking', type: 'checking' },
+      { id: 'card', type: 'credit_card' },
+      { id: 'mortgage', type: 'loan' },
+    ]
+
+    expect(sidebarAccounts(accounts).map((account) => account.id)).toEqual(['checking', 'card'])
+  })
+})
+
+describe('sidebarAccountBalance', () => {
+  const sharedCard = (extra: Record<string, unknown> = {}) => ({
+    type: 'credit_card',
+    shared_balance_group: 'provider:line-1',
+    balance_primary: null,
+    current_balance: -1500,
+    open_bill_total: null,
+    open_bill_total_primary: null,
+    ...extra,
+  })
+
+  it('shows a shared card own open bill instead of the line balance', () => {
+    const { amount, isPrimary } = sidebarAccountBalance(
+      sharedCard({ open_bill_total: 820.5 }),
+    )
+
+    expect(amount).toBe(-820.5)
+    expect(isPrimary).toBe(false)
+  })
+
+  it('prefers the converted bill when the account is in a foreign currency', () => {
+    const { amount, isPrimary } = sidebarAccountBalance(
+      sharedCard({ open_bill_total: 200, open_bill_total_primary: 1000 }),
+    )
+
+    expect(amount).toBe(-1000)
+    expect(isPrimary).toBe(true)
+  })
+
+  it('keeps the balance when a shared card has no open bill', () => {
+    const { amount, isPrimary } = sidebarAccountBalance(sharedCard())
+
+    expect(amount).toBe(-1500)
+    expect(isPrimary).toBe(false)
+  })
+
+  it('keeps the balance for a non-shared card even if a bill value is present', () => {
+    const { amount, isPrimary } = sidebarAccountBalance(
+      sharedCard({ shared_balance_group: null, open_bill_total: 700 }),
+    )
+
+    expect(amount).toBe(-1500)
+    expect(isPrimary).toBe(false)
+  })
+
+  it('keeps the converted balance for a non-credit-card account', () => {
+    const { amount, isPrimary } = sidebarAccountBalance(
+      sharedCard({ type: 'checking', balance_primary: 90, open_bill_total: null }),
+    )
+
+    expect(amount).toBe(90)
+    expect(isPrimary).toBe(true)
   })
 })

@@ -670,6 +670,53 @@ async def test_projected_transactions_account_id_and_range(client, auth_headers,
 
 
 @pytest.mark.asyncio
+async def test_projected_transactions_carry_category_transfer_flag(
+    client, auth_headers, test_account, test_categories
+):
+    """Each projection says whether its category is a transfer category, so a
+    projected row can be badged like a posted row in that category."""
+    next_month = _next_month_str()
+
+    cat_resp = await client.post(
+        "/api/categories",
+        json={"name": "Savings move", "icon": "piggy-bank", "color": "#000000", "treat_as_transfer": True},
+        headers=auth_headers,
+    )
+    assert cat_resp.status_code == 201
+    transfer_category_id = cat_resp.json()["id"]
+
+    for desc, category_id in (
+        ("Move to savings", transfer_category_id),
+        ("Rent", str(test_categories[0].id)),
+        ("No category", None),
+    ):
+        rec_resp = await client.post(
+            "/api/recurring-transactions",
+            json={
+                "description": desc,
+                "amount": 100.00,
+                "currency": "BRL",
+                "type": "debit",
+                "frequency": "monthly",
+                "start_date": next_month,
+                "category_id": category_id,
+                "account_id": str(test_account.id),
+            },
+            headers=auth_headers,
+        )
+        assert rec_resp.status_code == 201
+
+    resp = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": next_month, "to": next_month},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    flags = {p["description"]: p["category_treat_as_transfer"] for p in resp.json()}
+    assert flags == {"Move to savings": True, "Rent": False, "No category": False}
+
+
+@pytest.mark.asyncio
 async def test_projected_transactions_range_excludes_outside_dates(
     client, auth_headers, test_account, test_categories
 ):

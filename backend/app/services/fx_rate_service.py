@@ -197,6 +197,56 @@ async def _get_closest_rate(session: AsyncSession, currency: str, target: date) 
     return result
 
 
+async def has_rate(
+    session: AsyncSession,
+    from_currency: str,
+    to_currency: str,
+    target_date: Optional[date] = None,
+    *,
+    allow_fetch: bool = True,
+) -> bool:
+    """Whether a real FX rate can be resolved between two currencies.
+
+    Same resolution chain as :func:`get_rate` (exact date, on-demand fetch,
+    closest stored date), but reports availability instead of falling back
+    to 1:1. Callers use this to tell a genuine conversion apart from an
+    unresolvable one (issue #574).
+    """
+    rate = await _resolve_rate(
+        session, from_currency, to_currency, target_date, allow_fetch=allow_fetch
+    )
+    return rate is not None
+
+
+async def convert_or_none(
+    session: AsyncSession,
+    amount: Decimal,
+    from_currency: str,
+    to_currency: str,
+    target_date: Optional[date] = None,
+    *,
+    allow_fetch: bool = True,
+    decimals: int = 2,
+) -> tuple[Optional[Decimal], Optional[Decimal]]:
+    """Convert an amount, or return (None, None) when no rate can be resolved.
+
+    Same precision rules as :func:`convert`, but never falls back to 1:1.
+    Callers keep the primary-currency value NULL instead of displaying a
+    fake amount, so mixed-currency totals never silently sum raw foreign
+    values (issue #574).
+    """
+    if from_currency == to_currency:
+        return amount, Decimal("1")
+
+    rate = await _resolve_rate(
+        session, from_currency, to_currency, target_date, allow_fetch=allow_fetch
+    )
+    if rate is None:
+        return None, None
+    converted = amount * rate
+    return converted.quantize(Decimal(1).scaleb(-decimals)), rate
+
+
 async def convert(
     session: AsyncSession,
     amount: Decimal,

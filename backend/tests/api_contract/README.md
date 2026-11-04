@@ -43,8 +43,9 @@ Each operation fans out into variants (`cases.py`):
 | `anon`       | nobody                    | random ids               | 401             |
 
 `ok` and `viewer` run against a **world**: one business workspace seeded
-through the API (`world.py`), rebuilt per case so DELETEs can't leak. The
-other variants run in the default personal workspace without seeded data.
+through the API (`world.py`) once per worker, then restored (database and
+stored files) before every case so DELETEs can't leak. The other variants
+run in the default personal workspace without seeded data.
 
 Outbound network is blocked. Routes that call a provider answer with their
 own error handling (502/503), and that answer is part of the contract.
@@ -58,7 +59,7 @@ A failing case means the route's behaviour changed:
   baseline in the same PR. The JSON diff documents the change for review.
 - **Regression**: fix the code.
 
-Regenerate (serial, about 2 minutes):
+Regenerate (serial, under a minute):
 
 ```bash
 UPDATE_API_CONTRACT=1 uv run pytest tests/api_contract -n 0

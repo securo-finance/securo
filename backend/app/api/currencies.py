@@ -55,6 +55,7 @@ CURRENCY_META = {
     "HKD": {"symbol": "HK$", "name": "Hong Kong Dollar", "flag": "\U0001F1ED\U0001F1F0"},
     "TWD": {"symbol": "NT$", "name": "New Taiwan Dollar", "flag": "\U0001F1F9\U0001F1FC"},
     "ZAR": {"symbol": "R", "name": "South African Rand", "flag": "\U0001F1FF\U0001F1E6"},
+    "GEL": {"symbol": "₾", "name": "Georgian Lari", "flag": "\U0001F1EC\U0001F1EA"},
 }
 
 

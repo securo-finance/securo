@@ -287,3 +287,15 @@ async def test_currencies_include_zar_with_metadata(client: AsyncClient):
     assert zar["symbol"] == "R"
     assert zar["name"] == "South African Rand"
     assert zar["flag"] == "🇿🇦"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_gel_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    gel = next((currency for currency in data if currency["code"] == "GEL"), None)
+
+    assert gel is not None
+    assert gel["symbol"] == "₾"
+    assert gel["name"] == "Georgian Lari"
+    assert gel["flag"] == "🇬🇪"

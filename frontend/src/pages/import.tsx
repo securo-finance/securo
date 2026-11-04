@@ -9,7 +9,12 @@ import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import type { ImportPreviewTransaction, ImportReviewTransaction, FailedRow } from '@/types'
+import type {
+  AccountType,
+  ImportPreviewTransaction,
+  ImportReviewTransaction,
+  FailedRow,
+} from '@/types'
 import { Upload, FileText, X, CheckCircle2, AlertCircle, Settings2, Download } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/page-header'
@@ -20,11 +25,13 @@ import { ImportHistory } from '@/components/import-history'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 
-const TYPE_LABELS: Record<string, string> = {
+const TYPE_LABELS: Record<AccountType, string> = {
   checking: 'accounts.typeChecking',
   savings: 'accounts.typeSavings',
   credit_card: 'accounts.typeCreditCard',
+  loan: 'accounts.typeLoan',
   investment: 'accounts.typeInvestment',
+  wallet: 'accounts.typeWallet',
 }
 
 // Securo fields a CSV column can be mapped to, in display order.
@@ -387,7 +394,7 @@ function TransactionImportPanel() {
               >
                 <option value="">{t('import.selectAccount')}</option>
                 {sortAccountsByDisplayName(accountsList ?? []).map((acc) => (
-                  <option key={acc.id} value={acc.id}>{getAccountName(acc)} ({t(TYPE_LABELS[acc.type] || acc.type)})</option>
+                  <option key={acc.id} value={acc.id}>{getAccountName(acc)} ({t(TYPE_LABELS[acc.type as AccountType] || acc.type)})</option>
                 ))}
               </select>
               {!selectedAccount && (

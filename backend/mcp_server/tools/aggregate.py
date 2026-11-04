@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.transaction import Transaction
 from app.models.category import Category
+from app.services._query_filters import is_not_transfer
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_workspace_id
@@ -36,7 +37,7 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_
             "tx_type": {"type": "string", "enum": ["expense", "income"], "description": "Filter to expenses or income only"},
             "description_contains": {"type": "string", "description": "Case-insensitive substring match against the transaction description — use this to scope to a merchant/keyword like 'uber', 'spotify', 'amigos do bem'."},
             "status": {"type": "string", "enum": ["posted", "pending", "all"], "default": "posted", "description": "Default 'posted' = only money that already moved. Use 'pending' for scheduled/recurring not yet settled, or 'all' to include both."},
-            "exclude_transfers": {"type": "boolean", "default": True},
+            "exclude_transfers": {"type": "boolean", "default": True, "description": "Leave out transfers: paired transfer legs and rows in a category flagged treat_as_transfer."},
             "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 25, "description": "Max bucket rows in the result. Capped at 50."},
         },
         "additionalProperties": False,
@@ -137,7 +138,9 @@ async def aggregate(
         q = q.where(Transaction.type == "credit")
 
     if exclude_transfers:
-        q = q.where(Transaction.transfer_pair_id.is_(None))
+        # Paired transfers and rows in a `treat_as_transfer` category, the
+        # same transfers the reports leave out of income and expenses.
+        q = q.where(is_not_transfer())
 
     q = q.group_by(bucket_id).order_by(value_expr.desc().nulls_last()).limit(int(limit))
 

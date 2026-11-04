@@ -1,5 +1,11 @@
 import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react'
-import { getAccountName, sortAccountsByAbsoluteBalance, sumAccountsTotal } from '@/lib/account-utils'
+import {
+  getAccountName,
+  sidebarAccountBalance,
+  sidebarAccounts,
+  sortAccountsByAbsoluteBalance,
+  sumAccountsTotal,
+} from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
@@ -190,7 +196,7 @@ export function AppLayout() {
     queryFn: () => accountsApi.list(),
   })
 
-  const allAccounts = accountsList ?? []
+  const allAccounts = sidebarAccounts(accountsList ?? [])
   // When a collection is active, the sidebar list + total reflect only its
   // accounts (issue #105). null = all accounts.
   const visibleAccounts = activeAccountIds
@@ -508,9 +514,9 @@ export function AppLayout() {
               </button>
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
-                  {sortAccountsByAbsoluteBalance(visibleAccounts, (a) => a.balance_primary ?? a.current_balance).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
-                    const balance = Number(acc.balance_primary ?? acc.current_balance) || 0
-                    const balanceCurrency = acc.balance_primary != null ? userCurrency : acc.currency
+                  {sortAccountsByAbsoluteBalance(visibleAccounts, (a) => sidebarAccountBalance(a).amount).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
+                    const { amount: balance, isPrimary: balanceIsPrimary } = sidebarAccountBalance(acc)
+                    const balanceCurrency = balanceIsPrimary ? userCurrency : acc.currency
                     const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
 
                     return (

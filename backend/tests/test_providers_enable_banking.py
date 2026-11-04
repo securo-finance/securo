@@ -27,6 +27,7 @@ from app.providers.enable_banking import (
     FALLBACK_HISTORY_DAYS,
     EnableBankingProvider,
     _account_identifier,
+    _entry_reference_external_id,
     _map_cash_account_type,
     _txn_fingerprint,
 )
@@ -102,6 +103,7 @@ def test_cash_account_type_mapping():
     assert _map_cash_account_type("CACC") == "checking"
     assert _map_cash_account_type("SVGS") == "savings"
     assert _map_cash_account_type("CARD") == "credit_card"
+    assert _map_cash_account_type("LOAN") == "checking"
     assert _map_cash_account_type(None) == "checking"
     assert _map_cash_account_type("UNKNOWN_TYPE") == "checking"
 
@@ -321,6 +323,56 @@ async def test_handle_oauth_callback_builds_connection_data(eb_keys):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reported", ["-250000.00", "250000.00"])
+async def test_loan_account_keeps_the_bank_reported_balance(eb_keys, reported):
+    """Sign normalization happens on storage, by the account's stored type
+    (account_service._provider_to_internal_balance), not in the provider."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions":
+            return httpx.Response(
+                200,
+                json={
+                    "session_id": "sess-loan",
+                    "accounts": [
+                        {
+                            "uid": "loan-uid-1",
+                            "currency": "EUR",
+                            "display_name": "Mortgage",
+                            "cash_account_type": "LOAN",
+                        }
+                    ],
+                    "aspsp": {"name": "ING", "country": "NL"},
+                    "access": {"valid_until": "2026-12-01T00:00:00Z"},
+                },
+            )
+        if path == "/accounts/loan-uid-1/balances":
+            return httpx.Response(
+                200,
+                json={
+                    "balances": [
+                        {
+                            "balance_type": "CLBD",
+                            "balance_amount": {"amount": reported, "currency": "EUR"},
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    with _patch_client(provider, handler):
+        conn = await provider.handle_oauth_callback("code-loan")
+    acc = conn.accounts[0]
+    # A LOAN account still maps to checking: loans on a bank connection are
+    # not modelled yet. What matters here is that the provider passes the
+    # reported balance through untouched, whatever the type.
+    assert acc.type == "checking"
+    assert acc.balance == Decimal(reported)
+
+
+@pytest.mark.asyncio
 async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
     """Both `transactions:{booked,pending}` and flat list must produce the
     same internal TransactionData list."""
@@ -361,7 +413,11 @@ async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
     debit = next(t for t in nested if t.type == "debit")
     assert debit.amount == Decimal("10.00")
     assert debit.status == "posted"
-    assert debit.external_id == "ref-1"
+    assert debit.external_id == _entry_reference_external_id(
+        "ref-1",
+        {"amount": "10.00", "currency": "EUR"},
+        nested_page["transactions"]["booked"][0],
+    )
     credit = next(t for t in nested if t.type == "credit")
     assert credit.status == "pending"
 
@@ -430,7 +486,12 @@ async def test_get_transactions_stops_on_repeated_continuation_key(eb_keys, capl
     assert len(requests) == 2
     assert requests[0].url.params.get("continuation_key") is None
     assert requests[1].url.params["continuation_key"] == "cursor-a"
-    assert [transaction.external_id for transaction in transactions] == ["looped-tx-1"]
+    expected_id = _entry_reference_external_id(
+        "looped-tx-1",
+        {"amount": "10.00", "currency": "EUR"},
+        page["transactions"][0],
+    )
+    assert [transaction.external_id for transaction in transactions] == [expected_id]
     assert "pagination loop detected" in caplog.text
 
 
@@ -498,7 +559,12 @@ async def test_get_transactions_retries_shorter_window_on_wrong_period(eb_keys):
         DEFAULT_HISTORY_DAYS,
         FALLBACK_HISTORY_DAYS,
     ]
-    assert [t.external_id for t in transactions] == ["tx-1"]
+    expected_id = _entry_reference_external_id(
+        "tx-1",
+        {"amount": "5.00", "currency": "EUR"},
+        {"booking_date": date.today().isoformat(), "credit_debit_indicator": "DBIT"},
+    )
+    assert [t.external_id for t in transactions] == [expected_id]
 
 
 @pytest.mark.asyncio
@@ -813,6 +879,92 @@ def test_build_transaction_treats_entry_reference_zero_as_missing():
     assert tx1.external_id != tx2.external_id
 
 
+def test_build_transaction_disambiguates_shared_batch_entry_reference():
+    """#753 follow-up: a shared settlement/batch reference must not collide.
+
+    An Austrian bank reuses the same entry_reference for a fee line and its
+    related main charge. Both carry a booking and a value date, so the #756
+    fallback for an empty or "0" reference never applies. The fixture
+    mirrors the reported pair: same reference, booking date and remittance
+    text, different amounts and value dates.
+
+    Wise reuses the card-authorization id the same way for every follow-on
+    charge against one authorization, which this pair covers as well.
+    """
+    provider = EnableBankingProvider()
+    fee = {
+        "entry_reference": "ref-1",
+        "transaction_amount": {"currency": "EUR", "amount": "0.55"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-31",
+        "value_date": "2026-08-31",
+        "remittance_information": ["E-COMM 1006,45 AT K3 26.08. 12:53"],
+    }
+    main_charge = {
+        "entry_reference": "ref-1",
+        "transaction_amount": {"currency": "EUR", "amount": "1006.45"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-31",
+        "value_date": "2026-08-29",
+        "remittance_information": ["E-COMM 1006,45 AT K3 26.08. 12:53"],
+    }
+    tx_fee = provider._build_transaction("acc-1", fee, "posted", "auto")
+    tx_main = provider._build_transaction("acc-1", main_charge, "posted", "auto")
+    assert tx_fee is not None and tx_main is not None
+    assert tx_fee.external_id != tx_main.external_id
+    assert tx_fee.amount == Decimal("0.55")
+    assert tx_main.amount == Decimal("1006.45")
+
+
+def test_build_transaction_entry_reference_external_id_stable_across_refetch():
+    """A genuine re-fetch of the same booked transaction (identical payload)
+    must still resolve to the same external_id, or every sync would
+    re-insert it as new."""
+    provider = EnableBankingProvider()
+    raw = {
+        "entry_reference": "ref-stable-1",
+        "transaction_amount": {"currency": "EUR", "amount": "12.00"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-31",
+        "value_date": "2026-08-31",
+    }
+    tx1 = provider._build_transaction("acc-1", raw, "posted", "auto")
+    tx2 = provider._build_transaction("acc-1", dict(raw), "posted", "auto")
+    assert tx1 is not None and tx2 is not None
+    assert tx1.external_id == tx2.external_id
+
+
+def test_entry_reference_external_id_differs_on_amount_or_date():
+    base_amount = {"amount": "10.00", "currency": "EUR"}
+    base_raw = {"booking_date": "2026-08-31", "value_date": "2026-08-31"}
+    baseline = _entry_reference_external_id("ref-x", base_amount, base_raw)
+
+    other_amount = _entry_reference_external_id(
+        "ref-x", {"amount": "10.01", "currency": "EUR"}, base_raw
+    )
+    other_date = _entry_reference_external_id(
+        "ref-x", base_amount, {"booking_date": "2026-09-01", "value_date": "2026-08-31"}
+    )
+    assert baseline != other_amount
+    assert baseline != other_date
+
+
+def test_entry_reference_external_id_stable_across_equivalent_amount_spellings():
+    """"12.00" and "12.0" are the same Decimal amount.
+    If we get 12.00 or 12.0 or 12 we need to calculate the same external id"""
+    base_raw = {"booking_date": "2026-08-31", "value_date": "2026-08-31"}
+    a = _entry_reference_external_id(
+        "ref-x", {"amount": "12.00", "currency": "EUR"}, base_raw
+    )
+    b = _entry_reference_external_id(
+        "ref-x", {"amount": "12.0", "currency": "EUR"}, base_raw
+    )
+    c = _entry_reference_external_id(
+        "ref-x", {"amount": "12", "currency": "EUR"}, base_raw
+    )
+    assert a == b == c
+
+
 def test_txn_fingerprint_includes_transaction_date():
     raw1 = {
         "transaction_amount": {"amount": "20.00", "currency": "EUR"},
@@ -829,3 +981,195 @@ def test_txn_fingerprint_includes_transaction_date():
     assert fp1 != fp2
 
 
+def test_entry_reference_external_id_differs_on_other_transaction_details():
+    """A shared entry_reference with equal amount, currency and dates must
+    still separate a charge from its refund and settlement lines for
+    different counterparties."""
+    amount = {"amount": "10.00", "currency": "EUR"}
+    base_raw = {
+        "booking_date": "2026-08-31",
+        "value_date": "2026-08-31",
+        "credit_debit_indicator": "DBIT",
+        "remittance_information": ["Card purchase"],
+        "creditor": {"name": "Shop A"},
+    }
+    baseline = _entry_reference_external_id("ref-x", amount, base_raw)
+
+    refund = _entry_reference_external_id(
+        "ref-x", amount, {**base_raw, "credit_debit_indicator": "CRDT"}
+    )
+    other_remittance = _entry_reference_external_id(
+        "ref-x", amount, {**base_raw, "remittance_information": ["Card purchase 2"]}
+    )
+    other_creditor = _entry_reference_external_id(
+        "ref-x", amount, {**base_raw, "creditor": {"name": "Shop B"}}
+    )
+    assert len({baseline, refund, other_remittance, other_creditor}) == 4
+    assert baseline == _entry_reference_external_id("ref-x", amount, dict(base_raw))
+
+
+# ----- session status on sync -----
+
+
+def _session_payload(status: str) -> dict:
+    """GET /sessions/{id} as Enable Banking returns it (account uids only).
+
+    `valid_until` is always in the future: the status alone must decide."""
+    valid_until = (
+        (datetime.now(timezone.utc) + timedelta(days=180))
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+    return {
+        "status": status,
+        "accounts": ["acc-uid-1"],
+        "accounts_data": [{"uid": "acc-uid-1", "identification_hash": "hash-1"}],
+        "aspsp": {"name": "Openbank", "country": "ES"},
+        "access": {"valid_until": valid_until},
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_raises_when_session_expired_at_bank(eb_keys):
+    """The bank can end consent long before `valid_until`. EB then still
+    answers GET /sessions with 200 but `status: EXPIRED`, and every account
+    call fails with a 400 ASPSP_ERROR. That must surface as an expired
+    session, not as a sync that silently finds no accounts."""
+    provider = EnableBankingProvider()
+    details_calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-1":
+            return httpx.Response(200, json=_session_payload("EXPIRED"))
+        details_calls.append(request.url.path)
+        return httpx.Response(
+            400,
+            json={
+                "code": 400,
+                "message": "Error interacting with ASPSP",
+                "detail": {"message": "Unauthorized, authentication failure"},
+                "error": "ASPSP_ERROR",
+            },
+        )
+
+    with _patch_client(provider, handler):
+        with pytest.raises(SessionExpiredError):
+            await provider.get_accounts({"session_id": "sess-1"})
+    assert details_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["REVOKED", "CLOSED", "CANCELLED", "INVALID"])
+async def test_get_accounts_raises_for_other_terminal_session_states(eb_keys, status):
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_session_payload(status))
+
+    with _patch_client(provider, handler):
+        with pytest.raises(SessionExpiredError):
+            await provider.get_accounts({"session_id": "sess-1"})
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_authorized_session_returns_accounts(eb_keys):
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-1":
+            return httpx.Response(200, json=_session_payload("AUTHORIZED"))
+        if path == "/accounts/acc-uid-1/details":
+            return httpx.Response(
+                200,
+                json={
+                    "uid": "acc-uid-1",
+                    "name": "CUENTA CORRIENTE",
+                    "currency": "EUR",
+                    "cash_account_type": "CACC",
+                    "account_id": {"iban": "ES0000000000000000001172"},
+                },
+            )
+        if path == "/accounts/acc-uid-1/balances":
+            return httpx.Response(
+                200,
+                json={"balances": [{
+                    "balance_type": "CLBD",
+                    "balance_amount": {"amount": "859.43", "currency": "EUR"},
+                }]},
+            )
+        return httpx.Response(404)
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts({"session_id": "sess-1"})
+    assert [a.external_id for a in accounts] == ["acc-uid-1"]
+    assert accounts[0].balance == Decimal("859.43")
+
+
+def _settling_payload(entry_ref: str, amount: str, *, booking_date: str | None) -> dict:
+    return {
+        "entry_reference": entry_ref,
+        "transaction_amount": {"amount": amount, "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": booking_date,
+        "value_date": "2026-05-10",
+        "remittance_information": ["SUPERMARKT 12 AT"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_drops_pending_twin_of_a_booked_entry(eb_keys):
+    """An institution can list one operation as booked and still as pending
+    while it settles. The booked entry is the truth; its pending twin would
+    hash to a second id and land as a row that never clears."""
+    provider = EnableBankingProvider()
+    page = {
+        "transactions": {
+            "booked": [_settling_payload("auth-9", "25.00", booking_date="2026-05-11")],
+            "pending": [_settling_payload("auth-9", "25.00", booking_date=None)],
+        },
+        "continuation_key": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    assert [(t.status, t.date) for t in txns] == [("posted", date(2026, 5, 11))]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_keeps_pending_siblings_sharing_a_reference(eb_keys):
+    """Two equal charges on one card authorization share the reference (#753).
+    One booking does not make the other pending entry its twin, so an
+    ambiguous reference keeps every entry."""
+    provider = EnableBankingProvider()
+    page = {
+        "transactions": {
+            "booked": [_settling_payload("auth-1", "9.99", booking_date="2026-05-11")],
+            "pending": [
+                _settling_payload("auth-1", "9.99", booking_date=None),
+                dict(
+                    _settling_payload("auth-1", "9.99", booking_date=None),
+                    value_date="2026-05-12",
+                ),
+            ],
+        },
+        "continuation_key": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    assert sorted(t.status for t in txns) == ["pending", "pending", "posted"]
+    assert len({t.external_id for t in txns}) == 3

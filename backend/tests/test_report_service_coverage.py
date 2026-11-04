@@ -343,6 +343,59 @@ async def test_income_expenses_pending_is_projected_not_actual(
     assert bd["projectedExpenses"] == pytest.approx(50.0)
 
 
+async def test_income_expenses_split_pending_projects_owner_share(
+    session, test_user, test_workspace
+):
+    """A pending row split half with a friend projects only the owner's half,
+    in the totals and in the category composition and trend alike."""
+    from app.schemas.group import GroupCreate, GroupMemberCreate
+    from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
+    from app.services import group_service, split_service
+
+    acct = await _make_account(session, test_user.id, "IE Split Pending")
+    cat = await _make_category(session, test_user.id, "Shared")
+    today = date.today()
+    tx = await _add_txn(
+        session, test_user.id, acct.id, 80, "debit", today,
+        category_id=cat.id, status="pending",
+    )
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id,
+        GroupCreate(name="IE Split", default_currency="BRL"),
+    )
+    members = []
+    for name in ("Me", "Friend"):
+        member = await group_service.create_member(
+            session, group.id, test_workspace.id,
+            GroupMemberCreate(name=name, is_self=(name == "Me")),
+        )
+        assert member is not None
+        members.append(member)
+    await split_service.replace_splits(
+        session,
+        tx,
+        TransactionSplitsInput(
+            share_type="exact",
+            splits=[
+                TransactionSplitInput(group_member_id=m.id, share_amount=Decimal("40"))
+                for m in members
+            ],
+        ),
+        test_user.id,
+    )
+    await session.commit()
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1, interval="monthly"
+    )
+    bd = {b.key: b.value for b in report.summary.breakdowns}
+    assert bd["projectedExpenses"] == pytest.approx(40.0)
+    shared = next(c for c in report.composition if c.label == "Shared")
+    assert shared.value == pytest.approx(40.0)
+    shared_trend = next(ct for ct in report.category_trend if ct.label == "Shared")
+    assert shared_trend.total == pytest.approx(40.0)
+
+
 async def test_income_expenses_many_categories_triggers_other_bucket(session, test_user, test_workspace):
     """More than CATEGORY_TREND_TOP_N expense categories → an 'Other' bucket."""
     acct = await _make_account(session, test_user.id, "IE Many")

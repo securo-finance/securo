@@ -127,6 +127,7 @@ describe('a non-credit-card account with more rows than one page', () => {
       recurring_id: 'rec-1', account_id: 'acc-1', description: 'Rent', amount: 500,
       amount_primary: null, currency: 'BRL', type: 'debit', date: '2026-09-28',
       category_id: null, category_name: null, category_icon: null, category_color: null,
+      category_treat_as_transfer: false,
     }])
   })
 
@@ -176,7 +177,8 @@ describe('a non-credit-card account with more rows than one page', () => {
 
     await renderPage()
 
-    expect(await screen.findByText('R$20,000')).toBeInTheDocument()
+    // The axis ticks are compact, so the series shows up as "R$20.0K".
+    expect(await screen.findByText('R$20.0K')).toBeInTheDocument()
     expect(api.accounts.runningBalance).toHaveBeenCalledWith('acc-1', '2026-09-01', '2026-09-30')
   })
 })

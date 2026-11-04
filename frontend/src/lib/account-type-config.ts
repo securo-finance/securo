@@ -1,10 +1,11 @@
 import type { ElementType } from 'react'
 import { Building2, PiggyBank, CreditCard, TrendingUp, Wallet, Landmark } from 'lucide-react'
+import type { AccountType } from '@/types'
 
 // Account-type → icon/color, the fallback shown when an account has no bank
 // logo (manual accounts, and connected accounts whose provider exposes none).
 export const ACCOUNT_TYPE_CONFIG: Record<
-  string,
+  AccountType,
   { icon: ElementType; color: string; bg: string; label: string }
 > = {
   checking:    { icon: Building2,   color: 'text-indigo-600',  bg: 'bg-indigo-100',  label: 'accounts.typeChecking' },
@@ -16,5 +17,5 @@ export const ACCOUNT_TYPE_CONFIG: Record<
 }
 
 export function getAccountTypeConfig(type: string) {
-  return ACCOUNT_TYPE_CONFIG[type] ?? ACCOUNT_TYPE_CONFIG['checking']
+  return ACCOUNT_TYPE_CONFIG[type as AccountType] ?? ACCOUNT_TYPE_CONFIG.checking
 }

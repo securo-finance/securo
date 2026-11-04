@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   formatAmountInput,
+  formatCompactCurrency,
   formatCurrency,
+  formatSignedAmount,
   parseAmountInput,
   resolveDateLocale,
   resolveDateOrder,
@@ -37,6 +39,7 @@ describe('resolveDisplayLocale', () => {
     expect(resolveDisplayLocale('auto', 'HKD')).toBe('zh-HK')
     expect(resolveDisplayLocale('auto', 'TWD')).toBe('zh-TW')
     expect(resolveDisplayLocale('auto', 'ZAR')).toBe('en-ZA')
+    expect(resolveDisplayLocale('auto', 'GEL')).toBe('en-GE')
   })
 
   it('treats a missing number format like auto', () => {
@@ -169,6 +172,30 @@ describe('formatCurrency', () => {
   })
 })
 
+describe('formatSignedAmount', () => {
+  it('prefixes credits with + and debits with -', () => {
+    expect(formatSignedAmount(100, 'credit', 'USD', 'en-US')).toBe('+$100.00')
+    expect(formatSignedAmount(100, 'debit', 'USD', 'en-US')).toBe('-$100.00')
+  })
+
+  it('takes the sign from the type, not from a stored negative amount', () => {
+    expect(formatSignedAmount(-100, 'debit', 'USD', 'en-US')).toBe('-$100.00')
+    expect(formatSignedAmount(-100, 'credit', 'USD', 'en-US')).toBe('+$100.00')
+    // any type other than debit counts as positive, like the rule engine
+    expect(formatSignedAmount(100, 'other', 'USD', 'en-US')).toBe('+$100.00')
+  })
+
+  it('leaves amounts that round to zero unsigned', () => {
+    expect(formatSignedAmount(0, 'debit', 'USD', 'en-US')).toBe('$0.00')
+    expect(formatSignedAmount(0.004, 'debit', 'USD', 'en-US')).toBe('$0.00')
+    expect(formatSignedAmount(0, 'credit', 'USD', 'en-US')).toBe('$0.00')
+    // Precision follows the currency: 0.4 JPY rounds to zero.
+    expect(normalize(formatSignedAmount(0.4, 'debit', 'JPY', 'ja-JP'))).toBe(
+      normalize(formatCurrency(0, 'JPY', 'ja-JP')),
+    )
+  })
+})
+
 describe('parseAmountInput', () => {
   it('reads comma decimals under a dot_comma locale', () => {
     expect(parseAmountInput('1,50', 'de-DE')).toBe(1.5)
@@ -233,5 +260,29 @@ describe('formatAmountInput', () => {
 
   it('falls back to a dot format on a malformed locale', () => {
     expect(formatAmountInput(1.5, 'not a locale')).toBe('1.50')
+  })
+})
+
+describe('formatCompactCurrency', () => {
+  it('keeps a six-figure amount short enough for a chart tick', () => {
+    // The full form is "-R$340,000.00": far past the width an axis tick gets,
+    // which is what clipped the minus sign off a loan's balance chart.
+    const compact = normalize(formatCompactCurrency(-340000, 'BRL', 'en-US'))
+    expect(compact.length).toBeLessThan('-R$340,000.00'.length)
+    expect(compact.startsWith('-')).toBe(true)
+  })
+
+  it('keeps the sign on every magnitude', () => {
+    for (const value of [-1_500_000, -340_000, -1_200, -5]) {
+      expect(normalize(formatCompactCurrency(value, 'USD', 'en-US')).startsWith('-')).toBe(true)
+    }
+  })
+
+  it('renders a null value as the empty-value glyph', () => {
+    expect(formatCompactCurrency(null)).toBe('\u2014')
+  })
+
+  it('falls back to a dollar format on a malformed locale', () => {
+    expect(normalize(formatCompactCurrency(1500, 'USD', 'not a locale'))).toBe('$1.5K')
   })
 })

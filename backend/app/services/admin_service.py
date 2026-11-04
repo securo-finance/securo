@@ -247,10 +247,13 @@ async def set_app_setting(session: AsyncSession, key: str, value: str) -> AppSet
 
 
 async def is_registration_enabled(session: AsyncSession) -> bool:
+    """Whether public sign-up is open.
+
+    The value an administrator saved wins; with nothing saved, the
+    REGISTRATION_ENABLED environment variable decides."""
     setting = await get_app_setting(session, "registration_enabled")
     if setting:
         return setting.value.lower() == "true"
-    # Fall back to env var
     return get_settings().registration_enabled
 
 

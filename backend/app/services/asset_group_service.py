@@ -14,7 +14,7 @@ from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.user import User
 from app.schemas.asset_group import AssetGroupCreate, AssetGroupRead, AssetGroupUpdate
-from app.services.fx_rate_service import convert
+from app.services.fx_rate_service import convert_or_none
 
 
 async def ensure_group_in_workspace(
@@ -106,11 +106,12 @@ async def _rollup(
         if asset.currency == primary_currency:
             current_value_primary += latest
         else:
-            converted, _ = await convert(
+            converted, _ = await convert_or_none(
                 session, latest, asset.currency, primary_currency,
                 decimals=ASSET_PRICE_DECIMALS,
             )
-            current_value_primary += converted
+            if converted is not None:
+                current_value_primary += converted
     return asset_count, current_value, current_value_primary
 
 

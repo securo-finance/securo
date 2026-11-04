@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { getLoanDebtPrimary, getPropertyEquity } from '@/lib/property-equity'
 
 describe('property equity', () => {
-  const property = { id: 'home', current_value: 593000, current_value_primary: null }
+  const property = { id: 'home', currency: 'USD', current_value: 593000, current_value_primary: null }
   const loans = [
     { type: 'loan', secured_asset_id: 'home', current_balance: -194723.17, balance_primary: null },
     { type: 'loan', secured_asset_id: 'home', current_balance: -23556.84, balance_primary: null },
@@ -11,7 +11,7 @@ describe('property equity', () => {
   ]
 
   it('deducts every loan linked to the property once', () => {
-    const result = getPropertyEquity(property, loans)
+    const result = getPropertyEquity(property, loans, 'USD')
     expect(result?.debt).toBeCloseTo(218280.01, 2)
     expect(result?.equity).toBeCloseTo(374719.99, 2)
   })
@@ -20,6 +20,7 @@ describe('property equity', () => {
     const result = getPropertyEquity(
       { ...property, current_value_primary: 600000 },
       [{ ...loans[0], balance_primary: -200000 }],
+      'USD',
     )
     expect(result).toEqual({ value: 600000, debt: 200000, equity: 400000 })
   })
@@ -29,6 +30,11 @@ describe('property equity', () => {
   })
 
   it('has no equity to show for a property without a value', () => {
-    expect(getPropertyEquity({ ...property, current_value: null }, loans)).toBeNull()
+    expect(getPropertyEquity({ ...property, current_value: null }, loans, 'USD')).toBeNull()
+  })
+
+  it('does not fabricate equity for a foreign property without an FX rate', () => {
+    const foreignProperty = { ...property, currency: 'EUR' }
+    expect(getPropertyEquity(foreignProperty, loans, 'USD')).toBeNull()
   })
 })

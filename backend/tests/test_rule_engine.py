@@ -165,13 +165,13 @@ def test_safe_alternation_regex_remains_selective():
 
 def test_amount_lt():
     conditions = [{"field": "amount", "op": "lt", "value": 50}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_amount_gt_no_match():
     conditions = [{"field": "amount", "op": "gt", "value": 100}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is False
 
 
@@ -319,38 +319,92 @@ def test_not_equals_same_value():
 
 def test_gte_equal():
     conditions = [{"field": "amount", "op": "gte", "value": 25.50}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_gte_greater():
     conditions = [{"field": "amount", "op": "gte", "value": 20}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_gte_less():
     conditions = [{"field": "amount", "op": "gte", "value": 30}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is False
 
 
 def test_lte_equal():
     conditions = [{"field": "amount", "op": "lte", "value": 25.50}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_lte_less():
     conditions = [{"field": "amount", "op": "lte", "value": 30}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_lte_greater():
     conditions = [{"field": "amount", "op": "lte", "value": 20}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     assert evaluate_conditions("and", conditions, tx) is False
+
+
+# --- signed amount: debits are negative, credits positive (issue #981) ---
+
+
+def test_amount_gt_zero_matches_credits_only():
+    conditions = [{"field": "amount", "op": "gt", "value": 0}]
+    assert evaluate_conditions("and", conditions, make_tx(type="credit", amount=Decimal("100"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("100"))) is False
+
+
+def test_amount_lt_zero_matches_debits_only():
+    conditions = [{"field": "amount", "op": "lt", "value": 0}]
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("100"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="credit", amount=Decimal("100"))) is False
+
+
+def test_amount_negative_threshold_selects_large_expenses():
+    conditions = [{"field": "amount", "op": "lte", "value": -50}]
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("75"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("25"))) is False
+    assert evaluate_conditions("and", conditions, make_tx(type="credit", amount=Decimal("75"))) is False
+
+
+def test_amount_positive_threshold_selects_large_income():
+    conditions = [{"field": "amount", "op": "gte", "value": 1000}]
+    assert evaluate_conditions("and", conditions, make_tx(type="credit", amount=Decimal("1200"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("1200"))) is False
+
+
+def test_amount_equals_compares_numeric_and_signed():
+    conditions = [{"field": "amount", "op": "equals", "value": "25.5"}]
+    assert evaluate_conditions("and", conditions, make_tx(type="credit", amount=Decimal("25.50"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("25.50"))) is False
+    negative = [{"field": "amount", "op": "equals", "value": "-25.50"}]
+    assert evaluate_conditions("and", negative, make_tx(type="debit", amount=Decimal("25.50"))) is True
+
+
+def test_amount_not_equals_signed():
+    conditions = [{"field": "amount", "op": "not_equals", "value": "-25.50"}]
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("30"))) is True
+    assert evaluate_conditions("and", conditions, make_tx(type="debit", amount=Decimal("25.50"))) is False
+
+
+def test_amount_sign_comes_from_type_even_when_stored_negative():
+    # A row saved with an already-negative amount must not flip the sign twice.
+    expense = make_tx(type="debit", amount=Decimal("-100"))
+    income = make_tx(type="credit", amount=Decimal("-100"))
+    gt_zero = [{"field": "amount", "op": "gt", "value": 0}]
+    assert evaluate_conditions("and", gt_zero, expense) is False
+    assert evaluate_conditions("and", gt_zero, income) is True
+    equals = [{"field": "amount", "op": "equals", "value": "-100"}]
+    assert evaluate_conditions("and", equals, expense) is True
+    assert evaluate_conditions("and", equals, income) is False
 
 
 def test_date_gt():
@@ -570,7 +624,7 @@ def test_blank_numeric_value_never_matches():
 
 def test_zero_value_still_matches():
     """0 is a real value, not a blank one — it must keep working."""
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(type="credit", amount=Decimal("25.50"))
     conditions = [{"field": "amount", "op": "gt", "value": 0}]
     assert evaluate_conditions("and", conditions, tx) is True
 
@@ -632,10 +686,14 @@ def test_or_of_and_group():
     ]
     assert evaluate_conditions("or", conditions, make_tx(description="IFOOD PEDIDO")) is True
     assert evaluate_conditions(
-        "or", conditions, make_tx(description="MERCADO X", amount=Decimal("250.00"))
+        "or",
+        conditions,
+        make_tx(type="credit", description="MERCADO X", amount=Decimal("250.00")),
     ) is True
     assert evaluate_conditions(
-        "or", conditions, make_tx(description="MERCADO X", amount=Decimal("30.00"))
+        "or",
+        conditions,
+        make_tx(type="credit", description="MERCADO X", amount=Decimal("30.00")),
     ) is False
 
 
@@ -751,36 +809,38 @@ def test_an_empty_list_of_assignable_categories_blocks_every_categorization():
 #
 # Amounts are stored at a fixed scale (100.00) while the rule form submits
 # the number as typed (100); a string comparison of the two forms never
-# agrees, so equals on amount must compare numerically.
+# agrees, so equals on amount must compare numerically. Since issue #981 the
+# comparison is also signed, so the examples below pin the direction: a
+# credit of 100.00 equals the typed 100.
 
 
 def test_equals_amount_different_scales():
     conditions = [{"field": "amount", "op": "equals", "value": "100"}]
-    tx = make_tx(amount=Decimal("100.00"))
+    tx = make_tx(type="credit", amount=Decimal("100.00"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_equals_amount_value_with_trailing_zeros():
     conditions = [{"field": "amount", "op": "equals", "value": "25.50"}]
-    tx = make_tx(amount=Decimal("25.5"))
+    tx = make_tx(type="credit", amount=Decimal("25.5"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_equals_amount_no_match():
     conditions = [{"field": "amount", "op": "equals", "value": "100.01"}]
-    tx = make_tx(amount=Decimal("100.00"))
+    tx = make_tx(type="credit", amount=Decimal("100.00"))
     assert evaluate_conditions("and", conditions, tx) is False
 
 
 def test_not_equals_amount_different_scales():
     conditions = [{"field": "amount", "op": "not_equals", "value": "100"}]
-    tx = make_tx(amount=Decimal("100.00"))
+    tx = make_tx(type="credit", amount=Decimal("100.00"))
     assert evaluate_conditions("and", conditions, tx) is False
 
 
 def test_not_equals_amount_no_match():
     conditions = [{"field": "amount", "op": "not_equals", "value": "100.01"}]
-    tx = make_tx(amount=Decimal("100.00"))
+    tx = make_tx(type="credit", amount=Decimal("100.00"))
     assert evaluate_conditions("and", conditions, tx) is True
 
 
@@ -788,5 +848,5 @@ def test_equals_amount_non_numeric_falls_back_to_text():
     # A value that is not a number keeps the old text comparison: it cannot
     # agree with a stored amount, which is what it did before the fix.
     conditions = [{"field": "amount", "op": "equals", "value": "abc"}]
-    tx = make_tx(amount=Decimal("100.00"))
+    tx = make_tx(type="credit", amount=Decimal("100.00"))
     assert evaluate_conditions("and", conditions, tx) is False

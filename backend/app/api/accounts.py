@@ -18,6 +18,9 @@ from app.schemas.account import (
     AccountCreate,
     AccountRead,
     AccountRunningBalancePoint,
+    LoanBalanceAdjustment,
+    LoanBalanceUpdate,
+    LoanScheduleRead,
     AccountSummary,
     AccountUpdate,
     CreditCardBillRead,
@@ -41,19 +44,27 @@ async def list_accounts(
     session: AsyncSession = Depends(get_async_session),
 ):
     accounts = await account_service.get_accounts(session, ctx.workspace.id, include_closed=include_closed)
-    primary_currency = ctx.user.primary_currency
     for acc in accounts:
-        if acc["currency"] != primary_currency:
-            # Use the real rate only: the 1:1 fallback would present a foreign
-            # balance as already converted (issue #1165). Leaving it unset makes
-            # the UI show the native currency and flag the missing rate.
-            rate = await _resolve_rate(session, acc["currency"], primary_currency)
-            if rate is None:
-                acc["fx_fallback"] = True
-            else:
-                converted = Decimal(str(acc["current_balance"])) * rate
-                acc["balance_primary"] = float(converted.quantize(Decimal("0.01")))
+        await _convert_to_primary(session, acc, ctx.user.primary_currency)
     return accounts
+
+
+async def _convert_to_primary(session: AsyncSession, acc: dict, primary_currency: str) -> None:
+    """Fill the primary-currency balance and open bill of a serialized account."""
+    if acc["currency"] == primary_currency:
+        return
+    # Use the real rate only: the 1:1 fallback would present a foreign
+    # balance as already converted (issue #1165). Leaving it unset makes
+    # the UI show the native currency and flag the missing rate.
+    rate = await _resolve_rate(session, acc["currency"], primary_currency)
+    if rate is None:
+        acc["fx_fallback"] = True
+        return
+    converted = Decimal(str(acc["current_balance"])) * rate
+    acc["balance_primary"] = float(converted.quantize(Decimal("0.01")))
+    if acc["open_bill_total"] is not None:
+        bill = Decimal(str(acc["open_bill_total"])) * rate
+        acc["open_bill_total_primary"] = float(bill.quantize(Decimal("0.01")))
 
 
 @router.get("/{account_id}/summary", response_model=AccountSummary)
@@ -182,6 +193,36 @@ async def get_account_bills(
     return bills
 
 
+@router.get("/{account_id}/loan-schedule", response_model=LoanScheduleRead)
+async def get_loan_schedule(
+    account_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    schedule = await account_service.get_loan_schedule(session, account_id, ctx.workspace.id)
+    if schedule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan account not found")
+    return schedule
+
+
+@router.post("/{account_id}/loan-balance", response_model=LoanBalanceAdjustment)
+async def adjust_loan_balance(
+    account_id: uuid.UUID,
+    data: LoanBalanceUpdate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        result = await account_service.adjust_loan_balance(
+            session, account_id, ctx.workspace.id, ctx.user_id, data
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan account not found")
+    return result
+
+
 @router.get("/{account_id}", response_model=AccountRead)
 async def get_account(
     account_id: uuid.UUID,
@@ -191,6 +232,7 @@ async def get_account(
     account = await account_service.get_account_with_balances(session, account_id, ctx.workspace.id)
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    await _convert_to_primary(session, account, ctx.user.primary_currency)
     return account
 
 
