@@ -126,6 +126,37 @@ describe('BudgetsPage suggestions', () => {
     expect(api.dashboard.spendingByCategory).toHaveBeenCalledWith(expectedMonth, undefined)
   })
 
+  it.each([
+    [0, 0, 'bg-emerald-500'],
+    [250, 50, 'bg-emerald-500'],
+    [400, 80, 'bg-amber-400'],
+    [500, 100, 'bg-amber-400'],
+    [750, 100, 'bg-rose-500'],
+  ])('renders Overview progress for spending %s', async (amount, width, color) => {
+    mockBudgets()
+    api.dashboard.spendingByCategory.mockResolvedValue([
+      { category_id: 'cat-groceries', total: 0, projected_total: amount },
+    ])
+    renderWithProviders(<BudgetsPage />)
+    const row = (await screen.findByText('Groceries')).closest('tr')!
+    await waitFor(() => expect(within(row).getByRole('progressbar')).toHaveAttribute('aria-valuenow', String(width)))
+    const bar = within(row).getByRole('progressbar')
+    expect(bar.firstElementChild).toHaveStyle({ width: `${width}%` })
+    expect(bar.firstElementChild).toHaveClass(color)
+    expect(within(row).getByText(t('dashboard.ofBudget', { budget: '$500.00' }))).toBeInTheDocument()
+    expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual([
+      t('budgets.category'), t('budgets.spending'), t('budgets.amount'), t('budgets.actions'),
+    ])
+  })
+
+  it('omits the progress bar for a zero limit, as Overview does', async () => {
+    api.budgets.list.mockResolvedValue([{ id: 'zero', category_id: 'cat-groceries', amount: 0, month: expectedMonth }])
+    api.dashboard.spendingByCategory.mockResolvedValue([{ category_id: 'cat-groceries', projected_total: 25 }])
+    renderWithProviders(<BudgetsPage />)
+    expect(await screen.findByText('$25.00')).toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
   it('uses the selected month and collection accounts', async () => {
     api.activeAccountIds = ['account-1']
     mockBudgets()
@@ -156,6 +187,8 @@ describe('BudgetsPage suggestions', () => {
     renderWithProviders(<BudgetsPage />)
     expect(await screen.findAllByText('$0.00')).toHaveLength(2)
     expect(api.dashboard.spendingByCategory).not.toHaveBeenCalled()
+    expect(screen.getAllByRole('progressbar')).toHaveLength(2)
+    for (const bar of screen.getAllByRole('progressbar')) expect(bar).toHaveAttribute('aria-valuenow', '0')
   })
 
   it('masks spending with the existing privacy formatter', async () => {
@@ -165,6 +198,7 @@ describe('BudgetsPage suggestions', () => {
     renderWithProviders(<BudgetsPage />)
     await waitFor(() => expect(api.mask).toHaveBeenCalledWith('$123.45'))
     expect(screen.queryByText('$123.45')).not.toBeInTheDocument()
+    for (const bar of screen.getAllByRole('progressbar')) expect(bar).toHaveAttribute('aria-valuetext', '••••')
   })
 
   it('does not present a failed spending request as zero', async () => {
@@ -174,6 +208,7 @@ describe('BudgetsPage suggestions', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(t('budgets.spendingError'))
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
     expect(screen.getAllByText('—')).toHaveLength(2)
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
   it('offers the suggest button next to the add button', async () => {
