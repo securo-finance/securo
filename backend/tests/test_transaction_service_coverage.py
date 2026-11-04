@@ -1033,6 +1033,44 @@ async def test_get_transactions_bill_id_filter(session, test_user, test_workspac
     assert "Outside" not in descs
 
 
+async def test_get_transactions_statement_view_uses_purchase_date_in_accrual_mode(
+    session, test_user, test_workspace, cc_account
+):
+    await _mk_txn(
+        session, test_user, cc_account, description="OctoberPurchase",
+        date=date(2026, 10, 1), effective_date=date(2026, 10, 11),
+    )
+    await _mk_txn(
+        session, test_user, cc_account, description="OutsideCycle",
+        date=date(2026, 10, 5), effective_date=date(2026, 10, 20),
+    )
+
+    rows, _, _ = await get_transactions(
+        session, test_workspace.id, test_user.id,
+        account_ids=[cc_account.id], from_date=date(2026, 9, 4), to_date=date(2026, 10, 4),
+        accounting_mode="accrual", statement_view=True,
+    )
+
+    assert {row.description for row in rows} == {"OctoberPurchase"}
+
+
+async def test_get_transactions_without_statement_view_keeps_accrual_date_filter(
+    session, test_user, test_workspace, cc_account
+):
+    await _mk_txn(
+        session, test_user, cc_account, description="OctoberPurchase",
+        date=date(2026, 10, 1), effective_date=date(2026, 10, 11),
+    )
+
+    rows, _, _ = await get_transactions(
+        session, test_workspace.id, test_user.id,
+        account_ids=[cc_account.id], from_date=date(2026, 9, 4), to_date=date(2026, 10, 4),
+        accounting_mode="accrual",
+    )
+
+    assert rows == []
+
+
 async def test_get_transactions_bill_id_no_dates(session, test_user, test_workspace, cc_account):
     bill = CreditCardBill(
         id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,

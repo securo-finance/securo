@@ -18,6 +18,7 @@ from app.models.user import User
 from app.services._query_filters import (
     counts_as_pnl,
     counts_as_user_pnl,
+    forecast_owner_share_fractions,
     owner_split_offset_by_category,
     reporting_date_col,
     reporting_date_value,
@@ -710,6 +711,10 @@ async def get_income_expenses_report(
             session, workspace_id, max(m_start, start), m_end, account_ids,
             range_date_col=report_date,
         )
+        forecast_fractions = (
+            {} if filtered
+            else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
+        )
         for tx in forecast_transactions:
             if not _counts_as_user_pnl_row(tx):
                 continue
@@ -720,6 +725,7 @@ async def get_income_expenses_report(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
                 )
                 amount = abs(float(converted))
+            amount *= float(forecast_fractions.get(tx.id, 1))
             tx_report_date = reporting_date_value(tx, accounting_mode)
             label = _format_date_label(tx_report_date, interval)
             existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
@@ -1093,6 +1099,10 @@ async def get_income_expenses_report(
             session, workspace_id, m_start, m_end, account_ids,
             range_date_col=report_date,
         )
+        forecast_fractions = (
+            {} if filtered
+            else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
+        )
         for tx in forecast_transactions:
             if not _counts_as_user_pnl_row(tx):
                 continue
@@ -1119,6 +1129,7 @@ async def get_income_expenses_report(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
                 )
                 forecast_amount = abs(float(converted))
+            forecast_amount *= float(forecast_fractions.get(tx.id, 1))
             comp_key = (cat_id_str, group)
             if comp_key in comp_map:
                 comp_map[comp_key]["value"] += forecast_amount
@@ -1374,9 +1385,10 @@ async def get_cash_flow_report(
 ) -> ReportResponse:
     """Cash flow chart with a short past window plus a forward projection.
 
-    Past window (``_PAST_HISTORY_MONTHS`` months back to today) shows actual
-    booked transactions so the user has a visible "this is real" anchor next
-    to the forecast. Forward window walks from today to ``today + months``
+    Past window (from the 1st of the month ``_PAST_HISTORY_MONTHS`` months
+    back, to today) shows actual booked transactions so the user has a visible
+    "this is real" anchor next to the forecast. Forward window walks from
+    today to the last day of the month ``months`` months ahead,
     applying either deterministic recurring projections (default) or a
     historical-mean baseline (when ``baseline=True``) — see
     ``_get_baseline_projection`` for the latter.
@@ -1391,8 +1403,12 @@ async def get_cash_flow_report(
 
     acct_filter = [Transaction.account_id.in_(account_ids)] if account_ids is not None else []
     today = app_today()
-    end = _add_months(today, months)
-    chart_start = _add_months(today, -_PAST_HISTORY_MONTHS)
+    # Whole calendar months on both edges, so the first and last monthly bars
+    # aren't partial.
+    first_of_month = today.replace(day=1)
+    chart_start = _add_months(first_of_month, -_PAST_HISTORY_MONTHS)
+    end_month = _add_months(first_of_month, months)
+    end = end_month.replace(day=calendar.monthrange(end_month.year, end_month.month)[1])
 
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
@@ -1456,7 +1472,7 @@ async def get_cash_flow_report(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             or_(
-                and_(flow_date_col > chart_start, flow_date_col <= end),
+                and_(flow_date_col >= chart_start, flow_date_col <= end),
                 and_(balance_date_col > chart_start, balance_date_col <= end),
             ),
             Transaction.source != "opening_balance",
@@ -1473,7 +1489,7 @@ async def get_cash_flow_report(
         if amount_primary == 0:
             continue
         amount_primary = abs(amount_primary)
-        if chart_start < report_date <= end:
+        if chart_start <= report_date <= end:
             _add_flow(report_date, amount_primary, tx_type == "credit")
         if chart_start < balance_date <= end:
             _add_balance_flow(balance_date, amount_primary, tx_type == "credit")

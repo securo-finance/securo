@@ -17,6 +17,7 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, DailyBaseline, BalanceHistory
 from app.services._query_filters import (
     counts_as_user_pnl,
+    forecast_owner_share_fractions,
     owner_split_offset_by_category,
     owner_split_offset_pnl,
     reporting_date_col,
@@ -405,7 +406,7 @@ async def get_summary(
             user_id,
             month_start,
             month_end,
-            use_effective_date=False,
+            use_effective_date=accounting_mode == "accrual",
             workspace_id=workspace_id,
         )
         monthly_income -= own_offset_inc
@@ -435,6 +436,11 @@ async def get_summary(
         session, workspace_id, month_start, month_end, account_ids,
         range_date_col=report_date,
     )
+    # Same share-only rule as the posted totals above, and gated the same way.
+    forecast_fractions = (
+        {} if filtered
+        else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
+    )
     for proj in projections:
         if proj["type"] == "credit":
             projected_monthly_income += proj["amount"]
@@ -443,10 +449,11 @@ async def get_summary(
     for tx in forecast_transactions:
         if not _counts_as_user_pnl_row(tx):
             continue
+        amount = float(tx.amount) * float(forecast_fractions.get(tx.id, 1))
         if tx.type == "credit":
-            projected_monthly_income += float(tx.amount)
+            projected_monthly_income += amount
         else:
-            projected_monthly_expenses += float(tx.amount)
+            projected_monthly_expenses += amount
 
     # Account count — the active collection's accounts when filtered, else all
     # accounts in this workspace (manual + bank-connected).
@@ -459,16 +466,16 @@ async def get_summary(
             .where(Account.workspace_id == workspace_id)
         ) or 0
 
-    # Pending categorization — exclude opening_balance and transfer pairs
+    # Pending categorization: uncategorized rows that count toward the
+    # user's P/L. That is the same filter the uncategorized list behind the
+    # counter uses (user_pnl_only), so ignored rows, rows excluded from P/L,
+    # transfer pairs and settlement movements stay out of both. Opening
+    # balances are left out too.
     pending_cat_filters = [
         Transaction.workspace_id == workspace_id,
         Transaction.category_id.is_(None),
         Transaction.source != "opening_balance",
-        # Settlement-sourced rows are auto-generated movements (paying
-        # back / receiving back a group debt). They aren't expenses or
-        # income that need a category, so exclude them.
-        Transaction.source != "settlement",
-        Transaction.transfer_pair_id.is_(None),
+        counts_as_user_pnl(),
         *acct_filter,
     ]
     pending_categorization_result = await session.execute(
@@ -549,7 +556,7 @@ async def get_summary(
             user_id,
             month_start,
             month_end,
-            use_effective_date=False,
+            use_effective_date=accounting_mode == "accrual",
             primary_currency=primary_currency,
             workspace_id=workspace_id,
         )
@@ -637,10 +644,13 @@ async def get_summary(
             forecast_converted, _ = await convert(
                 session, Decimal(str(tx.amount)), tx.currency, primary_currency,
             )
+        # Magnitude first: the owner's share can be negative, and abs() after
+        # the fraction would flip it.
+        forecast_converted = abs(forecast_converted) * forecast_fractions.get(tx.id, 1)
         if tx.type == "credit":
-            projected_income_primary += abs(float(forecast_converted))
+            projected_income_primary += float(forecast_converted)
         else:
-            projected_expenses_primary += abs(float(forecast_converted))
+            projected_expenses_primary += float(forecast_converted)
 
     # Aggregate the user's net pending balance across all groups they
     # participate in. We reuse the group balance computation so partial
@@ -909,6 +919,10 @@ async def get_spending_by_category(
         session, workspace_id, month_start, month_end, account_ids,
         range_date_col=report_date,
     )
+    forecast_fractions = (
+        {} if filtered
+        else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
+    )
     for tx in forecast_transactions:
         if tx.type != "debit" or tx.is_ignored:
             continue
@@ -932,6 +946,7 @@ async def get_spending_by_category(
                 primary_currency,
             )
             projected_amount = float(amount)
+        projected_amount *= float(forecast_fractions.get(tx.id, 1))
         if cat_id in spending_map:
             spending_map[cat_id]["projected"] += projected_amount
         else:
@@ -947,13 +962,18 @@ async def get_spending_by_category(
     grand_total = sum(entry["total"] for entry in spending_map.values())
     spending = []
     for cat_id, entry in sorted(spending_map.items(), key=lambda x: x[1]["total"], reverse=True):
+        # A negative owner share can pull the projection below zero. Keep the
+        # category for its posted spending, but never project less than zero.
+        projected_total = entry["total"] + entry.get("projected", 0.0)
+        if projected_total <= 0 and entry["total"] <= 0:
+            continue
         spending.append(SpendingByCategory(
             category_id=cat_id,
             category_name=entry["name"],
             category_icon=entry["icon"],
             category_color=entry["color"],
             total=entry["total"],
-            projected_total=entry["total"] + entry.get("projected", 0.0),
+            projected_total=max(projected_total, 0.0),
             percentage=(entry["total"] / grand_total * 100) if grand_total else 0,
         ))
 
@@ -1015,6 +1035,10 @@ async def get_monthly_trend(
         session, workspace_id, forecast_start, forecast_end, account_ids,
         range_date_col=report_date,
     )
+    forecast_fractions = (
+        {} if filtered
+        else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
+    )
     for tx in forecast_transactions:
         if not _counts_as_user_pnl_row(tx):
             continue
@@ -1028,6 +1052,7 @@ async def get_monthly_trend(
                 session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
             )
             amount = abs(float(converted))
+        amount *= float(forecast_fractions.get(tx.id, 1))
         if tx.type == "credit":
             bucket[0] += amount
         else:

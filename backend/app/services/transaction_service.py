@@ -127,6 +127,7 @@ async def get_transactions(
     bill_id: Optional[uuid.UUID] = None,
     group_id: Optional[uuid.UUID] = None,
     unbilled_only: bool = False,
+    statement_view: bool = False,
     sort_by: Optional[str] = None,
     sort_dir: str = "desc",
     transaction_ids: Optional[list[uuid.UUID]] = None,
@@ -174,20 +175,16 @@ async def get_transactions(
             return [], 0, None
         use_group_scope = True
 
-    # CC bill-view date column: when the caller asks "what's in this bill?"
-    # (bill_id passed, or in-progress cycle via unbilled_only), the answer
-    # is bank-truth — the charges that fell in the cycle by purchase date —
-    # independent of the user's cash/accrual reporting preference. Without
-    # this carve-out, accrual mode would hide a 4/30 charge whose
-    # effective_date points at the next bill's due date because the cycle
-    # window [prev_close, this_close-1] doesn't contain the future
-    # effective_date (issue #92, abdalanervoso's accrual case).
+    # CC statement views use bank-truth: charges fall in a cycle by purchase
+    # date, independent of the user's cash/accrual reporting preference. The
+    # explicit statement_view flag covers manual historical cycles that have
+    # neither a bill_id nor unbilled_only (issue #1330).
     bill_view_date_col = func.coalesce(
         Transaction.effective_bill_date,
         Transaction.date,
     )
-    in_bill_view = bill_id is not None or unbilled_only
-    filter_date_col = bill_view_date_col if in_bill_view else date_col
+    in_statement_view = bill_id is not None or unbilled_only or statement_view
+    filter_date_col = bill_view_date_col if in_statement_view else date_col
     # Base query: user's own transactions (manual or via account), or
     # group-scoped when `group_id` resolves to a visible group.
     base_query = (
@@ -540,7 +537,7 @@ async def get_transactions(
     # Apply ordering (and pagination unless skipped). Bill-view callers
     # order by purchase date so the in-cycle list matches the bank's own
     # statement ordering regardless of accounting mode.
-    default_order_col = bill_view_date_col if in_bill_view else date_col
+    default_order_col = bill_view_date_col if in_statement_view else date_col
     sort_columns = {
         # `date` is the cycle/accrual-aware column the UI lists use so its
         # ordering matches the cash-flow & dashboard views.

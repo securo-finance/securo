@@ -308,6 +308,7 @@ export default function AccountDetailPage() {
     queryFn: () => accounts.get(id!),
     enabled: !!id,
   })
+  const isCreditCard = account?.type === 'credit_card'
 
   // Bills (faturas) from the provider's bills feed — issue #92. Only fetched
   // for CC accounts; non-CC and CC-without-bills both return [] so the UI
@@ -522,7 +523,15 @@ export default function AccountDetailPage() {
   // client-side cycle math below, which needs every row of the cycle rather
   // than the first page (#1202).
   const { data: cycleTxData, isLoading: cycleTxLoading } = useQuery({
-    queryKey: ['transactions', { account_id: id, bill_id: activeBill?.id, from: filterFrom, to: filterTo, include_opening_balance: true, unbilled_only: isInProgressCycle }],
+    queryKey: ['transactions', {
+      account_id: id,
+      bill_id: activeBill?.id,
+      from: filterFrom,
+      to: filterTo,
+      include_opening_balance: true,
+      unbilled_only: isInProgressCycle,
+      statement_view: isCreditCard,
+    }],
     queryFn: async () => {
       const params = {
         account_id: id,
@@ -535,6 +544,9 @@ export default function AccountDetailPage() {
         // current view), exclude already-billed txs so the bar/list only
         // shows what's accumulating toward the next bill.
         unbilled_only: isInProgressCycle || undefined,
+        // Credit-card cycle windows represent statements, so they are always
+        // filtered by purchase date even when reporting uses accrual dates.
+        statement_view: isCreditCard || undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
         limit: CYCLE_PAGE_SIZE,
@@ -692,7 +704,6 @@ export default function AccountDetailPage() {
   })
 
   // Whether to use primary currency amounts (for foreign-currency accounts with toggle, or domestic accounts with foreign txs)
-  const isCreditCard = account?.type === 'credit_card'
   const isForeignCurrency = account ? account.currency !== userCurrency : false
   // No real FX rate: the summary leaves the *_primary fields unset, so stay on
   // the account's own currency instead of labelling native amounts as converted.

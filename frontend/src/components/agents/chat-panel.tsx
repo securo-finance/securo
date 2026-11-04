@@ -25,6 +25,14 @@ interface Props {
   // the agent can reason about "this row" / "the filters above".
   // Re-read on each send so we always pick up the latest state.
   getPageContext?: () => Record<string, unknown> | null
+  // Called when conversationId no longer exists (deleted elsewhere, e.g.
+  // from the Agents page), so the parent can drop it instead of sending
+  // every new message into a 404.
+  onConversationMissing?: (id: string) => void
+}
+
+function isNotFound(err: unknown): boolean {
+  return (err as { response?: { status?: number } } | null)?.response?.status === 404
 }
 
 interface DraftMessage {
@@ -36,7 +44,7 @@ interface DraftMessage {
   pending?: boolean
 }
 
-export function ChatPanel({ agent, conversationId, onConversationCreated, focusSignal, getPageContext }: Props) {
+export function ChatPanel({ agent, conversationId, onConversationCreated, focusSignal, getPageContext, onConversationMissing }: Props) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [input, setInput] = useState('')
@@ -53,12 +61,18 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
   // streaming deltas no longer yank them back down.
   const isAtBottomRef = useRef(true)
 
-  const { data: history } = useQuery({
+  const { data: history, error: historyError } = useQuery({
     queryKey: ['agent-conv-messages', conversationId],
     queryFn: () => (conversationId ? agents.conversations.messages(conversationId) : Promise.resolve([])),
     enabled: !!conversationId,
     staleTime: 1000 * 5,
+    // A deleted conversation stays deleted; retrying only delays the reset.
+    retry: (count, err) => !isNotFound(err) && count < 1,
   })
+
+  useEffect(() => {
+    if (conversationId && isNotFound(historyError)) onConversationMissing?.(conversationId)
+  }, [conversationId, historyError, onConversationMissing])
 
   // Snap to bottom when the conversation switches (it should look fresh)
   // and move keyboard focus to the input — covers both "+" (null) and
