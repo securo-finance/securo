@@ -1429,6 +1429,7 @@
     "behind": "{{amount}} za harmonogramem",
     "onSchedule": "Zgodnie z planem",
     "paidOff": "Spłacony",
+    "progress": "{{paid}} z {{total}} rat opłaconych",
     "showSchedule": "Pokaż harmonogram",
     "hideSchedule": "Ukryj harmonogram",
     "colDate": "Data",

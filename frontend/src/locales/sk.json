@@ -1444,6 +1444,7 @@
     "behind": "{{amount}} pozadu oproti zmluve",
     "onSchedule": "Podľa plánu",
     "paidOff": "Splatené",
+    "progress": "{{paid}} z {{total}} splátok uhradených",
     "showSchedule": "Zobraziť splátkový kalendár",
     "hideSchedule": "Skryť kalendár",
     "colDate": "Dátum",

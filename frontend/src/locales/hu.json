@@ -1376,6 +1376,7 @@
     "behind": "{{amount}} lemaradás a szerződéshez képest",
     "onSchedule": "Ütemterv szerint",
     "paidOff": "Visszafizetve",
+    "progress": "{{total}} részletből {{paid}} kifizetve",
     "showSchedule": "Törlesztési terv megjelenítése",
     "hideSchedule": "Terv elrejtése",
     "colDate": "Dátum",

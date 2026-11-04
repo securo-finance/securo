@@ -1376,6 +1376,7 @@
     "behind": "契約より {{amount}} 遅れ",
     "onSchedule": "予定どおり",
     "paidOff": "完済",
+    "progress": "{{total}}回中{{paid}}回支払い済み",
     "showSchedule": "返済予定表を表示",
     "hideSchedule": "予定表を隠す",
     "colDate": "日付",

@@ -1380,6 +1380,7 @@
     "behind": "{{amount}} de retard sur le contrat",
     "onSchedule": "À jour",
     "paidOff": "Remboursé",
+    "progress": "{{paid}} sur {{total}} paiements effectués",
     "showSchedule": "Voir l'échéancier",
     "hideSchedule": "Masquer l'échéancier",
     "colDate": "Date",

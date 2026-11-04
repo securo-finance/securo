@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { CalendarCheck, Gauge, Landmark, ListChecks, Wallet } from 'lucide-react'
 
 import { LoanBalanceDialog } from '@/components/loan-balance-dialog'
+import { Badge } from '@/components/ui/badge'
 import { accounts } from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 /** Below this difference from the contract, the loan reads as on schedule. */
 const ON_SCHEDULE_TOLERANCE = 1
@@ -16,6 +19,19 @@ const ON_SCHEDULE_TOLERANCE = 1
  */
 function scheduleScrollTop(rowOffset: number, viewportHeight: number): number {
   return Math.max(0, Math.round(rowOffset - viewportHeight / 2))
+}
+
+/** One contract figure as a muted tile: an icon-led label over a bold value. */
+function Metric({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
+  return (
+    <div className="rounded-lg bg-muted/40 p-3">
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground [&>svg]:size-3.5 [&>svg]:shrink-0">
+        {icon}
+        <span className="truncate">{label}</span>
+      </div>
+      {children}
+    </div>
+  )
 }
 
 /**
@@ -88,7 +104,10 @@ export function LoanScheduleCard({
     return (
       <div className="bg-card rounded-xl border border-border shadow-sm p-4 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-          <h2 className="text-sm font-semibold">{t('loans.title')}</h2>
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Landmark className="size-4 text-muted-foreground" />
+            {t('loans.title')}
+          </h2>
           {adjust}
         </div>
         <p className="text-sm text-muted-foreground">{t('loans.notConfigured')}</p>
@@ -98,6 +117,7 @@ export function LoanScheduleCard({
 
   const total = data.installments.length
   const aheadBy = data.ahead_by ?? 0
+  const behind = !data.paid_off && aheadBy <= -ON_SCHEDULE_TOLERANCE
   const status = data.paid_off
     ? t('loans.paidOff')
     : Math.abs(aheadBy) < ON_SCHEDULE_TOLERANCE
@@ -105,54 +125,89 @@ export function LoanScheduleCard({
       : aheadBy > 0
         ? t('loans.ahead', { amount: money(aheadBy) })
         : t('loans.behind', { amount: money(-aheadBy) })
+  const statusTone = data.paid_off ? 'good' : behind ? 'bad' : aheadBy > 0 ? 'good' : 'neutral'
+
+  const remaining = data.remaining_payments ?? 0
+  const paid = Math.max(0, total - remaining)
+  const progress = total > 0 ? Math.min(100, Math.max(0, (paid / total) * 100)) : 0
 
   return (
     <div className="bg-card rounded-xl border border-border shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 pt-4">
-        <h2 className="text-sm font-semibold">{t('loans.title')}</h2>
-        <div className="flex items-center gap-4">
-          <span
-            className={`text-xs font-medium ${!data.paid_off && aheadBy <= -ON_SCHEDULE_TOLERANCE ? 'text-rose-500' : 'text-emerald-600'}`}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 pt-4 pb-3">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Landmark className="size-4 text-muted-foreground" />
+          {t('loans.title')}
+        </h2>
+        <div className="flex items-center gap-3">
+          <Badge
+            className={cn(
+              'border-transparent',
+              statusTone === 'good' && 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400',
+              statusTone === 'bad' && 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400',
+              statusTone === 'neutral' && 'bg-muted text-muted-foreground',
+            )}
           >
             {status}
-          </span>
+          </Badge>
           {adjust}
         </div>
       </div>
-      <dl className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-4 text-sm">
-        <div>
-          <dt className="text-xs font-medium text-muted-foreground mb-1">{t('loans.nextPayment')}</dt>
-          <dd className="font-semibold tabular-nums">{data.next_payment ? money(data.next_payment.payment) : '—'}</dd>
+      {total > 0 && (
+        <div className="px-4 pb-4">
+          <div
+            className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={total}
+            aria-valuenow={paid}
+            aria-label={t('loans.progress', { paid, total })}
+          >
+            <div
+              className={cn('h-full rounded-full', data.paid_off ? 'bg-emerald-500' : 'bg-primary')}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-4 pb-4">
+        <Metric icon={<Wallet />} label={t('loans.nextPayment')}>
+          <span className="text-lg font-bold tabular-nums text-foreground">
+            {data.next_payment ? money(data.next_payment.payment) : '—'}
+          </span>
           {data.next_payment && (
-            <dd className="mt-1 text-xs text-muted-foreground">
+            <span className="mt-1 block text-xs text-muted-foreground tabular-nums">
               {t('loans.nextPaymentSplit', {
                 date: day(data.next_payment.due_date),
                 interest: money(data.next_payment.interest),
                 principal: money(data.next_payment.principal),
               })}
-            </dd>
+            </span>
           )}
-        </div>
-        <div>
-          <dt className="text-xs font-medium text-muted-foreground mb-1">{t('loans.remaining')}</dt>
-          <dd className="font-semibold tabular-nums">
-            {t('loans.remainingValue', { remaining: data.remaining_payments ?? 0, total })}
-          </dd>
-          <dd className="mt-1 text-xs text-muted-foreground">
+        </Metric>
+        <Metric icon={<ListChecks />} label={t('loans.remaining')}>
+          <span className="text-lg font-bold tabular-nums text-foreground">
+            {t('loans.remainingValue', { remaining, total })}
+          </span>
+          <span className="mt-1 block text-xs text-muted-foreground tabular-nums">
             {t('loans.totalInterest')}: {money(data.total_interest ?? 0)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium text-muted-foreground mb-1">{t('loans.payoff')}</dt>
-          <dd className="font-semibold tabular-nums">{data.payoff_date ? day(data.payoff_date) : '—'}</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium text-muted-foreground mb-1">{t('loans.projectedPayoff')}</dt>
-          <dd className="font-semibold tabular-nums">
+          </span>
+        </Metric>
+        <Metric icon={<CalendarCheck />} label={t('loans.payoff')}>
+          <span className="text-lg font-bold tabular-nums text-foreground">
+            {data.payoff_date ? day(data.payoff_date) : '—'}
+          </span>
+        </Metric>
+        <Metric icon={<Gauge />} label={t('loans.projectedPayoff')}>
+          <span
+            className={cn(
+              'text-lg font-bold tabular-nums',
+              !data.projected_payoff_date ? 'text-muted-foreground' : behind ? 'text-rose-500' : 'text-emerald-600',
+            )}
+          >
             {data.projected_payoff_date ? day(data.projected_payoff_date) : '—'}
-          </dd>
-        </div>
-      </dl>
+          </span>
+        </Metric>
+      </div>
       <div className="border-t border-border px-4 py-2">
         <button
           type="button"

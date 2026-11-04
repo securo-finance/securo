@@ -1460,6 +1460,7 @@
     "behind": "{{amount}} pozadu oproti smlouvě",
     "onSchedule": "Podle plánu",
     "paidOff": "Splaceno",
+    "progress": "{{paid}} z {{total}} splátek uhrazeno",
     "showSchedule": "Zobrazit splátkový kalendář",
     "hideSchedule": "Skrýt kalendář",
     "colDate": "Datum",

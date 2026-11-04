@@ -1376,6 +1376,7 @@
     "behind": "{{amount}} behind the contract",
     "onSchedule": "On schedule",
     "paidOff": "Paid off",
+    "progress": "{{paid}} of {{total}} payments made",
     "showSchedule": "Show schedule",
     "hideSchedule": "Hide schedule",
     "colDate": "Date",

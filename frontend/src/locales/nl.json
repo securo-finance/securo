@@ -1378,6 +1378,7 @@
     "behind": "{{amount}} achter op het contract",
     "onSchedule": "Op schema",
     "paidOff": "Afgelost",
+    "progress": "{{paid}} van {{total}} betalingen voldaan",
     "showSchedule": "Aflossingsschema tonen",
     "hideSchedule": "Schema verbergen",
     "colDate": "Datum",

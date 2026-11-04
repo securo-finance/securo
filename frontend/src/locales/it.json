@@ -1380,6 +1380,7 @@
     "behind": "{{amount}} in ritardo sul contratto",
     "onSchedule": "In regola",
     "paidOff": "Estinto",
+    "progress": "{{paid}} di {{total}} rate pagate",
     "showSchedule": "Mostra piano di ammortamento",
     "hideSchedule": "Nascondi piano",
     "colDate": "Data",

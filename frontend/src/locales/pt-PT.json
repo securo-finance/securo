@@ -1380,6 +1380,7 @@
     "behind": "{{amount}} atrasado face ao contrato",
     "onSchedule": "Em dia",
     "paidOff": "Liquidado",
+    "progress": "{{paid}} de {{total}} prestações pagas",
     "showSchedule": "Ver plano de prestações",
     "hideSchedule": "Ocultar plano",
     "colDate": "Data",

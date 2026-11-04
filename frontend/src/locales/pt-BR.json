@@ -1380,6 +1380,7 @@
     "behind": "{{amount}} atrasado em relação ao contrato",
     "onSchedule": "Em dia",
     "paidOff": "Quitado",
+    "progress": "{{paid}} de {{total}} parcelas pagas",
     "showSchedule": "Ver tabela de parcelas",
     "hideSchedule": "Ocultar tabela",
     "colDate": "Data",
