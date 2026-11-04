@@ -1399,6 +1399,111 @@ async def test_sync_connection_enable_banking_pending_and_booked_in_one_fetch(
     assert rows[0].external_id == _eb_txn(booked_raw).external_id
 
 
+def _eb_late_ref_payload(
+    entry_ref: str | None, *, remittance: str = "COMPRA TARJ. 5540XXXXXXXX1234 TIENDA CENTRO",
+) -> dict:
+    """A booked card purchase, as returned before and after the bank fills in
+    its reference."""
+    return {
+        "entry_reference": entry_ref,
+        "transaction_amount": {"currency": "EUR", "amount": "149.90"},
+        "credit_debit_indicator": "DBIT",
+        "status": "BOOK",
+        "booking_date": "2026-09-03",
+        "value_date": "2026-09-03",
+        "remittance_information": [remittance],
+    }
+
+
+def _eb_late_ref_row(
+    user_id, workspace_id, account, txn: TransactionData, external_id: str | None = None,
+):
+    return _eb_row(
+        user_id, workspace_id, account, external_id or txn.external_id, txn.raw_data,
+        "149.90", description=txn.description, original_description=txn.description,
+        date=txn.date,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_ref", [None, "", "0"])
+async def test_sync_connection_enable_banking_rekeys_row_whose_reference_arrived_late(
+    session: AsyncSession, test_user, test_workspace, missing_ref,
+):
+    """Some institutions return a booked row with no entry_reference on the
+    day it books and fill one in on a later fetch, which moves its id from
+    the payload fingerprint to the reference. The held row takes the new id
+    instead of gaining a twin."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    first = _eb_txn(_eb_late_ref_payload(missing_ref))
+    held = _eb_late_ref_row(test_user.id, test_workspace.id, account, first)
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    refetched = _eb_txn(_eb_late_ref_payload("2026-09-03.1"))
+    assert refetched.external_id != first.external_id
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [row.id for row in rows] == [held_id]
+    assert rows[0].external_id == refetched.external_id
+    assert rows[0].raw_data["entry_reference"] == "2026-09-03.1"
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_late_reference_needs_same_description(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A held row without a reference that agrees on the day and amount but
+    names another merchant is a different purchase, so it keeps its id."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    other = _eb_txn(_eb_late_ref_payload(None, remittance="COMPRA TARJ. FARMACIA SOL"))
+    held = _eb_late_ref_row(test_user.id, test_workspace.id, account, other)
+    session.add(held)
+    await session.commit()
+
+    refetched = _eb_txn(_eb_late_ref_payload("2026-09-03.1"))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {other.external_id, refetched.external_id}
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_late_reference_ambiguous_is_new_row(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Known gap: two identical purchases on one day, both held without a
+    reference, are both candidates for each referenced row the next fetch
+    returns. Neither is the single match, so neither is re-keyed; guessing
+    could hang one purchase's category and notes on the other."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    unreferenced = _eb_txn(_eb_late_ref_payload(None))
+    held_a = _eb_late_ref_row(
+        test_user.id, test_workspace.id, account, unreferenced, external_id="fp-a",
+    )
+    held_b = _eb_late_ref_row(
+        test_user.id, test_workspace.id, account, unreferenced, external_id="fp-b",
+    )
+    session.add_all([held_a, held_b])
+    await session.commit()
+    held_ids = {held_a.id, held_b.id}
+
+    first = _eb_txn(_eb_late_ref_payload("2026-09-03.1"))
+    second = _eb_txn(_eb_late_ref_payload("2026-09-03.2"))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [first, second])
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows if row.id in held_ids} == {"fp-a", "fp-b"}
+    assert {row.external_id for row in rows if row.id not in held_ids} == {
+        first.external_id, second.external_id,
+    }
+
+
 @pytest.mark.asyncio
 async def test_simplefin_rekey_respects_institution_and_closed_account(
     session: AsyncSession, test_user, test_workspace,
