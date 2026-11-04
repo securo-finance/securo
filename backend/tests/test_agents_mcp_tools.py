@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # Importing this package registers all tools into mcp_server.registry.REGISTRY.
 import mcp_server.tools  # noqa: F401
+from app.models.account import Account
 from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate
 from app.services import account_service
@@ -227,7 +228,7 @@ async def test_list_recurring_transactions_returns_empty_dict_with_no_data(
 
 
 async def test_list_accounts_reports_current_balance(
-    session: AsyncSession, ctx: CallContext, test_user, test_account
+    session: AsyncSession, ctx: CallContext, test_user, test_account, test_connection
 ):
     """A manual account's balance is its opening balance plus its
     transactions, as on the Accounts page, not the stored opening amount."""
@@ -253,6 +254,19 @@ async def test_list_accounts_reports_current_balance(
                 currency="BRL",
             )
         )
+    session.add(
+        Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=ws_id,
+            connection_id=test_connection.id,
+            external_id="card-ext-1",
+            name="Connected Card",
+            type="credit_card",
+            balance=Decimal("300.00"),
+            currency="BRL",
+        )
+    )
     await session.commit()
 
     handler = REGISTRY["list_accounts"].handler
@@ -261,6 +275,8 @@ async def test_list_accounts_reports_current_balance(
     assert balances["Manual"] == pytest.approx(130.00)
     # A connected account reports what the bank sent, as before.
     assert balances["Conta Corrente"] == pytest.approx(1500.00)
+    # A card is debt, so it comes back negative, as on the Accounts page.
+    assert balances["Connected Card"] == pytest.approx(-300.00)
 
 
 async def test_list_assets_empty(session: AsyncSession, ctx: CallContext):
