@@ -3,6 +3,8 @@
 </p>
 <h1 align="center">Securo</h1>
 <p align="center">
+  <a href="https://www.buymeacoffee.com/usesecuro"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support%20Securo-FFDD00?logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee" /></a>
+  <br />
   <a href="https://github.com/securo-finance/securo/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://github.com/securo-finance/securo/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI" /></a>
   <img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tassionoronha/ae627b744aaa2ba89d850ea541c311be/raw/coverage.json" alt="Coverage" />
   <a href="https://github.com/securo-finance/securo/pkgs/container/securo-frontend"><img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tassionoronha/ae627b744aaa2ba89d850ea541c311be/raw/downloads.json" alt="Downloads" /></a>
@@ -271,6 +273,14 @@ mise frontend:build
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 Not sure where to start, or want to talk something through first? [Book 15 minutes](https://cal.com/tassio/15min) — no agenda needed. Something broken, an idea, or just what you think of Securo, all welcome.
+
+## Support Securo
+
+Securo is free and open source, and it runs entirely on your own infrastructure. If it helps you, a coffee keeps development going:
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/usesecuro"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="160" alt="Buy Me a Coffee" /></a>
+</p>
 
 ## License
 
