@@ -18,6 +18,7 @@ from app.models.user import User
 from app.services._query_filters import (
     counts_as_pnl,
     counts_as_user_pnl,
+    forecast_owner_share_fractions,
     owner_split_offset_by_category,
     reporting_date_col,
 )
@@ -709,6 +710,10 @@ async def get_income_expenses_report(
             session, workspace_id, max(m_start, start), m_end, account_ids,
             range_date_col=report_date,
         )
+        forecast_fractions = (
+            {} if filtered
+            else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
+        )
         for tx in forecast_transactions:
             if not _counts_as_user_pnl_row(tx):
                 continue
@@ -719,6 +724,7 @@ async def get_income_expenses_report(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
                 )
                 amount = abs(float(converted))
+            amount *= float(forecast_fractions.get(tx.id, 1))
             tx_report_date = (
                 tx.effective_bill_date
                 or (tx.effective_date if accounting_mode == "accrual" else tx.date)
@@ -1095,6 +1101,10 @@ async def get_income_expenses_report(
             session, workspace_id, m_start, m_end, account_ids,
             range_date_col=report_date,
         )
+        forecast_fractions = (
+            {} if filtered
+            else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
+        )
         for tx in forecast_transactions:
             if not _counts_as_user_pnl_row(tx):
                 continue
@@ -1124,6 +1134,7 @@ async def get_income_expenses_report(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
                 )
                 forecast_amount = abs(float(converted))
+            forecast_amount *= float(forecast_fractions.get(tx.id, 1))
             comp_key = (cat_id_str, group)
             if comp_key in comp_map:
                 comp_map[comp_key]["value"] += forecast_amount
