@@ -672,6 +672,16 @@ class EnableBankingProvider(BankProvider):
                 logger.warning("Failed to fetch details for account %s: %s", uid, exc)
                 continue
             result.append(await self._build_account(details, stable_external_ids.get(uid)))
+        # Skipping is only safe while something still syncs. When the bank refuses
+        # every account, an empty list would pass for a successful sync: the
+        # connection stays "active", last_sync_at keeps moving and the balances
+        # silently go stale. The next sync that reaches an account clears this.
+        if uids and not result:
+            raise ProviderUserActionRequired(
+                f"The bank refused all {len(uids)} account(s) on this connection. "
+                "Retry later, or reconnect if it keeps failing.",
+                code="accounts_unavailable",
+            )
         return result
 
     async def get_transactions(

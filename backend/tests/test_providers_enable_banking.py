@@ -650,6 +650,58 @@ async def test_get_accounts_raises_session_expired_when_details_unauthorized(eb_
 
 
 @pytest.mark.asyncio
+async def test_get_accounts_raises_when_the_bank_refuses_every_account(eb_keys):
+    """An authorized session whose accounts all fail must not look like a sync.
+
+    Returning an empty list here left the connection "active" with a fresh
+    last_sync_at while its balances went stale.
+    """
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-x":
+            return httpx.Response(200, json={
+                "session_id": "sess-x",
+                "status": "AUTHORIZED",
+                "accounts_data": [{"uid": "acc-1"}, {"uid": "acc-2"}],
+            })
+        if re.fullmatch(r"/accounts/[^/]+/details", request.url.path):
+            return httpx.Response(400, json={"code": 400, "error": "ASPSP_ERROR"})
+        raise AssertionError(f"unexpected path {request.url.path}")
+
+    with _patch_client(provider, handler):
+        with pytest.raises(ProviderUserActionRequired) as excinfo:
+            await provider.get_accounts(_CREDENTIALS)
+    assert excinfo.value.code == "accounts_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_skips_a_single_refused_account(eb_keys):
+    """One refused account stays a skip: the others still sync."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-x":
+            return httpx.Response(200, json={
+                "session_id": "sess-x",
+                "status": "AUTHORIZED",
+                "accounts_data": [{"uid": "acc-1"}, {"uid": "acc-2"}],
+            })
+        if path == "/accounts/acc-1/details":
+            return httpx.Response(400, json={"code": 400, "error": "ASPSP_ERROR"})
+        if path == "/accounts/acc-2/details":
+            return httpx.Response(200, json={"uid": "acc-2", "currency": "NOK"})
+        if path == "/accounts/acc-2/balances":
+            return httpx.Response(200, json={"balances": []})
+        raise AssertionError(f"unexpected path {path}")
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_CREDENTIALS)
+    assert [account.external_id for account in accounts] == ["acc-2"]
+
+
+@pytest.mark.asyncio
 async def test_get_accounts_exposes_stable_external_id(eb_keys):
     """EB's `uid` is session-scoped; `identification_hash` is the stable key.
 
