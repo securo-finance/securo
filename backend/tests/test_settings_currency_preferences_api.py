@@ -82,6 +82,21 @@ async def test_switch_rejected_without_an_fx_rate(client: AsyncClient, auth_head
     assert after.json()["currency_display"] == "BRL"
 
 
+async def test_switch_rejected_when_an_account_currency_has_no_rate(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_account
+):
+    # USD→EUR resolves, but the BRL account would be shown 1:1 as EUR.
+    await _seed_rate(session, "EUR", "0.9")
+
+    r = await client.put(f"{BASE}/display", json={"currency": "EUR"}, headers=auth_headers)
+    assert r.status_code == 409
+    assert "BRL" in r.json()["detail"]
+
+    await _seed_rate(session, "BRL", "5.0")
+    r = await client.put(f"{BASE}/display", json={"currency": "EUR"}, headers=auth_headers)
+    assert r.status_code == 200
+
+
 async def test_unsupported_display_currency_rejected(client: AsyncClient, auth_headers: dict):
     r = await client.put(f"{BASE}/display", json={"currency": "ZZZ"}, headers=auth_headers)
     assert r.status_code == 400

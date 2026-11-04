@@ -2,13 +2,16 @@ from collections.abc import Iterable
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import current_active_user
 from app.core.config import get_settings
 from app.core.database import get_async_session
+from app.models.account import Account
 from app.models.user import User
 from app.services.fx_rate_service import _resolve_rate
+from app.services.workspace_service import get_managed_workspaces, get_user_workspaces
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -60,19 +63,37 @@ def _require_supported(codes: Iterable[str]) -> None:
         raise HTTPException(status_code=400, detail=f"Unsupported currency: {', '.join(unknown)}")
 
 
-async def _require_convertible(session: AsyncSession, code: str) -> None:
+async def _require_convertible(session: AsyncSession, user: User, code: str) -> None:
     """Reject a switch we could only render with fabricated 1:1 numbers.
 
-    ``get_rate`` deliberately falls back to 1:1 so live reads still render
-    something, which for a currency switch would relabel unconverted amounts
-    in the new symbol. ``_resolve_rate`` returns None honestly instead.
+    ``convert`` falls back to 1:1 so live reads still render something, which
+    for a currency switch would relabel unconverted amounts in the new symbol.
+    So every account currency the user can see must resolve a real rate to
+    ``code``; ``_resolve_rate`` returns None honestly instead.
     """
-    if await _resolve_rate(session, "USD", code, None, allow_fetch=True) is None:
+    workspaces = [
+        *await get_user_workspaces(session, user.id),
+        *await get_managed_workspaces(session, user.id),
+    ]
+    sources = set(
+        await session.scalars(
+            select(Account.currency)
+            .distinct()
+            .where(Account.workspace_id.in_([w.id for w in workspaces]))
+        )
+    )
+    # USD keeps the target itself checked when the user has no accounts yet.
+    missing = [
+        src
+        for src in sorted(sources | {"USD"})
+        if await _resolve_rate(session, src, code, None, allow_fetch=True) is None
+    ]
+    if missing:
         raise HTTPException(
             status_code=409,
             detail=(
-                f"No FX rate available for {code}. Check the FX provider "
-                "configuration, then try again."
+                f"No FX rate available from {', '.join(missing)} to {code}. "
+                "Check the FX provider configuration, then try again."
             ),
         )
 
@@ -137,7 +158,7 @@ async def set_display_currency(
 
     prefs = dict(user.preferences or {})
     if code[0] != prefs.get("currency_display"):
-        await _require_convertible(session, code[0])
+        await _require_convertible(session, user, code[0])
     prefs["currency_display"] = code[0]
     return await _save(session, user, prefs)
 
