@@ -1911,7 +1911,7 @@ async def _find_synced_duplicate(
     # copy was keyed by the payload fingerprint and the second by the
     # reference, so the held row carries no reference to compare. Such a row
     # is the same transaction only when it is a synced row that also agrees on
-    # the date, the status and the description, no row holding the reference
+    # the currency, date, status and description, no row holding the reference
     # itself competes, and it is the single candidate: two identical purchases
     # on one day are ambiguous, and picking one would hang its category and
     # notes on the other.
@@ -1949,6 +1949,7 @@ async def _find_synced_duplicate(
             elif (
                 candidate_ref in (None, "", "0")
                 and candidate.source == "sync"
+                and candidate.currency == txn_data.currency
                 and candidate.date == txn_data.date
                 and candidate.status == txn_data.status
                 and token_overlap(

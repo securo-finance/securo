@@ -1400,13 +1400,16 @@ async def test_sync_connection_enable_banking_pending_and_booked_in_one_fetch(
 
 
 def _eb_late_ref_payload(
-    entry_ref: str | None, *, remittance: str = "COMPRA TARJ. 5540XXXXXXXX1234 TIENDA CENTRO",
+    entry_ref: str | None,
+    *,
+    remittance: str = "COMPRA TARJ. 5540XXXXXXXX1234 TIENDA CENTRO",
+    currency: str = "EUR",
 ) -> dict:
     """A booked card purchase, as returned before and after the bank fills in
     its reference."""
     return {
         "entry_reference": entry_ref,
-        "transaction_amount": {"currency": "EUR", "amount": "149.90"},
+        "transaction_amount": {"currency": currency, "amount": "149.90"},
         "credit_debit_indicator": "DBIT",
         "status": "BOOK",
         "booking_date": "2026-09-03",
@@ -1421,7 +1424,7 @@ def _eb_late_ref_row(
     return _eb_row(
         user_id, workspace_id, account, external_id or txn.external_id, txn.raw_data,
         "149.90", description=txn.description, original_description=txn.description,
-        date=txn.date,
+        date=txn.date, currency=txn.currency,
     )
 
 
@@ -1453,14 +1456,20 @@ async def test_sync_connection_enable_banking_rekeys_row_whose_reference_arrived
 
 
 @pytest.mark.asyncio
-async def test_sync_connection_enable_banking_late_reference_needs_same_description(
-    session: AsyncSession, test_user, test_workspace,
+@pytest.mark.parametrize(
+    "held_fields",
+    [{"remittance": "COMPRA TARJ. FARMACIA SOL"}, {"currency": "USD"}],
+    ids=["other-merchant", "other-currency"],
+)
+async def test_sync_connection_enable_banking_late_reference_leaves_other_purchase_alone(
+    session: AsyncSession, test_user, test_workspace, held_fields,
 ):
     """A held row without a reference that agrees on the day and amount but
-    names another merchant is a different purchase, so it keeps its id."""
+    names another merchant, or is in another currency, is a different
+    purchase, so it keeps its id."""
     conn, account = await _eb_account(session, test_user.id, test_workspace.id)
     account_id = account.id
-    other = _eb_txn(_eb_late_ref_payload(None, remittance="COMPRA TARJ. FARMACIA SOL"))
+    other = _eb_txn(_eb_late_ref_payload(None, **held_fields))
     held = _eb_late_ref_row(test_user.id, test_workspace.id, account, other)
     session.add(held)
     await session.commit()
@@ -1501,6 +1510,38 @@ async def test_sync_connection_enable_banking_late_reference_ambiguous_is_new_ro
     assert {row.external_id for row in rows if row.id in held_ids} == {"fp-a", "fp-b"}
     assert {row.external_id for row in rows if row.id not in held_ids} == {
         first.external_id, second.external_id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_late_reference_yields_to_held_reference(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Held rows that carry the incoming reference itself are Path 4's own
+    candidates. When two of them make that match ambiguous, a held row
+    without a reference is not taken in their place."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    unreferenced = _eb_txn(_eb_late_ref_payload(None))
+    referenced = _eb_txn(_eb_late_ref_payload("2026-09-03.1"))
+    session.add_all([
+        _eb_late_ref_row(
+            test_user.id, test_workspace.id, account, unreferenced, external_id="fp-late",
+        ),
+        _eb_late_ref_row(
+            test_user.id, test_workspace.id, account, referenced, external_id="fp-a",
+        ),
+        _eb_late_ref_row(
+            test_user.id, test_workspace.id, account, referenced, external_id="fp-b",
+        ),
+    ])
+    await session.commit()
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [referenced])
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {
+        "fp-late", "fp-a", "fp-b", referenced.external_id,
     }
 
 
