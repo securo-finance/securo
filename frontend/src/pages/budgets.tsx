@@ -265,74 +265,76 @@ export default function BudgetsPage() {
         <p className="px-4 sm:px-5 py-3 text-xs text-muted-foreground">{t('budgets.spendingDescription')}</p>
         {spendingError && !noAccounts && <p role="alert" className="px-4 sm:px-5 pb-3 text-sm text-destructive">{t('budgets.spendingError')}</p>}
         {budgetsList && budgetsList.length > 0 ? (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('budgets.category')}</th>
-                <th className={`${TH} pr-4 sm:pr-5 text-right w-52`}>{t('budgets.spending')}</th>
-                <th className={`${TH} text-left w-36`}>{t('budgets.amount')}</th>
-                {canWrite && <th className={`${TH} pr-4 sm:pr-5 text-right w-24`}>{t('budgets.actions')}</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {budgetsList.map((budget) => {
-                const amount = spendingByCategory.get(budget.category_id) ?? 0
-                const spendingAvailable = noAccounts || (!spendingPending && !spendingError)
-                const limit = Number(budget.amount)
-                // Match Overview: forecast-inclusive spending, rounded to one
-                // decimal, green below 80%, amber through 100%, red above it.
-                const pct = limit > 0 ? Math.round(amount / limit * 1000) / 10 : 0
-                return (
-                  <tr key={budget.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors">
-                    <td className="py-3 pl-4 sm:pl-5 text-sm font-medium text-foreground">
-                      <span className="flex items-center gap-1.5">
-                        {getCategoryDisplay(budget.category_id)}
-                        {budget.is_recurring && (
-                          <span title={t('budgets.recurringLabel')} className="text-muted-foreground">
-                            <Repeat size={12} />
-                          </span>
-                        )}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 sm:pr-5 text-right text-sm font-semibold tabular-nums text-foreground">
-                      {spendingAvailable ? (
-                        <>
-                          <div className="mb-1">{mask(formatCurrency(amount, userCurrency, locale))}</div>
-                          {limit > 0 && (
-                            <BudgetSpendingProgress percentage={pct} budgetAmount={limit} currency={userCurrency} />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] table-fixed">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className={`${TH} pl-4 sm:pl-5 text-left w-[28%]`}>{t('budgets.category')}</th>
+                  <th className={`${TH} pr-4 sm:pr-5 text-right`}>{t('budgets.spending')}</th>
+                  <th className={`${TH} text-left w-32`}>{t('budgets.amount')}</th>
+                  {canWrite && <th className={`${TH} pr-4 sm:pr-5 text-right w-24`}>{t('budgets.actions')}</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {budgetsList.map((budget) => {
+                  const amount = spendingByCategory.get(budget.category_id) ?? 0
+                  const spendingAvailable = noAccounts || (!spendingPending && !spendingError)
+                  const limit = Number(budget.amount)
+                  // Match Overview: forecast-inclusive spending, rounded to one
+                  // decimal, green below 80%, amber through 100%, red above it.
+                  const pct = limit > 0 ? Math.round(amount / limit * 1000) / 10 : 0
+                  return (
+                    <tr key={budget.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors">
+                      <td className="py-3 pl-4 sm:pl-5 pr-4 text-sm font-medium text-foreground break-words">
+                        <span className="flex items-center gap-1.5">
+                          {getCategoryDisplay(budget.category_id)}
+                          {budget.is_recurring && (
+                            <span title={t('budgets.recurringLabel')} className="text-muted-foreground">
+                              <Repeat size={12} />
+                            </span>
                           )}
-                        </>
-                      ) : '—'}
-                    </td>
-                    <td className="py-3 text-sm font-semibold tabular-nums text-foreground">{mask(formatCurrency(budget.amount, userCurrency, locale))}</td>
-                    {canWrite && (
-                      <td className="py-3 pr-4 sm:pr-5">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
-                            onClick={() => { setEditing(budget); setDialogOpen(true) }}
-                            aria-label={t('common.edit')}
-                            title={t('common.edit')}
-                          >
-                            <Pencil size={13} />
-                          </button>
-                          <button
-                            className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                            onClick={() => setDeletingBudget(budget)}
-                            disabled={deleteMutation.isPending}
-                            aria-label={t('common.delete')}
-                            title={t('common.delete')}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
+                        </span>
                       </td>
-                    )}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      <td className="py-3 pr-4 sm:pr-5 text-right text-sm font-semibold tabular-nums text-foreground">
+                        {spendingAvailable ? (
+                          <>
+                            <div className="mb-1">{mask(formatCurrency(amount, userCurrency, locale))}</div>
+                            {limit > 0 && (
+                              <BudgetSpendingProgress percentage={pct} budgetAmount={limit} currency={userCurrency} />
+                            )}
+                          </>
+                        ) : '—'}
+                      </td>
+                      <td className="py-3 text-sm font-semibold tabular-nums text-foreground">{mask(formatCurrency(budget.amount, userCurrency, locale))}</td>
+                      {canWrite && (
+                        <td className="py-3 pr-4 sm:pr-5">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                              onClick={() => { setEditing(budget); setDialogOpen(true) }}
+                              aria-label={t('common.edit')}
+                              title={t('common.edit')}
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                              onClick={() => setDeletingBudget(budget)}
+                              disabled={deleteMutation.isPending}
+                              aria-label={t('common.delete')}
+                              title={t('common.delete')}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground text-center py-10">{t('budgets.empty')}</p>
         )}
