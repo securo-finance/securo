@@ -2,7 +2,7 @@ import csv
 import io
 import uuid
 from datetime import date
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -232,6 +232,7 @@ async def transaction_calendar(
     month: Optional[date] = Query(None),
     account_id: Optional[uuid.UUID] = Query(None),
     account_ids: Optional[List[uuid.UUID]] = Query(None),
+    date_basis: Literal["reporting", "bank"] = Query("reporting"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -241,6 +242,7 @@ async def transaction_calendar(
         ctx.user_id,
         month,
         account_ids=_merge_id_filters(account_id, account_ids),
+        date_basis=date_basis,
     )
 
 

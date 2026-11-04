@@ -62,6 +62,7 @@ import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
 import { formatCompactCurrency, formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import { readCalendarDateBasis } from '@/lib/transaction-calendar'
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
@@ -139,6 +140,7 @@ export default function DashboardPage() {
     searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
   ))
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
+  const [calendarDateBasis, setCalendarDateBasis] = useState(readCalendarDateBasis)
 
   const prevSearchRef = useRef<string | null>(null)
   const searchParamsRef = useRef(searchParams)
@@ -314,11 +316,12 @@ export default function DashboardPage() {
   // collection's accounts. Only fetched while the calendar is on screen.
   const calendarAccountIds = acctIds && acctIds.length > 0 ? acctIds : undefined
   const { data: calendarData, isLoading: calendarLoading } = useQuery({
-    queryKey: ['transactions', 'calendar', selectedMonth, activeAccountIds],
+    queryKey: ['transactions', 'calendar', selectedMonth, activeAccountIds, calendarDateBasis],
     enabled: txViewMode === 'calendar' && !noAccounts,
     queryFn: () => transactions.calendar({
       month: monthStart,
       account_ids: calendarAccountIds,
+      date_basis: calendarDateBasis,
     }),
   })
 
@@ -1510,6 +1513,8 @@ export default function DashboardPage() {
             onOpenTransaction={handleOpenCalendarTransaction}
             accounts={accountsList}
             userCurrency={userCurrency}
+            dateBasis={calendarDateBasis}
+            onDateBasisChange={setCalendarDateBasis}
           />
         )}
 

@@ -125,6 +125,35 @@ async def test_running_balance_is_continuous_across_pages(
 
 
 @pytest.mark.asyncio
+async def test_running_balance_uses_bank_date_when_reporting_override_leaves_window(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+):
+    account = await _make_account(session, test_user.id)
+    await _add_txn(
+        session, test_user.id, account, "1000", "credit", date(2026, 1, 15),
+        source="opening_balance",
+    )
+    await _add_txn(
+        session, test_user.id, account, "60", "debit", date(2026, 2, 10),
+        source="sync",
+        reporting_date_override=date(2026, 1, 31),
+    )
+
+    response = await _series(
+        client,
+        auth_headers,
+        account.id,
+        **{"from": "2026-02-01", "to": "2026-02-28"},
+    )
+    assert response.status_code == 200, response.text
+    series = {point["date"]: point["balance"] for point in response.json()}
+
+    assert series["2026-02-09"] == 1000
+    assert series["2026-02-10"] == 940
+    assert series["2026-02-28"] == 940
+
+
+@pytest.mark.asyncio
 async def test_running_balance_breaks_same_date_ties_like_the_list(
     client: AsyncClient, auth_headers, session: AsyncSession, test_user,
 ):
