@@ -677,15 +677,17 @@ async def test_get_accounts_raises_when_the_bank_refuses_every_account(eb_keys):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "failures",
+    "failures, expected",
     [
-        pytest.param({"acc-1": 503, "acc-2": 503}, id="outage"),
-        pytest.param({"acc-1": 408, "acc-2": 408}, id="timeout"),
-        pytest.param({"acc-1": 400, "acc-2": 503}, id="refusal-and-outage"),
-        pytest.param({"acc-1": "network", "acc-2": "network"}, id="network"),
+        pytest.param({"acc-1": 503, "acc-2": 503}, 503, id="outage"),
+        pytest.param({"acc-1": 408, "acc-2": 408}, 408, id="timeout"),
+        pytest.param({"acc-1": 400, "acc-2": 503}, 503, id="refusal-and-outage"),
+        pytest.param({"acc-1": "network", "acc-2": "network"}, "network", id="network"),
     ],
 )
-async def test_get_accounts_does_not_ask_for_a_reconnect_during_an_outage(eb_keys, failures):
+async def test_get_accounts_does_not_ask_for_a_reconnect_during_an_outage(
+    eb_keys, failures, expected
+):
     """Only refusals from the bank are the user's to act on; the rest is retryable."""
     provider = EnableBankingProvider()
     attempted: list[str] = []
@@ -707,8 +709,13 @@ async def test_get_accounts_does_not_ask_for_a_reconnect_during_an_outage(eb_key
         return httpx.Response(failure, json={"code": failure})
 
     with _patch_client(provider, handler):
-        with pytest.raises(httpx.HTTPError):
+        with pytest.raises(httpx.HTTPError) as excinfo:
             await provider.get_accounts(_CREDENTIALS)
+    if expected == "network":
+        assert isinstance(excinfo.value, httpx.ConnectError)
+    else:
+        assert isinstance(excinfo.value, httpx.HTTPStatusError)
+        assert excinfo.value.response.status_code == expected
     assert attempted == ["acc-1", "acc-2"]
 
 
