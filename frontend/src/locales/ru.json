@@ -1393,6 +1393,7 @@
     "behind": "{{amount}} с отставанием от договора",
     "onSchedule": "По графику",
     "paidOff": "Погашен",
+    "progress": "{{paid}} из {{total}} платежей внесено",
     "showSchedule": "Показать график платежей",
     "hideSchedule": "Скрыть график",
     "colDate": "Дата",

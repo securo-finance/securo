@@ -1380,6 +1380,7 @@
     "behind": "{{amount}} por detrás del contrato",
     "onSchedule": "Al día",
     "paidOff": "Liquidado",
+    "progress": "{{paid}} de {{total}} cuotas pagadas",
     "showSchedule": "Ver cuadro de amortización",
     "hideSchedule": "Ocultar cuadro",
     "colDate": "Fecha",

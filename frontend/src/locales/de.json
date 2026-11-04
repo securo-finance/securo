@@ -1377,6 +1377,7 @@
     "behind": "{{amount}} hinter dem Vertrag",
     "onSchedule": "Im Plan",
     "paidOff": "Abbezahlt",
+    "progress": "{{paid}} von {{total}} Raten bezahlt",
     "showSchedule": "Tilgungsplan anzeigen",
     "hideSchedule": "Tilgungsplan ausblenden",
     "colDate": "Datum",

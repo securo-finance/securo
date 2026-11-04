@@ -1376,6 +1376,7 @@
     "behind": "अनुबंध से {{amount}} पीछे",
     "onSchedule": "समय पर",
     "paidOff": "चुकता",
+    "progress": "{{total}} में से {{paid}} भुगतान किए गए",
     "showSchedule": "किस्तों की तालिका दिखाएँ",
     "hideSchedule": "तालिका छिपाएँ",
     "colDate": "तारीख",
