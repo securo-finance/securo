@@ -682,6 +682,7 @@ async def test_get_accounts_raises_when_the_bank_refuses_every_account(eb_keys):
         pytest.param({"acc-1": 503, "acc-2": 503}, 503, id="outage"),
         pytest.param({"acc-1": 408, "acc-2": 408}, 408, id="timeout"),
         pytest.param({"acc-1": 400, "acc-2": 503}, 503, id="refusal-and-outage"),
+        pytest.param({"acc-1": 503, "acc-2": 400}, 503, id="outage-and-refusal"),
         pytest.param({"acc-1": "network", "acc-2": "network"}, "network", id="network"),
     ],
 )
