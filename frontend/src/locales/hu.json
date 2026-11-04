@@ -1431,6 +1431,9 @@
     "darkMode": "Sötét mód"
   },
   "budgets": {
+    "spending": "Kiadások",
+    "spendingDescription": "Megegyezik az áttekintés kategóriánkénti kiadásaival a kiválasztott hónapra és számlaszűrőre, beleértve a függőben lévő és előrejelzett kiadásokat.",
+    "spendingError": "A kiadások betöltése sikertelen.",
     "title": "Költségkeretek",
     "add": "Költségkeret hozzáadása",
     "edit": "Költségkeret szerkesztése",

@@ -1484,6 +1484,9 @@
     "darkMode": "Tryb ciemny"
   },
   "budgets": {
+    "spending": "Wydatki",
+    "spendingDescription": "Odpowiada wydatkom według kategorii w przeglądzie dla wybranego miesiąca i filtra kont, w tym wydatkom oczekującym i prognozowanym.",
+    "spendingError": "Nie udało się wczytać wydatków.",
     "title": "Budżety",
     "add": "Dodaj budżet",
     "edit": "Edytuj budżet",

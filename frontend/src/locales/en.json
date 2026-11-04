@@ -1431,6 +1431,9 @@
     "darkMode": "Dark mode"
   },
   "budgets": {
+    "spending": "Spending",
+    "spendingDescription": "Matches Overview’s Spending by Category for the selected month and account filter, including pending and projected spending.",
+    "spendingError": "Spending could not be loaded.",
     "title": "Budgets",
     "add": "Add Budget",
     "edit": "Edit Budget",

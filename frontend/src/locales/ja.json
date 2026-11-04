@@ -1431,6 +1431,9 @@
     "darkMode": "ダークモード"
   },
   "budgets": {
+    "spending": "支出",
+    "spendingDescription": "選択した月と口座フィルターの概要のカテゴリ別支出と一致し、保留中および予測支出を含みます。",
+    "spendingError": "支出を読み込めませんでした。",
     "title": "予算",
     "add": "予算を追加",
     "edit": "予算を編集",

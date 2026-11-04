@@ -1433,6 +1433,9 @@
     "darkMode": "Donkere modus"
   },
   "budgets": {
+    "spending": "Uitgaven",
+    "spendingDescription": "Komt overeen met de uitgaven per categorie in het overzicht voor de geselecteerde maand en het rekeningfilter, inclusief openstaande en verwachte uitgaven.",
+    "spendingError": "Uitgaven konden niet worden geladen.",
     "title": "Budgetten",
     "add": "Budget toevoegen",
     "edit": "Budget bewerken",

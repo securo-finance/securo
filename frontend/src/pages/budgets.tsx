@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { monthLabel } from '@/lib/month-utils'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { categories as categoriesApi, categoryGroups as groupsApi, budgets as budgetsApi } from '@/lib/api'
+import { categories as categoriesApi, categoryGroups as groupsApi, budgets as budgetsApi, dashboard } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -26,6 +26,7 @@ import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { findCategoryReference } from '@/lib/category-reference-utils'
@@ -59,6 +60,8 @@ export default function BudgetsPage() {
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
+  const { activeAccountIds } = useCollectionFilter()
+  const noAccounts = activeAccountIds !== null && activeAccountIds.length === 0
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const queryClient = useQueryClient()
@@ -78,6 +81,15 @@ export default function BudgetsPage() {
     queryKey: ['budgets', selectedMonth],
     queryFn: () => budgetsApi.list(monthParam),
   })
+
+  const { data: spending, isPending: spendingPending, isError: spendingError } = useQuery({
+    queryKey: ['dashboard', 'spending', selectedMonth, activeAccountIds],
+    queryFn: () => dashboard.spendingByCategory(monthParam, activeAccountIds ?? undefined),
+    enabled: !noAccounts,
+  })
+  const spendingByCategory = new Map(
+    (noAccounts ? [] : spending ?? []).map(item => [item.category_id, item.projected_total]),
+  )
 
   const { data: categoriesList } = useQuery({
     queryKey: ['categories'],
@@ -249,12 +261,15 @@ export default function BudgetsPage() {
             ) : undefined
           }
         />
+        <p className="px-4 sm:px-5 py-3 text-xs text-muted-foreground">{t('budgets.spendingDescription')}</p>
+        {spendingError && !noAccounts && <p role="alert" className="px-4 sm:px-5 pb-3 text-sm text-destructive">{t('budgets.spendingError')}</p>}
         {budgetsList && budgetsList.length > 0 ? (
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
                 <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('budgets.category')}</th>
                 <th className={`${TH} text-left w-36`}>{t('budgets.amount')}</th>
+                <th className={`${TH} pr-4 sm:pr-5 text-right w-36`}>{t('budgets.spending')}</th>
                 {canWrite && <th className={`${TH} pr-4 sm:pr-5 text-right w-24`}>{t('budgets.actions')}</th>}
               </tr>
             </thead>
@@ -272,6 +287,11 @@ export default function BudgetsPage() {
                     </span>
                   </td>
                   <td className="py-3 text-sm font-semibold tabular-nums text-foreground">{mask(formatCurrency(budget.amount, userCurrency, locale))}</td>
+                  <td className="py-3 pr-4 sm:pr-5 text-right text-sm font-semibold tabular-nums text-foreground">
+                    {!noAccounts && (spendingPending || spendingError)
+                      ? '—'
+                      : mask(formatCurrency(spendingByCategory.get(budget.category_id) ?? 0, userCurrency, locale))}
+                  </td>
                   {canWrite && (
                     <td className="py-3 pr-4 sm:pr-5">
                       <div className="flex items-center justify-end gap-1">

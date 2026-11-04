@@ -1499,6 +1499,9 @@
     "darkMode": "Tmavý režim"
   },
   "budgets": {
+    "spending": "Výdavky",
+    "spendingDescription": "Zodpovedá výdavkom podľa kategórií v prehľade pre vybraný mesiac a filter účtov vrátane čakajúcich a predpokladaných výdavkov.",
+    "spendingError": "Výdavky sa nepodarilo načítať.",
     "title": "Rozpočty",
     "add": "Pridať rozpočet",
     "edit": "Upraviť rozpočet",

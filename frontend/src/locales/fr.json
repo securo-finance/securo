@@ -1435,6 +1435,9 @@
     "darkMode": "Mode sombre"
   },
   "budgets": {
+    "spending": "Dépenses",
+    "spendingDescription": "Correspond aux dépenses par catégorie de la vue d’ensemble pour le mois et le filtre de comptes sélectionnés, y compris les dépenses en attente et prévisionnelles.",
+    "spendingError": "Impossible de charger les dépenses.",
     "title": "Budgets",
     "add": "Ajouter un budget",
     "edit": "Modifier le budget",

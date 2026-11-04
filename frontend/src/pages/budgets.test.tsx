@@ -6,6 +6,9 @@ import BudgetsPage from '@/pages/budgets'
 import { renderWithProviders, t } from '@/test/utils'
 
 const api = vi.hoisted(() => ({
+  activeAccountIds: null as string[] | null,
+  mask: vi.fn((value: string) => value),
+  dashboard: { spendingByCategory: vi.fn() },
   budgets: {
     list: vi.fn(),
     create: vi.fn(),
@@ -25,6 +28,7 @@ const api = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/api', () => ({
+  dashboard: api.dashboard,
   budgets: api.budgets,
   categories: api.categories,
   categoryGroups: api.categoryGroups,
@@ -43,8 +47,12 @@ vi.mock('@/contexts/workspace-context', () => ({
   useWorkspace: () => ({ canWrite: true }),
 }))
 
+vi.mock('@/contexts/collection-filter-context', () => ({
+  useCollectionFilter: () => ({ activeAccountIds: api.activeAccountIds }),
+}))
+
 vi.mock('@/hooks/use-privacy-mode', () => ({
-  usePrivacyMode: () => ({ mask: (value: string) => value }),
+  usePrivacyMode: () => ({ mask: api.mask }),
 }))
 
 const categories = [
@@ -87,10 +95,85 @@ const expectedMonth = `${format(new Date(), 'yyyy-MM')}-01`
 describe('BudgetsPage suggestions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    api.activeAccountIds = null
+    api.mask.mockImplementation(value => value)
+    api.dashboard.spendingByCategory.mockResolvedValue([])
     api.budgets.list.mockResolvedValue([])
     api.categories.list.mockResolvedValue(categories)
     api.categories.listIncludingHidden.mockResolvedValue(categories)
     api.categoryGroups.list.mockResolvedValue([])
+  })
+
+
+  function mockBudgets() {
+    api.budgets.list.mockResolvedValue(categories.map((category, index) => ({
+      id: `budget-${index}`, category_id: category.id, amount: 500,
+      month: expectedMonth, is_recurring: false,
+    })))
+  }
+
+  it('shows Overview projected spending and retains zero-activity budget rows', async () => {
+    mockBudgets()
+    api.dashboard.spendingByCategory.mockResolvedValue([
+      { category_id: 'cat-groceries', total: 20, projected_total: 123.45 },
+      { category_id: 'unbudgeted', total: 99, projected_total: 99 },
+    ])
+    renderWithProviders(<BudgetsPage />)
+    expect(await screen.findByText('$123.45')).toBeInTheDocument()
+    expect(screen.getByText('$0.00')).toBeInTheDocument()
+    expect(screen.getAllByRole('row')).toHaveLength(3)
+    expect(screen.getByText(t('budgets.spendingDescription'))).toBeInTheDocument()
+    expect(api.dashboard.spendingByCategory).toHaveBeenCalledWith(expectedMonth, undefined)
+  })
+
+  it('uses the selected month and collection accounts', async () => {
+    api.activeAccountIds = ['account-1']
+    mockBudgets()
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await waitFor(() => expect(api.dashboard.spendingByCategory).toHaveBeenCalledWith(expectedMonth, ['account-1']))
+    await user.click(screen.getByRole('button', { name: '‹' }))
+    const previous = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
+    await waitFor(() => expect(api.dashboard.spendingByCategory).toHaveBeenCalledWith(`${format(previous, 'yyyy-MM')}-01`, ['account-1']))
+  })
+
+  it('refreshes spending when the active account filter changes', async () => {
+    mockBudgets()
+    api.dashboard.spendingByCategory.mockImplementation((_month, accountIds) => Promise.resolve([
+      { category_id: 'cat-groceries', projected_total: accountIds ? 25 : 125 },
+    ]))
+    const { rerender } = renderWithProviders(<BudgetsPage />)
+    expect(await screen.findByText('$125.00')).toBeInTheDocument()
+    api.activeAccountIds = ['account-2']
+    rerender(<BudgetsPage />)
+    expect(await screen.findByText('$25.00')).toBeInTheDocument()
+    expect(screen.queryByText('$125.00')).not.toBeInTheDocument()
+    expect(api.dashboard.spendingByCategory).toHaveBeenLastCalledWith(expectedMonth, ['account-2'])
+  })
+
+  it('does not fetch all accounts for a wallet-only collection', async () => {
+    api.activeAccountIds = []
+    mockBudgets()
+    renderWithProviders(<BudgetsPage />)
+    expect(await screen.findAllByText('$0.00')).toHaveLength(2)
+    expect(api.dashboard.spendingByCategory).not.toHaveBeenCalled()
+  })
+
+  it('masks spending with the existing privacy formatter', async () => {
+    mockBudgets()
+    api.dashboard.spendingByCategory.mockResolvedValue([{ category_id: 'cat-groceries', projected_total: 123.45 }])
+    api.mask.mockImplementation(() => '••••')
+    renderWithProviders(<BudgetsPage />)
+    await waitFor(() => expect(api.mask).toHaveBeenCalledWith('$123.45'))
+    expect(screen.queryByText('$123.45')).not.toBeInTheDocument()
+  })
+
+  it('does not present a failed spending request as zero', async () => {
+    mockBudgets()
+    api.dashboard.spendingByCategory.mockRejectedValue(new Error('unavailable'))
+    renderWithProviders(<BudgetsPage />)
+    expect(await screen.findByRole('alert')).toHaveTextContent(t('budgets.spendingError'))
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
+    expect(screen.getAllByText('—')).toHaveLength(2)
   })
 
   it('offers the suggest button next to the add button', async () => {
