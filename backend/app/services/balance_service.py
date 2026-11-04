@@ -50,6 +50,7 @@ async def compute_balances(
     group = await get_group_visible(session, group_id, workspace_id, user_id)
     if not group:
         return None
+    default_currency = group.default_currency
 
     members_result = await session.execute(
         select(GroupMember).where(GroupMember.group_id == group_id)
@@ -107,14 +108,22 @@ async def compute_balances(
             Transaction.user_id,
             Transaction.type,
             User.preferences,
+            Transaction.date,
         )
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .join(GroupMember, TransactionSplit.group_member_id == GroupMember.id)
         .outerjoin(User, Transaction.user_id == User.id)
         .where(GroupMember.group_id == group_id)
+        .order_by(
+            TransactionSplit.transaction_id,
+            TransactionSplit.group_member_id,
+        )
     )
     split_rows = splits_result.all()
     converted_shares: dict[uuid.UUID, dict[uuid.UUID, Decimal]] = {}
+    legacy_conversion_tranches: dict[
+        tuple[uuid.UUID, uuid.UUID, str], list[dict[str, Any]]
+    ] = defaultdict(list)
     rows_by_transaction: dict[uuid.UUID, list[Any]] = defaultdict(list)
     for row in split_rows:
         rows_by_transaction[row[0].transaction_id].append(row)
@@ -147,7 +156,17 @@ async def compute_balances(
                 )
                 for row in transaction_rows
             ]
-            residual = target_amount - sum(
+            # Split rows can intentionally cover only part of the transaction
+            # (for example after an amount-only edit). Allocate cents only
+            # across the amount represented by the stored split rows.
+            covered_amount = sum(
+                (Decimal(str(row[0].share_amount)) for row in transaction_rows),
+                Decimal("0"),
+            )
+            expected_total = (
+                target_amount * covered_amount / source_amount
+            ).quantize(Decimal("0.01"))
+            residual = expected_total - sum(
                 (share for _, share in converted), Decimal("0")
             )
             member_id, last_share = converted[-1]
@@ -162,11 +181,13 @@ async def compute_balances(
         recorder_id,
         tx_type,
         preferences,
+        transaction_date,
     ) in split_rows:
         recorder = member_by_user.get(recorder_id, default_payer)
         if split.group_member_id == recorder:
             continue
         share = Decimal(str(split.share_amount))
+        source_currency = currency
         primary_currency = (preferences or {}).get(
             "currency_display", fallback_currency
         )
@@ -180,6 +201,19 @@ async def compute_balances(
         ):
             share = converted_shares[split.transaction_id][split.group_member_id]
             currency = group.default_currency
+            debtor, creditor = (
+                (recorder, split.group_member_id)
+                if tx_type == "credit"
+                else (split.group_member_id, recorder)
+            )
+            legacy_conversion_tranches[(debtor, creditor, source_currency)].append(
+                {
+                    "date": transaction_date,
+                    "source_remaining": Decimal(str(split.share_amount)),
+                    "source_total": Decimal(str(split.share_amount)),
+                    "target_total": share,
+                }
+            )
         if tx_type == "credit":
             # Income: the recorder received the money, so they owe each
             # other member that member's share.
@@ -189,10 +223,50 @@ async def compute_balances(
 
     # Settlements: `from` paid `to`, which reduces what `from` owes `to`.
     settlements_result = await session.execute(
-        select(GroupSettlement).where(GroupSettlement.group_id == group_id)
+        select(GroupSettlement)
+        .where(GroupSettlement.group_id == group_id)
+        .order_by(GroupSettlement.date, GroupSettlement.created_at)
     )
     for s in settlements_result.scalars().all():
-        owed[(s.from_member_id, s.to_member_id)][s.currency] -= Decimal(str(s.amount))
+        pair = (s.from_member_id, s.to_member_id)
+        remaining = Decimal(str(s.amount))
+        native_balance = owed[pair][s.currency]
+
+        # Keep legacy same-currency debts and settlements together first.
+        # If the settlement exceeds that native debt, apply the remainder to
+        # converted obligations using the weighted historical conversion
+        # represented by those obligations, rather than today's FX rate.
+        if s.currency == default_currency or native_balance < 0:
+            owed[pair][s.currency] -= remaining
+            continue
+        if native_balance > 0:
+            native_payment = min(remaining, native_balance)
+            owed[pair][s.currency] -= native_payment
+            remaining -= native_payment
+
+        tranches = legacy_conversion_tranches.get(
+            (s.from_member_id, s.to_member_id, s.currency)
+        )
+        if remaining == 0:
+            continue
+        converted_payment = Decimal("0")
+        for tranche in tranches or ():
+            if remaining == 0:
+                break
+            if tranche["date"] > s.date or tranche["source_remaining"] <= 0:
+                continue
+            source_payment = min(remaining, tranche["source_remaining"])
+            converted_payment += (
+                source_payment
+                * tranche["target_total"]
+                / tranche["source_total"]
+            ).quantize(Decimal("0.01"))
+            tranche["source_remaining"] -= source_payment
+            remaining -= source_payment
+        if converted_payment:
+            owed[pair][default_currency] -= converted_payment
+        if remaining:
+            owed[pair][s.currency] -= remaining
 
     # Project onto the caller: member_id -> currency -> what they owe the caller.
     totals: dict[uuid.UUID, dict[str, Decimal]] = defaultdict(
@@ -214,8 +288,6 @@ async def compute_balances(
     # frontend can roll cross-currency lines up into a single KPI
     # without doing FX itself. Lines stay in their native currency too.
     from app.services.fx_rate_service import convert as _fx_convert
-
-    default_currency = group.default_currency
 
     lines = []
     for member_id, by_currency in totals.items():

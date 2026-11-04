@@ -345,6 +345,62 @@ async def test_foreign_split_uses_historical_primary_amount(
 
 
 @pytest.mark.asyncio
+async def test_legacy_foreign_currency_settlement_closes_converted_balance(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, self_m, friends = await _setup(
+        session, test_user, test_workspace.id, n_others=1
+    )
+    friend = friends[0]
+    account = await _make_account(session, test_user.id)
+    tx = await _make_tx(
+        session,
+        test_user.id,
+        account.id,
+        "100.00",
+        currency="EUR",
+    )
+    tx.amount_primary = Decimal("110.00")
+    await split_service.replace_splits(
+        session,
+        tx,
+        TransactionSplitsInput(
+            share_type="exact",
+            splits=[
+                TransactionSplitInput(
+                    group_member_id=self_m.id, share_amount=Decimal("50.00")
+                ),
+                TransactionSplitInput(
+                    group_member_id=friend.id, share_amount=Decimal("50.00")
+                ),
+            ],
+        ),
+        test_user.id,
+    )
+    await settlement_service.create_settlement(
+        session,
+        group.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementCreate(
+            from_member_id=friend.id,
+            to_member_id=self_m.id,
+            amount=Decimal("50.00"),
+            currency="EUR",
+            date=date.today(),
+        ),
+    )
+    await session.commit()
+
+    balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+
+    assert balances is not None
+    assert not balances["lines"]
+
+
+@pytest.mark.asyncio
 async def test_foreign_split_conversion_uses_absolute_primary_amount(
     session: AsyncSession, test_user, test_workspace
 ):

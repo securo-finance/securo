@@ -87,6 +87,40 @@ async def test_create_settlement_happy_path(
 
 
 @pytest.mark.asyncio
+async def test_administrative_settlement_does_not_create_receiver_credit(
+    session: AsyncSession, test_user, test_workspace
+):
+    receiver, _receiver_workspace = await _make_user_with_workspace(
+        session, "admin-settlement-receiver@example.com"
+    )
+    receiver_account = await _make_account(session, receiver.id)
+    group, payer, recipient = await _setup_group(
+        session, test_user.id, test_workspace.id
+    )
+    recipient.linked_user_id = receiver.id
+    await session.flush()
+
+    settlement = await settlement_service.create_settlement(
+        session,
+        group.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementCreate(
+            from_member_id=payer.id,
+            to_member_id=recipient.id,
+            amount=Decimal("25.00"),
+            currency="USD",
+            date=date.today(),
+        ),
+    )
+
+    assert settlement is not None
+    assert settlement.transaction_id is None
+    assert settlement.receiver_transaction_id is None
+    assert receiver_account.user_id == receiver.id
+
+
+@pytest.mark.asyncio
 async def test_settlement_members_must_belong_to_group(
     session: AsyncSession, test_user, test_workspace
 ):

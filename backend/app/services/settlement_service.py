@@ -312,7 +312,10 @@ async def create_settlement(
     # user and has a checking/savings account, record the cash-in side
     # so their books reflect the actual money received.
     receiver_tx_id = None
-    if receiver_user_id is not None:
+    # Only mirror a cash receipt when this settlement also records a payer
+    # transaction. Administrative ledger-only settlements must not invent
+    # income in the receiver's account.
+    if receiver_user_id is not None and payload.get("transaction_id") is not None:
         receiver_desc = description or f"Acerto · {group.name} · {from_name}"
         receiver_tx = await _create_receiver_credit(
             session,
@@ -385,7 +388,8 @@ async def update_settlement(
         setattr(settlement, key, value)
 
     if (
-        settlement.transaction_id is not None
+        "transaction_id" in update_data
+        and settlement.transaction_id is not None
         and settlement.receiver_transaction_id is None
     ):
         receiver_meta_result = await session.execute(
