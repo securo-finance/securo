@@ -15,6 +15,7 @@ from mcp_server.tools._helpers import parse_date, parse_uuid, parse_uuid_list
 
 CANONICAL = "a1b2c3d4-e5f6-4789-abcd-ef0123456789"
 ID = uuid.UUID(CANONICAL)
+OTHER = uuid.UUID("b2c3d4e5-f6a7-4890-bcde-f01234567890")
 DAY = date(2026, 10, 29)
 
 
@@ -101,6 +102,13 @@ def test_parse_uuid_rejects_everything_else(value):
 def test_parse_uuid_list_wraps_a_single_value_and_drops_blanks():
     assert parse_uuid_list(CANONICAL) == [ID]
     assert parse_uuid_list([CANONICAL, "", None]) == [ID]
+
+
+def test_parse_uuid_list_keeps_every_valid_entry_in_order():
+    """Callers filter or aggregate by every id they get, so a list cut short
+    would silently skip rows instead of raising."""
+    assert parse_uuid_list([str(OTHER), "", CANONICAL]) == [OTHER, ID]
+    assert parse_uuid_list((ID, OTHER)) == [ID, OTHER]
 
 
 @pytest.mark.parametrize("value", [None, [], [""], [None]])
