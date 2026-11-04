@@ -510,6 +510,120 @@ async def test_foreign_settlement_does_not_clear_future_native_split(
 
 
 @pytest.mark.asyncio
+async def test_small_foreign_settlement_remainder_is_distributed_across_tranches(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, self_m, friends = await _setup(
+        session, test_user, test_workspace.id, n_others=1
+    )
+    friend = friends[0]
+    account = await _make_account(session, test_user.id)
+    for _ in range(5):
+        tx = await _make_tx(
+            session, test_user.id, account.id, "0.02", currency="EUR"
+        )
+        tx.date = date(2025, 1, 1)
+        tx.amount_primary = Decimal("0.02")
+        tx.amount_primary_currency = "USD"
+        await split_service.replace_splits(
+            session,
+            tx,
+            TransactionSplitsInput(
+                share_type="exact",
+                splits=[
+                    TransactionSplitInput(
+                        group_member_id=self_m.id, share_amount=Decimal("0.01")
+                    ),
+                    TransactionSplitInput(
+                        group_member_id=friend.id, share_amount=Decimal("0.01")
+                    ),
+                ],
+            ),
+            test_user.id,
+        )
+
+    await settlement_service.create_settlement(
+        session,
+        group.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementCreate(
+            from_member_id=friend.id,
+            to_member_id=self_m.id,
+            amount=Decimal("0.02"),
+            currency="EUR",
+            date=date(2025, 1, 2),
+        ),
+    )
+    await session.commit()
+
+    balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+
+    assert balances is not None
+    friend_lines = [line for line in balances["lines"] if line["member_id"] == friend.id]
+    assert [(line["currency"], line["amount"]) for line in friend_lines] == [
+        ("USD", Decimal("0.03"))
+    ]
+
+
+@pytest.mark.asyncio
+async def test_partial_default_currency_payment_preserves_fractional_source_share(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, self_m, friends = await _setup(
+        session, test_user, test_workspace.id, n_others=1
+    )
+    friend = friends[0]
+    account = await _make_account(session, test_user.id)
+    tx = await _make_tx(session, test_user.id, account.id, "0.02", currency="EUR")
+    tx.date = date(2025, 1, 1)
+    tx.amount_primary = Decimal("0.04")
+    tx.amount_primary_currency = "USD"
+    await split_service.replace_splits(
+        session,
+        tx,
+        TransactionSplitsInput(
+            share_type="exact",
+            splits=[
+                TransactionSplitInput(group_member_id=self_m.id, share_amount=Decimal("0.01")),
+                TransactionSplitInput(group_member_id=friend.id, share_amount=Decimal("0.01")),
+            ],
+        ),
+        test_user.id,
+    )
+    for amount, currency, settlement_date in [
+        ("0.01", "USD", date(2025, 1, 2)),
+        ("0.01", "EUR", date(2025, 1, 3)),
+    ]:
+        await settlement_service.create_settlement(
+            session,
+            group.id,
+            test_workspace.id,
+            test_user.id,
+            GroupSettlementCreate(
+                from_member_id=friend.id,
+                to_member_id=self_m.id,
+                amount=Decimal(amount),
+                currency=currency,
+                date=settlement_date,
+            ),
+        )
+    await session.commit()
+
+    balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+
+    assert balances is not None
+    friend_lines = [line for line in balances["lines"] if line["member_id"] == friend.id]
+    assert [(line["currency"], line["amount"]) for line in friend_lines] == [
+        ("EUR", Decimal("-0.005"))
+    ]
+
+
+@pytest.mark.asyncio
 async def test_foreign_split_conversion_uses_absolute_primary_amount(
     session: AsyncSession, test_user, test_workspace
 ):

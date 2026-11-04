@@ -366,6 +366,21 @@ async def test_linking_transaction_on_update_creates_receiver_credit(
     assert receiver_tx.account_id == receiver_account.id
     assert receiver_tx.amount == Decimal("50.00")
 
+    tx.amount = Decimal("60.00")
+    await session.commit()
+    updated = await settlement_service.update_settlement(
+        session,
+        group.id,
+        settlement.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementUpdate(amount=Decimal("60.00")),
+    )
+    assert updated is not None
+    receiver_tx = await session.get(Transaction, updated.receiver_transaction_id)
+    assert receiver_tx is not None
+    assert receiver_tx.amount == Decimal("60.00")
+
 
 @pytest.mark.asyncio
 async def test_receiver_credit_skipped_when_to_member_is_shadow(

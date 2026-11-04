@@ -117,6 +117,31 @@ async def test_create_settlement_links_existing_transaction(session: AsyncSessio
 
 
 @pytest.mark.asyncio
+async def test_create_settlement_rejects_mismatched_linked_debit_amount(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    tx = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+
+    with pytest.raises(ValueError, match="amount must match"):
+        await settlement_service.create_settlement(
+            session,
+            group.id,
+            test_workspace.id,
+            test_user.id,
+            GroupSettlementCreate(
+                from_member_id=a.id,
+                to_member_id=b.id,
+                amount=Decimal("100.00"),
+                currency="USD",
+                date=date.today(),
+                transaction_id=tx.id,
+            ),
+        )
+
+
+@pytest.mark.asyncio
 async def test_create_settlement_invalid_transaction(session: AsyncSession, test_user, test_workspace):
     group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
     with pytest.raises(ValueError, match="Linked transaction not found"):
@@ -157,6 +182,32 @@ async def test_create_settlement_bad_account(session: AsyncSession, test_user, t
                 from_member_id=a.id, to_member_id=b.id,
                 amount=Decimal("5.00"), currency="USD", date=date.today(),
                 account_id=uuid.uuid4(),
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_settlement_account_rejects_unlinked_non_owner_payer(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, _owner, friend, _c = await _setup_group(
+        session, test_user.id, test_workspace.id
+    )
+    account = await _make_account(session, test_user.id, test_workspace.id)
+
+    with pytest.raises(ValueError, match="unlinked settlement payer"):
+        await settlement_service.create_settlement(
+            session,
+            group.id,
+            test_workspace.id,
+            test_user.id,
+            GroupSettlementCreate(
+                from_member_id=friend.id,
+                to_member_id=_owner.id,
+                amount=Decimal("5.00"),
+                currency="USD",
+                date=date.today(),
+                account_id=account.id,
             ),
         )
 
@@ -305,7 +356,7 @@ async def test_update_settlement_revalidates_members_and_transaction(session: As
         session, group.id, test_workspace.id, test_user.id,
         GroupSettlementCreate(
             from_member_id=a.id, to_member_id=b.id,
-            amount=Decimal("10.00"), currency="USD", date=date.today(),
+            amount=Decimal("5.00"), currency="USD", date=date.today(),
         ),
     )
 
@@ -319,6 +370,41 @@ async def test_update_settlement_revalidates_members_and_transaction(session: As
     assert updated is not None
     assert updated.to_member_id == c.id
     assert updated.transaction_id == tx.id
+
+
+@pytest.mark.asyncio
+async def test_update_settlement_rejects_mismatched_linked_debit_amount(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    tx = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    settlement = await settlement_service.create_settlement(
+        session,
+        group.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id,
+            to_member_id=b.id,
+            amount=Decimal("5.00"),
+            currency="USD",
+            date=date.today(),
+        ),
+    )
+
+    assert settlement is not None
+    with pytest.raises(ValueError, match="amount must match"):
+        await settlement_service.update_settlement(
+            session,
+            group.id,
+            settlement.id,
+            test_workspace.id,
+            test_user.id,
+            GroupSettlementUpdate(
+                amount=Decimal("100.00"), transaction_id=tx.id
+            ),
+        )
 
 
 @pytest.mark.asyncio
