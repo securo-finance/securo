@@ -121,9 +121,12 @@ async def compute_balances(
     )
     split_rows = splits_result.all()
     converted_shares: dict[uuid.UUID, dict[uuid.UUID, Decimal]] = {}
-    legacy_conversion_tranches: dict[
-        tuple[uuid.UUID, uuid.UUID, str], list[dict[str, Any]]
-    ] = defaultdict(list)
+    legacy_conversion_tranches: dict[tuple[uuid.UUID, uuid.UUID, str], list[dict[str, Any]]] = (
+        defaultdict(list)
+    )
+    native_debt_tranches: dict[tuple[uuid.UUID, uuid.UUID, str], list[dict[str, Any]]] = (
+        defaultdict(list)
+    )
     rows_by_transaction: dict[uuid.UUID, list[Any]] = defaultdict(list)
     for row in split_rows:
         rows_by_transaction[row[0].transaction_id].append(row)
@@ -134,9 +137,7 @@ async def compute_balances(
         amount_primary = first_row[2]
         transaction_currency = first_row[3]
         preferences = first_row[6]
-        primary_currency = (preferences or {}).get(
-            "currency_display", fallback_currency
-        )
+        primary_currency = (preferences or {}).get("currency_display", fallback_currency)
         if (
             amount_primary is not None
             and primary_currency == group.default_currency
@@ -148,11 +149,9 @@ async def compute_balances(
             converted = [
                 (
                     row[0].group_member_id,
-                    (
-                        target_amount
-                        * Decimal(str(row[0].share_amount))
-                        / source_amount
-                    ).quantize(Decimal("0.01")),
+                    (target_amount * Decimal(str(row[0].share_amount)) / source_amount).quantize(
+                        Decimal("0.01")
+                    ),
                 )
                 for row in transaction_rows
             ]
@@ -163,12 +162,10 @@ async def compute_balances(
                 (Decimal(str(row[0].share_amount)) for row in transaction_rows),
                 Decimal("0"),
             )
-            expected_total = (
-                target_amount * covered_amount / source_amount
-            ).quantize(Decimal("0.01"))
-            residual = expected_total - sum(
-                (share for _, share in converted), Decimal("0")
+            expected_total = (target_amount * covered_amount / source_amount).quantize(
+                Decimal("0.01")
             )
+            residual = expected_total - sum((share for _, share in converted), Decimal("0"))
             member_id, last_share = converted[-1]
             converted[-1] = (member_id, last_share + residual)
             converted_shares[transaction_id] = dict(converted)
@@ -188,9 +185,7 @@ async def compute_balances(
             continue
         share = Decimal(str(split.share_amount))
         source_currency = currency
-        primary_currency = (preferences or {}).get(
-            "currency_display", fallback_currency
-        )
+        primary_currency = (preferences or {}).get("currency_display", fallback_currency)
         # Preserve the historical conversion stored on the transaction when
         # the group's default currency is the user's primary currency.
         if (
@@ -209,9 +204,24 @@ async def compute_balances(
             legacy_conversion_tranches[(debtor, creditor, source_currency)].append(
                 {
                     "date": transaction_date,
+                    "transaction_id": split.transaction_id,
                     "source_remaining": Decimal(str(split.share_amount)),
                     "source_total": Decimal(str(split.share_amount)),
                     "target_total": share,
+                    "target_remaining": share,
+                }
+            )
+        else:
+            debtor, creditor = (
+                (recorder, split.group_member_id)
+                if tx_type == "credit"
+                else (split.group_member_id, recorder)
+            )
+            native_debt_tranches[(debtor, creditor, currency)].append(
+                {
+                    "date": transaction_date,
+                    "transaction_id": split.transaction_id,
+                    "remaining": share,
                 }
             )
         if tx_type == "credit":
@@ -230,39 +240,101 @@ async def compute_balances(
     for s in settlements_result.scalars().all():
         pair = (s.from_member_id, s.to_member_id)
         remaining = Decimal(str(s.amount))
-        native_balance = owed[pair][s.currency]
-
         # Keep legacy same-currency debts and settlements together first.
         # If the settlement exceeds that native debt, apply the remainder to
         # converted obligations using the weighted historical conversion
         # represented by those obligations, rather than today's FX rate.
-        if s.currency == default_currency or native_balance < 0:
-            owed[pair][s.currency] -= remaining
-            continue
-        if native_balance > 0:
-            native_payment = min(remaining, native_balance)
+        native_tranches = native_debt_tranches.get((pair[0], pair[1], s.currency), [])
+        native_tranches.sort(key=lambda tranche: (tranche["date"], tranche["transaction_id"]))
+        for tranche in native_tranches:
+            if remaining == 0:
+                break
+            if tranche["date"] > s.date or tranche["remaining"] <= 0:
+                continue
+            native_payment = min(remaining, tranche["remaining"])
+            tranche["remaining"] -= native_payment
             owed[pair][s.currency] -= native_payment
             remaining -= native_payment
 
-        tranches = legacy_conversion_tranches.get(
-            (s.from_member_id, s.to_member_id, s.currency)
-        )
+        if s.currency == default_currency:
+            converted_tranches = sorted(
+                (
+                    tranche
+                    for (debtor, creditor, _), candidates in legacy_conversion_tranches.items()
+                    if (debtor, creditor) == pair
+                    for tranche in candidates
+                    if tranche["date"] <= s.date and tranche["target_remaining"] > 0
+                ),
+                key=lambda tranche: (tranche["date"], tranche["transaction_id"]),
+            )
+            for tranche in converted_tranches:
+                if remaining <= 0:
+                    break
+                target_payment = min(remaining, tranche["target_remaining"])
+                if target_payment == tranche["target_remaining"]:
+                    source_payment = tranche["source_remaining"]
+                elif tranche["target_total"]:
+                    source_payment = min(
+                        tranche["source_remaining"],
+                        (
+                            target_payment * tranche["source_total"] / tranche["target_total"]
+                        ).quantize(Decimal("0.01")),
+                    )
+                else:
+                    source_payment = Decimal("0")
+                tranche["target_remaining"] -= target_payment
+                tranche["source_remaining"] -= source_payment
+                owed[pair][default_currency] -= target_payment
+                remaining -= target_payment
+            if remaining:
+                owed[pair][default_currency] -= remaining
+            continue
+
+        tranches = legacy_conversion_tranches.get((s.from_member_id, s.to_member_id, s.currency))
         if remaining == 0:
             continue
+        eligible = sorted(
+            (
+                tranche
+                for tranche in tranches or ()
+                if tranche["date"] <= s.date and tranche["source_remaining"] > 0
+            ),
+            key=lambda tranche: (tranche["date"], tranche["transaction_id"]),
+        )
+        eligible_source_total = sum(
+            (tranche["source_remaining"] for tranche in eligible), Decimal("0")
+        )
+        source_to_allocate = min(remaining, eligible_source_total)
         converted_payment = Decimal("0")
-        for tranche in tranches or ():
-            if remaining == 0:
+        left_to_allocate = source_to_allocate
+        for index, tranche in enumerate(eligible):
+            if left_to_allocate <= 0:
                 break
-            if tranche["date"] > s.date or tranche["source_remaining"] <= 0:
+            if index == len(eligible) - 1 or source_to_allocate == eligible_source_total:
+                source_payment = min(left_to_allocate, tranche["source_remaining"])
+            else:
+                source_payment = min(
+                    tranche["source_remaining"],
+                    (
+                        source_to_allocate * tranche["source_remaining"] / eligible_source_total
+                    ).quantize(Decimal("0.01")),
+                )
+            if source_payment <= 0:
                 continue
-            source_payment = min(remaining, tranche["source_remaining"])
-            converted_payment += (
-                source_payment
-                * tranche["target_total"]
-                / tranche["source_total"]
-            ).quantize(Decimal("0.01"))
+            if source_payment == tranche["source_remaining"]:
+                target_payment = tranche["target_remaining"]
+            else:
+                target_payment = min(
+                    (source_payment * tranche["target_total"] / tranche["source_total"]).quantize(
+                        Decimal("0.01")
+                    ),
+                    tranche["target_remaining"],
+                )
             tranche["source_remaining"] -= source_payment
-            remaining -= source_payment
+            tranche["target_remaining"] -= target_payment
+            converted_payment += target_payment
+            left_to_allocate -= source_payment
+        remaining -= source_to_allocate - left_to_allocate
         if converted_payment:
             owed[pair][default_currency] -= converted_payment
         if remaining:

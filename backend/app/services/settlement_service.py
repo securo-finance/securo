@@ -205,21 +205,35 @@ async def _validate_members_in_group(
         raise ValueError("Settlement members must belong to the group")
 
 
-async def _validate_transaction(
+async def _validate_payer_debit(
     session: AsyncSession,
     transaction_id: Optional[uuid.UUID],
     workspace_id: uuid.UUID,
+    group: Group,
+    from_member_id: uuid.UUID,
 ) -> None:
     if transaction_id is None:
         return
     result = await session.execute(
-        select(Transaction).where(
+        select(Transaction, Account.user_id, GroupMember.linked_user_id, GroupMember.is_self)
+        .join(Account, Transaction.account_id == Account.id)
+        .join(GroupMember, GroupMember.id == from_member_id)
+        .where(
             Transaction.id == transaction_id,
             Transaction.workspace_id == workspace_id,
+            Account.workspace_id == workspace_id,
+            GroupMember.group_id == group.id,
         )
     )
-    if result.scalar_one_or_none() is None:
+    row = result.one_or_none()
+    if row is None:
         raise ValueError("Linked transaction not found")
+    transaction, account_user_id, payer_user_id, payer_is_self = row
+    if transaction.type != "debit":
+        raise ValueError("Linked transaction must be a payer debit")
+    expected_payer_id = payer_user_id or (group.user_id if payer_is_self else None)
+    if expected_payer_id is None or account_user_id != expected_payer_id:
+        raise ValueError("Linked transaction must belong to the settlement payer")
 
 
 async def list_settlements(
@@ -251,14 +265,12 @@ async def create_settlement(
 
     if not await _can_settle_from(session, group, user_id, data.from_member_id):
         # Linked members may only record payments they themselves made.
-        raise PermissionError(
-            "You can only record settlements where you are the payer"
-        )
+        raise PermissionError("You can only record settlements where you are the payer")
 
-    await _validate_members_in_group(
-        session, group_id, [data.from_member_id, data.to_member_id]
+    await _validate_members_in_group(session, group_id, [data.from_member_id, data.to_member_id])
+    await _validate_payer_debit(
+        session, data.transaction_id, workspace_id, group, data.from_member_id
     )
-    await _validate_transaction(session, data.transaction_id, workspace_id)
 
     payload = data.model_dump()
     account_id = payload.pop("account_id", None)
@@ -330,9 +342,7 @@ async def create_settlement(
             receiver_tx_id = receiver_tx.id
     payload["receiver_transaction_id"] = receiver_tx_id
 
-    settlement = GroupSettlement(
-        group_id=group_id, workspace_id=workspace_id, **payload
-    )
+    settlement = GroupSettlement(group_id=group_id, workspace_id=workspace_id, **payload)
     session.add(settlement)
     await session.commit()
     await session.refresh(settlement)
@@ -352,10 +362,12 @@ async def update_settlement(
         return None
 
     result = await session.execute(
-        select(GroupSettlement).where(
+        select(GroupSettlement)
+        .where(
             GroupSettlement.id == settlement_id,
             GroupSettlement.group_id == group_id,
         )
+        .with_for_update()
     )
     settlement = result.scalar_one_or_none()
     if not settlement:
@@ -382,7 +394,22 @@ async def update_settlement(
         await _validate_members_in_group(session, group_id, member_check)
 
     if "transaction_id" in update_data:
-        await _validate_transaction(session, update_data["transaction_id"], workspace_id)
+        await _validate_payer_debit(
+            session,
+            update_data["transaction_id"],
+            workspace_id,
+            group,
+            update_data.get("from_member_id", settlement.from_member_id),
+        )
+        if update_data["transaction_id"] is None and settlement.receiver_transaction_id:
+            raise ValueError("Cannot unlink the payer transaction while a receiver credit exists")
+
+    mirrored_fields = {"amount", "currency", "date", "from_member_id", "to_member_id"}
+    if settlement.receiver_transaction_id and mirrored_fields.intersection(update_data):
+        raise ValueError(
+            "Cannot edit settlement details while a receiver credit exists; "
+            "update the receiver transaction first"
+        )
 
     for key, value in update_data.items():
         setattr(settlement, key, value)

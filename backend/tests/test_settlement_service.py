@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.models.workspace import WorkspaceMember
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.group_settlement import (
     GroupSettlementCreate,
@@ -458,12 +459,10 @@ async def test_receiver_credit_skipped_when_linked_user_has_no_cash_account(
 
 
 @pytest.mark.asyncio
-async def test_receiver_credit_lands_on_owner_when_self_member_unlinked(
+async def test_administrative_settlement_to_owner_self_member_has_no_credit(
     session: AsyncSession, test_user, test_workspace
 ):
-    """When the to_member is the owner's self-member with no
-    linked_user_id, the service falls back to group.user_id — the
-    credit lands on the owner's checking account."""
+    """A shadow payer without a linked transaction cannot create ledger income."""
     owner_account = await _make_account(session, test_user.id)
     group = await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="SelfFallback")
@@ -475,15 +474,14 @@ async def test_receiver_credit_lands_on_owner_when_self_member_unlinked(
         GroupMemberCreate(name="Me", is_self=True),
     )
     friend = await group_service.create_member(
-        session, group.id, test_workspace.id,         GroupMemberCreate(name="Friend")
+        session, group.id, test_workspace.id, GroupMemberCreate(name="Friend")
     )
 
     assert owner_self is not None
     assert friend is not None
 
-    # Friend pays the owner back. Caller is the owner (allowed to record
-    # on any from_member). No account_id — friend is a shadow, no real
-    # account to debit. Receiver fallback should still kick in.
+    # Friend pays the owner back administratively; there is no payer debit
+    # to mirror in the owner's ledger.
     s = await settlement_service.create_settlement(
         session,
         group.id,
@@ -498,14 +496,9 @@ async def test_receiver_credit_lands_on_owner_when_self_member_unlinked(
         ),
     )
     assert s is not None
-    assert s.receiver_transaction_id is not None
-
-    receiver_tx = await session.get(Transaction, s.receiver_transaction_id)
-    assert receiver_tx is not None
-    assert receiver_tx.user_id == test_user.id
-    assert receiver_tx.account_id == owner_account.id
-    assert receiver_tx.type == "credit"
-    assert receiver_tx.amount == Decimal("20.00")
+    assert s.transaction_id is None
+    assert s.receiver_transaction_id is None
+    assert owner_account.user_id == test_user.id
 
 
 @pytest.mark.asyncio
@@ -515,16 +508,38 @@ async def test_receiver_credit_prefers_account_in_group_workspace(
     """An owner with several workspaces gets the settlement credit in the
     group's workspace, not in whichever workspace has the alphabetically
     first account (#1143)."""
+    receiver, _receiver_ws = await _make_user_with_workspace(
+        session, "workspace-pref-receiver@example.com"
+    )
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=test_workspace.id,
+            user_id=receiver.id,
+            role="editor",
+        )
+    )
+    await session.flush()
     other_ws = await workspace_service.create_workspace(
-        session, name="Business", creator=test_user, self_membership=True
+        session, name="Business", creator=receiver, self_membership=True
     )
     other_account = Account(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other_ws.id,
-        name="AAA Business", type="checking", balance=Decimal("0"), currency="USD",
+        id=uuid.uuid4(),
+        user_id=receiver.id,
+        workspace_id=other_ws.id,
+        name="AAA Business",
+        type="checking",
+        balance=Decimal("0"),
+        currency="USD",
     )
     group_ws_account = Account(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        name="ZZZ Personal", type="checking", balance=Decimal("0"), currency="USD",
+        id=uuid.uuid4(),
+        user_id=receiver.id,
+        workspace_id=test_workspace.id,
+        name="ZZZ Personal",
+        type="checking",
+        balance=Decimal("0"),
+        currency="USD",
     )
     session.add_all([other_account, group_ws_account])
     await session.flush()
@@ -536,22 +551,41 @@ async def test_receiver_credit_prefers_account_in_group_workspace(
         session, group.id, test_workspace.id, GroupMemberCreate(name="Me", is_self=True)
     )
     friend = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="Friend")
+        session,
+        group.id,
+        test_workspace.id,
+        GroupMemberCreate(name="Friend", linked_user_id=receiver.id),
     )
     assert owner_self is not None
     assert friend is not None
 
+    payer_account = await _make_account(session, test_user.id)
+    payer_tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=payer_account.id,
+        description="Settlement",
+        amount=Decimal("20.00"),
+        currency="USD",
+        date=date.today(),
+        type="debit",
+        source="manual",
+    )
+    session.add(payer_tx)
+    await session.flush()
     s = await settlement_service.create_settlement(
         session,
         group.id,
         test_workspace.id,
         test_user.id,
         GroupSettlementCreate(
-            from_member_id=friend.id,
-            to_member_id=owner_self.id,
+            from_member_id=owner_self.id,
+            to_member_id=friend.id,
             amount=Decimal("20.00"),
             currency="USD",
             date=date.today(),
+            transaction_id=payer_tx.id,
         ),
     )
     assert s is not None
