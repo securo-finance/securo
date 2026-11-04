@@ -680,6 +680,7 @@ async def test_get_accounts_raises_when_the_bank_refuses_every_account(eb_keys):
     "failures",
     [
         pytest.param({"acc-1": 503, "acc-2": 503}, id="outage"),
+        pytest.param({"acc-1": 408, "acc-2": 408}, id="timeout"),
         pytest.param({"acc-1": 400, "acc-2": 503}, id="refusal-and-outage"),
         pytest.param({"acc-1": "network", "acc-2": "network"}, id="network"),
     ],
@@ -687,6 +688,7 @@ async def test_get_accounts_raises_when_the_bank_refuses_every_account(eb_keys):
 async def test_get_accounts_does_not_ask_for_a_reconnect_during_an_outage(eb_keys, failures):
     """Only refusals from the bank are the user's to act on; the rest is retryable."""
     provider = EnableBankingProvider()
+    attempted: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/sessions/sess-x":
@@ -698,6 +700,7 @@ async def test_get_accounts_does_not_ask_for_a_reconnect_during_an_outage(eb_key
         match = re.fullmatch(r"/accounts/([^/]+)/details", request.url.path)
         if not match:
             raise AssertionError(f"unexpected path {request.url.path}")
+        attempted.append(match.group(1))
         failure = failures[match.group(1)]
         if failure == "network":
             raise httpx.ConnectError("no route to host", request=request)
@@ -706,11 +709,13 @@ async def test_get_accounts_does_not_ask_for_a_reconnect_during_an_outage(eb_key
     with _patch_client(provider, handler):
         with pytest.raises(httpx.HTTPError):
             await provider.get_accounts(_CREDENTIALS)
+    assert attempted == ["acc-1", "acc-2"]
 
 
 @pytest.mark.asyncio
-async def test_get_accounts_skips_a_single_refused_account(eb_keys):
-    """One refused account stays a skip: the others still sync."""
+@pytest.mark.parametrize("status", [400, 408, 503])
+async def test_get_accounts_skips_a_single_failed_account(eb_keys, status):
+    """One failed account stays a skip, whatever the failure: the others still sync."""
     provider = EnableBankingProvider()
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -722,7 +727,7 @@ async def test_get_accounts_skips_a_single_refused_account(eb_keys):
                 "accounts_data": [{"uid": "acc-1"}, {"uid": "acc-2"}],
             })
         if path == "/accounts/acc-1/details":
-            return httpx.Response(400, json={"code": 400, "error": "ASPSP_ERROR"})
+            return httpx.Response(status, json={"code": status})
         if path == "/accounts/acc-2/details":
             return httpx.Response(200, json={"uid": "acc-2", "currency": "NOK"})
         if path == "/accounts/acc-2/balances":

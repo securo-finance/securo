@@ -674,6 +674,7 @@ class EnableBankingProvider(BankProvider):
                 is_refusal = (
                     isinstance(exc, httpx.HTTPStatusError)
                     and exc.response.status_code < 500
+                    and exc.response.status_code != 408
                 )
                 if not is_refusal:
                     transient_error = exc
@@ -684,8 +685,9 @@ class EnableBankingProvider(BankProvider):
         # connection stays "active", last_sync_at keeps moving and the balances
         # silently go stale. The next sync that reaches an account clears this.
         if uids and not result:
-            # A 5xx or network failure says nothing about the accounts, so it
-            # fails this sync as an outage instead of asking for a reconnect.
+            # A 5xx, timeout or network failure says nothing about the accounts,
+            # so it surfaces as the original error, like any other provider
+            # failure, rather than as accounts_unavailable.
             if transient_error is not None:
                 raise transient_error
             raise ProviderUserActionRequired(
