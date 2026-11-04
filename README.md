@@ -10,6 +10,7 @@
   <a href="https://artifacthub.io/packages/search?repo=securo"><img src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/securo" alt="Artifact Hub" /></a>
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" /></a>
   <a href="https://discord.gg/rUqTKtQ9S4"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Join our Discord" /></a>
+  <a href="https://www.buymeacoffee.com/usesecuro"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support%20Securo-FFDD00?logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee" /></a>
   <br />
   <a href="https://usesecuro.com/">Website</a> · <a href="https://demo.usesecuro.com/">Demo</a> · <a href="https://www.usesecuro.com/roadmap">Roadmap</a> · <a href="https://docs.usesecuro.com/">Docs</a> · <a href="https://discord.gg/rUqTKtQ9S4">Discord</a> · <a href="https://cal.com/tassio/15min">Talk to the maintainer</a>
 </p>
@@ -271,6 +272,14 @@ mise frontend:build
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 Not sure where to start, or want to talk something through first? [Book 15 minutes](https://cal.com/tassio/15min) — no agenda needed. Something broken, an idea, or just what you think of Securo, all welcome.
+
+## Support Securo
+
+Securo is free and open source, and it runs entirely on your own infrastructure. If it helps you, a coffee keeps development going:
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/usesecuro"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="160" alt="Buy Me a Coffee" /></a>
+</p>
 
 ## License
 
