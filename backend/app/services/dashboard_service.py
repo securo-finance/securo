@@ -292,7 +292,17 @@ async def get_summary(
     # ``total_balance`` is deliberately current/posted-only. Forecast rows are
     # accumulated separately so a future installment or pending bank row never
     # silently changes the number labelled as the current balance.
-    total_balance = await _total_balance_by_currency(session, workspace_id, cutoff, account_ids)
+    # Asset values get folded into ``total_balance`` further down, so a synced
+    # brokerage would otherwise land twice: once as its account balance and
+    # again as the holdings that make up that balance.
+    from app.services.connection_service import accounts_superseded_by_assets
+
+    total_balance = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids,
+        exclude_account_ids=await accounts_superseded_by_assets(
+            session, workspace_id, cutoff
+        ),
+    )
     projected_balance = dict(total_balance)
 
     # For current/future months, project the balance by adding recurring
@@ -1411,9 +1421,18 @@ async def _total_balance_by_currency(
     account_ids: Optional[list[uuid.UUID]] = None,
     *,
     include_pending: bool = False,
+    exclude_account_ids: Optional[set[uuid.UUID]] = None,
 ) -> dict[str, float]:
-    """Get total balance across all open accounts at a date, grouped by currency."""
+    """Get total balance across all open accounts at a date, grouped by currency.
+
+    ``exclude_account_ids`` drops accounts the caller counts by another route —
+    a synced brokerage whose value arrives again as holdings. Only callers that
+    also add asset values should pass it; for a pure cash figure the brokerage
+    balance is still the only number available.
+    """
     accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    if exclude_account_ids:
+        accounts = [a for a in accounts if a.id not in exclude_account_ids]
     if not accounts:
         return {}
 

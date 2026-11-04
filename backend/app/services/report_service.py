@@ -151,6 +151,12 @@ async def _net_worth_at(
     """
     if accounts is None:
         accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    # A synced brokerage's balance and its holdings are the same money; the
+    # holdings carry it, so those accounts drop out of the account side
+    # entirely (balance and composition slice alike).
+    from app.services.connection_service import accounts_superseded_by_assets
+
+    superseded = await accounts_superseded_by_assets(session, workspace_id, cutoff)
 
     accounts_total = 0.0
     liabilities_total = 0.0
@@ -162,6 +168,8 @@ async def _net_worth_at(
     # account retyped to checking keeps its group but no longer shares the debt.
     grouped: dict[str, list[Account]] = {}
     for account in accounts:
+        if account.id in superseded:
+            continue
         shared = account.shared_balance_group if account.type == "credit_card" else None
         grouped.setdefault(shared or str(account.id), []).append(account)
 

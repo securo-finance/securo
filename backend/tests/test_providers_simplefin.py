@@ -882,3 +882,46 @@ async def test_get_holdings_carries_the_owning_account():
     assert by_id["h-1"].account_name == "Employer 401(k)"
     assert by_id["h-2"].account_external_id == "acc-2"
     assert by_id["h-2"].account_name == "Rollover IRA"
+
+
+def test_parse_accounts_types_holdings_bearing_accounts_as_investment():
+    """SimpleFIN has no account-type field, so positions are the only signal
+    that an account is a brokerage rather than a checking account. A Robinhood
+    portfolio and Roth IRA arrive as separate accounts, each with holdings."""
+    payload = {
+        "connections": [{"conn_id": "CON-1", "name": "Robinhood"}],
+        "accounts": [
+            {
+                "id": "rh-individual",
+                "name": "Individual",
+                "currency": "USD",
+                "balance": "1500",
+                "conn_id": "CON-1",
+                "holdings": [
+                    {"id": "h1", "symbol": "AAPL", "shares": "5", "market_value": "1000"},
+                ],
+            },
+            {
+                "id": "rh-roth",
+                "name": "Roth IRA",
+                "currency": "USD",
+                "balance": "500",
+                "conn_id": "CON-1",
+                "holdings": [
+                    {"id": "h2", "symbol": "VTI", "shares": "2", "market_value": "500"},
+                ],
+            },
+            # No holdings key at all → the historical default is preserved.
+            {"id": "bank-1", "name": "Checking", "currency": "USD", "balance": "42"},
+            # Present but empty must not be read as a brokerage.
+            {"id": "bank-2", "name": "Savings", "currency": "USD", "balance": "7", "holdings": []},
+        ],
+    }
+
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+
+    by_id = {a.external_id: a for a in accounts}
+    assert by_id["rh-individual"].type == "investment"
+    assert by_id["rh-roth"].type == "investment"
+    assert by_id["bank-1"].type == "checking"
+    assert by_id["bank-2"].type == "checking"

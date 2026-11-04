@@ -445,7 +445,13 @@ class SimpleFinProvider(BankProvider):
                 AccountData(
                     external_id=account_id,
                     name=name,
-                    type="checking",  # SimpleFIN doesn't expose an account type
+                    # SimpleFIN has no account-type field, so holdings are the
+                    # only signal we get: an account carrying positions is a
+                    # brokerage, not a checking account. Everything else stays
+                    # "checking" — the historical default — because guessing
+                    # savings-vs-checking from a name is worse than a stable
+                    # fallback the user can correct by hand.
+                    type="investment" if raw.get("holdings") else "checking",
                     balance=balance,
                     currency=currency,
                     institution_external_id=inst_ext,

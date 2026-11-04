@@ -85,6 +85,94 @@ def _clean_institution_name(value: object) -> Optional[str]:
     return value[:255] if isinstance(value, str) and value.strip() else None
 
 
+async def accounts_superseded_by_assets(
+    session: AsyncSession, workspace_id: uuid.UUID, cutoff: Optional[date] = None
+) -> set[uuid.UUID]:
+    """Investment accounts whose balance is already counted as holdings.
+
+    A synced brokerage arrives twice in one payload: as an Account carrying
+    the portfolio's total balance, and as the individual positions that make
+    up that same balance. Summing both inflates net worth by the whole
+    portfolio (issue seen with SimpleFIN, whose /accounts returns brokerages
+    inline; Pluggy dodges it by serving investments from a separate endpoint
+    and never minting an Account).
+
+    The holdings are the better record — per-position, market-priced, with a
+    ledger behind them — so the account balance is the copy we drop.
+
+    Deliberately narrow. An account qualifies only when it is typed
+    ``investment``, came from a sync, and has at least one live asset in the
+    wallet keyed to it. A hand-made "401k" account with a balance and no
+    holdings still counts, which is the whole point of not excluding by type
+    alone.
+
+    ``cutoff`` makes the answer date-aware. Holdings only carry a value from
+    the day they were first synced (or a dated purchase), so for an earlier
+    snapshot they contribute nothing and the account balance must stay in —
+    dropping it there would understate history by the whole portfolio and
+    draw a hockey stick on the day of the first sync. ``None`` means "now".
+    """
+    rows = (
+        await session.execute(
+            select(
+                Account.id,
+                Account.external_id,
+                Account.connection_id,
+                BankConnection.external_id,
+            )
+            .join(BankConnection, Account.connection_id == BankConnection.id)
+            .where(
+                Account.workspace_id == workspace_id,
+                Account.type == "investment",
+            )
+        )
+    ).all()
+    if not rows:
+        return set()
+
+    # Wallet key -> the accounts it stands for. Two accounts cannot share a
+    # key (the digest suffix in _wallet_external_id guarantees it), but a dict
+    # of lists keeps this independent of that guarantee.
+    by_key: dict[tuple[uuid.UUID, str], list[uuid.UUID]] = {}
+    for acc_id, acc_ext, conn_id, conn_ext in rows:
+        if not conn_ext:
+            continue
+        key = _wallet_external_id(conn_ext, acc_ext)
+        by_key.setdefault((conn_id, key), []).append(acc_id)
+    if not by_key:
+        return set()
+
+    live_stmt = (
+        select(AssetGroup.connection_id, AssetGroup.external_id)
+        .join(Asset, Asset.group_id == AssetGroup.id)
+        .where(
+            AssetGroup.workspace_id == workspace_id,
+            AssetGroup.external_id.in_({k for _, k in by_key}),
+            Asset.is_archived == False,  # noqa: E712
+            Asset.sell_date.is_(None),
+        )
+        .distinct()
+    )
+    if cutoff is not None:
+        # Same test _net_worth_at applies when it values a holding at
+        # `cutoff`: a recorded value on or before that date, else a purchase
+        # price dated no later. A holding that fails both is worth 0 in that
+        # snapshot, so it cannot stand in for the account balance there.
+        valued = exists().where(
+            AssetValue.asset_id == Asset.id, AssetValue.date <= cutoff
+        )
+        bought = Asset.purchase_price.is_not(None) & (
+            Asset.purchase_date.is_(None) | (Asset.purchase_date <= cutoff)
+        )
+        live_stmt = live_stmt.where(or_(valued, bought))
+    live = (await session.execute(live_stmt)).all()
+
+    superseded: set[uuid.UUID] = set()
+    for conn_id, key in live:
+        superseded.update(by_key.get((conn_id, key), []))
+    return superseded
+
+
 def _wallet_external_id(connection_external_id: str, account_key: Optional[str]) -> str:
     """The per-account wallet key, squeezed into the 255-char column.
 
@@ -926,7 +1014,21 @@ async def _upsert_asset_from_holding(
             ticker=holding.ticker,
             maturity_date=holding.maturity_date,
             external_metadata=holding.metadata,
-            valuation_method="manual",
+            # A tickered, quantity-bearing holding is a listed security, so
+            # hand it to the market-price engine rather than freezing it at
+            # whatever the aggregator last reported. That engine is what
+            # populates `last_price` (the "Current" column), recomputes value
+            # as units x quote between syncs, and rebuilds the chart from the
+            # buy/sell ledger — none of which runs for "manual" assets.
+            # Everything else (fixed income, pensions, untickered positions)
+            # keeps the manual default, where the provider's reported value is
+            # the only number we have. Mirrors the ticker + units > 0 gate the
+            # asset API enforces for market_price.
+            valuation_method=(
+                "market_price"
+                if holding.ticker and holding.quantity and holding.quantity > 0
+                else "manual"
+            ),
         )
         session.add(asset)
         await session.flush()

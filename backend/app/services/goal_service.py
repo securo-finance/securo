@@ -96,9 +96,16 @@ async def _resolve_current_amount(
         # (whose balance is computed from transactions) are handled correctly.
         accounts = await _get_open_accounts(session, workspace_id)
         today = app_today()
+        # Same double-count guard as the net worth report: a synced
+        # brokerage's balance is already carried by its holdings below.
+        from app.services.connection_service import accounts_superseded_by_assets
+
+        superseded = await accounts_superseded_by_assets(session, workspace_id, today)
         total = Decimal("0")
         seen_shared: set[str] = set()
         for acc in accounts:
+            if acc.id in superseded:
+                continue
             # Cards on one consolidated credit line each carry the whole
             # line's debt; count it once.
             if acc.shared_balance_group and acc.type == "credit_card":
