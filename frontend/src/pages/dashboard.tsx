@@ -658,7 +658,7 @@ export default function DashboardPage() {
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
         {/* Available balance in checking/savings accounts */}
         <div className="pb-4 mb-4 border-b border-border">
-          <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
             <p className="text-xs font-semibold text-muted-foreground">{t('dashboard.availableBalance')}</p>
             <CurrencyQuickSwitch />
           </div>

@@ -39,11 +39,14 @@ export function CurrencyQuickSwitch() {
 
   const switchMutation = useMutation({
     mutationFn: (code: string) => settingsApi.setDisplayCurrency(code),
-    onSuccess: async () => {
-      // Same refresh path as changing the workspace currency: re-read the
-      // user so primary_currency is current, then drop every cached figure
-      // because all of them were converted in the old currency.
+    onSuccess: async (saved) => {
+      // Apply the saved currency first so figures refetched below are never
+      // formatted with the old symbol, even if re-reading the user fails.
+      if (user) {
+        updateUser({ ...user, preferences: { ...user.preferences, ...saved } })
+      }
       await authApi.me().then(updateUser).catch(() => {})
+      // Every cached figure was converted in the old currency.
       void queryClient.invalidateQueries()
     },
     onError: (e: unknown) => {
@@ -58,7 +61,7 @@ export function CurrencyQuickSwitch() {
 
   return (
     <div
-      className="flex items-center gap-1"
+      className="flex flex-wrap items-center gap-1"
       role="group"
       aria-label={t('currencySwitch.label', 'Display currency')}
     >
