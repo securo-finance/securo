@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import { format } from 'date-fns'
+import { monthRange } from '@/lib/month-utils'
 
 import BudgetsPage from '@/pages/budgets'
 import { renderWithProviders, t } from '@/test/utils'
@@ -8,7 +9,9 @@ import { renderWithProviders, t } from '@/test/utils'
 const api = vi.hoisted(() => ({
   activeAccountIds: null as string[] | null,
   mask: vi.fn((value: string) => value),
-  dashboard: { spendingByCategory: vi.fn() },
+  dashboard: { spendingByCategory: vi.fn(), projectedTransactions: vi.fn() },
+  transactions: { list: vi.fn() },
+  admin: { accountingMode: vi.fn() },
   budgets: {
     list: vi.fn(),
     create: vi.fn(),
@@ -29,6 +32,8 @@ const api = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => ({
   dashboard: api.dashboard,
+  transactions: api.transactions,
+  admin: api.admin,
   budgets: api.budgets,
   categories: api.categories,
   categoryGroups: api.categoryGroups,
@@ -98,6 +103,9 @@ describe('BudgetsPage suggestions', () => {
     api.activeAccountIds = null
     api.mask.mockImplementation(value => value)
     api.dashboard.spendingByCategory.mockResolvedValue([])
+    api.dashboard.projectedTransactions.mockResolvedValue([])
+    api.transactions.list.mockResolvedValue({ items: [], total: 0 })
+    api.admin.accountingMode.mockResolvedValue({ mode: 'cash' })
     api.budgets.list.mockResolvedValue([])
     api.categories.list.mockResolvedValue(categories)
     api.categories.listIncludingHidden.mockResolvedValue(categories)
@@ -155,6 +163,99 @@ describe('BudgetsPage suggestions', () => {
     renderWithProviders(<BudgetsPage />)
     expect(await screen.findByText('$25.00')).toBeInTheDocument()
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
+  it('opens the shared sidebar from a row and supports close and repeated clicks', async () => {
+    mockBudgets()
+    api.transactions.list.mockResolvedValue({ items: [{ id: 'tx-1', description: 'Weekly groceries', date: expectedMonth, type: 'debit', amount: 25, currency: 'USD', status: 'posted' }], total: 1 })
+    const { user } = renderWithProviders(<BudgetsPage />)
+    const row = (await screen.findByText('Groceries')).closest('tr')!
+    await user.click(within(row).getByRole('progressbar'))
+    expect(await screen.findByText('Weekly groceries')).toBeInTheDocument()
+    expect(api.transactions.list).toHaveBeenCalledWith(expect.objectContaining({ category_id: 'cat-groceries', type: 'debit', ...monthRange(expectedMonth.slice(0, 7)), account_ids: undefined, user_pnl_only: true }))
+    await user.click(screen.getByRole('button', { name: t('common.close') }))
+    expect(screen.queryByText('Weekly groceries')).not.toBeInTheDocument()
+    const button = within(row).getByRole('button', { name: /Groceries/ })
+    button.focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByText('Weekly groceries')).toBeInTheDocument()
+    expect(screen.getByRole('complementary')).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByText('Weekly groceries')).not.toBeInTheDocument()
+    expect(button).toHaveFocus()
+    await user.click(button)
+    expect(await screen.findByText('Weekly groceries')).toBeInTheDocument()
+  })
+
+  it('opens empty categories and keeps the sidebar in sync with month and account filters', async () => {
+    mockBudgets()
+    api.activeAccountIds = ['account-1']
+    const { user, rerender } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Utilities/ }))
+    expect(await screen.findByText(t('dashboard.drillDownEmpty'))).toBeInTheDocument()
+    expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({ category_id: 'cat-utilities', account_ids: ['account-1'], ...monthRange(expectedMonth.slice(0,7)) }))
+    api.activeAccountIds = ['account-2']
+    rerender(<BudgetsPage />)
+    await waitFor(() => expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({ account_ids: ['account-2'] })))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: '‹' }))
+    await user.click(screen.getByRole('button', { name: /Utilities/ }))
+    const previous = format(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), 'yyyy-MM')
+    await waitFor(() => expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({ ...monthRange(previous) })))
+  })
+
+  it('shows an empty sidebar without fetching all accounts for a wallet-only collection', async () => {
+    mockBudgets()
+    api.activeAccountIds = []
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    expect(await screen.findByText(t('dashboard.drillDownEmpty'))).toBeInTheDocument()
+    expect(api.transactions.list).not.toHaveBeenCalled()
+    expect(api.dashboard.projectedTransactions).not.toHaveBeenCalled()
+  })
+
+  it('filters projected rows by account, category, debit type, and selected month', async () => {
+    mockBudgets()
+    api.activeAccountIds = ['account-1']
+    const projection = { recurring_id: 'r1', account_id: 'account-1', category_id: 'cat-groceries', type: 'debit', date: expectedMonth, amount: 30, currency: 'USD', description: 'Matching forecast' }
+    api.dashboard.projectedTransactions.mockResolvedValue([
+      projection,
+      { ...projection, recurring_id: 'r2', account_id: 'other', description: 'Other account' },
+      { ...projection, recurring_id: 'r3', category_id: 'cat-utilities', description: 'Other category' },
+      { ...projection, recurring_id: 'r4', type: 'credit', description: 'Income forecast' },
+      { ...projection, recurring_id: 'r5', date: '2000-01-01', description: 'Old forecast' },
+    ])
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    expect(await screen.findByText('Matching forecast')).toBeInTheDocument()
+    for (const description of ['Other account', 'Other category', 'Income forecast', 'Old forecast']) {
+      expect(screen.queryByText(description)).not.toBeInTheDocument()
+    }
+    expect(api.dashboard.projectedTransactions).toHaveBeenCalledWith({ month: expectedMonth })
+  })
+
+  it('preserves privacy masking for sidebar transaction amounts', async () => {
+    mockBudgets()
+    api.mask.mockImplementation(() => '••••')
+    api.transactions.list.mockResolvedValue({ items: [{ id: 'tx-1', description: 'Private groceries', date: expectedMonth, type: 'debit', amount: 123.45, currency: 'USD', status: 'posted' }], total: 1 })
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    expect(await screen.findByText('Private groceries')).toBeInTheDocument()
+    expect(screen.queryByText(/123.45/)).not.toBeInTheDocument()
+    expect(api.mask).toHaveBeenCalledWith('$123.45')
+  })
+
+  it('keeps edit and delete actions separate from the transaction sidebar', async () => {
+    mockBudgets()
+    const { user } = renderWithProviders(<BudgetsPage />)
+    const row = (await screen.findByText('Groceries')).closest('tr')!
+    await user.click(within(row).getByRole('button', { name: t('common.edit') }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(api.transactions.list).not.toHaveBeenCalled()
+    await user.keyboard('{Escape}')
+    await user.click(within(row).getByRole('button', { name: t('common.delete') }))
+    expect(await screen.findByRole('dialog', { name: t('budgets.confirmDeleteTitle') })).toBeInTheDocument()
+    expect(api.transactions.list).not.toHaveBeenCalled()
   })
 
   it('uses the selected month and collection accounts', async () => {

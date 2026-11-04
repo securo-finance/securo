@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
-import { monthLabel } from '@/lib/month-utils'
+import { monthLabel, monthRange } from '@/lib/month-utils'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as groupsApi, budgets as budgetsApi, dashboard } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
@@ -23,6 +23,7 @@ import { format } from 'date-fns'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { MonthPicker } from '@/components/ui/monthpicker'
 import { PageHeader } from '@/components/page-header'
+import { TransactionDrillDown } from '@/components/transaction-drill-down'
 import { BudgetSpendingProgress } from '@/components/budget-spending-progress'
 import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -68,6 +69,7 @@ export default function BudgetsPage() {
   const queryClient = useQueryClient()
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   const [monthCalOpen, setMonthCalOpen] = useState(false)
+  const [drillDownCategoryId, setDrillDownCategoryId] = useState<string | null>(null)
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const monthParam = `${selectedMonth}-01`
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -284,16 +286,22 @@ export default function BudgetsPage() {
                   // decimal, green below 80%, amber through 100%, red above it.
                   const pct = limit > 0 ? Math.round(amount / limit * 1000) / 10 : 0
                   return (
-                    <tr key={budget.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors">
+                    <tr key={budget.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors cursor-pointer"
+                      onClick={() => setDrillDownCategoryId(budget.category_id)}
+                    >
                       <td className="py-3 pl-4 sm:pl-5 pr-4 text-sm font-medium text-foreground break-words">
-                        <span className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="flex items-center gap-1.5 text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          aria-label={t('dashboard.drillDownCategory', { category: findCategoryReference(displayCategories, budget.category_id)?.name ?? budget.category_id, month: monthLabel(selectedMonth, uiLocale) })}
+                        >
                           {getCategoryDisplay(budget.category_id)}
                           {budget.is_recurring && (
                             <span title={t('budgets.recurringLabel')} className="text-muted-foreground">
                               <Repeat size={12} />
                             </span>
                           )}
-                        </span>
+                        </button>
                       </td>
                       <td className="py-3 pr-4 sm:pr-5 text-right text-sm font-semibold tabular-nums text-foreground">
                         {spendingAvailable ? (
@@ -311,7 +319,7 @@ export default function BudgetsPage() {
                           <div className="flex items-center justify-end gap-1">
                             <button
                               className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
-                              onClick={() => { setEditing(budget); setDialogOpen(true) }}
+                              onClick={(event) => { event.stopPropagation(); setEditing(budget); setDialogOpen(true) }}
                               aria-label={t('common.edit')}
                               title={t('common.edit')}
                             >
@@ -319,7 +327,7 @@ export default function BudgetsPage() {
                             </button>
                             <button
                               className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                              onClick={() => setDeletingBudget(budget)}
+                              onClick={(event) => { event.stopPropagation(); setDeletingBudget(budget) }}
                               disabled={deleteMutation.isPending}
                               aria-label={t('common.delete')}
                               title={t('common.delete')}
@@ -511,6 +519,22 @@ export default function BudgetsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {drillDownCategoryId !== null && (
+        <TransactionDrillDown
+          filter={{
+            title: t('dashboard.drillDownCategory', {
+              category: findCategoryReference(displayCategories, drillDownCategoryId)?.name ?? drillDownCategoryId,
+              month: monthLabel(selectedMonth, uiLocale),
+            }),
+            category_id: drillDownCategoryId,
+            type: 'debit',
+            ...monthRange(selectedMonth),
+            account_ids: activeAccountIds ?? undefined,
+          }}
+          onClose={() => setDrillDownCategoryId(null)}
+        />
+      )}
 
       <DeleteConfirmationDialog
         open={!!deletingBudget}

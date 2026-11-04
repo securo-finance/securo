@@ -63,6 +63,7 @@ export function TransactionDrillDown({
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const panelRef = useRef<HTMLDivElement>(null)
+  const noAccounts = filter?.account_ids?.length === 0
 
   const { data, isLoading } = useQuery({
     queryKey: ['drill-down', filter],
@@ -78,7 +79,7 @@ export function TransactionDrillDown({
         limit: 200,
         user_pnl_only: true,
       }),
-    enabled: !!filter,
+    enabled: !!filter && !noAccounts,
   })
 
   // Derive month param from filter.from for projected transactions
@@ -87,7 +88,7 @@ export function TransactionDrillDown({
   const { data: projectedTxs } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
-    enabled: !!filter && !!monthParam,
+    enabled: !!filter && !!monthParam && !noAccounts,
   })
 
   const { data: accountingModeData } = useQuery({
@@ -100,6 +101,7 @@ export function TransactionDrillDown({
   // Merge real + projected transactions, filtering projected by drill-down criteria
   const displayItems = useMemo((): DisplayItem[] => {
     const items: DisplayItem[] = []
+    if (noAccounts) return items
 
     for (const tx of data?.items ?? []) {
       // A split row listed under one category counts only its part there,
@@ -131,6 +133,8 @@ export function TransactionDrillDown({
 
     for (const pt of projectedTxs ?? []) {
       // Filter projected txs by drill-down criteria
+      if (filter?.account_id && pt.account_id !== filter.account_id) continue
+      if (filter?.account_ids && (!pt.account_id || !filter.account_ids.includes(pt.account_id))) continue
       if (filter?.type && pt.type !== filter.type) continue
       // A split template counts in a category through its part there.
       const parts = pt.has_category_lines ? pt.category_lines ?? [] : []
@@ -213,7 +217,15 @@ export function TransactionDrillDown({
 
     items.sort((a, b) => a.date.localeCompare(b.date))
     return items
-  }, [data, projectedTxs, filter])
+  }, [data, projectedTxs, filter, noAccounts])
+
+  const isOpen = !!filter
+  useEffect(() => {
+    if (!isOpen) return
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    panelRef.current?.focus()
+    return () => { opener?.focus() }
+  }, [isOpen])
 
   // Close on Escape, unless the key belongs to a dialog opened from the
   // panel (Radix marks the Escape it handled as defaultPrevented).
@@ -272,6 +284,11 @@ export function TransactionDrillDown({
       {/* Panel */}
       <div
         ref={panelRef}
+        role="complementary"
+        aria-label={filter?.title}
+        tabIndex={-1}
+        inert={!filter}
+        aria-hidden={!filter}
         className={`fixed top-0 right-0 h-full w-full max-w-md bg-card shadow-2xl z-50 transform transition-transform duration-200 ease-out flex flex-col ${
           filter ? 'translate-x-0' : 'translate-x-full'
         }`}
