@@ -435,6 +435,11 @@ def _auto_invested_deductions(
     instead of vanishing from net worth; and the cash residual plus the
     counted holdings add up to exactly the balance the provider reported.
 
+    Only positive, finite values are summed, the same rule the providers
+    apply to the reported portion. A negative position (a short, a written
+    option) then stays inside the cash residual, which is where the net
+    worth report counts it: the report leaves non-positive assets out.
+
     Holdings without an owning account (Pluggy's investments payload carries
     the item but no account id, so this is the normal case there) cannot say
     which account they came from, or whether they are the auto-invested
@@ -458,7 +463,10 @@ def _auto_invested_deductions(
             (
                 h.value
                 for h in counted
-                if h.account_external_id == acc.external_id and h.currency == acc.currency
+                if h.account_external_id == acc.external_id
+                and h.currency == acc.currency
+                and h.value.is_finite()
+                and h.value > 0
             ),
             Decimal(0),
         )

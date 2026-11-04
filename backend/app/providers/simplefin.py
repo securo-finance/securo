@@ -210,7 +210,8 @@ def _positions_value(raw_acc: dict) -> Decimal:
         if not str(raw.get("id") or ""):
             continue
         value = _to_decimal(raw.get("market_value"))
-        if value is None or value <= 0:
+        # NaN would raise on the comparison below; Infinity is not a value.
+        if value is None or not value.is_finite() or value <= 0:
             continue
         if (_iso_currency(raw.get("currency"), acc_currency) or acc_currency) != acc_currency:
             continue

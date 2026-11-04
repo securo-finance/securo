@@ -3443,6 +3443,16 @@ def test_auto_invested_deduction_is_the_counted_value_of_attributed_holdings():
     counted = [_CountedHolding("acc-a", Decimal("150"), "USD")]
     assert _auto_invested_deductions(accounts, counted) == {}
 
+    # Only positive, finite values are deducted: a negative position stays
+    # in the cash residual, and a non-finite value is never compared.
+    counted = [
+        _CountedHolding("acc-a", Decimal("150"), "BRL"),
+        _CountedHolding("acc-a", Decimal("-40"), "BRL"),
+        _CountedHolding("acc-a", Decimal("NaN"), "BRL"),
+        _CountedHolding("acc-a", Decimal("Infinity"), "BRL"),
+    ]
+    assert _auto_invested_deductions(accounts, counted) == {"acc-a": Decimal("150")}
+
 
 @pytest.mark.asyncio
 async def test_sync_deducts_auto_invested_only_from_the_holding_account(
@@ -7134,3 +7144,28 @@ async def test_sync_simplefin_margin_debit_is_a_negative_cash_residual(
 
     summary = await get_summary(session, test_workspace.id, test_user.id)
     assert summary.total_balance["USD"] == pytest.approx(400 + 889.92)
+
+
+@pytest.mark.asyncio
+async def test_sync_simplefin_negative_position_stays_in_the_cash_residual(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A short position arrives with a negative market value. It stays in
+    the cash residual, where the net worth report counts it, so the report
+    still equals the balance the broker reported."""
+    from datetime import date
+
+    from app.services.report_service import _net_worth_at
+
+    payload = _simplefin_brokerage_payload(balance="957.20")
+    payload["accounts"][0]["holdings"].append(
+        {"id": "h-short", "symbol": "XYZ", "description": "Short XYZ",
+         "currency": "USD", "shares": "-2", "market_value": "-100.00"}
+    )
+    conn = await _make_connection(session, test_user.id, "SimpleFIN Short")
+    balances = await _sync_simplefin_payload(session, test_user, test_workspace, conn, payload)
+
+    # 957.20 - (425.96 + 147.64): the -100 short is not deducted.
+    assert balances["brk-1"] == Decimal("383.60")
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
+    assert dp.value == pytest.approx(957.20 + 889.92)

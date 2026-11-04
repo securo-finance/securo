@@ -961,3 +961,16 @@ def test_parse_accounts_leaves_positions_in_another_currency_in_the_balance():
     ])
     _, accounts = SimpleFinProvider._parse_accounts(payload)
     assert accounts[0].auto_invested_balance == Decimal("506.17")
+
+
+def test_parse_accounts_skips_non_finite_market_values():
+    """NaN would raise on the sign check and abort the accounts sync;
+    Infinity is not a value. Both are skipped like a missing value."""
+    payload = _brokerage_payload(holdings=[
+        {"id": "h-nan", "symbol": "NAN", "currency": "USD", "market_value": "NaN"},
+        {"id": "h-snan", "symbol": "SNAN", "currency": "USD", "market_value": "sNaN"},
+        {"id": "h-inf", "symbol": "INF", "currency": "USD", "market_value": "Infinity"},
+        {"id": "h-ok", "symbol": "OK", "currency": "USD", "market_value": "50.25"},
+    ])
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+    assert accounts[0].auto_invested_balance == Decimal("50.25")
