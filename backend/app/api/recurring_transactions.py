@@ -77,5 +77,10 @@ async def generate_recurring_transactions(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    count = await recurring_transaction_service.generate_pending(session, ctx.user_id)
+    # The button is an explicit request, so it also covers schedules whose
+    # auto-generate toggle is off; the hourly task skips those. It is scoped
+    # to the workspace this request was authorized to write to.
+    count = await recurring_transaction_service.generate_pending(
+        session, ctx.user_id, include_manual=True, workspace_id=ctx.workspace.id
+    )
     return {"generated": count}

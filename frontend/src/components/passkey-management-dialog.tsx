@@ -34,11 +34,15 @@ const FAILURE_KEYS: Record<PasskeyFailure, string> = {
   unknown: 'auth.passkeyRegisterError',
 }
 
-export function PasskeyManagementDialog({ open, onClose, localAuthEnabled = true }: PasskeyManagementDialogProps) {
+export function PasskeyManagementDialog(props: PasskeyManagementDialogProps) {
+  return props.open ? <PasskeyManagementSession {...props} /> : null
+}
+
+function PasskeyManagementSession({ open, onClose, localAuthEnabled = true }: PasskeyManagementDialogProps) {
   const { t } = useTranslation()
   const [passkeys, setPasskeys] = useState<Passkey[]>([])
   const [name, setName] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)

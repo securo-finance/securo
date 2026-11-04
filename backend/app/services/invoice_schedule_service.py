@@ -14,9 +14,8 @@ the frequency, day of month clamped in shorter months and recovered
 afterwards, and ends the day before period `n + 1` starts. That is all
 the calendar there is: no separate "next run" date to drift, no
 timezone column to disagree with the anchor. The job compares period
-starts against the UTC date; a retainer due on the 1st is emitted on
-the 1st UTC, which is the same day everywhere that matters for a
-document dated by the day.
+starts against the workspace's calendar, using the same timezone as
+invoice dates and the rest of its books.
 
 ## Terms
 
@@ -49,6 +48,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.invoice import (
     Invoice,
     InvoiceAllocation,
@@ -87,7 +87,7 @@ _MAX_WALK = 1000
 
 
 def _today() -> _date:
-    return datetime.now(timezone.utc).date()
+    return app_today()
 
 
 # ---------------------------------------------------------------------------

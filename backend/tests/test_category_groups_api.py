@@ -71,7 +71,8 @@ async def test_delete_group_not_found(client: AsyncClient, auth_headers):
     response = await client.delete(
         f"/api/category-groups/{uuid.uuid4()}", headers=auth_headers,
     )
-    assert response.status_code == 400
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Group not found"
 
 
 @pytest.mark.asyncio
@@ -179,3 +180,23 @@ async def test_group_list_filters_hidden_child_categories(
         for category in group["categories"]
     }
     assert category_id in nested_hidden_ids
+
+
+@pytest.mark.asyncio
+async def test_delete_system_group(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user
+):
+    await create_default_categories(session, test_user.id, "pt-BR")
+    groups_response = await client.get("/api/category-groups", headers=auth_headers)
+    assert groups_response.status_code == 200
+    system_group = next(group for group in groups_response.json() if group["is_system"])
+    group_id = system_group["id"]
+
+    delete_resp = await client.delete(f"/api/category-groups/{group_id}", headers=auth_headers)
+    assert delete_resp.status_code == 204
+
+    groups_after = await client.get("/api/category-groups?include_hidden=true", headers=auth_headers)
+    assert group_id not in {g["id"] for g in groups_after.json()}
+
+
+

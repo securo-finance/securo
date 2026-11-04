@@ -6,7 +6,8 @@ signal) only need to be made here.
 """
 import uuid
 from datetime import date
-from typing import Optional
+from decimal import Decimal
+from typing import Iterable, Optional
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -135,6 +136,23 @@ def is_transfer():
     )
 
 
+def is_not_transfer():
+    """SQL filter: the negation of `is_transfer`, safe for uncategorized rows.
+
+    `~is_transfer()` would also drop rows with no category: their
+    `category_id IN (...)` is NULL, so the whole negation is NULL.
+    """
+    return and_(
+        Transaction.transfer_pair_id.is_(None),
+        or_(
+            Transaction.category_id.is_(None),
+            Transaction.category_id.not_in(
+                select(Category.id).where(Category.treat_as_transfer.is_(True))
+            ),
+        ),
+    )
+
+
 def counts_as_pnl():
     """SQL filter: True when a transaction should contribute to income/expense totals.
 
@@ -177,21 +195,27 @@ def counts_as_pnl():
     )
 
 
-def counts_on_bill():
+def counts_on_bill(net_payments: bool = False):
     """SQL filter: True when a transaction belongs on a credit-card bill.
 
     A bill total is an *amount owed*, not a reporting figure, and the two
     answer to different authorities: the bill has to match what the bank
     says you owe, while P/L answers to how the user chose to categorize
     their spending. So the card's cycle total cannot reuse
-    `counts_as_pnl` — every judgment that helper makes about what counts
+    `counts_as_pnl`. Every judgment that helper makes about what counts
     as *spending* is a judgment the bank never made.
 
     Kept out, because they are genuinely not charges on this bill:
-      - paired transfers (the bill *payment* is not a purchase),
+      - paired transfers, by default (the bill *payment* is not a
+        purchase). With ``net_payments=True`` the *credit* leg of a
+        paired transfer counts instead: an intermediate payment into the
+        card shrinks the amount owed, the way a refund does. Callers
+        net only what is left after the payment settles any debt that
+        was already outstanding (banks apply repayments oldest first),
+        see `get_account_summary`.
       - settlement debits (a repayment of a share already booked),
       - rows the user flagged `is_ignored`, on the transaction or its
-        category — those leave the account balance too, so dropping them
+        category. Those leave the account balance too, so dropping them
         from the bill keeps the card's two numbers telling one story.
 
     `treat_as_transfer` categories are handled asymmetrically, and this is
@@ -226,12 +250,37 @@ def counts_on_bill():
     transfer_category = Transaction.category_id.in_(
         select(Category.id).where(Category.treat_as_transfer.is_(True))
     )
+    if net_payments:
+        # The credit leg of a paired transfer is a payment by
+        # construction: the pair proves the money moved between the
+        # user's own accounts, so the pair itself and a transfer-like
+        # category tag on it cannot keep it off the bill.
+        paired_payment = and_(
+            Transaction.type == "credit",
+            Transaction.transfer_pair_id.is_not(None),
+        )
+        transfer_clause = or_(
+            Transaction.transfer_pair_id.is_(None), paired_payment,
+        )
+        category_clause = or_(
+            Transaction.type == "debit",
+            Transaction.category_id.is_(None),
+            ~transfer_category,
+            paired_payment,
+        )
+    else:
+        transfer_clause = Transaction.transfer_pair_id.is_(None)
+        category_clause = or_(
+            Transaction.type == "debit",
+            Transaction.category_id.is_(None),
+            ~transfer_category,
+        )
     return and_(
-        Transaction.transfer_pair_id.is_(None),
+        transfer_clause,
         Transaction.is_ignored.is_(False),
         ~and_(Transaction.source == "settlement", Transaction.type == "debit"),
         or_(Transaction.category_id.is_(None), ~ignored_category),
-        or_(Transaction.type == "debit", Transaction.category_id.is_(None), ~transfer_category),
+        category_clause,
     )
 
 
@@ -416,6 +465,61 @@ async def owner_split_offset_by_category(
         converted, _ = await _convert(session, _Decimal(str(total)), cur, primary_currency)
         out[cat_id] = out.get(cat_id, 0.0) + float(converted)
     return out
+
+
+async def forecast_owner_share_fractions(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    transactions: Iterable[Transaction],
+) -> dict[uuid.UUID, Decimal]:
+    """Map the user's own split forecast rows to the fraction that is their cost.
+
+    The `owner_split_offset_*` helpers only see posted rows dated up to today.
+    Pending and future-dated rows reach the projections one by one through
+    `_get_forecast_transactions`, so the share-only rule is applied per row
+    instead. The fraction comes from the split amounts in the row's own
+    currency, so multiplying it into `amount_primary` keeps the conversion
+    already stored on the row and needs no FX lookup.
+
+    Rows without non-owner shares are left out; callers treat a missing id
+    as 1.
+    """
+    from app.models.group import Group, GroupMember
+    from app.models.transaction_split import TransactionSplit
+
+    own_rows = {tx.id: tx for tx in transactions if tx.user_id == user_id}
+    if not own_rows:
+        return {}
+
+    viewer_member_ids = (
+        select(GroupMember.id)
+        .outerjoin(Group, Group.id == GroupMember.group_id)
+        .where(
+            or_(
+                GroupMember.linked_user_id == user_id,
+                and_(GroupMember.is_self == True, Group.user_id == user_id),
+            )
+        )
+    )
+    result = await session.execute(
+        select(TransactionSplit.transaction_id, func.sum(TransactionSplit.share_amount))
+        .where(
+            TransactionSplit.transaction_id.in_(list(own_rows)),
+            TransactionSplit.group_member_id.notin_(viewer_member_ids),
+        )
+        .group_by(TransactionSplit.transaction_id)
+    )
+
+    fractions: dict[uuid.UUID, Decimal] = {}
+    for tx_id, others in result.all():
+        full = abs(Decimal(str(own_rows[tx_id].amount)))
+        if not full:
+            continue
+        # Signed and unclamped, like the posted offset: an exact split may
+        # give a member a negative share, and the owner's share then exceeds
+        # the row.
+        fractions[tx_id] = 1 - Decimal(str(others or 0)) / full
+    return fractions
 
 
 async def viewer_shared_pnl(

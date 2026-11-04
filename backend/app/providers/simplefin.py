@@ -188,6 +188,10 @@ class SimpleFinProvider(BankProvider):
 
     def __init__(self) -> None:
         self.action_required_warnings: list[dict] = []
+        # External ids of accounts whose transaction fetch stopped early on
+        # an authorization failure. Their result is partial (earlier chunks
+        # only), so the sync layer must not treat it as the full live set.
+        self.incomplete_account_ids: set[str] = set()
 
     @property
     def name(self) -> str:
@@ -303,10 +307,17 @@ class SimpleFinProvider(BankProvider):
         }
 
         # Pull the account list once so we can return an institution name and
-        # the initial AccountData list. Filter out transactions here — they're
-        # fetched per-account by ``get_transactions``.
+        # the initial AccountData list. Transactions are filtered out here;
+        # they're fetched per-account by ``get_transactions``.
         payload = await self._fetch_accounts(credentials, pending=False)
-        _surface_errors(payload.get("errlist") or [], context="claim")
+        # A multi-institution bridge can carry a con.auth warning for one
+        # institution while still returning usable accounts from the others;
+        # in that case keep the claim moving instead of failing it outright.
+        _surface_errors(
+            payload.get("errlist") or [],
+            context="claim",
+            has_usable_data=bool(payload.get("accounts") or []),
+        )
         institution_name, accounts = self._parse_accounts(payload)
         return ConnectionData(
             external_id=self._stable_external_id(payload, claim_url),
@@ -485,19 +496,77 @@ class SimpleFinProvider(BankProvider):
                 cursor + timedelta(days=SIMPLEFIN_MAX_WINDOW_DAYS),
                 end_exclusive,
             )
-            payload = await self._fetch_accounts(
-                credentials,
-                start_date=cursor,
-                end_date=chunk_end,
-                account_id=account_external_id,
-                pending=True,
-            )
+            try:
+                payload = await self._fetch_accounts(
+                    credentials,
+                    start_date=cursor,
+                    end_date=chunk_end,
+                    account_id=account_external_id,
+                    pending=True,
+                )
+            except ProviderUserActionRequired as exc:
+                # The bridge refused the request outright (HTTP 401/403):
+                # this account's auth expired. Same wall as the errlist case
+                # below, reached the other way. One account's expiry must not
+                # abort the whole connection's sync (issue #1077): record the
+                # warning so the sync layer flags the connection, keep what
+                # we already fetched for this account, and let the other
+                # accounts sync normally. The access URL itself is never
+                # invalidated, so the user reauthorizes the affected bank at
+                # the bridge and the next sync picks this account back up
+                # without touching the token.
+                self.action_required_warnings.append(
+                    {"code": exc.code, "msg": str(exc)}
+                )
+                logger.warning(
+                    "SimpleFIN get_transactions: bridge refused the request "
+                    "for account %s (code=%s); skipping it for this sync",
+                    account_external_id,
+                    exc.code,
+                )
+                self.incomplete_account_ids.add(account_external_id)
+                return transactions
             matching_accounts = [
                 raw_acc for raw_acc in payload.get("accounts") or []
                 if str(raw_acc.get("id") or "") == account_external_id
             ]
+            errlist = payload.get("errlist") or []
+            reauth = [
+                e for e in errlist
+                if (e.get("code") or "").lower() in _REAUTH_ERROR_CODES
+            ]
+            if reauth:
+                # Reauth warnings are always recorded, so the connection
+                # stays flagged for reauthorization. When the bridge answered
+                # but has no data for this account, its sub-connection's auth
+                # expired: soft-skip it instead of aborting the whole
+                # connection's sync (issue #1077). The next sync retries
+                # automatically once the user reauthorizes the affected bank
+                # at the bridge; no new token is required.
+                for e in reauth:
+                    logger.warning(
+                        "SimpleFIN get_transactions: account %s warning "
+                        "code=%s msg=%s",
+                        account_external_id,
+                        e.get("code"),
+                        e.get("msg") or e.get("message"),
+                    )
+                self.action_required_warnings.extend(reauth)
+                if not matching_accounts:
+                    logger.warning(
+                        "SimpleFIN get_transactions: account %s needs "
+                        "reauthorization (codes=%s); skipping it for this "
+                        "sync",
+                        account_external_id,
+                        [e.get("code") for e in reauth],
+                    )
+                    self.incomplete_account_ids.add(account_external_id)
+                    return transactions
             warnings = _surface_errors(
-                payload.get("errlist") or [],
+                [
+                    e for e in errlist
+                    if (e.get("code") or "").lower() not in _REAUTH_ERROR_CODES
+                ],
                 context="get_transactions",
                 has_usable_data=bool(matching_accounts),
             )

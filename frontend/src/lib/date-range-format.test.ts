@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatDateRange } from './date-range-format'
+import { formatDate, formatDateRange } from './date-range-format'
 
 describe('formatDateRange', () => {
   it('formats a closed range with the year by default', () => {
@@ -25,5 +25,16 @@ describe('formatDateRange', () => {
 
   it('localizes month names for the requested locale', () => {
     expect(formatDateRange('2026-03-01', '2026-03-10', 'es-ES')).toMatch(/mar\.?/i)
+  })
+})
+
+describe('formatDate', () => {
+  it('formats one ISO day the way a range formats each bound', () => {
+    expect(formatDate('2026-10-01', 'en-US')).toBe('Oct 01, 2026')
+    expect(formatDate('2026-10-01', 'en-US', { compact: true })).toBe('Oct 01')
+  })
+
+  it('follows the requested locale instead of echoing the ISO string', () => {
+    expect(formatDate('2026-10-01', 'en-GB')).toBe('01 Oct 2026')
   })
 })

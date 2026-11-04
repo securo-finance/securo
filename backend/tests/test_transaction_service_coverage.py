@@ -378,15 +378,20 @@ async def test_get_transactions_user_pnl_only_returns_only_dashboard_reportable_
 
 
 async def test_get_transactions_sorting(session, test_user, test_workspace, acct):
-    await _mk_txn(session, test_user, acct, description="Aaa", amount=Decimal("30"))
-    await _mk_txn(session, test_user, acct, description="Zzz", amount=Decimal("10"))
+    await _mk_txn(
+        session, test_user, acct, description="Aaa",
+        amount=Decimal("30"), amount_primary=Decimal("5"),
+    )
+    await _mk_txn(
+        session, test_user, acct, description="Zzz",
+        amount=Decimal("10"), amount_primary=Decimal("40"),
+    )
     await _mk_txn(session, test_user, acct, description="Mmm", amount=Decimal("20"))
 
     asc, _, _ = await get_transactions(
         session, test_workspace.id, test_user.id, sort_by="amount", sort_dir="asc"
     )
-    amts = [t.amount for t in asc]
-    assert amts == sorted(amts)
+    assert [t.description for t in asc] == ["Aaa", "Mmm", "Zzz"]
 
     desc, _, _ = await get_transactions(
         session, test_workspace.id, test_user.id, sort_by="description", sort_dir="desc"
@@ -399,6 +404,33 @@ async def test_get_transactions_sorting(session, test_user, test_workspace, acct
         session, test_workspace.id, test_user.id, sort_by="transaction_date", sort_dir="asc"
     )
     assert len(td) == 3
+
+
+async def test_get_transactions_pages_rows_sharing_created_at_in_a_stable_order(
+    session, test_user, test_workspace, acct
+):
+    # A bank sync inserts its batch in one database transaction, so the rows
+    # share date and created_at. Paging through them must return each row
+    # exactly once, in the same order on every request.
+    created_at = datetime(2025, 3, 1, 12, tzinfo=timezone.utc)
+    ids = sorted(uuid.uuid4() for _ in range(7))
+    for txn_id in ids:
+        await _mk_txn(session, test_user, acct, id=txn_id, created_at=created_at)
+
+    async def paged_ids(**sort):
+        paged = []
+        for page in range(1, 5):
+            rows, total, _ = await get_transactions(
+                session, test_workspace.id, test_user.id, account_id=acct.id,
+                page=page, limit=2, **sort,
+            )
+            assert total == 7
+            paged.extend(t.id for t in rows)
+        return paged
+
+    # Default order, and an explicit sort whose column ties on every row too.
+    assert await paged_ids() == sorted(ids, reverse=True)
+    assert await paged_ids(sort_by="amount") == sorted(ids, reverse=True)
 
 
 # ---------------------------------------------------------------------------
@@ -999,6 +1031,44 @@ async def test_get_transactions_bill_id_filter(session, test_user, test_workspac
     assert "Linked" in descs
     assert "InWindow" in descs
     assert "Outside" not in descs
+
+
+async def test_get_transactions_statement_view_uses_purchase_date_in_accrual_mode(
+    session, test_user, test_workspace, cc_account
+):
+    await _mk_txn(
+        session, test_user, cc_account, description="OctoberPurchase",
+        date=date(2026, 10, 1), effective_date=date(2026, 10, 11),
+    )
+    await _mk_txn(
+        session, test_user, cc_account, description="OutsideCycle",
+        date=date(2026, 10, 5), effective_date=date(2026, 10, 20),
+    )
+
+    rows, _, _ = await get_transactions(
+        session, test_workspace.id, test_user.id,
+        account_ids=[cc_account.id], from_date=date(2026, 9, 4), to_date=date(2026, 10, 4),
+        accounting_mode="accrual", statement_view=True,
+    )
+
+    assert {row.description for row in rows} == {"OctoberPurchase"}
+
+
+async def test_get_transactions_without_statement_view_keeps_accrual_date_filter(
+    session, test_user, test_workspace, cc_account
+):
+    await _mk_txn(
+        session, test_user, cc_account, description="OctoberPurchase",
+        date=date(2026, 10, 1), effective_date=date(2026, 10, 11),
+    )
+
+    rows, _, _ = await get_transactions(
+        session, test_workspace.id, test_user.id,
+        account_ids=[cc_account.id], from_date=date(2026, 9, 4), to_date=date(2026, 10, 4),
+        accounting_mode="accrual",
+    )
+
+    assert rows == []
 
 
 async def test_get_transactions_bill_id_no_dates(session, test_user, test_workspace, cc_account):

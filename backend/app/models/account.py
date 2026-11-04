@@ -1,9 +1,9 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, SmallInteger, String
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, SmallInteger, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +24,10 @@ class Account(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     connection_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("bank_connections.id"), nullable=True)
+    # The provider's id for this account, and the first key the sync matches on.
+    # Expected to be stable across re-syncs, but not guaranteed: Enable Banking
+    # mints a `uid` scoped to a single session, so it is re-keyed on every
+    # reauthorisation. `stable_external_id` is the value that survives that.
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -31,8 +35,27 @@ class Account(Base):
     # the provider exposes one. Provider-owned like `name`: refreshed on sync,
     # not user-editable. Never holds the full identifier.
     masked_number: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)
-    type: Mapped[str] = mapped_column(String(50))  # checking, savings, credit_card
+    # Provider-owned and session-independent (Enable Banking's
+    # identification_hash): the durable half of the pair with `external_id`. It
+    # survives that being re-keyed, so the sync matches on it to avoid
+    # duplicating the account after a reconnect. Refreshed alongside `name`,
+    # never blanked by a missing value.
+    stable_external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    type: Mapped[str] = mapped_column(String(50))  # checking, savings, credit_card, loan
+    # Loan accounts only: the property or vehicle this loan is secured against.
+    secured_asset_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     balance: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0.00"))
+    # Loan accounts only: the contract terms, all optional. The payment
+    # schedule is computed from them on read (app/services/loan_schedule.py).
+    loan_kind: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    loan_original_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    loan_interest_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=9, scale=6), nullable=True)
+    loan_rate_period: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    loan_term_months: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    loan_first_payment_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    loan_amortization: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     balance_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     credit_limit: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)

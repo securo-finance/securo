@@ -4,17 +4,20 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/format'
+import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
+import { assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { extractApiError } from '@/lib/api-errors'
 import { normalizeRuleMatchValue } from '@/lib/rule-match-utils'
 import { findCategoryReference, getRuleCategoryId } from '@/lib/category-reference-utils'
 import { flattenConditions, hasConditionGroups } from '@/lib/rule-conditions'
 import { cn, normalizeText } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DescriptionInput } from '@/components/description-input'
 import { Label } from '@/components/ui/label'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -116,7 +119,7 @@ export function TransactionDialog({
   transaction: Transaction | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string }[]
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
   recurringMatch?: RecurringTransaction
   onSave: (data: TransactionSavePayload, recurringData?: { frequency: string; end_date?: string }, installmentData?: InstallmentSeriesInput, pendingFiles?: File[], action?: SaveAction) => void
   onDelete?: () => void
@@ -405,7 +408,7 @@ function TransactionForm({
   defaultAccountId?: string
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string }[]
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
   recurringMatch?: RecurringTransaction
   onSave: (data: TransactionEditPayload, recurringData?: { frequency: string; end_date?: string }, installmentData?: InstallmentSeriesInput, pendingFiles?: File[], action?: SaveAction) => void
   onDelete?: () => void
@@ -457,7 +460,7 @@ function TransactionForm({
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
-  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? sortedAccounts[0]?.id ?? '')
+  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
@@ -521,8 +524,8 @@ function TransactionForm({
   const formRef = useRef<HTMLFormElement>(null)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
-  // Bank-synced descriptions are read-only and can be long; auto-grow the
-  // textarea so the full text is always visible (issue #256).
+  // Bank-synced descriptions can be long; auto-grow the textarea so the full
+  // text is always visible (issue #256).
   useEffect(() => {
     const el = descriptionRef.current
     if (!el) return
@@ -540,6 +543,9 @@ function TransactionForm({
   const [unlinkingRecurring, setUnlinkingRecurring] = useState(false)
   const [addToRuleOpen, setAddToRuleOpen] = useState(false)
   const [extendRuleTarget, setExtendRuleTarget] = useState<Rule | null>(null)
+  // Unlinking re-reports the other leg, so the pair link is removed only
+  // after an explicit confirmation (issue #1160).
+  const [unlinkConfirmOpen, setUnlinkConfirmOpen] = useState(false)
 
   const { data: rulesList, isLoading: rulesLoading } = useQuery({
     queryKey: ['rules'],
@@ -657,7 +663,14 @@ function TransactionForm({
 
   const triggerSubmit = (action: SaveAction) => {
     pendingActionRef.current = action
-    formRef.current?.requestSubmit()
+    try {
+      // The submit handler runs synchronously inside requestSubmit() and reads
+      // the action first. If validation blocks the submit, the handler never
+      // runs, so reset here or a later plain Save would reuse this action.
+      formRef.current?.requestSubmit()
+    } finally {
+      pendingActionRef.current = 'save'
+    }
   }
   const showSaveVariants = isCreating && !isSynced
 
@@ -804,6 +817,7 @@ function TransactionForm({
           : {}
         const txData = isSynced
           ? {
+              ...(description !== transaction?.description ? { description } : {}),
               category_id: categoryId || null,
               payee_id: payeeId || null,
               notes: notes.trim() || null,
@@ -834,13 +848,13 @@ function TransactionForm({
         const recurringData = isCreating && isRecurring
           ? { frequency, end_date: endDate || undefined }
           : undefined
-        const installmentData = isCreating && isInstallment && !isSynced
+        const installmentData = isCreating && isInstallment && !isSynced && parsedAmount != null
           ? buildInstallmentSeriesInput({
               accountId,
               categoryId,
               payeeId,
               description,
-              amount,
+              amount: parsedAmount,
               date,
               type,
               currency,
@@ -912,20 +926,46 @@ function TransactionForm({
               <p className="text-xs text-blue-500 dark:text-blue-400">{t('transactions.transferTooltip')}</p>
             </div>
             {onUnlinkTransfer && transaction?.transfer_pair_id && (
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => {
-                  if (transaction?.transfer_pair_id) {
-                    onUnlinkTransfer(transaction.transfer_pair_id)
-                  }
-                }}
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-blue-200 dark:border-blue-800 bg-white/60 dark:bg-blue-900/40 px-2.5 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-200 hover:bg-white dark:hover:bg-blue-900/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title={t('transactions.unlinkTransferConfirm')}
-              >
-                <Unlink size={12} />
-                {t('transactions.unlinkTransfer')}
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setUnlinkConfirmOpen(true)}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-blue-200 dark:border-blue-800 bg-white/60 dark:bg-blue-900/40 px-2.5 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-200 hover:bg-white dark:hover:bg-blue-900/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Unlink size={12} />
+                  {t('transactions.unlinkTransfer')}
+                </button>
+                {/* Confirms the unlink: dropping the pair link re-reports the
+                    other leg, which changes reported totals (issue #1160). */}
+                <Dialog open={unlinkConfirmOpen} onOpenChange={setUnlinkConfirmOpen}>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>{t('transactions.unlinkTransfer')}</DialogTitle>
+                      <DialogDescription>
+                        {t('transactions.unlinkTransferConfirm')}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setUnlinkConfirmOpen(false)}>
+                        {t('common.cancel')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={() => {
+                          setUnlinkConfirmOpen(false)
+                          if (transaction?.transfer_pair_id) {
+                            onUnlinkTransfer(transaction.transfer_pair_id)
+                          }
+                        }}
+                      >
+                        {t('transactions.unlinkTransfer')}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </>
             )}
           </div>
         </div>
@@ -934,7 +974,7 @@ function TransactionForm({
         <div className="flex items-center gap-2 p-3 text-sm bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
           <span>{t('transactions.recurringInfo', {
             frequency: t(`recurring.${recurringMatch.frequency}`),
-            next: new Date(recurringMatch.next_occurrence).toLocaleDateString(dateLocale),
+            next: new Date(recurringMatch.next_occurrence + 'T00:00:00').toLocaleDateString(dateLocale),
           })}</span>
         </div>
       )}
@@ -959,24 +999,47 @@ function TransactionForm({
         {isSynced ? (
           <textarea
             ref={descriptionRef}
-            className="w-full border border-input rounded-md px-3 py-2 text-sm bg-muted/40 text-muted-foreground resize-none overflow-hidden cursor-default outline-none focus:outline-none focus-visible:outline-none"
+            className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card dark:bg-input/30 shadow-xs resize-none overflow-hidden outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={description}
-            readOnly
+            onChange={(e) => setDescription(e.target.value)}
+            // Descriptions are single-line; Enter saves like the Input does.
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                formRef.current?.requestSubmit()
+              }
+            }}
+            required
             rows={1}
           />
         ) : (
-          <Input
+          <DescriptionInput
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={setDescription}
+            // Prefill what was last filed under this description, without
+            // overwriting anything the user already chose (issue #1127).
+            onPick={(suggestion) => {
+              if (!categoryId && suggestion.category_id) setCategoryId(suggestion.category_id)
+              if (!payeeId && suggestion.payee_id) setPayeeId(suggestion.payee_id)
+            }}
             required
             className="bg-card"
           />
         )}
         {transaction?.original_description &&
-          transaction.original_description !== transaction.description && (
-            <p className="text-xs text-muted-foreground">
-              {t('transactions.originalDescription')}: {transaction.original_description}
-            </p>
+          transaction.original_description !== description && (
+            <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
+              <p>
+                {t('transactions.originalDescription')}: {transaction.original_description}
+              </p>
+              <button
+                type="button"
+                onClick={() => setDescription(transaction.original_description ?? '')}
+                className="shrink-0 underline underline-offset-2 hover:text-foreground transition-colors cursor-pointer"
+              >
+                {t('transactions.restoreOriginalDescription')}
+              </button>
+            </div>
           )}
         {/* Rows that pre-date the original_description column have no
             provenance to show, so the raw payee stays the only hint at what
@@ -1155,6 +1218,7 @@ function TransactionForm({
               onChange={(e) => setAccountId(e.target.value)}
               required
             >
+              {!accountId && <option value="" disabled hidden>{t('transactions.createCounterpartSelectAccount')}</option>}
               {sortedAccounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>{getAccountLabel(acc)}</option>
               ))}
@@ -1241,6 +1305,10 @@ function TransactionForm({
           onChange={setSplits}
           onValidityChange={setSplitsValid}
         />
+      )}
+
+      {!isCreating && transaction?.type === 'debit' && transaction.status === 'posted' && !transaction.is_ignored && !transaction.transfer_pair_id && !transaction.category?.is_ignored && Number(transaction.amount) > 0 && accounts.find(a => a.id === transaction.account_id)?.type !== 'loan' && accounts.some(a => a.type === 'loan' && a.secured_asset_id) && (
+        <MortgagePaymentEditor transaction={transaction} accounts={accounts} />
       )}
 
       {!isCreating && transaction ? (
@@ -1483,6 +1551,120 @@ function TransactionForm({
         />
       )}
     </form>
+  )
+}
+
+function MortgagePaymentEditor({
+  transaction,
+  accounts,
+}: {
+  transaction: Transaction
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
+}) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const loans = useMemo(
+    () => accounts.filter(account => account.type === 'loan' && account.secured_asset_id && account.currency === transaction.currency),
+    [accounts, transaction.currency],
+  )
+  const account = accounts.find(item => item.id === transaction.account_id)
+  const { data } = useQuery({
+    queryKey: ['mortgage-payment', transaction.id],
+    queryFn: () => mortgagePaymentsApi.get(transaction.id),
+  })
+  const [draftAmounts, setDraftAmounts] = useState<Record<string, { principal: string; interest: string }> | null>(null)
+  const [expandedOverride, setExpandedOverride] = useState<boolean | null>(null)
+  const isExpanded = expandedOverride ?? !!data?.allocations.length
+  const amounts = draftAmounts ?? Object.fromEntries((data?.allocations ?? []).map(row => [row.loan_account_id, {
+    principal: String(row.principal_amount), interest: String(row.interest_amount),
+  }]))
+  const { data: propertyAssets } = useQuery({
+    queryKey: ['assets'],
+    queryFn: () => assetsApi.list(),
+  })
+  const refreshMortgageData = async () => {
+    invalidateFinancialQueries(queryClient)
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['mortgage-payment', transaction.id] }),
+      queryClient.invalidateQueries({ queryKey: ['accounts'] }),
+      queryClient.invalidateQueries({ queryKey: ['mortgage-balance-history'] }),
+      queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+      queryClient.invalidateQueries({ queryKey: ['reports'] }),
+    ])
+  }
+  const save = useMutation({
+    mutationFn: () => mortgagePaymentsApi.replace(transaction.id, loans
+      .filter(item => amounts[item.id])
+      .map(item => ({
+        loan_account_id: item.id,
+        principal_amount: (parseCents(amounts[item.id].principal) ?? 0) / 100,
+        interest_amount: (parseCents(amounts[item.id].interest) ?? 0) / 100,
+      }))),
+    onSuccess: async () => {
+      await refreshMortgageData()
+      toast.success(t('transactions.mortgageSaved'))
+    },
+    onError: (error) => toast.error(extractApiError(error, t('transactions.mortgageSaveError'))),
+  })
+  const remove = useMutation({
+    mutationFn: () => mortgagePaymentsApi.remove(transaction.id),
+    onSuccess: async () => {
+      setDraftAmounts(null)
+      await refreshMortgageData()
+      toast.success(t('transactions.mortgageRemoved'))
+    },
+    onError: (error) => toast.error(extractApiError(error, t('transactions.mortgageSaveError'))),
+  })
+  if (account?.type === 'loan' || loans.length === 0) return null
+  // Compare whole cents: the backend requires two decimals and an exact total.
+  const parts = loans.flatMap(item => {
+    const value = amounts[item.id]
+    return value ? [parseCents(value.principal), parseCents(value.interest)] : []
+  })
+  const partsValid = parts.every(cents => cents !== null)
+  const totalCents = parts.reduce<number>((sum, cents) => sum + (cents ?? 0), 0)
+  const total = totalCents / 100
+  // Share of the payment, not of the parts entered so far: the label says
+  // "payment split", and while the parts are still short of the payment a
+  // denominator of their own sum reads as 100% of a payment half allocated.
+  const paymentAmount = Number(transaction.amount)
+  const percentage = (value: string, totalAmount: number) => totalAmount ? (Number(value || 0) / totalAmount * 100).toFixed(1) : '0.0'
+  return (
+    <section className="rounded-lg border border-border p-3 space-y-3">
+      <button type="button" className="w-full text-left text-sm font-medium" onClick={() => setExpandedOverride(!isExpanded)}>
+        {t('transactions.mortgageAllocation')}
+        {data?.allocations.length ? ' · ' + data.allocations.length : ''}
+      </button>
+      {isExpanded && <>
+      <p className="text-xs text-muted-foreground">{t('transactions.mortgageCurrencyHint', { currency: transaction.currency })}</p>
+      {loans.map(loan => {
+        const value = amounts[loan.id] ?? { principal: '', interest: '' }
+        const propertyName = propertyAssets?.find(asset => asset.id === loan.secured_asset_id)?.name
+        return (
+          <div key={loan.id} className="rounded-md bg-muted/40 p-3 space-y-2">
+            <div className="text-sm font-medium">{loan.display_name || loan.name}{propertyName ? <span className="ml-1 text-xs font-normal text-muted-foreground">· {propertyName}</span> : null}</div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs text-muted-foreground">{t('transactions.mortgagePrincipal')}
+              <Input type="number" min="0" step="0.01" value={value.principal} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, principal: e.target.value } }))} />
+              </label>
+              <label className="text-xs text-muted-foreground">{t('transactions.mortgageInterest')}
+              <Input type="number" min="0" step="0.01" value={value.interest} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, interest: e.target.value } }))} />
+              </label>
+            </div>
+            <p className="text-xs text-muted-foreground">{t('transactions.mortgageSplitPercentages', { principal: percentage(value.principal, paymentAmount), interest: percentage(value.interest, paymentAmount) })}</p>
+          </div>
+        )
+      })}
+      <p className="text-xs text-muted-foreground">{t('transactions.mortgagePaymentTotal', { total: total.toFixed(2), payment: Number(transaction.amount).toFixed(2), currency: transaction.currency })}</p>
+      <Button type="button" size="sm" variant="outline" disabled={save.isPending || !partsValid || totalCents <= 0 || totalCents !== amountToCents(Number(transaction.amount))} onClick={() => save.mutate()}>
+        {save.isPending ? t('common.saving') : t('transactions.saveMortgageAllocation')}
+      </Button>
+      {data?.allocations.length ? <Button type="button" size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate()}>{t('transactions.removeMortgageAllocation')}</Button> : null}
+      {data?.allocations.length ? <p className="text-xs text-muted-foreground">{t('transactions.mortgageSavedSummary', { principal: data.principal_total.toFixed(2), interest: data.interest_total.toFixed(2), currency: data.currency, principalPercentage: data.principal_percentage.toFixed(1), interestPercentage: data.interest_percentage.toFixed(1) })}</p> : null}
+      {data?.allocations.some(row => row.historical) && <p className="text-xs text-muted-foreground">{t('transactions.mortgageHistoricalNote')}</p>}
+      {data?.allocations.some(row => row.bank_managed) && <p className="text-xs text-muted-foreground">{t('transactions.mortgageBankManagedNote')}</p>}
+      </>}
+    </section>
   )
 }
 

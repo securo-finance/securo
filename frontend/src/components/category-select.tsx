@@ -1,26 +1,15 @@
 import { useState, useMemo, useContext } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
-import { ChevronDownIcon, CheckIcon, PlusIcon } from 'lucide-react'
+import { ChevronDownIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
+import { CategoryPicker } from '@/components/category-picker'
 import { WorkspaceContext } from '@/contexts/workspace-context'
-import { categories as categoriesApi } from '@/lib/api'
-import { extractApiError } from '@/lib/api-errors'
-import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
-import { inlineCreateItemValue, inlineCreateName } from '@/lib/inline-create'
 import type { Category, CategoryGroup } from '@/types'
-import { cn, normalizeText } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import {
   isCategoryHiddenFromSelection,
   resolveSelectedCategory,
 } from '@/lib/category-selection-utils'
-
-// Same starting look the categories page gives a new category, so one made
-// from a picker is indistinguishable from one made there.
-const NEW_CATEGORY_ICON = 'circle-help'
-const NEW_CATEGORY_COLOR = '#6366f1'
 
 interface CategorySelectProps {
   value: string
@@ -55,56 +44,20 @@ export function CategorySelect({
   contentProps,
 }: CategorySelectProps) {
   const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
   // The category just created here. The list catches up once the refetch
   // lands; until then this keeps the trigger showing the new name.
   const [created, setCreated] = useState<Category | null>(null)
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
   // Read the context directly rather than through useWorkspace, so the
   // picker still renders (without creation) outside a workspace provider.
   const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
   const canCreate = creatable && canWrite
 
-  const createMutation = useMutation({
-    mutationFn: (name: string) =>
-      categoriesApi.create({ name, icon: NEW_CATEGORY_ICON, color: NEW_CATEGORY_COLOR }),
-    onSuccess: (category) => {
-      // Only the category lists refetch. Whatever form hosts this picker
-      // (an import preview, a half-filled transaction) keeps its state.
-      invalidateCategoryQueries(queryClient)
-      setCreated(category)
-      onChange(category.id)
-      handleOpenChange(false)
-      toast.success(t('categories.created'))
-    },
-    onError: (err: unknown) => toast.error(extractApiError(err, t('common.error'))),
-  })
-
   function handleOpenChange(next: boolean) {
     setOpen(next)
-    if (!next) setSearch('')
   }
 
-  const createName = canCreate
-    ? inlineCreateName(search, (categories ?? []).map((c) => c.name))
-    : null
-
   const resolvedPlaceholder = placeholder ?? t('transactions.selectCategory', 'Select category')
-
-  const displayGroups = useMemo(() => {
-    const ungrouped = (categories ?? []).filter((c) => !c.group_id)
-    if (ungrouped.length === 0) return groups
-
-    return [
-      ...groups,
-      {
-        id: 'ungrouped-virtual',
-        name: t('groups.noGroup'),
-        categories: ungrouped,
-      } as CategoryGroup,
-    ]
-  }, [categories, groups, t])
 
   const selectedCategory = useMemo(() => {
     const fallback = created && created.id === value ? created : currentCategory
@@ -156,77 +109,18 @@ export function CategorySelect({
         className="w-[var(--radix-popover-trigger-width)] p-0 overflow-hidden"
         {...contentProps}
       >
-        <Command
-          filter={(itemValue, search) => {
-            return normalizeText(itemValue).includes(normalizeText(search)) ? 1 : 0
+        <CategoryPicker
+          value={value}
+          onChange={(next) => {
+            onChange(next)
+            handleOpenChange(false)
           }}
-        >
-          <CommandInput
-            placeholder={t('transactions.searchCategory')}
-            value={search}
-            onValueChange={setSearch}
-          />
-          <CommandList>
-            <CommandEmpty>{t('transactions.noCategoryFound')}</CommandEmpty>
-            {allowNone && (
-              <CommandGroup>
-                <CommandItem
-                  value={`none ${t('transactions.noCategory')}`}
-                  onSelect={() => {
-                    onChange('')
-                    handleOpenChange(false)
-                  }}
-                  className="italic text-muted-foreground cursor-pointer"
-                >
-                  <span className="flex-1">{t('transactions.noCategory')}</span>
-                  {value === '' && <CheckIcon className="size-4 shrink-0" />}
-                </CommandItem>
-              </CommandGroup>
-            )}
-            {displayGroups.map((group) => (
-              <CommandGroup key={group.id}>
-                <div className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
-                  {group.name}
-                </div>
-                {group.categories.map((cat) => (
-                  <CommandItem
-                    key={cat.id}
-                    value={`${group.name} ${cat.name}`}
-                    onSelect={() => {
-                      onChange(cat.id)
-                      handleOpenChange(false)
-                    }}
-                    className="cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2 min-w-0 truncate flex-1">
-                      {cat.color ? (
-                        <span
-                          className="size-2.5 shrink-0 rounded-full border border-black/5"
-                          style={{ backgroundColor: cat.color }}
-                        />
-                      ) : null}
-                      <span className="truncate">{cat.name}</span>
-                    </div>
-                    {value === cat.id && <CheckIcon className="size-4 shrink-0" />}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            ))}
-            {createName && (
-              <CommandGroup>
-                <CommandItem
-                  value={inlineCreateItemValue(search)}
-                  disabled={createMutation.isPending}
-                  onSelect={() => createMutation.mutate(createName)}
-                  className="cursor-pointer"
-                >
-                  <PlusIcon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{t('common.createNamed', { name: createName })}</span>
-                </CommandItem>
-              </CommandGroup>
-            )}
-          </CommandList>
-        </Command>
+          categories={categories}
+          groups={groups}
+          allowNone={allowNone}
+          creatable={canCreate}
+          onCreated={setCreated}
+        />
       </PopoverContent>
     </Popover>
   )

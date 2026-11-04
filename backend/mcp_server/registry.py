@@ -57,17 +57,32 @@ def tool(
     return deco
 
 
-def list_tools() -> list[dict[str, Any]]:
-    """MCP-compatible tool list payload."""
-    return [
-        {
+def list_tools(*, legacy: bool = True) -> list[dict[str, Any]]:
+    """MCP tool list payload, in registration order (the spec asks for a
+    deterministic order so clients can cache the list).
+
+    Securo's per-tool extras travel under a vendor-prefixed `_meta` key, the
+    place the spec gives them. Legacy responses also keep the old top-level
+    `_securo` object: during a rolling deploy the backend's agent runtime can
+    briefly be one version behind the mcp-server, and it read that field.
+    Modern responses leave it out, since `Tool` defines no such property.
+    """
+    from mcp_server.protocol import TOOL_META_KEY, tool_annotations
+
+    out: list[dict[str, Any]] = []
+    for s in REGISTRY.values():
+        extras = {"is_proposal": s.is_proposal, "tags": s.tags}
+        item: dict[str, Any] = {
             "name": s.name,
             "description": s.description,
             "inputSchema": s.parameters,
-            "_securo": {"is_proposal": s.is_proposal, "tags": s.tags},
+            "annotations": tool_annotations(s.name, is_proposal=s.is_proposal),
+            "_meta": {TOOL_META_KEY: extras},
         }
-        for s in REGISTRY.values()
-    ]
+        if legacy:
+            item["_securo"] = extras
+        out.append(item)
+    return out
 
 
 async def call_tool(

@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,7 @@ from app.schemas.category import (
     CategoryRead,
     CategoryRuleUsage,
     CategoryUpdate,
+    CategoryUsageRead,
     RuleSummary,
 )
 from app.services import category_service
@@ -56,6 +58,24 @@ async def category_rule_usage(
     return CategoryRuleUsage(rules=[RuleSummary(id=r.id, name=r.name) for r in rules])
 
 
+@router.get("/{category_id}/usage", response_model=CategoryUsageRead)
+async def category_usage(
+    category_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """What still points at this category, so deleting it can offer a destination."""
+    usage = await category_service.get_category_usage(
+        session, ctx.workspace.id, category_id
+    )
+    return CategoryUsageRead(
+        transactions=usage.transactions,
+        budgets=usage.budgets,
+        recurring_transactions=usage.recurring_transactions,
+        rules=[RuleSummary(id=r.id, name=r.name) for r in usage.rules],
+    )
+
+
 @router.patch("/{category_id}", response_model=CategoryRead)
 async def update_category(
     category_id: uuid.UUID,
@@ -82,13 +102,26 @@ async def update_category(
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_category(
     category_id: uuid.UUID,
+    transfer_to_category_id: Optional[uuid.UUID] = Query(
+        None,
+        description="Category that takes over the transactions, budgets, "
+        "recurring entries and rules of the one being deleted.",
+    ),
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
         deleted = await category_service.delete_category(
-            session, category_id, ctx.workspace.id
+            session,
+            category_id,
+            ctx.workspace.id,
+            transfer_to_id=transfer_to_category_id,
         )
+    except category_service.CategoryTransferError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -96,6 +129,7 @@ async def delete_category(
         ) from exc
     if not deleted:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Category not found or is a system category",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category not found",
         )
+

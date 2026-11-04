@@ -1,3 +1,4 @@
+import time
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -24,6 +25,8 @@ from app.services.transaction_service import (
     toggle_ignore_transaction,
     get_transaction,
     get_transactions,
+    notes_with_tags_added,
+    notes_with_tags_removed,
     update_transaction,
 )
 
@@ -631,6 +634,54 @@ async def test_update_transaction(session: AsyncSession, test_user, test_workspa
     assert updated.amount == Decimal("99")
     assert updated.original_description == "Bank Raw"
     assert updated.description_is_rule_managed is False
+
+
+@pytest.mark.asyncio
+async def test_update_transaction_backfills_original_description_on_legacy_rows(
+    session: AsyncSession, test_user, test_workspace, txn_account
+):
+    synced = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="PAG*LOJA 123",
+        original_description=None,
+        amount=Decimal("10"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="sync",
+        created_at=datetime.now(timezone.utc),
+    )
+    manual = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="Lunch",
+        original_description=None,
+        amount=Decimal("10"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="manual",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([synced, manual])
+    await session.commit()
+
+    updated = await update_transaction(
+        session, synced.id, test_workspace.id, test_user.id,
+        TransactionUpdate(description="Birthday gift"),
+    )
+    assert updated is not None
+    assert updated.description == "Birthday gift"
+    assert updated.original_description == "PAG*LOJA 123"
+
+    updated = await update_transaction(
+        session, manual.id, test_workspace.id, test_user.id,
+        TransactionUpdate(description="Team lunch"),
+    )
+    assert updated is not None
+    assert updated.description == "Team lunch"
+    assert updated.original_description is None
 
 
 @pytest.mark.asyncio
@@ -1712,3 +1763,42 @@ async def test_bulk_remove_tags_clears_only_exact_matches(
     await session.refresh(t2)
     assert t1.notes == "#keep"
     assert t2.notes == "#test2 untouched"
+
+
+def test_notes_with_tags_added_normalises_and_skips_present_tags():
+    assert notes_with_tags_added(None, ["trip"]) == "#trip"
+    assert notes_with_tags_added("lunch #trip", ["#trip", "work", "work"]) == "lunch #trip #work"
+    assert notes_with_tags_added("lunch #trip", ["trip", " "]) == "lunch #trip"
+
+
+def test_notes_with_tags_removed_leaves_none_when_nothing_is_left():
+    assert notes_with_tags_removed("#test #test2 keep", ["test"]) == "#test2 keep"
+    assert notes_with_tags_removed("#work", ["work"]) is None
+    assert notes_with_tags_removed(None, ["work"]) is None
+
+
+def test_notes_with_tags_removed_leaves_notes_without_the_tag_untouched():
+    assert notes_with_tags_removed("First\n\nSecond", ["work"]) == "First\n\nSecond"
+    assert notes_with_tags_removed("a  b", ["work"]) == "a  b"
+
+
+def test_notes_with_tags_removed_keeps_unrelated_line_breaks():
+    assert notes_with_tags_removed("Lunch #work\n\nSecond", ["work"]) == "Lunch\n\nSecond"
+    assert notes_with_tags_removed("#work Lunch\nSecond", ["work"]) == "Lunch\nSecond"
+    assert notes_with_tags_removed("Lunch #work #trip", ["work"]) == "Lunch #trip"
+    assert notes_with_tags_removed("Lunch #workshop", ["work"]) == "Lunch #workshop"
+
+
+def test_notes_with_tags_removed_separates_tags_glued_together():
+    assert notes_with_tags_removed("Lunch #work#trip", ["work"]) == "Lunch #trip"
+    assert notes_with_tags_removed("Lunch #work#trip", ["trip"]) == "Lunch #work"
+    assert notes_with_tags_removed("Lunch #work#trip", ["work", "trip"]) == "Lunch"
+    assert notes_with_tags_removed("Lunch #work#trip today", ["trip"]) == "Lunch #work today"
+    assert notes_with_tags_removed("Lunch #work#trip today", ["work"]) == "Lunch #trip today"
+
+
+def test_notes_with_tags_removed_reads_a_long_run_of_spaces_once():
+    notes = "a" + " " * 100_000 + "b"
+    started = time.perf_counter()
+    assert notes_with_tags_removed(notes, ["work"]) == notes
+    assert time.perf_counter() - started < 1

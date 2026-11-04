@@ -7,7 +7,15 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-engine = create_async_engine(settings.database_url, echo=settings.debug)
+# pool_pre_ping validates a pooled connection before handing it to the
+# application. Without it, a PostgreSQL failover leaves dead connections in
+# the pool and the first request that borrows one fails with
+# "connection is closed" instead of transparently reconnecting.
+engine = create_async_engine(
+    settings.database_url,
+    echo=settings.debug,
+    pool_pre_ping=True,
+)
 async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

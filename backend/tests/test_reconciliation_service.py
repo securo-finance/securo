@@ -18,7 +18,14 @@ from app.models.account import Account
 from app.models.invoice import Invoice, InvoiceAllocation
 from app.models.payee import Payee
 from app.models.transaction import Transaction
-from app.services import invoice_service, reconciliation_service
+from app.schemas.recurring_transaction import RecurringTransactionCreate
+from app.services import (
+    invoice_service,
+    reconciliation_policy,
+    reconciliation_rule_service,
+    reconciliation_service,
+)
+from app.services.recurring_transaction_service import create_recurring_transaction
 
 TODAY = date.today()
 
@@ -573,3 +580,78 @@ async def test_linking_by_hand_answers_the_pending_suggestion(
     queue = await client.get("/api/reconciliation/suggestions", headers=biz_headers)
     assert queue.status_code == 200, queue.text
     assert all(str(short_id) not in str(item) for item in queue.json())
+
+
+async def _tolerant_bills(session, account, test_user, descriptions: list[str]):
+    """Bills of about 18.43 on `account`, in a workspace that lets one match a
+    charge within 5% and link on it."""
+    await reconciliation_rule_service.upsert_override(
+        session, account.workspace_id, test_user.id,
+        reconciliation_policy.MATCH_RECURRING["node"], "same_account_exact",
+        {"when": {"amount": {"match": "tolerance", "percent": "5"},
+                  "unique_candidate": True}},
+    )
+    return [
+        await create_recurring_transaction(
+            session, account.workspace_id, test_user.id,
+            RecurringTransactionCreate(
+                description=description, amount=Decimal("18.43") + Decimal(i) / 10,
+                currency="USD", type="debit", frequency="monthly",
+                start_date=TODAY, account_id=account.id,
+            ),
+        )
+        for i, description in enumerate(descriptions)
+    ]
+
+
+async def _pending_for(session, transaction_id):
+    from app.models.reconciliation import ReconciliationSuggestion
+
+    result = await session.execute(
+        select(ReconciliationSuggestion.expectation_id).where(
+            ReconciliationSuggestion.transaction_id == transaction_id,
+            ReconciliationSuggestion.status == "pending",
+        )
+    )
+    return set(result.scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_several_bills_within_tolerance_become_a_question(
+    business_ws, session: AsyncSession, account, test_user
+):
+    """Each bill would link on its own, but the rule asks for a single
+    candidate and there are two. Nothing is linked, so the charge has to be
+    offered to the person rather than left unexplained."""
+    bills = await _tolerant_bills(
+        session, account, test_user, ["Hosting Plan", "Hosting Plan Pro"]
+    )
+    charge = await a_transaction(
+        session, account, test_user, amount=Decimal("18.71"), kind="debit",
+        description="HOSTING PLAN",
+    )
+    charge_id = charge.id
+
+    await reconciliation_service.match_incoming(session, account.workspace_id, [charge])
+    await session.commit()
+
+    assert await _pending_for(session, charge_id) == {bill.id for bill in bills}
+
+
+@pytest.mark.asyncio
+async def test_a_single_bill_within_tolerance_is_not_suggested(
+    business_ws, session: AsyncSession, account, test_user
+):
+    """One fit is not ambiguous: it is the linking pass's to make, and this
+    pass keeps leaving it alone."""
+    await _tolerant_bills(session, account, test_user, ["Hosting Plan"])
+    charge = await a_transaction(
+        session, account, test_user, amount=Decimal("18.71"), kind="debit",
+        description="HOSTING PLAN",
+    )
+    charge_id = charge.id
+
+    await reconciliation_service.match_incoming(session, account.workspace_id, [charge])
+    await session.commit()
+
+    assert await _pending_for(session, charge_id) == set()

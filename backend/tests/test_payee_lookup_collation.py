@@ -200,7 +200,7 @@ async def test_sync_imports_a_shared_counterparty_once(
 
     with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
          patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock):
-        synced, _ = await sync_connection(
+        synced, _, _ = await sync_connection(
             session, connection.id, test_workspace.id, test_user.id
         )
 

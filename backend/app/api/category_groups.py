@@ -64,6 +64,7 @@ async def delete_group(
     deleted = await category_group_service.delete_group(session, group_id, ctx.workspace.id)
     if not deleted:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Group not found or is a system group",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Group not found",
         )
+

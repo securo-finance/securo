@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 class DashboardSummary(BaseModel):
     total_balance: dict[str, float]  # currency -> amount
     total_balance_primary: float = 0.0  # consolidated in primary currency
-    projected_balance: dict[str, float] = Field(default_factory=dict)  # current balance plus forecast rows
+    projected_balance: dict[str, float] = Field(
+        default_factory=dict
+    )  # current balance plus forecast rows
     projected_balance_primary: float = 0.0  # consolidated projected balance
     balance_date: str  # ISO date string, e.g. "2026-03-02"
     monthly_income: float
@@ -23,6 +25,10 @@ class DashboardSummary(BaseModel):
     assets_value: dict[str, float] = Field(default_factory=dict)  # currency -> total asset value
     assets_value_primary: float = 0.0
     primary_currency: str = "USD"
+    # No real FX rate for at least one currency bucket: the *_primary totals
+    # sum that bucket at 1:1, so they are an estimate, not a conversion.
+    # Same flag the account list carries (issue #1165).
+    fx_fallback: bool = False
     # Net pending balance from group splits (in primary currency).
     # Negative = the user is a net debtor (others paid for them, debt
     # owed). Positive = the user is a net creditor (paid for others,
@@ -54,9 +60,20 @@ class DailyBalance(BaseModel):
     balance: Optional[float]  # None for future days beyond cutoff
 
 
+class DailyBaseline(BaseModel):
+    day: int
+    median: Optional[float] = None  # None when fewer than 2 months contribute
+    lower_quartile: Optional[float] = None  # None when fewer than 3 contribute
+    upper_quartile: Optional[float] = None  # None when fewer than 3 contribute
+
+
 class BalanceHistory(BaseModel):
     current: list[DailyBalance]
-    previous: list[DailyBalance]
+    opening_balance: float
+    baseline: list[DailyBaseline]  # cumulative change since month opening
+    comparison: Optional[list[DailyBalance]] = None
+    comparison_month: Optional[str] = None
+    comparison_opening_balance: Optional[float] = None
 
 
 class ProjectedTransaction(BaseModel):
@@ -72,3 +89,4 @@ class ProjectedTransaction(BaseModel):
     category_name: Optional[str]
     category_icon: Optional[str]
     category_color: Optional[str] = None
+    category_treat_as_transfer: bool = False

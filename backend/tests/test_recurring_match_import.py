@@ -14,6 +14,7 @@ from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.schemas.transaction import TransactionImport
+from app.services import reconciliation_policy, reconciliation_rule_service
 from app.services.import_service import import_transactions
 from app.services.recurring_transaction_service import create_recurring_transaction
 from app.services.rule_service import create_rule
@@ -32,12 +33,34 @@ async def _make_bill(session, test_workspace, test_user, account, **ov):
     return await create_recurring_transaction(session, test_workspace.id, test_user.id, data)
 
 
-async def _run_import(session, test_workspace, test_user, account_id, txns, source="csv"):
-    with patch("app.services.import_service.stamp_primary_amount", new_callable=AsyncMock), \
+async def _run_import(session, test_workspace, test_user, account_id, txns, source="csv",
+                      stamp=None):
+    with patch("app.services.import_service.stamp_primary_amount",
+               new=stamp if stamp is not None else AsyncMock()), \
          patch("app.services.import_service.apply_rules_to_transaction", new_callable=AsyncMock):
         return await import_transactions(
             session, test_workspace.id, test_user.id, account_id, txns, source,
         )
+
+
+async def _usd_placeholder(session, test_workspace, test_user, account):
+    """A USD bill and its generated placeholder on the BRL account, stamped
+    with the estimate made when it was generated (4.8833 BRL per USD)."""
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            amount=Decimal("18.43"), currency="USD",
+                            start_date=date(2026, 1, 10))
+    bill.next_occurrence = date(2026, 2, 10)
+    placeholder = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
+        workspace_id=test_workspace.id, description="Netflix Subscription",
+        amount=Decimal("18.43"), currency="USD", date=date(2026, 1, 10),
+        amount_primary=Decimal("90.00"), fx_rate_used=Decimal("4.8833"),
+        type="debit", source="recurring", status="posted",
+        recurring_transaction_id=bill.id, created_at=datetime.now(timezone.utc),
+    )
+    session.add(placeholder)
+    await session.commit()
+    return placeholder.id
 
 
 async def _real_txs(session, account_id):
@@ -522,3 +545,179 @@ async def test_import_amount_mismatch_not_linked(session, test_user, test_worksp
     assert txs[0].recurring_transaction_id is None
     refreshed = await session.get(RecurringTransaction, bill_id)
     assert refreshed.next_occurrence == date(2026, 1, 10)
+
+
+@pytest.mark.asyncio
+async def test_import_merges_a_tolerated_amount_into_placeholder(
+    session, test_user, test_workspace, test_account
+):
+    """Issue #1073: the charge differs from the bill by cents. The workspace
+    allows 5%, so the placeholder becomes the charge, at the charged amount."""
+    account_id = test_account.id
+    await reconciliation_rule_service.upsert_override(
+        session, test_workspace.id, test_user.id,
+        reconciliation_policy.MATCH_RECURRING["node"], "same_account_exact",
+        {"when": {"amount": {"match": "tolerance", "percent": "5"},
+                  "unique_candidate": True}},
+    )
+    bill = await _make_bill(session, test_workspace, test_user, test_account,
+                            amount=Decimal("18.43"), start_date=date(2026, 1, 10))
+    bill_id = bill.id
+    bill.next_occurrence = date(2026, 2, 10)
+    placeholder = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=account_id,
+        workspace_id=test_workspace.id, description="Netflix Subscription",
+        amount=Decimal("18.43"), currency="BRL", date=date(2026, 1, 10),
+        amount_primary=Decimal("18.43"), fx_rate_used=Decimal("1"),
+        type="debit", source="recurring", status="posted",
+        recurring_transaction_id=bill_id, created_at=datetime.now(timezone.utc),
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+
+    txns = [TransactionImport(description="NETFLIX SUBSCRIPTION", amount=Decimal("18.71"),
+                              date=date(2026, 1, 11), type="debit", currency="BRL")]
+    with patch("app.services.import_service.apply_rules_to_transaction",
+               new_callable=AsyncMock):
+        imported, _, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, account_id, txns, "csv",
+        )
+
+    assert imported == 1
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].amount == Decimal("18.71")
+    assert txs[0].source == "csv"
+    assert txs[0].recurring_transaction_id == bill_id
+    assert txs[0].amount_primary == Decimal("18.71")
+    assert txs[0].fx_rate_used == 1
+
+
+@pytest.mark.asyncio
+async def test_import_merges_a_late_charge_inside_a_widened_window(
+    session, test_user, test_workspace, test_account
+):
+    """The workspace's bank posts up to ten days late, so a charge eight days
+    after the placeholder still becomes the placeholder rather than a twin."""
+    account_id = test_account.id
+    await reconciliation_rule_service.upsert_override(
+        session, test_workspace.id, test_user.id,
+        reconciliation_policy.MATCH_RECURRING["node"], "same_account_exact",
+        {"when": {"date": {"before_days": 3, "after_days": 10}}},
+    )
+    bill = await _make_bill(session, test_workspace, test_user, test_account,
+                            amount=Decimal("18.43"), start_date=date(2026, 1, 10))
+    bill_id = bill.id
+    bill.next_occurrence = date(2026, 2, 10)
+    placeholder = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=account_id,
+        workspace_id=test_workspace.id, description="Netflix Subscription",
+        amount=Decimal("18.43"), currency="BRL", date=date(2026, 1, 10),
+        type="debit", source="recurring", status="posted",
+        recurring_transaction_id=bill_id, created_at=datetime.now(timezone.utc),
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+
+    txns = [TransactionImport(description="NETFLIX SUBSCRIPTION", amount=Decimal("18.43"),
+                              date=date(2026, 1, 18), type="debit", currency="BRL")]
+    imported, _, _, _ = await _run_import(
+        session, test_workspace, test_user, account_id, txns
+    )
+
+    assert imported == 1
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].source == "csv"
+    assert txs[0].recurring_transaction_id == bill_id
+
+
+@pytest.mark.asyncio
+async def test_import_placeholder_takes_the_files_fx_rate(
+    session, test_user, test_workspace, test_account
+):
+    """The charge is exactly what the bill expected, but the file carries the
+    rate the bank applied: it replaces the estimate made at generation."""
+    account_id = test_account.id
+    placeholder_id = await _usd_placeholder(session, test_workspace, test_user, test_account)
+
+    txns = [TransactionImport(description="NETFLIX SUBSCRIPTION", amount=Decimal("18.43"),
+                              date=date(2026, 1, 11), type="debit", currency="USD",
+                              fx_rate=Decimal("5.28"))]
+    stamp = AsyncMock()
+    imported, _, _, _ = await _run_import(
+        session, test_workspace, test_user, account_id, txns, stamp=stamp
+    )
+
+    assert imported == 1
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].amount == Decimal("18.43")
+    # 18.43 * 5.28 = 97.3104, and the amount_primary column keeps cents.
+    assert txs[0].amount_primary == Decimal("97.31")
+    assert txs[0].fx_rate_used == Decimal("5.28")
+    stamp.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_import_placeholder_without_a_rate_is_not_restamped(
+    session, test_user, test_workspace, test_account
+):
+    """Same amount and no rate in the file: nothing new is known about the
+    primary-currency cost, so the placeholder keeps its estimate."""
+    account_id = test_account.id
+    placeholder_id = await _usd_placeholder(session, test_workspace, test_user, test_account)
+
+    txns = [TransactionImport(description="NETFLIX SUBSCRIPTION", amount=Decimal("18.43"),
+                              date=date(2026, 1, 11), type="debit", currency="USD")]
+    stamp = AsyncMock()
+    imported, _, _, _ = await _run_import(
+        session, test_workspace, test_user, account_id, txns, stamp=stamp
+    )
+
+    assert imported == 1
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].amount_primary == pytest.approx(Decimal("90.00"))
+    assert txs[0].fx_rate_used == pytest.approx(Decimal("4.8833"))
+    stamp.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_import_tolerated_placeholder_takes_the_files_fx_rate(
+    session, test_user, test_workspace, test_account
+):
+    """Tolerated amount and a rate in the file: the row becomes the charge,
+    priced at the rate the bank applied rather than re-estimated."""
+    account_id = test_account.id
+    await reconciliation_rule_service.upsert_override(
+        session, test_workspace.id, test_user.id,
+        reconciliation_policy.MATCH_RECURRING["node"], "same_account_exact",
+        {"when": {"amount": {"match": "tolerance", "percent": "5"},
+                  "unique_candidate": True}},
+    )
+    placeholder_id = await _usd_placeholder(session, test_workspace, test_user, test_account)
+
+    txns = [TransactionImport(description="NETFLIX SUBSCRIPTION", amount=Decimal("18.71"),
+                              date=date(2026, 1, 11), type="debit", currency="USD",
+                              fx_rate=Decimal("5.28"))]
+    stamp = AsyncMock()
+    imported, _, _, _ = await _run_import(
+        session, test_workspace, test_user, account_id, txns, stamp=stamp
+    )
+
+    assert imported == 1
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].amount == Decimal("18.71")
+    # 18.71 * 5.28 = 98.7888, which the amount_primary column keeps as cents.
+    assert txs[0].amount_primary == Decimal("98.79")
+    assert txs[0].fx_rate_used == Decimal("5.28")
+    stamp.assert_not_awaited()

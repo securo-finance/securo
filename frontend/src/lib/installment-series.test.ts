@@ -12,7 +12,7 @@ const base: InstallmentSeriesFormInput = {
   categoryId: 'cat-1',
   payeeId: null,
   description: 'Notebook',
-  amount: '150.00',
+  amount: 150,
   date: '2026-08-06',
   type: 'debit',
   currency: 'BRL',

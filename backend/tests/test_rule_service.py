@@ -843,6 +843,75 @@ async def test_apply_all_rules_preserves_manually_edited_import_description(
 
 
 @pytest.mark.asyncio
+async def test_apply_all_rules_preserves_edited_legacy_synced_description(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A synced row from before original_description existed keeps its edit.
+
+    The edit backfills the bank text, which is what lets the rules tell the
+    user's wording apart from the provider's.
+    """
+    account = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Synced",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    transaction = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="PAG*LOJA 123",
+        original_description=None,
+        amount=Decimal("80.00"),
+        date=date(2026, 1, 12),
+        type="debit",
+        source="sync",
+        payee="LOJA EXEMPLO",
+    )
+    session.add(transaction)
+    await session.commit()
+
+    updated = await update_transaction(
+        session,
+        transaction.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(description="Birthday gift"),
+    )
+    assert updated is not None
+    assert updated.original_description == "PAG*LOJA 123"
+
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Loja normalization",
+            conditions=[
+                RuleCondition(field="payee", op="contains", value="LOJA EXEMPLO")
+            ],
+            actions=[
+                RuleAction(op="set_description", value="Loja Exemplo"),
+                RuleAction(op="append_notes", value="#shopping"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+
+    assert await apply_all_rules(session, test_workspace.id) == 1
+    await session.refresh(transaction)
+    assert transaction.description == "Birthday gift"
+    assert transaction.original_description == "PAG*LOJA 123"
+    assert transaction.description_is_rule_managed is False
+    assert transaction.notes == "#shopping"
+
+
+@pytest.mark.asyncio
 async def test_apply_single_rule_preserves_manually_edited_import_description(
     session: AsyncSession, test_user, test_workspace
 ):

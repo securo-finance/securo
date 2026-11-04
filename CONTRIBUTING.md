@@ -156,6 +156,11 @@ taken and you have to renumber. CI catches this: the Migration Chain job runs
 against your branch merged with `main`, so a clash fails there rather than on
 someone's `alembic upgrade head` after both are merged.
 
+In the Docker stack, migrations run in the one-shot `migrate` service, and
+the backend, workers and MCP server refuse to start until the database is at
+head. Restarting the backend does not apply a new migration; run
+`docker compose run --rm migrate`.
+
 ## Pull Request Guidelines
 
 - Keep PRs focused — one feature or fix per PR
