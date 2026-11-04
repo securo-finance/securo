@@ -75,6 +75,8 @@ See [automatic bank synchronization](docs/automatic-bank-sync.md) to configure t
 
 ### Enable Banking — European banks (PSD2)
 
+See [balance selection](docs/enable-banking-balances.md) for the current-balance priority and its optional environment override.
+
 Sign up at [enablebanking.com](https://enablebanking.com), create a Production application, and download its PEM private key. Save the PEM to `./secrets/` (gitignored), then add:
 
 ```
