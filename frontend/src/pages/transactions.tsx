@@ -81,6 +81,7 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
+import { readCalendarDateBasis } from '@/lib/transaction-calendar'
 
 type TransactionUpdatePayload = TransactionEditPayload & {
   apply_to_transfer_pair?: boolean
@@ -169,6 +170,7 @@ export default function TransactionsPage() {
     searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
   ))
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
+  const [calendarDateBasis, setCalendarDateBasis] = useState(readCalendarDateBasis)
   const [filterPayee, setFilterPayee] = useState<string>(searchParams.get('payee_id') ?? '')
   const [filterGroupId, setFilterGroupId] = useState<string>(searchParams.get('group_id') ?? '')
   const [filterType, setFilterType] = useState<string>(searchParams.get('type') ?? '')
@@ -431,11 +433,12 @@ export default function TransactionsPage() {
   const calendarMonth = steppedMonth
   const calendarAccountIds = filterAccountIds.length === 1 ? filterAccountIds : []
   const { data: calendarData, isLoading: calendarLoading, isFetching: calendarFetching, refetch: refetchCalendar } = useQuery({
-    queryKey: ['transactions', 'calendar', calendarMonth, calendarAccountIds],
+    queryKey: ['transactions', 'calendar', calendarMonth, calendarAccountIds, calendarDateBasis],
     enabled: viewMode === 'calendar',
     queryFn: () => transactions.calendar({
       month: `${calendarMonth}-01`,
       account_ids: calendarAccountIds.length === 1 ? calendarAccountIds : undefined,
+      date_basis: calendarDateBasis,
     }),
   })
 
@@ -1585,6 +1588,8 @@ export default function TransactionsPage() {
           onOpenTransaction={handleOpenCalendarTransaction}
           accounts={accountsList}
           userCurrency={userCurrency}
+          dateBasis={calendarDateBasis}
+          onDateBasisChange={setCalendarDateBasis}
         />
       )}
 

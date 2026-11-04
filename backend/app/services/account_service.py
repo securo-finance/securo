@@ -1602,14 +1602,13 @@ async def get_running_balances(
 async def get_account_running_balance(
     session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID,
     primary_currency: str, date_from: _Date, date_to: _Date,
-    accounting_mode: Optional[str] = None,
 ) -> Optional[list[dict]]:
     """End-of-day balance for every day in [date_from, date_to] (#1202).
 
-    The same walk as the list's `running_balance` over the unfiltered account
-    list for that range, opening row included, so the last point equals the
-    newest row's value. Unlike `get_account_balance_history`, pending and
-    future-dated rows count: this is the account page's projected balance.
+    Balance movement always follows the bank date. A reporting-date override
+    changes period attribution and list placement, but cannot move money in the
+    account ledger. Pending and future-dated rows count because this is the
+    account page's projected balance.
     """
     account = await get_account(session, account_id, workspace_id)
     if not account:
@@ -1621,9 +1620,7 @@ async def get_account_running_balance(
     opening, opening_primary = await _running_balance_seed(
         session, account, date_from, primary_currency,
     )
-    # Bucket by the list's date column so each row lands on the day it is
-    # listed under.
-    date_col = reporting_date_col(accounting_mode or "cash")
+    date_col = Transaction.date
     result = await session.execute(
         select(
             date_col,

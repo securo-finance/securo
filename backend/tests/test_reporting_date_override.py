@@ -152,6 +152,36 @@ async def test_override_moves_synced_row_and_reset_preserves_bank_truth(
             TransactionUpdate(date=bank_date - timedelta(days=2)),
         )
 
+@pytest.mark.asyncio
+async def test_update_without_reporting_date_keeps_existing_override(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    test_account,
+):
+    reporting_date = date.today() - timedelta(days=1)
+    transaction = await _synced_transaction(
+        session,
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        bank_date=date.today(),
+        reporting_date=reporting_date,
+    )
+
+    updated = await update_transaction(
+        session,
+        transaction.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(description="Updated description"),
+    )
+
+    assert updated is not None
+    assert updated.description == "Updated description"
+    assert updated.reporting_date_override == reporting_date
+
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
