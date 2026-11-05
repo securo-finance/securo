@@ -1905,6 +1905,16 @@ async def _find_synced_duplicate(
     # a sibling sharing the reference that is still returned is its own
     # transaction. More than one candidate is ambiguous, so none is chosen.
     # A pending fetch never takes over a booked row.
+    #
+    # Some institutions return a booked row with no entry_reference on the day
+    # it books and fill one in ("2026-11-03.1") on a later fetch. The first
+    # copy was keyed by the payload fingerprint and the second by the
+    # reference, so the held row carries no reference to compare. Such a row
+    # is the same transaction only when it is a synced row that also agrees on
+    # the currency, date, status and description, no row holding the reference
+    # itself competes, and it is the single candidate: two identical purchases
+    # on one day are ambiguous, and picking one would hang its category and
+    # notes on the other.
     entry_ref = raw.get("entry_reference")
     entry_ref = entry_ref.strip() if isinstance(entry_ref, str) else ""
     if entry_ref and entry_ref != "0":
@@ -1925,15 +1935,33 @@ async def _find_synced_duplicate(
             statement = statement.where(Transaction.status == "pending")
         result = await session.execute(statement)
         rekey_matches = []
+        late_ref_matches = []
         for candidate in result.scalars():
             if candidate.external_id in incoming_external_ids:
                 continue
-            candidate_raw = candidate.raw_data if isinstance(candidate.raw_data, dict) else {}
-            candidate_ref = candidate_raw.get("entry_reference")
-            if isinstance(candidate_ref, str) and candidate_ref.strip() == entry_ref:
+            if not isinstance(candidate.raw_data, dict):
+                continue
+            candidate_ref = candidate.raw_data.get("entry_reference")
+            if isinstance(candidate_ref, str):
+                candidate_ref = candidate_ref.strip()
+            if candidate_ref == entry_ref:
                 rekey_matches.append(candidate)
+            elif (
+                candidate_ref in (None, "", "0")
+                and candidate.source == "sync"
+                and candidate.currency == txn_data.currency
+                and candidate.date == txn_data.date
+                and candidate.status == txn_data.status
+                and token_overlap(
+                    candidate.original_description or candidate.description,
+                    txn_data.description,
+                ) >= 0.9
+            ):
+                late_ref_matches.append(candidate)
         if len(rekey_matches) == 1:
             return rekey_matches[0]
+        if not rekey_matches and len(late_ref_matches) == 1:
+            return late_ref_matches[0]
 
     # Path 5: local import history from before the account was connected.
     # Posting lag and statement exports can shift the date or shorten the
