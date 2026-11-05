@@ -1445,14 +1445,9 @@
     "recurringLabel": "Επαναλαμβανόμενος",
     "settingsTitle": "Budget settings",
     "monthBudgets": "Προϋπολογισμοί {{month}}",
-    "suggestionsHint": "Οι προτάσεις είναι ο τυπικός σας μήνας: η διάμεσος των τελευταίων 3 μηνών.",
-    "useAllSuggestions": "Χρήση όλων των προτάσεων",
-    "average": "συνήθως {{amount}}",
-    "useSuggestion": "χρήση",
     "otherCategories": "Άλλες κατηγορίες",
     "noCategories": "Δεν υπάρχουν ακόμη κατηγορίες",
     "total": "Προϋπολογισμός {{amount}}",
-    "typicalSpending": "συνήθη έξοδα {{amount}}",
     "saved": "Οι προϋπολογισμοί αποθηκεύτηκαν",
     "budgetFor": "Προϋπολογισμός για {{category}}",
     "invalidAmount": "Εισαγάγετε έγκυρο ποσό μηδέν ή μεγαλύτερο.",
@@ -1468,7 +1463,8 @@
     "suggestCreate": "Δημιουργία προϋπολογισμών",
     "suggestCreated": "Δημιουργήθηκαν {{count}} προϋπολογισμοί",
     "suggestEmpty": "Δεν υπάρχει ιστορικό εξόδων για την επιλεγμένη περίοδο.",
-    "suggestError": "Δεν ήταν δυνατή η φόρτωση των προτάσεων. Δοκιμάστε ξανά σε λίγο."
+    "suggestError": "Δεν ήταν δυνατή η φόρτωση των προτάσεων. Δοκιμάστε ξανά σε λίγο.",
+    "hiddenCategory": "Κρυφή"
   },
   "goals": {
     "title": "Στόχοι",

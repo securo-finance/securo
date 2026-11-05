@@ -1462,14 +1462,9 @@
     "recurringLabel": "Регулярний",
     "settingsTitle": "Budget settings",
     "monthBudgets": "Бюджети на {{month}}",
-    "suggestionsHint": "Підказки — ваш типовий місяць: медіана за останні 3 місяці.",
-    "useAllSuggestions": "Застосувати всі підказки",
-    "average": "зазвичай {{amount}}",
-    "useSuggestion": "застосувати",
     "otherCategories": "Інші категорії",
     "noCategories": "Категорій ще немає",
     "total": "Бюджет {{amount}}",
-    "typicalSpending": "зазвичай витрачається {{amount}}",
     "saved": "Бюджети збережено",
     "budgetFor": "Бюджет для {{category}}",
     "invalidAmount": "Введіть коректну суму від нуля.",
@@ -1485,7 +1480,8 @@
     "suggestCreate": "Створити бюджети",
     "suggestCreated": "Створено бюджетів: {{count}}",
     "suggestEmpty": "Немає історії витрат за обраний період.",
-    "suggestError": "Не вдалося завантажити пропозиції. Спробуйте ще раз трохи згодом."
+    "suggestError": "Не вдалося завантажити пропозиції. Спробуйте ще раз трохи згодом.",
+    "hiddenCategory": "Прихована"
   },
   "goals": {
     "title": "Цілі",

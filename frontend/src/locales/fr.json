@@ -1449,14 +1449,9 @@
     "recurringLabel": "Récurrent",
     "settingsTitle": "Budget settings",
     "monthBudgets": "Budgets de {{month}}",
-    "suggestionsHint": "Les suggestions sont votre mois type : la médiane des 3 derniers mois.",
-    "useAllSuggestions": "Utiliser toutes les suggestions",
-    "average": "d'habitude {{amount}}",
-    "useSuggestion": "utiliser",
     "otherCategories": "Autres catégories",
     "noCategories": "Aucune catégorie",
     "total": "Budget {{amount}}",
-    "typicalSpending": "dépenses habituelles {{amount}}",
     "saved": "Budgets enregistrés",
     "budgetFor": "Budget pour {{category}}",
     "invalidAmount": "Saisissez un montant valide égal ou supérieur à zéro.",
@@ -1472,7 +1467,8 @@
     "suggestCreate": "Créer les budgets",
     "suggestCreated": "{{count}} budgets créés",
     "suggestEmpty": "Aucun historique de dépenses sur la période sélectionnée pour suggérer.",
-    "suggestError": "Impossible de charger les suggestions. Réessayez dans un instant."
+    "suggestError": "Impossible de charger les suggestions. Réessayez dans un instant.",
+    "hiddenCategory": "Masquée"
   },
   "goals": {
     "title": "Objectifs",

@@ -1445,14 +1445,9 @@
     "recurringLabel": "Recurring",
     "settingsTitle": "Budget settings",
     "monthBudgets": "Budgets for {{month}}",
-    "suggestionsHint": "Enter an amount for an existing category and save; clear it and save to remove its budget. Suggestions use the median of the last 3 months.",
-    "useAllSuggestions": "Use all suggestions",
-    "average": "usually {{amount}}",
-    "useSuggestion": "use",
     "otherCategories": "Other categories",
     "noCategories": "No categories yet",
     "total": "Budget {{amount}}",
-    "typicalSpending": "usually spent {{amount}}",
     "saved": "Budgets saved",
     "budgetFor": "Budget for {{category}}",
     "invalidAmount": "Enter a valid amount of zero or more.",
@@ -1468,7 +1463,8 @@
     "suggestCreate": "Create budgets",
     "suggestCreated": "Created {{count}} budgets",
     "suggestEmpty": "No spending history in the selected period to suggest from.",
-    "suggestError": "Could not load suggestions. Try again in a moment."
+    "suggestError": "Could not load suggestions. Try again in a moment.",
+    "hiddenCategory": "Hidden"
   },
   "goals": {
     "title": "Goals",

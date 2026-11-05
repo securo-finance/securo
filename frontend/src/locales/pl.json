@@ -1498,14 +1498,9 @@
     "recurringLabel": "Cykliczny",
     "settingsTitle": "Budget settings",
     "monthBudgets": "Budżety na {{month}}",
-    "suggestionsHint": "Sugestie to twój typowy miesiąc: mediana z ostatnich 3 miesięcy.",
-    "useAllSuggestions": "Użyj wszystkich sugestii",
-    "average": "zwykle {{amount}}",
-    "useSuggestion": "użyj",
     "otherCategories": "Inne kategorie",
     "noCategories": "Brak kategorii",
     "total": "Budżet {{amount}}",
-    "typicalSpending": "zwykle wydane {{amount}}",
     "saved": "Budżety zapisane",
     "budgetFor": "Budżet dla {{category}}",
     "invalidAmount": "Wpisz prawidłową kwotę równą zero lub większą.",
@@ -1521,7 +1516,8 @@
     "suggestCreate": "Utwórz budżety",
     "suggestCreated": "Utworzono {{count}} budżetów",
     "suggestEmpty": "Brak historii wydatków w wybranym okresie.",
-    "suggestError": "Nie udało się wczytać sugestii. Spróbuj ponownie za chwilę."
+    "suggestError": "Nie udało się wczytać sugestii. Spróbuj ponownie za chwilę.",
+    "hiddenCategory": "Ukryta"
   },
   "goals": {
     "title": "Cele",

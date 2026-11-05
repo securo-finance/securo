@@ -25,7 +25,6 @@ import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
-import { typicalActualForCategory } from '@/lib/budget-settings-utils'
 import { parseBudgetDraft, planBudgetChange, type BudgetOperation } from '@/lib/budget-settings-utils'
 import { todayInTimezone } from '@/lib/date-utils'
 import { formatAmountInput, formatCurrency } from '@/lib/format'
@@ -33,7 +32,6 @@ import type { BudgetSuggestion, Category } from '@/types'
 
 /** Months of history shown per category; the suggestion is the median of the latest three. */
 const HISTORY_MONTHS = 6
-const SUGGESTION_MONTHS = 3
 
 const STEP_BUTTON = 'h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base'
 
@@ -122,11 +120,11 @@ export default function BudgetsPage() {
   })
   const { data: categoriesList, isLoading: categoriesLoading, isError: categoriesError, error: categoriesLoadError, refetch: refetchCategories } = useQuery({
     queryKey: ['categories'],
-    queryFn: categoriesApi.list,
+    queryFn: categoriesApi.listIncludingHidden,
   })
   const { data: groupsList, isLoading: groupsLoading, isError: groupsError, error: groupsLoadError, refetch: refetchGroups } = useQuery({
     queryKey: ['category-groups'],
-    queryFn: groupsApi.list,
+    queryFn: groupsApi.listIncludingHidden,
   })
   const { data: suggestionData, isPending: suggestionsPending, isError: suggestionsError } = useQuery({
     queryKey: ['budgets', 'suggestions', monthParam, suggestMonths],
@@ -163,18 +161,15 @@ export default function BudgetsPage() {
       month: monthParam,
     })
   }
-  const suggestionFor = (categoryId: string) => history
-    ? Math.round(typicalActualForCategory(history.slice(0, SUGGESTION_MONTHS), categoryId))
-    : 0
-
-  // Visible spending categories, in their groups; transfers and ignored categories never get a budget.
+  // Include hidden categories/groups because existing budgets still count in reports.
+  // Transfers and ignored categories never get a budget.
   const sections = useMemo(() => {
     const budgetable = (category: Category) => !category.treat_as_transfer && !category.is_ignored
     const grouped = (groupsList ?? [])
-      .filter((group) => !group.is_hidden)
-      .map((group) => ({ id: group.id, name: group.name, categories: group.categories.filter((category) => !category.is_hidden && budgetable(category)) }))
+      .map((group) => ({ id: group.id, name: group.name, categories: group.categories.filter(budgetable) }))
       .filter((group) => group.categories.length > 0)
-    const ungrouped = (categoriesList ?? []).filter((category) => !category.group_id && budgetable(category))
+    const groupedCategoryIds = new Set(grouped.flatMap((group) => group.categories.map((category) => category.id)))
+    const ungrouped = (categoriesList ?? []).filter((category) => !groupedCategoryIds.has(category.id) && budgetable(category))
     return ungrouped.length ? [...grouped, { id: 'ungrouped', name: t('budgets.otherCategories'), categories: ungrouped }] : grouped
   }, [groupsList, categoriesList, t])
   const allCategories = sections.flatMap((section) => section.categories)
@@ -183,11 +178,6 @@ export default function BudgetsPage() {
   const changedCategories = new Set(allCategories.filter((category) => planFor(category.id).length > 0).map((category) => category.id))
   const invalidCategories = new Set(allCategories.filter((category) => parsedDraftFor(category.id) === null).map((category) => category.id))
   const totalBudget = allCategories.reduce((sum, category) => sum + (parsedDraftFor(category.id) ?? 0), 0)
-  const typicalSpending = allCategories.reduce((sum, category) => sum + suggestionFor(category.id), 0)
-  const suggestionsToApply = allCategories.filter((category) => {
-    const suggestion = suggestionFor(category.id)
-    return suggestion > 0 && parsedDraftFor(category.id) !== suggestion
-  })
   const rowFor = (suggestion: BudgetSuggestion) =>
     suggestEdits[suggestion.category_id] ?? { checked: !suggestion.existing_budget, amount: String(suggestion.suggested_amount) }
   const suggestable = (suggestionData?.suggestions ?? []).filter((suggestion) => !suggestion.existing_budget)
@@ -281,24 +271,10 @@ export default function BudgetsPage() {
       <SectionCard>
         <SectionHeader
           title={t('budgets.monthBudgets', { month: monthTitle })}
-          description={t('budgets.suggestionsHint')}
           action={canWrite ? (
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => { setSuggestEdits({}); setSuggestOpen(true) }}>
-                <Sparkles size={13} /> {t('budgets.suggest')}
-              </Button>
-              <Button
-                disabled={suggestionsToApply.length === 0}
-                variant="outline"
-                size="sm"
-                className="gap-1.5 h-8"
-                onClick={() => updateDrafts((state) => ({
-                  drafts: { ...state.drafts, ...Object.fromEntries(suggestionsToApply.map((category) => [category.id, String(suggestionFor(category.id))])) },
-                }))}
-              >
-                {t('budgets.useAllSuggestions')}
-              </Button>
-            </div>
+            <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => { setSuggestEdits({}); setSuggestOpen(true) }}>
+              <Sparkles size={13} /> {t('budgets.suggest')}
+            </Button>
           ) : undefined}
         />
 
@@ -318,8 +294,6 @@ export default function BudgetsPage() {
               <div className="divide-y divide-border border-b border-border">
                 {section.categories.map((category) => {
                   const draft = draftFor(category.id)
-                  const amount = parsedDraftFor(category.id)
-                  const suggestion = suggestionFor(category.id)
                   const values = history ? [...history].reverse().map((rows) => rows.find((row) => row.category_id === category.id)?.actual_amount ?? 0) : []
                   const changed = changedCategories.has(category.id)
                   const recurring = recurringFor(category.id)
@@ -328,20 +302,8 @@ export default function BudgetsPage() {
                       <CategoryIcon icon={category.icon} color={category.color} size="md" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{category.name}</p>
+                        {category.is_hidden && <span className="text-[11px] text-muted-foreground">{t('budgets.hiddenCategory')}</span>}
                         {invalidCategories.has(category.id) && <p id={`budget-error-${category.id}`} role="alert" className="text-[11px] text-destructive">{t('budgets.invalidAmount')}</p>}
-                        {suggestion > 0 && (
-                          <p className="text-[11px] text-muted-foreground tabular-nums">
-                            {t('budgets.average', { amount: fmt(suggestion) })}
-                            {canWrite && Math.abs((amount ?? 0) - suggestion) > suggestion * 0.02 && (
-                              <>
-                                {' · '}
-                                <button type="button" className="text-primary hover:underline" onClick={() => setDraft(category.id, String(suggestion))}>
-                                  {t('budgets.useSuggestion')}
-                                </button>
-                              </>
-                            )}
-                          </p>
-                        )}
                       </div>
                       {values.length > 0 && (
                         <SpendHistory values={values} labels={values.map((value, index) => `${historyLabels[index]}: ${fmt(value)}`)} />
@@ -457,9 +419,6 @@ export default function BudgetsPage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-card border border-border shadow-xl rounded-2xl px-4 py-3">
               <div className="text-sm tabular-nums">
                 <span className="font-semibold text-foreground">{t('budgets.total', { amount: fmt(totalBudget) })}</span>
-                {typicalSpending > 0 && (
-                  <span className="text-muted-foreground"> · {t('budgets.typicalSpending', { amount: fmt(typicalSpending) })}</span>
-                )}
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <Button variant="outline" size="sm" disabled={operations.length === 0 || saveMutation.isPending} onClick={() => setDraftState(emptyDrafts())}>

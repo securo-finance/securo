@@ -1447,14 +1447,9 @@
     "confirmDeleteRecurringDescription": "Het terugkerende budget voor \"{{name}}\" wordt permanent verwijderd. Deze definitie geldt niet meer voor latere maanden. Bestaande transacties worden niet beïnvloed. Deze actie kan niet ongedaan worden gemaakt.",
     "settingsTitle": "Budget instellen",
     "monthBudgets": "Budgetten {{month}}",
-    "suggestionsHint": "Vul een bedrag in bij een bestaande categorie en sla op; maak het veld leeg en sla op om het budget te verwijderen. Suggesties gebruiken de mediaan van de afgelopen 3 maanden.",
-    "useAllSuggestions": "Alle suggesties gebruiken",
-    "average": "meestal {{amount}}",
-    "useSuggestion": "gebruiken",
     "otherCategories": "Overige categorieën",
     "noCategories": "Nog geen categorieën",
     "total": "Budget {{amount}}",
-    "typicalSpending": "meestal uitgegeven {{amount}}",
     "saved": "Budgetten opgeslagen",
     "budgetFor": "Budget voor {{category}}",
     "invalidAmount": "Vul een geldig bedrag van nul of meer in.",
@@ -1470,7 +1465,8 @@
     "suggestCreate": "Budgetten aanmaken",
     "suggestCreated": "{{count}} budgetten aangemaakt",
     "suggestEmpty": "Geen uitgavenhistoriek in de geselecteerde periode.",
-    "suggestError": "Suggesties konden niet worden geladen. Probeer het zo opnieuw."
+    "suggestError": "Suggesties konden niet worden geladen. Probeer het zo opnieuw.",
+    "hiddenCategory": "Verborgen"
   },
   "goals": {
     "title": "Doelen",

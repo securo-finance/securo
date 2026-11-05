@@ -1445,14 +1445,9 @@
     "recurringLabel": "आवर्ती",
     "settingsTitle": "Budget settings",
     "monthBudgets": "{{month}} के बजट",
-    "suggestionsHint": "सुझाव आपका सामान्य महीना हैं: पिछले 3 महीनों की माध्यिका।",
-    "useAllSuggestions": "सभी सुझाव लागू करें",
-    "average": "आमतौर पर {{amount}}",
-    "useSuggestion": "लागू करें",
     "otherCategories": "अन्य श्रेणियाँ",
     "noCategories": "अभी कोई श्रेणी नहीं",
     "total": "बजट {{amount}}",
-    "typicalSpending": "आमतौर पर खर्च {{amount}}",
     "saved": "बजट सहेजे गए",
     "budgetFor": "{{category}} के लिए बजट",
     "invalidAmount": "शून्य या उससे अधिक की मान्य राशि दर्ज करें।",
@@ -1468,7 +1463,8 @@
     "suggestCreate": "बजट बनाएँ",
     "suggestCreated": "{{count}} बजट बनाए गए",
     "suggestEmpty": "चुनी गई अवधि में खर्च का कोई इतिहास नहीं है।",
-    "suggestError": "सुझाव लोड नहीं हो सके। थोड़ी देर बाद फिर से कोशिश करें।"
+    "suggestError": "सुझाव लोड नहीं हो सके। थोड़ी देर बाद फिर से कोशिश करें।",
+    "hiddenCategory": "छिपी हुई"
   },
   "goals": {
     "title": "लक्ष्य",

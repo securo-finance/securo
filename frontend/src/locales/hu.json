@@ -1445,14 +1445,9 @@
     "recurringLabel": "Ismétlődő",
     "settingsTitle": "Budget settings",
     "monthBudgets": "Budgets for {{month}}",
-    "suggestionsHint": "Suggestions are your typical month: the median of the last 3 months.",
-    "useAllSuggestions": "Use all suggestions",
-    "average": "usually {{amount}}",
-    "useSuggestion": "use",
     "otherCategories": "Other categories",
     "noCategories": "No categories yet",
     "total": "Budget {{amount}}",
-    "typicalSpending": "usually spent {{amount}}",
     "saved": "Budgets saved",
     "budgetFor": "Budget for {{category}}",
     "invalidAmount": "Adjon meg egy érvényes, legalább nulla összeget.",
@@ -1468,7 +1463,8 @@
     "suggestCreate": "Költségkeretek létrehozása",
     "suggestCreated": "{{count}} költségkeret létrehozva",
     "suggestEmpty": "Nincs kiadási előzmény a kiválasztott időszakban.",
-    "suggestError": "Nem sikerült betölteni a javaslatokat. Próbáld újra egy kicsit később."
+    "suggestError": "Nem sikerült betölteni a javaslatokat. Próbáld újra egy kicsit később.",
+    "hiddenCategory": "Rejtett"
   },
   "goals": {
     "title": "Célok",

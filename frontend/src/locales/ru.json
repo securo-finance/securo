@@ -1462,14 +1462,9 @@
     "recurringLabel": "Регулярный",
     "settingsTitle": "Budget settings",
     "monthBudgets": "Бюджеты на {{month}}",
-    "suggestionsHint": "Подсказки — ваш типичный месяц: медиана за последние 3 месяца.",
-    "useAllSuggestions": "Применить все подсказки",
-    "average": "обычно {{amount}}",
-    "useSuggestion": "применить",
     "otherCategories": "Другие категории",
     "noCategories": "Категорий пока нет",
     "total": "Бюджет {{amount}}",
-    "typicalSpending": "обычно тратится {{amount}}",
     "saved": "Бюджеты сохранены",
     "budgetFor": "Бюджет для {{category}}",
     "invalidAmount": "Введите допустимую сумму не меньше нуля.",
@@ -1485,7 +1480,8 @@
     "suggestCreate": "Создать бюджеты",
     "suggestCreated": "Создано бюджетов: {{count}}",
     "suggestEmpty": "Нет истории расходов за выбранный период.",
-    "suggestError": "Не удалось загрузить предложения. Попробуйте ещё раз чуть позже."
+    "suggestError": "Не удалось загрузить предложения. Попробуйте ещё раз чуть позже.",
+    "hiddenCategory": "Скрытая"
   },
   "goals": {
     "title": "Цели",
