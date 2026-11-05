@@ -10,7 +10,9 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
+from app.core.config import get_settings
 from app.models.transaction import Transaction
+from app.models.workspace import Workspace
 from app.schemas.forecast import (
     CadenceEnum,
     DetectedRecurringItem,
@@ -19,6 +21,7 @@ from app.schemas.forecast import (
     SubscriptionStatusEnum,
 )
 from app.services._query_filters import counts_as_pnl
+from app.services.fx_rate_service import convert_or_none
 
 # Common subscription & utility indicators
 SUBSCRIPTION_KEYWORDS = {
@@ -133,6 +136,27 @@ def compute_next_occurrence(
     return last_date + timedelta(days=max(1, int(round(avg_interval))))
 
 
+async def amount_in_currency(
+    session: AsyncSession, tx: Transaction, currency: str
+) -> Optional[Decimal]:
+    """A transaction's magnitude in ``currency``, or None when no rate exists.
+
+    Converted from the native amount because ``amount_primary`` is in the
+    owner's primary currency, which need not be the workspace's, and is NULL
+    when no rate was available. Only stored rates are read: history can hold
+    many dates, and a provider call for each would stall the request.
+    """
+    converted, _ = await convert_or_none(
+        session,
+        abs(Decimal(str(tx.amount))),
+        tx.currency,
+        currency,
+        tx.date,
+        allow_fetch=False,
+    )
+    return converted
+
+
 async def detect_recurring_patterns(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -146,9 +170,16 @@ async def detect_recurring_patterns(
     Transactions linked to a recurring record in ``exclude_recurring_ids`` are
     skipped, so a caller that already schedules those records does not see
     them detected a second time under a different payee name.
+
+    Amounts are in the workspace currency. Transactions with no FX rate are
+    left out of them and their currency is reported, rather than adding
+    foreign amounts 1:1.
     """
     today = reference_date or app_today()
     start_date = today - timedelta(days=lookback_days)
+    workspace = await session.get(Workspace, workspace_id)
+    base_currency = workspace.default_currency if workspace else get_settings().default_currency
+    unconverted_currencies: set[str] = set()
 
     # Same exclusions the reports use (transfers, ignored rows, settlement
     # debits), plus opening balances: one per account, so accounts created a
@@ -195,9 +226,6 @@ async def detect_recurring_patterns(
         # Sort dates
         sorted_txs = sorted(tx_list, key=lambda t: t.date)
         dates = [t.date for t in sorted_txs]
-        amounts = [Decimal(str(t.amount_primary or t.amount)) for t in sorted_txs]
-        currencies = [t.currency for t in sorted_txs]
-        primary_currency = currencies[-1] if currencies else "USD"
 
         # Calculate interval deltas
         intervals = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
@@ -212,6 +240,16 @@ async def detect_recurring_patterns(
         if cadence == CadenceEnum.IRREGULAR:
             continue
         if len(sorted_txs) < max(min_occurrences, MIN_OCCURRENCES_BY_CADENCE[cadence]):
+            continue
+
+        amounts: list[Decimal] = []
+        for tx in sorted_txs:
+            amount = await amount_in_currency(session, tx, base_currency)
+            if amount is None:
+                unconverted_currencies.add(tx.currency)
+            else:
+                amounts.append(amount)
+        if not amounts:
             continue
 
         # Interval variance & standard deviation
@@ -288,7 +326,7 @@ async def detect_recurring_patterns(
             last_seen_date=last_date,
             next_expected_date=next_date,
             average_amount=avg_amount,
-            currency=primary_currency,
+            currency=base_currency,
             confidence_score=confidence,
             is_subscription=is_sub,
             status=status,
@@ -309,4 +347,5 @@ async def detect_recurring_patterns(
         total_monthly_subscription_cost=total_monthly_sub_cost,
         total_annual_subscription_cost=total_annual_sub_cost,
         items=detected_items,
+        unconverted_currencies=sorted(unconverted_currencies),
     )

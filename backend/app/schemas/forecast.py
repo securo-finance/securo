@@ -56,6 +56,9 @@ class RecurringDetectionResponse(BaseModel):
     total_monthly_subscription_cost: Decimal
     total_annual_subscription_cost: Decimal
     items: list[DetectedRecurringItem]
+    # Currencies of transactions left out of the amounts because no FX rate to
+    # the workspace currency was available.
+    unconverted_currencies: list[str] = Field(default_factory=list)
 
 
 class DailyForecastPoint(BaseModel):
@@ -74,6 +77,9 @@ class ForecastSummary(BaseModel):
     start_date: date
     end_date: date
     starting_liquid_balance: Decimal
+    # What the credit cards stand at, signed like the account screen (debt is
+    # negative). Not part of the liquid balance: it is not due today.
+    credit_card_balance: Decimal = Decimal("0.00")
     projected_ending_balance: Decimal
     lowest_projected_balance: Decimal
     lowest_balance_date: date

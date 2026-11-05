@@ -5,11 +5,13 @@ from decimal import Decimal
 import pytest
 
 from app.models.account import Account
+from app.models.category import Category
 from app.models.fx_rate import FxRate
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.workspace import Workspace
 from app.services.cashflow_forecast_service import _date_matches_cadence, generate_cashflow_forecast
+from app.services.recurring_detector_service import detect_recurring_patterns
 from app.schemas.forecast import CadenceEnum
 
 
@@ -146,8 +148,9 @@ async def test_cashflow_forecast_simulation(session):
     assert forecast.workspace_id == ws.id
     assert forecast.summary.horizon_days == 60
     # Checking: $10,000 opening - 3 x $2,000 rent + 3 x $3,000 salary = $13,000
-    # Net liquid = $13,000 checking - $1,000 CC = $12,000
-    assert forecast.summary.starting_liquid_balance == Decimal("12000.00")
+    # Runway starts from cash alone; the $1,000 card debt is reported beside it.
+    assert forecast.summary.starting_liquid_balance == Decimal("13000.00")
+    assert forecast.summary.credit_card_balance == Decimal("-1000.00")
     assert len(forecast.daily_trajectory) == 61  # day 0 to day 60
     assert forecast.summary.total_projected_inflow > Decimal("0.00")
     assert forecast.summary.total_projected_outflow > Decimal("0.00")
@@ -461,8 +464,23 @@ async def test_cashflow_forecast_counts_shared_credit_line_once(session):
         reference_date=date(2026, 9, 1),
     )
 
-    # Both cards report the same 800 of debt on one line: 5,000 - 800.
-    assert forecast.summary.starting_liquid_balance == Decimal("4200.00")
+    # Both cards report the same 800 of debt on one line, so it is counted once.
+    assert forecast.summary.credit_card_balance == Decimal("-800.00")
+    assert forecast.summary.starting_liquid_balance == Decimal("5000.00")
+
+
+async def _category(session, user_id, workspace_id, name):
+    category = Category(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        name=name,
+        icon="circle",
+        color="#000000",
+    )
+    session.add(category)
+    await session.flush()
+    return category
 
 
 def _posted_debit(user_id, workspace_id, account_id, payee, amount, tx_date, **kwargs):
@@ -474,11 +492,11 @@ def _posted_debit(user_id, workspace_id, account_id, payee, amount, tx_date, **k
         description=payee,
         payee=payee,
         amount=Decimal(amount),
-        amount_primary=Decimal(amount),
-        currency="USD",
+        amount_primary=kwargs.pop("amount_primary", Decimal(amount)),
+        currency=kwargs.pop("currency", "USD"),
         date=tx_date,
         effective_date=tx_date,
-        type="debit",
+        type=kwargs.pop("type", "debit"),
         source=kwargs.pop("source", "manual"),
         status="posted",
         **kwargs,
@@ -508,9 +526,10 @@ async def test_cashflow_forecast_keeps_pending_detected_outflow_scheduled(sessio
 @pytest.mark.asyncio
 async def test_cashflow_forecast_counts_manual_bill_once_when_bank_rows_use_another_payee(session):
     user_id, ws, checking = await _forecast_workspace(session, "Forecast Same Bill WS")
+    utilities = await _category(session, user_id, ws.id, "Utilities")
     session.add(_manual_recurring(
         user_id, ws.id, checking.id, "Electricity", "monthly", date(2026, 9, 15),
-        amount=Decimal("120.00"),
+        amount=Decimal("120.00"), category_id=utilities.id,
     ))
     # The same bill imported from the bank, not linked to the rule and under
     # the utility's own name.
@@ -520,7 +539,8 @@ async def test_cashflow_forecast_counts_manual_bill_once_when_bank_rows_use_anot
         (date(2026, 8, 15), "122.00"),
     ):
         session.add(_posted_debit(
-            user_id, ws.id, checking.id, "PG&E Web Online", amount, tx_date, source="sync"
+            user_id, ws.id, checking.id, "PG&E Web Online", amount, tx_date,
+            source="sync", category_id=utilities.id,
         ))
     await session.commit()
 
@@ -578,3 +598,270 @@ async def test_cashflow_forecast_starts_on_the_workspace_calendar_day(session):
     for start_date, expected in starts.values():
         assert start_date == expected
     assert starts["Pacific/Kiritimati"][0] != starts["Pacific/Pago_Pago"][0]
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_keeps_similar_bill_in_another_category(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Near Amount WS")
+    utilities = await _category(session, user_id, ws.id, "Utilities")
+    fitness = await _category(session, user_id, ws.id, "Fitness")
+    session.add(_manual_recurring(
+        user_id, ws.id, checking.id, "Electricity", "monthly", date(2026, 9, 15),
+        amount=Decimal("120.00"), category_id=utilities.id,
+    ))
+    # Same account, same cadence, within 10% of the rule: still another bill.
+    for tx_date in (date(2026, 6, 20), date(2026, 7, 20), date(2026, 8, 20)):
+        session.add(_posted_debit(
+            user_id, ws.id, checking.id, "Iron Gym", "115.00", tx_date, category_id=fitness.id,
+        ))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=30, include_discretionary_burn=False,
+        reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.summary.total_projected_outflow == Decimal("235.00")
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_rule_name_inside_another_bill_keeps_that_bill(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Name Inside WS")
+    session.add(_manual_recurring(
+        user_id, ws.id, checking.id, "Gas", "monthly", date(2026, 9, 15), amount=Decimal("40.00"),
+    ))
+    # The rule's name sits inside this payee, but the amount says another bill.
+    for tx_date in (date(2026, 6, 20), date(2026, 7, 20), date(2026, 8, 20)):
+        session.add(_posted_debit(user_id, ws.id, checking.id, "Gas Station Club", "200.00", tx_date))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=30, include_discretionary_burn=False,
+        reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.summary.total_projected_outflow == Decimal("240.00")
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_name_match_needs_a_whole_word(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Whole Word WS")
+    session.add(_manual_recurring(
+        user_id, ws.id, checking.id, "Rent", "monthly", date(2026, 9, 15), amount=Decimal("500.00"),
+    ))
+    # "rent" is inside "parent", same amount and cadence, unrelated bill.
+    for tx_date in (date(2026, 6, 20), date(2026, 7, 20), date(2026, 8, 20)):
+        session.add(_posted_debit(user_id, ws.id, checking.id, "Parent Care", "500.00", tx_date))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=30, include_discretionary_burn=False,
+        reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.summary.total_projected_outflow == Decimal("1000.00")
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_name_match_within_guards_counts_bill_once(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Name Guarded WS")
+    session.add(_manual_recurring(
+        user_id, ws.id, checking.id, "Netflix", "monthly", date(2026, 9, 15), amount=Decimal("15.00"),
+    ))
+    for tx_date in (date(2026, 6, 15), date(2026, 7, 15), date(2026, 8, 15)):
+        session.add(_posted_debit(user_id, ws.id, checking.id, "POS DEBIT NETFLIX.COM", "15.00", tx_date))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=30, include_discretionary_burn=False,
+        reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.summary.total_projected_outflow == Decimal("15.00")
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_burn_keeps_one_off_named_like_a_rule(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Burn Name WS")
+    session.add(_manual_recurring(
+        user_id, ws.id, checking.id, "Gas", "monthly", date(2026, 9, 15), amount=Decimal("40.00"),
+    ))
+    session.add(_posted_debit(user_id, ws.id, checking.id, "Gas Station", "900.00", date(2026, 8, 20)))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=7, reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.daily_trajectory[1].discretionary_burn == Decimal("10.00")
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_burn_keeps_debit_named_like_a_detected_inflow(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Burn Inflow WS")
+    for tx_date in (date(2026, 6, 1), date(2026, 7, 1), date(2026, 8, 1)):
+        session.add(_posted_debit(
+            user_id, ws.id, checking.id, "Venmo", "300.00", tx_date, type="credit",
+        ))
+    session.add(_posted_debit(user_id, ws.id, checking.id, "Venmo", "900.00", date(2026, 8, 20)))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=7, reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.daily_trajectory[1].discretionary_burn == Decimal("10.00")
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_burn_divides_by_the_full_window(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Burn Window WS")
+    # One purchase three days ago is 900 over 90 days, not 900 over 3 days.
+    session.add(_posted_debit(user_id, ws.id, checking.id, "Sofa Shop", "900.00", date(2026, 8, 29)))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=7, reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.daily_trajectory[1].discretionary_burn == Decimal("10.00")
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_leaves_out_foreign_history_without_fx_rate(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast History FX WS")
+    for tx_date in (date(2026, 6, 20), date(2026, 7, 20), date(2026, 8, 20)):
+        session.add(_posted_debit(
+            user_id, ws.id, checking.id, "Zurich Gym", "100.00", tx_date,
+            currency="CHF", amount_primary=None,
+        ))
+    session.add(_posted_debit(
+        user_id, ws.id, checking.id, "Bern Cafe", "900.00", date(2026, 8, 29),
+        currency="CHF", amount_primary=None,
+    ))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=30, reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.summary.total_projected_outflow == Decimal("0.00")
+    assert forecast.summary.total_projected_discretionary == Decimal("0.00")
+    assert forecast.summary.unconverted_currencies == ["CHF"]
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_converts_foreign_history_with_a_rate(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast History Rate WS")
+    # USD/SEK of 0.5: 100 kronor are 200 dollars.
+    session.add(FxRate(
+        base_currency="USD", quote_currency="SEK", date=date(2026, 6, 1),
+        rate=Decimal("0.5"), source="test",
+    ))
+    for tx_date in (date(2026, 6, 20), date(2026, 7, 20), date(2026, 8, 20)):
+        session.add(_posted_debit(
+            user_id, ws.id, checking.id, "Malmo Gym", "100.00", tx_date,
+            currency="SEK", amount_primary=None,
+        ))
+    session.add(_posted_debit(
+        user_id, ws.id, checking.id, "Lund Cafe", "450.00", date(2026, 8, 29),
+        currency="SEK", amount_primary=None,
+    ))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=30, reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.summary.total_projected_outflow == Decimal("200.00")
+    assert forecast.daily_trajectory[1].discretionary_burn == Decimal("10.00")
+    assert forecast.summary.unconverted_currencies == []
+
+
+@pytest.mark.asyncio
+async def test_detector_reports_amounts_in_workspace_currency(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Detector FX WS")
+    session.add(FxRate(
+        base_currency="USD", quote_currency="DKK", date=date(2026, 6, 1),
+        rate=Decimal("0.5"), source="test",
+    ))
+    for tx_date in (date(2026, 6, 20), date(2026, 7, 20), date(2026, 8, 20)):
+        session.add(_posted_debit(
+            user_id, ws.id, checking.id, "Aarhus Gym", "100.00", tx_date,
+            currency="DKK", amount_primary=None,
+        ))
+    for tx_date in (date(2026, 6, 21), date(2026, 7, 21), date(2026, 8, 21)):
+        session.add(_posted_debit(
+            user_id, ws.id, checking.id, "Oslo Gym", "100.00", tx_date,
+            currency="NOK", amount_primary=None,
+        ))
+    await session.commit()
+
+    detected = await detect_recurring_patterns(
+        session, ws.id, reference_date=date(2026, 9, 1),
+    )
+
+    assert [(i.normalized_key, i.average_amount, i.currency) for i in detected.items] == [
+        ("aarhus gym", Decimal("200.00"), "USD"),
+    ]
+    assert detected.unconverted_currencies == ["NOK"]
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_card_debt_does_not_end_the_runway(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Card Runway WS")
+    card = Account(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=ws.id,
+        name="Card",
+        type="credit_card",
+        balance=Decimal("0.00"),
+        currency="USD",
+    )
+    session.add(card)
+    await session.flush()
+    session.add(_opening_balance_tx(user_id, ws.id, card.id, "8000.00", "debit", date(2026, 8, 1)))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=10, include_discretionary_burn=False,
+        reference_date=date(2026, 9, 1),
+    )
+
+    # 5,000 in checking against 8,000 on a card is not out of money today.
+    assert forecast.summary.starting_liquid_balance == Decimal("5000.00")
+    assert forecast.summary.credit_card_balance == Decimal("-8000.00")
+    assert forecast.summary.has_shortfall_risk is False
+    assert forecast.summary.runway_days is None
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_liquid_balance_counts_spendable_account_types(session):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Liquid Types WS")
+    for name, account_type, amount, tx_type in (
+        ("Savings", "savings", "1000.00", "credit"),
+        ("Wallet", "wallet", "200.00", "credit"),
+        ("Brokerage", "investment", "9000.00", "credit"),
+        ("Car Loan", "loan", "7000.00", "debit"),
+    ):
+        account = Account(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            workspace_id=ws.id,
+            name=name,
+            type=account_type,
+            balance=Decimal("0.00"),
+            currency="USD",
+        )
+        session.add(account)
+        await session.flush()
+        session.add(_opening_balance_tx(user_id, ws.id, account.id, amount, tx_type, date(2026, 8, 1)))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=7, include_discretionary_burn=False,
+        reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.summary.starting_liquid_balance == Decimal("6200.00")
