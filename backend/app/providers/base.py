@@ -239,7 +239,14 @@ class ProviderRateLimited(Exception):
     access (commonly ~4/day per resource), so a burst of syncs returns HTTP
     429. The connection is healthy; callers should skip this run and retry
     later rather than flag it as errored.
+
+    ``retry_after`` is the wait the provider asked for, in seconds, when it
+    sent one (``Retry-After``); None when it did not.
     """
+
+    def __init__(self, message: str = "", retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class ProviderNotConfiguredError(Exception):

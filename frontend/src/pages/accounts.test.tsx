@@ -11,6 +11,15 @@ const api = vi.hoisted(() => ({
   sync: vi.fn(),
 }))
 
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  warning: vi.fn(),
+  info: vi.fn(),
+  error: vi.fn(),
+}))
+
+vi.mock('sonner', () => ({ toast }))
+
 vi.mock('@/lib/api', () => ({
   accounts: { list: api.accountsList },
   assets: { list: vi.fn().mockResolvedValue([]) },
@@ -143,6 +152,17 @@ describe('AccountsPage connection row actions', () => {
     await user.click(retry)
 
     expect(api.sync).toHaveBeenCalledWith('conn-err')
+  })
+
+  it('warns instead of reporting success when only some accounts could be synced', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-ok', status: 'active' })])
+    api.sync.mockResolvedValue({ sync_outcome: 'partial', merged_count: 0 })
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.sync') }))
+
+    await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledWith(t('accounts.syncPartial')))
+    expect(toast.success).not.toHaveBeenCalled()
   })
 })
 

@@ -62,6 +62,6 @@ async def test_automatic_sync_honors_interval_and_status(
          patch("app.tasks.sync_tasks.datetime") as clock, \
          patch("app.tasks.sync_tasks._sync_one", sync_one):
         clock.now.return_value = now
-        assert await _sync_all() == len(expected)
+        assert (await _sync_all())["synced"] == len(expected)
     assert {call.args[1] for call in sync_one.await_args_list} == expected
     engine.dispose.assert_awaited_once()
