@@ -32,6 +32,7 @@ from app.services.connection_service import (
     _find_existing_connected_account,
     _merge_sync_metadata,
     _match_pluggy_category,
+    _set_sync_status_if_current,
     create_connect_token,
     delete_connection,
     get_connection,
@@ -7154,3 +7155,142 @@ async def test_ensure_group_relocates_wallet_when_connection_moves_workspaces(
     assert group.connection_id == conn.id
     assert group.workspace_id == test_workspace.id
     assert group.name == "Moved Wallet"
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_locks_connection_row():
+    """All sync callers serialize on the connection row."""
+    from sqlalchemy.dialects import postgresql
+
+    session = AsyncMock(spec=AsyncSession)
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+    session.execute.return_value = result
+
+    with pytest.raises(ValueError, match="not found"):
+        await sync_connection(session, uuid.uuid4(), uuid.uuid4(), uuid.uuid4())
+
+    statement = session.execute.await_args.args[0]
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert sql.rstrip().endswith("FOR UPDATE")
+
+
+@pytest.mark.asyncio
+async def test_stale_sync_failure_does_not_overwrite_newer_success(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, "Newer Sync Wins")
+    stale_version = conn.sync_state_version
+    conn.last_sync_at = None
+    conn.status = "active"
+    conn.credentials = {"token": "fresh"}
+    conn.sync_state_version += 1
+    await session.commit()
+
+    await _set_sync_status_if_current(session, conn.id, stale_version, "sync_error")
+    await session.commit()
+    await session.refresh(conn)
+
+    assert conn.status == "active"
+    assert conn.last_sync_at is None
+    assert conn.credentials == {"token": "fresh"}
+    assert conn.sync_state_version == stale_version + 1
+    assert conn.last_sync_error_account_id is None
+
+
+@pytest.mark.asyncio
+async def test_sync_rate_limit_preserves_expired_status(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, "Expired Rate Limit")
+    conn.status = "expired"
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(
+        side_effect=ProviderRateLimited("try later")
+    )
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        result, merged, outcome = await sync_connection(
+            session, conn.id, test_workspace.id, test_user.id
+        )
+
+    assert result.status == "expired"
+    assert result.sync_state_version == 1
+    assert merged == 0
+
+
+@pytest.mark.asyncio
+async def test_sync_rate_limit_preserves_sync_error_account(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, "Failed Rate Limit")
+    error_account_id = uuid.uuid4()
+    conn.status = "sync_error"
+    conn.last_sync_error_account_id = error_account_id
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(
+        side_effect=ProviderRateLimited("try later")
+    )
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        result, merged, outcome = await sync_connection(
+            session, conn.id, test_workspace.id, test_user.id
+        )
+
+    assert result.status == "sync_error"
+    assert result.last_sync_error_account_id == error_account_id
+    assert merged == 0
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_records_and_clears_error_account(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, "Account Error Bank")
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        connection_id=conn.id,
+        external_id="error-acc-1",
+        name="Checking",
+        type="checking",
+        balance=Decimal("100"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+    account_id = account.id
+    connection_id = conn.id
+    workspace_id = test_workspace.id
+    user_id = test_user.id
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="error-acc-1", name="Checking", type="checking",
+            balance=Decimal("100"), currency="BRL",
+        )
+    ])
+    mock_provider.get_transactions = AsyncMock(side_effect=RuntimeError("API down"))
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        with pytest.raises(RuntimeError, match="API down"):
+            await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    refreshed = await session.get(BankConnection, conn.id)
+    assert refreshed is not None
+    assert refreshed.status == "sync_error"
+    assert refreshed.last_sync_error_account_id == account_id
+
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    mock_provider.get_holdings = AsyncMock(return_value=[])
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        result, _, _ = await sync_connection(
+            session, connection_id, workspace_id, user_id
+        )
+
+    assert result.status == "active"
+    assert result.last_sync_error_account_id is None

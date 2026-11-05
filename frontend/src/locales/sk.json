@@ -1427,8 +1427,11 @@
     "connectionStatus": {
       "active": "Aktívne",
       "error": "Chyba",
-      "expired": "Vypršané"
-    }
+      "expired": "Vypršané",
+      "sync_error": "Synchronizácia zlyhala"
+    },
+    "connectionSyncError": "Posledná synchronizácia tohto pripojenia zlyhala. Konkrétny účet nebol identifikovaný; všetky prepojené účty sú uvedené nižšie.",
+    "connectionAccountError": "Posledná synchronizácia zlyhala pri spracovaní účtu {{account}}."
   },
   "loans": {
     "title": "Úverová zmluva",

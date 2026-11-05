@@ -1359,8 +1359,11 @@
     "connectionStatus": {
       "active": "有効",
       "error": "エラー",
-      "expired": "期限切れ"
-    }
+      "expired": "期限切れ",
+      "sync_error": "同期失敗"
+    },
+    "connectionSyncError": "この接続の前回の同期に失敗しました。該当する口座は特定できませんでした。接続されたすべての口座を以下に表示します。",
+    "connectionAccountError": "{{account}} の処理中に前回の同期に失敗しました。"
   },
   "loans": {
     "title": "ローン契約",

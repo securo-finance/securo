@@ -1361,10 +1361,13 @@
     },
     "reconnected": "Banque reconnectée avec succès",
     "connectionStatus": {
-      "active": "Active",
-      "error": "Erreur",
-      "expired": "Expirée"
-    }
+      "active": "Connecté",
+      "error": "Reconnexion requise",
+      "expired": "Expiré",
+      "sync_error": "Échec de la synchronisation"
+    },
+    "connectionSyncError": "La dernière synchronisation de cette connexion a échoué. Aucun compte précis n'a été identifié ; tous les comptes liés sont listés ci-dessous.",
+    "connectionAccountError": "La dernière synchronisation a échoué lors du traitement de {{account}}."
   },
   "loans": {
     "title": "Contrat de prêt",

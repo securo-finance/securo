@@ -1359,8 +1359,11 @@
     "connectionStatus": {
       "active": "सक्रिय",
       "error": "त्रुटि",
-      "expired": "समाप्त"
-    }
+      "expired": "समाप्त",
+      "sync_error": "सिंक विफल"
+    },
+    "connectionSyncError": "इस कनेक्शन का पिछला सिंक विफल हुआ। कोई एक खाता पहचाना नहीं गया; सभी जुड़े खाते नीचे दिए गए हैं।",
+    "connectionAccountError": "{{account}} को प्रोसेस करते समय पिछला सिंक विफल हुआ।"
   },
   "loans": {
     "title": "ऋण अनुबंध",

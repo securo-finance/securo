@@ -1359,8 +1359,11 @@
     "connectionStatus": {
       "active": "Aktív",
       "error": "Hiba",
-      "expired": "Lejárt"
-    }
+      "expired": "Lejárt",
+      "sync_error": "A szinkronizálás sikertelen"
+    },
+    "connectionSyncError": "Az utolsó szinkronizálás sikertelen volt ennél a kapcsolatnál. Egyetlen számla sem azonosítható; az összes kapcsolt számla alább látható.",
+    "connectionAccountError": "Az utolsó szinkronizálás a(z) {{account}} feldolgozása közben sikertelen volt."
   },
   "loans": {
     "title": "Hitelszerződés",

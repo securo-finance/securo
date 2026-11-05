@@ -37,7 +37,7 @@ vi.mock('@/contexts/collection-filter-context', () => ({
 }))
 
 vi.mock('@/hooks/use-privacy-mode', () => ({
-  usePrivacyMode: () => ({ mask: false }),
+  usePrivacyMode: () => ({ mask: (value: string) => value }),
 }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
@@ -69,6 +69,7 @@ function makeConnection(overrides: Partial<BankConnection>): BankConnection {
     status: 'active',
     settings: null,
     last_sync_at: null,
+    last_sync_error_account_id: null,
     created_at: '2026-10-01T00:00:00Z',
     institutions: [],
     ...overrides,
@@ -133,6 +134,26 @@ describe('AccountsPage connection row actions', () => {
     await screen.findByRole('button', { name: t('accounts.sync') })
     expect(screen.queryByRole('button', { name: t('accounts.reconnect') })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('accounts.retrySync') })).not.toBeInTheDocument()
+  })
+
+  it('retries a processing failure with stored credentials and names its account', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({
+      status: 'sync_error', last_sync_error_account_id: 'acc-1',
+    })])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await screen.findByText(t('accounts.connectionAccountError', { account: 'Healthy Checking' }))
+    expect(screen.queryByRole('button', { name: t('accounts.reconnect') })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('accounts.retrySync') }))
+    expect(api.sync).toHaveBeenCalledWith('conn-1')
+  })
+
+  it('shows a connection-wide diagnostic when the failed account is unknown', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ status: 'sync_error' })])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await screen.findByText(t('accounts.connectionSyncError'))
+    expect(screen.queryByRole('button', { name: t('accounts.reconnect') })).not.toBeInTheDocument()
   })
 
   it('retries the sync for the connection whose row the retry button sits in', async () => {

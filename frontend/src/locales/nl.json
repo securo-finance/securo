@@ -1359,10 +1359,13 @@
     "reconnected": "Bank heeft opnieuw verbinding gemaakt",
     "multiInstitutionLink": "{{provider}} · {{count}} institutions",
     "connectionStatus": {
-      "active": "Actief",
-      "error": "Fout",
-      "expired": "Verlopen"
-    }
+      "active": "Verbonden",
+      "error": "Opnieuw verbinden vereist",
+      "expired": "Verlopen",
+      "sync_error": "Synchronisatie mislukt"
+    },
+    "connectionSyncError": "De laatste synchronisatie voor deze verbinding is mislukt. Er is geen specifieke rekening geïdentificeerd; alle gekoppelde rekeningen worden hieronder weergegeven.",
+    "connectionAccountError": "De laatste synchronisatie is mislukt tijdens het verwerken van {{account}}."
   },
   "loans": {
     "title": "Leningcontract",

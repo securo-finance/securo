@@ -1361,10 +1361,13 @@
     },
     "reconnected": "Banco reconectado com sucesso",
     "connectionStatus": {
-      "active": "Ativa",
-      "error": "Erro",
-      "expired": "Expirada"
-    }
+      "active": "Ligado",
+      "error": "É necessário voltar a ligar",
+      "expired": "Expirada",
+      "sync_error": "Falha na sincronização"
+    },
+    "connectionSyncError": "A última sincronização desta ligação falhou. Não foi identificada nenhuma conta específica; todas as contas associadas estão listadas abaixo.",
+    "connectionAccountError": "A última sincronização falhou ao processar {{account}}."
   },
   "loans": {
     "title": "Contrato do empréstimo",

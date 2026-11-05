@@ -1443,8 +1443,11 @@
     "connectionStatus": {
       "active": "Aktivní",
       "error": "Chyba",
-      "expired": "Vypršelo"
-    }
+      "expired": "Vypršelo",
+      "sync_error": "Synchronizace selhala"
+    },
+    "connectionSyncError": "Poslední synchronizace tohoto připojení selhala. Konkrétní účet nebyl určen; všechny propojené účty jsou uvedeny níže.",
+    "connectionAccountError": "Poslední synchronizace selhala při zpracování účtu {{account}}."
   },
   "loans": {
     "title": "Úvěrová smlouva",
