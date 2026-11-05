@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Literal, Optional, get_args
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -92,6 +92,13 @@ class Workspace(Base):
     tax_jurisdiction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)
+    # Per-workspace transaction review policy (PR-2): {"ingest":
+    # "needs_review"|"reviewed", "manual": ...}. NULL means the defaults —
+    # imports/sync land needing review, manual entries land reviewed.
+    # Shape is Literal-validated on write by
+    # `workspace_service.validate_review_policy`; JSON (not two boolean
+    # columns) so per-source policy can grow without another migration.
+    review_policy: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

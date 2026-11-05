@@ -73,6 +73,7 @@ const CONDITION_FIELDS = [
   { value: 'payee_id', label: 'rules.fieldPayee' },
   { value: 'date', label: 'rules.fieldDate' },
   { value: 'status', label: 'rules.fieldStatus' },
+  { value: 'review_status', label: 'rules.fieldReviewStatus' },
 ] as const
 
 const STRING_OPS = [
@@ -96,7 +97,7 @@ const NUMERIC_OPS = [
 function getOpsForField(field: string) {
   if (field === 'amount' || field === 'date') return NUMERIC_OPS
   if (field === 'type') return [{ value: 'equals', label: 'rules.opIs' }]
-  if (field === 'payee_id' || field === 'account_id' || field === 'status') return [
+  if (field === 'payee_id' || field === 'account_id' || field === 'status' || field === 'review_status') return [
     { value: 'equals', label: 'rules.opIs' },
     { value: 'not_equals', label: 'rules.opIsNot' },
   ]
@@ -120,6 +121,10 @@ function conditionSummary(conditions: RuleConditionNode[], conditionsOp: string,
     if (c.field === 'status') {
       if (c.value === 'pending') return t('rules.statusPending')
       if (c.value === 'posted') return t('rules.statusPosted')
+    }
+    if (c.field === 'review_status') {
+      if (c.value === 'needs_review') return t('transactions.needsReview')
+      if (c.value === 'reviewed') return t('transactions.reviewed')
     }
     return String(c.value)
   }
@@ -149,6 +154,7 @@ function actionSummary(actions: RuleAction[], categories: Category[], payeesList
     }
     if (a.op === 'append_notes') return `→ ${t('rules.fieldNotes')}: ${a.value}`
     if (a.op === 'ignore') return `→ ${t('rules.ignoreAction')}`
+    if (a.op === 'set_reviewed') return `→ ${t('rules.markReviewed')}`
     return a.op
   }).join('  ') || t('rules.noActions')
 }
@@ -159,6 +165,7 @@ const ACTION_FILTERS = [
   { value: 'set_payee', label: 'rules.setPayee' },
   { value: 'append_notes', label: 'rules.appendNotes' },
   { value: 'ignore', label: 'rules.ignoreAction' },
+  { value: 'set_reviewed', label: 'rules.markReviewed' },
 ] as const
 
 const FILTER_CONTROL_CLASS = 'h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]'

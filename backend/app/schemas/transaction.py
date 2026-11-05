@@ -1,5 +1,5 @@
 import uuid
-from datetime import date as _Date
+from datetime import date as _Date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -105,6 +105,14 @@ class TransactionUpdate(BaseModel):
     # user mark a manually-entered transaction as settled once it clears,
     # or flip a synced row back to pending before the next sync.
     status: Optional[Literal["posted", "pending"]] = None
+    # Review triage (PR-2). Literal-validated so the generic PATCH can never
+    # write an unknown state; the provenance stamps are maintained by the
+    # shared `set_review_status` chokepoint in the service layer, never by
+    # the generic column loop.
+    review_status: Optional[Literal["needs_review", "reviewed"]] = None
+    # The #56 bookmark. Independent of review state; a plain boolean column
+    # with no stamp invariant, so it rides normal column updates.
+    flagged: Optional[bool] = None
     apply_to_transfer_pair: bool = False
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.
@@ -169,6 +177,22 @@ class TransactionTransferCounterpart(BaseModel):
     account_name: str
 
 
+class HumanReviewAttribution(BaseModel):
+    kind: Literal["human"]
+    reviewed_at: datetime
+    user_id: uuid.UUID
+
+
+class RuleReviewAttribution(BaseModel):
+    kind: Literal["rule"]
+    reviewed_at: datetime
+    rule_id: uuid.UUID
+
+
+class UnknownReviewAttribution(BaseModel):
+    kind: Literal["unknown"]
+
+
 class TransactionRead(TransactionBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -224,6 +248,17 @@ class TransactionRead(TransactionBase):
     # when no real rate is available (#1165).
     running_balance: Optional[float] = None
     running_balance_primary: Optional[float] = None
+    # Review triage (PR-2). `review_status` defaults to 'reviewed' on read
+    # the way the column defaults at rest; the stamps are NULL together on
+    # legacy/exempt rows and populated together only by explicit
+    # actor-driven transitions — never exactly one (gate §15-A1).
+    review_status: str = "reviewed"
+    reviewed_at: Optional[datetime] = None
+    reviewed_by_id: Optional[uuid.UUID] = None
+    review_attribution: Optional[
+        HumanReviewAttribution | RuleReviewAttribution | UnknownReviewAttribution
+    ] = Field(default=None, discriminator="kind")
+    flagged: bool = False
 
     @model_validator(mode="after")
     def reflect_ignored_category(self):
@@ -237,6 +272,21 @@ class TransactionRead(TransactionBase):
 class BulkCategorizeRequest(BaseModel):
     transaction_ids: list[uuid.UUID]
     category_id: Optional[uuid.UUID] = None
+
+
+class BulkReviewRequest(BaseModel):
+    """Bulk review-state transition (PR-2). Empty id lists are rejected by
+    the route with 400 — a bulk op that silently matched nothing hides
+    client bugs behind a success toast."""
+
+    transaction_ids: list[uuid.UUID]
+    review_status: Literal["needs_review", "reviewed"]
+
+
+class ReviewRequest(BaseModel):
+    """Target state for PATCH /transactions/{id}/review (PR-2)."""
+
+    review_status: Literal["needs_review", "reviewed"]
 
 
 class TransactionBulkDeleteRequest(BaseModel):

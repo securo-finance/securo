@@ -74,6 +74,10 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
     field = condition.get("field", "")
     op = condition.get("op", "")
     value = condition.get("value")
+    # Only this closed-state field ignores surrounding whitespace. Generic
+    # text conditions retain their literal whitespace semantics.
+    if field == "review_status" and isinstance(value, str):
+        value = value.strip().lower()
 
     tx_val = getattr(tx, field, None)
 
@@ -284,5 +288,18 @@ def apply_rule_actions(
 
         elif op == "ignore":
             tx.is_ignored = True
+
+        elif op == "set_reviewed":
+            # Transition-gated: the engine is clockless and userless, so it
+            # only flips the state here — the provenance stamps are written
+            # at the commit boundary by the apply drivers in rule_service,
+            # which know the acting user (gate §15-A2). Rows already
+            # reviewed stay untouched so `applied_count` stays honest and
+            # rule re-runs stay idempotent. Deliberately no
+            # `set_unreviewed` counterpart (§1, §10 Q3): rules exist to
+            # reduce inbox noise; auto-unreview would fight the user's own
+            # habit.
+            if tx.review_status == "needs_review":
+                tx.review_status = "reviewed"
 
     return category_already_set

@@ -30,7 +30,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, CircleDot, Download, Eye, EyeClosed, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -661,6 +661,35 @@ function TransactionForm({
     }
   }
 
+  const [reviewStatus, setReviewStatus] = useState<'needs_review' | 'reviewed' | null>(
+    transaction?.review_status ?? null
+  )
+  const [togglingReview, setTogglingReview] = useState(false)
+
+  useEffect(() => {
+    setReviewStatus(transaction?.review_status ?? null)
+  }, [transaction?.id, transaction?.review_status])
+
+  const handleToggleReview = async () => {
+    if (!seed?.id || togglingReview) return
+    const targetStatus = reviewStatus === 'needs_review' ? 'reviewed' : 'needs_review'
+    setTogglingReview(true)
+    try {
+      const updated = await transactionsApi.setReview(seed.id, targetStatus)
+      setReviewStatus(updated.review_status as 'needs_review' | 'reviewed')
+      toast.success(
+        updated.review_status === 'reviewed'
+          ? (t('transactions.bulkReviewSuccess', { count: 1 }) || 'Marked as reviewed')
+          : (t('transactions.bulkUnreviewSuccess', { count: 1 }) || 'Marked as unreviewed')
+      )
+      onIgnoreChanged?.()
+    } catch {
+      toast.error(t('common.error'))
+    } finally {
+      setTogglingReview(false)
+    }
+  }
+
   const triggerSubmit = (action: SaveAction) => {
     pendingActionRef.current = action
     try {
@@ -879,6 +908,24 @@ function TransactionForm({
       {error && (
         <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
           {error}
+        </div>
+      )}
+      {seed?.id && reviewStatus === 'needs_review' && (
+        <div className="flex items-center justify-between gap-3 p-3 text-sm bg-amber-500/10 border border-amber-500/20 rounded-md text-amber-700 dark:text-amber-400">
+          <div className="flex items-center gap-2">
+            <CircleDot className="w-4 h-4 text-amber-500 shrink-0" />
+            <span className="font-medium">{t('transactions.needsReview')}</span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleToggleReview}
+            disabled={loading || togglingReview}
+            className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 cursor-pointer"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            {t('transactions.markReviewed')}
+          </Button>
         </div>
       )}
       {isSynced && (
@@ -1447,6 +1494,31 @@ function TransactionForm({
             >
               {isIgnored ? <Eye size={14} /> : <EyeClosed size={14} />}
               {isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
+            </Button>
+          )}
+          {seed?.id && (
+            <Button
+              type="button"
+              variant={reviewStatus === 'needs_review' ? 'default' : 'outline'}
+              onClick={handleToggleReview}
+              disabled={loading || togglingReview}
+              title={reviewStatus === 'needs_review' ? t('transactions.markReviewed') : t('transactions.markUnreviewed')}
+              className={cn(
+                "gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9",
+                reviewStatus === 'needs_review' && "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
+              )}
+            >
+              {reviewStatus === 'needs_review' ? (
+                <>
+                  <CheckCircle2 size={14} />
+                  {t('transactions.markReviewed')}
+                </>
+              ) : (
+                <>
+                  <CircleDot size={14} />
+                  {t('transactions.markUnreviewed')}
+                </>
+              )}
             </Button>
           )}
           {transaction && onCreateRule && (

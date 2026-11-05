@@ -771,6 +771,13 @@ export default function AccountDetailPage() {
       recurring_transaction_id: p.recurring_id,
       splits: [],
       is_ignored: false,
+      // Projected rows are pure future projections: no ledger state, so
+      // they sit outside review triage exactly like other synthetics.
+      review_status: 'reviewed',
+      reviewed_at: null,
+      reviewed_by_id: null,
+      review_attribution: null,
+      flagged: false,
       virtual: true,
     }))
   }, [projectedTxData, ledgerItems, id])

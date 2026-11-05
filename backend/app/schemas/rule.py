@@ -3,7 +3,7 @@ import datetime
 import uuid
 from typing import Any, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 
 class RuleCondition(BaseModel):
@@ -13,7 +13,7 @@ class RuleCondition(BaseModel):
 
     @field_validator("value")
     @classmethod
-    def value_must_not_be_blank(cls, v: Any) -> Any:
+    def value_must_not_be_blank(cls, v: Any, info: ValidationInfo) -> Any:
         """Reject blank values — they silently match every transaction.
 
         A blank value turns `contains`/`starts_with`/`ends_with`/`regex` into a
@@ -22,6 +22,8 @@ class RuleCondition(BaseModel):
         """
         if v is None or (isinstance(v, str) and not v.strip()):
             raise ValueError("Condition value cannot be blank")
+        if info.data.get("field") == "review_status" and isinstance(v, str):
+            return v.strip().lower()
         return v
 
 

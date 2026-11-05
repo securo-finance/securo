@@ -61,7 +61,13 @@
     "archiveHint": "El espacio de trabajo se oculta de la lista y del selector. Los datos se conservan.",
     "archiveSuccess": "Espacio de trabajo archivado",
     "archiveConfirmTitle": "¿Archivar espacio de trabajo?",
-    "archiveConfirmDescription": "El espacio de trabajo \"{{name}}\" se eliminará de tu lista. Los datos se conservan y un administrador puede restaurarlo más tarde."
+    "archiveConfirmDescription": "El espacio de trabajo \"{{name}}\" se eliminará de tu lista. Los datos se conservan y un administrador puede restaurarlo más tarde.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1176,7 +1182,22 @@
     "invoiceBadgeTooltip": "Esta transacción salda una factura. Ábrela.",
     "suggestionBadge": "Pregunta",
     "suggestionBadgeTooltip": "Un pago puede saldar esta factura. Abre la cola para responder.",
-    "clearGroupFilter": "Quitar filtro de grupo"
+    "clearGroupFilter": "Quitar filtro de grupo",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Revisada por una persona",
+    "reviewedByRule": "Revisada por una regla",
+    "reviewedUnattributed": "Revisada (sin atribución)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "Cuentas",
@@ -1653,6 +1674,8 @@
     "fieldPayee": "Beneficiario",
     "fieldDate": "Fecha",
     "fieldStatus": "Estado",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "contiene",
     "opNotContains": "no contiene",
     "opEquals": "es igual a",

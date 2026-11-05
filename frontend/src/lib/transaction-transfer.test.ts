@@ -51,6 +51,11 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     effective_bill_date: null,
     splits: [],
     is_ignored: false,
+    review_status: 'reviewed',
+    reviewed_at: null,
+    reviewed_by_id: null,
+    review_attribution: null,
+    flagged: false,
     ...overrides,
   }
 }

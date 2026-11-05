@@ -14,11 +14,11 @@ export function isInvalidDescriptionAction(action: RuleAction): boolean {
  * a no-op — and the preview should keep answering the question about the
  * conditions instead of failing the backend's action validation. Actions the
  * form itself flags are dropped for the same reason: the inline error already
- * says what is wrong. `ignore` carries no value at all.
+ * says what is wrong. `ignore` and `set_reviewed` carry no value at all.
  */
 export function previewableActions(actions: RuleAction[]): RuleAction[] {
   return actions.filter((action) => {
-    if (action.op === 'ignore') return true
+    if (action.op === 'ignore' || action.op === 'set_reviewed') return true
     if (isInvalidDescriptionAction(action)) return false
     return String(action.value ?? '').trim() !== ''
   })

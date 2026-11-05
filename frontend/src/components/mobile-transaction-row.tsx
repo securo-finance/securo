@@ -1,8 +1,9 @@
 import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
+import { ReviewAttributionBadge } from '@/components/review-attribution-badge'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, CircleDot, Clock, EyeClosed, Paperclip, Star } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency } from '@/lib/format'
@@ -32,6 +33,11 @@ interface MobileTransactionRowProps {
   showPayee?: boolean
   /** Localize synthetic opening-balance descriptions only in account detail. */
   localizeOpeningBalance?: boolean
+  /** Opt in on the main transaction list, not account-scoped rows. */
+  showReviewAttribution?: boolean
+  /** Opt-in action; account-detail consumers keep their existing interaction. */
+  onToggleFlag?: (tx: Transaction) => void
+  flagPending?: boolean
 }
 
 export function MobileTransactionRow({
@@ -49,6 +55,9 @@ export function MobileTransactionRow({
   onClick,
   showPayee = false,
   localizeOpeningBalance = false,
+  showReviewAttribution = false,
+  onToggleFlag,
+  flagPending = false,
 }: MobileTransactionRowProps) {
   const { mask } = usePrivacyMode()
   const { t } = useTranslation()
@@ -146,6 +155,37 @@ export function MobileTransactionRow({
               {tx.installment_number}/{tx.total_installments}
             </span>
           )}
+          {tx.review_status === 'needs_review' && (
+            <span
+              role="img"
+              aria-label={t('transactions.needsReview')}
+              title={t('transactions.needsReview')}
+              className="inline-flex items-center gap-1 text-[10px] text-primary font-medium bg-primary/5 border border-primary/20 rounded px-1 py-0.5 shrink-0"
+            >
+              <CircleDot className="h-2.5 w-2.5" />
+              {t('transactions.needsReview')}
+            </span>
+          )}
+          {tx.flagged && (
+            <Star role="img" aria-label={t('transactions.flagged')} className="h-3 w-3 shrink-0 fill-current text-amber-500" />
+          )}
+          {onToggleFlag && canWrite && !tx.is_shared && !virtual && (
+            <button
+              type="button"
+              aria-label={tx.flagged ? t('transactions.unflag') : t('transactions.flag')}
+              title={tx.flagged ? t('transactions.unflag') : t('transactions.flag')}
+              aria-pressed={!!tx.flagged}
+              disabled={flagPending}
+              className="inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-amber-500 disabled:opacity-50"
+              onClick={(event) => {
+                event.stopPropagation()
+                if (!flagPending) onToggleFlag(tx)
+              }}
+            >
+              <Star className={`h-4 w-4 ${tx.flagged ? 'fill-current' : ''}`} />
+            </button>
+          )}
+          {showReviewAttribution && <ReviewAttributionBadge transaction={tx} />}
           {shouldShowPendingBadge(tx) && (
             <span
               title={t('transactions.pending')}

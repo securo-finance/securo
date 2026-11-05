@@ -18,7 +18,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 
 import TransactionsPage from '@/pages/transactions'
-import { renderWithProviders } from '@/test/utils'
+import { renderWithProviders, t } from '@/test/utils'
 import type { Transaction } from '@/types'
 
 const api = vi.hoisted(() => ({
@@ -97,6 +97,8 @@ const crowded: Transaction = {
   installment_number: 18, total_installments: 18, installment_total_amount: 3240,
   installment_purchase_date: '2025-05-08', installment_series_id: 'series-1',
   bill_id: null, effective_bill_date: null, splits: [], is_ignored: false,
+  review_status: 'reviewed', reviewed_at: null, reviewed_by_id: null,
+  review_attribution: null, flagged: false,
   exclude_from_pnl: true,
 }
 
@@ -118,11 +120,20 @@ beforeEach(() => {
 })
 
 describe('the description cell on a row with several badges', () => {
-  it('wraps the badges instead of letting them run into the next column', async () => {
+  it.each(['reviewed', 'needs_review'] as const)('wraps the badges instead of letting them run into the next column (%s)', async (reviewStatus) => {
+    api.transactions.list.mockResolvedValue({
+      items: [{ ...crowded, review_status: reviewStatus }], total: 1, page: 1, limit: 50,
+    })
     renderWithProviders(<TransactionsPage />, { route: '/transactions', path: '/transactions' })
 
     const description = await screen.findByText('Payment to Vinicius in 18 parts')
     const line = description.parentElement!
+    expect(screen.getByRole('button', { name: t('transactions.flag') })).toBeInTheDocument()
+    expect(screen.getByRole('img', {
+      name: t(reviewStatus === 'needs_review'
+        ? 'transactions.needsReview'
+        : 'transactions.reviewedUnattributed'),
+    })).toBeInTheDocument()
 
     // All three badges share the line with the description. Each one is
     // looked up as its own element, so dropping a badge fails the test

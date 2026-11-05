@@ -2,6 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.review_conflict import ReviewerAttributionRace
 
 from app.core.database import get_async_session
 from app.core.workspace_context import (
@@ -114,6 +115,8 @@ async def oauth_callback(
             reconnect_connection_id=data.reconnect_connection_id,
         )
         return connection
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ProviderUserActionRequired as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -183,6 +186,8 @@ async def sync_connection(
             "merged_count": merged_count,
             "sync_outcome": sync_outcome,
         }
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ProviderUserActionRequired as e:

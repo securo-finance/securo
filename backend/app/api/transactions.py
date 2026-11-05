@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.review_conflict import ReviewerAttributionRace
 
 from app.core.app_clock import app_today
 from app.core.database import get_async_session
@@ -19,7 +20,24 @@ from app.core.workspace_context import (
 )
 from app.models.account import Account
 from app.models.transaction import Transaction
-from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
+from app.schemas.transaction import (
+    BulkAddToGroupRequest,
+    BulkCategorizeRequest,
+    BulkReviewRequest,
+    BulkTagsRequest,
+    CreateCounterpartRequest,
+    DescriptionSuggestion,
+    InstallmentSeriesCreate,
+    LinkTransferRequest,
+    ReviewRequest,
+    TransactionBulkDeleteRequest,
+    TransactionCreate,
+    TransactionRead,
+    TransactionTransferCounterpart,
+    TransactionUpdate,
+    TransferCreate,
+    TransferRead,
+)
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
 from app.services.admin_service import get_credit_card_accounting_mode
@@ -142,6 +160,11 @@ class PaginatedTransactions(BaseModel):
     page: int
     limit: int
     summary: Optional[TransactionsSummary] = None
+    # Rows needing review under the CURRENT filters (the number a click on
+    # the smart chip would show, §5.3/Q9). Computed by the service on the
+    # same WHERE builder minus the review_status filter; 0 when not asked
+    # for (MCP/export/dashboard callers don't pay for the extra count).
+    needs_review_count: int = 0
 
 
 def _merge_id_filters(
@@ -173,6 +196,7 @@ async def list_transactions(
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="Filter by transaction status (posted|pending)"),
+    review_status: Optional[str] = Query(None, pattern="^(needs_review|reviewed)$", description="Filter by review triage state (needs_review|reviewed)"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=500),
     include_opening_balance: bool = Query(False),
@@ -199,6 +223,7 @@ async def list_transactions(
         user_pnl_only=user_pnl_only,
         exclude_ignored=exclude_ignored,
         status=status,
+        review_status=review_status,
         accounting_mode=accounting_mode,
         tags=tags,
         bill_id=bill_id,
@@ -212,17 +237,31 @@ async def list_transactions(
         include_summary=True,
         include_running_balance=include_running_balance,
         primary_currency=ctx.user.primary_currency,
+        include_needs_review_count=True,
     )
     primary_currency = ctx.user.primary_currency
     items = [_tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency) for tx in transactions]
     await _attach_invoice_links(session, ctx, items)
     await _attach_transfer_counterparts(session, ctx.workspace.id, items)
+    # The chip count rides the service's summary dict (the function keeps
+    # its three-tuple shape for ~50 other callers) and moves to its own
+    # envelope field before the summary is typed.
+    needs_review_count = 0
+    if summary is not None:
+        needs_review_count = int(summary.pop("needs_review_count", 0) or 0)
     summary_out = (
         TransactionsSummary(**summary, currency=primary_currency)
         if summary is not None
         else None
     )
-    return PaginatedTransactions(items=items, total=total, page=page, limit=limit, summary=summary_out)
+    return PaginatedTransactions(
+        items=items,
+        total=total,
+        page=page,
+        limit=limit,
+        summary=summary_out,
+        needs_review_count=needs_review_count,
+    )
 
 
 @router.get("/calendar", response_model=TransactionCalendarResponse)
@@ -335,9 +374,42 @@ async def bulk_categorize(
         count = await transaction_service.bulk_update_category(
             session, ctx.workspace.id, data.transaction_ids, data.category_id
         )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return {"updated": count}
+
+
+@router.patch("/bulk-review")
+async def bulk_review(
+    data: BulkReviewRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Bulk mark reviewed / mark unreviewed (PR-2 §5.2).
+
+    Empty id lists are a client error, not a successful no-op: 400 so a
+    wiring bug can't hide behind a success toast.
+    """
+    if not data.transaction_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="transaction_ids must not be empty",
+        )
+    try:
+        result = await transaction_service.bulk_set_review(
+            session,
+            ctx.workspace.id,
+            ctx.user_id,
+            data.transaction_ids,
+            data.review_status,
+        )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return result
 
 
 @router.patch("/bulk-add-tags")
@@ -380,6 +452,8 @@ async def bulk_add_to_group(
             share_type=data.share_type,
             member_splits=data.member_splits,
         )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -406,6 +480,8 @@ async def create_transfer(
             credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
             transfer_pair_id=debit_tx.transfer_pair_id,
         )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -433,6 +509,8 @@ async def link_transfer(
             credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
             transfer_pair_id=debit_tx.transfer_pair_id,
         )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -462,6 +540,8 @@ async def create_counterpart(
             credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
             transfer_pair_id=debit_tx.transfer_pair_id,
         )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -533,6 +613,8 @@ async def create_installment_series(
         created = await transaction_service.create_installment_series(
             session, ctx.workspace.id, ctx.user_id, data
         )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     primary_currency = ctx.user.primary_currency
@@ -555,6 +637,8 @@ async def create_transaction(
         full_tx = await transaction_service.get_transaction(session, transaction.id, ctx.workspace.id)
         primary_currency = ctx.user.primary_currency
         return _tag_fx_fallback(TransactionRead.model_validate(full_tx, from_attributes=True), primary_currency)
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -570,6 +654,8 @@ async def update_transaction(
         transaction = await transaction_service.update_transaction(
             session, transaction_id, ctx.workspace.id, ctx.user_id, data
         )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not transaction:
@@ -611,6 +697,35 @@ async def post_transaction_today(
     transaction = await transaction_service.post_transaction_today(
         session, transaction_id, ctx.workspace.id
     )
+    if not transaction:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    primary_currency = ctx.user.primary_currency
+    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+
+
+@router.patch("/{transaction_id}/review", response_model=TransactionRead)
+async def set_transaction_review(
+    transaction_id: uuid.UUID,
+    data: ReviewRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Explicit single-row review transition (PR-2 §4.1). The target state
+    is in the body rather than toggled server-side so the client decides
+    (list star, bulk bar, and Shift+R all know the row's current state)
+    and retries are idempotent."""
+    try:
+        transaction = await transaction_service.review_transaction(
+            session,
+            transaction_id,
+            ctx.workspace.id,
+            ctx.user_id,
+            data.review_status,
+        )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency

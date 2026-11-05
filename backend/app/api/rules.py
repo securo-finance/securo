@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.review_conflict import ReviewerAttributionRace
 
 from app.core.database import get_async_session
 from app.core.workspace_context import (
@@ -95,16 +96,16 @@ async def create_rule(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     # Apply the new rule to existing transactions so it takes effect on history
     # immediately, and report how many were touched for a transparent toast.
-    applied_count = (
-        await rule_service.apply_single_rule(
-            session,
-            ctx.workspace.id,
-            rule,
-            overwrite_existing_categories=data.overwrite_existing_categories,
+    try:
+        applied_count = (
+            await rule_service.apply_single_rule(
+                session, ctx.workspace.id, rule,
+                overwrite_existing_categories=data.overwrite_existing_categories,
+            )
+            if data.apply_to_existing else 0
         )
-        if data.apply_to_existing
-        else 0
-    )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     response = RuleCreateResponse.model_validate(rule)
     response.applied_count = applied_count
     return response
@@ -198,16 +199,16 @@ async def update_rule(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
-    applied_count = (
-        await rule_service.apply_single_rule(
-            session,
-            ctx.workspace.id,
-            rule,
-            overwrite_existing_categories=data.overwrite_existing_categories,
+    try:
+        applied_count = (
+            await rule_service.apply_single_rule(
+                session, ctx.workspace.id, rule,
+                overwrite_existing_categories=data.overwrite_existing_categories,
+            )
+            if should_apply else 0
         )
-        if should_apply
-        else 0
-    )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     response = RuleMutationResponse.model_validate(rule)
     response.applied_count = applied_count
     return response
@@ -281,5 +282,8 @@ async def apply_all_rules(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Re-apply all active rules to all existing transactions."""
-    count = await rule_service.apply_all_rules(session, ctx.workspace.id)
+    try:
+        count = await rule_service.apply_all_rules(session, ctx.workspace.id)
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     return {"applied": count}

@@ -3,7 +3,7 @@ from datetime import date as _date, datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional, cast
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, JSON, Numeric, SmallInteger, String, event
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, JSON, Numeric, SmallInteger, String, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +22,28 @@ if TYPE_CHECKING:
 
 class Transaction(Base):
     __tablename__ = "transactions"
+    __table_args__ = (
+        # Serves the needs-review chip count + list filter (PR-2). Composite
+        # on purpose: a workspace-scoped count must not walk the whole
+        # workspace's rows on a large ledger.
+        Index(
+            "ix_transactions_workspace_review_status",
+            "workspace_id",
+            "review_status",
+        ),
+        CheckConstraint(
+            "(("
+            "(review_attribution_kind IS NULL AND review_rule_id IS NULL)"
+            " OR (review_attribution_kind = 'human'"
+            " AND review_rule_id IS NULL AND review_status = 'reviewed'"
+            " AND reviewed_at IS NOT NULL AND reviewed_by_id IS NOT NULL)"
+            " OR (review_attribution_kind = 'rule'"
+            " AND review_rule_id IS NOT NULL AND review_status = 'reviewed'"
+            " AND reviewed_at IS NOT NULL AND reviewed_by_id IS NULL)"
+            ") IS TRUE)",
+            name="ck_transactions_review_attribution_shape",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
@@ -105,6 +127,34 @@ class Transaction(Base):
     exclude_from_pnl: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # Workflow triage state (PR-2), deliberately orthogonal to the two
+    # monetary flags above: review changes no computed total. Two states;
+    # provenance (`reviewed_at`/`reviewed_by_id`) is written together by
+    # explicit actor-driven transitions into 'reviewed' and cleared
+    # together on leaving it — never exactly one stamp. Legacy and
+    # exempt rows created as 'reviewed' by the DB default may keep both
+    # NULL (gate §15-A1); `needs_review` always means both NULL.
+    review_status: Mapped[str] = mapped_column(
+        String(20), default="reviewed", server_default="reviewed"
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reviewed_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_transactions_reviewed_by_id", ondelete="RESTRICT", deferrable=False),
+        nullable=True,
+    )
+    review_attribution_kind: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True
+    )
+    review_rule_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    # Issue #56's flag: an independent bookmark that never triggers or
+    # clears review state and has zero monetary effect.
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     # Link to the recurring bill this transaction fulfills (issue #116). Set when
     # a synced/imported/manual charge is matched to a recurring bill, or stamped
     # onto the placeholder generate_pending materializes. ON DELETE SET NULL: if
@@ -141,6 +191,25 @@ class Transaction(Base):
     payee_name = cast(Optional[str], None)
     running_balance = cast(Optional[float], None)
     running_balance_primary = cast(Optional[float], None)
+
+    @property
+    def review_attribution(self) -> Optional[dict[str, str | datetime | uuid.UUID | None]]:
+        """Project stored attribution without inferring principals from legacy stamps."""
+        if self.review_status != "reviewed":
+            return None
+        if self.review_attribution_kind == "human":
+            return {
+                "kind": "human",
+                "reviewed_at": self.reviewed_at,
+                "user_id": self.reviewed_by_id,
+            }
+        if self.review_attribution_kind == "rule":
+            return {
+                "kind": "rule",
+                "reviewed_at": self.reviewed_at,
+                "rule_id": self.review_rule_id,
+            }
+        return {"kind": "unknown"}
 
 
 # Safety net: `effective_date` is NOT NULL. For non-CC transactions it always

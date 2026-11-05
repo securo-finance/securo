@@ -1,11 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import { MobileTransactionRow } from './mobile-transaction-row'
-import type { Account, Category, Transaction } from '@/types'
+import { cleanup, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
-}))
+import { MobileTransactionRow } from '@/components/mobile-transaction-row'
+import { i18n, renderWithProviders } from '@/test/utils'
+import type { Account, Category, Transaction } from '@/types'
 
 function makeCategory(overrides: Partial<Category> = {}): Category {
   return {
@@ -56,6 +54,12 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     effective_bill_date: null,
     splits: [],
     is_ignored: false,
+    review_status: 'reviewed',
+    reviewed_at: null,
+    reviewed_by_id: null,
+    review_attribution: null,
+    flagged: false,
+    virtual: false,
     ...overrides,
   }
 }
@@ -93,7 +97,7 @@ function makeAccount(): Account {
 }
 
 function renderRow(tx: Transaction) {
-  return render(
+  return renderWithProviders(
     <MobileTransactionRow
       tx={tx}
       account={makeAccount()}
@@ -111,20 +115,201 @@ function renderRow(tx: Transaction) {
 }
 
 describe('MobileTransactionRow transfer indicator', () => {
+  beforeEach(async () => {
+    cleanup()
+    await i18n.changeLanguage('en')
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
   it('shows the transfer icon for a treat_as_transfer category without a pair (#993)', () => {
     const category = makeCategory({ treat_as_transfer: true })
     renderRow(makeTx({ category_id: category.id, category }))
-    expect(screen.getByLabelText('transactions.transfer')).toBeInTheDocument()
+    expect(screen.getByLabelText(i18n.t('transactions.transfer'))).toBeInTheDocument()
   })
 
   it('shows the transfer icon for a linked transfer pair', () => {
     renderRow(makeTx({ transfer_pair_id: 'pair-1' }))
-    expect(screen.getByLabelText('transactions.transfer')).toBeInTheDocument()
+    expect(screen.getByLabelText(i18n.t('transactions.transfer'))).toBeInTheDocument()
   })
 
   it('hides the transfer icon for a normal row', () => {
     const category = makeCategory({ treat_as_transfer: false })
     renderRow(makeTx({ category_id: category.id, category }))
-    expect(screen.queryByLabelText('transactions.transfer')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(i18n.t('transactions.transfer'))).not.toBeInTheDocument()
+  })
+})
+
+// Authoring-only integration delta: no post-edit test or compiler run claimed.
+// Exercise the real row, opening-balance formatter and attribution badge.
+// No component, formatter, money helper or translation mocks are needed.
+const rawDescription = 'Synthetic opening balance API text'
+const reviewedAt = '2026-10-01T12:00:00Z'
+
+function openingBalance(): Transaction {
+  return {
+    id: 'synthetic-opening-transaction',
+    user_id: 'synthetic-owner',
+    account_id: 'synthetic-account',
+    category_id: null,
+    category: null,
+    external_id: null,
+    description: rawDescription,
+    original_description: null,
+    amount: 125,
+    currency: 'USD',
+    date: '2026-10-01',
+    type: 'credit',
+    // Provenance, not description matching, identifies an opening balance.
+    source: 'opening_balance',
+    status: 'posted',
+    payee: null,
+    payee_id: null,
+    payee_name: null,
+    notes: null,
+    transfer_pair_id: null,
+    amount_primary: 125,
+    fx_rate_used: null,
+    fx_fallback: false,
+    installment_number: null,
+    total_installments: null,
+    installment_total_amount: null,
+    installment_purchase_date: null,
+    installment_series_id: null,
+    bill_id: null,
+    effective_bill_date: null,
+    splits: [],
+    is_ignored: false,
+    review_status: 'reviewed',
+    reviewed_at: reviewedAt,
+    reviewed_by_id: 'synthetic-reviewer',
+    // The real badge requires the nested packet, not just legacy flat stamps.
+    review_attribution: {
+      kind: 'human',
+      reviewed_at: reviewedAt,
+      user_id: 'synthetic-reviewer',
+    },
+    flagged: false,
+    virtual: false,
+  }
+}
+
+// Independent literal expectations checked against the shipped EN/PT-BR JSON.
+// Do not compute expected copy with transactionDescription or i18n.t.
+const locales = [
+  {
+    language: 'en',
+    displayLocale: 'en-US',
+    openingCopy: 'Opening balance',
+    badgeCopy: 'Reviewed by human',
+  },
+  {
+    language: 'pt-BR',
+    displayLocale: 'pt-BR',
+    openingCopy: 'Saldo inicial',
+    badgeCopy: 'Revisada por uma pessoa',
+  },
+]
+
+interface FlagCase {
+  name: string
+  flags: {
+    localizeOpeningBalance?: boolean
+    showReviewAttribution?: boolean
+  }
+  localized: boolean
+  attributed: boolean
+}
+
+const flagCases: FlagCase[] = [
+  {
+    name: 'defaults: raw description / no review badge (both props omitted)',
+    flags: {},
+    localized: false,
+    attributed: false,
+  },
+  {
+    name: 'localize-only: localized description / no review badge',
+    flags: { localizeOpeningBalance: true },
+    localized: true,
+    attributed: false,
+  },
+  {
+    name: 'attribution-only: raw description / real review badge',
+    flags: { showReviewAttribution: true },
+    localized: false,
+    attributed: true,
+  },
+  {
+    name: 'both: localized description / real review badge',
+    flags: { localizeOpeningBalance: true, showReviewAttribution: true },
+    localized: true,
+    attributed: true,
+  },
+]
+
+describe.each(locales)('MobileTransactionRow flag integration ($language)', ({
+  language,
+  displayLocale,
+  openingCopy,
+  badgeCopy,
+}) => {
+  beforeEach(async () => {
+    // Unmount before changing the shared language or privacy storage.
+    cleanup()
+    localStorage.clear()
+    sessionStorage.clear()
+    await i18n.changeLanguage(language)
+  })
+
+  afterEach(async () => {
+    cleanup()
+    await i18n.changeLanguage('en')
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it.each(flagCases)('$name', ({ flags, localized, attributed }) => {
+    const tx = openingBalance()
+    const original = structuredClone(tx)
+
+    renderWithProviders(
+      <MobileTransactionRow
+        tx={tx}
+        account={undefined}
+        groupName={undefined}
+        selected={false}
+        selectable={false}
+        canWrite={true}
+        highlighted={false}
+        locale={displayLocale}
+        userCurrency="USD"
+        onSelect={vi.fn()}
+        onClick={vi.fn()}
+        {...flags}
+      />,
+    )
+
+    const expectedDescription = localized ? openingCopy : rawDescription
+    const absentDescription = localized ? rawDescription : openingCopy
+    expect(screen.getByText(expectedDescription, { exact: true })).toBeVisible()
+    expect(screen.queryByText(absentDescription, { exact: true })).not.toBeInTheDocument()
+
+    if (attributed) {
+      const badge = screen.getByRole('img', { name: badgeCopy })
+      expect(badge).toBeVisible()
+      expect(badge).toHaveAttribute('title', badgeCopy)
+      expect(screen.getByTitle(badgeCopy)).toBe(badge)
+      expect(screen.getAllByRole('img')).toHaveLength(1)
+    } else {
+      expect(screen.queryByRole('img', { name: badgeCopy })).not.toBeInTheDocument()
+      expect(screen.queryByTitle(badgeCopy)).not.toBeInTheDocument()
+      // Also reject an accidentally rendered rule/unknown-attribution badge.
+      expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    }
+
+    expect(tx).toEqual(original)
   })
 })

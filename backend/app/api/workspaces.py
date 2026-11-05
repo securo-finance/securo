@@ -138,16 +138,45 @@ async def update_workspace(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    member = await workspace_service.require_membership(
-        session, workspace_id, user.id, min_role="owner"
-    )
-    workspace = await session.get(Workspace, workspace_id)
+    with session.no_autoflush:
+        member = await workspace_service.require_membership(
+            session, workspace_id, user.id, min_role="owner"
+        )
+        if any(isinstance(row, Workspace) and row.id == workspace_id
+               and session.is_modified(row, include_collections=False) for row in session.dirty):
+            await session.rollback()
+            raise HTTPException(409, "Workspace has pending edits; reload before retrying")
+        workspace = (await session.execute(
+            select(Workspace).where(Workspace.id == workspace_id)
+            .with_for_update(of=Workspace)
+            .execution_options(populate_existing=True, autoflush=False)
+        )).scalar_one_or_none()
     if workspace is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
     updates = body.model_dump(exclude_unset=True)
+    expected_policy = updates.pop("expected_review_policy", None)
+    if "review_policy" in updates:
+        from app.services.review_service import REVIEW_VALUES
+
+        policy = workspace.review_policy or {}
+        effective = {
+            "ingest": policy.get("ingest") if policy.get("ingest") in REVIEW_VALUES else "needs_review",
+            "manual": policy.get("manual") if policy.get("manual") in REVIEW_VALUES else "reviewed",
+        }
+        if (
+            not isinstance(expected_policy, dict)
+            or set(expected_policy) != {"ingest", "manual"}
+            or any(value not in REVIEW_VALUES for value in expected_policy.values())
+            or expected_policy != effective
+        ):
+            await session.rollback()
+            raise HTTPException(409, "Review policy changed; refresh and reconcile before saving")
     timezone = updates.get("timezone")
     if timezone is not None and not is_valid_timezone(timezone):
         raise HTTPException(status_code=400, detail="Invalid IANA timezone")
+    if "review_policy" in updates:
+        # Closed-set Literal check (§7.1); 400 on an unknown key/value.
+        workspace_service.validate_review_policy(updates["review_policy"])
     for key, value in updates.items():
         setattr(workspace, key, value)
     # Changing the workspace currency follows through to the acting

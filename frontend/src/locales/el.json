@@ -61,7 +61,13 @@
     "archiveHint": "Ο χώρος εργασίας αποκρύπτεται από τη λίστα και τον διακόπτη. Τα δεδομένα διατηρούνται.",
     "archiveSuccess": "Ο χώρος εργασίας αρχειοθετήθηκε",
     "archiveConfirmTitle": "Αρχειοθέτηση χώρου εργασίας;",
-    "archiveConfirmDescription": "Ο χώρος εργασίας \"{{name}}\" θα αφαιρεθεί από τη λίστα σας. Τα δεδομένα διατηρούνται και ένας διαχειριστής μπορεί να τον επαναφέρει αργότερα."
+    "archiveConfirmDescription": "Ο χώρος εργασίας \"{{name}}\" θα αφαιρεθεί από τη λίστα σας. Τα δεδομένα διατηρούνται και ένας διαχειριστής μπορεί να τον επαναφέρει αργότερα.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1429,7 +1435,22 @@
     "invoiceBadgeTooltip": "Αυτή η συναλλαγή εξοφλεί ένα τιμολόγιο. Ανοίξτε το.",
     "suggestionBadge": "Ερώτηση",
     "suggestionBadgeTooltip": "Μια πληρωμή μπορεί να εξοφλεί ένα τιμολόγιο. Ανοίξτε την ουρά για να απαντήσετε.",
-    "clearGroupFilter": "Κατάργηση φίλτρου ομάδας"
+    "clearGroupFilter": "Κατάργηση φίλτρου ομάδας",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Ελέγχθηκε από άνθρωπο",
+    "reviewedByRule": "Ελέγχθηκε από κανόνα",
+    "reviewedUnattributed": "Ελέγχθηκε (χωρίς αναφορά ελεγκτή)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "budgets": {
     "title": "Προϋπολογισμοί",
@@ -1644,6 +1665,8 @@
     "fieldPayee": "Δικαιούχος",
     "fieldDate": "Ημερομηνία",
     "fieldStatus": "Κατάσταση",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "περιέχει",
     "opNotContains": "δεν περιέχει",
     "opEquals": "ισούται με",

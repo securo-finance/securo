@@ -4,6 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.review_conflict import ReviewerAttributionRace
 
 from app.core.database import get_async_session
 from app.core.workspace_context import (
@@ -161,11 +162,14 @@ async def import_transactions(
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
-    imported, skipped, excluded, import_log_id = await import_service.import_transactions(
-        session, ctx.workspace.id, ctx.user_id, data.account_id, data.transactions, "import",
-        filename=data.filename, detected_format=data.detected_format,
-        detect_duplicates=data.detect_duplicates,
-    )
+    try:
+        imported, skipped, excluded, import_log_id = await import_service.import_transactions(
+            session, ctx.workspace.id, ctx.user_id, data.account_id, data.transactions, "import",
+            filename=data.filename, detected_format=data.detected_format,
+            detect_duplicates=data.detect_duplicates,
+        )
+    except ReviewerAttributionRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
     return {
         "imported": imported,

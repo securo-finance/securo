@@ -67,6 +67,8 @@ function tx(index: number, date: string, runningBalance: number | null): Transac
     total_installments: null, installment_total_amount: null,
     installment_purchase_date: null, installment_series_id: null, bill_id: null,
     effective_bill_date: null, splits: [], is_ignored: false,
+    review_status: 'reviewed', reviewed_at: null, reviewed_by_id: null,
+    review_attribution: null, flagged: false,
     running_balance: runningBalance, running_balance_primary: null,
   }
 }

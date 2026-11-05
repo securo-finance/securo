@@ -61,7 +61,13 @@
     "archiveHint": "ワークスペースは一覧と切り替えメニューから非表示になります。データは保持されます。",
     "archiveSuccess": "ワークスペースをアーカイブしました",
     "archiveConfirmTitle": "ワークスペースをアーカイブしますか?",
-    "archiveConfirmDescription": "ワークスペース「{{name}}」が一覧から削除されます。データは保持され、管理者が後から復元できます。"
+    "archiveConfirmDescription": "ワークスペース「{{name}}」が一覧から削除されます。データは保持され、管理者が後から復元できます。",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1174,7 +1180,22 @@
     "invoiceBadgeTooltip": "この取引は請求書を決済しています。開く。",
     "suggestionBadge": "要確認",
     "suggestionBadgeTooltip": "これが何かを消し込む可能性があります。キューを開いて回答してください。",
-    "clearGroupFilter": "グループフィルターを解除"
+    "clearGroupFilter": "グループフィルターを解除",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "人による確認済み",
+    "reviewedByRule": "ルールによる確認済み",
+    "reviewedUnattributed": "確認済み（確認者の記録なし）",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "口座",
@@ -1644,6 +1665,8 @@
     "fieldPayee": "取引相手",
     "fieldDate": "日付",
     "fieldStatus": "ステータス",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "次を含む",
     "opNotContains": "次を含まない",
     "opEquals": "次に等しい",

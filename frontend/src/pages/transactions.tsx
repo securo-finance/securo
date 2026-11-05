@@ -47,7 +47,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CheckCircle2, CircleDot, Clock, HelpCircle, Info, Paperclip, Star, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -75,6 +75,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useCreateTransaction } from '@/hooks/use-create-transaction'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
+import { ReviewAttributionBadge } from '@/components/review-attribution-badge'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
@@ -173,6 +174,11 @@ export default function TransactionsPage() {
   const [filterGroupId, setFilterGroupId] = useState<string>(searchParams.get('group_id') ?? '')
   const [filterType, setFilterType] = useState<string>(searchParams.get('type') ?? '')
   const [filterStatus, setFilterStatus] = useState<string>(searchParams.get('status') ?? '')
+  // PR-2 smart chip filter (#636): boolean in state, `review_status` in
+  // the URL and the query — one click toggles the whole inbox.
+  const [filterNeedsReview, setFilterNeedsReview] = useState<boolean>(
+    searchParams.get('review_status') === 'needs_review',
+  )
   // Hiding ignored rows is a reading preference, not a query someone re-picks
   // every visit, so it outlives the page the way page size and columns do. The
   // URL still wins when present, so a shared link shows what its sender saw.
@@ -266,6 +272,7 @@ export default function TransactionsPage() {
     setFilterGroupId(searchParams.get('group_id') ?? '')
     setFilterType(searchParams.get('type') ?? '')
     setFilterStatus(searchParams.get('status') ?? '')
+    setFilterNeedsReview(searchParams.get('review_status') === 'needs_review')
     const urlHideIgnored = searchParams.get('hide_ignored')
     if (urlHideIgnored !== null) setHideIgnored(urlHideIgnored === 'true')
     const categories = searchParams.get('category_id');
@@ -303,6 +310,7 @@ export default function TransactionsPage() {
         ['group_id', filterGroupId],
         ['type', filterType],
         ['status', filterStatus],
+        ['review_status', filterNeedsReview ? 'needs_review' : ''],
         ['category_id', filterCategoryIds.join(',')],
         ['uncategorized', filterUncategorized ? '1' : ''],
         ['account_id', filterAccountIds.join(',')],
@@ -328,6 +336,7 @@ export default function TransactionsPage() {
     filterGroupId,
     filterType,
     filterStatus,
+    filterNeedsReview,
     filterCategoryIds,
     filterUncategorized,
     filterAccountIds,
@@ -352,7 +361,7 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterNeedsReview, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
@@ -402,7 +411,7 @@ export default function TransactionsPage() {
     && activeAccountIds !== null && activeAccountIds.length === 0
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterNeedsReview, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -414,6 +423,7 @@ export default function TransactionsPage() {
         group_id: filterGroupId || undefined,
         type: filterType || undefined,
         status: filterStatus || undefined,
+        review_status: filterNeedsReview ? 'needs_review' : undefined,
         uncategorized: filterUncategorized ? true : undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
@@ -601,6 +611,36 @@ export default function TransactionsPage() {
       setSelectedIds(new Set())
       setBulkCategory('')
       toast.success(t('transactions.bulkSuccess', { count: result.updated }))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const bulkReviewMutation = useMutation({
+    mutationFn: ({ ids, reviewStatus }: { ids: string[]; reviewStatus: 'needs_review' | 'reviewed' }) =>
+      transactions.bulkReview(ids, reviewStatus),
+    onSuccess: (result, vars) => {
+      invalidateAfterTxMutation()
+      setSelectedIds(new Set())
+      toast.success(
+        vars.reviewStatus === 'reviewed'
+          ? t('transactions.bulkReviewSuccess', { count: result.updated })
+          : t('transactions.bulkUnreviewSuccess', { count: result.updated }),
+      )
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  // Row-level flag toggle (#56): an independent bookmark, so it never
+  // touches review fields — the server PATCH only writes `flagged`.
+  const toggleFlagMutation = useMutation({
+    mutationFn: ({ id, flagged }: { id: string; flagged: boolean }) =>
+      transactions.update(id, { flagged }),
+    onSuccess: () => {
+      invalidateAfterTxMutation()
     },
     onError: (error) => {
       toast.error(extractApiError(error))
@@ -1231,6 +1271,44 @@ export default function TransactionsPage() {
                 <span className="shrink-0" title={t('transactions.excludeFromReportsHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
               </span>
             )}
+            {/* PR-2 triage (#636): needs-review pill. Workflow state only —
+                it never changes whether money counts, unlike Ignored. */}
+            {tx.review_status === 'needs_review' && (
+              <span
+                role="img"
+                aria-label={t('transactions.needsReview')}
+                title={t('transactions.needsReview')}
+                className="ml-2 inline-flex shrink-0 items-center gap-1 text-xs text-primary font-medium bg-primary/5 border border-primary/20 rounded px-1.5 py-0.5"
+              >
+                <CircleDot className="h-3 w-3" />
+                {t('transactions.needsReview')}
+              </span>
+            )}
+            <ReviewAttributionBadge transaction={tx} />
+            {/* #56 flag star: a bookmark independent of review state.
+                Q2 says "per-row toggle + star", and §5.1 defines the star
+                click as a toggle — so the star renders in both states
+                (filled while flagged, outline when not) and the label
+                tracks the action: Flag ↔ Remove flag. */}
+            {canWrite && !tx.is_shared && !tx.virtual && (
+              <button
+                type="button"
+                disabled={toggleFlagMutation.isPending}
+                title={tx.flagged ? t('transactions.unflag') : t('transactions.flag')}
+                aria-label={tx.flagged ? t('transactions.unflag') : t('transactions.flag')}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleFlagMutation.mutate({ id: tx.id, flagged: !tx.flagged })
+                }}
+                className={`ml-1 inline-flex shrink-0 items-center justify-center rounded p-0.5 transition-colors ${
+                  tx.flagged
+                    ? 'text-amber-500 hover:bg-amber-500/10'
+                    : 'text-muted-foreground/60 hover:text-amber-500 hover:bg-amber-500/10'
+                }`}
+              >
+                <Star className={`h-3.5 w-3.5 ${tx.flagged ? 'fill-current' : ''}`} />
+              </button>
+            )}
             {tx.recurring_transaction_id != null && (
               <span
                 className="inline-flex max-w-full items-center text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full"
@@ -1500,6 +1578,9 @@ export default function TransactionsPage() {
         onTypeChange={(v) => { setFilterType(v); setPage(1) }}
         filterStatus={filterStatus}
         onStatusChange={(v) => { setFilterStatus(v); setPage(1) }}
+        filterNeedsReview={filterNeedsReview}
+        onNeedsReviewChange={(v) => { setFilterNeedsReview(v); setPage(1) }}
+        needsReviewCount={data?.needs_review_count ?? 0}
         hideIgnored={hideIgnored}
         onHideIgnoredChange={handleHideIgnoredChange}
         filterFrom={filterFrom}
@@ -1518,6 +1599,7 @@ export default function TransactionsPage() {
           setFilterGroupId('')
           setFilterType('')
           setFilterStatus('')
+          setFilterNeedsReview(false)
           setFilterMinAmount('')
           setFilterMaxAmount('')
           handleHideIgnoredChange(false)
@@ -1611,6 +1693,13 @@ export default function TransactionsPage() {
                   <MobileTransactionRow
                     key={tx.id}
                     tx={tx}
+                    showReviewAttribution
+                    flagPending={toggleFlagMutation.isPending}
+                    onToggleFlag={(row) => {
+                      if (canWrite && !row.is_shared && !row.virtual && !toggleFlagMutation.isPending) {
+                        toggleFlagMutation.mutate({ id: row.id, flagged: !row.flagged })
+                      }
+                    }}
                     account={tx.account_id ? accountById.get(tx.account_id) : undefined}
                     groupName={tx.group_id ? groupNameById.get(tx.group_id) : undefined}
                     selected={selectedIds.has(tx.id)}
@@ -1951,6 +2040,19 @@ export default function TransactionsPage() {
               tagInput={bulkTagInput}
               addTagsPending={bulkAddTagsMutation.isPending}
               removeTagsPending={bulkRemoveTagsMutation.isPending}
+              reviewPending={bulkReviewMutation.isPending}
+              onMarkReviewed={() =>
+                bulkReviewMutation.mutate({
+                  ids: Array.from(selectedIds),
+                  reviewStatus: 'reviewed',
+                })
+              }
+              onMarkUnreviewed={() =>
+                bulkReviewMutation.mutate({
+                  ids: Array.from(selectedIds),
+                  reviewStatus: 'needs_review',
+                })
+              }
               transferDisabled={!canOpenLinkDialog}
               transferTitle={linkDisabledTooltip ?? t('transactions.linkAsTransfer')}
               onCategoryChange={(next) => {
@@ -1997,6 +2099,46 @@ export default function TransactionsPage() {
                 </span>
               </div>
             </div>
+
+            <div className="w-px bg-border/60 self-stretch" />
+
+            {/* PR-2 (#636): bulk triage — both directions, same selection
+                model as every other bulk action. Re-marking rows that are
+                already in the target state is a server-side no-op, so the
+                toast count reflects rows that actually changed. */}
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={bulkReviewMutation.isPending}
+              onClick={() =>
+                bulkReviewMutation.mutate({
+                  ids: Array.from(selectedIds),
+                  reviewStatus: 'reviewed',
+                })
+              }
+              title={t('transactions.markReviewed')}
+              className="h-8 px-3 shrink-0 text-sm"
+            >
+              <CheckCircle2 size={15} className="lg:mr-1.5" />
+              <span className="hidden lg:inline">{t('transactions.markReviewed')}</span>
+            </Button>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={bulkReviewMutation.isPending}
+              onClick={() =>
+                bulkReviewMutation.mutate({
+                  ids: Array.from(selectedIds),
+                  reviewStatus: 'needs_review',
+                })
+              }
+              title={t('transactions.markUnreviewed')}
+              className="h-8 px-3 shrink-0 text-sm"
+            >
+              <CircleDot size={15} className="lg:mr-1.5" />
+              <span className="hidden lg:inline">{t('transactions.markUnreviewed')}</span>
+            </Button>
 
             <div className="w-px bg-border/60 self-stretch" />
 

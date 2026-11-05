@@ -1,5 +1,6 @@
 # backend/app/services/rule_service.py
 import uuid
+from app.services.review_conflict import ReviewerAttributionRace, review_persistence
 from typing import Any, Optional, cast
 
 from sqlalchemy import delete, select
@@ -33,6 +34,9 @@ from app.services.rule_engine import (
     evaluate_conditions,
 )
 
+from app.services.review_service import REVIEW_DONE, REVIEW_NEEDS
+from app.services.review_attribution import RuleReviewPrincipal
+
 
 class DuplicateRuleError(Exception):
     """Raised when a rule with the same name already exists for a user."""
@@ -41,18 +45,24 @@ class DuplicateRuleError(Exception):
 
 _ALLOWED_CONDITION_FIELDS = {
     "description", "payee", "notes", "amount", "type", "account_id", "payee_id", "date",
-    "status",
+    "status", "review_status",
 }
 # Status is a closed set, so only equality makes sense and the value must be one
 # of the statuses a transaction can carry.
 _STATUS_CONDITION_OPS = {"equals", "not_equals"}
 _STATUS_CONDITION_VALUES = {"pending", "posted"}
+# Review triage (PR-2) is a two-value closed set on the same terms: the
+# generic string compare in `_match_condition` handles matching, but
+# creation only accepts equality against the two states.
+_REVIEW_STATUS_CONDITION_OPS = {"equals", "not_equals"}
+_REVIEW_STATUS_CONDITION_VALUES = {"needs_review", "reviewed"}
 _ALLOWED_CONDITION_OPS = {
     "contains", "not_contains", "equals", "not_equals", "starts_with",
     "ends_with", "regex", "gt", "gte", "lt", "lte",
 }
 _ALLOWED_ACTION_OPS = {
     "set_category", "set_payee", "set_description", "append_notes", "ignore",
+    "set_reviewed",
 }
 
 
@@ -92,6 +102,12 @@ async def _validate_rule_definition(
             op not in _STATUS_CONDITION_OPS
             or str(_rule_item_value(condition, "value") or "").strip().lower()
             not in _STATUS_CONDITION_VALUES
+        ):
+            raise ValueError("Invalid rule condition")
+        if field == "review_status" and (
+            op not in _REVIEW_STATUS_CONDITION_OPS
+            or str(_rule_item_value(condition, "value") or "").strip().lower()
+            not in _REVIEW_STATUS_CONDITION_VALUES
         ):
             raise ValueError("Invalid rule condition")
         if op == "regex":
@@ -1130,6 +1146,12 @@ _PREVIEW_COLUMNS = (
     Transaction.payee_id,
     Transaction.notes,
     Transaction.is_ignored,
+    Transaction.review_status,
+    Transaction.reviewed_at,
+    Transaction.reviewed_by_id,
+    Transaction.review_attribution_kind,
+    Transaction.review_rule_id,
+    Transaction.flagged,
 )
 
 
@@ -1153,6 +1175,15 @@ def _rule_preview(transaction: Transaction) -> Transaction:
         payee_id=transaction.payee_id,
         notes=transaction.notes,
         is_ignored=transaction.is_ignored,
+        # Carried so a `review_status` condition and the `set_reviewed`
+        # gate see the same state the persisted row has; a transient row
+        # with no value yet reads as the column's default, 'reviewed'.
+        review_status=transaction.review_status or "reviewed",
+        reviewed_at=transaction.reviewed_at,
+        reviewed_by_id=transaction.reviewed_by_id,
+        review_attribution_kind=transaction.review_attribution_kind,
+        review_rule_id=transaction.review_rule_id,
+        flagged=bool(transaction.flagged),
     )
 
 
@@ -1187,9 +1218,21 @@ async def preview_rules_for_transaction(
     return preview
 
 
+async def apply_rules_to_new_transaction(
+    session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
+    skip_category_rules: bool = False,
+) -> None:
+    """Creation-owner entry: the inserted row is not committed or externally visible."""
+    await apply_rules_to_transaction(
+        session, user_id, transaction, skip_category_rules, new_transaction=True,
+    )
+
+
 async def apply_rules_to_transaction(
     session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
     skip_category_rules: bool = False,
+    *,
+    new_transaction: bool = False,
 ) -> None:
     """Apply all active rules to a transaction, modifying it in-place. Commits nothing.
 
@@ -1198,6 +1241,16 @@ async def apply_rules_to_transaction(
     workspace via the transaction's own workspace_id when available, falling
     back to the legacy user filter so historical rows still match.
     """
+    from sqlalchemy import inspect
+    from app.services.review_service import lock_review_rows
+
+    # Production call sites are creation owners and explicitly identify rows
+    # inserted in this uncommitted transaction. Detached/transient previews
+    # never persist. Any existing-row caller must enter here before mutation.
+    if inspect(transaction).persistent and not new_transaction:
+        rows = await lock_review_rows(session, transaction.workspace_id, {transaction.id})
+        if not rows:
+            raise ValueError("Transaction not found")
     rule_filter = Rule.user_id == user_id
     if getattr(transaction, "workspace_id", None) is not None:
         rule_filter = Rule.workspace_id == transaction.workspace_id
@@ -1221,11 +1274,18 @@ async def apply_rules_to_transaction(
         conditions = rule.conditions or []
         actions = rule.actions or []
         if evaluate_conditions(rule.conditions_op, conditions, transaction):
+            principal = RuleReviewPrincipal(rule.id)
+            # Captured before the actions run: §15-A2 forbids deciding the
+            # stamp from post-mutation state alone.
+            prior_review = transaction.review_status
             category_set = apply_rule_actions(
                 actions,
                 transaction,
                 category_set,
                 assignable_category_ids=assignable_categories,
+            )
+            await _stamp_review_transition(
+                session, transaction, prior_review, principal
             )
 
 
@@ -1234,6 +1294,9 @@ def _rule_effect_state(tx: Transaction) -> tuple:
 
     Mirrors the tuple `apply_single_rule` compares, so a preview counts a
     transaction as changed exactly when saving the rule would change it.
+    The review triple rides along because `set_reviewed` transitions it
+    and (on the save path) the driver stamps provenance — without them a
+    review-only rule would undercount to zero.
     """
     return (
         tx.category_id,
@@ -1243,6 +1306,45 @@ def _rule_effect_state(tx: Transaction) -> tuple:
         tx.description_is_rule_managed,
         tx.notes,
         tx.is_ignored,
+        tx.review_status,
+        tx.reviewed_at,
+        tx.reviewed_by_id,
+        tx.review_attribution_kind,
+        tx.review_rule_id,
+    )
+
+
+async def _stamp_review_transition(
+    session: AsyncSession,
+    tx: Transaction,
+    prior_review: Any,
+    principal: RuleReviewPrincipal,
+) -> None:
+    """Stamp an observed transition with the executing persisted rule UUID.
+
+    Drivers validate the principal before applying actions. Revalidate here
+    before any status rewind, including on a no-op, so malformed packets
+    cannot transiently mutate the transaction. Scope/user IDs are not actors.
+
+    The clockless engine flips review_status; rewind only an observed
+    needs_review-to-reviewed transition so the shared helper writes the
+    rule shape. Already-reviewed rows retain their existing attribution.
+    """
+    if not isinstance(principal, RuleReviewPrincipal):
+        raise ValueError("Rule review transition requires a rule principal")
+    principal = RuleReviewPrincipal(principal.rule_id)
+    if prior_review != REVIEW_NEEDS or tx.review_status != REVIEW_DONE:
+        return
+    # Local import: transaction_service imports this module at load time.
+    from app.services.transaction_service import set_review_status
+
+    tx.review_status = REVIEW_NEEDS
+    await set_review_status(
+        session,
+        tx.workspace_id,
+        tx,
+        REVIEW_DONE,
+        principal,
     )
 
 
@@ -1369,6 +1471,7 @@ async def preview_rule(
     )
 
 
+@review_persistence(ReviewerAttributionRace)
 async def apply_single_rule(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1389,13 +1492,9 @@ async def apply_single_rule(
     if not rule.is_active:
         return 0
 
-    result = await session.execute(
-        select(Transaction).where(
-            Transaction.workspace_id == workspace_id,
-            Transaction.source != "opening_balance",
-        )
-    )
-    transactions = result.scalars().all()
+    from app.services.review_service import lock_review_rows
+
+    transactions = await lock_review_rows(session, workspace_id)
     conditions = rule.conditions or []
     actions = rule.actions or []
 
@@ -1412,6 +1511,11 @@ async def apply_single_rule(
         if not matches:
             continue
 
+        principal = RuleReviewPrincipal(rule.id)
+        # Review transition provenance (§15-A2): observed state before the
+        # actions run, stamp through the shared chokepoint right after, so
+        # this row's before/after comparison sees the stamped result.
+        prior_review = tx.review_status
         before = (
             tx.category_id,
             tx.payee_id,
@@ -1420,6 +1524,11 @@ async def apply_single_rule(
             tx.description_is_rule_managed,
             tx.notes,
             tx.is_ignored,
+            tx.review_status,
+            tx.reviewed_at,
+            tx.reviewed_by_id,
+            tx.review_attribution_kind,
+            tx.review_rule_id,
         )
         apply_rule_actions(
             actions,
@@ -1429,6 +1538,7 @@ async def apply_single_rule(
             skip_description=_has_manual_description(tx),
             assignable_category_ids=assignable_categories,
         )
+        await _stamp_review_transition(session, tx, prior_review, principal)
         after = (
             tx.category_id,
             tx.payee_id,
@@ -1437,6 +1547,11 @@ async def apply_single_rule(
             tx.description_is_rule_managed,
             tx.notes,
             tx.is_ignored,
+            tx.review_status,
+            tx.reviewed_at,
+            tx.reviewed_by_id,
+            tx.review_attribution_kind,
+            tx.review_rule_id,
         )
         if before != after:
             count += 1
@@ -1445,15 +1560,12 @@ async def apply_single_rule(
     return count
 
 
+@review_persistence(ReviewerAttributionRace)
 async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int:
     """Reset rule-managed fields and reapply active rules in priority order."""
-    result = await session.execute(
-        select(Transaction).where(
-            Transaction.workspace_id == workspace_id,
-            Transaction.source != "opening_balance",
-        )
-    )
-    transactions = result.scalars().all()
+    from app.services.review_service import lock_review_rows
+
+    transactions = await lock_review_rows(session, workspace_id)
 
     rules_result = await session.execute(
         select(Rule)
@@ -1474,6 +1586,11 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
             tx.description_is_rule_managed,
             tx.notes,
             tx.is_ignored,
+            tx.review_status,
+            tx.reviewed_at,
+            tx.reviewed_by_id,
+            tx.review_attribution_kind,
+            tx.review_rule_id,
         )
         if tx.description_is_rule_managed:
             if tx.original_description is not None:
@@ -1485,16 +1602,22 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
             conditions = rule.conditions or []
             actions = rule.actions or []
             if evaluate_conditions(rule.conditions_op, conditions, tx):
+                principal = RuleReviewPrincipal(rule.id)
                 if not matched:
                     tx.category_id = None
                     tx.notes = None
                     matched = True
+                # Observed review state before this executing rule's actions.
+                prior_review = tx.review_status
                 category_set = apply_rule_actions(
                     actions,
                     tx,
                     category_set,
                     skip_description=preserve_manual_description,
                     assignable_category_ids=assignable_categories,
+                )
+                await _stamp_review_transition(
+                    session, tx, prior_review, principal
                 )
 
         after = (
@@ -1505,6 +1628,11 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
             tx.description_is_rule_managed,
             tx.notes,
             tx.is_ignored,
+            tx.review_status,
+            tx.reviewed_at,
+            tx.reviewed_by_id,
+            tx.review_attribution_kind,
+            tx.review_rule_id,
         )
         if matched or before != after:
             count += 1

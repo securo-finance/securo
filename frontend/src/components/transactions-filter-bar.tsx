@@ -8,6 +8,7 @@ import {
   Calendar as CalendarIcon,
   Check,
   ChevronRight,
+  CircleDot,
   Coins,
   EyeClosed,
   ListChecks,
@@ -70,6 +71,11 @@ interface TransactionsFilterBarProps {
   onTypeChange: (value: string) => void
   filterStatus: string
   onStatusChange: (value: string) => void
+  // PR-2 smart chip (#636): persistent needs-review toggle with the
+  // count of rows that clicking it would reveal under current filters.
+  filterNeedsReview: boolean
+  onNeedsReviewChange: (value: boolean) => void
+  needsReviewCount: number
   hideIgnored: boolean
   onHideIgnoredChange: (value: boolean) => void
   filterFrom: string
@@ -113,6 +119,9 @@ export function TransactionsFilterBar({
   onTypeChange,
   filterStatus,
   onStatusChange,
+  filterNeedsReview,
+  onNeedsReviewChange,
+  needsReviewCount,
   hideIgnored,
   onHideIgnoredChange,
   filterFrom,
@@ -209,6 +218,7 @@ export function TransactionsFilterBar({
     !!filterGroupId ||
     !!filterType ||
     !!filterStatus ||
+    filterNeedsReview ||
     hideIgnored ||
     !!filterFrom ||
     !!filterTo ||
@@ -371,6 +381,28 @@ export function TransactionsFilterBar({
 
         {/* Right-side controls */}
         <div className="ml-auto flex shrink-0 items-center gap-1 pl-1">
+          {/* PR-2 smart chip (#636): persistent even with zero filters set —
+              the removable-chip row below only appears once filters exist,
+              so the inbox shortcut cannot live there. N = needs-review rows
+              under the CURRENT filters: click and you see exactly N. */}
+          <button
+            type="button"
+            aria-pressed={filterNeedsReview}
+            onClick={() => onNeedsReviewChange(!filterNeedsReview)}
+            className={cn(
+              'inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors',
+              filterNeedsReview
+                ? 'border-primary/30 bg-primary/5 text-primary hover:text-primary'
+                : 'border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground',
+            )}
+          >
+            <CircleDot size={13} />
+            <span className="hidden sm:inline">
+              {t('transactions.needsReviewCount', { count: needsReviewCount })}
+            </span>
+            <span className="sm:hidden">{needsReviewCount}</span>
+          </button>
+
           {hasAnyFilter && (
             <button
               type="button"
@@ -435,6 +467,7 @@ export function TransactionsFilterBar({
                   type: typeLabel,
                   status: statusLabel,
                   ignored: hideIgnored ? t('transactions.ignoredHide') : undefined,
+                  review: filterNeedsReview ? t('transactions.needsReviewOnly') : undefined,
                   date: dateLabel,
                   amount: amountLabel,
                 }}
@@ -448,6 +481,8 @@ export function TransactionsFilterBar({
                 onTypeChange={onTypeChange}
                 status={filterStatus}
                 onStatusChange={onStatusChange}
+                needsReview={filterNeedsReview}
+                onNeedsReviewChange={onNeedsReviewChange}
                 hideIgnored={hideIgnored}
                 onHideIgnoredChange={onHideIgnoredChange}
                 onDateRangeChange={onDateRangeChange}
@@ -820,6 +855,20 @@ export function TransactionsFilterBar({
                   <EyeClosed size={14} className="text-muted-foreground" />
                   <span className="flex-1">{t('transactions.hideIgnored')}</span>
                   {hideIgnored && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
+
+                {/* PR-2 (#636): needs-review inbox, same one-line switch
+                    shape as hideIgnored. */}
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    onNeedsReviewChange(!filterNeedsReview)
+                  }}
+                  className="gap-2 text-[13px]"
+                >
+                  <CircleDot size={14} className="text-muted-foreground" />
+                  <span className="flex-1">{t('transactions.needsReviewOnly')}</span>
+                  {filterNeedsReview && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
 
                 {/* Date range submenu with presets */}

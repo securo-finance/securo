@@ -3,6 +3,7 @@ import hashlib
 import io
 import re
 import uuid
+from app.services.review_conflict import ReviewerAttributionRace, review_persistence
 import warnings
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
@@ -25,7 +26,11 @@ from app.services import reconciliation_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
-from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
+from app.services.rule_service import (
+    apply_rules_to_new_transaction as apply_rules_to_transaction,
+    preview_rules_for_transaction,
+)
+from app.services.review_service import get_review_policy, ingest_review_status
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
@@ -949,6 +954,7 @@ async def enrich_with_category_suggestions(
     return transactions
 
 
+@review_persistence(ReviewerAttributionRace)
 async def import_transactions(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1025,6 +1031,10 @@ async def import_transactions(
     matched_existing_ids: set[uuid.UUID] = set()
     effective_format = (detected_format or source or "").lower()
     should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
+    # Review policy read once per batch, not per row (§7.1). Observed-money
+    # rows (file imports) land with the workspace's `ingest` value — the
+    # default is `needs_review` (§7.2).
+    review_policy = await get_review_policy(session, workspace_id)
 
     for txn_data in included:
         # Resolve currency: CSV value > account currency
@@ -1115,6 +1125,10 @@ async def import_transactions(
             type=txn_data.type,
             status="posted",
             source=source,
+            # Explicit at construction (§7.2): never left to omission.
+            review_status=ingest_review_status(
+                source, txn_data.external_id, review_policy
+            ),
             import_id=import_log.id,
             external_id=txn_data.external_id,
             currency=txn_currency,

@@ -61,7 +61,13 @@
     "archiveHint": "Рабочее пространство скрывается из списка и переключателя. Данные сохраняются.",
     "archiveSuccess": "Рабочее пространство архивировано",
     "archiveConfirmTitle": "Архивировать рабочее пространство?",
-    "archiveConfirmDescription": "Рабочее пространство «{{name}}» будет удалено из вашего списка. Данные сохраняются, администратор сможет восстановить его позже."
+    "archiveConfirmDescription": "Рабочее пространство «{{name}}» будет удалено из вашего списка. Данные сохраняются, администратор сможет восстановить его позже.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1188,7 +1194,22 @@
     "invoiceBadgeTooltip": "Эта операция закрывает счёт. Открыть.",
     "suggestionBadge": "Вопрос",
     "suggestionBadgeTooltip": "Платёж может закрыть этот счёт. Откройте очередь, чтобы ответить.",
-    "clearGroupFilter": "Сбросить фильтр группы"
+    "clearGroupFilter": "Сбросить фильтр группы",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Проверено человеком",
+    "reviewedByRule": "Проверено правилом",
+    "reviewedUnattributed": "Проверено (без указания проверяющего)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "Счета",
@@ -1666,6 +1687,8 @@
     "fieldPayee": "Получатель",
     "fieldDate": "Дата",
     "fieldStatus": "Статус",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "содержит",
     "opNotContains": "не содержит",
     "opEquals": "равно",

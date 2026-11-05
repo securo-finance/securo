@@ -270,6 +270,31 @@ describe('hasModule', () => {
   })
 })
 
+describe('refresh ordering', () => {
+  it.each(['resolve', 'reject'])('discards a superseded policy refresh that later %s', async (outcome) => {
+    workspacesApi.list.mockResolvedValue([makeWorkspace({ review_policy: { ingest: 'needs_review', manual: 'reviewed' } })])
+    const { result } = await renderWorkspace()
+    let finishOld!: (value: Workspace[]) => void
+    let failOld!: (error: Error) => void
+    let finishNew!: (value: Workspace[]) => void
+    workspacesApi.list.mockImplementationOnce(() => new Promise((resolve, reject) => { finishOld = resolve; failOld = reject }))
+      .mockImplementationOnce(() => new Promise(resolve => { finishNew = resolve }))
+    let old!: Promise<void>, latest!: Promise<void>
+    act(() => { old = result.current.refresh(); latest = result.current.refresh() })
+    await act(async () => {
+      finishNew([makeWorkspace({ review_policy: { ingest: 'reviewed', manual: 'needs_review' } })])
+      await latest
+    })
+    await act(async () => {
+      if (outcome === 'resolve') finishOld([makeWorkspace({ review_policy: { ingest: 'needs_review', manual: 'reviewed' } })])
+      else failOld(new Error('Superseded request failed'))
+      await old
+    })
+    expect(result.current.current?.review_policy).toEqual({ ingest: 'reviewed', manual: 'needs_review' })
+    expect(result.current.isLoading).toBe(false)
+  })
+})
+
 describe('useWorkspace', () => {
   it('refuses to be used outside the provider', () => {
     expect(() => renderHook(() => useWorkspace())).toThrow(

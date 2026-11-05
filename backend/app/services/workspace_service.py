@@ -347,6 +347,34 @@ async def update_member_role(
     return member
 
 
+def validate_review_policy(policy: Optional[dict]) -> None:
+    """Literal-check a `review_policy` payload on write (PR-2 §7.1).
+
+    The shape is a closed set — `{"ingest"|"manual":
+    "needs_review"|"reviewed"}` — with each key optional (an absent key
+    means the default). None clears back to defaults. Raises 400 like the
+    other write validators in this module; called by the PATCH
+    workspace endpoint, which is already owner-gated (workspace-config
+    role, models/workspace.py).
+    """
+    if policy is None:
+        return
+    if not isinstance(policy, dict):
+        raise HTTPException(status_code=400, detail="review_policy must be an object")
+    unknown = set(policy) - {"ingest", "manual"}
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown review_policy keys: {sorted(unknown)}",
+        )
+    for key, value in policy.items():
+        if value not in ("needs_review", "reviewed"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid review_policy value for '{key}': {value!r}",
+            )
+
+
 async def get_workspace_stats(
     session: AsyncSession, workspace_id: uuid.UUID
 ) -> dict:

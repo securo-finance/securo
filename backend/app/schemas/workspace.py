@@ -19,6 +19,10 @@ class WorkspaceRead(BaseModel):
     # The workspace's own calendar, or None to follow the application
     # timezone. See `core.app_clock`.
     timezone: Optional[str] = None
+    # Per-workspace transaction review policy (PR-2): {"ingest":
+    # "needs_review"|"reviewed", "manual": ...}. NULL/absent keys mean the
+    # defaults (ingest=needs_review, manual=reviewed).
+    review_policy: Optional[dict] = None
     # Where the workspace operates fiscally. Never the UI language: see
     # `models.workspace.Workspace.tax_jurisdiction`.
     tax_jurisdiction: Optional[str] = None
@@ -68,6 +72,16 @@ class WorkspaceUpdate(BaseModel):
     # An IANA name to keep this workspace's calendar in, or null to follow
     # the application timezone again. Validated by the route.
     timezone: Optional[str] = Field(default=None, max_length=64)
+    # Review policy (PR-2). A dict rather than two booleans so per-source
+    # policy can grow without another migration; shape and values are
+    # Literal-checked by `workspace_service.validate_review_policy` on
+    # write (owner-only, via the PATCH endpoint's role gate). None clears
+    # back to the defaults.
+    review_policy: Optional[dict] = None
+    # Transport-only precondition: a complete valid effective pair is required
+    # whenever review_policy is supplied (including null). Invalid/stale
+    # effective dictionaries are 409; nonobject transport shapes are 422.
+    expected_review_policy: Optional[dict] = None
     # Editable, unlike `kind`: a business relocates, and every workspace that
     # existed before jurisdictions did needs a way to say where it files.
     tax_jurisdiction: Optional[str] = Field(default=None, max_length=10)

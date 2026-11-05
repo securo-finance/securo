@@ -6,6 +6,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  CircleDot,
   Coins,
   EyeClosed,
   ListChecks,
@@ -35,6 +36,7 @@ export type MobileFilterView =
   | 'group'
   | 'type'
   | 'status'
+  | 'review'
   | 'ignored'
   | 'date'
   | 'amount'
@@ -62,6 +64,10 @@ interface MobileTransactionsFilterMenuProps {
   groupId: string
   type: string
   status: string
+  // PR-2 (#636): needs-review inbox toggle, same switch shape as
+  // hideIgnored.
+  needsReview: boolean
+  onNeedsReviewChange: (value: boolean) => void
   hideIgnored: boolean
   from: string
   to: string
@@ -442,6 +448,7 @@ function buildRootOptions(
     { view: 'group', icon: Users, label: labels.group, summary: summaries.group },
     { view: 'type', icon: ArrowUpDown, label: labels.type, summary: summaries.type },
     { view: 'status', icon: ListChecks, label: labels.status, summary: summaries.status },
+    { view: 'review', icon: CircleDot, label: labels.review, summary: summaries.review },
     { view: 'ignored', icon: EyeClosed, label: labels.ignored, summary: summaries.ignored },
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
@@ -458,6 +465,7 @@ function buildLabels(
     group: t('splitGroups.group'),
     type: t('transactions.type'),
     status: t('transactions.status'),
+    review: t('transactions.needsReviewOnly'),
     ignored: t('transactions.ignoredRows'),
     date: t('transactions.filtersBar.date'),
     amount: t('transactions.filtersBar.amount'),
@@ -492,6 +500,13 @@ function MobileFilterDetail({
   if (menu.view === 'status') {
     const options = [allOption, { value: 'pending', label: t('transactions.statusPending') }, { value: 'posted', label: t('transactions.statusPosted') }]
     return <MobileSelectionView options={options} selectedValue={menu.status} onChange={menu.onStatusChange} />
+  }
+  if (menu.view === 'review') {
+    const options = [
+      { value: '', label: t('transactions.all') },
+      { value: 'only', label: t('transactions.needsReviewOnly') },
+    ]
+    return <MobileSelectionView options={options} selectedValue={menu.needsReview ? 'only' : ''} onChange={(value) => menu.onNeedsReviewChange(value === 'only')} />
   }
   if (menu.view === 'ignored') {
     const options = [

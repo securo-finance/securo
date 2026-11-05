@@ -1,6 +1,7 @@
 import re
 import uuid
-from datetime import date
+from app.services.review_conflict import ReviewerAttributionRace, review_persistence
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional, cast
 
@@ -32,6 +33,18 @@ from app.services import reconciliation_service, split_service
 from app.services.account_service import get_account, get_running_balances
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
+from app.services.review_attribution import (
+    HumanReviewPrincipal,
+    ReviewAttribution,
+    _UNSET,
+    normalize_review_attribution,
+)
+from app.services.review_service import (
+    REVIEW_DONE,
+    REVIEW_NEEDS,
+    REVIEW_VALUES,
+    get_review_policy,
+)
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
 from app.services._query_filters import (
     counts_as_pnl,
@@ -136,7 +149,9 @@ async def get_transactions(
     max_amount: Optional[float] = None,
     account_types: Optional[list[str]] = None,
     status: Optional[str] = None,
+    review_status: Optional[str] = None,
     include_summary: bool = False,
+    include_needs_review_count: bool = False,
     user_pnl_only: bool = False,
     exclude_ignored: bool = False,
     include_running_balance: bool = False,
@@ -479,6 +494,26 @@ async def get_transactions(
             ])
         base_query = base_query.where(or_(*clauses))
 
+    # PR-2 smart chip: needs_review count under the CURRENT filters,
+    # computed BEFORE the review_status filter joins, so N is always the
+    # number the user would see by clicking the chip (§5.3/Q9) — one
+    # count() query reusing the same WHERE builder as `total`.
+    needs_review_count: Optional[int] = None
+    if include_needs_review_count:
+        needs_review_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(
+                    base_query.where(
+                        Transaction.review_status == REVIEW_NEEDS
+                    ).subquery()
+                )
+            )
+            or 0
+        )
+    if review_status:
+        base_query = base_query.where(Transaction.review_status == review_status)
+
     # Get total count
     count_query = select(func.count()).select_from(base_query.subquery())
     total = await session.scalar(count_query)
@@ -533,6 +568,15 @@ async def get_transactions(
             "net": income - expense,
             "excluded": excluded,
         }
+
+    # The chip count rides the summary dict so the function keeps its
+    # three-tuple shape (~50 call sites unpack it: mcp_server, dashboard,
+    # export, tests). The API route pops it into the envelope's dedicated
+    # `needs_review_count` field before building TransactionsSummary.
+    if include_needs_review_count:
+        if summary is None:
+            summary = {}
+        summary["needs_review_count"] = needs_review_count or 0
 
     # Apply ordering (and pagination unless skipped). Bill-view callers
     # order by purchase date so the in-cycle list matches the bank's own
@@ -612,7 +656,7 @@ async def get_transactions(
                     txn_type, tags, status, currency, account_types, transaction_ids,
                     min_amount is not None, max_amount is not None,
                     exclude_transfers, user_pnl_only, exclude_ignored,
-                    group_id, bill_id, unbilled_only,
+                    group_id, bill_id, unbilled_only, review_status,
                     # Without the opening row the walk misses its amount
                     # whenever it falls inside the range.
                     not include_opening_balance,
@@ -807,7 +851,12 @@ async def get_transaction(
         )
     )
     if for_update:
-        query = query.with_for_update(of=Transaction)
+        from app.services.review_service import guard_clean_review_rows
+
+        await guard_clean_review_rows(session, workspace_id, {transaction_id})
+        query = query.with_for_update(of=Transaction).execution_options(
+            populate_existing=True, autoflush=False,
+        )
     result = await session.execute(query)
     transaction = result.scalar_one_or_none()
     if transaction:
@@ -821,6 +870,123 @@ async def get_transaction(
     return transaction
 
 
+async def set_review_status(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    targets: "Transaction | list[Transaction]",
+    value: str,
+    attribution: ReviewAttribution | uuid.UUID | None | object = _UNSET,
+    *,
+    initial: bool = False,
+    actor_user_id: uuid.UUID | None | object = _UNSET,
+) -> int:
+    """Query-free review transition chokepoint (attribution design v1.2).
+
+    Validate the entire batch before mutation. A fifth positional UUID or
+    legacy ``actor_user_id=`` means human attribution, never a rule owner.
+    The arguments conflict even when explicitly None; omitted/None attribution
+    permits clears and no-ops but never a transition that would stamp.
+
+    Human transitions stamp at/user/human/None; rule transitions stamp
+    at/None/rule/executing-rule UUID. Clear removes all four fields.
+    Repeated review preserves existing attribution, including legacy half
+    stamps. Initial stamping requires a human and all four fields empty;
+    already-reviewed nonempty legacy rows remain no-ops, not relabeled.
+
+    Mutates in place, returns changed-row count, and commits nothing. No
+    authority lookup is performed: trusted callers retain authorization.
+    Transient and detached targets do not require session attachment.
+    """
+    if value not in REVIEW_VALUES:
+        raise ValueError(f"Invalid review status: {value}")
+    rows = [targets] if isinstance(targets, Transaction) else list(targets)
+    for tx in rows:
+        if tx.workspace_id is not None and tx.workspace_id != workspace_id:
+            raise ValueError("Transaction not found")
+    principal = normalize_review_attribution(
+        attribution, actor_user_id=actor_user_id
+    )
+    for tx in rows:
+        attribution_empty = (
+            tx.reviewed_at is None
+            and tx.reviewed_by_id is None
+            and tx.review_attribution_kind is None
+            and tx.review_rule_id is None
+        )
+        would_stamp = value == REVIEW_DONE and (
+            tx.review_status != REVIEW_DONE or (initial and attribution_empty)
+        )
+        if not would_stamp:
+            continue
+        if principal is None:
+            raise ValueError("Cannot mark transaction as reviewed without an actor")
+        if initial:
+            if not isinstance(principal, HumanReviewPrincipal):
+                raise ValueError("Initial review requires a human principal")
+            if not attribution_empty:
+                raise ValueError("Initial review requires empty attribution")
+    changed = 0
+    for tx in rows:
+        prior = tx.review_status
+        attribution_empty = (
+            tx.reviewed_at is None
+            and tx.reviewed_by_id is None
+            and tx.review_attribution_kind is None
+            and tx.review_rule_id is None
+        )
+        if value == REVIEW_DONE:
+            already_done = prior == REVIEW_DONE
+            fresh_initial = initial and attribution_empty
+            if already_done and not fresh_initial:
+                continue  # stamp no-op: reviewed_at must stay meaningful
+            assert principal is not None  # whole-batch preflight established this
+            tx.review_status = REVIEW_DONE
+            tx.reviewed_at = datetime.now(timezone.utc)
+            if isinstance(principal, HumanReviewPrincipal):
+                tx.reviewed_by_id = principal.user_id
+                tx.review_attribution_kind = "human"
+                tx.review_rule_id = None
+            else:
+                tx.reviewed_by_id = None
+                tx.review_attribution_kind = "rule"
+                tx.review_rule_id = principal.rule_id
+        else:
+            if prior == REVIEW_NEEDS and attribution_empty:
+                continue  # already there and the invariant already holds
+            tx.review_status = REVIEW_NEEDS
+            tx.reviewed_at = None
+            tx.reviewed_by_id = None
+            tx.review_attribution_kind = None
+            tx.review_rule_id = None
+        changed += 1
+    return changed
+
+
+@review_persistence(ReviewerAttributionRace)
+async def review_transaction(
+    session: AsyncSession,
+    transaction_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    value: str,
+) -> Optional[Transaction]:
+    """Single-row review transition for ``PATCH /transactions/{id}/review``.
+
+    Returns the updated row, or None when it isn't in this workspace.
+    """
+    transaction = await get_transaction(session, transaction_id, workspace_id, for_update=True)
+    if not transaction:
+        return None
+    await set_review_status(
+        session, workspace_id, transaction, value,
+        HumanReviewPrincipal(user_id) if user_id is not None else None,
+    )
+    await session.commit()
+    await session.refresh(transaction)
+    return transaction
+
+
+@review_persistence(ReviewerAttributionRace)
 async def create_transaction(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -876,12 +1042,26 @@ async def create_transaction(
     if data.effective_bill_date is not None:
         await _resync_bill_link_from_override(session, transaction, account)
     apply_effective_date(transaction, account)
+    # Review policy (§7.3): manual entries land per workspace policy
+    # (default 'reviewed'). Creation is actor-driven (gate §15-A1), so a
+    # row landing `reviewed` gets both stamps from the creating user —
+    # even though the model default would already say reviewed — while a
+    # `needs_review` policy leaves both stamps NULL, as A1 requires.
+    review_policy = await get_review_policy(session, workspace_id)
+    await set_review_status(
+        session,
+        workspace_id,
+        transaction,
+        review_policy["manual"],
+        HumanReviewPrincipal(user_id) if user_id is not None else None,
+        initial=True,
+    )
     session.add(transaction)
     await session.flush()  # get ID without committing
 
     # Apply rules only if no explicit category provided
     if not data.category_id:
-        await apply_rules_to_transaction(session, user_id, transaction)
+        await apply_rules_to_transaction(session, user_id, transaction, new_transaction=True)
 
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
@@ -904,6 +1084,7 @@ async def create_transaction(
     return transaction
 
 
+@review_persistence(ReviewerAttributionRace)
 async def create_installment_series(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -949,6 +1130,7 @@ async def create_installment_series(
     purchase_date = base.date
     intended_day = base.date.day
     series_id = uuid.uuid4()
+    review_policy = await get_review_policy(session, workspace_id)
 
     created: list[Transaction] = []
     installment_date = base.date
@@ -982,6 +1164,16 @@ async def create_installment_series(
         if base.effective_bill_date is not None:
             await _resync_bill_link_from_override(session, tx, account)
         apply_effective_date(tx, account)
+        # Same review policy as a single manual create, per parcel
+        # (§7.3): stamps land even when defaulting to 'reviewed'.
+        await set_review_status(
+            session,
+            workspace_id,
+            tx,
+            review_policy["manual"],
+            HumanReviewPrincipal(user_id) if user_id is not None else None,
+            initial=True,
+        )
         session.add(tx)
         await session.flush()  # get ID without committing
         created.append(tx)
@@ -990,7 +1182,7 @@ async def create_installment_series(
     # parcel is finalized exactly like a single manual transaction.
     for tx in created:
         if not base.category_id:
-            await apply_rules_to_transaction(session, user_id, tx)
+            await apply_rules_to_transaction(session, user_id, tx, new_transaction=True)
         if base.fx_rate_used is not None:
             _apply_fx_override(tx, tx.amount, None, base.fx_rate_used)
         elif base.amount_primary is not None:
@@ -1486,13 +1678,18 @@ async def _get_series_transactions(
         conditions.append(Transaction.installment_number >= tx.installment_number)
     query = select(Transaction).where(*conditions).order_by(Transaction.installment_number)
     if for_update:
-        query = query.with_for_update()
+        from app.services.review_service import guard_clean_review_rows
+
+        await guard_clean_review_rows(session, workspace_id)
+        query = query.order_by(None).order_by(Transaction.id).with_for_update(of=Transaction)
+        query = query.execution_options(populate_existing=True, autoflush=False)
     result = await session.execute(query)
     return list(result.scalars().all())
 
 
 async def _resync_installment_series_total(
-    session: AsyncSession, workspace_id: uuid.UUID, tx: Transaction
+    session: AsyncSession, workspace_id: uuid.UUID, tx: Transaction,
+    *, locked_ids: set[uuid.UUID],
 ) -> None:
     """Keep ``installment_total_amount`` equal to the sum of the parcels.
 
@@ -1508,9 +1705,10 @@ async def _resync_installment_series_total(
         select(Transaction).where(
             Transaction.workspace_id == workspace_id,
             Transaction.installment_series_id == tx.installment_series_id,
-        )
+        ).execution_options(autoflush=False)
     )
     siblings = list(result.scalars().all())
+    await _require_locked_rows(session, siblings, locked_ids)
     if not siblings:
         return
     total = sum((row.amount for row in siblings), Decimal("0"))
@@ -1536,6 +1734,7 @@ async def _apply_update_to_row(
     update_data: dict,
     apply_to_transfer_pair: bool,
     splits_payload: Optional[TransactionSplitsInput],
+    *, locked_ids: set[uuid.UUID],
 ) -> None:
     """Apply a parsed TransactionUpdate payload to a single row.
 
@@ -1563,6 +1762,19 @@ async def _apply_update_to_row(
     if description_changed:
         _preserve_original_description(tx)
         tx.description_is_rule_managed = False
+
+    # Review fields never ride the generic setattr loop below: the
+    # provenance stamps are owned by the shared `set_review_status`
+    # chokepoint, and a bare column write here would let a PATCH leave
+    # exactly one stamp populated (§4.2 invariant, risk R4). An explicit
+    # null is a no-op, not a state.
+    if "review_status" in update_data:
+        review_value = update_data.pop("review_status")
+        if review_value is not None:
+            await set_review_status(
+                session, tx.workspace_id, tx, review_value,
+                HumanReviewPrincipal(user_id) if user_id is not None else None,
+            )
 
     fx_keys = {"amount_primary", "fx_rate_used"}
     for key, value in update_data.items():
@@ -1609,6 +1821,7 @@ async def _apply_update_to_row(
         )
         paired_tx = paired.scalar_one_or_none()
         if paired_tx:
+            await _require_locked_rows(session, [paired_tx], locked_ids)
             if should_cascade_category:
                 paired_tx.category_id = tx.category_id
             # When the user typed both amounts, neither is a conversion of the
@@ -1683,6 +1896,40 @@ async def _ensure_not_mortgage_linked(
         raise ValueError("A mortgage payment with a breakdown cannot also be a transfer")
 
 
+async def _update_lock_candidates(
+    session: AsyncSession, workspace_id: uuid.UUID, anchor: Transaction,
+    apply_to: str, update_data: dict, apply_to_transfer_pair: bool,
+) -> tuple[list[Transaction], set[uuid.UUID]]:
+    """Discover the complete write set without mutation or lock-order expansion."""
+    rows = [anchor]
+    with session.no_autoflush:
+        if apply_to != "this" and _is_installment(anchor):
+            rows = await _get_series_transactions(session, workspace_id, anchor, apply_to)
+        ids = {anchor.id, *(row.id for row in rows)}
+        if "amount" in update_data and anchor.installment_series_id is not None:
+            ids.update((await session.scalars(select(Transaction.id).where(
+                Transaction.workspace_id == workspace_id,
+                Transaction.installment_series_id == anchor.installment_series_id,
+            ))).all())
+        cascade = {"amount", "date", "description", "notes"} & update_data.keys()
+        if cascade or (apply_to_transfer_pair and "category_id" in update_data):
+            pairs = {row.transfer_pair_id for row in rows if row.transfer_pair_id}
+            if pairs:
+                ids.update((await session.scalars(select(Transaction.id).where(
+                    Transaction.transfer_pair_id.in_(pairs),
+                ))).all())
+    return rows, ids
+
+
+async def _require_locked_rows(session: AsyncSession, rows, locked_ids: set[uuid.UUID]) -> None:
+    if any(row.id not in locked_ids for row in rows):
+        from fastapi import HTTPException
+
+        await session.rollback()
+        raise HTTPException(409, "Transaction relationships changed; reload before retrying")
+
+
+@review_persistence(ReviewerAttributionRace)
 async def update_transaction(
     session: AsyncSession,
     transaction_id: uuid.UUID,
@@ -1690,13 +1937,48 @@ async def update_transaction(
     user_id: uuid.UUID,
     data: TransactionUpdate,
 ) -> Optional[Transaction]:
-    transaction = await get_transaction(session, transaction_id, workspace_id, for_update=True)
+    from app.services.review_service import guard_clean_review_rows
+
+    # Candidate discovery is read-only. Never acquire the anchor ahead of a
+    # lower-ID sibling/counterpart that a bulk or rule owner locks first.
+    await guard_clean_review_rows(session, workspace_id)
+    with session.no_autoflush:
+        transaction = await get_transaction(session, transaction_id, workspace_id)
     if not transaction:
         return None
 
     update_data = data.model_dump(exclude_unset=True)
     apply_to_transfer_pair = update_data.pop("apply_to_transfer_pair", False)
     apply_to = update_data.pop("apply_to", "this")
+    _, candidate_ids = await _update_lock_candidates(
+        session, workspace_id, transaction, apply_to, update_data, apply_to_transfer_pair,
+    )
+    with session.no_autoflush:
+        locked = list((await session.scalars(
+            select(Transaction).where(Transaction.id.in_(candidate_ids))
+            .order_by(Transaction.id).with_for_update(of=Transaction)
+            .execution_options(populate_existing=True, autoflush=False)
+        )).all())
+        locked_ids = {row.id for row in locked}
+        transaction = next((row for row in locked if row.id == transaction_id), None)
+        if transaction is None:
+            return None
+        # ID-ordered discovery is not an authorization snapshot: sync can move
+        # workspace membership while this SELECT waits. Fence every possible
+        # writer (including cascade/total siblings), not only the anchor.
+        if any(row.workspace_id != workspace_id for row in locked):
+            from fastapi import HTTPException
+
+            await session.rollback()
+            raise HTTPException(409, "Transaction workspace changed; reload before retrying")
+        rows, required_ids = await _update_lock_candidates(
+            session, workspace_id, transaction, apply_to, update_data, apply_to_transfer_pair,
+        )
+        if not required_ids <= locked_ids:
+            from fastapi import HTTPException
+
+            await session.rollback()
+            raise HTTPException(409, "Transaction relationships changed; reload before retrying")
 
     # Splits are processed separately after column updates land so the
     # service can validate against the new amount.
@@ -1763,12 +2045,8 @@ async def update_transaction(
             "notes",
         }
     )
-    rows = [transaction]
     scoped_update = None
     if apply_to != "this" and _is_installment(transaction):
-        rows = await _get_series_transactions(
-            session, workspace_id, transaction, apply_to, for_update=True
-        )
         scoped_update = {
             k: v for k, v in update_data.items() if k in installment_scoped_fields
         }
@@ -1818,6 +2096,7 @@ async def update_transaction(
             row_update,
             apply_to_transfer_pair,
             row_splits,
+            locked_ids=locked_ids,
         )
 
     # A changed parcel amount makes the stored series total stale, whatever
@@ -1825,11 +2104,43 @@ async def update_transaction(
     # several. Recompute from the rows themselves so the two always agree.
     if "amount" in update_data and _is_installment(transaction):
         await session.flush()
-        await _resync_installment_series_total(session, workspace_id, transaction)
+        await _resync_installment_series_total(
+            session, workspace_id, transaction, locked_ids=locked_ids,
+        )
 
     await session.commit()
     await session.refresh(transaction, ["category", "payee_entity", "splits"])
     return transaction
+
+
+@review_persistence(ReviewerAttributionRace)
+async def bulk_set_review(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    transaction_ids: list[uuid.UUID],
+    value: str,
+) -> dict[str, int]:
+    """Bulk review-state transition (PR-2 §5.2), routed through the shared
+    chokepoint so per-row stamps follow the §4.2 invariant.
+
+    Rows already in the target state are left untouched (no restamp), so
+    `updated` counts actual transitions while `matched` counts rows the
+    selection resolved — a mixed selection reports both honestly.
+    """
+    if not transaction_ids:
+        raise ValueError("No transactions selected")
+    if value not in REVIEW_VALUES:
+        raise ValueError(f"Invalid review status: {value}")
+    from app.services.review_service import lock_review_rows
+
+    rows = await lock_review_rows(session, workspace_id, set(transaction_ids))
+    changed = await set_review_status(
+        session, workspace_id, rows, value,
+        HumanReviewPrincipal(user_id) if user_id is not None else None,
+    )
+    await session.commit()
+    return {"updated": changed, "matched": len(rows)}
 
 
 async def bulk_update_category(

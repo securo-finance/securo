@@ -61,7 +61,13 @@
     "archiveHint": "L'espace de travail est masqué de la liste et du sélecteur. Les données sont conservées.",
     "archiveSuccess": "Espace de travail archivé",
     "archiveConfirmTitle": "Archiver l'espace de travail ?",
-    "archiveConfirmDescription": "L'espace de travail « {{name}} » sera retiré de votre liste. Les données sont conservées et un administrateur pourra le restaurer ultérieurement."
+    "archiveConfirmDescription": "L'espace de travail « {{name}} » sera retiré de votre liste. Les données sont conservées et un administrateur pourra le restaurer ultérieurement.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1176,7 +1182,22 @@
     "invoiceBadgeTooltip": "Cette transaction solde une facture. Ouvrir.",
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "Un paiement peut solder cette facture. Ouvrez la file pour répondre.",
-    "clearGroupFilter": "Effacer le filtre de groupe"
+    "clearGroupFilter": "Effacer le filtre de groupe",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Vérifiée par une personne",
+    "reviewedByRule": "Vérifiée par une règle",
+    "reviewedUnattributed": "Vérifiée (sans attribution)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "Comptes",
@@ -1653,6 +1674,8 @@
     "fieldPayee": "Bénéficiaire",
     "fieldDate": "Date",
     "fieldStatus": "Statut",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "contient",
     "opNotContains": "ne contient pas",
     "opEquals": "est égal à",

@@ -61,7 +61,13 @@
     "archiveHint": "Der Workspace wird aus der Liste entfernt und ist nicht mehr in der Workspace-Auswahl sichtbar. Die Daten bleiben erhalten.",
     "archiveSuccess": "Workspace archiviert",
     "archiveConfirmTitle": "Workspace archivieren?",
-    "archiveConfirmDescription": "Der Workspace \"{{name}}\" wird aus deiner Liste entfernt. Die Daten bleiben erhalten und ein Administrator kann ihn später wiederherstellen."
+    "archiveConfirmDescription": "Der Workspace \"{{name}}\" wird aus deiner Liste entfernt. Die Daten bleiben erhalten und ein Administrator kann ihn später wiederherstellen.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1174,7 +1180,22 @@
     "invoiceBadgeTooltip": "Diese Transaktion begleicht eine Rechnung. Öffnen.",
     "suggestionBadge": "Frage",
     "suggestionBadgeTooltip": "Eine Zahlung könnte diese Rechnung begleichen. Öffnen Sie die Warteschlange.",
-    "clearGroupFilter": "Gruppenfilter entfernen"
+    "clearGroupFilter": "Gruppenfilter entfernen",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Von einer Person geprüft",
+    "reviewedByRule": "Durch eine Regel geprüft",
+    "reviewedUnattributed": "Geprüft (ohne Zuordnung)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "Konten",
@@ -1650,6 +1671,8 @@
     "fieldPayee": "Zahlungsempfänger",
     "fieldDate": "Datum",
     "fieldStatus": "Status",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "enthält",
     "opNotContains": "enthält nicht",
     "opEquals": "ist gleich",

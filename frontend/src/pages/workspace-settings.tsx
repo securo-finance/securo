@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { auth as authApi, currencies as currenciesApi, fiscal as fiscalApi, workspaces as workspacesApi } from '@/lib/api'
 import { useTimezones } from '@/hooks/use-timezone'
+import { ReviewPolicySettings } from '@/components/review-policy-settings'
 import { TimezoneSelect } from '@/components/timezone-select'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -504,6 +505,9 @@ export default function WorkspaceSettingsPage() {
           </div>
         </div>
       </section>
+
+      {/* Policy owns its own baseline/draft; unrelated form refreshes never reset it. */}
+      {current && <ReviewPolicySettings key={current.id} workspace={current} canManage={canManage} refresh={refresh} />}
 
       {/* Members card */}
       <section className="space-y-4 rounded-xl border bg-card p-6">

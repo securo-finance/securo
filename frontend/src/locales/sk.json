@@ -61,7 +61,13 @@
     "archiveHint": "Pracovný priestor sa skryje zo zoznamu aj z prepínača. Údaje zostanú zachované.",
     "archiveSuccess": "Pracovný priestor archivovaný",
     "archiveConfirmTitle": "Archivovať pracovný priestor?",
-    "archiveConfirmDescription": "Pracovný priestor „{{name}}“ sa odstráni z tvojho zoznamu. Údaje zostanú zachované a správca ho môže neskôr obnoviť."
+    "archiveConfirmDescription": "Pracovný priestor „{{name}}“ sa odstráni z tvojho zoznamu. Údaje zostanú zachované a správca ho môže neskôr obnoviť.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1226,7 +1232,22 @@
     "invoiceBadgeTooltip": "Táto transakcia vyrovnáva faktúru. Otvorte ju.",
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba môže uhradiť túto faktúru. Otvorte front a odpovedzte.",
-    "clearGroupFilter": "Zrušiť filter skupiny"
+    "clearGroupFilter": "Zrušiť filter skupiny",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Skontrolované človekom",
+    "reviewedByRule": "Skontrolované pravidlom",
+    "reviewedUnattributed": "Skontrolované (bez uvedenia kontrolujúceho)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "Účty",
@@ -1741,6 +1762,8 @@
     "fieldPayee": "Príjemca",
     "fieldDate": "Dátum",
     "fieldStatus": "Stav",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "obsahuje",
     "opNotContains": "neobsahuje",
     "opEquals": "rovná sa",

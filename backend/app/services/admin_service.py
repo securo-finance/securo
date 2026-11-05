@@ -1,4 +1,5 @@
 import uuid
+from app.services.review_conflict import ReviewerDeleteRace, review_persistence
 from typing import Optional
 
 from fastapi_users.exceptions import UserAlreadyExists
@@ -143,6 +144,7 @@ async def update_user(
     return user
 
 
+@review_persistence(ReviewerDeleteRace)
 async def delete_user(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -181,6 +183,15 @@ async def delete_user(
     from app.models.category import Category
     from app.models.category_group import CategoryGroup
     from app.models.bank_connection import BankConnection
+
+    surviving_review = await session.execute(
+        select(Transaction.id).where(
+            Transaction.reviewed_by_id == user_id,
+            Transaction.user_id != user_id,
+        ).limit(1)
+    )
+    if surviving_review.scalar_one_or_none() is not None:
+        raise ValueError("Cannot delete a user who reviewed another user's transactions")
 
     # Delete attachments for user's transactions
     tx_ids_query = select(Transaction.id).where(Transaction.user_id == user_id)

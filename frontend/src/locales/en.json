@@ -61,7 +61,13 @@
     "archiveHint": "The workspace is hidden from the list and switcher. Data is preserved.",
     "archiveSuccess": "Workspace archived",
     "archiveConfirmTitle": "Archive workspace?",
-    "archiveConfirmDescription": "The workspace \"{{name}}\" will be removed from your list. Data is preserved and an admin can restore it later."
+    "archiveConfirmDescription": "The workspace \"{{name}}\" will be removed from your list. Data is preserved and an admin can restore it later.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1174,7 +1180,22 @@
     "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "A payment may settle this. Open the queue to answer.",
-    "clearGroupFilter": "Clear group filter"
+    "clearGroupFilter": "Clear group filter",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Reviewed by human",
+    "reviewedByRule": "Reviewed by rule",
+    "reviewedUnattributed": "Reviewed (unattributed)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "Accounts",
@@ -1649,6 +1670,8 @@
     "fieldPayee": "Payee",
     "fieldDate": "Date",
     "fieldStatus": "Status",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "contains",
     "opNotContains": "does not contain",
     "opEquals": "equals",

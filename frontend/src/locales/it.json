@@ -61,7 +61,13 @@
     "archiveHint": "L'area di lavoro viene nascosta dall'elenco e dal selettore. I dati vengono conservati.",
     "archiveSuccess": "Area di lavoro archiviata",
     "archiveConfirmTitle": "Archiviare l'area di lavoro?",
-    "archiveConfirmDescription": "L'area di lavoro \"{{name}}\" sarà rimossa dal tuo elenco. I dati vengono conservati e un amministratore potrà ripristinarla in seguito."
+    "archiveConfirmDescription": "L'area di lavoro \"{{name}}\" sarà rimossa dal tuo elenco. I dati vengono conservati e un amministratore potrà ripristinarla in seguito.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1176,7 +1182,22 @@
     "invoiceBadgeTooltip": "Questa transazione salda una fattura. Aprila.",
     "suggestionBadge": "Domanda",
     "suggestionBadgeTooltip": "Un pagamento potrebbe saldare questa fattura. Apri la coda per rispondere.",
-    "clearGroupFilter": "Rimuovi filtro gruppo"
+    "clearGroupFilter": "Rimuovi filtro gruppo",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Verificata da una persona",
+    "reviewedByRule": "Verificata da una regola",
+    "reviewedUnattributed": "Verificata (senza attribuzione)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "Conti",
@@ -1653,6 +1674,8 @@
     "fieldPayee": "Beneficiario",
     "fieldDate": "Data",
     "fieldStatus": "Stato",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "contiene",
     "opNotContains": "non contiene",
     "opEquals": "uguale a",

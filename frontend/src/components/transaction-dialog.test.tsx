@@ -187,6 +187,11 @@ function transferLegFixture(pairId: string, over: Partial<Transaction> = {}): Tr
     effective_bill_date: null,
     splits: [],
     is_ignored: false,
+    review_status: 'reviewed',
+    reviewed_at: null,
+    reviewed_by_id: null,
+    review_attribution: null,
+    flagged: false,
     ...over,
   }
 }
@@ -394,4 +399,55 @@ it('does not submit the transaction when Enter is pressed in a mortgage split fi
   await user.keyboard('{Enter}')
 
   expect(onSave).not.toHaveBeenCalled()
+})
+
+it('displays review status and toggles review state when Mark reviewed is clicked', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  vi.spyOn(assets, 'list').mockResolvedValue([])
+  const reviewTx = transferLegFixture('pair-rev-1', {
+    id: 'tx-rev-1',
+    user_id: 'user-1',
+    date: '2026-11-04',
+    description: 'Starbucks Coffee',
+    amount: -6.75,
+    source: 'sync',
+    transfer_pair_id: null,
+    review_status: 'needs_review',
+  })
+  const setReviewSpy = vi.spyOn(transactions, 'setReview').mockResolvedValue({
+    ...reviewTx,
+    review_status: 'reviewed',
+  })
+  const onIgnoreChanged = vi.fn()
+
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={reviewTx}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={vi.fn()}
+      onIgnoreChanged={onIgnoreChanged}
+      loading={false}
+      error={null}
+      isSynced={true}
+    />,
+  )
+
+  // Top banner notice
+  expect(screen.getByText(t('transactions.needsReview'))).toBeInTheDocument()
+
+  // Mark reviewed buttons (top banner + footer)
+  const markButtons = screen.getAllByRole('button', { name: new RegExp(t('transactions.markReviewed'), 'i') })
+  expect(markButtons.length).toBeGreaterThanOrEqual(1)
+
+  // Click the mark reviewed button
+  await user.click(markButtons[0])
+
+  expect(setReviewSpy).toHaveBeenCalledWith('tx-rev-1', 'reviewed')
+  expect(onIgnoreChanged).toHaveBeenCalled()
 })

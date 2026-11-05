@@ -1,5 +1,5 @@
 import type { Category, CategoryGroup } from '@/types'
-import { ArrowLeftRight, Check, MoreHorizontal, SlidersHorizontal, Trash2, Users, X } from 'lucide-react'
+import { ArrowLeftRight, Check, CheckCircle2, CircleDot, MoreHorizontal, SlidersHorizontal, Trash2, Users, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CategorySelect } from '@/components/category-select'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,10 @@ export type MobileBulkSelectionActionsProps = {
   removeTagsPending: boolean
   transferDisabled: boolean
   transferTitle: string
+  // PR-2 (#636): bulk triage on mobile, same endpoint as desktop.
+  reviewPending: boolean
+  onMarkReviewed: () => void
+  onMarkUnreviewed: () => void
   onCategoryChange: (value: string) => void
   onOpenGroup: () => void
   onOpenTransfer: () => void
@@ -103,6 +107,13 @@ function BulkActionItems(props: MobileBulkSelectionActionsProps) {
         <ArrowLeftRight size={15} />{t('transactions.linkAsTransfer')}
       </DropdownMenuItem>
       {props.onCreateRule && <DropdownMenuItem onSelect={props.onCreateRule}><SlidersHorizontal size={15} />{t('transactions.createRule')}</DropdownMenuItem>}
+      {/* PR-2 (#636): triage both directions, before the destructive row. */}
+      <DropdownMenuItem disabled={props.reviewPending} onSelect={props.onMarkReviewed}>
+        <CheckCircle2 size={15} />{t('transactions.markReviewed')}
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={props.reviewPending} onSelect={props.onMarkUnreviewed}>
+        <CircleDot size={15} />{t('transactions.markUnreviewed')}
+      </DropdownMenuItem>
       <DropdownMenuItem onSelect={props.onBulkDelete} className="text-destructive">
         <Trash2 size={15} />{t('transactions.bulkDelete')}
       </DropdownMenuItem>

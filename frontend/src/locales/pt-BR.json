@@ -61,7 +61,13 @@
     "archiveHint": "O workspace fica oculto da lista e do switcher. Os dados continuam preservados.",
     "archiveSuccess": "Workspace arquivado",
     "archiveConfirmTitle": "Arquivar workspace?",
-    "archiveConfirmDescription": "O workspace \"{{name}}\" será removido da sua lista. Os dados ficam preservados e um admin pode restaurar mais tarde."
+    "archiveConfirmDescription": "O workspace \"{{name}}\" será removido da sua lista. Os dados ficam preservados e um admin pode restaurar mais tarde.",
+    "reviewPolicyTitle": "Revisão de transações",
+    "reviewPolicyIngest": "Importações e sincronização",
+    "reviewPolicyManual": "Lançamentos manuais",
+    "reviewPolicyNeedsReview": "Marcar como precisando de revisão",
+    "reviewPolicyReviewed": "Marcar como revisada",
+    "reviewPolicyHint": "Define em qual estado novas transações chegam. Linhas já no livro não são reescritas."
   },
   "app": {
     "name": "Securo",
@@ -1176,7 +1182,22 @@
     "invoiceBadgeTooltip": "Esta transação quita uma cobrança. Abrir.",
     "suggestionBadge": "Pergunta",
     "suggestionBadgeTooltip": "Um pagamento pode quitar esta cobrança. Abra a fila para responder.",
-    "clearGroupFilter": "Limpar filtro de grupo"
+    "clearGroupFilter": "Limpar filtro de grupo",
+    "needsReview": "Precisa de revisão",
+    "needsReviewCount": "Precisa de revisão ({{count}})",
+    "needsReviewOnly": "Somente precisam de revisão",
+    "reviewed": "Revisada",
+    "reviewedByHuman": "Revisada por uma pessoa",
+    "reviewedByRule": "Revisada por uma regra",
+    "reviewedUnattributed": "Revisada (sem atribuição)",
+    "markReviewed": "Marcar como revisada",
+    "markUnreviewed": "Marcar como não revisada",
+    "bulkReviewSuccess": "{{count}} marcadas como revisadas",
+    "bulkUnreviewSuccess": "{{count}} marcadas como não revisadas",
+    "reviewShortcutHint": "Alternar revisão (Shift+R)",
+    "flagged": "Sinalizada",
+    "flag": "Sinalizar",
+    "unflag": "Remover sinalização"
   },
   "accounts": {
     "title": "Contas",
@@ -1653,6 +1674,8 @@
     "fieldPayee": "Pessoa",
     "fieldDate": "Data",
     "fieldStatus": "Status",
+    "fieldReviewStatus": "Status de revisão",
+    "markReviewed": "Marcar como revisada",
     "opContains": "contém",
     "opNotContains": "não contém",
     "opEquals": "é igual a",

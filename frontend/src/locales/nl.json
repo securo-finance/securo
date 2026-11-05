@@ -61,7 +61,13 @@
     "archiveSuccess": "Workspace gearchiveerd",
     "archiveConfirmTitle": "Workspace archiveren?",
     "archiveConfirmDescription": "De workspace \"{{name}}\" wordt uit uw lijst verwijderd. Gegevens blijven behouden en een beheerder kan deze later herstellen.",
-    "addMemberDescriptionExistingOnly": "Nodig een bestaande gebruiker uit via e-mail."
+    "addMemberDescriptionExistingOnly": "Nodig een bestaande gebruiker uit via e-mail.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1174,7 +1180,22 @@
     "invoiceBadgeTooltip": "Deze transactie rekent een factuur af. Openen.",
     "suggestionBadge": "Vraag",
     "suggestionBadgeTooltip": "Een betaling kan deze factuur voldoen. Open de wachtrij om te antwoorden.",
-    "clearGroupFilter": "Groepsfilter wissen"
+    "clearGroupFilter": "Groepsfilter wissen",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Gecontroleerd door een persoon",
+    "reviewedByRule": "Gecontroleerd door een regel",
+    "reviewedUnattributed": "Gecontroleerd (controleur niet vermeld)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "Rekeningen",
@@ -1649,6 +1670,8 @@
     "fieldPayee": "Begunstigde",
     "fieldDate": "Datum",
     "fieldStatus": "Status",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "bevat",
     "opNotContains": "bevat niet",
     "opEquals": "gelijk aan",

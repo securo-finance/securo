@@ -61,7 +61,13 @@
     "archiveHint": "Obszar roboczy zostanie ukryty z listy i przełącznika. Dane zostają zachowane.",
     "archiveSuccess": "Zarchiwizowano obszar roboczy",
     "archiveConfirmTitle": "Zarchiwizować obszar roboczy?",
-    "archiveConfirmDescription": "Obszar roboczy „{{name}}” zostanie usunięty z listy. Dane zostają zachowane, a administrator może go później przywrócić."
+    "archiveConfirmDescription": "Obszar roboczy „{{name}}” zostanie usunięty z listy. Dane zostają zachowane, a administrator może go później przywrócić.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1215,7 +1221,22 @@
     "invoiceBadgeTooltip": "Ta transakcja rozlicza fakturę. Otwórz ją.",
     "suggestionBadge": "Pytanie",
     "suggestionBadgeTooltip": "Płatność może opłacić tę fakturę. Otwórz kolejkę, aby odpowiedzieć.",
-    "clearGroupFilter": "Wyczyść filtr grupy"
+    "clearGroupFilter": "Wyczyść filtr grupy",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Sprawdzona przez człowieka",
+    "reviewedByRule": "Sprawdzona przez regułę",
+    "reviewedUnattributed": "Sprawdzona (bez wskazania sprawdzającego)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "Konta",
@@ -1720,6 +1741,8 @@
     "fieldPayee": "Odbiorca",
     "fieldDate": "Data",
     "fieldStatus": "Status",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "zawiera",
     "opNotContains": "nie zawiera",
     "opEquals": "równa się",

@@ -3,6 +3,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
+from app.services.review_conflict import ReviewerAttributionRace, review_persistence
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Literal, Optional
@@ -52,6 +53,7 @@ from app.services.asset_group_service import (
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
+from app.services.review_service import get_review_policy, ingest_review_status
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
@@ -1273,6 +1275,7 @@ async def update_connection_settings(
     return connection
 
 
+@review_persistence(ReviewerAttributionRace)
 async def handle_oauth_callback(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1366,6 +1369,9 @@ async def handle_oauth_callback(
     auto_invested_deducted = await _resolve_auto_invested_deductions(
         session, connection, holdings, connection_data.accounts
     )
+
+    # Review policy read once per OAuth batch, not per row (§7.1).
+    review_policy = await get_review_policy(session, workspace_id)
 
     institution_cache: dict[str, Institution] = {}
     for acc_data in connection_data.accounts:
@@ -1488,6 +1494,13 @@ async def handle_oauth_callback(
                 date=txn_data.date,
                 type=txn_data.type,
                 source="sync",
+                # Explicit at construction (§7.2): provider sync is observed
+                # money — lands `needs_review` unless policy says otherwise.
+                # `bill_charge:*` synthetics are exempt (built in
+                # _sync_bill_finance_charges, which this helper's rule skips).
+                review_status=ingest_review_status(
+                    "sync", txn_data.external_id, review_policy
+                ),
                 status=txn_data.status,
                 payee=txn_data.payee,
                 payee_id=payee_id,
@@ -1505,7 +1518,7 @@ async def handle_oauth_callback(
             session.add(transaction)
             await session.flush()
             new_tx_ids.append(transaction.id)
-            await apply_rules_to_transaction(session, user_id, transaction)
+            await apply_rules_to_transaction(session, user_id, transaction, new_transaction=True)
             if transaction.category_id is None:
                 transaction.category_id = category_id
 
@@ -2282,6 +2295,7 @@ async def _sync_credit_card_bills(
 SyncOutcome = Literal["refreshed", "rate_limited"]
 
 
+@review_persistence(ReviewerAttributionRace)
 async def sync_connection(
     session: AsyncSession,
     connection_id: uuid.UUID,
@@ -2314,6 +2328,8 @@ async def sync_connection(
     conn_settings = connection.settings or {}
     payee_source = conn_settings.get("payee_source", "auto")
     import_pending = conn_settings.get("import_pending", True)
+    # Review policy read once per sync run, not per row (§7.1).
+    review_policy = await get_review_policy(session, workspace_id)
     use_provider_cats = await admin_service.use_provider_categories(session)
 
     # Resolve the provider before the error-handling block: an unregistered
@@ -2702,6 +2718,11 @@ async def sync_connection(
                     date=txn_data.date,
                     type=txn_data.type,
                     source="sync",
+                    # Explicit at construction (§7.2): observed money lands
+                    # `needs_review` unless policy says otherwise.
+                    review_status=ingest_review_status(
+                        "sync", txn_data.external_id, review_policy
+                    ),
                     status=txn_data.status,
                     payee=txn_data.payee,
                     payee_id=sync_payee_id,
@@ -2796,7 +2817,7 @@ async def sync_connection(
                         recurring_link, txn_data.date
                     )
                 new_tx_ids.append(transaction.id)
-                await apply_rules_to_transaction(session, user_id, transaction)
+                await apply_rules_to_transaction(session, user_id, transaction, new_transaction=True)
                 if transaction.category_id is None:
                     transaction.category_id = category_id
 
@@ -2901,6 +2922,9 @@ async def sync_connection(
         await session.refresh(connection)
         return connection, merged_count, "refreshed"
 
+    except IntegrityError:
+        # The installed owner boundary classifies before generic status writes.
+        raise
     except SessionExpiredError:
         # Provider consent expired — distinct from a generic error so the UI
         # can show a clearer "reauthorize" prompt.

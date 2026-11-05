@@ -198,7 +198,19 @@ export const workspaces = {
     id: string,
     payload: Partial<
       Pick<Workspace, 'name' | 'icon' | 'color' | 'default_currency' | 'locale'>
-    > & { tax_jurisdiction?: string | null; timezone?: string | null },
+    > & {
+      tax_jurisdiction?: string | null
+      timezone?: string | null
+      // PR-2 §7.1: closed set server-side; unknown keys/values → 400.
+      expected_review_policy?: {
+        ingest: 'needs_review' | 'reviewed'
+        manual: 'needs_review' | 'reviewed'
+      } | null
+      review_policy?: {
+        ingest?: 'needs_review' | 'reviewed'
+        manual?: 'needs_review' | 'reviewed'
+      } | null
+    },
   ): Promise<Workspace> => {
     const { data } = await api.patch(`/workspaces/${id}`, payload)
     return data
@@ -623,6 +635,8 @@ export const transactions = {
     max_amount?: number
     sort_by?: string
     sort_dir?: 'asc' | 'desc'
+    // PR-2: closed set server-side (needs_review|reviewed).
+    review_status?: string
   }): Promise<PaginatedTransactions> => {
     const { data } = await api.get('/transactions', {
       params,
@@ -672,6 +686,21 @@ export const transactions = {
   },
   toggleIgnore: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/ignore`)
+    return data
+  },
+  // PR-2 single-row review transition (#636). The endpoint stamps both
+  // provenance columns on actor-driven transitions (gate §15-A1).
+  setReview: async (id: string, reviewStatus: 'needs_review' | 'reviewed'): Promise<Transaction> => {
+    const { data } = await api.patch(`/transactions/${id}/review`, { review_status: reviewStatus })
+    return data
+  },
+  // PR-2 bulk review. Returns per-call counts: `matched` = rows found,
+  // `updated` = rows whose state actually changed (re-marking is a no-op).
+  bulkReview: async (transactionIds: string[], reviewStatus: 'needs_review' | 'reviewed'): Promise<{ updated: number; matched: number }> => {
+    const { data } = await api.patch('/transactions/bulk-review', {
+      transaction_ids: transactionIds,
+      review_status: reviewStatus,
+    })
     return data
   },
   unlinkRecurring: async (id: string): Promise<Transaction> => {

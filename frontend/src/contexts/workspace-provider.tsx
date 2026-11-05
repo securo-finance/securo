@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { workspaces as workspacesApi, WORKSPACE_STORAGE_KEY } from '@/lib/api'
@@ -7,18 +7,35 @@ import type { Workspace } from '@/types'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 
 
+// Local refresh state, not a draft store: consumers retain their own edits.
+export const WorkspaceRefreshStatusContext = createContext({ pending: false, failed: false })
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const { user, token } = useAuth()
+  // Remount the complete workspace subtree on auth identity/logout, even if
+  // the next identity can access the same workspace ID. No old draft survives.
+  return <WorkspaceSessionProvider key={user && token ? user.id : 'signed-out'}>{children}</WorkspaceSessionProvider>
+}
+
+function WorkspaceSessionProvider({ children }: { children: ReactNode }) {
   const { user, token, isLoading: authLoading } = useAuth()
   const [list, setList] = useState<Workspace[]>([])
   const [currentId, setCurrentId] = useState<string | null>(() => localStorage.getItem(WORKSPACE_STORAGE_KEY))
   const [isLoading, setIsLoading] = useState(true)
+  const [refreshFailed, setRefreshFailed] = useState(false)
   const queryClient = useQueryClient()
 
+  const loadGeneration = useRef(0)
+  useEffect(() => () => { ++loadGeneration.current }, [])
   const loadWorkspaces = useCallback(async () => {
+    const generation = ++loadGeneration.current
+    if (!user || !token) return
     setIsLoading(true)
     try {
       const fetched = await workspacesApi.list()
+      if (generation !== loadGeneration.current) return
       setList(fetched)
+      setRefreshFailed(false)
       // Reconcile the stored selection against what's actually accessible.
       // If the stored ID is stale (workspace archived, user removed, etc.)
       // fall back to the first one.
@@ -35,13 +52,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setCurrentId(null)
       }
     } catch {
-      // 401s are handled by the global interceptor; other failures we
-      // just surface as no-data — the user can retry from the UI.
-      setList([])
+      if (generation !== loadGeneration.current) return
+      // Keep the last usable SAME-AUTH list so mounted local drafts survive.
+      // Initial failures still expose an empty list. Never reject refresh:
+      // existing fire-and-forget callers rely on its resolving contract.
+      setRefreshFailed(true)
     } finally {
-      setIsLoading(false)
+      if (generation === loadGeneration.current) setIsLoading(false)
     }
-  }, [])
+  }, [user, token])
 
   useEffect(() => {
     // Stay in the loading state until auth has settled. Reporting "done,
@@ -108,7 +127,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         hasModule,
       }}
     >
-      {children}
+      <WorkspaceRefreshStatusContext.Provider value={{ pending: isLoading, failed: refreshFailed }}>
+        {children}
+      </WorkspaceRefreshStatusContext.Provider>
     </WorkspaceContext.Provider>
   )
 }

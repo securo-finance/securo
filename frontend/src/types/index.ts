@@ -64,6 +64,12 @@ export interface Workspace {
   tax_jurisdiction: string | null
   icon: string | null
   color: string | null
+  // PR-2 §7.1: per-workspace review policy. Absent/NULL keys mean the
+  // documented defaults (ingest → needs_review, manual → reviewed).
+  review_policy?: {
+    ingest?: 'needs_review' | 'reviewed'
+    manual?: 'needs_review' | 'reviewed'
+  } | null
   created_at: string
   created_by_user_id: string | null
   managed_by_user_id: string | null
@@ -277,6 +283,11 @@ export interface DescriptionSuggestion {
   payee_id: string | null
 }
 
+export type ReviewAttribution =
+  | { kind: 'human'; reviewed_at: string; user_id: string }
+  | { kind: 'rule'; reviewed_at: string; rule_id: string }
+  | { kind: 'unknown' }
+
 export interface Transaction {
   /** Every invoice this transaction settles — a payout net of fees
    *  settles several. Absent in a workspace without the module. */
@@ -344,6 +355,16 @@ export interface Transaction {
   // currency.
   running_balance?: number | null
   running_balance_primary?: number | null
+  // PR-2 review triage (#636): two-state axis, orthogonal to is_ignored.
+  // Human reviews stamp time and human ID; rule reviews stamp time only here.
+  // Legacy/exempt flat stamps may be paired, absent, or partial; only the
+  // nested packet establishes human/rule attribution.
+  review_status: 'needs_review' | 'reviewed'
+  reviewed_at: string | null
+  reviewed_by_id: string | null
+  review_attribution: ReviewAttribution | null
+  // #56 flag: a per-row bookmark, independent of review_status.
+  flagged: boolean
   virtual?: boolean
 }
 
@@ -1091,6 +1112,9 @@ export interface TransactionsSummary {
 
 export interface PaginatedTransactions extends PaginatedResponse<Transaction> {
   summary?: TransactionsSummary
+  // PR-2 smart chip (§5.3): needs_review rows under the CURRENT filters —
+  // exactly what clicking the chip would show. Absent on non-list calls.
+  needs_review_count?: number
 }
 
 // Reports (universal schema for all report types)

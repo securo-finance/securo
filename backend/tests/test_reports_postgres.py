@@ -8,7 +8,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.core.database import get_async_session
+from app.core.database import Base, get_async_session
 from app.main import app
 from app.models.transaction import Transaction
 from app.services import admin_service, report_service
@@ -368,3 +368,167 @@ async def test_reports_data_range_excludes_ignored_rows(
     assert response.status_code == 200
     data = response.json()
     assert data["min_date"] == min(t.date for t in test_transactions).strftime("%Y-%m-%d")
+
+
+async def test_admin_delete_reviewer_preserves_core_rows_postgres(
+    postgres_sessions, session, clean_db, test_user, test_superuser, test_workspace, test_account,
+):
+    """Characterize the existing guard on fresh-model PG, not migrations or races."""
+    from sqlalchemy import event, inspect
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
+    from app.models.app_settings import AppSetting
+    from app.models.user import User
+    from app.models.workspace import WorkspaceMember
+    from app.services.transaction_service import set_review_status
+
+    owner_id, admin_id = test_user.id, test_superuser.id
+    workspace_id, account_id = test_workspace.id, test_account.id
+    reviewer_id, reviewed_id, control_id = (uuid.uuid4() for _ in range(3))
+    reviewer = User(
+        id=reviewer_id, email="reviewer@pg-preservation.example",
+        hashed_password="synthetic-unused-no-login", is_active=True,
+        is_superuser=False, is_verified=True,
+    )
+    session.add(reviewer)
+    await session.flush()
+    session.add(WorkspaceMember(
+        id=uuid.uuid4(), workspace_id=workspace_id, user_id=reviewer_id, role="editor",
+    ))
+    session.add(AppSetting(key="pg-preservation-control", value="synthetic-unchanged"))
+    transactions = []
+    # Direct-model synthetic import metadata: this does NOT exercise an importer.
+    for transaction_id, label in ((reviewed_id, "reviewed"), (control_id, "control")):
+        transaction = Transaction(
+            id=transaction_id, user_id=owner_id, workspace_id=workspace_id,
+            account_id=account_id, description=f"Synthetic PG preservation {label}",
+            amount=Decimal("10.00"), currency="BRL", date=date(2026, 10, 15),
+            effective_date=date(2026, 10, 15), type="debit", source="import",
+            raw_data={"synthetic": True, "case": label}, review_status="needs_review",
+        )
+        session.add(transaction)
+        transactions.append(transaction)
+    await session.flush()
+    reviewed = transactions[0]
+    assert reviewed.reviewed_at is None and reviewed.reviewed_by_id is None
+    assert await set_review_status(
+        session, workspace_id, reviewed, "reviewed", reviewer_id,
+    ) == 1
+    await session.commit()  # The real helper leaves persistence to its caller.
+    assert not (session.new or session.dirty or session.deleted)
+    assert not session.in_transaction()
+    assert isinstance(session.bind, AsyncEngine)
+    assert session.bind.dialect.name == "postgresql"
+    engine = session.bind.sync_engine
+
+    async def snapshot():
+        state = {}
+        async with postgres_sessions() as verifier:
+            assert verifier is not session
+            for table in Base.metadata.sorted_tables:
+                assert tuple(table.primary_key.columns), table.name
+                rows = (await verifier.execute(
+                    select(table).order_by(*table.primary_key.columns)
+                )).mappings().all()
+                state[table.name] = [dict(row) for row in rows]
+        return state
+
+    def inspect_reviewer_fk(connection):
+        schema = connection.get_execution_options()["schema_translate_map"][None]
+        assert schema.startswith("postgres_test_")
+        return schema, inspect(connection).get_foreign_keys("transactions", schema=schema)
+
+    # Reflect the actual disposable schema, not the model's FK declaration.
+    async with postgres_sessions() as verifier:
+        connection = await verifier.connection()
+        schema, foreign_keys = await connection.run_sync(inspect_reviewer_fk)
+    reviewer_fks = [fk for fk in foreign_keys if fk["constrained_columns"] == ["reviewed_by_id"]]
+    assert len(reviewer_fks) == 1
+    fk = reviewer_fks[0]
+    assert fk["referred_schema"] == schema
+    assert fk["referred_table"] == "users" and fk["referred_columns"] == ["id"]
+    assert fk["options"].get("ondelete") == "RESTRICT"
+
+    before = await snapshot()
+    assert len(before) == len(Base.metadata.tables)
+    users = {row["id"]: row for row in before["users"]}
+    assert len({owner_id, reviewer_id, admin_id}) == 3
+    assert {owner_id, reviewer_id, admin_id} <= users.keys()
+    assert users[reviewer_id]["is_superuser"] is False
+    assert users[admin_id]["is_superuser"] is True
+    assert any(row["id"] == workspace_id and row["created_by_user_id"] == owner_id
+               for row in before["workspaces"])
+    assert any(row["workspace_id"] == workspace_id and row["user_id"] == owner_id
+               and row["role"] == "owner" for row in before["workspace_members"])
+    assert any(row["workspace_id"] == workspace_id and row["user_id"] == reviewer_id
+               and row["role"] == "editor" for row in before["workspace_members"])
+    account = next(row for row in before["accounts"] if row["id"] == account_id)
+    assert account["user_id"] == owner_id and account["workspace_id"] == workspace_id
+    rows = {row["id"]: row for row in before["transactions"]}
+    assert set(rows) == {reviewed_id, control_id}
+    for transaction_id, label in ((reviewed_id, "reviewed"), (control_id, "control")):
+        row = rows[transaction_id]
+        assert row["user_id"] == owner_id != reviewer_id
+        assert row["workspace_id"] == workspace_id and row["account_id"] == account_id
+        assert row["source"] == "import" and row["raw_data"] == {"synthetic": True, "case": label}
+    stamp = rows[reviewed_id]
+    assert stamp["review_status"] == "reviewed" and stamp["reviewed_by_id"] == reviewer_id
+    assert stamp["reviewed_at"] is not None and stamp["reviewed_at"].utcoffset() == timedelta(0)
+    assert rows[control_id]["review_status"] == "needs_review"
+    assert rows[control_id]["reviewed_at"] is None and rows[control_id]["reviewed_by_id"] is None
+    assert {"key": "pg-preservation-control", "value": "synthetic-unchanged"} in before["app_settings"]
+
+    statements, commits, rollbacks = [], [], []
+    phase = "service"
+
+    def observe_sql(conn, cursor, statement, parameters, context, executemany):
+        if phase == "service":
+            statements.append((" ".join(statement.lower().split()), parameters))
+
+    def observe_commit(conn):
+        commits.append(phase)
+
+    def observe_rollback(conn):
+        rollbacks.append(phase)
+
+    listeners = (
+        ("before_cursor_execute", observe_sql), ("commit", observe_commit),
+        ("rollback", observe_rollback),
+    )
+    try:
+        # Register on the actual service bind only, after every setup/read.
+        for name, listener in listeners:
+            event.listen(engine, name, listener)
+        with pytest.raises(ValueError) as refusal:
+            await admin_service.delete_user(session, reviewer_id, admin_id)
+        assert type(refusal.value) is ValueError
+        assert str(refusal.value) == "Cannot delete a user who reviewed another user's transactions"
+        assert session.in_transaction(), "The real guard must have opened a transaction"
+        phase = "caller-rollback"
+        await session.rollback()
+        assert not session.in_transaction()
+    finally:
+        # contains also handles a failure partway through listener registration.
+        for name, listener in reversed(listeners):
+            if event.contains(engine, name, listener):
+                event.remove(engine, name, listener)
+
+    assert statements, "A dormant SQL listener must not satisfy the no-DML oracle"
+    # Strict SELECT-only admission also rejects DDL, TRUNCATE and writable CTEs.
+    assert all(sql.startswith("select ") and ";" not in sql for sql, _ in statements), statements
+    guards = [(sql, params) for sql, params in statements if (
+        "transactions.reviewed_by_id =" in sql and "transactions.user_id !=" in sql
+        and " limit " in sql
+    )]
+    assert len(guards) == 1, statements
+    parameters = guards[0][1]
+    values = tuple(parameters.values()) if isinstance(parameters, dict) else tuple(parameters)
+    assert tuple(uuid.UUID(str(value)) for value in values[:2]) == (reviewer_id, reviewer_id)
+    assert commits == [], "No service commit (nor a commit during caller rollback) is allowed"
+    assert rollbacks == ["caller-rollback"], "Witness the explicit caller rollback, not teardown"
+    after = await snapshot()  # New verifier; never reuse the service ORM cache.
+    assert after == before
+    surviving = next(row for row in after["transactions"] if row["id"] == reviewed_id)
+    assert surviving == stamp
+    assert surviving["user_id"] == owner_id and surviving["reviewed_by_id"] == reviewer_id
+    assert surviving["reviewed_at"] == stamp["reviewed_at"] is not None

@@ -61,7 +61,13 @@
     "archiveHint": "Робочий простір ховається зі списку та перемикача. Дані зберігаються.",
     "archiveSuccess": "Робочий простір архівовано",
     "archiveConfirmTitle": "Архівувати робочий простір?",
-    "archiveConfirmDescription": "Робочий простір «{{name}}» буде видалено з вашого списку. Дані зберігаються, адміністратор зможе відновити його пізніше."
+    "archiveConfirmDescription": "Робочий простір «{{name}}» буде видалено з вашого списку. Дані зберігаються, адміністратор зможе відновити його пізніше.",
+    "reviewPolicyTitle": "Transaction review",
+    "reviewPolicyIngest": "Imports & sync",
+    "reviewPolicyManual": "Manual entries",
+    "reviewPolicyNeedsReview": "Mark as needing review",
+    "reviewPolicyReviewed": "Mark as reviewed",
+    "reviewPolicyHint": "Decides the state new transactions land in. Rows already in the ledger are not rewritten."
   },
   "app": {
     "name": "Securo",
@@ -1188,7 +1194,22 @@
     "invoiceBadgeTooltip": "Ця операція закриває рахунок. Відкрити.",
     "suggestionBadge": "Питання",
     "suggestionBadgeTooltip": "Платіж може закрити цей рахунок. Відкрийте чергу, щоб відповісти.",
-    "clearGroupFilter": "Скинути фільтр групи"
+    "clearGroupFilter": "Скинути фільтр групи",
+    "needsReview": "Needs review",
+    "needsReviewCount": "Needs review ({{count}})",
+    "needsReviewOnly": "Needs review only",
+    "reviewed": "Reviewed",
+    "reviewedByHuman": "Перевірено людиною",
+    "reviewedByRule": "Перевірено правилом",
+    "reviewedUnattributed": "Перевірено (без зазначення виконавця)",
+    "markReviewed": "Mark reviewed",
+    "markUnreviewed": "Mark unreviewed",
+    "bulkReviewSuccess": "{{count}} marked as reviewed",
+    "bulkUnreviewSuccess": "{{count}} marked as unreviewed",
+    "reviewShortcutHint": "Toggle reviewed (Shift+R)",
+    "flagged": "Flagged",
+    "flag": "Flag",
+    "unflag": "Remove flag"
   },
   "accounts": {
     "title": "Рахунки",
@@ -1666,6 +1687,8 @@
     "fieldPayee": "Отримувач",
     "fieldDate": "Дата",
     "fieldStatus": "Статус",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "містить",
     "opNotContains": "не містить",
     "opEquals": "дорівнює",

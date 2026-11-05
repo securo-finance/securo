@@ -1,17 +1,21 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useCallback, useEffect, useRef, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
-import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
+import { AlertTriangle, CircleDot, Clock, Info, Paperclip, Star, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { ReviewAttributionBadge } from '@/components/review-attribution-badge'
 import { sumDrillDownTotals } from '@/lib/drill-down-totals'
 import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
+import { extractApiError } from '@/lib/api-errors'
+import { useWorkspace } from '@/contexts/workspace-context'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction } from '@/types'
+import type { PaginatedTransactions, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
 
 export type DrillDownFilter = {
@@ -54,11 +58,57 @@ export function TransactionDrillDown({
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { canWrite } = useWorkspace()
+  const reviewInFlight = useRef(false)
   const { mask } = usePrivacyMode()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const panelRef = useRef<HTMLDivElement>(null)
+  // PR-2 §5.4: the row under the pointer is the shortcut target. No
+  // active row (or a projected row, which has no Transaction) = no-op.
+  const [activeRowKey, setActiveRowKey] = useState<string | null>(null)
+  // Equal filter objects keep intent; a semantic replacement (including
+  // close/reopen) must require a new mouse entry even if the same ID returns.
+  const filterIdentity = JSON.stringify(filter ? [
+    filter.title, filter.category_id, filter.uncategorized, filter.account_id,
+    filter.account_ids ? [...filter.account_ids].sort() : null, filter.type, filter.from, filter.to,
+  ] : null)
+  const [intentFilter, setIntentFilter] = useState(filterIdentity)
+  if (intentFilter !== filterIdentity) {
+    setIntentFilter(filterIdentity)
+    setActiveRowKey(null)
+  }
+  const queryClient = useQueryClient()
+  const close = useCallback(() => {
+    setActiveRowKey(null)
+    onClose()
+  }, [onClose])
+
+  // Shift+R toggles review on the active row — one key, both directions.
+  // Same dialog guard as the Escape layer so typing in the edit dialog
+  // never fires it.
+  const toggleReviewMutation = useMutation({
+    mutationFn: (tx: Transaction) =>
+      transactionsApi.setReview(
+        tx.id,
+        tx.review_status === 'reviewed' ? 'needs_review' : 'reviewed',
+      ),
+    onSuccess: (updated) => {
+      // Patch the panel's own cache so the indicator flips immediately,
+      // then let the list page refetch under its own key.
+      queryClient.setQueryData<PaginatedTransactions>(
+        ['drill-down', filter],
+        (old) =>
+          old
+            ? { ...old, items: old.items.map((i) => (i.id === updated.id ? updated : i)) }
+            : old,
+      )
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    },
+    onError: (error) => toast.error(extractApiError(error)),
+    onSettled: () => { reviewInFlight.current = false },
+  })
 
   const { data, isLoading } = useQuery({
     queryKey: ['drill-down', filter],
@@ -152,11 +202,32 @@ export function TransactionDrillDown({
     if (!filter) return
     const handleKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || hasOpenDialog()) return
-      onClose()
+      close()
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
-  }, [filter, onClose])
+  }, [filter, close])
+
+  // PR-2 §5.4: Shift+R toggles review on the active row.
+  useEffect(() => {
+    if (!filter) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'r' || !e.shiftKey) return
+      if (e.defaultPrevented || e.repeat || e.ctrlKey || e.altKey || e.metaKey || hasOpenDialog()) return
+      if (!canWrite || reviewInFlight.current || toggleReviewMutation.isPending) return
+      const target = e.target instanceof Element ? e.target : null
+      const focused = document.activeElement
+      const editable = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]'
+      if (target?.closest(editable) || focused?.closest(editable)) return
+      const item = displayItems.find((i) => i.key === activeRowKey)
+      if (!item?.transaction || item.transaction.is_shared || item.transaction.virtual) return
+      e.preventDefault()
+      reviewInFlight.current = true
+      toggleReviewMutation.mutate(item.transaction)
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [filter, activeRowKey, displayItems, toggleReviewMutation, canWrite])
 
   // Close on click outside. The transaction dialog opened from a row, and its
   // popovers and selects, are portaled to the body; clicks there keep the
@@ -166,7 +237,7 @@ export function TransactionDrillDown({
     const handleClick = (e: MouseEvent) => {
       if (!panelRef.current || panelRef.current.contains(e.target as Node)) return
       if (isInsideOverlayLayer(e.target) || hasOpenDialog()) return
-      onClose()
+      close()
     }
     // Delay to avoid closing immediately from the click that opened it
     const timer = setTimeout(() => {
@@ -176,7 +247,7 @@ export function TransactionDrillDown({
       clearTimeout(timer)
       document.removeEventListener('mousedown', handleClick)
     }
-  }, [filter, onClose])
+  }, [filter, close])
 
   // Sum in user's primary currency. For foreign-currency rows we need
   // amount_primary; if it's missing we can't convert, so skip the row
@@ -213,7 +284,7 @@ export function TransactionDrillDown({
             {filter?.title}
           </h2>
           <button
-            onClick={onClose}
+            onClick={close}
             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
             title={t('common.close')}
           >
@@ -246,6 +317,12 @@ export function TransactionDrillDown({
                 <div
                   key={item.key}
                   className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected ? 'cursor-pointer' : ''}`}
+                  title={
+                    canWrite && item.transaction && !item.transaction.is_shared && !item.transaction.virtual
+                      && !toggleReviewMutation.isPending ? t('transactions.reviewShortcutHint') : undefined
+                  }
+                  onMouseEnter={() => setActiveRowKey(item.key)}
+                  onMouseLeave={() => setActiveRowKey((key) => key === item.key ? null : key)}
                   onClick={() => {
                     if (!item.isProjected && item.transaction) {
                       onTransactionClick?.(item.transaction)
@@ -262,6 +339,27 @@ export function TransactionDrillDown({
                       <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
                       {item.isProjected && (
                         <ProjectedTransactionBadge />
+                      )}
+                      {/* PR-2 indicators — same axis as the list page:
+                          review state first, then the flag bookmark.
+                          Native `title`, not Tooltip: the panel rows are
+                          rendered inside tests without a TooltipProvider
+                          and the pill on the list page uses `title` too. */}
+                      {item.transaction?.review_status === 'needs_review' && (
+                        <span
+                          role="img"
+                          aria-label={t('transactions.needsReview')}
+                          title={t('transactions.needsReview')}
+                          className="shrink-0 inline-flex items-center justify-center"
+                        >
+                          <CircleDot size={12} className="text-primary" />
+                        </span>
+                      )}
+                      {item.transaction && (
+                        <ReviewAttributionBadge transaction={item.transaction} />
+                      )}
+                      {item.transaction?.flagged && (
+                        <Star size={12} className="shrink-0 fill-current text-amber-500" aria-label={t('transactions.flagged')} />
                       )}
                       {item.isPending && (
                         <Tooltip>

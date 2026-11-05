@@ -63,6 +63,12 @@ _INVOICE_LINES = [{"description": "Consulting", "quantity": 2, "unit_price": "10
 # on purpose answer a domain rule instead (a draft can't be voided, a sole
 # owner can't leave): that answer is the contract, and the baseline pins it.
 BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
+    ("PATCH", "/api/transactions/{transaction_id}/review"): lambda w: {
+        "review_status": "reviewed",
+    },
+    ("PATCH", "/api/transactions/bulk-review"): lambda w: {
+        "review_status": "reviewed", "transaction_ids": [w["transaction_id"]],
+    },
     ("POST", "/api/budgets"): lambda w: {
         "category_id": w["second_category_id"], "amount": 300, "month": "2026-05-01",
     },

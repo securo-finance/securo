@@ -61,7 +61,13 @@
     "archiveHint": "O espaço de trabalho fica oculto da lista e do seletor. Os dados permanecem preservados.",
     "archiveSuccess": "Espaço de trabalho arquivado",
     "archiveConfirmTitle": "Arquivar espaço de trabalho?",
-    "archiveConfirmDescription": "O espaço de trabalho \"{{name}}\" será removido da tua lista. Os dados permanecem preservados e um administrador poderá restaurá-lo mais tarde."
+    "archiveConfirmDescription": "O espaço de trabalho \"{{name}}\" será removido da tua lista. Os dados permanecem preservados e um administrador poderá restaurá-lo mais tarde.",
+    "reviewPolicyTitle": "Revisão de transações",
+    "reviewPolicyIngest": "Importações e sincronização",
+    "reviewPolicyManual": "Lançamentos manuais",
+    "reviewPolicyNeedsReview": "Marcar como precisando de revisão",
+    "reviewPolicyReviewed": "Marcar como revisada",
+    "reviewPolicyHint": "Define em qual estado novas transações chegam. Linhas já no livro não são reescritas."
   },
   "app": {
     "name": "Securo",
@@ -1176,7 +1182,22 @@
     "invoiceBadgeTooltip": "Esta transação quita uma cobrança. Abrir.",
     "suggestionBadge": "Pergunta",
     "suggestionBadgeTooltip": "Um pagamento pode liquidar esta cobrança. Abra a fila para responder.",
-    "clearGroupFilter": "Limpar filtro de grupo"
+    "clearGroupFilter": "Limpar filtro de grupo",
+    "needsReview": "Precisa de revisão",
+    "needsReviewCount": "Precisa de revisão ({{count}})",
+    "needsReviewOnly": "Somente precisam de revisão",
+    "reviewed": "Revisada",
+    "reviewedByHuman": "Revista por uma pessoa",
+    "reviewedByRule": "Revista por uma regra",
+    "reviewedUnattributed": "Revista (sem atribuição)",
+    "markReviewed": "Marcar como revisada",
+    "markUnreviewed": "Marcar como não revisada",
+    "bulkReviewSuccess": "{{count}} marcadas como revisadas",
+    "bulkUnreviewSuccess": "{{count}} marcadas como não revisadas",
+    "reviewShortcutHint": "Alternar revisão (Shift+R)",
+    "flagged": "Sinalizada",
+    "flag": "Sinalizar",
+    "unflag": "Remover sinalização"
   },
   "accounts": {
     "title": "Contas",
@@ -1653,6 +1674,8 @@
     "fieldPayee": "Entidade",
     "fieldDate": "Data",
     "fieldStatus": "Estado",
+    "fieldReviewStatus": "Review status",
+    "markReviewed": "Mark reviewed",
     "opContains": "contém",
     "opNotContains": "não contém",
     "opEquals": "é igual a",

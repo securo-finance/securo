@@ -41,6 +41,7 @@ const CONDITION_FIELDS = [
   { value: 'payee_id', label: 'rules.fieldPayee' },
   { value: 'date', label: 'rules.fieldDate' },
   { value: 'status', label: 'rules.fieldStatus' },
+  { value: 'review_status', label: 'rules.fieldReviewStatus' },
 ] as const
 
 const STRING_OPS = [
@@ -64,7 +65,7 @@ const NUMERIC_OPS = [
 function getOpsForField(field: string) {
   if (field === 'amount' || field === 'date') return NUMERIC_OPS
   if (field === 'type') return [{ value: 'equals', label: 'rules.opIs' }]
-  if (field === 'payee_id' || field === 'account_id' || field === 'status') return [
+  if (field === 'payee_id' || field === 'account_id' || field === 'status' || field === 'review_status') return [
     { value: 'equals', label: 'rules.opIs' },
     { value: 'not_equals', label: 'rules.opIsNot' },
   ]
@@ -74,6 +75,7 @@ function getOpsForField(field: string) {
 function defaultValueForField(field: string) {
   if (field === 'type') return 'debit'
   if (field === 'status') return 'pending'
+  if (field === 'review_status') return 'needs_review'
   return ''
 }
 
@@ -167,6 +169,15 @@ function ConditionRow({
         >
           <option value="pending">{t('rules.statusPending')}</option>
           <option value="posted">{t('rules.statusPosted')}</option>
+        </select>
+      ) : condition.field === 'review_status' ? (
+        <select
+          className={`${SELECT_CLASS} col-span-2 w-full min-w-0 sm:w-0 sm:flex-1`}
+          value={String(condition.value)}
+          onChange={(e) => onChange('value', e.target.value)}
+        >
+          <option value="needs_review">{t('transactions.needsReview')}</option>
+          <option value="reviewed">{t('transactions.reviewed')}</option>
         </select>
       ) : condition.field === 'account_id' ? (
         <select
@@ -451,7 +462,9 @@ export function RuleDialog({
     defaultConditions.length ? defaultConditions : [newCondition()]
   )
   const [actions, setActions] = useState<RuleAction[]>(
-    defaultActions.length ? defaultActions : [{ op: 'set_category', value: '' }]
+    defaultActions.length
+      ? defaultActions.map(action => action.op === 'set_reviewed' ? { ...action, value: '' } : action)
+      : [{ op: 'set_category', value: '' }]
   )
   const [priority, setPriority] = useState(String(rule?.priority ?? 0))
   // Read, never written here: the row owns the switch. Kept so an edit
@@ -701,12 +714,13 @@ export function RuleDialog({
                         <option value="set_payee">{t('rules.setPayee')}</option>
                         <option value="append_notes">{t('rules.appendNotes')}</option>
                         <option value="ignore">{t('rules.ignoreAction')}</option>
+                        <option value="set_reviewed">{t('rules.markReviewed')}</option>
                       </select>
                       {action.op === 'ignore' ? (
                         <span className="min-w-0 text-sm italic text-muted-foreground sm:w-0 sm:flex-1">
                           {t('rules.ignoreActionHint')}
                         </span>
-                      ) : action.op === 'set_category' ? (
+                      ) : action.op === 'set_reviewed' ? null : action.op === 'set_category' ? (
                         <div className="w-full min-w-0 sm:w-0 sm:flex-1">
                           <CategorySelect
                             value={action.value}

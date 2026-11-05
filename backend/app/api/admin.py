@@ -3,6 +3,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.review_conflict import ReviewerDeleteRace
 
 from app.core.auth import UserManager, current_active_user, current_superuser, get_user_manager
 from app.core.auth_policy import require_local_auth_enabled
@@ -113,6 +114,8 @@ async def delete_user(
 ):
     try:
         deleted = await admin_service.delete_user(session, user_id, current_user.id)
+    except ReviewerDeleteRace as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not deleted:
