@@ -888,7 +888,9 @@
     "fxRateUsed": "Árfolyam: {{rate}}",
     "refreshRates": "Árfolyamok frissítése",
     "ratesRefreshed": "Árfolyamok frissítve",
-    "ratesError": "Nem sikerült frissíteni az árfolyamokat"
+    "ratesError": "Nem sikerült frissíteni az árfolyamokat",
+    "balanceFlowVsPrev": "In {{month}} on day {{day}}: {{amount}} ({{delta}})",
+    "balancePreviousMonthLegend": "Previous month"
   },
   "transactions": {
     "title": "Tranzakciók",
@@ -1558,7 +1560,8 @@
     "autoGenerate": "Tranzakciók automatikus létrehozása",
     "autoGenerateHelp": "Minden esedékességkor létrejön egy tranzakció. Kapcsold ki, ha inkább megvárnád a tényleges terhelést (pl. banki szinkronizálásból) – addig csak közelgő tételként jelenik meg.",
     "fxEstimate": "Becslés a legutóbbi árfolyam ({{rate}}) alapján. A végleges összeg eltérhet.",
-    "confirmDeleteDescription": "Az ismétlődő tétel („{{description}}”) véglegesen törlődik. A meglévő tranzakciók megmaradnak, de elveszítik az ismétlődő kapcsolatukat. Ez a művelet nem vonható vissza."
+    "confirmDeleteDescription": "Az ismétlődő tétel („{{description}}”) véglegesen törlődik. A meglévő tranzakciók megmaradnak, de elveszítik az ismétlődő kapcsolatukat. Ez a művelet nem vonható vissza.",
+    "noAccount": "None"
   },
   "rules": {
     "searchPlaceholder": "Szabályok keresése...",
@@ -1914,9 +1917,57 @@
       "invalid_fx_rate": "Érvénytelen árfolyam",
       "ambiguous_amount": "Bemenő és kimenő összeg is megvan",
       "conflicting_amount": "Ütköző összegmezők",
-      "invalid_direction": "Érvénytelen jóváírás/levonás jelző"
+      "invalid_direction": "Érvénytelen jóváírás/levonás jelző",
+      "zero_amount": "Zero Amount"
     },
-    "selectAll": "Összes kijelölése"
+    "selectAll": "Összes kijelölése",
+    "sourcePreset": "Source preset",
+    "presetAuto": "Auto (generic CSV; confirm Monarch explicitly)",
+    "sessionOnly": "Import progress is retained only on this page. After leaving or reloading, reconcile prior writes before uploading again; duplicate detection does not make replay safe.",
+    "resumeImport": "Resume remaining buckets",
+    "progressTotals": "Acknowledged only: {{imported}} imported, {{skipped}} duplicates skipped, {{excluded}} excluded. Import is not complete.",
+    "outcomeUnknown": "A request may have committed without an acknowledgement. Import is stopped: do not replay or upload again until its outcome is reconciled. Missing logs or matching filenames alone are not proof.",
+    "abandonProgress": "Abandon this retained import plan? Acknowledged writes remain, and uncertain requests may have committed. This page cannot safely recover the plan after leaving or reloading; reconcile before importing again.",
+    "bucketStatus": {
+      "not-started": "Not started",
+      "in-flight": "Awaiting acknowledgement",
+      "acknowledged": "Acknowledged (imported / skipped / excluded; log)",
+      "proven-not-committed": "Rejected before writes; safe to resume this bucket",
+      "outcome-unknown": "Outcome unknown; replay blocked"
+    },
+    "presetMonarch": "Monarch Money",
+    "presetGeneric": "Generic CSV",
+    "categoryMapping": "Category mapping",
+    "categoryMappingHint": "Confirm where each source category lands. Suggestions come from your categories; anything left unmapped imports as Uncategorized unless your rules assign one.",
+    "mappingRows": "rows",
+    "mappingTargetFor": "Target category for {{value}}",
+    "leaveToRules": "Leave to my rules",
+    "uncategorizedOption": "Uncategorized",
+    "summaryRowsIn": "rows in",
+    "summaryWillImport": "will import",
+    "summaryDupes": "dupes (will skip)",
+    "summaryFailed": "failed rows",
+    "summaryUnmapped": "unmapped categories",
+    "reportTitle": "Import report",
+    "reportSummary": "{{imported}} imported · {{skipped}} duplicates skipped · {{failed}} failed rows",
+    "reportRows": "Submitted category intentions",
+    "unassignedSource": "Unassigned rows",
+    "sourceCounts": "{{name}}: {{submitted}} submitted, {{excluded}} excluded (request outcome shared)",
+    "routingSkipped": "Routing-skipped rows: {{count}} (not server duplicates or exclusions)",
+    "groupTooLarge": "A destination request exceeds the 15 MiB limit. Nothing was submitted; reduce the file before importing.",
+    "resetReviewConfirm": "Re-previewing will reset individual row exclusions and categories. Continue and review the replacement preview again?",
+    "reviewReset": "Individual row decisions were reset. Review this replacement preview before importing.",
+    "reviewedPreview": "I reviewed this preview",
+    "reportTarget": "Target",
+    "reportMapped": "mapped",
+    "reportUncategorized": "Uncategorized",
+    "reportLeftToRules": "Left to my rules",
+    "reportFootnote": "Category counts describe submitted mapping intentions, not persisted outcomes. Your rules may have reassigned some of these rows.",
+    "routingTitle": "Account routing",
+    "routingNoTarget": "Not routed",
+    "routingSkip": "Skip these rows",
+    "routingBlocked": "Route every account before importing.",
+    "reportAccountLine": "{{name}}: {{imported}} imported, {{skipped}} skipped"
   },
   "assetImport": {
     "title": "Befektetési megbízások importálása",
@@ -2473,7 +2524,10 @@
       "project": "Projekt",
       "client": "Ügyfél",
       "other": "Egyéb"
-    }
+    },
+    "ownerOwesYou": "{{name}} owes you",
+    "thirdPartyOwes": "{{name}} owes {{owner}}",
+    "thirdPartyOwed": "{{owner}} owes {{name}}"
   },
   "privacy": {
     "hide": "Értékek elrejtése",
