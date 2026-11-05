@@ -126,7 +126,7 @@ def test_price_change_stable_monthly_17_to_15():
 
 def test_price_change_requires_three_clean_observations():
     """Exactly three clean observations is the documented minimum that fires
-    (§3.1, §3.4 rule 1, §7 Q1; Juiz gate amendment 2026-09-23)."""
+    (§3.1, §3.4 rule 1, §7 Q1; minimum-sample contract)."""
     series = _series()
     rows = _monthly_rows(series, ["10.00", "10.00", "11.00"])
 
@@ -143,8 +143,7 @@ def test_price_change_requires_three_clean_observations():
 
 
 def test_price_change_two_observations_are_insufficient():
-    """Two linked occurrences = insufficient history (§3.4; Juiz gate
-    amendment 2026-09-23)."""
+    """Two linked occurrences = insufficient history (§3.4; minimum-sample contract)."""
     series = _series()
     rows = _monthly_rows(series, ["10.00", "11.00"])
 

@@ -21,7 +21,7 @@ Contract summary, all from the packet:
   ``[previous, prior_previous]``; it must be stable
   (``max - min <= 0.01``) and the candidate must differ from ``previous`` by
   more than ``0.01``. Exactly three clean observations is the minimum that
-  fires (two alone = insufficient history; Juiz gate amendment 2026-09-23).
+  fires (two alone = insufficient history; minimum-sample contract).
 - Decimal discipline (§3.2): amounts are quantized to the model's two-decimal
   scale with ``ROUND_HALF_UP`` and never round-tripped through binary floats.
   The v1 noise unit is one persisted minor unit, ``Decimal("0.01")``.
