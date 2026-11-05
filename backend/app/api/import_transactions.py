@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -11,22 +12,41 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.transaction import TransactionImportPreview, TransactionImportRequest
+from app.schemas.transaction import (
+    DryRunSummary,
+    PresetCategorySuggestion,
+    TransactionImportPreview,
+    TransactionImportRequest,
+)
 from app.services import account_service, import_service
+from app.services.import_category_mapping import MonarchCategoryMapper
+from app.services.import_presets import MONARCH
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/transactions", tags=["import"])
+
+# Preset vocabulary: auto/generic stay generic; Monarch is explicit confirmation.
+_PRESET_CHOICES = ("", "auto", "monarch", "generic")
 
 
 @router.post("/import/preview", response_model=TransactionImportPreview)
 async def preview_import(
     file: UploadFile = File(...),
     date_format: Optional[str] = Form(None),
-    flip_amount: bool = Form(False),
+    flip_amount: Optional[bool] = Form(None),
     inflow_column: Optional[str] = Form(None),
     outflow_column: Optional[str] = Form(None),
     column_mapping: Optional[str] = Form(None),
+    # Source-preset selector: absent/"auto" and "generic" use plain CSV.
+    # Only "monarch" explicitly confirms its sign/date defaults; headers
+    # cannot establish provenance. This endpoint remains read-gated.
+    preset: Optional[str] = Form(None),
+    # Dry-run summary (§7.3): read-only counts via the extracted
+    # find_existing_duplicate; requires the target account_id. Writes
+    # remain the job of POST /import below.
+    dry_run: bool = Form(False),
+    account_id: Optional[str] = Form(None),
     # Read-gated on purpose, and the exception is deliberate rather than an
     # oversight. This is a POST because it takes a file upload, not because
     # it changes anything: it parses the upload and returns what *would* be
@@ -46,6 +66,13 @@ async def preview_import(
         filename, len(content), file.content_type,
     )
 
+    requested_preset = (preset or "").strip().lower()
+    if requested_preset not in _PRESET_CHOICES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown preset: {preset!r}. Expected one of: auto, monarch, generic",
+        )
+
     # column_mapping arrives as a JSON-encoded form field (Securo field -> CSV header)
     parsed_mapping: Optional[dict] = None
     if column_mapping:
@@ -64,6 +91,8 @@ async def preview_import(
 
     parse_error: Optional[str] = None
     failed_rows = []
+    # Resolved preset actually applied to this parse (None = generic path).
+    applied_preset: Optional[str] = None
     try:
         if filename.lower().endswith('.ofx') or filename.lower().endswith('.qfx'):
             transactions = import_service.parse_ofx(content)
@@ -76,6 +105,10 @@ async def preview_import(
             detected_format = "camt"
         elif filename.lower().endswith('.csv'):
             detected_format = "csv"
+            # Only an explicit source selection confirms Monarch provenance.
+            # Ordinary headers cannot justify changing sign/date semantics.
+            preset_spec = MONARCH if requested_preset == "monarch" else None
+            applied_preset = preset_spec.name if preset_spec else None
             try:
                 transactions, failed_rows = import_service.parse_csv(
                     content,
@@ -84,6 +117,7 @@ async def preview_import(
                     inflow_column=inflow_column,
                     outflow_column=outflow_column,
                     column_mapping=parsed_mapping,
+                    preset=preset_spec,
                 )
             except ValueError as csv_err:
                 # The CSV's columns couldn't be auto-mapped. As long as we can
@@ -139,12 +173,83 @@ async def preview_import(
         except Exception:
             csv_columns = []
 
+    # Preset category mapping (§4.2/§4.3): one mapper serves the mapping
+    # card suggestions and the dry-run unmapped count.
+    mapper = None
+    preset_suggestions: list[PresetCategorySuggestion] = []
+    distinct_values: list[str] = []
+    if applied_preset:
+        mapper = await MonarchCategoryMapper.load(session, ctx.workspace.id)
+        counts: dict[str, int] = {}
+        for txn in transactions:
+            value = (txn.category_name or "").strip()
+            if not value:
+                continue
+            if value not in counts:
+                counts[value] = 0
+                distinct_values.append(value)
+            counts[value] += 1
+        for value in distinct_values:
+            target = mapper.suggest(value)
+            preset_suggestions.append(PresetCategorySuggestion(
+                value=value,
+                row_count=counts[value],
+                suggested_category_id=target.id if target else None,
+                suggested_category_name=target.name if target else None,
+            ))
+
+    # Dry-run summary (§7.3): read-only pre-flight counts. Validates the
+    # target account, then runs the same extracted duplicate lookup the
+    # write path uses — one SELECT per row, no writes (asserted by test).
+    dry_run_summary: Optional[DryRunSummary] = None
+    if dry_run:
+        if not account_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="dry_run requires account_id",
+            )
+        try:
+            account_uuid = uuid.UUID(account_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid account_id",
+            )
+        account = await account_service.get_account(session, account_uuid, ctx.workspace.id)
+        if not account:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+        matched_ids: set[uuid.UUID] = set()
+        would_skip = 0
+        for txn in transactions:
+            duplicate = await import_service.find_existing_duplicate(
+                session, account.id, txn, matched_ids=matched_ids,
+            )
+            if duplicate:
+                matched_ids.add(duplicate.id)
+                would_skip += 1
+
+        unmapped_categories = sum(
+            1 for value in distinct_values if mapper is None or mapper.suggest(value) is None
+        )
+
+        dry_run_summary = DryRunSummary(
+            rows_in=len(transactions) + len(failed_rows),
+            would_import=len(transactions) - would_skip,
+            would_skip_dupes=would_skip,
+            failed_rows=len(failed_rows),
+            unmapped_categories=unmapped_categories,
+        )
+
     return TransactionImportPreview(
         transactions=transactions,
         detected_format=detected_format,
         csv_columns=csv_columns,
         parse_error=parse_error,
         failed_rows=failed_rows,
+        preset=applied_preset,
+        dry_run=dry_run_summary,
+        preset_category_suggestions=preset_suggestions,
     )
 
 
@@ -159,7 +264,14 @@ async def import_transactions(
     # account owned by another tenant.
     account = await account_service.get_account(session, data.account_id, ctx.workspace.id)
     if not account:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+        # This rejection occurs before the import service is invoked. It is
+        # the only retry evidence this route promises; a later exception may
+        # have occurred during/after commit and must remain outcome-unknown.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
+            headers={"X-Import-Outcome": "not-committed"},
+        )
 
     imported, skipped, excluded, import_log_id = await import_service.import_transactions(
         session, ctx.workspace.id, ctx.user_id, data.account_id, data.transactions, "import",

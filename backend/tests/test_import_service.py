@@ -3526,3 +3526,51 @@ class TestCsvFxRateValidation:
             ("Bad rate", "invalid_fx_rate"),
             ("Negative rate", "invalid_fx_rate"),
         ]
+
+
+def test_parse_csv_preset_is_pure_default_provider():
+    """Generic CSV parsing with no preset passed stays byte-identical.
+
+    Design packet §12 T2/T3: a preset is a default provider layered on
+    top of parse_csv, never a change to the base path — the extract of
+    find_existing_duplicate and the preset parameter must both leave this
+    observable output untouched. Pinned fields are the full user-visible
+    row payload; additive optional schema fields are deliberately not
+    asserted so a later packet-mandated field addition cannot masquerade
+    as a behavior change here (nor hide one).
+    """
+    from app.services.import_service import parse_csv
+
+    csv_content = (
+        "data,descricao,valor,categoria,nota\n"
+        "10/02/2026,UBER TRIP,-25.50,Transporte,pickup at 8\n"
+        "2026-02-12,Unknown TX,150.00,,\n"
+        "bad-date,Broken,-1.00,,\n"
+        "2026-02-14,Broken amt,oops,,\n"
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+
+    assert [
+        (
+            t.description,
+            str(t.amount),
+            t.date.isoformat(),
+            t.type,
+            t.category_name,
+            t.notes,
+            t.currency,
+            t.external_id,
+            t.payee_raw,
+        )
+        for t in transactions
+    ] == [
+        ("UBER TRIP", "25.50", "2026-02-10", "debit", "Transporte", "pickup at 8", None, None, None),
+        ("Unknown TX", "150.00", "2026-02-12", "credit", None, None, None, None, None),
+    ]
+    assert [
+        (f.line_number, f.error_reason, f.raw_value, f.description)
+        for f in failed_rows
+    ] == [
+        (4, "invalid_date", "bad-date", "Broken"),
+        (5, "invalid_amount", "oops", "Broken amt"),
+    ]

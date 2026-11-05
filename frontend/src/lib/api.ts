@@ -65,6 +65,9 @@ import type {
   RulePreviewResponse,
   ImportLog,
   ImportPreviewTransaction,
+  ImportPresetChoice,
+  DryRunSummary,
+  PresetCategorySuggestion,
   FailedRow,
   PayeeTaxId,
   TaxIdKindOption,
@@ -769,29 +772,50 @@ export const transactions = {
     inflow_column?: string
     outflow_column?: string
     column_mapping?: Record<string, string>
-  }): Promise<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null; failed_rows?: FailedRow[] }> => {
+    preset?: ImportPresetChoice
+    dry_run?: boolean
+    account_id?: string
+  }): Promise<{
+    transactions: ImportPreviewTransaction[]
+    detected_format: string
+    csv_columns?: string[]
+    parse_error?: string | null
+    failed_rows?: FailedRow[]
+    preset?: string | null
+    dry_run?: DryRunSummary | null
+    preset_category_suggestions?: PresetCategorySuggestion[]
+  }> => {
     const formData = new FormData()
     formData.append('file', file)
     if (options?.date_format) formData.append('date_format', options.date_format)
-    if (options?.flip_amount) formData.append('flip_amount', 'true')
+    // A boolean is sent whenever the caller has an opinion, including an
+    // explicit false: under an active preset, "off" must beat the preset's
+    // default flip (§7.1 — every control stays editable).
+    if (typeof options?.flip_amount === 'boolean') {
+      formData.append('flip_amount', options.flip_amount ? 'true' : 'false')
+    }
     if (options?.inflow_column) formData.append('inflow_column', options.inflow_column)
     if (options?.outflow_column) formData.append('outflow_column', options.outflow_column)
     if (options?.column_mapping && Object.keys(options.column_mapping).length > 0) {
       formData.append('column_mapping', JSON.stringify(options.column_mapping))
     }
+    // Auto is omitted and stays generic; Monarch requires explicit confirmation.
+    if (options?.preset && options.preset !== 'auto') formData.append('preset', options.preset)
+    if (options?.dry_run) formData.append('dry_run', 'true')
+    if (options?.account_id) formData.append('account_id', options.account_id)
     const { data } = await api.post('/transactions/import/preview', formData, readOnly)
     return data
   },
   import: async (
     account_id: string,
-    transactions: ImportPreviewTransaction[],
+    transactions: readonly ImportPreviewTransaction[],
     filename: string,
     detected_format: string,
     options?: { detect_duplicates?: boolean },
   ): Promise<{ imported: number; skipped: number; excluded: number; import_log_id: string }> => {
     const payload: {
       account_id: string
-      transactions: ImportPreviewTransaction[]
+      transactions: readonly ImportPreviewTransaction[]
       filename: string
       detected_format: string
       detect_duplicates?: boolean

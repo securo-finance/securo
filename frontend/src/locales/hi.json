@@ -734,7 +734,9 @@
     "updated": "संग्रह अपडेट हुआ",
     "deleted": "संग्रह हटाया गया",
     "confirmDeleteTitle": "संग्रह हटाएँ?",
-    "confirmDeleteDesc": "\"{{name}}\" हटा दिया जाएगा। आपके खाते और डेटा पर कोई असर नहीं पड़ता।"
+    "confirmDeleteDesc": "\"{{name}}\" हटा दिया जाएगा। आपके खाते और डेटा पर कोई असर नहीं पड़ता।",
+    "accountCount": "{{count}} खाते",
+    "walletCount": "{{count}} वॉलेट"
   },
   "auth": {
     "login": "लॉग इन",
@@ -888,7 +890,9 @@
     "fxRateUsed": "FX दर: {{rate}}",
     "refreshRates": "FX दरें रीफ़्रेश करें",
     "ratesRefreshed": "FX दरें अपडेट हुईं",
-    "ratesError": "FX दरें अपडेट करने में विफल"
+    "ratesError": "FX दरें अपडेट करने में विफल",
+    "balanceFlowVsPrev": "{{month}} में दिन {{day}} को: {{amount}} ({{delta}})",
+    "balancePreviousMonthLegend": "पिछला महीना"
   },
   "transactions": {
     "title": "लेन-देन",
@@ -1558,7 +1562,8 @@
     "autoGenerate": "लेन-देन अपने आप बनाएँ",
     "autoGenerateHelp": "हर बार यह बिल देय होने पर एक लेन-देन बनाएँ। असल शुल्क का इंतज़ार करने के लिए इसे बंद करें (जैसे, बैंक सिंक से) और तब तक इसे केवल आने वाले के रूप में दिखाएँ।",
     "fxEstimate": "नवीनतम विनिमय दर ({{rate}}) के आधार पर अनुमान। अंतिम राशि बदल सकती है।",
-    "confirmDeleteDescription": "आवर्ती परिभाषा \"{{description}}\" स्थायी रूप से हट जाएगी। मौजूदा लेन-देन बने रहेंगे लेकिन उनका आवर्ती लिंक खो जाएगा। यह कार्रवाई पूर्ववत नहीं की जा सकती।"
+    "confirmDeleteDescription": "आवर्ती परिभाषा \"{{description}}\" स्थायी रूप से हट जाएगी। मौजूदा लेन-देन बने रहेंगे लेकिन उनका आवर्ती लिंक खो जाएगा। यह कार्रवाई पूर्ववत नहीं की जा सकती।",
+    "noAccount": "कोई नहीं"
   },
   "rules": {
     "searchPlaceholder": "नियम खोजें...",
@@ -1914,9 +1919,38 @@
       "invalid_fx_rate": "अमान्य विनिमय दर",
       "ambiguous_amount": "आवक और जावक दोनों भरी हैं",
       "conflicting_amount": "टकराव में राशि फ़ील्ड",
-      "invalid_direction": "अमान्य क्रेडिट/डेबिट संकेतक"
+      "invalid_direction": "अमान्य क्रेडिट/डेबिट संकेतक",
+      "zero_amount": "शून्य राशि"
     },
-    "selectAll": "सभी चुनें"
+    "selectAll": "सभी चुनें",
+    "sourcePreset": "स्रोत प्रीसेट",
+    "presetAuto": "स्वचालित (डिफ़ॉल्ट)",
+    "presetMonarch": "Monarch Money",
+    "presetGeneric": "सामान्य CSV",
+    "categoryMapping": "श्रेणी मैपिंग",
+    "categoryMappingHint": "पुष्टि करें कि प्रत्येक स्रोत श्रेणी कहाँ जाती है। सुझाव आपकी श्रेणियों से आते हैं; बिना मैप की गई श्रेणियाँ बिना श्रेणी के आयात होती हैं, जब तक आपके नियम कोई असाइन नहीं करते।",
+    "mappingRows": "पंक्तियाँ",
+    "mappingTargetFor": "{{value}} के लिए लक्ष्य श्रेणी",
+    "leaveToRules": "मेरे नियमों पर छोड़ें",
+    "summaryRowsIn": "पंक्तियाँ प्राप्त",
+    "summaryWillImport": "आयात होंगी",
+    "summaryDupes": "डुप्लिकेट (छोड़े जाएँगे)",
+    "summaryFailed": "विफल पंक्तियाँ",
+    "summaryUnmapped": "बिना मैप श्रेणियाँ",
+    "reportTitle": "आयात रिपोर्ट",
+    "reportSummary": "{{imported}} आयात · {{skipped}} डुप्लिकेट छोड़े गए · {{failed}} विफल पंक्तियाँ",
+    "reportRows": "पंक्तियाँ",
+    "reportTarget": "लक्ष्य",
+    "reportMapped": "मैप की गई",
+    "reportLeftToRules": "नियमों के लिए छोड़ी गई",
+    "reportFootnote": "आपके नियमों ने इनमें से कुछ पंक्तियों को पुनः असाइन किया हो सकता है।",
+    "uncategorizedOption": "अवर्गीकृत",
+    "reportUncategorized": "अवर्गीकृत",
+    "routingTitle": "खाता रूटिंग",
+    "routingNoTarget": "अरूटेड",
+    "routingSkip": "ये पंक्तियाँ छोड़ें",
+    "routingBlocked": "आयात से पहले हर खाता रूट करें।",
+    "reportAccountLine": "{{name}}: {{imported}} आयात, {{skipped}} छोड़े गए"
   },
   "assetImport": {
     "title": "निवेश ऑर्डर इंपोर्ट करें",
@@ -2473,7 +2507,10 @@
       "project": "प्रोजेक्ट",
       "client": "क्लाइंट",
       "other": "अन्य"
-    }
+    },
+    "ownerOwesYou": "{{name}} पर आपका बकाया है",
+    "thirdPartyOwes": "{{name}} पर {{owner}} का बकाया है",
+    "thirdPartyOwed": "{{owner}} पर {{name}} का बकाया है"
   },
   "privacy": {
     "hide": "मान छिपाएँ",

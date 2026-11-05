@@ -742,7 +742,9 @@
     "updated": "Zaktualizowano kolekcję",
     "deleted": "Usunięto kolekcję",
     "confirmDeleteTitle": "Usunąć kolekcję?",
-    "confirmDeleteDesc": "„{{name}}” zostanie usunięta. Twoje konta i dane nie zostaną naruszone."
+    "confirmDeleteDesc": "„{{name}}” zostanie usunięta. Twoje konta i dane nie zostaną naruszone.",
+    "accountCount": "{{count}} kont",
+    "walletCount": "{{count}} portfeli"
   },
   "auth": {
     "login": "Zaloguj się",
@@ -902,7 +904,9 @@
     "fxRateUsed": "Kurs FX: {{rate}}",
     "refreshRates": "Odśwież kursy FX",
     "ratesRefreshed": "Zaktualizowano kursy FX",
-    "ratesError": "Nie udało się zaktualizować kursów FX"
+    "ratesError": "Nie udało się zaktualizować kursów FX",
+    "balanceFlowVsPrev": "W {{month}} w dniu {{day}}: {{amount}} ({{delta}})",
+    "balancePreviousMonthLegend": "Poprzedni miesiąc"
   },
   "transactions": {
     "title": "Transakcje",
@@ -1620,7 +1624,8 @@
     "autoGenerate": "Automatycznie generuj transakcje",
     "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
     "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić.",
-    "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć."
+    "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć.",
+    "noAccount": "Brak"
   },
   "rules": {
     "searchPlaceholder": "Szukaj reguł...",
@@ -2003,9 +2008,38 @@
       "invalid_fx_rate": "Nieprawidłowy kurs walutowy",
       "ambiguous_amount": "Wpływ i wypływ uzupełnione",
       "conflicting_amount": "Konfliktowe pola kwot",
-      "invalid_direction": "Nieprawidłowy wskaźnik uznania/obciążenia"
+      "invalid_direction": "Nieprawidłowy wskaźnik uznania/obciążenia",
+      "zero_amount": "Kwota zero"
     },
-    "selectAll": "Zaznacz wszystko"
+    "selectAll": "Zaznacz wszystko",
+    "sourcePreset": "Preset źródłowy",
+    "presetAuto": "Automatycznie (domyślne)",
+    "presetMonarch": "Monarch Money",
+    "presetGeneric": "Ogólny CSV",
+    "categoryMapping": "Mapowanie kategorii",
+    "categoryMappingHint": "Potwierdź, dokąd trafia każda kategoria źródłowa. Propozycje pochodzą z Twoich kategorii; to, co pozostaje bez mapowania, jest importowane jako Bez kategorii, chyba że Twoje reguły przypiszą jedną.",
+    "mappingRows": "wpisów",
+    "mappingTargetFor": "Kategoria docelowa dla {{value}}",
+    "leaveToRules": "Zostaw moim regułom",
+    "summaryRowsIn": "odebranych wierszy",
+    "summaryWillImport": "zostanie zaimportowanych",
+    "summaryDupes": "duplikaty (pominięte)",
+    "summaryFailed": "nieudane wiersze",
+    "summaryUnmapped": "niezmapowane kategorie",
+    "reportTitle": "Raport importu",
+    "reportSummary": "{{imported}} zaimportowano · {{skipped}} duplikatów pominięto · {{failed}} nieudanych wierszy",
+    "reportRows": "Wiersze",
+    "reportTarget": "Cel",
+    "reportMapped": "zmapowana",
+    "reportLeftToRules": "Zostawiona regułom",
+    "reportFootnote": "Twoje reguły mogły ponownie przypisać część z tych wierszy.",
+    "uncategorizedOption": "Nieskategoryzowane",
+    "reportUncategorized": "Nieskategoryzowane",
+    "routingTitle": "Układ kont",
+    "routingNoTarget": "Bez trasy",
+    "routingSkip": "Pomiń te wiersze",
+    "routingBlocked": "Przypisz każde konto przed importem.",
+    "reportAccountLine": "{{name}}: {{imported}} zaimportowano, {{skipped}} pominięto"
   },
   "assetImport": {
     "title": "Importuj zlecenia inwestycyjne",
@@ -2577,7 +2611,10 @@
       "project": "Projekt",
       "client": "Klient",
       "other": "Inne"
-    }
+    },
+    "ownerOwesYou": "{{name}} jest Ci winien",
+    "thirdPartyOwes": "{{name}} jest winien {{owner}}",
+    "thirdPartyOwed": "{{owner}} jest winien {{name}}"
   },
   "privacy": {
     "hide": "Ukryj wartości",

@@ -736,7 +736,9 @@
     "updated": "Collection mise à jour",
     "deleted": "Collection supprimée",
     "confirmDeleteTitle": "Supprimer la collection ?",
-    "confirmDeleteDesc": "« {{name}} » sera supprimée. Vos comptes et vos données ne sont pas affectés."
+    "confirmDeleteDesc": "« {{name}} » sera supprimée. Vos comptes et vos données ne sont pas affectés.",
+    "accountCount": "{{count}} comptes",
+    "walletCount": "{{count}} portefeuilles"
   },
   "auth": {
     "login": "Connexion",
@@ -890,7 +892,9 @@
     "fxRateUsed": "Taux de change : {{rate}}",
     "refreshRates": "Actualiser les taux de change",
     "ratesRefreshed": "Taux de change mis à jour",
-    "ratesError": "Échec de la mise à jour des taux de change"
+    "ratesError": "Échec de la mise à jour des taux de change",
+    "balanceFlowVsPrev": "En {{month}} le jour {{day}} : {{amount}} ({{delta}})",
+    "balancePreviousMonthLegend": "Mois précédent"
   },
   "transactions": {
     "title": "Transactions",
@@ -1562,7 +1566,8 @@
     "autoGenerate": "Générer les transactions automatiquement",
     "autoGenerateHelp": "Créer une transaction à chaque échéance de cette facture. Désactivez pour attendre le prélèvement réel (ex. via la synchronisation bancaire) et l'afficher uniquement comme à venir jusque-là.",
     "fxEstimate": "Estimation basée sur le dernier taux de change ({{rate}}). Le montant final peut varier.",
-    "confirmDeleteDescription": "La définition récurrente « {{description}} » sera définitivement supprimée. Les transactions existantes resteront, mais perdront leur lien récurrent. Cette action est irréversible."
+    "confirmDeleteDescription": "La définition récurrente « {{description}} » sera définitivement supprimée. Les transactions existantes resteront, mais perdront leur lien récurrent. Cette action est irréversible.",
+    "noAccount": "Aucun"
   },
   "rules": {
     "searchPlaceholder": "Rechercher des règles...",
@@ -1918,9 +1923,38 @@
       "invalid_fx_rate": "Taux de change invalide",
       "ambiguous_amount": "Entrée et sortie renseignées",
       "conflicting_amount": "Champs de montant contradictoires",
-      "invalid_direction": "Indicateur crédit/débit invalide"
+      "invalid_direction": "Indicateur crédit/débit invalide",
+      "zero_amount": "Montant zéro"
     },
-    "selectAll": "Tout sélectionner"
+    "selectAll": "Tout sélectionner",
+    "sourcePreset": "Préréglage source",
+    "presetAuto": "Automatique (par défaut)",
+    "presetMonarch": "Monarch Money",
+    "presetGeneric": "CSV générique",
+    "categoryMapping": "Mappage des catégories",
+    "categoryMappingHint": "Confirmez où atterrit chaque catégorie d'origine. Les suggestions viennent de vos catégories ; tout ce qui n'est pas mappé est importé en Non catégorisé, sauf si vos règles en assignent une.",
+    "mappingRows": "lignes",
+    "mappingTargetFor": "Catégorie cible pour {{value}}",
+    "leaveToRules": "Laisser à mes règles",
+    "summaryRowsIn": "lignes reçues",
+    "summaryWillImport": "seront importées",
+    "summaryDupes": "doublons (ignorés)",
+    "summaryFailed": "lignes en erreur",
+    "summaryUnmapped": "catégories non mappées",
+    "reportTitle": "Rapport d'importation",
+    "reportSummary": "{{imported}} importées · {{skipped}} doublons ignorés · {{failed}} lignes en erreur",
+    "reportRows": "Lignes",
+    "reportTarget": "Cible",
+    "reportMapped": "mappée",
+    "reportLeftToRules": "Laissée aux règles",
+    "reportFootnote": "Vos règles ont peut-être réassigné certaines de ces lignes.",
+    "uncategorizedOption": "Non catégorisée",
+    "reportUncategorized": "Non catégorisée",
+    "routingTitle": "Routage des comptes",
+    "routingNoTarget": "Non routé",
+    "routingSkip": "Ignorer ces lignes",
+    "routingBlocked": "Routez chaque compte avant d'importer.",
+    "reportAccountLine": "{{name}}: {{imported}} importées, {{skipped}} ignorées"
   },
   "assetImport": {
     "title": "Importer des ordres d'investissement",
@@ -2477,7 +2511,10 @@
       "project": "Projet",
       "client": "Client",
       "other": "Autre"
-    }
+    },
+    "ownerOwesYou": "{{name}} vous doit",
+    "thirdPartyOwes": "{{name}} doit à {{owner}}",
+    "thirdPartyOwed": "{{owner}} doit à {{name}}"
   },
   "privacy": {
     "hide": "Masquer les valeurs",

@@ -742,7 +742,9 @@
     "updated": "Колекцію оновлено",
     "deleted": "Колекцію видалено",
     "confirmDeleteTitle": "Видалити колекцію?",
-    "confirmDeleteDesc": "«{{name}}» буде видалено. Ваші рахунки та дані не постраждають."
+    "confirmDeleteDesc": "«{{name}}» буде видалено. Ваші рахунки та дані не постраждають.",
+    "accountCount": "{{count}} рахунків",
+    "walletCount": "{{count}} гаманців"
   },
   "auth": {
     "login": "Увійти",
@@ -896,7 +898,9 @@
     "fxRateUsed": "Курс: {{rate}}",
     "refreshRates": "Оновити курси валют",
     "ratesRefreshed": "Курси валют оновлено",
-    "ratesError": "Не вдалося оновити курси валют"
+    "ratesError": "Не вдалося оновити курси валют",
+    "balanceFlowVsPrev": "У {{month}} на {{day}} день: {{amount}} ({{delta}})",
+    "balancePreviousMonthLegend": "Попередній місяць"
   },
   "transactions": {
     "title": "Транзакції",
@@ -1575,7 +1579,8 @@
     "autoGenerate": "Створювати транзакції автоматично",
     "autoGenerateHelp": "Створює транзакцію щоразу, коли настає термін оплати. Вимкніть, щоб дочекатися реального списання (наприклад, із банківської синхронізації) і до того часу показувати її лише як майбутню.",
     "fxEstimate": "Оцінка на основі останнього курсу ({{rate}}). Підсумкова сума може змінитися.",
-    "confirmDeleteDescription": "Визначення регулярної транзакції «{{description}}» буде видалено назавжди. Наявні транзакції залишаться, але втратять зв’язок із регулярною транзакцією. Цю дію не можна скасувати."
+    "confirmDeleteDescription": "Визначення регулярної транзакції «{{description}}» буде видалено назавжди. Наявні транзакції залишаться, але втратять зв’язок із регулярною транзакцією. Цю дію не можна скасувати.",
+    "noAccount": "Немає"
   },
   "rules": {
     "searchPlaceholder": "Пошук правил...",
@@ -1931,9 +1936,38 @@
       "invalid_fx_rate": "Недійсний курс валют",
       "ambiguous_amount": "Заповнено надходження і витрати",
       "conflicting_amount": "Конфліктні поля сум",
-      "invalid_direction": "Некоректний індикатор кредиту/дебету"
+      "invalid_direction": "Некоректний індикатор кредиту/дебету",
+      "zero_amount": "Нульова сума"
     },
-    "selectAll": "Вибрати все"
+    "selectAll": "Вибрати все",
+    "sourcePreset": "Пресет джерела",
+    "presetAuto": "Авто (за замовчуванням)",
+    "presetMonarch": "Monarch Money",
+    "presetGeneric": "Звичайний CSV",
+    "categoryMapping": "Зіставлення категорій",
+    "categoryMappingHint": "Підтвердьте, куди потрапляє кожна категорія-джерело. Підказки беруться з ваших категорій; незіставлене імпортується як «Без категорії», якщо ваші правила не призначать її.",
+    "mappingRows": "рядків",
+    "mappingTargetFor": "Цільова категорія для {{value}}",
+    "leaveToRules": "Залишити моїм правилам",
+    "summaryRowsIn": "отримано рядків",
+    "summaryWillImport": "буде імпортовано",
+    "summaryDupes": "дублікатів (буде пропущено)",
+    "summaryFailed": "рядків з помилкою",
+    "summaryUnmapped": "категорій без зіставлення",
+    "reportTitle": "Звіт про імпорт",
+    "reportSummary": "{{imported}} імпортовано · {{skipped}} дублікатів пропущено · {{failed}} рядків з помилкою",
+    "reportRows": "Рядки",
+    "reportTarget": "Призначення",
+    "reportMapped": "зіставлена",
+    "reportLeftToRules": "Залишена правилам",
+    "reportFootnote": "Ваші правила могли перепризначити деякі з цих рядків.",
+    "uncategorizedOption": "Без категорії",
+    "reportUncategorized": "Без категорії",
+    "routingTitle": "Маршрутизація рахунків",
+    "routingNoTarget": "Без маршруту",
+    "routingSkip": "Пропустити ці рядки",
+    "routingBlocked": "Призначте кожен рахунок перед імпортом.",
+    "reportAccountLine": "{{name}}: {{imported}} імпортовано, {{skipped}} пропущено"
   },
   "assetImport": {
     "title": "Імпорт інвестиційних заявок",
@@ -2490,7 +2524,10 @@
       "project": "Проєкт",
       "client": "Клієнт",
       "other": "Інше"
-    }
+    },
+    "ownerOwesYou": "{{name}} винен вам",
+    "thirdPartyOwes": "{{name}} винен {{owner}}",
+    "thirdPartyOwed": "{{owner}} винен {{name}}"
   },
   "privacy": {
     "hide": "Сховати суми",

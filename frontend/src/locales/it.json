@@ -736,7 +736,9 @@
     "updated": "Collezione aggiornata",
     "deleted": "Collezione eliminata",
     "confirmDeleteTitle": "Eliminare la collezione?",
-    "confirmDeleteDesc": "\"{{name}}\" verrà rimossa. I tuoi conti e dati non sono interessati."
+    "confirmDeleteDesc": "\"{{name}}\" verrà rimossa. I tuoi conti e dati non sono interessati.",
+    "accountCount": "{{count}} conti",
+    "walletCount": "{{count}} portafogli"
   },
   "auth": {
     "login": "Accedi",
@@ -890,7 +892,9 @@
     "fxRateUsed": "Tasso di cambio: {{rate}}",
     "refreshRates": "Aggiorna i tassi di cambio",
     "ratesRefreshed": "Tassi di cambio aggiornati",
-    "ratesError": "Impossibile aggiornare i tassi di cambio"
+    "ratesError": "Impossibile aggiornare i tassi di cambio",
+    "balanceFlowVsPrev": "In {{month}} il giorno {{day}}: {{amount}} ({{delta}})",
+    "balancePreviousMonthLegend": "Mese precedente"
   },
   "transactions": {
     "title": "Transazioni",
@@ -1562,7 +1566,8 @@
     "autoGenerate": "Genera transazioni automaticamente",
     "autoGenerateHelp": "Crea una transazione ogni volta che questa spesa è in scadenza. Disattiva per attendere l'addebito reale (ad es. dalla sincronizzazione bancaria) e mostrarla solo come in arrivo fino ad allora.",
     "fxEstimate": "Stima basata sull'ultimo tasso di cambio ({{rate}}). L'importo finale può variare.",
-    "confirmDeleteDescription": "La definizione ricorrente \"{{description}}\" verrà eliminata definitivamente. Le transazioni esistenti rimarranno, ma perderanno il collegamento ricorrente. Questa azione non può essere annullata."
+    "confirmDeleteDescription": "La definizione ricorrente \"{{description}}\" verrà eliminata definitivamente. Le transazioni esistenti rimarranno, ma perderanno il collegamento ricorrente. Questa azione non può essere annullata.",
+    "noAccount": "Nessuno"
   },
   "rules": {
     "searchPlaceholder": "Cerca regole...",
@@ -1918,9 +1923,38 @@
       "invalid_fx_rate": "Tasso di cambio non valido",
       "ambiguous_amount": "Entrata e uscita entrambe compilate",
       "conflicting_amount": "Campi di importo in conflitto",
-      "invalid_direction": "Indicatore accredito/addebito non valido"
+      "invalid_direction": "Indicatore accredito/addebito non valido",
+      "zero_amount": "Importo zero"
     },
-    "selectAll": "Seleziona tutto"
+    "selectAll": "Seleziona tutto",
+    "sourcePreset": "Preset di origine",
+    "presetAuto": "Automatico (predefinito)",
+    "presetMonarch": "Monarch Money",
+    "presetGeneric": "CSV generico",
+    "categoryMapping": "Mappatura categorie",
+    "categoryMappingHint": "Conferma dove finisce ogni categoria di origine. I suggerimenti vengono dalle tue categorie; ciò che resta senza mappatura viene importato come Senza categoria, a meno che le tue regole non ne assegnino una.",
+    "mappingRows": "righe",
+    "mappingTargetFor": "Categoria di destinazione per {{value}}",
+    "leaveToRules": "Lasciare alle mie regole",
+    "summaryRowsIn": "righe ricevute",
+    "summaryWillImport": "verranno importate",
+    "summaryDupes": "duplicati (verranno ignorati)",
+    "summaryFailed": "righe non riuscite",
+    "summaryUnmapped": "categorie non mappate",
+    "reportTitle": "Rapporto di importazione",
+    "reportSummary": "{{imported}} importate · {{skipped}} duplicati ignorati · {{failed}} righe non riuscite",
+    "reportRows": "Righe",
+    "reportTarget": "Destinazione",
+    "reportMapped": "mappata",
+    "reportLeftToRules": "Lasciata alle regole",
+    "reportFootnote": "Le tue regole potrebbero aver riassegnato alcune di queste righe.",
+    "uncategorizedOption": "Senza categoria",
+    "reportUncategorized": "Senza categoria",
+    "routingTitle": "Instradamento account",
+    "routingNoTarget": "Non instradato",
+    "routingSkip": "Salta queste righe",
+    "routingBlocked": "Instrada ogni account prima di importare.",
+    "reportAccountLine": "{{name}}: {{imported}} importate, {{skipped}} ignorate"
   },
   "assetImport": {
     "title": "Importa ordini di investimento",
@@ -2477,7 +2511,10 @@
       "project": "Progetto",
       "client": "Cliente",
       "other": "Altro"
-    }
+    },
+    "ownerOwesYou": "{{name}} ti deve",
+    "thirdPartyOwes": "{{name}} deve a {{owner}}",
+    "thirdPartyOwed": "{{owner}} deve a {{name}}"
   },
   "privacy": {
     "hide": "Nascondi valori",

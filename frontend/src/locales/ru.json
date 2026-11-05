@@ -742,7 +742,9 @@
     "updated": "Коллекция обновлена",
     "deleted": "Коллекция удалена",
     "confirmDeleteTitle": "Удалить коллекцию?",
-    "confirmDeleteDesc": "«{{name}}» будет удалена. Ваши счета и данные не пострадают."
+    "confirmDeleteDesc": "«{{name}}» будет удалена. Ваши счета и данные не пострадают.",
+    "accountCount": "{{count}} счетов",
+    "walletCount": "{{count}} кошельков"
   },
   "auth": {
     "login": "Войти",
@@ -896,7 +898,9 @@
     "fxRateUsed": "Курс: {{rate}}",
     "refreshRates": "Обновить курсы валют",
     "ratesRefreshed": "Курсы валют обновлены",
-    "ratesError": "Не удалось обновить курсы валют"
+    "ratesError": "Не удалось обновить курсы валют",
+    "balanceFlowVsPrev": "В {{month}} на {{day}} день: {{amount}} ({{delta}})",
+    "balancePreviousMonthLegend": "Предыдущий месяц"
   },
   "transactions": {
     "title": "Транзакции",
@@ -1575,7 +1579,8 @@
     "autoGenerate": "Создавать транзакции автоматически",
     "autoGenerateHelp": "Создаёт транзакцию при каждом наступлении срока оплаты. Отключите, чтобы дождаться реального списания (например, из банковской синхронизации) и до тех пор показывать её только как предстоящую.",
     "fxEstimate": "Оценка на основе последнего курса ({{rate}}). Итоговая сумма может измениться.",
-    "confirmDeleteDescription": "Определение регулярной транзакции «{{description}}» будет удалено навсегда. Существующие транзакции останутся, но потеряют связь с регулярной транзакцией. Это действие нельзя отменить."
+    "confirmDeleteDescription": "Определение регулярной транзакции «{{description}}» будет удалено навсегда. Существующие транзакции останутся, но потеряют связь с регулярной транзакцией. Это действие нельзя отменить.",
+    "noAccount": "Нет"
   },
   "rules": {
     "searchPlaceholder": "Поиск правил...",
@@ -1931,9 +1936,38 @@
       "invalid_fx_rate": "Неверный курс валюты",
       "ambiguous_amount": "Заполнены приход и расход",
       "conflicting_amount": "Конфликтующие поля сумм",
-      "invalid_direction": "Неверный индикатор кредита/дебета"
+      "invalid_direction": "Неверный индикатор кредита/дебета",
+      "zero_amount": "Нулевая сумма"
     },
-    "selectAll": "Выбрать все"
+    "selectAll": "Выбрать все",
+    "sourcePreset": "Пресет источника",
+    "presetAuto": "Авто (по умолчанию)",
+    "presetMonarch": "Monarch Money",
+    "presetGeneric": "Обычный CSV",
+    "categoryMapping": "Сопоставление категорий",
+    "categoryMappingHint": "Подтвердите, куда попадает каждая категория-источник. Подсказки берутся из ваших категорий; несопоставленное импортируется как «Без категории», если ваши правила не назначат её.",
+    "mappingRows": "строк",
+    "mappingTargetFor": "Целевая категория для {{value}}",
+    "leaveToRules": "Оставить на правила",
+    "summaryRowsIn": "получено строк",
+    "summaryWillImport": "будет импортировано",
+    "summaryDupes": "дубликатов (будет пропущено)",
+    "summaryFailed": "строк с ошибкой",
+    "summaryUnmapped": "категорий без сопоставления",
+    "reportTitle": "Отчёт об импорте",
+    "reportSummary": "{{imported}} импортировано · {{skipped}} дубликатов пропущено · {{failed}} строк с ошибкой",
+    "reportRows": "Строки",
+    "reportTarget": "Назначение",
+    "reportMapped": "сопоставлена",
+    "reportLeftToRules": "Оставлена правилам",
+    "reportFootnote": "Ваши правила могли переназначить некоторые из этих строк.",
+    "uncategorizedOption": "Без категории",
+    "reportUncategorized": "Без категории",
+    "routingTitle": "Маршрутизация счетов",
+    "routingNoTarget": "Без маршрута",
+    "routingSkip": "Пропустить эти строки",
+    "routingBlocked": "Назначьте каждый счёт перед импортом.",
+    "reportAccountLine": "{{name}}: {{imported}} импортировано, {{skipped}} пропущено"
   },
   "assetImport": {
     "title": "Импорт инвестиционных заявок",
@@ -2490,7 +2524,10 @@
       "project": "Проект",
       "client": "Клиент",
       "other": "Другое"
-    }
+    },
+    "ownerOwesYou": "{{name}} должен вам",
+    "thirdPartyOwes": "{{name}} должен {{owner}}",
+    "thirdPartyOwed": "{{owner}} должен {{name}}"
   },
   "privacy": {
     "hide": "Скрыть суммы",

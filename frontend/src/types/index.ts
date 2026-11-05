@@ -658,6 +658,31 @@ export interface ImportPreviewTransaction {
   category_id?: string | null
   force_uncategorized?: boolean
   notes?: string | null
+  /** Raw Account cell from a combined export (§7.2). Rides preview payloads
+      only; never persisted. */
+  account_hint?: string | null
+}
+
+/** Source selection: auto/generic use plain CSV; Monarch requires explicit
+    confirmation because ordinary headers cannot establish provenance. */
+export type ImportPresetChoice = 'auto' | 'monarch' | 'generic'
+
+/** One distinct preset category value with its suggested target (§4.3).
+    suggested_category_id is null for unmapped values. */
+export interface PresetCategorySuggestion {
+  value: string
+  row_count: number
+  suggested_category_id: string | null
+  suggested_category_name: string | null
+}
+
+/** Read-only pre-flight counts from a dry-run preview (§7.3). */
+export interface DryRunSummary {
+  rows_in: number
+  would_import: number
+  would_skip_dupes: number
+  failed_rows: number
+  unmapped_categories: number
 }
 
 export interface ImportReviewTransaction extends ImportPreviewTransaction {

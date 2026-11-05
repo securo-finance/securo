@@ -313,6 +313,10 @@ class TransactionImport(TransactionBase):
     category_id: Optional[uuid.UUID] = None
     force_uncategorized: bool = False
     notes: Optional[str] = None
+    # Raw Monarch Account cell from a combined export (design packet §7.2).
+    # Additive: rides the preview/import payloads only for account routing,
+    # never persisted (no DB migration).
+    account_hint: Optional[str] = None
 
 
 class FailedRow(BaseModel):
@@ -320,6 +324,35 @@ class FailedRow(BaseModel):
     description: str
     raw_value: str
     error_reason: str
+
+
+class DryRunSummary(BaseModel):
+    """Read-only pre-import counts (design packet §7.3).
+
+    Computed at preview time by the extracted read-only
+    ``find_existing_duplicate`` per row — nothing is written.
+    """
+
+    rows_in: int
+    would_import: int
+    would_skip_dupes: int
+    failed_rows: int
+    unmapped_categories: int
+
+
+class PresetCategorySuggestion(BaseModel):
+    """One distinct preset category value with its suggested target (§4.3).
+
+    ``suggested_category_id`` is None for unmapped values — the mapping
+    card then offers Uncategorized / Leave-to-my-rules instead. This is
+    how the §4.2 chain reaches the client; application onto rows still
+    rides the existing per-row category_id / force_uncategorized fields.
+    """
+
+    value: str
+    row_count: int
+    suggested_category_id: Optional[uuid.UUID] = None
+    suggested_category_name: Optional[str] = None
 
 
 class TransactionImportPreview(BaseModel):
@@ -332,6 +365,14 @@ class TransactionImportPreview(BaseModel):
     # succeeds (with no transactions) so the UI can show the mapping dropdowns.
     parse_error: Optional[str] = None
     failed_rows: list[FailedRow] = []
+    # Import preset applied to this parse (e.g. "monarch"), None for the
+    # generic path. Additive (§7.1 selector echoes what was resolved).
+    preset: Optional[str] = None
+    # Present only when the request asked for dry_run=true (§7.3).
+    dry_run: Optional[DryRunSummary] = None
+    # Distinct preset category values + §4.2 suggestions (§4.3 mapping
+    # card). Empty unless a preset was applied.
+    preset_category_suggestions: list[PresetCategorySuggestion] = []
 
 
 class TransactionImportRequest(BaseModel):

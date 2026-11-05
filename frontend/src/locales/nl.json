@@ -734,7 +734,9 @@
     "updated": "Collectie bijgewerkt",
     "deleted": "Collectie verwijderd",
     "confirmDeleteTitle": "Collectie verwijderen?",
-    "confirmDeleteDesc": "\"{{name}}\" wordt verwijderd. Uw accounts en gegevens worden niet beïnvloed."
+    "confirmDeleteDesc": "\"{{name}}\" wordt verwijderd. Uw accounts en gegevens worden niet beïnvloed.",
+    "accountCount": "{{count}} accounts",
+    "walletCount": "{{count}} portefeuilles"
   },
   "auth": {
     "login": "Inloggen",
@@ -888,7 +890,9 @@
     "fxRateUsed": "Wisselkoers: {{rate}}",
     "refreshRates": "Vernieuw de wisselkoersen",
     "ratesRefreshed": "FX-tarieven bijgewerkt",
-    "ratesError": "Kan de valutakoersen niet updaten"
+    "ratesError": "Kan de valutakoersen niet updaten",
+    "balanceFlowVsPrev": "In {{month}} op dag {{day}}: {{amount}} ({{delta}})",
+    "balancePreviousMonthLegend": "Vorige maand"
   },
   "transactions": {
     "title": "Transacties",
@@ -1560,7 +1564,8 @@
     "autoGenerateHelp": "Maak een transactie aan elke keer dat deze rekening moet worden betaald. Schakel uit om te wachten op de werkelijke afschrijving (bijvoorbeeld via banksynchronisatie) en toon deze tot die tijd alleen als aankomend.",
     "fxEstimate": "Schatting gebaseerd op de laatste wisselkoers ({{rate}}). Het eindbedrag kan veranderen.",
     "confirmDeleteTitle": "Terugkerende transactie verwijderen?",
-    "confirmDeleteDescription": "De terugkerende definitie \"{{description}}\" wordt permanent verwijderd. Bestaande transacties blijven bestaan, maar verliezen hun koppeling met de terugkerende transactie. Deze actie kan niet ongedaan worden gemaakt."
+    "confirmDeleteDescription": "De terugkerende definitie \"{{description}}\" wordt permanent verwijderd. Bestaande transacties blijven bestaan, maar verliezen hun koppeling met de terugkerende transactie. Deze actie kan niet ongedaan worden gemaakt.",
+    "noAccount": "Geen"
   },
   "rules": {
     "searchPlaceholder": "Regels zoeken...",
@@ -1916,9 +1921,38 @@
       "invalid_fx_rate": "Ongeldige wisselkoers",
       "ambiguous_amount": "In- en uitstroombedrag ingevuld",
       "conflicting_amount": "Tegensprekende bedragsvelden",
-      "invalid_direction": "Ongeldige credit/debet-indicator"
+      "invalid_direction": "Ongeldige credit/debet-indicator",
+      "zero_amount": "Nulbedrag"
     },
-    "selectAll": "Alles selecteren"
+    "selectAll": "Alles selecteren",
+    "sourcePreset": "Bronpreset",
+    "presetAuto": "Automatisch (standaard)",
+    "presetMonarch": "Monarch Money",
+    "presetGeneric": "Generieke CSV",
+    "categoryMapping": "Categoriekoppeling",
+    "categoryMappingHint": "Bevestig waar elke broncategorie terechtkomt. De suggesties komen uit jouw categorieën; wat ongemapt blijft, wordt geïmporteerd als Zonder categorie, tenzij je regels er een toewijzen.",
+    "mappingRows": "rijen",
+    "mappingTargetFor": "Doelcategorie voor {{value}}",
+    "leaveToRules": "Aan mijn regels overlaten",
+    "summaryRowsIn": "rijen ontvangen",
+    "summaryWillImport": "worden geïmporteerd",
+    "summaryDupes": "duplicaten (worden overgeslagen)",
+    "summaryFailed": "mislukte rijen",
+    "summaryUnmapped": "ongemapte categorieën",
+    "reportTitle": "Importrapport",
+    "reportSummary": "{{imported}} geïmporteerd · {{skipped}} duplicaten overgeslagen · {{failed}} mislukte rijen",
+    "reportRows": "Rijen",
+    "reportTarget": "Bestemming",
+    "reportMapped": "gemapt",
+    "reportLeftToRules": "Overgelaten aan regels",
+    "reportFootnote": "Jouw regels hebben sommige van deze rijen mogelijk toegewezen.",
+    "uncategorizedOption": "Niet gecategoriseerd",
+    "reportUncategorized": "Niet gecategoriseerd",
+    "routingTitle": "Rekeningroutering",
+    "routingNoTarget": "Niet gerouteerd",
+    "routingSkip": "Deze rijen overslaan",
+    "routingBlocked": "Route elke rekening voordat je importeert.",
+    "reportAccountLine": "{{name}}: {{imported}} geïmporteerd, {{skipped}} overgeslagen"
   },
   "assetImport": {
     "title": "Investeringsorders importeren",
@@ -2475,7 +2509,10 @@
       "other": "Anders"
     },
     "confirmDeleteTitle": "Groep verwijderen?",
-    "confirmDeleteDescription": "De groep \"{{name}}\" en de leden ervan worden permanent verwijderd. Groepen waarnaar wordt verwezen door transactiesplitsingen of afrekeningen kunnen pas worden verwijderd als die verwijzingen zijn weggehaald. Deze actie kan niet ongedaan worden gemaakt."
+    "confirmDeleteDescription": "De groep \"{{name}}\" en de leden ervan worden permanent verwijderd. Groepen waarnaar wordt verwezen door transactiesplitsingen of afrekeningen kunnen pas worden verwijderd als die verwijzingen zijn weggehaald. Deze actie kan niet ongedaan worden gemaakt.",
+    "ownerOwesYou": "{{name}} is u iets verschuldigd",
+    "thirdPartyOwes": "{{name}} is {{owner}} iets verschuldigd",
+    "thirdPartyOwed": "{{owner}} is {{name}} iets verschuldigd"
   },
   "privacy": {
     "hide": "Waarden verbergen",

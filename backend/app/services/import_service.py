@@ -27,6 +27,7 @@ from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.fx_rate_service import stamp_primary_amount
+from app.services.import_presets import ImportPreset, resolve_preset_columns
 from app.services.payee_service import get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
@@ -626,13 +627,33 @@ def detect_csv_columns(content: bytes) -> list[str]:
     return [f.strip() for f in (reader.fieldnames or []) if f and f.strip()]
 
 
+def compose_tag_suffix(tags_cell: str) -> str:
+    """Monarch Tags cell → canonical hashtag suffix (§5.5).
+
+    ``"groceries; family"`` → ``"#groceries #family"``. ``;`` and ``,`` are
+    both tolerated as delimiters (assumption A5); each tag gets the
+    canonical ``#foo`` form of ``_canonical_tag``. Existing notes are never
+    rewritten — the caller appends this suffix after them.
+    """
+    tags = []
+    for part in re.split(r'[;,]', tags_cell):
+        tag = " ".join(part.split())
+        if not tag:
+            continue
+        if not tag.startswith("#"):
+            tag = f"#{tag}"
+        tags.append(tag)
+    return " ".join(tags)
+
+
 def parse_csv(
     content: bytes,
     date_format: str | None = None,
-    flip_amount: bool = False,
+    flip_amount: bool | None = None,
     inflow_column: str | None = None,
     outflow_column: str | None = None,
     column_mapping: dict[str, str] | None = None,
+    preset: ImportPreset | None = None,
     ) -> tuple[list[TransactionImport], list[FailedRow]]:
     """Parse CSV file content and return transactions.
 
@@ -642,10 +663,16 @@ def parse_csv(
 
     Options:
     - date_format: explicit date format (DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD)
-    - flip_amount: negate all parsed amounts
+    - flip_amount: negate all parsed amounts; None = let the preset decide
+      (False when no preset), so an explicit False still wins over a preset
     - inflow_column/outflow_column: use split columns instead of single amount
     - column_mapping: explicit Securo-field -> CSV-header map. Any field
       present here overrides auto-detection; unmapped fields still auto-detect.
+    - preset: named import preset spec (design packet §3.4). Resolution
+      order for columns is explicit mapping > preset alias > auto-detect;
+      the preset also contributes sign convention, date pin, tags->notes,
+      account_hint and the zero-amount rejection. Passing None keeps the
+      generic path byte-identical.
     """
     text = content.decode('utf-8-sig')  # Handle BOM
     dialect = _sniff_csv_dialect(text)
@@ -673,6 +700,17 @@ def parse_csv(
         if field in CSV_MAPPABLE_FIELDS and value and value.strip()
     }
 
+    # Preset aliases (§3.4): resolved once per file, ranked between an
+    # explicit user mapping and the generic auto-detect candidates.
+    preset_cols: dict[str, str] = {}
+    if preset is not None:
+        preset_cols = {
+            field: header.lower().strip()
+            for field, header in resolve_preset_columns(
+                preset, [f for f in (reader.fieldnames or []) if f]
+            ).items()
+        }
+
     def find_col(candidates):
         for c in candidates:
             if c in fieldnames:
@@ -683,6 +721,7 @@ def parse_csv(
         """Resolve a CSV column for a Securo field.
 
         An explicit user mapping always wins; otherwise fall back to
+        the preset's alias table when a preset is active, then to
         auto-detection against the known column-name candidates.
         """
         mapped = mapping.get(field)
@@ -693,6 +732,9 @@ def parse_csv(
                     f"Available columns: {', '.join(fieldnames)}"
                 )
             return mapped
+        preset_header = preset_cols.get(field)
+        if preset_header and preset_header in fieldnames:
+            return preset_header
         return find_col(candidates)
 
     date_col = resolve_col('date', date_cols)
@@ -719,6 +761,17 @@ def parse_csv(
     external_id_col = resolve_col('external_id', external_id_cols)
     notes_col = resolve_col('notes', notes_cols)
 
+    # Preset-only passthroughs: Tags column (appended to notes as
+    # hashtags, §5.5) and the combined-export Account column (rides rows
+    # as account_hint for the routing strip, §7.2). Neither is a generic
+    # CSV concept, so they resolve only under an active preset.
+    tags_col = preset_cols.get('tags') if preset is not None else None
+    if tags_col and tags_col not in fieldnames:
+        tags_col = None
+    account_col = preset_cols.get('account') if preset is not None else None
+    if account_col and account_col not in fieldnames:
+        account_col = None
+
     if not date_col or not desc_col:
         raise ValueError(
             f"Could not detect CSV columns. Found: {', '.join(fieldnames)}. "
@@ -730,11 +783,27 @@ def parse_csv(
             f"Expected a column named: {', '.join(amount_cols)}"
         )
 
-    # Determine date formats to try
+    # Determine date formats to try. An explicit user choice is strict;
+    # otherwise a preset's pinned format is the file-wide default (§5.4) —
+    # MM/DD can never mix with DD/MM inside one Monarch file the way the
+    # per-row fallback list allows. Neither → per-row fallback as before.
+    # "auto" is an explicit choice of the generic fallback, not inheritance.
     if date_format and date_format in DATE_FORMAT_MAP:
         date_formats = [DATE_FORMAT_MAP[date_format]]
+    elif (
+        date_format != "auto"
+        and preset is not None
+        and preset.default_date_format
+        and preset.default_date_format in DATE_FORMAT_MAP
+    ):
+        date_formats = [DATE_FORMAT_MAP[preset.default_date_format]]
     else:
         date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%m/%d/%Y', '%d.%m.%Y']
+
+    # Sign convention: an explicit caller choice always wins; otherwise the
+    # preset's flag (Monarch income-negative → flip, §5.2); otherwise off.
+    if flip_amount is None:
+        flip_amount = preset.flip_amount if preset is not None else False
 
     # Decide the decimal separator once per file from every amount cell, so
     # "25,000" next to "1,500.50" reads as twenty-five thousand rather than
@@ -822,13 +891,24 @@ def parse_csv(
                 failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=raw_val, error_reason="no_amount"))
                 continue  # Skip rows with no amount
         else:
-            amount_str = normalize_amount(row[amount_col], decimal_separator)
+            raw_amount_cell = row[amount_col]
+            # Under a preset an empty amount cell reports `no_amount` and a
+            # zero amount is rejected as `zero_amount` (§5.3) — never a
+            # silent zero-value row. The generic path (no preset) keeps its
+            # historic behavior unchanged.
+            if preset is not None and not str(raw_amount_cell).strip():
+                failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=raw_amount_cell, error_reason="no_amount"))
+                continue
+            amount_str = normalize_amount(raw_amount_cell, decimal_separator)
 
             try:
                 amount = Decimal(amount_str)
             except Exception:
-                failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=row[amount_col], error_reason="invalid_amount"))
+                failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=raw_amount_cell, error_reason="invalid_amount"))
                 continue  # Skip invalid amounts
+            if preset is not None and amount == 0:
+                failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=raw_amount_cell, error_reason="zero_amount"))
+                continue  # Skip zero rows (would otherwise become debit 0)
 
             if flip_amount:
                 amount = -amount
@@ -867,6 +947,17 @@ def parse_csv(
         txn_payee = row[payee_col].strip() if payee_col and row.get(payee_col) else None
         txn_external_id = row[external_id_col].strip() if external_id_col and row.get(external_id_col) else None
         txn_notes = row[notes_col].strip() if notes_col and row.get(notes_col) else None
+        # Tags → canonical hashtags appended after existing notes (§5.5);
+        # tags_col exists only under a preset, so this is a no-op otherwise.
+        if tags_col and row.get(tags_col):
+            tag_suffix = compose_tag_suffix(row[tags_col])
+            if tag_suffix:
+                txn_notes = f"{txn_notes} {tag_suffix}" if txn_notes else tag_suffix
+        # Combined-export Account cell rides the row for the routing strip
+        # (§7.2); additive, never persisted beyond the payloads.
+        txn_account_hint = None
+        if account_col and row.get(account_col):
+            txn_account_hint = row[account_col].strip() or None
 
         transactions.append(TransactionImport(
             description=row[desc_col].strip(),
@@ -879,6 +970,7 @@ def parse_csv(
             payee_raw=txn_payee,
             external_id=txn_external_id,
             notes=txn_notes,
+            account_hint=txn_account_hint,
         ))
 
     return transactions, failed_rows
@@ -947,6 +1039,71 @@ async def enrich_with_category_suggestions(
             txn.suggested_category_name = category_name_map.get(str(proxy.category_id))
 
     return transactions
+
+
+async def find_existing_duplicate(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    txn_data,
+    *,
+    matched_ids: set[uuid.UUID],
+) -> Transaction | None:
+    """Return the existing row one incoming row would duplicate, else None.
+
+    Extracted verbatim from ``import_transactions`` as a pure refactor
+    (design packet §6.3): every predicate — the external-ID key, the
+    field key, the ``.first()`` tolerance, the ``matched_ids`` exclusion
+    and the ``{"sync"}`` fallback — is unchanged, and the write path and
+    the read-only dry-run preview both consume this one function.
+
+    Prefer an external ID (OFX FITID), with date retained because some
+    Brazilian cards reuse one purchase FITID across monthly installments,
+    and amount and type retained because some banks reuse one FITID for
+    several distinct entries posted on the same day. Formats without
+    unique IDs fall back to transaction fields; compare both descriptions
+    because rules may have changed the displayed one.
+    """
+    if txn_data.external_id:
+        existing_statement = select(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.external_id == txn_data.external_id,
+            Transaction.date == txn_data.date,
+            Transaction.amount == txn_data.amount,
+            Transaction.type == txn_data.type,
+        )
+    else:
+        existing_statement = select(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.date == txn_data.date,
+            Transaction.amount == txn_data.amount,
+            Transaction.type == txn_data.type,
+            or_(
+                Transaction.description == txn_data.description,
+                Transaction.original_description == txn_data.description,
+            ),
+        )
+    # `.first()` rather than `.scalar_one_or_none()`: the dedup key can
+    # legitimately match more than one row (e.g. a prior sync/import race
+    # left a duplicate, or a bank reuses one FITID across statements),
+    # and we only need to know whether *any* match exists. Requiring
+    # exactly one would raise MultipleResultsFound and abort the import.
+    if matched_ids and not txn_data.external_id:
+        existing_statement = existing_statement.where(
+            Transaction.id.not_in(matched_ids)
+        )
+    existing = await session.execute(
+        existing_statement.order_by(Transaction.created_at, Transaction.id)
+    )
+    duplicate = existing.scalars().first()
+    if not duplicate:
+        duplicate = await find_unique_transaction_match(
+            session,
+            account_id,
+            txn_data,
+            {"sync"},
+            exclude_ids=matched_ids,
+        )
+    return duplicate
 
 
 async def import_transactions(
@@ -1031,52 +1188,12 @@ async def import_transactions(
         txn_currency = txn_data.currency or account_currency
 
         if should_detect_duplicates:
-            # Prefer an external ID (OFX FITID), with date retained because some
-            # Brazilian cards reuse one purchase FITID across monthly installments,
-            # and amount and type retained because some banks reuse one FITID for
-            # several distinct entries posted on the same day.
-            # Formats without unique IDs fall back to transaction fields; compare
-            # both descriptions because rules may have changed the displayed one.
-            if txn_data.external_id:
-                existing_statement = select(Transaction).where(
-                    Transaction.account_id == account_id,
-                    Transaction.external_id == txn_data.external_id,
-                    Transaction.date == txn_data.date,
-                    Transaction.amount == txn_data.amount,
-                    Transaction.type == txn_data.type,
-                )
-            else:
-                existing_statement = select(Transaction).where(
-                    Transaction.account_id == account_id,
-                    Transaction.date == txn_data.date,
-                    Transaction.amount == txn_data.amount,
-                    Transaction.type == txn_data.type,
-                    or_(
-                        Transaction.description == txn_data.description,
-                        Transaction.original_description == txn_data.description,
-                    ),
-                )
-            # `.first()` rather than `.scalar_one_or_none()`: the dedup key can
-            # legitimately match more than one row (e.g. a prior sync/import race
-            # left a duplicate, or a bank reuses one FITID across statements),
-            # and we only need to know whether *any* match exists. Requiring
-            # exactly one would raise MultipleResultsFound and abort the import.
-            if matched_existing_ids and not txn_data.external_id:
-                existing_statement = existing_statement.where(
-                    Transaction.id.not_in(matched_existing_ids)
-                )
-            existing = await session.execute(
-                existing_statement.order_by(Transaction.created_at, Transaction.id)
+            duplicate = await find_existing_duplicate(
+                session,
+                account_id,
+                txn_data,
+                matched_ids=matched_existing_ids,
             )
-            duplicate = existing.scalars().first()
-            if not duplicate:
-                duplicate = await find_unique_transaction_match(
-                    session,
-                    account_id,
-                    txn_data,
-                    {"sync"},
-                    exclude_ids=matched_existing_ids,
-                )
             if duplicate:
                 matched_existing_ids.add(duplicate.id)
                 skipped += 1

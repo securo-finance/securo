@@ -736,7 +736,9 @@
     "updated": "Coleção atualizada",
     "deleted": "Coleção eliminada",
     "confirmDeleteTitle": "Eliminar coleção?",
-    "confirmDeleteDesc": "\"{{name}}\" será eliminada. As tuas contas e os teus dados não serão afetados."
+    "confirmDeleteDesc": "\"{{name}}\" será eliminada. As tuas contas e os teus dados não serão afetados.",
+    "accountCount": "{{count}} contas",
+    "walletCount": "{{count}} carteiras"
   },
   "auth": {
     "login": "Iniciar sessão",
@@ -890,7 +892,9 @@
     "fxRateUsed": "Taxa de câmbio: {{rate}}",
     "refreshRates": "Atualizar taxas de câmbio",
     "ratesRefreshed": "Taxas de câmbio atualizadas",
-    "ratesError": "Erro ao atualizar taxas de câmbio"
+    "ratesError": "Erro ao atualizar taxas de câmbio",
+    "balanceFlowVsPrev": "Em {{month}} no dia {{day}}: {{amount}} ({{delta}})",
+    "balancePreviousMonthLegend": "Mês anterior"
   },
   "transactions": {
     "title": "Transações",
@@ -1562,7 +1566,8 @@
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desativa para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
     "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar.",
-    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será eliminada permanentemente. As transações existentes manter-se-ão, mas perderão a ligação recorrente. Esta ação não pode ser desfeita."
+    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será eliminada permanentemente. As transações existentes manter-se-ão, mas perderão a ligação recorrente. Esta ação não pode ser desfeita.",
+    "noAccount": "Nenhuma"
   },
   "rules": {
     "searchPlaceholder": "Procurar regras...",
@@ -1918,9 +1923,38 @@
       "invalid_fx_rate": "Câmbio inválido",
       "ambiguous_amount": "Entrada e saída preenchidas",
       "conflicting_amount": "Campos de valor contraditórios",
-      "invalid_direction": "Indicador de crédito/débito inválido"
+      "invalid_direction": "Indicador de crédito/débito inválido",
+      "zero_amount": "Valor zero"
     },
-    "selectAll": "Selecionar todos"
+    "selectAll": "Selecionar todos",
+    "sourcePreset": "Predefinição de origem",
+    "presetAuto": "Automático (predefinição)",
+    "presetMonarch": "Monarch Money",
+    "presetGeneric": "CSV genérico",
+    "categoryMapping": "Mapeamento de categorias",
+    "categoryMappingHint": "Confirme para onde vai cada categoria de origem. As sugestões vêm das suas categorias; o que ficar sem mapeamento é importado como Sem categoria, salvo as suas regras atribuírem uma.",
+    "mappingRows": "linhas",
+    "mappingTargetFor": "Categoria de destino para {{value}}",
+    "leaveToRules": "Deixar para as minhas regras",
+    "summaryRowsIn": "linhas recebidas",
+    "summaryWillImport": "serão importadas",
+    "summaryDupes": "duplicados (serão ignorados)",
+    "summaryFailed": "linhas com erro",
+    "summaryUnmapped": "categorias sem mapeamento",
+    "reportTitle": "Relatório de importação",
+    "reportSummary": "{{imported}} importadas · {{skipped}} duplicados ignorados · {{failed}} linhas com erro",
+    "reportRows": "Linhas",
+    "reportTarget": "Destino",
+    "reportMapped": "mapeada",
+    "reportLeftToRules": "Deixada para as regras",
+    "reportFootnote": "As suas regras podem ter mudado a categoria de algumas destas linhas.",
+    "uncategorizedOption": "Sem categoria",
+    "reportUncategorized": "Sem categoria",
+    "routingTitle": "Encaminhamento de contas",
+    "routingNoTarget": "Sem encaminhamento",
+    "routingSkip": "Ignorar estas linhas",
+    "routingBlocked": "Encaminhe cada conta antes de importar.",
+    "reportAccountLine": "{{name}}: {{imported}} importadas, {{skipped}} ignoradas"
   },
   "assetImport": {
     "title": "Importar ordens de investimento",
@@ -2477,7 +2511,10 @@
       "project": "Projeto",
       "client": "Cliente",
       "other": "Outro"
-    }
+    },
+    "ownerOwesYou": "{{name}} te deve",
+    "thirdPartyOwes": "{{name}} deve para {{owner}}",
+    "thirdPartyOwed": "{{owner}} deve para {{name}}"
   },
   "privacy": {
     "hide": "Ocultar valores",

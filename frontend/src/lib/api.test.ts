@@ -1,13 +1,32 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InternalAxiosRequestConfig } from 'axios'
-import { api, rules } from '@/lib/api'
+import { api, rules, transactions } from '@/lib/api'
 import { DATA_CHANGED_KEY } from '@/lib/data-changed'
 
 // The interceptor under test only looks at method + success, so a fake
 // adapter that always resolves 200 is all the transport it needs.
 const okAdapter = (config: InternalAxiosRequestConfig) =>
   Promise.resolve({ data: {}, status: 200, statusText: 'OK', headers: {}, config })
+
+describe('import option serialization', () => {
+  beforeEach(() => { api.defaults.adapter = okAdapter; vi.restoreAllMocks() })
+
+  it.each([undefined, false, true])('serializes sign override %s without losing false', async (flip) => {
+    const post = vi.spyOn(api, 'post')
+    await transactions.previewImport(new File(['Date,Description,Amount\n'], 'synthetic.csv'), { preset: 'monarch', flip_amount: flip })
+    const form = post.mock.calls[0][1] as FormData
+    expect(form.has('flip_amount')).toBe(flip !== undefined)
+    if (flip !== undefined) expect(form.get('flip_amount')).toBe(String(flip))
+    expect(form.get('preset')).toBe('monarch')
+  })
+
+  it('keeps duplicate detection disabled on the real import client', async () => {
+    const post = vi.spyOn(api, 'post')
+    await transactions.import('synthetic-account', [], 'synthetic.csv', 'csv', { detect_duplicates: false })
+    expect(post.mock.calls[0][1]).toEqual(expect.objectContaining({ detect_duplicates: false }))
+  })
+})
 
 describe('api data-change signal (issue #763)', () => {
   beforeEach(() => {

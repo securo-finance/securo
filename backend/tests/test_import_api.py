@@ -1,5 +1,8 @@
 import json
 import uuid
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
@@ -7,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.import_log import ImportLog
 from app.models.transaction import Transaction
 
 
@@ -181,6 +185,7 @@ async def test_import_to_invalid_account(client: AsyncClient, auth_headers, test
         },
     )
     assert response.status_code == 404
+    assert response.headers.get("X-Import-Outcome") == "not-committed"
 
 
 @pytest.mark.asyncio
@@ -545,3 +550,388 @@ async def test_import_uses_csv_category_when_no_rule_matches(
     )
     imported = result.scalar_one()
     assert imported.category_id == test_categories[0].id
+
+
+@pytest.mark.parametrize("detect_duplicates", [True, False])
+async def test_sequential_import_rejection_preserves_committed_bucket(
+    client, auth_headers, session, test_account, test_user, test_workspace, detect_duplicates,
+):
+    """Real route: first commits, second is rejected before writes, then only
+    the restored second destination is retried. No idempotency assumption."""
+    missing_id = uuid.uuid4()
+    rows = [{"description": "Synthetic retained bucket", "amount": "5.00", "date": "2026-01-05", "type": "debit"}]
+    payload = {"transactions": rows, "filename": "synthetic.csv", "detected_format": "csv", "detect_duplicates": detect_duplicates}
+    first = await client.post("/api/transactions/import", headers=auth_headers, json={**payload, "account_id": str(test_account.id)})
+    assert first.status_code == 201
+    assert first.json()["imported"] == 1
+    failed = await client.post("/api/transactions/import", headers=auth_headers, json={**payload, "account_id": str(missing_id)})
+    assert failed.status_code == 404
+    assert failed.headers["X-Import-Outcome"] == "not-committed"
+    assert len((await session.execute(select(Transaction))).scalars().all()) == 1
+    assert len((await session.execute(select(ImportLog))).scalars().all()) == 1
+    session.add(Account(id=missing_id, user_id=test_user.id, workspace_id=test_workspace.id, name="Synthetic restored target", type="checking", currency="USD", balance=0))
+    await session.commit()
+    resumed = await client.post("/api/transactions/import", headers=auth_headers, json={**payload, "account_id": str(missing_id)})
+    assert resumed.status_code == 201
+    assert resumed.json()["imported"] == 1
+    transactions = (await session.execute(select(Transaction))).scalars().all()
+    logs = (await session.execute(select(ImportLog))).scalars().all()
+    assert len(transactions) == len(logs) == 2
+    assert sum(tx.account_id == test_account.id for tx in transactions) == 1
+    assert sum(str(log.id) == first.json()["import_log_id"] for log in logs) == 1
+
+
+async def test_failure_after_commit_is_not_marked_safe_to_replay(
+    client, auth_headers, session, test_account, monkeypatch,
+):
+    """Inject a lost acknowledgement after the real import service commits."""
+    from fastapi import HTTPException
+    from app.services import import_service
+
+    original = import_service.import_transactions
+
+    async def commit_then_lose_response(*args, **kwargs):
+        await original(*args, **kwargs)
+        raise HTTPException(status_code=503, detail="Synthetic lost acknowledgement")
+
+    monkeypatch.setattr(import_service, "import_transactions", commit_then_lose_response)
+    response = await client.post(
+        "/api/transactions/import", headers=auth_headers,
+        json={"account_id": str(test_account.id), "filename": "synthetic-uncertain.csv", "transactions": [
+            {"description": "Synthetic committed charge", "amount": "5.00", "date": "2026-01-05", "type": "debit"},
+        ]},
+    )
+    assert response.status_code == 503
+    assert "X-Import-Outcome" not in response.headers
+    assert len((await session.execute(select(Transaction))).scalars().all()) == 1
+    assert len((await session.execute(select(ImportLog))).scalars().all()) == 1
+
+
+@pytest.mark.parametrize("flip", [None, True, False])
+async def test_confirmed_monarch_preview_roundtrips_and_date_override(
+    client, auth_headers, test_account, flip,
+):
+    content = b"Date,Description,Amount,Category\n03/05/2026,Synthetic charge,10.00,Shopping\n"
+    options = {"preset": "monarch"}
+    if flip is not None:
+        options["flip_amount"] = str(flip).lower()
+    for extra in [{}, {"dry_run": "true", "account_id": str(test_account.id)}, {}]:
+        response = await client.post(
+            "/api/transactions/import/preview", headers=auth_headers,
+            files={"file": ("synthetic.csv", content, "text/csv")}, data={**options, **extra},
+        )
+        assert response.status_code == 200
+        row = response.json()["transactions"][0]
+        assert row["type"] == ("credit" if flip is False else "debit")
+        assert row["date"] == "2026-03-05"
+    explicit_auto = await client.post(
+        "/api/transactions/import/preview", headers=auth_headers,
+        files={"file": ("synthetic.csv", content, "text/csv")}, data={**options, "date_format": "auto"},
+    )
+    assert explicit_auto.status_code == 200
+    assert explicit_auto.json()["transactions"][0]["date"] == "2026-05-03"
+
+
+@pytest.mark.parametrize("preset", [None, "auto", "generic", "monarch"])
+@pytest.mark.parametrize("with_account", [False, True])
+async def test_categorized_headers_do_not_confirm_monarch(
+    client, auth_headers, test_account, preset, with_account,
+):
+    header = "Date,Description,Amount,Category" + (",Account" if with_account else "")
+    row = "03/05/2026,Synthetic credit,10.00,Shopping" + (",Synthetic" if with_account else "")
+    response = await client.post(
+        "/api/transactions/import/preview", headers=auth_headers,
+        files={"file": ("categorized.csv", f"{header}\n{row}\n".encode(), "text/csv")},
+        data={"preset": preset} if preset else {},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["parse_error"] is None
+    assert data["preset"] == ("monarch" if preset == "monarch" else None)
+    assert data["transactions"][0]["type"] == ("debit" if preset == "monarch" else "credit")
+    assert data["transactions"][0]["date"] == ("2026-03-05" if preset == "monarch" else "2026-05-03")
+
+
+# --- PR-3 / Monarch preset (design packet §8.3) ---------------------------
+
+_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "import"
+
+
+def _monarch_fixture(name: str = "monarch-combined") -> bytes:
+    return _FIXTURES.joinpath(f"{name}.csv").read_bytes()
+
+
+@pytest.mark.asyncio
+async def test_preview_monarch_preset_form_field(
+    client: AsyncClient, auth_headers, test_account
+):
+    """Explicit Monarch applies the preset; auto/absent and generic decline
+    header-only inference. Unknown selections are a 400, not a crash."""
+    content = _monarch_fixture()
+
+    forced = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("monarch-combined.csv", content, "text/csv")},
+        data={"preset": "monarch"},
+    )
+    assert forced.status_code == 200
+    data = forced.json()
+    assert data["preset"] == "monarch"
+    # Preset sign convention applied: first row is income -1200.00 → credit.
+    assert data["transactions"][0]["type"] == "credit"
+    assert data["transactions"][0]["amount"] == "1200.00"
+
+    # Explicit flip_amount=false beats the preset's sign flag (§5.2/§7.1).
+    unflipped = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("monarch-combined.csv", content, "text/csv")},
+        data={"preset": "monarch", "flip_amount": "false"},
+    )
+    assert unflipped.status_code == 200
+    assert unflipped.json()["transactions"][0]["type"] == "debit"
+
+    # Auto (no field) does not establish provenance from ordinary headers.
+    auto = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("monarch-combined.csv", content, "text/csv")},
+    )
+    assert auto.status_code == 200
+    assert auto.json()["preset"] is None
+
+    # Generic declines: no preset echoed, mapping dropdowns take over.
+    generic = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("monarch-combined.csv", content, "text/csv")},
+        data={"preset": "generic"},
+    )
+    assert generic.status_code == 200
+    assert generic.json()["preset"] is None
+    assert generic.json()["parse_error"]  # description column not auto-detectable
+
+    # Unknown preset value is rejected explicitly.
+    unknown = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("monarch-combined.csv", content, "text/csv")},
+        data={"preset": "quicken"},
+    )
+    assert unknown.status_code == 400
+    assert "Unknown preset" in unknown.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_preview_dry_run_requires_account_and_is_read_only(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_account
+):
+    """§7.3/§8.2: dry_run without account_id is a 400; with one it returns
+    counts and writes nothing — the transactions table is untouched."""
+    from sqlalchemy import func
+
+    content = _monarch_fixture()
+
+    missing = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("monarch-combined.csv", content, "text/csv")},
+        data={"dry_run": "true"},
+    )
+    assert missing.status_code == 400
+    assert "account_id" in missing.json()["detail"]
+
+    count_before = (
+        await session.execute(select(func.count()).select_from(Transaction))
+    ).scalar_one()
+
+    ok = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("monarch-combined.csv", content, "text/csv")},
+        data={"preset": "monarch", "dry_run": "true", "account_id": str(test_account.id)},
+    )
+    assert ok.status_code == 200
+    summary = ok.json()["dry_run"]
+    assert summary is not None
+    assert set(summary) == {
+        "rows_in", "would_import", "would_skip_dupes", "failed_rows", "unmapped_categories",
+    }
+    assert summary["rows_in"] == 17  # 14 parsed + 3 failed rows
+    assert summary["would_import"] == 14
+    assert summary["would_skip_dupes"] == 0
+    assert summary["failed_rows"] == 3
+
+    await session.rollback()
+    count_after = (
+        await session.execute(select(func.count()).select_from(Transaction))
+    ).scalar_one()
+    assert count_after == count_before
+
+
+@pytest.mark.asyncio
+async def test_legacy_preview_matches_per_account_import_without_cross_account_dupes(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_workspace
+):
+    """Single-target files only: a synced twin in A must not consume B's rows.
+
+    This is not combined-file routing or recurring-placeholder (#886) coverage.
+    """
+    accounts = [
+        Account(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name=name, type="checking", balance=0, currency=test_workspace.default_currency,
+        )
+        for name in ("Synthetic Target A", "Synthetic Target B")
+    ]
+    account_a, account_b = accounts
+    session.add_all(accounts)
+    twin = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account_a.id, external_id="synthetic-fernwood-sync",
+        description="Fernwood Coffee", amount=Decimal("4.99"),
+        currency=account_a.currency, date=date(2026, 3, 16), type="debit",
+        source="sync", status="posted",
+    )
+    session.add(twin)
+    await session.commit()
+
+    # Each file represents only its named account, even though the rows match.
+    files = {
+        account.id: (
+            "Date,Merchant,Category,Amount,Notes,Account\n"
+            f"03/16/2026,Fernwood Coffee,,4.99,,{account.name}\n"
+            f"03/16/2026,Fernwood Coffee,,4.99,,{account.name}\n"
+        ).encode()
+        for account in accounts
+    }
+
+    async def snapshot():
+        # Column rows avoid ORM identity-map caching across ASGI request sessions.
+        transactions = (await session.execute(
+            select(*Transaction.__table__.c).where(
+                Transaction.workspace_id == test_workspace.id,
+            ).order_by(Transaction.id)
+        )).all()
+        logs = (await session.execute(
+            select(*ImportLog.__table__.c).where(
+                ImportLog.workspace_id == test_workspace.id,
+            ).order_by(ImportLog.id)
+        )).all()
+        return transactions, logs
+
+    async def preview(content, account_id):
+        response = await client.post(
+            "/api/transactions/import/preview", headers=auth_headers,
+            files={"file": ("synthetic-per-account.csv", content, "text/csv")},
+            data={"preset": "monarch", "dry_run": "true", "account_id": str(account_id)},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["parse_error"] is None
+        assert data["failed_rows"] == []
+        assert len(data["transactions"]) == data["dry_run"]["rows_in"] == 2
+        return data
+
+    before = await snapshot()
+    assert len(before[0]) == 1
+    assert before[0][0].id == twin.id
+    assert before[0][0].account_id == account_a.id
+    assert before[1] == []
+    previews = {}
+    for account in accounts:
+        previews[account.id] = await preview(files[account.id], account.id)
+        assert await snapshot() == before
+
+    summary_a = previews[account_a.id]["dry_run"]
+    summary_b = previews[account_b.id]["dry_run"]
+    assert (summary_a["would_import"], summary_a["would_skip_dupes"]) == (1, 1)
+    assert (summary_b["would_import"], summary_b["would_skip_dupes"]) == (2, 0)
+
+    # Falsifier: B's file previewed against the WRONG account sees A's twin.
+    # Account hints do not route legacy preview; dropping account scoping would
+    # make B's correct preview equal this control and fail the assertions.
+    wrong_target = (await preview(files[account_b.id], account_a.id))["dry_run"]
+    assert (wrong_target["would_import"], wrong_target["would_skip_dupes"]) == (1, 1)
+    assert wrong_target["would_skip_dupes"] != summary_b["would_skip_dupes"]
+    assert await snapshot() == before
+
+    previous = before
+    for account in accounts:
+        data = previews[account.id]
+        response = await client.post(
+            "/api/transactions/import", headers=auth_headers,
+            json={
+                "account_id": str(account.id), "transactions": data["transactions"],
+                "filename": f"{account.name}.csv", "detected_format": "csv",
+                "detect_duplicates": True,
+            },
+        )
+        assert response.status_code == 201
+        result = response.json()
+        assert result["excluded"] == 0
+        assert (result["imported"], result["skipped"]) == (
+            data["dry_run"]["would_import"], data["dry_run"]["would_skip_dupes"],
+        )
+        current = await snapshot()
+        # Prior rows/logs, including the synced twin and the other target, survive unchanged.
+        assert all(row in current[0] for row in previous[0])
+        assert all(log in current[1] for log in previous[1])
+        new_rows = [row for row in current[0] if row not in previous[0]]
+        new_logs = [log for log in current[1] if log not in previous[1]]
+        assert len(new_rows) == result["imported"]
+        assert len(new_logs) == 1
+        log = new_logs[0]
+        assert str(log.id) == result["import_log_id"]
+        assert log.account_id == account.id
+        assert log.transaction_count == len(new_rows)
+        assert log.filename == f"{account.name}.csv"
+        assert all(row.account_id == account.id and row.import_id == log.id for row in new_rows)
+        assert sum(row.account_id == account.id for row in current[0]) == 2
+        previous = current
+
+
+@pytest.mark.asyncio
+async def test_import_monarch_end_to_end_creates_account_currency_log(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_account
+):
+    """§8.3: preview → import → GET /api/import-logs surfaces the log in the
+    target account's currency (the #1003 precedent, kept not rebuilt)."""
+    preview = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("monarch-combined.csv", _monarch_fixture(), "text/csv")},
+        data={"preset": "monarch"},
+    )
+    assert preview.status_code == 200
+    rows = preview.json()["transactions"]
+    assert len(rows) == 14
+
+    resp = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "transactions": rows,
+            "filename": "monarch-combined.csv",
+            "detected_format": "csv",
+        },
+    )
+    assert resp.status_code == 201
+    assert resp.json()["imported"] == 14
+    assert resp.json()["skipped"] == 0
+
+    logs = (await client.get("/api/import-logs", headers=auth_headers)).json()
+    log = next(entry for entry in logs if entry["filename"] == "monarch-combined.csv")
+    assert log["format"] == "csv"
+    assert log["account_currency"] == test_account.currency
+    assert log["account_name"] == test_account.name
+    assert log["transaction_count"] == 14
+    assert float(log["total_credit"]) == pytest.approx(
+        1200.00 + 0.05 + 1234.56 + 12.50 + 5.00, abs=1e-6
+    )
+    assert float(log["total_debit"]) == pytest.approx(
+        45.00 + 1234.56 + 1234.56 + 4.99 + 4.99 + 27.40 + 950.00 + 12.99 + 60.00,
+        abs=1e-6,
+    )

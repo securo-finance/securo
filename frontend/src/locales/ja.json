@@ -734,7 +734,9 @@
     "updated": "コレクションを更新しました",
     "deleted": "コレクションを削除しました",
     "confirmDeleteTitle": "コレクションを削除しますか?",
-    "confirmDeleteDesc": "「{{name}}」を削除します。口座とデータには影響しません。"
+    "confirmDeleteDesc": "「{{name}}」を削除します。口座とデータには影響しません。",
+    "accountCount": "{{count}}口座",
+    "walletCount": "{{count}}ウォレット"
   },
   "auth": {
     "login": "ログイン",
@@ -888,7 +890,9 @@
     "fxRateUsed": "為替レート: {{rate}}",
     "refreshRates": "為替レートを更新",
     "ratesRefreshed": "為替レートを更新しました",
-    "ratesError": "為替レートの更新に失敗しました"
+    "ratesError": "為替レートの更新に失敗しました",
+    "balanceFlowVsPrev": "{{month}}の{{day}}日目: {{amount}}({{delta}})",
+    "balancePreviousMonthLegend": "前月"
   },
   "transactions": {
     "title": "取引",
@@ -1558,7 +1562,8 @@
     "autoGenerate": "取引を自動生成",
     "autoGenerateHelp": "この支払いの期日が来るたびに取引を作成します。オフにすると、実際の請求(銀行同期など)を待ち、それまでは予定として表示するだけになります。",
     "fxEstimate": "最新の為替レートによる推定({{rate}})。最終金額は変わる場合があります。",
-    "confirmDeleteDescription": "定期取引の定義「{{description}}」を完全に削除します。既存の取引は残りますが、定期の紐付けが失われます。この操作は取り消せません。"
+    "confirmDeleteDescription": "定期取引の定義「{{description}}」を完全に削除します。既存の取引は残りますが、定期の紐付けが失われます。この操作は取り消せません。",
+    "noAccount": "なし"
   },
   "rules": {
     "searchPlaceholder": "ルールを検索...",
@@ -1914,9 +1919,38 @@
       "invalid_fx_rate": "無効な為替レート",
       "ambiguous_amount": "入金と出金の両方が入力されています",
       "conflicting_amount": "金額フィールドの競合",
-      "invalid_direction": "無効な貸借区分"
+      "invalid_direction": "無効な貸借区分",
+      "zero_amount": "金額がゼロ"
     },
-    "selectAll": "すべて選択"
+    "selectAll": "すべて選択",
+    "sourcePreset": "ソースプリセット",
+    "presetAuto": "自動（デフォルト）",
+    "presetMonarch": "Monarch Money",
+    "presetGeneric": "汎用CSV",
+    "categoryMapping": "カテゴリマッピング",
+    "categoryMappingHint": "各ソースカテゴリの行き先を確認してください。候補はあなたのカテゴリから表示されます。マッピングされない項目は、ルールで割り当てられない限り「カテゴリなし」で取り込まれます。",
+    "mappingRows": "件",
+    "mappingTargetFor": "{{value}} の移動先カテゴリ",
+    "leaveToRules": "自分のルールに任せる",
+    "summaryRowsIn": "受信行",
+    "summaryWillImport": "取り込む",
+    "summaryDupes": "重複（スキップ）",
+    "summaryFailed": "エラー行",
+    "summaryUnmapped": "未マッピングのカテゴリ",
+    "reportTitle": "インポートレポート",
+    "reportSummary": "{{imported}} 件取り込み · {{skipped}} 件の重複をスキップ · {{failed}} 件のエラー",
+    "reportRows": "行",
+    "reportTarget": "移動先",
+    "reportMapped": "マッピング済み",
+    "reportLeftToRules": "ルール任せ",
+    "reportFootnote": "一部の行はルールによって再割り当てされている可能性があります。",
+    "uncategorizedOption": "未分類",
+    "reportUncategorized": "未分類",
+    "routingTitle": "口座ルーティング",
+    "routingNoTarget": "未ルーティング",
+    "routingSkip": "これらの行をスキップ",
+    "routingBlocked": "インポート前にすべての口座をルーティングしてください。",
+    "reportAccountLine": "{{name}}: {{imported}} 件取り込み、{{skipped}} 件スキップ"
   },
   "assetImport": {
     "title": "投資注文をインポート",
@@ -2473,7 +2507,10 @@
       "project": "プロジェクト",
       "client": "クライアント",
       "other": "その他"
-    }
+    },
+    "ownerOwesYou": "{{name}}があなたに未払い",
+    "thirdPartyOwes": "{{name}}が{{owner}}に未払い",
+    "thirdPartyOwed": "{{owner}}が{{name}}に未払い"
   },
   "privacy": {
     "hide": "金額を隠す",
