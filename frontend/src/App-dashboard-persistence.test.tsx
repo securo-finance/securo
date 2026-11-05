@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 // Qualify every real route used below before the 5000ms behavior budget.
 // resetModules still rebuilds App/SDK state under the native transport spies.
 import '@/App'
@@ -171,7 +171,57 @@ const startupReplies = freeze({
 })
 const tick = () => new Promise<void>((resolve) => { queueMicrotask(resolve) })
 
+type ScenarioOwner = { retired: boolean; retire?: () => void; disconnect?: () => void }
+let active: { iterator: ReturnType<typeof nativeScenario>; step: Promise<IteratorResult<void>>; owner: ScenarioOwner } | undefined
+
+beforeEach(async ({ signal }) => {
+  if (active) throw new Error('Previous native scenario is still owned')
+  const owner: ScenarioOwner = { retired: false }
+  const iterator = nativeScenario(signal, owner)
+  const step = iterator.next()
+  active = { iterator, step, owner }
+  await step
+})
+afterEach(async ({ signal, onTestFinished }) => {
+  const owned = active
+  if (!owned) return
+  // A runner timeout does not cancel an async body. Retire its ports, then join
+  // that exact step before global DOM cleanup or a successor captures its spies.
+  if (signal.aborted && !owned.owner.retired) {
+    owned.owner.retired = true
+    owned.owner.retire?.()
+  }
+  try {
+    const progress = await owned.step
+    if (!progress.done) await owned.iterator.throw(signal.reason ?? new Error('Native scenario did not run'))
+  } catch (error: unknown) {
+    // Joining is complete. Report its error after shared cleanup rather than
+    // aborting the remaining afterEach hooks (including global DOM cleanup).
+    onTestFinished(() => { throw error })
+  } finally { active = undefined }
+})
+
 it('actual App retains an unknown dashboard save across native navigation until reviewed discard admits a distinct fresh save', async () => {
+  const owned = required(active, 'prepared native scenario')
+  owned.step = owned.iterator.next()
+  await owned.step
+})
+
+// Only fresh prerequisite evaluation runs in beforeEach. The yield is BEFORE
+// render; the named test owns all native behavior, assertions and finally work.
+async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): AsyncGenerator<void, void, void> {
+  let inCleanup = false
+  const checkActive = () => {
+    if (inCleanup) return
+    if (owner.retired) throw signal.reason ?? new Error('Native scenario retired')
+    signal.throwIfAborted()
+  }
+  async function prepared<T>(work: Promise<T>): Promise<T> {
+    checkActive()
+    const value = await work
+    checkActive()
+    return value
+  }
   vi.resetModules()
   const diagnostics: unknown[] = [], violations: unknown[] = [], asynchronous: unknown[] = [], consoleCalls: unknown[] = []
   const restores: Array<() => void | Promise<void>> = []
@@ -203,7 +253,7 @@ it('actual App retains an unknown dashboard save across native navigation until 
     const onRejection = (event: PromiseRejectionEvent) => { asynchronous.push(event.reason) }
     window.addEventListener('error', onError); window.addEventListener('unhandledrejection', onRejection)
     restores.push(() => { window.removeEventListener('error', onError); window.removeEventListener('unhandledrejection', onRejection) })
-    const axiosModule = await import('axios'), axios = axiosModule.default
+    const axiosModule = await prepared(import('axios')), axios = axiosModule.default
     const priorAdapter = axios.defaults.adapter
     const calls: InternalAxiosRequestConfig[] = [], tasks: Promise<void>[] = []
     let cleaning = false, http: AxiosInstance | null = null
@@ -223,6 +273,7 @@ it('actual App retains an unknown dashboard save across native navigation until 
     const reads = [slot(seed), slot(seed), slot(postUser), slot(serverUser), slot(freshUser)]
     const puts = [slot(committed), slot(undefined), slot(freshCommit)]
     const ports = [...reads, ...puts]
+    owner.retire = () => { cleaning = true; ports.forEach((port) => { port.settle() }) }
     let originalError: InstanceType<typeof axiosModule.AxiosError> | null = null
     const userGets = () => calls.filter((config) => config.method === 'get' && config.url === '/users/me')
     const layoutPuts = () => calls.filter((config) => config.method === 'put' && config.url === `/dashboard/layouts/${WS}`)
@@ -262,37 +313,38 @@ it('actual App retains an unknown dashboard save across native navigation until 
     }
     axios.defaults.adapter = adapter
     restores.push(() => { axios.defaults.adapter = priorAdapter })
+    expect(vi.isMockFunction(axios.create)).toBe(false)
     const create = axios.create.bind(axios)
     const createSpy = vi.spyOn(axios, 'create').mockImplementation((config) => {
       const instance = create(config); http = instance
       restores.push(() => { instance.defaults.adapter = priorAdapter }); return instance
     })
     restores.push(() => { createSpy.mockRestore() })
-    const { act, render, screen, within, waitFor } = await import('@testing-library/react')
-    const { default: userEvent } = await import('@testing-library/user-event')
-    const query = await import('@tanstack/react-query')
+    const { act, render, screen, within, waitFor } = await prepared(import('@testing-library/react'))
+    const { default: userEvent } = await prepared(import('@testing-library/user-event'))
+    const query = await prepared(import('@tanstack/react-query'))
     // Observe App's actual module client through its genuine mount call. No
     // exported constructor replacement, nested client, or default option edits.
     const mountSpy = vi.spyOn(query.QueryClient.prototype, 'mount')
     restores.push(() => { mountSpy.mockRestore() })
-    const session = await import('@/lib/dashboard-layout-session')
+    const session = await prepared(import('@/lib/dashboard-layout-session'))
     const factorySpy = vi.spyOn(session, 'createDashboardLayoutSession')
     restores.push(() => { factorySpy.mockRestore() })
-    const { getPageSessionLease } = await import('@/lib/dashboard-layout-page-session-lease')
-    const { getDashboardAuthSnapshot } = await import('@/lib/dashboard-layout-auth-bridge')
-    const { validateDashboardLayoutRequest, validateCommittedDashboardLayout } = await import('@/lib/dashboard-layout')
-    const { DASHBOARD_WIDGETS } = await import('@/components/dashboard/widgets')
-    const api = await import('@/lib/api')
+    const { getPageSessionLease } = await prepared(import('@/lib/dashboard-layout-page-session-lease'))
+    const { getDashboardAuthSnapshot } = await prepared(import('@/lib/dashboard-layout-auth-bridge'))
+    const { validateDashboardLayoutRequest, validateCommittedDashboardLayout } = await prepared(import('@/lib/dashboard-layout'))
+    const { DASHBOARD_WIDGETS } = await prepared(import('@/components/dashboard/widgets'))
+    const api = await prepared(import('@/lib/api'))
     const saveSpy = vi.spyOn(api.dashboard, 'saveLayout'), meSpy = vi.spyOn(api.auth, 'me')
     const patchSpy = vi.spyOn(api.auth, 'updateMe'), colorsSpy = vi.spyOn(api.admin, 'defaultColors')
     restores.push(() => { saveSpy.mockRestore(); meSpy.mockRestore(); patchSpy.mockRestore(); colorsSpy.mockRestore() })
-    const { default: i18n, i18nReady } = await import('@/lib/i18n')
-    await i18nReady
+    const { default: i18n, i18nReady } = await prepared(import('@/lib/i18n'))
+    await prepared(i18nReady)
     const oldLanguage = i18n.language
     restores.push(async () => { await i18n.changeLanguage(oldLanguage) })
-    await i18n.changeLanguage('en')
+    await prepared(i18n.changeLanguage('en'))
     const t = (key: string, options?: Record<string, unknown>) => i18n.t(key, options) as string
-    const { currentMonth } = await import('@/lib/month-utils')
+    const { currentMonth } = await prepared(import('@/lib/month-utils'))
     const month = currentMonth() // Source-fit real logo return, not a fake clock.
     localStorage.setItem('token', TOKEN); localStorage.setItem(api.WORKSPACE_STORAGE_KEY, WS)
     localStorage.setItem('privacyMode', 'false'); localStorage.setItem('theme', 'dark')
@@ -300,12 +352,12 @@ it('actual App retains an unknown dashboard save across native navigation until 
     localStorage.setItem('updateCheckEnabled', 'false') // Real user setting; prevents external release fetch.
     localStorage.removeItem(`securo.activeCollection.${WS}`)
     window.history.replaceState(null, '', `/?month=${month}`)
-    const { default: App } = await import('@/App')
+    const { default: App } = await prepared(import('@/App'))
     // Qualify the real lazy dashboard's transitive module transform before
     // mounting App; keep its native lazy route, Suspense and all providers.
-    await import('@/pages/dashboard')
+    await prepared(import('@/pages/dashboard'))
     const user = userEvent.setup()
-    let root: { unmount(): void } | null = null, client: QueryClient | null = null
+    let root: { unmount(): void; container: HTMLElement } | null = null, client: QueryClient | null = null
     const stores = new Map<SessionStore, StoreOptions>(), unsubscribes: Array<() => void> = []
     const observedPromises = new Set<Promise<unknown>>()
     let publications = 0, queryEvents = 0
@@ -334,9 +386,12 @@ it('actual App retains an unknown dashboard save across native navigation until 
       }
     }
     async function flush() {
+      checkActive()
       await act(async () => { await tick(); await tick(); discoverNativeDiagnostics() })
+      checkActive()
     }
     async function drain() {
+      checkActive()
       for (let turn = 0; turn < 16; turn += 1) {
         discoverNativeDiagnostics()
         const before = [calls.length, tasks.length, stores.size, publications, queryEvents]
@@ -345,6 +400,7 @@ it('actual App retains an unknown dashboard save across native navigation until 
           for (const store of stores.keys()) { await getPageSessionLease(store).whenIdle(); await store.whenIdle() }
           await tick(); await tick(); discoverNativeDiagnostics()
         })
+        checkActive()
         if (client) await waitFor(() => { expect(client?.isFetching()).toBe(0); expect(client?.isMutating()).toBe(0) })
         const after = [calls.length, tasks.length, stores.size, publications, queryEvents]
         if (after.every((value, index) => value === before[index])) return
@@ -365,7 +421,7 @@ it('actual App retains an unknown dashboard save across native navigation until 
       await step(async () => { await act(async () => { ports.forEach((port) => { port.settle() }); await tick(); await tick() }) })
       await step(drain)
       const beforeUnmount = [...calls]
-      await step(async () => { await act(async () => { root?.unmount(); root = null; await tick(); await tick() }) })
+      await step(async () => { await act(async () => { root?.unmount(); root?.container.remove(); root = null; await tick(); await tick() }) })
       await step(drain)
       await step(() => {
         expect(calls).toStrictEqual(beforeUnmount)
@@ -376,6 +432,8 @@ it('actual App retains an unknown dashboard save across native navigation until 
       await step(() => { client?.clear() })
       await step(drain)
     }
+    yield
+    checkActive()
     // Native App supplies ALL providers, routing, lazy pages and Toaster.
     root = render(<App />, { reactStrictMode: false })
     await waitFor(() => expect(reads[0]!.config).not.toBeNull())
@@ -595,6 +653,8 @@ it('actual App retains an unknown dashboard save across native navigation until 
     expect(ports.every((port) => port.config !== null && port.settled)).toBe(true)
   } catch (error: unknown) { primary = error; failed = true }
   finally {
+    inCleanup = true
+    owner.retired = true
     try { await nativeCleanup?.() } catch (error: unknown) { diagnostics.push(error) }
     for (const restore of [...restores].reverse()) {
       try { await restore() } catch (error: unknown) { diagnostics.push(error) }
@@ -604,4 +664,4 @@ it('actual App retains an unknown dashboard save across native navigation until 
   if (failed && diagnostics.length) throw new AggregateError([primary, ...diagnostics], 'Primary actual-App failure plus cleanup diagnostics', { cause: primary })
   if (failed) throw primary
   if (diagnostics.length) throw new AggregateError(diagnostics, 'Actual-App cleanup failed')
-})
+}
