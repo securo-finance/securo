@@ -1,13 +1,15 @@
+import type { ContextType, ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import DashboardPage from '@/pages/dashboard'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { WorkspaceContext } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
 import { monthLabel } from '@/lib/month-utils'
-import { renderWithProviders, t } from '@/test/utils'
-import type { Account, DashboardSummary } from '@/types'
+import { renderWithProviders as renderWithBaseProviders, t, type ProviderOptions } from '@/test/utils'
+import type { Account, DashboardSummary, Transaction, Workspace, WorkspaceRole } from '@/types'
 
 const api = vi.hoisted(() => ({
   dashboard: {
@@ -17,7 +19,8 @@ const api = vi.hoisted(() => ({
     balanceHistoryMonths: vi.fn(),
     projectedTransactions: vi.fn(),
   },
-  transactions: { list: vi.fn(), calendar: vi.fn() },
+  transactions: { list: vi.fn(), calendar: vi.fn(), setReview: vi.fn() },
+  admin: { accountingMode: vi.fn() },
   budgets: { comparison: vi.fn() },
   categories: { list: vi.fn(), listIncludingHidden: vi.fn() },
   categoryGroups: { list: vi.fn(), listIncludingHidden: vi.fn() },
@@ -52,6 +55,51 @@ vi.mock('@/contexts/auth-context', () => ({
 vi.mock('@/contexts/collection-filter-context', () => ({
   useCollectionFilter: () => ({ activeAccountIds: null, activeWalletIds: null }),
 }))
+
+type DashboardWorkspace = NonNullable<ContextType<typeof WorkspaceContext>>
+
+// Keep the real child/hook guard: only this file's renderer supplies its workspace.
+function renderWithProviders(
+  ui: ReactElement,
+  { workspaceRole = 'editor', ...options }: ProviderOptions & { workspaceRole?: WorkspaceRole } = {},
+) {
+  // The existing mortgage case uses assets; no unrelated module/management grant.
+  const enabledModules: DashboardWorkspace['enabledModules'] = ['transactions', 'accounts', 'assets']
+  const current: Workspace = {
+    id: 'ws-dashboard',
+    name: 'Dashboard workspace',
+    kind: 'personal',
+    is_archived: false,
+    default_currency: 'USD',
+    locale: 'en-US',
+    timezone: 'UTC',
+    tax_jurisdiction: null,
+    icon: null,
+    color: null,
+    created_at: '2026-01-01T00:00:00Z',
+    created_by_user_id: 'user-1',
+    managed_by_user_id: null,
+    role: workspaceRole,
+    enabled_modules: enabledModules,
+  }
+  const canManage = workspaceRole === 'owner' || workspaceRole === 'manager'
+  const workspace: DashboardWorkspace = {
+    current,
+    workspaces: [current],
+    isLoading: false,
+    switchWorkspace: vi.fn<DashboardWorkspace['switchWorkspace']>().mockResolvedValue(undefined),
+    refresh: vi.fn<DashboardWorkspace['refresh']>().mockResolvedValue(undefined),
+    role: workspaceRole,
+    canManage,
+    canWrite: canManage || workspaceRole === 'editor',
+    enabledModules,
+    hasModule: (id) => enabledModules.includes(id),
+  }
+  return renderWithBaseProviders(
+    <WorkspaceContext.Provider value={workspace}>{ui}</WorkspaceContext.Provider>,
+    options,
+  )
+}
 
 function account(overrides: Partial<Account>): Account {
   return {
@@ -145,6 +193,7 @@ beforeEach(() => {
   api.dashboard.balanceHistoryMonths.mockResolvedValue([])
   api.dashboard.projectedTransactions.mockResolvedValue([])
   api.transactions.list.mockResolvedValue({ items: [], total: 0 })
+  api.admin.accountingMode.mockResolvedValue({ mode: 'cash' })
   api.budgets.comparison.mockResolvedValue([])
   api.categories.list.mockResolvedValue([])
   api.categories.listIncludingHidden.mockResolvedValue([])
@@ -766,5 +815,93 @@ describe('Dashboard refresh button', () => {
       '2026-04-01', undefined, ['2026-02-01'],
     )
     expect(screen.getByTestId('location-search')).toHaveTextContent('comparison_month=2026-02')
+  })
+})
+
+describe('Dashboard drill-down review permissions', () => {
+  const transaction: Transaction = {
+    id: 'dashboard-review-1',
+    user_id: 'user-1',
+    account_id: 'checking',
+    category_id: null,
+    category: null,
+    external_id: null,
+    description: 'Dashboard review coffee',
+    original_description: null,
+    amount: 4.5,
+    currency: 'USD',
+    date: '2026-04-05',
+    type: 'debit',
+    source: 'manual',
+    status: 'posted',
+    payee: null,
+    payee_id: null,
+    payee_name: null,
+    notes: null,
+    transfer_pair_id: null,
+    amount_primary: 4.5,
+    fx_rate_used: null,
+    fx_fallback: false,
+    installment_number: null,
+    total_installments: null,
+    installment_total_amount: null,
+    installment_purchase_date: null,
+    installment_series_id: null,
+    bill_id: null,
+    effective_bill_date: null,
+    splits: [],
+    is_ignored: false,
+    is_shared: false,
+    virtual: false,
+    review_status: 'needs_review',
+    reviewed_at: null,
+    reviewed_by_id: null,
+    review_attribution: null,
+    flagged: false,
+  }
+
+  it.each(['viewer', 'editor'] as const)('gates the real hovered-row Shift+R mutation for a %s workspace', async (workspaceRole) => {
+    api.transactions.list.mockResolvedValue({ items: [transaction], total: 1, page: 1, limit: 200 })
+    api.transactions.setReview.mockResolvedValue({
+      ...transaction,
+      review_status: 'reviewed',
+      reviewed_at: '2026-04-06T00:00:00Z',
+      reviewed_by_id: 'user-1',
+      review_attribution: { kind: 'human', reviewed_at: '2026-04-06T00:00:00Z', user_id: 'user-1' },
+    } satisfies Transaction)
+    const { user, queryClient } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+      { route: '/?month=2026-04', workspaceRole },
+    )
+
+    // Open the actual dashboard panel; hovering, not merely mounting, arms review.
+    await user.click(await screen.findByRole('button', { name: new RegExp(t('dashboard.monthlyExpenses')) }))
+    const heading = await screen.findByRole('heading', {
+      name: t('dashboard.drillDownExpenses', { month: monthLabel('2026-04', 'en') }),
+    })
+    const panel = heading.parentElement!.parentElement!
+    const row = (await within(panel).findByText(transaction.description)).closest<HTMLElement>('.cursor-pointer')!
+    expect(row).not.toBeNull()
+    expect(within(row).getByRole('img', { name: t('transactions.needsReview') })).toBeInTheDocument()
+    await waitFor(() => expect(queryClient.getQueryState(['admin', 'accounting-mode'])?.status).toBe('success'))
+    expect(api.transactions.list).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'debit', from: '2026-04-01', to: '2026-04-30', limit: 200, user_pnl_only: true,
+    }))
+    await user.hover(row)
+    await user.keyboard('{Shift>}R{/Shift}')
+
+    if (workspaceRole === 'viewer') {
+      expect(api.transactions.setReview).not.toHaveBeenCalled()
+      expect(row).not.toHaveAttribute('title', t('transactions.reviewShortcutHint'))
+      expect(within(row).getByRole('img', { name: t('transactions.needsReview') })).toBeInTheDocument()
+    } else {
+      expect(row).toHaveAttribute('title', t('transactions.reviewShortcutHint'))
+      await waitFor(() => expect(api.transactions.setReview).toHaveBeenCalledExactlyOnceWith(transaction.id, 'reviewed'))
+      await waitFor(() => expect(within(row).queryByRole('img', { name: t('transactions.needsReview') })).not.toBeInTheDocument())
+      expect(within(row).getByRole('img', { name: t('transactions.reviewedByHuman') })).toBeInTheDocument()
+    }
+    expect(queryClient.getQueryCache().getAll().filter(query => query.state.status === 'error')).toEqual([])
   })
 })
