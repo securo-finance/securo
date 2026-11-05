@@ -974,7 +974,7 @@ function TransactionForm({
         <div className="flex items-center gap-2 p-3 text-sm bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
           <span>{t('transactions.recurringInfo', {
             frequency: t(`recurring.${recurringMatch.frequency}`),
-            next: new Date(recurringMatch.next_occurrence + 'T00:00:00').toLocaleDateString(dateLocale),
+            next: new Date((recurringMatch.next_due_date ?? recurringMatch.next_occurrence) + 'T00:00:00').toLocaleDateString(dateLocale),
           })}</span>
         </div>
       )}

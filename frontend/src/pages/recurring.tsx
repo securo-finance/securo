@@ -29,6 +29,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
+import { countryName } from '@/lib/country-name'
 
 const TH = 'text-xs font-medium text-muted-foreground py-3'
 
@@ -216,7 +217,7 @@ function RecurringTab() {
                     </span>
                   </td>
                   <td className="py-3 text-xs text-muted-foreground tabular-nums hidden md:table-cell">
-                    {new Date(rt.next_occurrence + 'T00:00:00').toLocaleDateString(dateLocale)}
+                    {new Date((rt.next_due_date ?? rt.next_occurrence) + 'T00:00:00').toLocaleDateString(dateLocale)}
                   </td>
                   <td className="py-3 hidden sm:table-cell">
                     <span className={cn(
@@ -261,7 +262,9 @@ function RecurringTab() {
       </SectionCard>
 
       <Dialog open={dialogOpen} onOpenChange={() => { setDialogOpen(false); setEditing(null) }}>
-        <DialogContent>
+        {/* Bounded to the viewport as a flex column, so the form body scrolls
+            and the footer stays reachable however many rules are shown. */}
+        <DialogContent className="flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editing ? t('recurring.edit') : t('recurring.add')}</DialogTitle>
           </DialogHeader>
@@ -318,7 +321,7 @@ function RecurringForm({
   onCancel: () => void
   loading: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
@@ -336,6 +339,42 @@ function RecurringForm({
     recurring?.weekend_adjustment ?? 'none'
   )
   const [dayOfMonth, setDayOfMonth] = useState(recurring?.day_of_month?.toString() ?? '')
+  const [dayRule, setDayRule] = useState<'calendar' | 'business'>(recurring?.business_day ? 'business' : 'calendar')
+  const [businessDay, setBusinessDay] = useState(recurring?.business_day?.toString() ?? '5')
+  const [countSaturdays, setCountSaturdays] = useState(recurring?.count_saturdays ?? false)
+  // holiday_calendar is "BR" or "BR-SP": the country, then an optional subdivision.
+  const [holidayCountry, setHolidayCountry] = useState(recurring?.holiday_calendar?.split('-')[0] ?? '')
+  const [holidayRegion, setHolidayRegion] = useState(
+    recurring?.holiday_calendar?.split('-').slice(1).join('-') ?? ''
+  )
+  // Country names follow the UI language, not the currency-derived display
+  // locale: a Hindi UI with BRL amounts should still read "ब्राज़ील".
+  const displayLocale = i18n.language
+  const { data: holidayCalendars } = useQuery({
+    queryKey: ['holiday-calendars'],
+    queryFn: recurringApi.holidayCalendars,
+    staleTime: Infinity,
+  })
+  const holidayCountries = useMemo(
+    () =>
+      (holidayCalendars ?? [])
+        .map((c) => ({ ...c, name: countryName(c.country, displayLocale) }))
+        .sort((a, b) => a.name.localeCompare(b.name, displayLocale)),
+    [holidayCalendars, displayLocale]
+  )
+  const holidayRegions = useMemo(
+    () =>
+      [...(holidayCountries.find((c) => c.country === holidayCountry)?.subdivisions ?? [])].sort((a, b) =>
+        a.name.localeCompare(b.name, displayLocale)
+      ),
+    [holidayCountries, holidayCountry, displayLocale]
+  )
+  const holidayCalendar = holidayCountry ? (holidayRegion ? `${holidayCountry}-${holidayRegion}` : holidayCountry) : null
+  const [graceDays, setGraceDays] = useState(recurring?.grace_days?.toString() ?? '0')
+  const [amountTolerance, setAmountTolerance] = useState(recurring?.amount_tolerance_percent?.toString() ?? '0')
+  const [matchKeywords, setMatchKeywords] = useState(recurring?.match_keywords ?? '')
+  const monthBased = frequency === 'monthly' || frequency === 'quarterly' || frequency === 'semiannual'
+  const useBusinessDay = monthBased && dayRule === 'business'
   const [startDate, setStartDate] = useState(recurring?.start_date ?? localDateString())
   const [endDate, setEndDate] = useState(recurring?.end_date ?? '')
   const [categoryId, setCategoryId] = useState(recurring?.category_id ?? '')
@@ -357,6 +396,14 @@ function RecurringForm({
           frequency,
           weekend_adjustment: weekendAdjustment,
           day_of_month: dayOfMonth ? parseInt(dayOfMonth) : null,
+          business_day: useBusinessDay && businessDay ? parseInt(businessDay) : null,
+          count_saturdays: useBusinessDay && countSaturdays,
+          // The selector only shows for month-based frequencies; a calendar
+          // left over from before a frequency change must not be saved unseen.
+          holiday_calendar: monthBased ? holidayCalendar : null,
+          grace_days: graceDays ? parseInt(graceDays) : 0,
+          amount_tolerance_percent: amountTolerance ? parseFloat(amountTolerance) : 0,
+          match_keywords: matchKeywords.trim() || null,
           start_date: startDate,
           end_date: endDate || null,
           category_id: categoryId || null,
@@ -365,13 +412,14 @@ function RecurringForm({
           auto_generate: autoGenerate,
         } as Partial<RecurringTransaction>)
       }}
-      className="space-y-4"
+      className="flex flex-col flex-1 min-h-0"
     >
+      <div className="space-y-4 overflow-y-auto overscroll-contain flex-1 min-h-0 -mx-1 px-1 pb-2">
       <div className="space-y-2">
         <Label>{t('recurring.description')}</Label>
         <Input value={description} onChange={(e) => setDescription(e.target.value)} required />
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label>{t('recurring.amount')}</Label>
           <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
@@ -392,7 +440,7 @@ function RecurringForm({
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>{t('recurring.frequency')}</Label>
           <select className={selectClass} value={frequency} onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}>
@@ -404,26 +452,92 @@ function RecurringForm({
             <option value="yearly">{t('recurring.yearly')}</option>
           </select>
         </div>
-        {(frequency === 'monthly' || frequency === 'quarterly' || frequency === 'semiannual') && (
+        {monthBased && (
+          <div className="space-y-2">
+            <Label>{t('recurring.dayRule')}</Label>
+            <select className={selectClass} value={dayRule} onChange={(e) => setDayRule(e.target.value as 'calendar' | 'business')}>
+              <option value="calendar">{t('recurring.dayRuleCalendar')}</option>
+              <option value="business">{t('recurring.dayRuleBusiness')}</option>
+            </select>
+          </div>
+        )}
+        {monthBased && (useBusinessDay ? (
+          <div className="space-y-2">
+            <Label>{t('recurring.businessDay')}</Label>
+            <Input type="number" min="1" max="23" value={businessDay} onChange={(e) => setBusinessDay(e.target.value)} required />
+          </div>
+        ) : (
           <div className="space-y-2">
             <Label>{t('recurring.dayOfMonth')}</Label>
             <Input type="number" min="1" max="31" value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} />
           </div>
+        ))}
+        <div className="space-y-2">
+          <Label>{t('recurring.weekendAdjustment')}</Label>
+          <select
+            className={selectClass}
+            value={weekendAdjustment}
+            onChange={(e) => setWeekendAdjustment(e.target.value as RecurringTransaction['weekend_adjustment'])}
+          >
+            <option value="none">{t('recurring.weekendAdjustmentNone')}</option>
+            <option value="previous_friday">{t('recurring.weekendAdjustmentPreviousFriday')}</option>
+            <option value="next_monday">{t('recurring.weekendAdjustmentNextMonday')}</option>
+          </select>
+        </div>
+        {monthBased && (
+          <div className="space-y-2">
+            <Label>{t('recurring.holidayCalendar')}</Label>
+            <select
+              className={selectClass}
+              value={holidayCountry}
+              onChange={(e) => { setHolidayCountry(e.target.value); setHolidayRegion('') }}
+            >
+              <option value="">{t('recurring.holidayCalendarNone')}</option>
+              {/* Keep a saved calendar selectable while the list loads. */}
+              {holidayCountry && !holidayCountries.some((c) => c.country === holidayCountry) && (
+                <option value={holidayCountry}>{countryName(holidayCountry, displayLocale)}</option>
+              )}
+              {holidayCountries.map((c) => (
+                <option key={c.country} value={c.country}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {monthBased && holidayCountry && (holidayRegions.length > 0 || holidayRegion) && (
+          <div className="space-y-2">
+            <Label>{t('recurring.holidayRegion')}</Label>
+            <select className={selectClass} value={holidayRegion} onChange={(e) => setHolidayRegion(e.target.value)}>
+              <option value="">{t('recurring.holidayRegionNational')}</option>
+              {holidayRegion && !holidayRegions.some((r) => r.code === holidayRegion) && (
+                <option value={holidayRegion}>{holidayRegion}</option>
+              )}
+              {holidayRegions.map((r) => (
+                <option key={r.code} value={r.code}>
+                  {r.name === r.code ? r.code : `${r.name} (${r.code})`}
+                </option>
+              ))}
+            </select>
+          </div>
         )}
       </div>
-      <div className="space-y-2">
-        <Label>{t('recurring.weekendAdjustment')}</Label>
-        <select
-          className={selectClass}
-          value={weekendAdjustment}
-          onChange={(e) => setWeekendAdjustment(e.target.value as RecurringTransaction['weekend_adjustment'])}
-        >
-          <option value="none">{t('recurring.weekendAdjustmentNone')}</option>
-          <option value="previous_friday">{t('recurring.weekendAdjustmentPreviousFriday')}</option>
-          <option value="next_monday">{t('recurring.weekendAdjustmentNextMonday')}</option>
-        </select>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
+      {monthBased && holidayCountry === 'BR' && (
+        <p className="text-xs text-muted-foreground -mt-2">{t('recurring.holidayCalendarBRHelp')}</p>
+      )}
+      {useBusinessDay && (
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={countSaturdays}
+            onChange={(e) => setCountSaturdays(e.target.checked)}
+            className="h-4 w-4 mt-0.5 rounded border-border"
+          />
+          <span className="text-sm text-foreground">
+            {t('recurring.countSaturdays')}
+            <span className="block text-xs text-muted-foreground">{t('recurring.countSaturdaysHelp')}</span>
+          </span>
+        </label>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>{t('recurring.startDate')}</Label>
           <DatePickerInput value={startDate} onChange={setStartDate} className="w-full justify-start" />
@@ -433,7 +547,7 @@ function RecurringForm({
           <DatePickerInput value={endDate} onChange={setEndDate} placeholder={t('recurring.endDate')} className="w-full justify-start" />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>{t('recurring.category')}</Label>
           <CategorySelect
@@ -461,6 +575,32 @@ function RecurringForm({
           </select>
         </div>
       </div>
+      <div className="space-y-3 rounded-lg border border-border p-3">
+        <div>
+          <p className="text-sm font-medium text-foreground">{t('recurring.matching')}</p>
+          <p className="text-xs text-muted-foreground">{t('recurring.matchingHelp')}</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>{t('recurring.graceDays')}</Label>
+            <Input type="number" min="0" max="15" value={graceDays} onChange={(e) => setGraceDays(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>{t('recurring.amountTolerance')}</Label>
+            <Input type="number" min="0" max="50" step="0.5" value={amountTolerance} onChange={(e) => setAmountTolerance(e.target.value)} />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label>{t('recurring.matchKeywords')}</Label>
+          <Input
+            value={matchKeywords}
+            onChange={(e) => setMatchKeywords(e.target.value)}
+            placeholder={t('recurring.matchKeywordsPlaceholder')}
+            maxLength={500}
+          />
+          <p className="text-xs text-muted-foreground">{t('recurring.matchKeywordsHelp')}</p>
+        </div>
+      </div>
       <label className="flex items-start gap-2 cursor-pointer">
         <input
           type="checkbox"
@@ -484,7 +624,8 @@ function RecurringForm({
           <span className="text-sm text-foreground">{t('recurring.active')}</span>
         </label>
       )}
-      <DialogFooter>
+      </div>
+      <DialogFooter className="pt-4 border-t border-border">
         <Button type="button" variant="outline" onClick={onCancel}>{t('common.cancel')}</Button>
         <Button type="submit" disabled={loading}>
           {loading ? t('common.loading') : t('common.save')}

@@ -389,7 +389,8 @@ async def _suggest_recurring(
     if not bills:
         return
 
-    from app.services.recurring_transaction_service import adjust_weekend_date
+    from app.services.recurring_match_service import _bill_policy
+    from app.services.recurring_transaction_service import nearest_occurrence
 
     composed = await reconciliation_rule_service.resolve(
         session, workspace_id, RECURRING_NODE
@@ -404,9 +405,7 @@ async def _suggest_recurring(
         for bill in bills:
             if bill.account_id != transaction.account_id:
                 continue
-            occurrence = adjust_weekend_date(
-                bill.next_occurrence, bill.weekend_adjustment
-            )
+            _, occurrence = nearest_occurrence(bill, transaction.date)
             decision = evaluate(
                 movement,
                 [
@@ -421,8 +420,12 @@ async def _suggest_recurring(
                         account_id=bill.account_id,
                     )
                 ],
-                reconciliation_rule_service.narrow_for_frequency(
-                    composed, bill.frequency
+                _bill_policy(
+                    reconciliation_rule_service.narrow_for_frequency(
+                        composed, bill.frequency
+                    ),
+                    bill,
+                    transaction.description,
                 ),
                 base_currency=base_currency,
             )

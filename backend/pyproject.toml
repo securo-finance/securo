@@ -48,6 +48,10 @@ dependencies = [
     "fastembed>=0.4.0",
     # Resolve the host's IANA timezone when no app setting or TZ override exists.
     "tzlocal>=5.0.0",
+    # Holiday calendars for business-day schedules (a salary on the fifth
+    # business day). Computed offline for ~250 countries and their
+    # subdivisions, so no holiday API is called and nothing needs a key.
+    "holidays>=0.80",
 ]
 
 [project.optional-dependencies]
