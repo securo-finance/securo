@@ -10,6 +10,9 @@
     "kindBusiness": "Vállalkozás",
     "kindHint": "Válaszd ki, mit követ ez a munkaterület. Később nem módosítható.",
     "defaultCurrency": "Alapértelmezett pénznem",
+    "quickCurrencies": "Gyorsváltó pénznemek",
+    "quickCurrenciesActive": "Ez az aktív megjelenítési pénznem.",
+    "quickCurrenciesHint": "Váltóként jelenik meg az irányítópulton. Válassz legalább kettőt, legfeljebb hatot. Az összegeket átváltjuk, nem csak átcímkézzük.",
     "locale": "Nyelv",
     "taxJurisdiction": "Adóügyi illetékesség",
     "taxJurisdictionHint": "Ez határozza meg, milyen adóügyi dokumentumok érhetők el ebben a munkaterületen. Független a felület nyelvétől.",
@@ -3114,5 +3117,9 @@
       "recurring": "Ismétlődési szabályok",
       "recurringHint": "Hogyan döntjük el, hogy egy terhelés az a számla, amelyre már számítottál."
     }
+  },
+  "currencySwitch": {
+    "label": "Megjelenítési pénznem",
+    "error": "Nem sikerült pénznemet váltani"
   }
 }
