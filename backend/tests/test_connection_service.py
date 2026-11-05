@@ -1516,6 +1516,38 @@ async def test_sync_connection_enable_banking_late_reference_ambiguous_is_new_ro
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reverse", [False, True], ids=["in_order", "reversed"])
+async def test_sync_connection_enable_banking_late_reference_one_held_two_incoming(
+    session: AsyncSession, test_user, test_workspace, reverse,
+):
+    """One purchase was held without a reference, and the next fetch returns
+    it beside an identical purchase that booked later, each with its own
+    reference. One of the two is the held row, so it takes whichever comes
+    first and the other lands as a new row. Leaving the held row alone would
+    keep it next to both referenced copies, the duplicate this match removes."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    held = _eb_late_ref_row(
+        test_user.id, test_workspace.id, account, _eb_txn(_eb_late_ref_payload(None)),
+    )
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    first = _eb_txn(_eb_late_ref_payload("2026-09-03.1"))
+    second = _eb_txn(_eb_late_ref_payload("2026-09-03.2"))
+    fetched = [second, first] if reverse else [first, second]
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, fetched)
+
+    rows = await _account_rows(session, account_id)
+    assert len(rows) == 2
+    assert {row.external_id for row in rows} == {first.external_id, second.external_id}
+    assert next(row for row in rows if row.id == held_id).external_id == (
+        fetched[0].external_id
+    )
+
+
+@pytest.mark.asyncio
 async def test_sync_connection_enable_banking_late_reference_yields_to_held_reference(
     session: AsyncSession, test_user, test_workspace,
 ):
