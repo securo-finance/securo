@@ -34,6 +34,7 @@ from app.services.credit_card_service import apply_effective_date, cc_cycle_bill
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
 from app.services._query_filters import (
+    counts_as_pnl,
     counts_as_user_pnl,
     counts_in_rollup,
     is_not_ignored,
@@ -497,7 +498,9 @@ async def get_transactions(
         # matches the dashboard & reports: paired transfers,
         # `treat_as_transfer` categories (transfers, investments, custom),
         # ignored items and excluded accounts are kept OUT of income/expense.
-        pnl_filter = counts_in_rollup()
+        # Statement footers are own-account views: preserve their existing
+        # P&L formula without applying the account's report exclusion.
+        pnl_filter = counts_as_pnl() if in_statement_view else counts_in_rollup()
         pnl_subq = base_query.where(pnl_filter).subquery()
         amount_norm = func.coalesce(
             pnl_subq.c.amount_primary, pnl_subq.c.amount

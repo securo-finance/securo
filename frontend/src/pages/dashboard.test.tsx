@@ -188,6 +188,10 @@ describe('Dashboard net worth breakdown', () => {
     )
     await screen.findByText('Checking')
     expect(screen.queryByText('Mirror Cash')).not.toBeInTheDocument()
+    const headlineLabel = screen.getByText(t('dashboard.availableBalance'))
+    expect(headlineLabel.nextElementSibling).toHaveTextContent(formatCurrency(1000, 'USD', 'en-US'))
+    expect(headlineLabel.nextElementSibling).not.toHaveTextContent(formatCurrency(10000, 'USD', 'en-US'))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
     await user.hover(screen.getByRole('button', { name: 'i' }))
     const tooltip = await screen.findByRole('tooltip')
     for (const [key, amount] of [

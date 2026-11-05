@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.json_schema import SkipJsonSchema
 
 LoanKind = Literal["mortgage", "auto", "personal", "student", "other"]
 LoanRatePeriod = Literal["monthly", "yearly_effective", "yearly_nominal"]
@@ -63,7 +64,8 @@ class AccountUpdate(BaseModel):
     loan_term_months: Optional[int] = Field(default=None, ge=1, le=600)
     loan_first_payment_date: Optional[date] = None
     loan_amortization: Optional[LoanAmortization] = None
-    exclude_from_reports: Optional[bool] = None
+    # None is an internal omission sentinel, not a valid request value/default.
+    exclude_from_reports: bool | SkipJsonSchema[None] = Field(default_factory=lambda: None)
 
     @field_validator("exclude_from_reports")
     @classmethod

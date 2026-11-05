@@ -531,6 +531,16 @@ export default function AccountsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+                          onClick={() => { setEditingAccount(acc); setDialogOpen(true) }}
+                        >
+                          {t('common.edit')}
+                        </Button>
+                      )}
+                      {canWrite && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className="text-xs text-muted-foreground hover:text-foreground h-7 px-2 mr-3"
                           onClick={() => reopenMutation.mutate(acc.id)}
                           disabled={reopenMutation.isPending}
@@ -840,7 +850,7 @@ export function AccountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {account ? t('accounts.editAccount') : t('accounts.addManual')}
@@ -850,6 +860,10 @@ export function AccountDialog({
           key={account?.id ?? 'new'}
           onSubmit={(e) => {
             e.preventDefault()
+            if (account?.is_closed) {
+              onSave({ exclude_from_reports: excludeFromReports })
+              return
+            }
             const isCC = type === 'credit_card'
             const parseDay = (v: string) => {
               const n = parseInt(v, 10)
@@ -883,6 +897,7 @@ export function AccountDialog({
           }}
           className="space-y-4"
         >
+          <fieldset hidden={account?.is_closed} disabled={account?.is_closed} className="space-y-4">
           <div className="space-y-2">
             <Label>{t('accounts.accountName')}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!!account?.connection_id} />
@@ -1080,6 +1095,7 @@ export function AccountDialog({
               </div>
             </div>
           )}
+          </fieldset>
           {/* PR-5 (S1): totals flag. Positive phrasing (include-in-reports)
               bound to the inverse of exclude_from_reports. Edit-only — v1
               adds no create-time field (AccountCreate unchanged, Q-7). */}

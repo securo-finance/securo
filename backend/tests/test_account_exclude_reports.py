@@ -989,3 +989,62 @@ async def test_card_bill_totals_unchanged_by_exclusion(
     assert float(after["monthly_expenses"]) == pytest.approx(150.0)
     assert after["monthly_expenses"] == before["monthly_expenses"]
     assert after["monthly_income"] == before["monthly_income"]
+
+
+@pytest.mark.parametrize("view", ["bill_id", "unbilled_only", "statement_view"])
+async def test_excluded_card_statement_footer_keeps_own_totals(
+    session: AsyncSession, test_user, test_workspace, view
+):
+    from app.models.credit_card_bill import CreditCardBill
+
+    card = await _make_account(session, test_user.id, "Statement Card", acc_type="credit_card")
+    transfer = await _make_category(session, test_user.id, "Movement", treat_as_transfer=True)
+    charges = [
+        await _add_txn(session, test_user.id, card.id, 100, "debit", date.today()),
+        await _add_txn(session, test_user.id, card.id, 20, "credit", date.today()),
+        await _add_txn(session, test_user.id, card.id, 50, "debit", date.today(), category_id=transfer.id),
+        await _add_txn(session, test_user.id, card.id, 7, "debit", date.today()),
+    ]
+    charges[-1].is_ignored = True
+    bill_id = None
+    if view == "bill_id":
+        bill = CreditCardBill(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=card.id, external_id="statement-footer", due_date=date.today(),
+            total_amount=Decimal("0"), currency="BRL",
+        )
+        session.add(bill)
+        for charge in charges:
+            charge.bill_id = bill.id
+        bill_id = bill.id
+    await session.commit()
+
+    async def statement():
+        return await get_transactions(
+            session, test_workspace.id, test_user.id, account_ids=[card.id],
+            from_date=date.today(), to_date=date.today(), include_summary=True,
+            bill_id=bill_id, unbilled_only=view == "unbilled_only",
+            statement_view=view == "statement_view",
+        )
+
+    before_rows, before_total, before = await statement()
+    assert before is not None
+    assert before["income"] == Decimal("20")
+    assert before["expense"] == Decimal("100")
+    assert before["net"] == Decimal("20") - Decimal("100")
+    # Preserve the existing P&L formula: transfer-like and ignored rows stay excluded.
+    assert before["excluded"] == Decimal("50") + Decimal("7")
+    await _set_flag(session, card)
+    after_rows, after_total, after = await statement()
+    assert {row.id for row in before_rows} == {charge.id for charge in charges}
+    assert {row.id for row in after_rows} == {charge.id for charge in charges}
+    assert before_total == after_total == len(charges)
+    assert after == before
+
+    # The same rows still leave aggregate report totals; only own-bill views bypass the flag.
+    _, _, aggregate = await get_transactions(
+        session, test_workspace.id, test_user.id, include_summary=True,
+    )
+    assert aggregate is not None
+    assert aggregate["income"] == aggregate["expense"] == aggregate["net"] == 0
+    assert aggregate["excluded"] == sum(charge.amount for charge in charges)

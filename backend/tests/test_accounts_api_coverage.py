@@ -6,6 +6,7 @@ non-primary-currency conversion path.
 """
 
 from decimal import Decimal
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -420,6 +421,39 @@ async def test_list_accounts_requires_auth(client: AsyncClient):
 # ---------------------------------------------------------------------------
 
 
+def test_account_exclusion_request_schema_is_optional_non_nullable_boolean():
+    from app.schemas.account import AccountUpdate
+
+    schema = AccountUpdate.model_json_schema(mode="validation")
+    operation = app.openapi()["paths"]["/api/accounts/{account_id}"]["patch"]
+    body = operation["requestBody"]["content"]["application/json"]["schema"]
+    published = app.openapi()["components"]["schemas"][body["$ref"].split("/")[-1]]
+    for request_schema in (schema, published):
+        field = request_schema["properties"]["exclude_from_reports"]
+        assert field["type"] == "boolean"
+        assert "anyOf" not in field
+        assert "default" not in field
+        assert "exclude_from_reports" not in request_schema.get("required", [])
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_account_exclusion_runtime_accepts_boolean_and_omission(value):
+    from app.schemas.account import AccountUpdate
+
+    assert AccountUpdate().model_dump(exclude_unset=True) == {}
+    update = AccountUpdate(exclude_from_reports=value)
+    assert update.model_dump(exclude_unset=True) == {"exclude_from_reports": value}
+
+
+def test_account_exclusion_runtime_rejects_explicit_null():
+    from pydantic import ValidationError
+
+    from app.schemas.account import AccountUpdate
+
+    with pytest.raises(ValidationError, match="exclude_from_reports cannot be null"):
+        AccountUpdate.model_validate({"exclude_from_reports": None, "display_name": "Invalid"})
+
+
 @pytest.mark.asyncio
 async def test_accounts_api_roundtrips_exclude_from_reports(
     client: AsyncClient, auth_headers, test_account: Account
@@ -497,10 +531,12 @@ async def test_account_exclusion_null_rejected_without_mutation(
     # Observe the HTTP response even if a regression raises inside the app.
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as http:
-        rejected = await http.patch(
-            url, headers=auth_headers,
-            json={"exclude_from_reports": None, "display_name": "Must not be saved"},
-        )
+        with patch("app.api.accounts.account_service.update_account", new_callable=AsyncMock) as writer:
+            rejected = await http.patch(
+                url, headers=auth_headers,
+                json={"exclude_from_reports": None, "display_name": "Must not be saved"},
+            )
+        writer.assert_not_awaited()
     assert rejected.status_code == 422, rejected.text
     assert any(
         error["loc"] == ["body", "exclude_from_reports"]
@@ -542,9 +578,50 @@ async def test_account_exclusion_omitted_patch_preserves_boolean_roundtrip(
 
 
 @pytest.mark.asyncio
-async def test_viewer_can_read_but_cannot_change_account_exclusion(
-    client: AsyncClient, viewer_auth_headers, test_account: Account
+@pytest.mark.parametrize("connected", [False, True], ids=["manual", "connected"])
+async def test_closed_account_report_edit_preserves_closure_and_history(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_user, test_workspace, test_account: Account, test_transactions, connected,
 ):
+    from sqlalchemy import select
+
+    from app.models.transaction import Transaction
+
+    if connected:
+        account_id = str(test_account.id)
+    else:
+        created = await client.post(
+            "/api/accounts", headers=auth_headers,
+            json={"name": "Closed history", "type": "checking", "balance": "123.00"},
+        )
+        assert created.status_code == 201, created.text
+        account_id = created.json()["id"]
+    url = f"/api/accounts/{account_id}"
+    closed = await client.post(f"{url}/close", headers=auth_headers)
+    assert closed.status_code == 200, closed.text
+    before = await client.get(url, headers=auth_headers)
+    assert before.status_code == 200
+    assert before.json()["is_closed"] is True
+    history_query = select(Transaction.__table__).order_by(Transaction.id)
+    history_before = (await session.execute(history_query)).all()
+    assert history_before
+    for excluded in (True, False):
+        patched = await client.patch(url, headers=auth_headers, json={"exclude_from_reports": excluded})
+        assert patched.status_code == 200, patched.text
+        after = await client.get(url, headers=auth_headers)
+        assert after.status_code == 200
+        assert after.json() == {**before.json(), "exclude_from_reports": excluded}
+        assert (await session.execute(history_query)).all() == history_before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("closed", [False, True], ids=["open", "closed"])
+async def test_viewer_can_read_but_cannot_change_account_exclusion(
+    client: AsyncClient, auth_headers, viewer_auth_headers, test_account: Account, closed
+):
+    if closed:
+        response = await client.post(f"/api/accounts/{test_account.id}/close", headers=auth_headers)
+        assert response.status_code == 200, response.text
     response = await client.get(
         f"/api/accounts/{test_account.id}", headers=viewer_auth_headers,
     )
