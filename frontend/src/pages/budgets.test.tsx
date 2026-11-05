@@ -175,6 +175,7 @@ describe('BudgetsPage suggestions', () => {
     expect(api.transactions.list).toHaveBeenCalledWith(expect.objectContaining({ category_id: 'cat-groceries', type: 'debit', ...monthRange(expectedMonth.slice(0, 7)), account_ids: undefined, user_pnl_only: true }))
     await user.click(screen.getByRole('button', { name: t('common.close') }))
     expect(screen.queryByText('Weekly groceries')).not.toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: /Groceries/ })).toHaveFocus()
     const button = within(row).getByRole('button', { name: /Groceries/ })
     button.focus()
     await user.keyboard('{Enter}')
@@ -197,9 +198,9 @@ describe('BudgetsPage suggestions', () => {
     api.activeAccountIds = ['account-2']
     rerender(<BudgetsPage />)
     await waitFor(() => expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({ account_ids: ['account-2'] })))
-    await user.keyboard('{Escape}')
-    await user.click(screen.getByRole('button', { name: '‹' }))
-    await user.click(screen.getByRole('button', { name: /Utilities/ }))
+    screen.getByRole('button', { name: '‹' }).focus()
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('complementary')).toBeInTheDocument()
     const previous = format(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), 'yyyy-MM')
     await waitFor(() => expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({ ...monthRange(previous) })))
   })
@@ -245,6 +246,64 @@ describe('BudgetsPage suggestions', () => {
     expect(api.mask).toHaveBeenCalledWith('$123.45')
   })
 
+  it.each([null, ['account-1']])('uses split shares only for the unfiltered spending scope (%s)', async (accountIds) => {
+    mockBudgets()
+    api.activeAccountIds = accountIds
+    api.transactions.list.mockResolvedValue({ items: [{ id: 'split', description: 'Split groceries', date: expectedMonth, type: 'debit', amount: 120, amount_primary: 240, viewer_share: 30, currency: 'EUR', status: 'posted' }], total: 1 })
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    const panel = screen.getByRole('complementary')
+    expect(await within(panel).findByText('Split groceries')).toBeInTheDocument()
+    expect(within(panel).getByText(accountIds ? '-€120.00' : '-€30.00')).toBeInTheDocument()
+    expect(within(panel).getAllByText(accountIds ? '$240.00' : '$60.00').length).toBeGreaterThan(0)
+  })
+
+  it.each(['transactions', 'projections', 'later-page'])('shows a load error rather than incomplete totals when %s fails', async (failure) => {
+    mockBudgets()
+    if (failure === 'projections') api.dashboard.projectedTransactions.mockRejectedValue(new Error('unavailable'))
+    else if (failure === 'later-page') api.transactions.list
+      .mockResolvedValueOnce({ items: [{ id: 'partial', description: 'Partial result', amount: 10, date: expectedMonth, currency: 'USD', type: 'debit' }], total: 2 })
+      .mockRejectedValue(new Error('unavailable'))
+    else api.transactions.list.mockRejectedValue(new Error('unavailable'))
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(t('dashboard.drillDownError'))
+    expect(screen.queryByText(t('dashboard.drillDownEmpty'))).not.toBeInTheDocument()
+    expect(screen.queryByText('Partial result')).not.toBeInTheDocument()
+    api.transactions.list.mockResolvedValue({ items: [], total: 0 })
+    api.dashboard.projectedTransactions.mockResolvedValue([])
+    await user.click(screen.getByRole('button', { name: t('common.retry') }))
+    expect(await screen.findByText(t('dashboard.drillDownEmpty'))).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('ignores a cached projection error when switching to a wallet-only collection', async () => {
+    mockBudgets()
+    api.dashboard.projectedTransactions.mockRejectedValue(new Error('unavailable'))
+    const { user, rerender } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(t('dashboard.drillDownError'))
+    const transactionRequests = api.transactions.list.mock.calls.length
+    api.activeAccountIds = []
+    rerender(<BudgetsPage />)
+    expect(await screen.findByText(t('dashboard.drillDownEmpty'))).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(api.transactions.list).toHaveBeenCalledTimes(transactionRequests)
+  })
+
+  it('loads every transaction page and shows the complete total with the same filter', async () => {
+    mockBudgets()
+    const rows = Array.from({ length: 201 }, (_, index) => ({ id: `tx-${index}`, description: `Grocery ${index}`, date: expectedMonth, type: 'debit', amount: 1, currency: 'USD', status: 'posted' }))
+    api.transactions.list.mockImplementation(async ({ page = 1, limit = 200 }) => ({ items: rows.slice((page - 1) * limit, page * limit), total: rows.length }))
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    expect(await screen.findByText('Grocery 200')).toBeInTheDocument()
+    expect(within(screen.getByRole('complementary')).getAllByText('$201.00').length).toBeGreaterThan(0)
+    expect(api.transactions.list).toHaveBeenCalledTimes(2)
+    expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, category_id: 'cat-groceries', ...monthRange(expectedMonth.slice(0,7)) }))
+    expect(screen.getByText('Grocery 0').closest('.cursor-pointer')).toBeNull()
+  })
+
   it('keeps edit and delete actions separate from the transaction sidebar', async () => {
     mockBudgets()
     const { user } = renderWithProviders(<BudgetsPage />)
@@ -261,9 +320,15 @@ describe('BudgetsPage suggestions', () => {
   it('uses the selected month and collection accounts', async () => {
     api.activeAccountIds = ['account-1']
     mockBudgets()
+    api.dashboard.spendingByCategory.mockImplementation((month) => Promise.resolve([
+      { category_id: 'cat-groceries', projected_total: month === expectedMonth ? 125 : 75 },
+    ]))
     const { user } = renderWithProviders(<BudgetsPage />)
+    expect(await screen.findByText('$125.00')).toBeInTheDocument()
     await waitFor(() => expect(api.dashboard.spendingByCategory).toHaveBeenCalledWith(expectedMonth, ['account-1']))
     await user.click(screen.getByRole('button', { name: '‹' }))
+    expect(await screen.findByText('$75.00')).toBeInTheDocument()
+    expect(screen.queryByText('$125.00')).not.toBeInTheDocument()
     const previous = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
     await waitFor(() => expect(api.dashboard.spendingByCategory).toHaveBeenCalledWith(`${format(previous, 'yyyy-MM')}-01`, ['account-1']))
   })

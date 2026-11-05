@@ -870,6 +870,7 @@
     "drillDownSettledTotal": "निपटा · कार्ड कुल",
     "drillDownPendingTotal": "निपटान लंबित",
     "drillDownShownTotal": "दिखाया गया कुल",
+    "drillDownError": "लेनदेन लोड नहीं हो सके। कृपया पुनः प्रयास करें।",
     "drillDownEmpty": "कोई लेन-देन नहीं मिला",
     "drillDownClose": "बंद करें",
     "accrualNote": "क्रेडिट-कार्ड लेन-देन बिल की देय तिथि के अनुसार समूहित होते हैं (प्रोद्भवन मोड)।",

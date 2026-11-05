@@ -881,6 +881,7 @@
     "drillDownSettledTotal": "Zaksięgowane · suma podsumowania",
     "drillDownPendingTotal": "Oczekujące rozliczenie",
     "drillDownShownTotal": "Wyświetlana suma",
+    "drillDownError": "Nie udało się wczytać transakcji. Spróbuj ponownie.",
     "drillDownEmpty": "Nie znaleziono transakcji",
     "drillDownClose": "Zamknij",
     "accrualNote": "Transakcje kartą kredytową są grupowane wg terminu płatności rachunku (tryb memoriałowy).",

@@ -870,6 +870,7 @@
     "drillDownSettledTotal": "Settled · card total",
     "drillDownPendingTotal": "Pending settlement",
     "drillDownShownTotal": "Total shown",
+    "drillDownError": "Transactions could not be loaded. Please try again.",
     "drillDownEmpty": "No transactions found",
     "drillDownClose": "Close",
     "accrualNote": "Credit-card transactions are grouped by bill due date (accrual mode).",

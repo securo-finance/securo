@@ -1810,7 +1810,7 @@ export default function DashboardPage() {
               // Keep drill-downs consistent with the collection-scoped cards
               // they open from (e.g. "Categorize now").
               account_ids:
-                drillDown.account_ids ?? (acctIds && acctIds.length > 0 ? acctIds : undefined),
+                drillDown.account_ids ?? acctIds,
             }
             : null
         }

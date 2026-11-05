@@ -872,6 +872,7 @@
     "drillDownSettledTotal": "Regolato · totale riepilogativo",
     "drillDownPendingTotal": "In attesa di regolamento",
     "drillDownShownTotal": "Totale mostrato",
+    "drillDownError": "Impossibile caricare le transazioni. Riprova.",
     "drillDownEmpty": "Nessuna transazione trovata",
     "drillDownClose": "Chiudi",
     "accrualNote": "Le transazioni con carta di credito sono raggruppate per scadenza dell'estratto conto (modalità per competenza).",

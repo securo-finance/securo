@@ -287,7 +287,10 @@ export default function BudgetsPage() {
                   const pct = limit > 0 ? Math.round(amount / limit * 1000) / 10 : 0
                   return (
                     <tr key={budget.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors cursor-pointer"
-                      onClick={() => setDrillDownCategoryId(budget.category_id)}
+                      onClick={(event) => {
+                        event.currentTarget.querySelector('button')?.focus()
+                        setDrillDownCategoryId(budget.category_id)
+                      }}
                     >
                       <td className="py-3 pl-4 sm:pl-5 pr-4 text-sm font-medium text-foreground break-words">
                         <button
@@ -522,6 +525,7 @@ export default function BudgetsPage() {
 
       {drillDownCategoryId !== null && (
         <TransactionDrillDown
+          useViewerShare={activeAccountIds === null}
           filter={{
             title: t('dashboard.drillDownCategory', {
               category: findCategoryReference(displayCategories, drillDownCategoryId)?.name ?? drillDownCategoryId,

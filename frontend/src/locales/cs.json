@@ -898,6 +898,7 @@
     "drillDownSettledTotal": "Zaúčtováno · souhrnná částka",
     "drillDownPendingTotal": "Čeká na zaúčtování",
     "drillDownShownTotal": "Zobrazená částka",
+    "drillDownError": "Transakce se nepodařilo načíst. Zkuste to znovu.",
     "drillDownEmpty": "Nebyly nalezeny žádné transakce",
     "drillDownClose": "Zavřít",
     "accrualNote": "Transakce kreditní kartou jsou seskupeny podle data splatnosti výpisu (akruální režim).",

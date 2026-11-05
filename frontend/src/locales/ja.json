@@ -870,6 +870,7 @@
     "drillDownSettledTotal": "決済済み · カード請求合計",
     "drillDownPendingTotal": "未決済",
     "drillDownShownTotal": "表示合計",
+    "drillDownError": "取引を読み込めませんでした。もう一度お試しください。",
     "drillDownEmpty": "取引が見つかりません",
     "drillDownClose": "閉じる",
     "accrualNote": "クレジットカードの取引は請求の支払期日ごとにまとめられます(発生基準)。",

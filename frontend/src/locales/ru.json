@@ -878,6 +878,7 @@
     "drillDownSettledTotal": "Проведено · сумма в сводке",
     "drillDownPendingTotal": "Ожидает расчёта",
     "drillDownShownTotal": "Показанная сумма",
+    "drillDownError": "Не удалось загрузить операции. Попробуйте ещё раз.",
     "drillDownEmpty": "Транзакции не найдены",
     "drillDownClose": "Закрыть",
     "accrualNote": "Кредитные карты: транзакции группируются по дате платежа (метод начисления).",

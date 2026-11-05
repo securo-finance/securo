@@ -870,6 +870,7 @@
     "drillDownSettledTotal": "Kiegyenlítve · kártya összesen",
     "drillDownPendingTotal": "Kiegyenlítésre vár",
     "drillDownShownTotal": "Megjelenített összeg",
+    "drillDownError": "A tranzakciók betöltése sikertelen. Próbálja újra.",
     "drillDownEmpty": "Nincs találat",
     "drillDownClose": "Bezárás",
     "accrualNote": "A hitelkártyás tranzakciók a kártyaszámla esedékessége szerint vannak csoportosítva (teljesítési szemlélet).",

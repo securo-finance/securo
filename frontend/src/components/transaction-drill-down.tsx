@@ -51,10 +51,12 @@ export function TransactionDrillDown({
   filter,
   onClose,
   onTransactionClick,
+  useViewerShare = false,
 }: {
   filter: DrillDownFilter | null
   onClose: () => void
   onTransactionClick?: (tx: Transaction) => void
+  useViewerShare?: boolean
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -65,10 +67,10 @@ export function TransactionDrillDown({
   const panelRef = useRef<HTMLDivElement>(null)
   const noAccounts = filter?.account_ids?.length === 0
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['drill-down', filter],
-    queryFn: () =>
-      transactionsApi.list({
+    queryFn: async () => {
+      const params = {
         category_id: filter?.category_id,
         uncategorized: filter?.uncategorized,
         account_id: filter?.account_id,
@@ -78,14 +80,24 @@ export function TransactionDrillDown({
         to: filter?.to,
         limit: 200,
         user_pnl_only: true,
-      }),
+      }
+      const first = await transactionsApi.list({ ...params, page: 1 })
+      const items = [...first.items]
+      for (let page = 2; items.length < first.total; page++) {
+        const next = await transactionsApi.list({ ...params, page })
+        // Never silently present a truncated list and total as complete.
+        if (next.items.length === 0) throw new Error('Incomplete transaction response')
+        items.push(...next.items)
+      }
+      return { ...first, items }
+    },
     enabled: !!filter && !noAccounts,
   })
 
   // Derive month param from filter.from for projected transactions
   const monthParam = filter?.from ? filter.from.slice(0, 7) + '-01' : undefined
 
-  const { data: projectedTxs } = useQuery({
+  const { data: projectedTxs, isLoading: projectionsLoading, isError: projectionsError, refetch: refetchProjections } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
     enabled: !!filter && !!monthParam && !noAccounts,
@@ -97,6 +109,8 @@ export function TransactionDrillDown({
     staleTime: 5 * 60 * 1000,
   })
   const isAccrual = accountingModeData?.mode === 'accrual'
+  const loading = !noAccounts && (isLoading || projectionsLoading)
+  const loadError = !noAccounts && (isError || projectionsError)
 
   // Merge real + projected transactions, filtering projected by drill-down criteria
   const displayItems = useMemo((): DisplayItem[] => {
@@ -104,21 +118,30 @@ export function TransactionDrillDown({
     if (noAccounts) return items
 
     for (const tx of data?.items ?? []) {
-      // A split row listed under one category counts only its part there,
-      // the same share the report it was opened from counted.
+      // Category splits and group splits are mutually exclusive in the API.
+      // Keep the category-matched part and its converted amount authoritative;
+      // otherwise apply the viewer's group share for unfiltered Budgets.
       const isPart = tx.matched_amount != null
       const matchedLine = isPart
         ? tx.category_lines?.find((line) => line.category_id === filter?.category_id)
         : undefined
+      const parentAmount = Number(tx.amount)
+      const viewerShare = useViewerShare && tx.viewer_share != null ? Number(tx.viewer_share) : null
+      const amount = isPart ? Number(tx.matched_amount) : viewerShare ?? parentAmount
+      const parentPrimary = tx.amount_primary != null ? Number(tx.amount_primary) : null
+      const amountPrimary = isPart
+        ? tx.matched_amount_primary != null ? Number(tx.matched_amount_primary) : null
+        : viewerShare == null ? parentPrimary
+          : viewerShare === 0 ? 0 : parentPrimary != null && parentAmount !== 0
+            ? parentPrimary * Math.abs(viewerShare / parentAmount)
+            : null
       items.push({
         key: tx.id,
         description: tx.description,
         date: tx.date,
         type: tx.type as 'debit' | 'credit',
-        amount: isPart ? Number(tx.matched_amount) : Number(tx.amount),
-        amountPrimary: isPart
-          ? tx.matched_amount_primary != null ? Number(tx.matched_amount_primary) : null
-          : tx.amount_primary != null ? Number(tx.amount_primary) : null,
+        amount,
+        amountPrimary,
         currency: tx.currency,
         categoryIcon: (matchedLine?.category ?? tx.category)?.icon ?? null,
         categoryName: (matchedLine?.category ?? tx.category)?.name ?? null,
@@ -217,7 +240,7 @@ export function TransactionDrillDown({
 
     items.sort((a, b) => a.date.localeCompare(b.date))
     return items
-  }, [data, projectedTxs, filter, noAccounts])
+  }, [data, projectedTxs, filter, noAccounts, useViewerShare])
 
   const isOpen = !!filter
   useEffect(() => {
@@ -316,7 +339,15 @@ export function TransactionDrillDown({
 
         {/* Transaction list */}
         <div className="flex-1 overflow-auto">
-          {isLoading ? (
+          {loadError ? (
+            <div role="alert" className="p-5 text-center space-y-3">
+              <p className="text-sm text-destructive">{t('dashboard.drillDownError')}</p>
+              <button type="button" className="text-sm text-primary hover:underline" onClick={() => {
+                void refetch()
+                if (monthParam && !noAccounts) void refetchProjections()
+              }}>{t('common.retry')}</button>
+            </div>
+          ) : loading ? (
             <div className="p-5 space-y-3">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="h-12 bg-muted rounded-lg animate-pulse" />
@@ -331,7 +362,7 @@ export function TransactionDrillDown({
               {displayItems.map((item) => (
                 <div
                   key={item.key}
-                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected ? 'cursor-pointer' : ''}`}
+                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''}`}
                   onClick={() => {
                     if (!item.isProjected && item.transaction) {
                       onTransactionClick?.(item.transaction)
@@ -402,7 +433,7 @@ export function TransactionDrillDown({
         </div>
 
         {/* Footer */}
-        {displayItems.length > 0 && (
+        {!loadError && !loading && displayItems.length > 0 && (
           <div className="px-5 py-3 border-t border-border bg-muted/50 shrink-0">
             {hasUnsettledTotal ? (
               <div className="space-y-1">

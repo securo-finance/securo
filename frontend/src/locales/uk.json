@@ -878,6 +878,7 @@
     "drillDownSettledTotal": "Проведено · сума у зведенні",
     "drillDownPendingTotal": "Очікує розрахунку",
     "drillDownShownTotal": "Показана сума",
+    "drillDownError": "Не вдалося завантажити транзакції. Спробуйте ще раз.",
     "drillDownEmpty": "Транзакції не знайдено",
     "drillDownClose": "Закрити",
     "accrualNote": "Кредитні картки: транзакції групуються за датою платежу (метод нарахування).",
