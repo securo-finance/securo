@@ -760,6 +760,91 @@ async def test_schedule_fiscal_ref_inheritance_survives_term_writes_over_http(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("save_path", ["create", "add", "update", "make_recurring"])
+@pytest.mark.parametrize("clear", [None, {}], ids=["null", "empty-object"])
+async def test_fiscal_ref_clears_on_term_writes_and_invoice_conversion(
+    client: AsyncClient, biz_headers, save_path, clear,
+):
+    """Term writes retain a clear; conversion cannot recover it from an invoice.
+
+    Cover all three term save endpoints as well as the deliberately lossy
+    make-recurring boundary, where invoice null has no provenance.
+    """
+    response = await client.post(
+        "/api/products", headers=biz_headers,
+        json={"name": "Design", "fiscal_refs": {"service_code": "catalog-code"}},
+    )
+    assert response.status_code == 201, response.text
+    product_id = response.json()["id"]
+    line = {"description": "Design", "unit_price": "100", "product_id": product_id}
+    cleared_line = {**line, "fiscal_refs": clear}
+    start = date(date.today().year + 1, 1, 1)
+
+    if save_path == "make_recurring":
+        response = await client.post(
+            "/api/invoices", headers=biz_headers,
+            json={"as_draft": True, "currency": "USD", "issue_date": start.isoformat(),
+                  "lines": [line]},
+        )
+        assert response.status_code == 201, response.text
+        invoice_id = response.json()["id"]
+        response = await client.patch(
+            f"/api/invoices/{invoice_id}", headers=biz_headers,
+            json={"lines": [cleared_line]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["lines"][0]["fiscal_refs"] is None
+        response = await client.post(f"/api/invoices/{invoice_id}/issue", headers=biz_headers)
+        assert response.status_code == 200, response.text
+        response = await client.post(
+            f"/api/invoices/{invoice_id}/make-recurring", headers=biz_headers,
+            json={"frequency": "monthly", "name": "Design retainer"},
+        )
+    else:
+        response = await client.post(
+            "/api/invoice-schedules", headers=biz_headers,
+            json={"name": "Design retainer", "frequency": "monthly", "currency": "USD",
+                  "start_date": start.isoformat(),
+                  "lines": [cleared_line if save_path == "create" else line]},
+        )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    if save_path == "add":
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/terms", headers=biz_headers,
+            json={"effective_from": start.replace(month=2).isoformat(), "lines": [cleared_line]},
+        )
+        assert response.status_code == 201, response.text
+    elif save_path == "update":
+        term_id = response.json()["terms"][0]["id"]
+        response = await client.patch(
+            f"/api/invoice-schedules/{schedule_id}/terms/{term_id}", headers=biz_headers,
+            json={"lines": [cleared_line]},
+        )
+        assert response.status_code == 200, response.text
+    stored_line = response.json()["terms"][-1]["lines"][0]
+    if save_path == "make_recurring":
+        assert "fiscal_refs" not in stored_line
+    else:
+        assert stored_line["fiscal_refs"] == {}
+
+    later_refs = {"service_code": "changed-after-save"}
+    response = await client.patch(
+        f"/api/products/{product_id}", headers=biz_headers, json={"fiscal_refs": later_refs},
+    )
+    assert response.status_code == 200, response.text
+    for _ in range(2 if save_path == "add" else 1):
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/generate", headers=biz_headers,
+        )
+        assert response.status_code == 201, response.text
+        [invoice] = response.json()
+    assert invoice["lines"][0]["fiscal_refs"] == (
+        later_refs if save_path == "make_recurring" else None
+    )
+
+
+@pytest.mark.asyncio
 async def test_new_term_inherits_refs_the_product_gains_later_over_http(
     client: AsyncClient, biz_headers,
 ):

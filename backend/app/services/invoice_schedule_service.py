@@ -955,8 +955,9 @@ def _lines_from_invoice(invoice: Invoice, fallback_description: str) -> list[dic
                 "tax_rate": line.tax_rate,
                 "product_id": line.product_id,
                 "price_id": line.price_id,
-                # An invoice line without refs leaves the term inheriting
-                # from its product; sending None would store an explicit clear.
+                # Invoices store both absent and explicitly cleared refs as
+                # null. Conversion cannot recover that distinction: either
+                # becomes product inheritance on the new agreement term.
                 **({"fiscal_refs": line.fiscal_refs} if line.fiscal_refs else {}),
             }
             for line in invoice.lines
