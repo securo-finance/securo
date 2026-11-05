@@ -459,7 +459,7 @@ function TransactionForm({
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
-  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? accounts[0]?.id ?? '')
+  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
