@@ -11,13 +11,13 @@ the reference is cleared:
 - invoices.user_id            -> ON DELETE SET NULL
 - invoice_attachments.user_id -> ON DELETE SET NULL
 
-Revision ID: 097
-Revises: 096
+Revision ID: 103
+Revises: 102
 """
 from alembic import op
 
-revision = "097"
-down_revision = "096"
+revision = "103"
+down_revision = "102"
 branch_labels = None
 depends_on = None
 

@@ -48,7 +48,7 @@ async def _agreement(session):
 async def _migrate_existing(session):
     path = (
         Path(__file__).resolve().parent.parent
-        / "alembic/versions/097_invoice_user_fks_set_null.py"
+        / "alembic/versions/103_invoice_user_fks_set_null.py"
     )
     spec = importlib.util.spec_from_file_location("invoice_user_fks_migration", path)
     assert spec is not None and spec.loader is not None
@@ -133,3 +133,22 @@ async def test_deleting_the_author_of_a_billed_agreement_keeps_what_it_issued(
         assert invoice.schedule_id == schedule.id and invoice.status == "open"
         attachment = await session.get(InvoiceAttachment, filed.id)
         assert attachment is not None and attachment.user_id is None
+
+
+async def test_generation_refreshes_an_author_deleted_after_the_schedule_was_loaded(
+    postgres_sessions,
+):
+    async with postgres_sessions() as worker:
+        admin, author, workspace, schedule = await _agreement(worker)
+        author_id = author.id
+        async with postgres_sessions() as deleting:
+            assert await admin_service.delete_user(deleting, author_id, admin.id)
+
+        # The worker already loaded the old author. PostgreSQL cleared the FK
+        # in another session, so the post-lock refresh must reload that field.
+        assert schedule.user_id == author_id
+        [invoice] = await schedules.generate_due(worker, schedule, today=date(2026, 10, 5))
+        await worker.commit()
+        assert schedule.user_id is None
+        assert invoice.user_id is None and invoice.workspace_id == workspace.id
+        assert invoice.sequence == 1 and schedule.next_sequence == 2

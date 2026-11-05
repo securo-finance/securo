@@ -327,7 +327,6 @@
       "start_after_invoice": "The agreement cannot start after this invoice.",
       "invoice_not_found": "Invoice not found.",
       "no_term": "No term is in force for this period.",
-      "no_author": "This agreement has no author to issue invoices as.",
       "negative_discount": "A discount cannot be negative.",
       "first_term": "The price in force from the start cannot be moved or removed. Change it, or add a new price from a later date.",
       "not_receivable": "Only an invoice you issued can belong to an agreement.",

@@ -327,7 +327,6 @@
       "start_after_invoice": "Dohoda nemôže začať po tejto faktúre.",
       "invoice_not_found": "Faktúra sa nenašla.",
       "no_term": "Pre toto obdobie neplatí žiadna podmienka.",
-      "no_author": "Táto dohoda nemá autora, v mene ktorého by sa vystavovali faktúry.",
       "negative_discount": "Zľava nemôže byť záporná.",
       "first_term": "Cenu platnú od začiatku nemožno presunúť ani odstrániť. Zmeňte ju alebo pridajte novú cenu od neskoršieho dátumu.",
       "not_receivable": "K dohode môže patriť iba faktúra, ktorú ste vystavili vy.",

@@ -1133,7 +1133,7 @@ async def generate_due(
         schedule,
         attribute_names=[
             "status", "frequency", "start_date", "end_type", "end_date",
-            "end_count", "next_sequence", "payee_id", "currency",
+            "end_count", "next_sequence", "payee_id", "currency", "user_id",
             "payment_terms_days", "notes", "custom_fields", "terms",
         ],
     )
