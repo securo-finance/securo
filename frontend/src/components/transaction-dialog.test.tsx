@@ -1,5 +1,5 @@
-import { screen, within } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { fireEvent, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
 import { assets, currencies, groups, mortgagePayments, payees, transactions } from '@/lib/api'
@@ -12,6 +12,28 @@ vi.mock('@/contexts/auth-context', () => ({
 vi.mock('@/hooks/use-display-locale', () => ({
   useDateLocale: () => 'en-US',
   useDisplayLocale: () => 'en-US',
+}))
+
+vi.mock('@/components/ui/date-picker-input', () => ({
+  DatePickerInput: ({
+    value,
+    onChange,
+    placeholder,
+    disabled,
+  }: {
+    value: string
+    onChange: (value: string) => void
+    placeholder?: string
+    disabled?: boolean
+  }) => (
+    <input
+      type="date"
+      value={value}
+      aria-label={placeholder ?? 'date'}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
 }))
 
 afterEach(() => vi.restoreAllMocks())
@@ -154,7 +176,7 @@ it('forgets a save variant the browser blocked, so a later plain Save just saves
   expect(onSave.mock.calls[0][4]).toBe('save')
 })
 
-function transferLegFixture(pairId: string, over: Partial<Transaction> = {}): Transaction {
+function transferLegFixture(pairId: string | null, over: Partial<Transaction> = {}): Transaction {
   return {
     id: 'tx-1160-leg',
     user_id: 'synthetic-user',
@@ -188,6 +210,7 @@ function transferLegFixture(pairId: string, over: Partial<Transaction> = {}): Tr
     splits: [],
     is_ignored: false,
     ...over,
+    reporting_date_override: over.reporting_date_override ?? null,
   }
 }
 
@@ -394,4 +417,88 @@ it('does not submit the transaction when Enter is pressed in a mortgage split fi
   await user.keyboard('{Enter}')
 
   expect(onSave).not.toHaveBeenCalled()
+})
+
+function syncedTransaction(overrides: Partial<Transaction> = {}): Transaction {
+  return {
+    ...transferLegFixture(null, {
+      id: 'tx-synced',
+      account_id: 'acc-a',
+      external_id: 'provider-1',
+      description: 'Synced transaction',
+      date: '2026-10-01',
+      type: 'credit',
+      source: 'sync',
+      transfer_pair_id: null,
+    }),
+    ...overrides,
+    reporting_date_override: overrides.reporting_date_override ?? null,
+  }
+}
+
+function renderSyncedDialog(
+  transaction: Transaction,
+  accounts: Account[] = accountFixtures,
+  onSave = vi.fn(),
+) {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  return {
+    onSave,
+    ...renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={transaction}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accounts}
+        onSave={onSave}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    ),
+  }
+}
+
+describe('TransactionDialog reporting date override', () => {
+  it('submits reporting attribution without mutating the bank date', async () => {
+    const { onSave, user } = renderSyncedDialog(syncedTransaction())
+
+    expect(screen.getByDisplayValue('2026-10-01')).toBeDisabled()
+    fireEvent.change(
+      screen.getByLabelText(t('transactions.reportingDatePlaceholder')),
+      { target: { value: '2026-09-30' } },
+    )
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ reporting_date_override: '2026-09-30' })
+    expect(payload).not.toHaveProperty('date')
+  })
+
+  it('resets reporting attribution to automatic without changing the bank date', async () => {
+    const { onSave, user } = renderSyncedDialog(
+      syncedTransaction({ reporting_date_override: '2026-09-30' }),
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: t('transactions.clearReportingDate') }),
+    )
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({ reporting_date_override: null })
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('date')
+  })
+
+  it('hides reporting attribution until the synced account is resolved', () => {
+    renderSyncedDialog(syncedTransaction(), [])
+
+    expect(
+      screen.queryByLabelText(t('transactions.reportingDatePlaceholder')),
+    ).not.toBeInTheDocument()
+  })
 })

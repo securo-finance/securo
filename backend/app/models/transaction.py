@@ -44,6 +44,10 @@ class Transaction(Base):
     # the transaction belongs to — so accrual-mode aggregations count the
     # purchase when it hits the user's cash, not when it was made.
     effective_date: Mapped[_date] = mapped_column(Date, index=True)
+    # Optional user correction for report-period attribution. The provider
+    # `date` remains immutable bank truth; this field only affects reporting
+    # bucketing and is deliberately ignored by sync, balances, matching, and FX.
+    reporting_date_override: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
     type: Mapped[str] = mapped_column(String(10))  # debit, credit
     source: Mapped[str] = mapped_column(String(20))  # sync, ofx, csv, manual
     status: Mapped[str] = mapped_column(String(10), default="posted")  # posted, pending

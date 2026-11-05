@@ -75,7 +75,7 @@ function tx(index: number, date: string, runningBalance: number | null): Transac
     fx_rate_used: null, fx_fallback: false, installment_number: null,
     total_installments: null, installment_total_amount: null,
     installment_purchase_date: null, installment_series_id: null, bill_id: null,
-    effective_bill_date: null, splits: [], is_ignored: false,
+    effective_bill_date: null, reporting_date_override: null, splits: [], is_ignored: false,
     running_balance: runningBalance, running_balance_primary: null,
   }
 }

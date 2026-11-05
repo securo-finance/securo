@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.group import GroupMember
 from app.services import transaction_service
+from app.services._query_filters import reporting_date_value
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
@@ -197,6 +198,10 @@ async def list_transactions(
             "id": str(t.id),
             "date": t.date.isoformat() if t.date else None,
             "effective_date": t.effective_date.isoformat() if getattr(t, "effective_date", None) else None,
+            "reporting_date": reporting_date_value(t, accounting_mode or "cash").isoformat(),
+            "reporting_date_override": (
+                t.reporting_date_override.isoformat() if t.reporting_date_override else None
+            ),
             "description": t.description,
             "amount": num(t.amount),
             "currency": t.currency,
