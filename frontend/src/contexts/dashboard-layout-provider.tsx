@@ -1,5 +1,5 @@
 import {
-  createContext, useCallback, useContext, useLayoutEffect, useRef, useState,
+  useCallback, useLayoutEffect, useRef, useState,
   useSyncExternalStore, type ReactNode,
 } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
@@ -14,13 +14,8 @@ import {
 import { createDashboardLayoutSession, type SessionStore } from '@/lib/dashboard-layout-session'
 import type { User } from '@/types'
 
-export type DashboardLayoutOwner = Readonly<{
-  actorId: string
-  authGeneration: number
-  store: SessionStore
-}>
-
-const DashboardLayoutContext = createContext<DashboardLayoutOwner | null | undefined>(undefined)
+import { DashboardLayoutContext, type DashboardLayoutOwner } from '@/contexts/dashboard-layout-context'
+export type { DashboardLayoutOwner } from '@/contexts/dashboard-layout-context'
 
 interface CommittedIdentity {
   client: QueryClient
@@ -184,10 +179,4 @@ export function DashboardLayoutProvider({ children }: { children: ReactNode }) {
     exposure.owner.authGeneration === generation && exposure.registration.isCurrent()
     ? exposure.owner : null
   return <DashboardLayoutContext.Provider value={owner}>{children}</DashboardLayoutContext.Provider>
-}
-
-export function useDashboardLayoutOwner(): DashboardLayoutOwner | null {
-  const owner = useContext(DashboardLayoutContext)
-  if (owner === undefined) throw new Error('useDashboardLayoutOwner must be used within a DashboardLayoutProvider')
-  return owner
 }

@@ -2,7 +2,6 @@
 import asyncio
 import copy
 import json
-import os
 import time
 import uuid
 from pathlib import Path
@@ -27,10 +26,6 @@ from app.models.workspace import Workspace, WorkspaceMember
 from app.schemas.dashboard import DASHBOARD_WIDGET_IDS, DashboardLayoutWrite
 from app.services import dashboard_layout_preferences as layout_service
 
-PROOF_ROOT = Path(os.environ["TMPDIR"]).resolve().parent
-PROOF_DIR = Path(os.environ.get("PR1_LAYOUT_PROOF_DIR", str(PROOF_ROOT / "runtime-proofs")))
-
-
 def layout(workspace_id, widget="hero-balance"):
     return {
         "version": 1,
@@ -40,9 +35,10 @@ def layout(workspace_id, widget="hero-balance"):
 
 
 @pytest_asyncio.fixture
-async def atomic_db(request):
-    assert PROOF_DIR.is_absolute()
-    assert PROOF_DIR.resolve().is_relative_to(PROOF_ROOT.resolve())
+async def atomic_db(request, tmp_path, tmp_path_factory):
+    proof_root = tmp_path_factory.getbasetemp().resolve()
+    assert tmp_path.is_absolute()
+    assert tmp_path.resolve().is_relative_to(proof_root)
     assert Path.cwd().resolve() == Path(__file__).resolve().parents[1]
     assert Path(dashboard.__file__).resolve() == Path(__file__).resolve().parents[1] / (
         "app/api/dashboard.py"
@@ -50,15 +46,11 @@ async def atomic_db(request):
     assert Path(layout_service.__file__).resolve() == Path(__file__).resolve().parents[1] / (
         "app/services/dashboard_layout_preferences.py"
     )
-    assert Path(os.environ["TMPDIR"]).is_absolute()
-    db_path = Path(os.environ["TMPDIR"]) / f"layout-{uuid.uuid4()}.sqlite"
-    assert configured_engine.url.database is not None
-    trap = Path(configured_engine.url.database)
-    assert trap.is_absolute()
-    assert trap == Path(os.environ["TMPDIR"]).parent / "configured-engine-MUST-NOT-EXIST.sqlite"
-    assert not trap.exists()
+    db_path = tmp_path / "layout.sqlite"
+    assert not db_path.exists()
     events = []
     origins = []
+    configured_attempts = []
     bindings = {"auth": 0, "factory": 0}
 
     class ProofSession(Session):
@@ -79,6 +71,7 @@ async def atomic_db(request):
     )
 
     def forbid_configured(*args):
+        configured_attempts.append("forbidden")
         raise AssertionError("Configured application engine must never connect")
 
     @event.listens_for(engine.sync_engine, "connect")
@@ -129,7 +122,9 @@ async def atomic_db(request):
         if isinstance(session, ProofSession):
             events.append({"kind": "assignment", "role": session.info.get("role")})
 
-    event.listen(configured_engine.sync_engine, "connect", forbid_configured)
+    # do_connect fires BEFORE the DBAPI opens anything (connect is too late).
+    # checkout also rejects any already-pooled connection, independent of URL.
+    event.listen(configured_engine.sync_engine, "do_connect", forbid_configured)
     event.listen(configured_engine.sync_engine, "checkout", forbid_configured)
     event.listen(User.preferences, "set", assigned)
     previous = dict(app.dependency_overrides)
@@ -183,18 +178,17 @@ async def atomic_db(request):
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)
-        event.remove(configured_engine.sync_engine, "connect", forbid_configured)
+        event.remove(configured_engine.sync_engine, "do_connect", forbid_configured)
         event.remove(configured_engine.sync_engine, "checkout", forbid_configured)
         event.remove(User.preferences, "set", assigned)
         await engine.dispose()
-        assert not trap.exists()
-        PROOF_DIR.mkdir(parents=True, exist_ok=True)
-        with (PROOF_DIR / "fixture-proofs.jsonl").open("a") as output:
-            output.write(json.dumps({"case": request.node.nodeid, "database": str(db_path),
-                                     "connection_origins": origins, "bindings": bindings,
-                                     "cache_mode": cache_mode,
-                                     "events": events, "trap_absent": not trap.exists(),
-                                     "overrides_restored": app.dependency_overrides == previous}) + "\n")
+        with (tmp_path / "fixture-proof.json").open("x") as output:
+            json.dump({"case": request.node.nodeid, "database": str(db_path),
+                       "connection_origins": origins, "bindings": bindings,
+                       "cache_mode": cache_mode, "events": events,
+                       "configured_engine_attempts": configured_attempts,
+                       "overrides_restored": app.dependency_overrides == previous}, output)
+        assert configured_attempts == []
 
 
 async def preferences(db, user_id=None):

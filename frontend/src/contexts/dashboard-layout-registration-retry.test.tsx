@@ -7,9 +7,8 @@ import { expect, it, vi } from 'vitest'
 import { AuthProvider } from '@/contexts/auth-provider'
 import { useAuth } from '@/contexts/auth-context'
 import { WorkspaceContext, useWorkspace } from '@/contexts/workspace-context'
-import {
-  DashboardLayoutProvider, useDashboardLayoutOwner, type DashboardLayoutOwner,
-} from '@/contexts/dashboard-layout-provider'
+import { DashboardLayoutProvider, type DashboardLayoutOwner } from '@/contexts/dashboard-layout-provider'
+import { useDashboardLayoutOwner } from '@/contexts/dashboard-layout-context'
 import {
   getDashboardAuthSnapshot, registerDashboardOwner,
   type DashboardRegistration, type RetirementReason,
@@ -167,7 +166,9 @@ it('acquires and saves after genuine registration denial in plain and root Stric
       const context = useAuth()
       const queryClient = useQueryClient()
       const current = useWorkspace().current
-      useLayoutEffect(() => {
+      // A mount/replay witness deliberately retains the first committed inputs;
+      // later owner exposure must not create additional setup/cleanup records.
+      const [mount] = useState(() => () => {
         function record(event: Witness['event']) {
           witness.push({ event, active: callbackActive, owner, user: context.user,
             token: context.token, loading: context.isLoading, client: queryClient,
@@ -176,7 +177,8 @@ it('acquires and saves after genuine registration denial in plain and root Stric
         }
         record('setup')
         return () => { record('cleanup') }
-      }, []) // Mount/replay witness only; observes no private provider state.
+      })
+      useLayoutEffect(mount, [mount]) // Mount/replay only; no private provider state.
       return null
     }
     function Shell() {

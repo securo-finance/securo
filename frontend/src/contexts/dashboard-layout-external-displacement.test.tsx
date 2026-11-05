@@ -6,7 +6,8 @@ import { expect, it, vi } from 'vitest'
 import { AuthProvider } from '@/contexts/auth-provider'
 import { useAuth } from '@/contexts/auth-context'
 import { WorkspaceContext, useWorkspace } from '@/contexts/workspace-context'
-import { DashboardLayoutProvider, useDashboardLayoutOwner } from '@/contexts/dashboard-layout-provider'
+import { DashboardLayoutProvider } from '@/contexts/dashboard-layout-provider'
+import { useDashboardLayoutOwner } from '@/contexts/dashboard-layout-context'
 import {
   getDashboardAuthSnapshot, registerDashboardOwner, subscribeDashboardAuth,
   type DashboardAuthSnapshot, type DashboardRegistration, type RetirementReason,

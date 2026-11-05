@@ -6,7 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { useDashboardLayoutOwner, type DashboardLayoutOwner } from '@/contexts/dashboard-layout-provider'
+import { useDashboardLayoutOwner, type DashboardLayoutOwner } from '@/contexts/dashboard-layout-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import {
   DASHBOARD_WIDGETS,
@@ -107,7 +107,11 @@ export function useDashboardLayout(): DashboardLayoutController {
   const defaults = useMemo(() => resolveDashboardLayout(DASHBOARD_WIDGETS, undefined, workspaceId), [workspaceId])
   const view = snapshot?.state === 'editing' && snapshot.draft ? snapshot.draft : snapshot?.layout
   const draft = useMemo(() => copyLayout(view ?? defaults), [view, defaults])
-  const customizeOpen = panel?.identity === identity && snapshot?.state === 'editing'
+  // Reacquisition already owns a native ticket on the published binding. Derive
+  // its presentation instead of copying that ticket into a second effect state.
+  const panelTicket = panel?.identity === identity ? panel.ticket
+    : bindingState?.identity === identity ? bindingState.ticket : null
+  const customizeOpen = panelTicket !== null && snapshot?.state === 'editing'
 
   // Selection wins over the previous passive binding's deferred release.
   useLayoutEffect(() => {
@@ -130,7 +134,6 @@ export function useDashboardLayout(): DashboardLayoutController {
     if (initial.state === 'editing' && initial.writable) {
       try {
         captured.ticket = binding.open()
-        setPanel({ identity, ticket: captured.ticket })
       } catch {
         // The public binding/store remain authoritative; never fake an open.
       }
@@ -383,7 +386,7 @@ export function useDashboardLayout(): DashboardLayoutController {
     displayReadPending: snapshot?.readPending ?? false,
     customizeOpen,
     customizeDisabled: !customizeOpen || bindingState?.identity !== identity ||
-      !bindingState.ticket || bindingState.ticket !== panel?.ticket || !persistence.canCustomize ||
+      !bindingState.ticket || bindingState.ticket !== panelTicket || !persistence.canCustomize ||
       snapshot?.state !== 'editing' || !snapshot.writable || snapshot.pending || snapshot.readPending ||
       snapshot.recovery !== null || !snapshot.draft,
     canEditCustomize,
