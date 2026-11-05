@@ -7373,3 +7373,72 @@ async def test_enable_banking_pending_does_not_claim_posted_legacy_row(
     assert matched is None
     assert posted.external_id == old_id
     assert posted.status == "posted"
+
+
+@pytest.mark.parametrize("entry_reference", [None, "0"])
+@pytest.mark.parametrize("rejection", ["counterparty", "value_date", "pending_on_posted"])
+@pytest.mark.parametrize("fallback", [None, "sync", "import"])
+async def test_enable_banking_rejected_legacy_rows_cannot_bypass_identity_checks(
+    session, test_user, test_workspace, entry_reference, rejection, fallback,
+):
+    from app.providers.enable_banking import EnableBankingProvider
+    from app.services.connection_service import _find_synced_duplicate
+
+    _, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account.external_id = "acc-uid-1"
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "BRL"},
+        "credit_debit_indicator": "DBIT",
+        "value_date": "2026-08-20",
+        "remittance_information": ["Card payment"],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    if entry_reference is not None:
+        raw["entry_reference"] = entry_reference
+    # Captured pre-v0.16.3 key. The shared remittance makes Path 2's generic
+    # description match tempting even when the provider identity rejects it.
+    old_id = entry_reference or "838146003656ce860d198c6eddfcc9f8"
+    legacy = _eb_row(
+        test_user.id, test_workspace.id, account, old_id, raw, "12.34",
+        date=date(2026, 8, 20), currency="BRL",
+        status="posted" if rejection == "pending_on_posted" else "pending",
+        description="Card payment", original_description="Card payment",
+    )
+    session.add(legacy)
+    await session.flush()
+    incoming_raw = deepcopy(raw)
+    incoming_status = "posted"
+    if rejection == "pending_on_posted":
+        incoming_status = "pending"
+    else:
+        incoming_raw["booking_date"] = "2026-08-20"
+        if rejection == "counterparty":
+            incoming_raw["creditor"] = {"name": "Bakery"}
+        else:
+            incoming_raw["value_date"] = "2026-08-21"
+    incoming = EnableBankingProvider()._build_transaction(
+        "acc-uid-1", incoming_raw, incoming_status, "auto",
+    )
+    assert incoming is not None
+
+    expected = None
+    if fallback is not None:
+        # Rejecting one legacy row must not end the search. A nonlegacy twin
+        # or an unclaimed statement import still follows the existing paths.
+        expected = Transaction(
+            user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+            external_id="unrelated-current-key", amount=Decimal("12.34"), type="debit",
+            date=incoming.date, currency="BRL", source=fallback,
+            status="pending" if incoming_status == "posted" else "posted",
+            description="Card payment", original_description="Card payment",
+        )
+        session.add(expected)
+        await session.flush()
+
+    matched = await _find_synced_duplicate(
+        session, account.id, incoming, {incoming.external_id},
+    )
+
+    assert matched is expected
+    assert legacy.external_id == old_id
+    assert legacy.raw_data == raw

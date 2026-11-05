@@ -232,6 +232,16 @@ def legacy_fallback_candidates(account_uid: str, incoming: TransactionData) -> s
     return keys
 
 
+def is_legacy_fallback(
+    account_uid: str, stored_external_id: Optional[str], stored_raw: object,
+) -> bool:
+    """Whether a held row still carries its pre-v0.16.3 fallback key."""
+    if not isinstance(stored_raw, dict):
+        return False
+    old_id = _legacy_fallback_id(account_uid, stored_raw)
+    return old_id is not None and old_id == stored_external_id
+
+
 def matches_legacy_fallback(
     account_uid: str,
     stored_external_id: Optional[str],
@@ -241,10 +251,9 @@ def matches_legacy_fallback(
     pending_to_posted: bool,
 ) -> bool:
     """Check the stored bank identity before claiming a legacy-keyed row."""
-    if not isinstance(stored_raw, dict):
-        return False
-    old_id = _legacy_fallback_id(account_uid, stored_raw)
-    if old_id is None or old_id != stored_external_id:
+    if not isinstance(stored_raw, dict) or not is_legacy_fallback(
+        account_uid, stored_external_id, stored_raw,
+    ):
         return False
     aligned = dict(stored_raw)
     if pending_to_posted and isinstance(incoming.raw_data, dict):

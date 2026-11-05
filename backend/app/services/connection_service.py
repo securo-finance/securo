@@ -28,7 +28,11 @@ from app.models.payee import Payee, PayeeMapping
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.providers import get_provider
-from app.providers.enable_banking import legacy_fallback_candidates, matches_legacy_fallback
+from app.providers.enable_banking import (
+    is_legacy_fallback,
+    legacy_fallback_candidates,
+    matches_legacy_fallback,
+)
 from app.providers.base import (
     AccountData,
     HoldingData,
@@ -1801,6 +1805,7 @@ async def _find_synced_duplicate(
     # when the stored bank payload independently produces the new identity;
     # same-date/amount rows with different counterparties must stay separate.
     raw = txn_data.raw_data
+    legacy_account_uid: str | None = None
     if isinstance(raw, dict) and "transaction_amount" in raw:
         account = await session.get(Account, account_id)
         connection = (
@@ -1810,8 +1815,9 @@ async def _find_synced_duplicate(
         )
         if connection is not None and connection.provider == "enable_banking" and account:
             account_uid = account.external_id or ""
-            old_ids = legacy_fallback_candidates(account_uid, txn_data) - incoming_external_ids
+            old_ids = legacy_fallback_candidates(account_uid, txn_data)
             if old_ids:
+                legacy_account_uid = account_uid
                 # An old fingerprint can be shared by distinct counterparties
                 # or duplicate copies. Verify the payload and claim the oldest
                 # matching copy deterministically, without a transaction-date
@@ -1820,7 +1826,7 @@ async def _find_synced_duplicate(
                     select(Transaction).where(
                         Transaction.account_id == account_id,
                         Transaction.source == "sync",
-                        Transaction.external_id.in_(old_ids),
+                        Transaction.external_id.in_(old_ids - incoming_external_ids),
                         Transaction.status.in_(
                             ["pending"] if txn_data.status == "pending" else ["pending", "posted"]
                         ),
@@ -1834,6 +1840,19 @@ async def _find_synced_duplicate(
                         ),
                     ):
                         return candidate
+
+    def requires_legacy_match(candidate: Transaction) -> bool:
+        # Once a stored row is recognized as legacy, only the payload-checked
+        # compatibility path above can claim it. Generic description or
+        # installment matches must not override its identity/status rejection.
+        # Other synced rows and local imports retain their existing fallbacks.
+        return (
+            legacy_account_uid is not None
+            and candidate.source == "sync"
+            and is_legacy_fallback(
+                legacy_account_uid, candidate.external_id, candidate.raw_data,
+            )
+        )
 
     # Path 1: installment fingerprint. Highly specific, so we don't require a
     # description match on top.
@@ -1855,6 +1874,8 @@ async def _find_synced_duplicate(
             )
         )
         for candidate in result.scalars():
+            if requires_legacy_match(candidate):
+                continue
             if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
                 continue
             return candidate
@@ -1878,6 +1899,8 @@ async def _find_synced_duplicate(
     )
     candidates = list(result.scalars())
     for candidate in candidates:
+        if requires_legacy_match(candidate):
+            continue
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
             continue
         if token_overlap(
@@ -1914,6 +1937,8 @@ async def _find_synced_duplicate(
             )
         )
         for candidate in result.scalars():
+            if requires_legacy_match(candidate):
+                continue
             if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
                 continue
             if candidate.external_id in incoming_external_ids:
@@ -1977,6 +2002,8 @@ async def _find_synced_duplicate(
         rekey_matches = []
         late_ref_matches = []
         for candidate in result.scalars():
+            if requires_legacy_match(candidate):
+                continue
             if candidate.external_id in incoming_external_ids:
                 continue
             if not isinstance(candidate.raw_data, dict):
