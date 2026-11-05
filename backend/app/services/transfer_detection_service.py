@@ -202,6 +202,9 @@ async def _pool(
         # Not a policy knob: workspace rule overrides must not re-enable it.
         Transaction.source != MORTGAGE_PRINCIPAL_SOURCE,
         ~exists().where(MortgagePaymentAllocation.payment_transaction_id == Transaction.id),
+        # A row split across categories is not one movement: a transfer
+        # leaves income and expenses as a whole row.
+        Transaction.has_category_lines.is_(False),
     )
     if ignored_sources:
         query = query.where(Transaction.source.not_in(ignored_sources))

@@ -26,6 +26,7 @@ from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
 from app.models.transaction import Transaction
+from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
 from app.providers import get_provider
 from app.providers.base import (
@@ -39,7 +40,7 @@ from app.providers.base import (
 )
 from app.services import oauth_state
 from app.services import admin_service
-from app.services import reconciliation_service, recurring_match_service
+from app.services import category_line_service, reconciliation_service, recurring_match_service
 from app.services.text_similarity import token_overlap
 from app.services.account_service import (
     _provider_to_internal_balance,
@@ -1126,7 +1127,12 @@ async def _find_installment_category(
         .where(
             Transaction.account_id == account_id,
             Transaction.source == "sync",
-            Transaction.category_id.is_not(None),
+            # A split parcel counts as the latest choice too, and hands on no
+            # single category, rather than letting an older parcel's win.
+            or_(
+                Transaction.category_id.is_not(None),
+                Transaction.has_category_lines.is_(True),
+            ),
             Transaction.installment_purchase_date == txn_data.installment_purchase_date,
             Transaction.total_installments == txn_data.total_installments,
             Transaction.installment_total_amount == txn_data.installment_total_amount,
@@ -2448,6 +2454,18 @@ async def sync_connection(
                     .values(user_id=user_id, workspace_id=connection.workspace_id)
                 )
                 await session.execute(
+                    update(TransactionCategoryLine)
+                    .where(
+                        TransactionCategoryLine.transaction_id.in_(
+                            select(Transaction.id).where(
+                                Transaction.account_id == account.id,
+                                Transaction.source == "sync",
+                            )
+                        )
+                    )
+                    .values(workspace_id=connection.workspace_id)
+                )
+                await session.execute(
                     update(CreditCardBill)
                     .where(CreditCardBill.account_id == account.id)
                     .values(user_id=user_id, workspace_id=connection.workspace_id)
@@ -2784,11 +2802,16 @@ async def sync_connection(
                         # charge cost in the primary currency: the row now
                         # stands for what was actually charged, not for what
                         # the bill expected.
+                        expected_amount = placeholder.amount
                         placeholder.amount = txn_data.amount
                         await _stamp_synced_primary_amount(
                             session, user_id, placeholder, converted
                         )
-                    if placeholder.category_id is None:
+                        # A split placeholder keeps its split, resized.
+                        await category_line_service.rescale_lines(
+                            session, placeholder, expected_amount
+                        )
+                    if placeholder.category_id is None and not placeholder.has_category_lines:
                         placeholder.category_id = preview.category_id or category_id
                     if txn_data.payee and not placeholder.payee:
                         placeholder.payee = txn_data.payee
