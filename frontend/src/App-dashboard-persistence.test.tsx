@@ -1,4 +1,9 @@
 import { expect, it, vi } from 'vitest'
+// Qualify every real route used below before the 5000ms behavior budget.
+// resetModules still rebuilds App/SDK state under the native transport spies.
+import '@/App'
+import '@/pages/dashboard'
+import '@/pages/categories'
 import type { AxiosAdapter, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import type { QueryClient } from '@tanstack/react-query'
 import type { SessionStore, StoreOptions } from '@/lib/dashboard-layout-session'

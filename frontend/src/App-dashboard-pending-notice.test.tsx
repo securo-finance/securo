@@ -3,6 +3,8 @@ import { expect, it, vi } from 'vitest'
 // The test's resetModules still rebuilds App/SDK state after transport spies are installed.
 import '@/App'
 import '@/pages/dashboard'
+// Native navigation also evaluates this lazy route; qualify its graph here.
+import '@/pages/categories'
 import type { AxiosAdapter, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import type { QueryClient } from '@tanstack/react-query'
 import type { SessionStore, StoreOptions } from '@/lib/dashboard-layout-session'

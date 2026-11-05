@@ -1,4 +1,8 @@
 import { expect, it, vi } from 'vitest'
+// Qualify the real page/harness graph before the 5000ms behavior budget.
+// resetModules still rebuilds providers/SDK under the native transport spies.
+import '@/pages/dashboard'
+import '@/test/utils'
 import type { AxiosAdapter, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import type { DashboardLayoutOwner } from '@/contexts/dashboard-layout-provider'
 import type { DashboardLayout } from '@/lib/dashboard-layout'
