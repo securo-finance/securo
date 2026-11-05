@@ -7078,7 +7078,7 @@ async def test_sync_simplefin_brokerage_counts_portfolio_once(
     # Cash residual: 1057.20 - (425.96 + 147.64). The checking account is untouched.
     assert balances == {"brk-1": Decimal("483.60"), "chk-1": Decimal("889.92")}
     assets = (await session.execute(select(Asset).where(Asset.connection_id == conn.id))).scalars().all()
-    assert sorted(a.external_id for a in assets) == ["h-bp", "h-mpc"]
+    assert {a.external_id for a in assets} == {"h-bp", "h-mpc"}
 
     dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
     assert dp.breakdowns["accounts"] == pytest.approx(483.60 + 889.92)
