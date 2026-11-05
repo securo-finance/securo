@@ -42,7 +42,7 @@ from app.services import admin_service
 from app.services import reconciliation_service, recurring_match_service
 from app.services.text_similarity import token_overlap
 from app.services.account_service import (
-    _simplefin_to_internal_balance,
+    _provider_to_internal_balance,
     sync_opening_balance_for_connected_account,
 )
 from app.services.asset_group_service import (
@@ -1897,6 +1897,72 @@ async def _find_synced_duplicate(
             ):
                 return candidate
 
+    # Path 4: Enable Banking re-key. Its id hashes the entry_reference with
+    # the payload, so a richer remittance text or a settled date on a later
+    # fetch changes the id of a row we already hold. The reference is not
+    # unique on its own (#753), so it must also agree on amount and type
+    # within a few days, and the old id must have dropped out of this batch:
+    # a sibling sharing the reference that is still returned is its own
+    # transaction. More than one candidate is ambiguous, so none is chosen.
+    # A pending fetch never takes over a booked row.
+    #
+    # Some institutions return a booked row with no entry_reference on the day
+    # it books and fill one in ("2026-11-03.1") on a later fetch. The first
+    # copy was keyed by the payload fingerprint and the second by the
+    # reference, so the held row carries no reference to compare. Such a row
+    # is the same transaction only when it is a synced row that also agrees on
+    # the currency, date, status and description, no row holding the reference
+    # itself competes, and it is the single candidate: two identical purchases
+    # on one day are ambiguous, and picking one would hang its category and
+    # notes on the other.
+    entry_ref = raw.get("entry_reference")
+    entry_ref = entry_ref.strip() if isinstance(entry_ref, str) else ""
+    if entry_ref and entry_ref != "0":
+        statement = select(Transaction).where(
+            Transaction.account_id == account_id,
+            or_(
+                Transaction.source == "sync",
+                Transaction.source.in_(LOCAL_IMPORT_SOURCES),
+            ),
+            Transaction.raw_data.is_not(None),
+            Transaction.date >= txn_data.date - timedelta(days=3),
+            Transaction.date <= txn_data.date + timedelta(days=3),
+            Transaction.amount == txn_data.amount,
+            Transaction.type == txn_data.type,
+            Transaction.external_id != txn_data.external_id,
+        )
+        if txn_data.status == "pending":
+            statement = statement.where(Transaction.status == "pending")
+        result = await session.execute(statement)
+        rekey_matches = []
+        late_ref_matches = []
+        for candidate in result.scalars():
+            if candidate.external_id in incoming_external_ids:
+                continue
+            if not isinstance(candidate.raw_data, dict):
+                continue
+            candidate_ref = candidate.raw_data.get("entry_reference")
+            if isinstance(candidate_ref, str):
+                candidate_ref = candidate_ref.strip()
+            if candidate_ref == entry_ref:
+                rekey_matches.append(candidate)
+            elif (
+                candidate_ref in (None, "", "0")
+                and candidate.source == "sync"
+                and candidate.currency == txn_data.currency
+                and candidate.date == txn_data.date
+                and candidate.status == txn_data.status
+                and token_overlap(
+                    candidate.original_description or candidate.description,
+                    txn_data.description,
+                ) >= 0.9
+            ):
+                late_ref_matches.append(candidate)
+        if len(rekey_matches) == 1:
+            return rekey_matches[0]
+        if not rekey_matches and len(late_ref_matches) == 1:
+            return late_ref_matches[0]
+
     # Path 5: local import history from before the account was connected.
     # Posting lag and statement exports can shift the date or shorten the
     # merchant description, so accept only one exact normalized merchant/payee.
@@ -2406,8 +2472,9 @@ async def sync_connection(
                 # SimpleFIN reports card debt as negative under a "checking"
                 # label; once the user overrides the type to credit_card the
                 # downstream sites negate it, so store positive-for-debt to keep
-                # them provider-agnostic and avoid double-counting.
-                account.balance = _simplefin_to_internal_balance(
+                # them provider-agnostic and avoid double-counting. A loan reads
+                # the same way whatever the provider called the account.
+                account.balance = _provider_to_internal_balance(
                     connection.provider,
                     account.type,
                     _account_balance(acc_data, auto_invested_deducted),
@@ -2466,7 +2533,11 @@ async def sync_connection(
                     display_name=institution.name if institution else None,
                     masked_number=acc_data.masked_number,
                     type=acc_data.type,
-                    balance=_account_balance(acc_data, auto_invested_deducted),
+                    balance=_provider_to_internal_balance(
+                        connection.provider,
+                        acc_data.type,
+                        _account_balance(acc_data, auto_invested_deducted),
+                    ),
                     currency=acc_data.currency,
                     credit_limit=acc_data.credit_limit if is_cc else None,
                     statement_close_day=acc_data.statement_close_day if is_cc else None,

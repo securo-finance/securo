@@ -108,9 +108,11 @@ export default function AdminSettingsPage() {
     },
   })
 
-  const { data: regSetting, isLoading: settingsLoading } = useQuery({
+  // The effective state, not the saved row: with nothing saved,
+  // REGISTRATION_ENABLED decides.
+  const { data: regStatus, isLoading: settingsLoading } = useQuery({
     queryKey: ['admin', 'settings', 'registration_enabled'],
-    queryFn: () => adminApi.getSetting('registration_enabled'),
+    queryFn: () => adminApi.registrationStatus(),
   })
 
   const updateSettingMutation = useMutation({
@@ -275,7 +277,7 @@ export default function AdminSettingsPage() {
 
   const users = usersData?.items ?? []
   const isSelf = (u: AdminUser) => u.id === currentUser?.id
-  const isEnabled = regSetting?.value === 'true'
+  const isEnabled = regStatus?.enabled === true
 
   const filteredUsers = users
 

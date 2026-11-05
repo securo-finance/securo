@@ -504,7 +504,7 @@ async def test_dashboard_projected_transactions(
 
 @pytest.mark.asyncio
 async def test_dashboard_balance_history(client: AsyncClient, auth_headers):
-    """GET /api/dashboard/balance-history returns current/previous month data."""
+    """GET /api/dashboard/balance-history returns current month and baseline data."""
     # Create an account first
     await client.post(
         "/api/accounts",
@@ -518,9 +518,52 @@ async def test_dashboard_balance_history(client: AsyncClient, auth_headers):
     assert response.status_code == 200
     data = response.json()
     assert "current" in data
-    assert "previous" in data
+    assert "opening_balance" in data
+    assert "baseline" in data
     assert isinstance(data["current"], list)
-    assert isinstance(data["previous"], list)
+    assert len(data["baseline"]) == len(data["current"])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_balance_history_accepts_comparison_months(
+    client: AsyncClient, auth_headers
+):
+    response = await client.get(
+        "/api/dashboard/balance-history",
+        params=[
+            ("month", "2026-04-01"),
+            ("comparison_months", "2026-01-01"),
+            ("comparison_months", "2026-03-01"),
+        ],
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["comparison"] is None
+    assert len(data["baseline"]) == len(data["current"])
+
+    months_response = await client.get(
+        "/api/dashboard/balance-history/months", headers=auth_headers
+    )
+    assert months_response.status_code == 200
+    assert isinstance(months_response.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_dashboard_balance_history_rejects_non_prior_comparison_month(
+    client: AsyncClient, auth_headers
+):
+    response = await client.get(
+        "/api/dashboard/balance-history",
+        params=[
+            ("month", "2026-04-01"),
+            ("comparison_months", "2026-04-01"),
+        ],
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------

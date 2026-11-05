@@ -11,10 +11,9 @@ from tests.api_contract.harness import check_case, headers_for, params_for
 async def test_contract(
     client: AsyncClient,
     world,
-    auth_headers,
-    admin_auth_headers,
+    world_headers,
     variant: str,
     op: Operation,
 ):
-    headers = headers_for(variant, op, auth_headers, admin_auth_headers)
+    headers = headers_for(variant, op, *world_headers)
     await check_case(client, variant, op, world, headers)
