@@ -246,4 +246,30 @@ describe('i18n locale files', () => {
       ).toEqual([])
     }
   })
+
+  // PR-9: the price-history surface keys are contractually exact (§4.3), so
+  // assert them explicitly in addition to the en-driven parity checks above.
+  it('contains price-history labels in every locale', () => {
+    const required = [
+      'recurring.priceHistory',
+      'recurring.viewPriceHistory',
+      'recurring.priceChangesTitle',
+      'recurring.priceChangesEmpty',
+      'recurring.priceChangeBadge',
+      'recurring.priceChangeIncrease',
+      'recurring.priceChangeDecrease',
+      'recurring.priceChangeAmount',
+      'recurring.priceChangeDelta',
+      'recurring.priceChangeGap',
+      'recurring.priceChangeInsufficient',
+    ]
+
+    for (const locale of LOCALES) {
+      const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
+      expect(
+        required.filter((key) => !keys.has(key)),
+        `Price-history labels missing in ${locale}:`,
+      ).toEqual([])
+    }
+  })
 })

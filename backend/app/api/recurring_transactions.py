@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -9,12 +9,16 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
+from app.schemas.recurring_price_change import (
+    RecurringPriceChangeHistoryRead,
+    RecurringPriceChangeRead,
+)
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionRead,
     RecurringTransactionUpdate,
 )
-from app.services import recurring_transaction_service
+from app.services import recurring_price_change_service, recurring_transaction_service
 
 router = APIRouter(prefix="/api/recurring-transactions", tags=["recurring-transactions"])
 
@@ -25,6 +29,36 @@ async def list_recurring_transactions(
     session: AsyncSession = Depends(get_async_session),
 ):
     return await recurring_transaction_service.get_recurring_transactions(session, ctx.workspace.id)
+
+
+# Read-only price-change projections (PR-9). Both routes are registered before
+# the "/{recurring_id}" CRUD paths, and the static "/price-changes/recent"
+# comes first so its literal path can never be parsed as a UUID (§3.7).
+@router.get("/price-changes/recent", response_model=list[RecurringPriceChangeRead])
+async def recent_price_changes(
+    limit: int = Query(20, ge=1, le=50, description="Max events, newest first (1-50)"),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Latest qualifying price change per series in the workspace, newest first."""
+    return await recurring_price_change_service.get_recent_price_changes(
+        session, ctx.workspace.id, limit
+    )
+
+
+@router.get("/{recurring_id}/price-changes", response_model=RecurringPriceChangeHistoryRead)
+async def recurring_price_change_history(
+    recurring_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Full price-change history for one series; 404 when unknown or out of scope."""
+    history = await recurring_price_change_service.get_price_history(
+        session, recurring_id, ctx.workspace.id
+    )
+    if history is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurring transaction not found")
+    return history
 
 
 @router.post("", response_model=RecurringTransactionRead, status_code=status.HTTP_201_CREATED)

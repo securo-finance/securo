@@ -694,6 +694,37 @@ export interface RecurringTransaction {
   fx_rate_used: number | null
 }
 
+// Read-only price-change projections (PR-9). Derived from linked transaction
+// history on the backend; never written back and never mutated client-side.
+export type RecurringPriceChangeEligibility =
+  | 'insufficient_history'
+  | 'no_qualifying_change'
+  | 'changes_detected'
+
+export interface RecurringPriceChange {
+  recurring_id: string
+  previous_transaction_id: string
+  current_transaction_id: string
+  previous_date: string
+  current_date: string
+  // Exact two-decimal JSON strings; coerce only for display formatting.
+  previous_amount: string
+  current_amount: string
+  currency: string
+  direction: 'increase' | 'decrease'
+  absolute_delta: string
+  percent_delta: string
+  gap_days: number
+  baseline_occurrence_count: number
+}
+
+export interface RecurringPriceChangeHistory {
+  recurring_id: string
+  eligible_occurrence_count: number
+  eligibility: RecurringPriceChangeEligibility
+  changes: RecurringPriceChange[]
+}
+
 export interface ProjectedTransaction {
   recurring_id: string
   account_id: string | null
