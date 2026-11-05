@@ -1,3 +1,5 @@
+import type { DashboardLayout } from '@/lib/dashboard-layout'
+
 export interface User {
   id: string
   email: string
@@ -87,6 +89,10 @@ export interface UserPreferences {
   currency_display?: string
   display_name?: string
   onboarding_completed?: boolean
+  /** Per-user, per-workspace dashboard layouts, keyed by workspace id
+   *  (design packet §4.1). Unknown/obsolete widget ids inside a stored
+   *  layout are ignored on read — see `resolveDashboardLayout`. */
+  dashboard_layouts?: Record<string, DashboardLayout>
 }
 
 export interface Category {

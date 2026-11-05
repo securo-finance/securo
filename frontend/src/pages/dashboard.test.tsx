@@ -4,9 +4,11 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 import DashboardPage from '@/pages/dashboard'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { DashboardLayoutProvider } from '@/contexts/dashboard-layout-provider'
+import { WorkspaceContext } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
 import { monthLabel } from '@/lib/month-utils'
-import { renderWithProviders, t } from '@/test/utils'
+import { renderWithProviders as renderWithBaseProviders, t } from '@/test/utils'
 import type { Account, DashboardSummary } from '@/types'
 
 const api = vi.hoisted(() => ({
@@ -46,7 +48,7 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
 const preferences = vi.hoisted(() => ({ currency_display: 'USD' }))
 
 vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ user: { preferences } }),
+  useAuth: () => ({ user: { id: 'user-1', preferences }, token: null, isLoading: false }),
 }))
 
 vi.mock('@/contexts/collection-filter-context', () => ({
@@ -171,13 +173,31 @@ beforeEach(() => {
   api.settings.attachments.mockResolvedValue({ enabled: false })
 })
 
+// Financial rendering uses the real provider's token-null, read-only path:
+// default widgets render without acquiring an authenticated layout owner.
+function renderWithProviders(
+  ui: Parameters<typeof renderWithBaseProviders>[0],
+  options?: Parameters<typeof renderWithBaseProviders>[1],
+) {
+  return renderWithBaseProviders(
+    <WorkspaceContext.Provider value={{
+      current: null, workspaces: [], isLoading: false, switchWorkspace: async () => {},
+      refresh: async () => {}, role: null, canManage: false, canWrite: false,
+      enabledModules: [], hasModule: () => false,
+    }}>
+      <DashboardLayoutProvider>{ui}</DashboardLayoutProvider>
+    </WorkspaceContext.Provider>,
+    options,
+  )
+}
+
+const renderDashboard = () => renderWithProviders(
+  <TooltipProvider delayDuration={0}><DashboardPage /></TooltipProvider>,
+)
+
 describe('Dashboard net worth breakdown', () => {
   it('counts a shared credit line once in the credit card total', async () => {
-    const { user } = renderWithProviders(
-      <TooltipProvider delayDuration={0}>
-        <DashboardPage />
-      </TooltipProvider>,
-    )
+    const { user } = renderDashboard()
 
     await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
     await user.hover(screen.getByRole('button', { name: 'i' }))
@@ -247,12 +267,6 @@ it('shows the mortgage breakdown editor for a payment opened from the dashboard'
 })
 
 describe('Dashboard available balance without an FX rate', () => {
-  const renderDashboard = () => renderWithProviders(
-    <TooltipProvider delayDuration={0}>
-      <DashboardPage />
-    </TooltipProvider>,
-  )
-
   it('shows an unconverted account in its own currency and flags the total', async () => {
     api.accounts.list.mockResolvedValue([
       account({ id: 'checking', name: 'Checking', current_balance: 1000 }),
@@ -277,12 +291,27 @@ describe('Dashboard balance comparisons', () => {
   const month = (value: string) => monthLabel(value, 'en')
   const money = (value: number) => formatCurrency(value, 'USD', 'en-US')
 
-  function renderDashboard(route: string) {
+  function renderDashboard(route?: string) {
     return renderWithProviders(
-      <TooltipProvider delayDuration={0}>
-        <DashboardPage />
-      </TooltipProvider>,
-      { route },
+      <WorkspaceContext.Provider value={{
+        current: null,
+        workspaces: [],
+        isLoading: false,
+        switchWorkspace: async () => {},
+        refresh: async () => {},
+        role: null,
+        canManage: false,
+        canWrite: false,
+        enabledModules: [],
+        hasModule: () => false,
+      }}>
+        <DashboardLayoutProvider>
+          <TooltipProvider delayDuration={0}>
+            <DashboardPage />
+          </TooltipProvider>
+        </DashboardLayoutProvider>
+      </WorkspaceContext.Provider>,
+      route ? { route } : undefined,
     )
   }
 
@@ -700,22 +729,18 @@ describe('Dashboard balance comparisons', () => {
 })
 
 describe('Dashboard net worth without an FX rate', () => {
-  const renderDashboard = () => renderWithProviders(
-    <TooltipProvider delayDuration={0}>
-      <DashboardPage />
-    </TooltipProvider>,
-  )
+  const renderDashboardWithoutFx = () => renderDashboard()
 
   it('flags the net worth total when the summary carried a fallback', async () => {
     api.dashboard.summary.mockResolvedValue({ ...summary, fx_fallback: true })
-    renderDashboard()
+    renderDashboardWithoutFx()
 
     await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
     expect(screen.getByText(t('transactions.fxFallbackBanner'))).toBeInTheDocument()
   })
 
   it('keeps the net worth quiet when every bucket was converted', async () => {
-    renderDashboard()
+    renderDashboardWithoutFx()
 
     await screen.findByText('Checking')
     expect(screen.queryByText(t('transactions.fxFallbackBanner'))).not.toBeInTheDocument()
@@ -767,4 +792,26 @@ describe('Dashboard refresh button', () => {
     )
     expect(screen.getByTestId('location-search')).toHaveTextContent('comparison_month=2026-02')
   })
+})
+
+describe('Dashboard available balance account chips', () => {
+  it('orders rendered chips by absolute primary balance and preserves a zero primary balance', async () => {
+    api.accounts.list.mockResolvedValue([
+      account({ id: 'small-positive', name: 'Synthetic Small Positive', current_balance: 125 }),
+      account({ id: 'primary-zero', name: 'Synthetic Primary Zero', currency: 'EUR', current_balance: 99000, balance_primary: 0 }),
+      account({ id: 'large-debt', name: 'Synthetic Large Debt', current_balance: -90, balance_primary: -900 }),
+      account({ id: 'positive-savings', name: 'Synthetic Positive Savings', type: 'savings', currency: 'EUR', current_balance: 50, balance_primary: 500 }),
+    ])
+    renderDashboard()
+
+    const chips = await screen.findAllByRole('link', { name: /Synthetic (Small Positive|Primary Zero|Large Debt|Positive Savings)/ })
+    const zeroChip = screen.getByRole('link', { name: /Synthetic Primary Zero/ })
+    expect(chips).toEqual([
+      screen.getByRole('link', { name: /Synthetic Large Debt/ }),
+      screen.getByRole('link', { name: /Synthetic Positive Savings/ }),
+      screen.getByRole('link', { name: /Synthetic Small Positive/ }),
+      zeroChip,
+    ])
+    expect(zeroChip).toHaveTextContent(formatCurrency(0, 'USD', 'en-US'))
+    expect(zeroChip).not.toHaveTextContent(formatCurrency(99000, 'EUR', 'en-US'))  })
 })

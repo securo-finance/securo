@@ -1,6 +1,9 @@
 import axios from 'axios'
-import type { AxiosResponse } from 'axios'
+import type { AxiosResponse, AxiosRequestConfig } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
+import { DASHBOARD_WIDGETS } from '@/components/dashboard/widgets'
+import { validateDashboardLayoutRequest, validateCommittedDashboardLayout } from '@/lib/dashboard-layout'
+import type { DashboardLayout, DashboardRequestBinding, CommittedDashboardLayout } from '@/lib/dashboard-layout'
 import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
   User,
@@ -115,6 +118,11 @@ const api = axios.create({
 })
 export { api }
 
+// Internal config only: never sent in the layout body or HTTP headers.
+type DashboardLayoutRequestConfig = AxiosRequestConfig & {
+  dashboardLayoutIsCurrent?: () => boolean
+}
+
 // Storage key for the currently-selected workspace ID. Lives in
 // localStorage so reloads + new tabs stay on the same workspace until
 // the user picks another one.
@@ -122,6 +130,10 @@ export const WORKSPACE_STORAGE_KEY = 'workspace_id'
 
 // Add auth token + active workspace header to requests
 api.interceptors.request.use((config) => {
+  const layoutRequest = config as DashboardLayoutRequestConfig
+  if (layoutRequest.dashboardLayoutIsCurrent && layoutRequest.dashboardLayoutIsCurrent() !== true) {
+    throw new Error('Dashboard layout request binding is no longer current')
+  }
   const token = localStorage.getItem('token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
@@ -1399,6 +1411,27 @@ const acctIdsParam = (accountIds?: string[]) =>
     : {}
 
 export const dashboard = {
+  saveLayout: async (
+    workspaceId: string,
+    layout: DashboardLayout,
+    binding: DashboardRequestBinding,
+  ): Promise<CommittedDashboardLayout> => {
+    const body = validateDashboardLayoutRequest(workspaceId, layout, DASHBOARD_WIDGETS)
+    const isCurrent = binding?.isCurrent
+    if (typeof isCurrent !== 'function') {
+      throw new Error('Invalid dashboard layout request binding')
+    }
+    // A function survives axios config merging without cloning the captured owner.
+    const config: DashboardLayoutRequestConfig = {
+      dashboardLayoutIsCurrent: isCurrent.bind(binding),
+    }
+    const { data } = await api.put<unknown>(
+      `/dashboard/layouts/${encodeURIComponent(workspaceId)}`,
+      body,
+      config,
+    )
+    return validateCommittedDashboardLayout(workspaceId, data, DASHBOARD_WIDGETS)
+  },
   summary: async (month?: string, balanceDate?: string, accountIds?: string[], assetGroupIds?: string[]): Promise<DashboardSummary> => {
     const hasFilter = (accountIds && accountIds.length > 0) || (assetGroupIds && assetGroupIds.length > 0)
     const { data } = await api.get('/dashboard/summary', {

@@ -1,6 +1,7 @@
+import uuid
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, field_validator, model_validator
 
 
 class DashboardSummary(BaseModel):
@@ -90,3 +91,64 @@ class ProjectedTransaction(BaseModel):
     category_icon: Optional[str]
     category_color: Optional[str] = None
     category_treat_as_transfer: bool = False
+
+
+# Server-owned v1 registry; mirrors components/dashboard/widgets.ts.
+DASHBOARD_WIDGET_IDS = frozenset({
+    "hero-balance", "uncategorized-banner", "spending-charts",
+    "balance-evolution", "goals-progress", "period-transactions",
+})
+
+
+class DashboardLayoutItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    id: str
+    visible: StrictBool
+    order: StrictInt = Field(ge=0)
+
+    @field_validator("id")
+    @classmethod
+    def registered_id(cls, value: str) -> str:
+        if value not in DASHBOARD_WIDGET_IDS:
+            raise ValueError("Unknown dashboard widget")
+        return value
+
+
+class DashboardLayoutWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    version: StrictInt
+    workspaceId: str
+    items: list[DashboardLayoutItem] = Field(min_length=1, max_length=64)
+
+    @field_validator("version")
+    @classmethod
+    def v1_only(cls, value: int) -> int:
+        if value != 1:
+            raise ValueError("Only dashboard layout version 1 is supported")
+        return value
+
+    @field_validator("workspaceId")
+    @classmethod
+    def canonical_workspace(cls, value: str) -> str:
+        if str(uuid.UUID(value)) != value:
+            raise ValueError("workspaceId must be a canonical UUID")
+        return value
+
+    @model_validator(mode="after")
+    def valid_items(self) -> "DashboardLayoutWrite":
+        if len({item.id for item in self.items}) != len(self.items):
+            raise ValueError("Duplicate dashboard widgets")
+        if sorted(item.order for item in self.items) != list(range(len(self.items))):
+            raise ValueError("Widget order must be contiguous")
+        if not any(item.visible for item in self.items):
+            raise ValueError("At least one widget must be visible")
+        return self
+
+
+class CommittedDashboardLayout(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    workspaceId: str
+    layout: DashboardLayoutWrite

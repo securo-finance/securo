@@ -1,69 +1,45 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
+import { getAccountName } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
-import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Button } from '@/components/ui/button'
-import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { MonthPicker } from '@/components/ui/monthpicker'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  ComposedChart,
-  Area,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip as RechartsTooltip,
-  DefaultTooltipContent,
-  ResponsiveContainer,
-} from 'recharts'
-import { CheckCircle2, CalendarIcon, ChevronDown, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle } from 'lucide-react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ICON_MAP } from '@/lib/category-icons'
+import { Button } from '@/components/ui/button'
+import { CalendarIcon, SlidersHorizontal } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
-import { CategoryIcon } from '@/components/category-icon'
-import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
+import {
+  BalanceEvolutionSection,
+  GoalsProgressSection,
+  PeriodTransactionsSection,
+  SpendingChartsSection,
+  UncategorizedBannerSection,
+  HeroBalanceSection,
+} from '@/components/dashboard/widget-components'
+import { DashboardStack } from '@/components/dashboard/dashboard-stack'
+import { CustomizeDashboardDialog } from '@/components/dashboard/customize-dashboard-dialog'
+import { DashboardLayoutRecoveryDialog } from '@/components/dashboard/dashboard-layout-recovery-dialog'
+import { useDashboardLayout } from '@/hooks/use-dashboard-layout'
 import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { extractApiError } from '@/lib/api-errors'
-import { TransactionCalendarView } from '@/components/transaction-calendar-view'
-import { TransactionsViewSwitcher, type TransactionsViewMode } from '@/components/transactions-view-switcher'
+import type { TransactionsViewMode } from '@/components/transactions-view-switcher'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
-import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
+import type { ReactNode } from 'react'
+import type { DashboardWidgetId } from '@/lib/dashboard-layout'
+import type { DisplayRow } from '@/components/dashboard/widget-components'
 import type { Rule, Transaction } from '@/types'
-import { formatCompactCurrency, formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
-
-function formatDate(dateStr: string, locale = 'pt-BR') {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
-}
 
 function parseHashtags(notes: string | null): string[] {
   if (!notes) return []
@@ -75,6 +51,21 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
 const MONTH_STRING_LENGTH = 7
 const COMPARISON_MONTH_PARAM = 'comparison_month'
 const EMPTY_COMPARISON_MONTHS: string[] = []
+
+function normalizeComparisonMonths(months: string[], availableMonths: string[], viewedMonth: string): string[] {
+  const available = new Set(availableMonths)
+  return [...new Set(months)]
+    .filter((month) => MONTH_REGEX.test(month) && month < viewedMonth && available.has(month))
+    .sort()
+    .slice(-24)
+}
+
+function defaultComparisonMonths(availableMonths: string[], viewedMonth: string): string[] {
+  const firstMonth = shiftMonth(viewedMonth, -12)
+  return availableMonths
+    .filter((month) => MONTH_REGEX.test(month) && month >= firstMonth && month < viewedMonth)
+    .sort()
+}
 
 function parseMonthFromParams(params: URLSearchParams): string | null {
   const monthParam = params.get('month')
@@ -93,32 +84,13 @@ function parseMonthFromParams(params: URLSearchParams): string | null {
   return null
 }
 
-function normalizeComparisonMonths(months: string[], availableMonths: string[], viewedMonth: string): string[] {
-  const available = new Set(availableMonths)
-  return [...new Set(months)]
-    .filter((month) => MONTH_REGEX.test(month) && month < viewedMonth && available.has(month))
-    .sort()
-    .slice(-24)
-}
-
-function defaultComparisonMonths(availableMonths: string[], viewedMonth: string): string[] {
-  const firstMonth = shiftMonth(viewedMonth, -12)
-  return availableMonths
-    .filter((month) => MONTH_REGEX.test(month) && month >= firstMonth && month < viewedMonth)
-    .sort()
-}
-
 
 export default function DashboardPage() {
   const { t, i18n } = useTranslation()
-  const navigate = useNavigate()
-  const { mask, privacyMode, MASK } = usePrivacyMode()
   const isMobile = useIsMobile()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const displayName = user?.preferences?.display_name || ''
-  const locale = useDisplayLocale()
-  const dateLocale = useDateLocale()
 
   const greeting = (() => {
     const hour = new Date().getHours()
@@ -187,7 +159,6 @@ export default function DashboardPage() {
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
   const queryClient = useQueryClient()
   const [headerCalOpen, setHeaderCalOpen] = useState(false)
-  const [comparisonPickerOpen, setComparisonPickerOpen] = useState(false)
   const [hoveredDay, setHoveredDay] = useState<number | null>(null)
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const { from: monthStart, to: monthEnd } = monthRange(selectedMonth)
@@ -197,7 +168,7 @@ export default function DashboardPage() {
 
   const handleMonthChange = (newMonth: string) => {
     setSelectedMonth(newMonth)
-  }
+}
 
   // Active Collection filter (issue #105): scope dashboard cards to its
   // accounts. undefined when "All accounts".
@@ -225,52 +196,35 @@ export default function DashboardPage() {
     [searchParams],
   )
   const validComparisonMonths = useMemo(
-    () => normalizeComparisonMonths(
-      requestedComparisonMonths,
-      availableComparisonMonths,
-      selectedMonth,
-    ),
+    () => normalizeComparisonMonths(requestedComparisonMonths, availableComparisonMonths, selectedMonth),
     [requestedComparisonMonths, availableComparisonMonths, selectedMonth],
   )
   const comparisonMonths = validComparisonMonths.length > 0 ? validComparisonMonths : defaultMonths
 
   useEffect(() => {
-    // Only prune once the options have loaded; a failed request must not drop a shared selection.
     if (comparisonMonthsLoading || !comparisonMonthOptions || requestedComparisonMonths.length === 0) return
-    // After navigation the URL is ahead of selectedMonth for one render; validate against the month it asks for.
     const urlMonth = parseMonthFromParams(searchParams)
     if (urlMonth && urlMonth !== selectedMonth) return
     if (
       requestedComparisonMonths.length === validComparisonMonths.length &&
       requestedComparisonMonths.every((month, index) => month === validComparisonMonths[index])
     ) return
-
     const params = new URLSearchParams(searchParams.toString())
     params.delete(COMPARISON_MONTH_PARAM)
     validComparisonMonths.forEach((month) => params.append(COMPARISON_MONTH_PARAM, month))
     setSearchParams(params, { replace: true })
-  }, [
-    comparisonMonthsLoading,
-    comparisonMonthOptions,
-    requestedComparisonMonths,
-    validComparisonMonths,
-    selectedMonth,
-    searchParams,
-    setSearchParams,
-  ])
+  }, [comparisonMonthsLoading, comparisonMonthOptions, requestedComparisonMonths,
+    validComparisonMonths, selectedMonth, searchParams, setSearchParams])
 
   const toggleComparisonMonth = (month: string, checked: boolean) => {
     const nextMonths = checked
       ? [...comparisonMonths, month]
       : comparisonMonths.filter((selected) => selected !== month)
     if (nextMonths.length === 0 || nextMonths.length > 24) return
-
     const params = new URLSearchParams(searchParams.toString())
     params.delete(COMPARISON_MONTH_PARAM)
     const orderedMonths = [...new Set(nextMonths)].sort()
-    orderedMonths.forEach((selected) => {
-      params.append(COMPARISON_MONTH_PARAM, selected)
-    })
+    orderedMonths.forEach((selected) => params.append(COMPARISON_MONTH_PARAM, selected))
     setSearchParams(params)
   }
 
@@ -284,7 +238,6 @@ export default function DashboardPage() {
     queryFn: () => dashboard.spendingByCategory(monthParam, acctIds),
     enabled: !noAccounts,
   })
-
 
   const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
     queryKey: ['dashboard', 'balance-history', selectedMonth, activeAccountIds, comparisonMonths],
@@ -469,7 +422,6 @@ export default function DashboardPage() {
       if (comparisonPoint?.balance != null && balanceHistory.comparison_opening_balance != null) {
         lastComparison = comparisonPoint.balance - balanceHistory.comparison_opening_balance
       } else if (comparisonPoint) {
-        // A null balance is a day after today; only carry over days the comparison month lacks.
         lastComparison = null
       }
       const base = balanceHistory.baseline.find(d => d.day === day)
@@ -507,25 +459,15 @@ export default function DashboardPage() {
   const availableBalance = availableBalanceAccounts.reduce(
     (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
   )
-  // A foreign account without a real FX rate is summed at its native amount,
-  // so the headline total is an estimate; say so instead of hiding it (#1165).
-  const availableBalanceHasFxFallback = availableBalanceAccounts.some((a) => a.fx_fallback)
-  const sortedAvailableBalanceAccounts = useMemo(
-    () => sortAccountsByAbsoluteBalance(availableBalanceAccounts, (a) => a.balance_primary ?? a.current_balance),
-    [availableBalanceAccounts],
-  )
   // While accounts are loading or failed to load, treat their balance
   // components as unavailable rather than silently rendering zero.
   const accountsUnavailable = accountsLoading || accountsError
-  const creditCardBalance = sumAccountBalances((accountsList ?? [])
-    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card'))
+  const creditCardAccounts = (accountsList ?? [])
+    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card')
+  // Net worth separates loans from spendable non-card balances.
   const loanBalance = (accountsList ?? [])
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'loan')
     .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
-  // Net worth's "Available balance" breakdown row: every account that is not
-  // a card or loan (unlike the headline `availableBalance`, which is
-  // checking/savings only), so with the card and loan rows it reconciles with
-  // `totalBalance` — which sums all account types.
   const nonCardAccountsBalance = (accountsList ?? [])
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type !== 'credit_card' && a.type !== 'loan')
     .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
@@ -595,35 +537,6 @@ export default function DashboardPage() {
   const [txPage, setTxPage] = useState(1)
   const [txSortDesc, setTxSortDesc] = useState(true)
   useEffect(() => setTxPage(1), [selectedMonth])
-
-  type DisplayRow = {
-    key: string
-    description: string
-    date: string
-    type: 'debit' | 'credit'
-    amount: number
-    amountPrimary: number | null
-    currency: string
-    categoryIcon: string | null
-    categoryName: string | null
-    categoryColor: string | null
-    accountId: string | null
-    isProjected: boolean
-    attachmentCount: number
-    isShared: boolean
-    parentTotal: number | null
-    // Owner-side: this user's share of a split they own. Null when
-    // they're not in the split, or when share == amount (would be a
-    // redundant secondary line).
-    ownerShare: number | null
-    groupId: string | null
-    parentOwnerName: string | null
-    groupName: string | null
-    isIgnored: boolean
-    installmentNumber: number | null
-    totalInstallments: number | null
-    showPendingBadge: boolean
-  }
 
   const [txPerPage, setTxPerPage] = useState<number>(() => {
     try {
@@ -723,6 +636,112 @@ export default function DashboardPage() {
     ? '---'
     : `${savingsRate.toFixed(0)}%`
 
+  const layout = useDashboardLayout()
+  const customizeTriggerRef = useRef<HTMLButtonElement>(null)
+  const reviewTriggerRef = useRef<HTMLButtonElement>(null)
+  const refreshTriggerRef = useRef<HTMLButtonElement>(null)
+  const [recoveryFocusGuard, setRecoveryFocusGuard] = useState<() => boolean>(() => () => false)
+
+  const sections: Record<DashboardWidgetId, ReactNode> = {
+    'hero-balance': (
+      <HeroBalanceSection
+        summary={summary}
+        summaryLoading={summaryLoading}
+        accountsUnavailable={accountsUnavailable}
+        availableBalance={availableBalance}
+        availableBalanceAccounts={availableBalanceAccounts}
+        primaryCurrency={primaryCurrency}
+        totalBalance={totalBalance}
+        projectedBalance={projectedBalance}
+        hasProjectedBalance={hasProjectedBalance}
+        assetsValue={assetsValue}
+        creditCardAccounts={creditCardAccounts}
+        nonCardAccountsBalance={nonCardAccountsBalance}
+        loanBalance={loanBalance}
+        income={income}
+        expenses={expenses}
+        projectedIncome={projectedIncome}
+        projectedExpenses={projectedExpenses}
+        savingsRateColor={savingsRateColor}
+        savingsRateDisplay={savingsRateDisplay}
+        projectedSpend={projectedSpend}
+        monthStart={monthStart}
+        monthEnd={monthEnd}
+        monthLabelStr={monthLabelStr}
+        userCurrency={userCurrency}
+        setDrillDown={setDrillDown}
+      />
+    ),
+    'uncategorized-banner': (
+      <UncategorizedBannerSection
+        summaryLoading={summaryLoading}
+        uncategorizedCount={uncategorizedCount}
+        uncategorizedAmount={uncategorizedAmount}
+        userCurrency={userCurrency}
+        setDrillDown={setDrillDown}
+      />
+    ),
+    'spending-charts': (
+      <SpendingChartsSection
+        spendingLoading={spendingLoading}
+        mergedCategories={mergedCategories}
+        catSortDesc={catSortDesc}
+        setCatSortDesc={setCatSortDesc}
+        userCurrency={userCurrency}
+        monthStart={monthStart}
+        monthEnd={monthEnd}
+        monthLabelStr={monthLabelStr}
+        setDrillDown={setDrillDown}
+      />
+    ),
+    'balance-evolution': (
+      <BalanceEvolutionSection
+        balanceHistoryLoading={balanceHistoryLoading}
+        cumulativeData={cumulativeData}
+        lastCurrentPoint={lastCurrentPoint}
+        lastDay={lastDay}
+        monthVariation={monthVariation}
+        availableComparisonMonths={availableComparisonMonths}
+        comparisonMonths={comparisonMonths}
+        toggleComparisonMonth={toggleComparisonMonth}
+        selectedMonth={selectedMonth}
+        uiLocale={uiLocale}
+        hoveredDay={hoveredDay}
+        setHoveredDay={setHoveredDay}
+        userCurrency={userCurrency}
+        setDrillDown={setDrillDown}
+      />
+    ),
+    'goals-progress': <GoalsProgressSection goalsSummary={goalsSummary} />,
+    'period-transactions': (
+      <PeriodTransactionsSection
+        txViewMode={txViewMode}
+        setTxViewMode={setTxViewMode}
+        txSortDesc={txSortDesc}
+        setTxSortDesc={setTxSortDesc}
+        txPage={txPage}
+        setTxPage={setTxPage}
+        txPerPage={txPerPage}
+        setTxPerPage={setTxPerPage}
+        calendarData={calendarData}
+        calendarLoading={calendarLoading}
+        calendarSelectedDate={calendarSelectedDate}
+        setCalendarSelectedDate={setCalendarSelectedDate}
+        handleOpenCalendarTransaction={handleOpenCalendarTransaction}
+        accountsList={accountsList}
+        userCurrency={userCurrency}
+        pagedRows={pagedRows}
+        allDisplayRows={allDisplayRows}
+        txTotalPages={txTotalPages}
+        txListLoading={txListLoading}
+        isMobile={isMobile}
+        currentMonthTxs={currentMonthTxs}
+        setEditingTx={setEditingTx}
+        setDialogOpen={setDialogOpen}
+      />
+    ),
+  }
+
   return (
     <div>
       {/* Header */}
@@ -731,6 +750,20 @@ export default function DashboardPage() {
         title={monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
         action={
           <div className="flex items-center gap-1">
+            <PageRefreshButton onRefresh={() => queryClient.refetchQueries({ type: 'active' })} refreshing={summaryFetching} />
+            {layout.draft.workspaceId && (
+              <Button
+                ref={customizeTriggerRef}
+                variant="outline"
+                size="sm"
+                aria-haspopup="dialog"
+                disabled={!layout.canCustomize}
+                onClick={layout.openCustomize}
+              >
+                <SlidersHorizontal className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                {t('dashboard.customize.action')}
+              </Button>
+            )}
             <button
               className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
               onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
@@ -762,1055 +795,97 @@ export default function DashboardPage() {
               className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
               onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
             >&#8250;</button>
-            <PageRefreshButton
-              onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
-              refreshing={summaryFetching}
-            />
           </div>
         }
       />
 
-      {/* Hero Card: Available Balance + secondary indicators */}
-      <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
-        {/* Available balance in checking/savings accounts */}
-        <div className="pb-4 mb-4 border-b border-border">
-          <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
-          {summaryLoading || accountsUnavailable ? (
-            <Skeleton className="h-9 w-40" />
-          ) : (
-            <>
-              {/* Neutral while positive. Size and weight carry the headline;
-                  colour is left to mean direction (income, expenses) and
-                  exception (a negative balance), so it still says something
-                  when it does appear. */}
-              <p className={`text-3xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-                {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
-              </p>
-              {/* Visible text, not a hover title, so touch users can read it. */}
-              {availableBalanceHasFxFallback && (
-                <p className="flex items-start gap-1.5 mt-1 text-xs text-amber-700 dark:text-amber-400">
-                  <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                  <span>{t('transactions.fxFallbackBanner')}</span>
-                </p>
-              )}
-              {sortedAvailableBalanceAccounts.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-3">
-                  {sortedAvailableBalanceAccounts.map((acc) => {
-                    const bal = Number(acc.balance_primary ?? acc.current_balance)
-                    const balCurrency = acc.balance_primary != null ? primaryCurrency : acc.currency
-                    // A link, not a click handler: the chip is a navigation
-                    // target, so it gets keyboard focus and cmd-click into a
-                    // new tab for free. Scale on hover only, which the
-                    // compositor handles without touching layout.
-                    return (
-                      <Link
-                        key={acc.id}
-                        to={`/accounts/${acc.id}`}
-                        className="group inline-flex items-center gap-1 text-[11px] pl-1 pr-2 py-0.5 rounded-full border border-border bg-background transition-transform duration-150 ease-out hover:scale-105 hover:border-foreground/25 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                      >
-                        {/* The bank mark is what the eye actually sorts on in a
-                            row of chips; the name is the confirmation. Falls
-                            back to the account-type icon, so manual accounts
-                            and providers without a logo still line up. */}
-                        <AccountIcon account={acc} size="xs" className="w-4 h-4 rounded-md" />
-                        {/* getAccountLabel, not getAccountName: two accounts can
-                            share a name, and the mask suffix is what tells them
-                            apart in a row of chips. */}
-                        <span className="text-muted-foreground group-hover:text-foreground transition-colors">{getAccountLabel(acc)}</span>
-                        <span className={`font-semibold tabular-nums ${bal < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-                          {mask(formatCurrency(bal, balCurrency, locale))}
-                        </span>
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
-              {/* Net of pending group shares — show only when meaningfully
-                  nonzero so users without groups see the same UI as before. */}
-              {summary && Math.abs(summary.pending_shares_net) >= 0.01 && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <p className="text-xs tabular-nums mt-2.5 inline-block cursor-help text-muted-foreground underline decoration-dotted underline-offset-2">
-                      {summary.pending_shares_net < 0
-                        ? t('dashboard.pendingSharesOwe', {
-                          net: mask(formatCurrency(availableBalance + summary.pending_shares_net, primaryCurrency, locale)),
-                          owed: mask(formatCurrency(Math.abs(summary.pending_shares_net), primaryCurrency, locale)),
-                        })
-                        : t('dashboard.pendingSharesOwed', {
-                          net: mask(formatCurrency(availableBalance + summary.pending_shares_net, primaryCurrency, locale)),
-                          owed: mask(formatCurrency(summary.pending_shares_net, primaryCurrency, locale)),
-                        })}
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent>{t('dashboard.pendingSharesTooltip')}</TooltipContent>
-                </Tooltip>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Secondary indicators */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-4">
-          {/* Income */}
-          <button
-            type="button"
-            className="min-w-0 text-left cursor-pointer hover:opacity-70 transition-opacity"
-            onClick={() => setDrillDown({
-              title: t('dashboard.drillDownIncome', { month: monthLabelStr }),
-              type: 'credit',
-              from: monthStart,
-              to: monthEnd,
-            })}
-          >
-            <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.monthlyIncome')}</p>
-            {summaryLoading ? (
-              <Skeleton className="h-6 w-20" />
-            ) : (
-              <>
-                <p className="text-xl font-bold tabular-nums text-emerald-600">
-                  +{mask(formatCurrency(income, primaryCurrency, locale))}
-                </p>
-                {Math.abs(projectedIncome - income) >= 0.01 && (
-                  <p className="text-xs text-muted-foreground tabular-nums mt-1">
-                    {t('dashboard.projectedIncome')} {mask(formatCurrency(projectedIncome, primaryCurrency, locale))}
-                  </p>
-                )}
-              </>
-            )}
-          </button>
-
-          {/* Expenses */}
-          <button
-            type="button"
-            className="relative min-w-0 text-left cursor-pointer hover:opacity-70 transition-opacity before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border"
-            onClick={() => setDrillDown({
-              title: t('dashboard.drillDownExpenses', { month: monthLabelStr }),
-              type: 'debit',
-              from: monthStart,
-              to: monthEnd,
-            })}
-          >
-            <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.monthlyExpenses')}</p>
-            {summaryLoading ? (
-              <Skeleton className="h-6 w-20" />
-            ) : (
-              <>
-                <p className="text-xl font-bold tabular-nums text-rose-500">
-                  -{mask(formatCurrency(expenses, primaryCurrency, locale))}
-                </p>
-                {Math.abs(projectedExpenses - expenses) >= 0.01 && (
-                  <p className="text-xs text-muted-foreground tabular-nums mt-1">
-                    {t('dashboard.projectedExpenses')} {mask(formatCurrency(projectedExpenses, primaryCurrency, locale))}
-                  </p>
-                )}
-              </>
-            )}
-          </button>
-
-          {/* Net worth */}
-          <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
-            <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center gap-1">
-              {t('dashboard.netWorth')}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-muted text-muted-foreground hover:bg-primary hover:text-primary-foreground transition-colors text-[9px] font-bold leading-none"
-                  >
-                    i
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent className="w-56">
-                  <p>{t('dashboard.netWorthTooltip')}</p>
-                  <div className="mt-1.5 pt-1.5 border-t border-background/20 space-y-0.5">
-                    <div className="flex justify-between gap-3">
-                      <span>{t('dashboard.availableBalance')}</span>
-                      <span>{mask(formatCurrency(nonCardAccountsBalance, primaryCurrency, locale))}</span>
-                    </div>
-                    {assetsValue > 0 && (
-                      <div className="flex justify-between gap-3">
-                        <span>{t('dashboard.assetsValue')}</span>
-                        <span>{mask(formatCurrency(assetsValue, primaryCurrency, locale))}</span>
-                      </div>
-                    )}
-                    {creditCardBalance !== 0 && (
-                      <div className="flex justify-between gap-3">
-                        <span>{t('dashboard.creditCardBalance')}</span>
-                        <span>{mask(formatCurrency(creditCardBalance, primaryCurrency, locale))}</span>
-                      </div>
-                    )}
-                    {loanBalance !== 0 && (
-                      <div className="flex justify-between gap-3">
-                        <span>{t('dashboard.loanBalance')}</span>
-                        <span>{mask(formatCurrency(loanBalance, primaryCurrency, locale))}</span>
-                      </div>
-                    )}
-                    {hasProjectedBalance && (
-                      <div className="flex justify-between gap-3">
-                        <span>{t('dashboard.projectedBalance')}</span>
-                        <span>{mask(formatCurrency(projectedBalance, primaryCurrency, locale))}</span>
-                      </div>
-                    )}
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </p>
-            {/* Net worth stays neutral so the secondary row does not out-shout
-                the headline above it. It is the larger number here; colouring
-                it too pulled the eye away from available balance. */}
-            {summaryLoading || accountsUnavailable ? (
-              <Skeleton className="h-6 w-24" />
-            ) : (
-              <>
-                <p className={`text-lg sm:text-xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-                  {mask(formatCurrency(totalBalance, primaryCurrency, locale))}
-                </p>
-                {/* Visible text, not a hover title, so touch users can read it. */}
-                {summary?.fx_fallback === true && (
-                  <p className="mt-1 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
-                    <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                    <span>{t('transactions.fxFallbackBanner')}</span>
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Savings rate */}
-          <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
-            <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.savingsRate')}</p>
-            {summaryLoading ? (
-              <Skeleton className="h-6 w-16" />
-            ) : (
-              <>
-                <p className={`text-xl font-bold tabular-nums ${savingsRateColor}`}>
-                  {savingsRateDisplay}
-                </p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">{t('dashboard.savingsRateCaption')}</p>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Spending projection */}
-        {projectedSpend !== null && !summaryLoading && (
-          <p className="text-xs text-muted-foreground mt-3">
-            {t('dashboard.spendingProjection', { amount: mask(formatCurrency(projectedSpend, primaryCurrency, locale)) })}
-          </p>
-        )}
-      </div>
-
-      {/* Uncategorized banner */}
-      {!summaryLoading && (
-        uncategorizedCount > 0 ? (
-          <button
-            type="button"
-            className="w-full flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-4 py-2.5 mb-5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
-            onClick={() => setDrillDown({
-              title: t('dashboard.drillDownUncategorized'),
-              uncategorized: true,
-            })}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              {/* An icon, not the count: the sentence beside it already states
-                  the number, and a fixed 24px circle clipped it from four
-                  digits on. Severity still reads through the tint. */}
-              <AlertCircle
-                size={16}
-                className={`shrink-0 ${uncategorizedCount >= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500 dark:text-amber-500'}`}
-              />
-              <span className="text-sm text-amber-900 dark:text-amber-200 truncate">
-                {t('dashboard.uncategorizedCta', { count: uncategorizedCount })}
-                {uncategorizedAmount > 0 && (
-                  <span className="text-amber-700/70 dark:text-amber-300/70"> · {mask(formatCurrency(uncategorizedAmount, userCurrency, locale))}</span>
-                )}
-              </span>
-            </div>
-            <span className="shrink-0 text-sm font-semibold text-amber-600 dark:text-amber-400 hover:underline">
-              {t('dashboard.categorizeNow')} &rarr;
-            </span>
-          </button>
-        ) : (
-          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-4 py-2.5 mb-5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span className="text-sm text-emerald-900 dark:text-emerald-200">{t('dashboard.allCategorized')}</span>
-          </div>
-        )
-      )}
-
-      {/* Charts: Category Spending Bars + Balance Evolution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
-        {/* Category Spending Bars */}
-        <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col max-h-[420px]">
-          <div className="px-5 py-4 border-b border-border shrink-0 flex items-center justify-between">
-            <p className="text-sm font-semibold text-foreground">{t('dashboard.spendingByCategory')}</p>
-            <button
-              onClick={() => setCatSortDesc(v => !v)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            >
-              <ArrowUpDown size={13} />
-              {catSortDesc ? t('dashboard.sortHighest') : t('dashboard.sortLowest')}
-            </button>
-          </div>
-          <div className="p-3 overflow-y-auto flex-1">
-            {spendingLoading ? (
-              <div className="space-y-3 p-2">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : mergedCategories.length > 0 ? (
-              <div className="space-y-1.5">
-                {mergedCategories.map((item) => {
-                  const hasBudget = item.budget_amount != null && item.budget_amount > 0
-                  const pct = item.percentage_used
-                  const barColor = hasBudget
-                    ? pct! > 100 ? 'bg-rose-500' : pct! >= 80 ? 'bg-amber-400' : 'bg-emerald-500'
-                    : 'bg-muted-foreground/20'
-
-                  return (
-                    <div
-                      key={item.category_id}
-                      className="rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer"
-                      onClick={() => setDrillDown({
-                        title: t('dashboard.drillDownCategory', { category: item.category_name, month: monthLabelStr }),
-                        category_id: item.category_id,
-                        type: 'debit',
-                        from: monthStart,
-                        to: monthEnd,
-                      })}
-                    >
-                      <div className="flex items-center gap-3">
-                        <CategoryIcon icon={item.category_icon} color={item.category_color} size="lg" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="text-sm font-semibold text-foreground truncate">{item.category_name}</span>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(item.actual, userCurrency, locale))}</span>
-                              {item.momPct !== null && (
-                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${item.momPct > 0 ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400' : item.momPct < 0 ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
-                                  }`}>
-                                  {item.momPct > 0 ? '\u2191' : item.momPct < 0 ? '\u2193' : '='}{Math.abs(item.momPct).toFixed(0)}%
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {hasBudget && (
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-1.5 bg-muted/60 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all ${barColor}`}
-                                  style={{ width: `${Math.min(pct!, 100)}%` }}
-                                />
-                              </div>
-                              <span className={`text-[11px] tabular-nums font-medium shrink-0 ${pct! > 100 ? 'text-rose-500' : pct! >= 80 ? 'text-amber-500' : 'text-muted-foreground'
-                                }`}>
-                                {mask(t('dashboard.ofBudget', { budget: formatCurrency(item.budget_amount!, userCurrency, locale) }))}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-sm text-center py-12">{t('dashboard.noData')}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Cumulative Spending Comparison */}
-        <div className="bg-card rounded-xl border border-border shadow-sm max-h-[420px] flex flex-col">
-          <div className="px-5 pt-5 pb-3 shrink-0">
-            <div className="flex items-start justify-between mb-0.5">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-base font-bold text-foreground">{t('dashboard.balanceFlow')}</p>
-                  <Popover open={comparisonPickerOpen} onOpenChange={setComparisonPickerOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={availableComparisonMonths.filter((month) => month < selectedMonth).length === 0}
-                        aria-label={comparisonMonths.length === 1
-                          ? monthLabel(comparisonMonths[0], uiLocale)
-                          : `${t('dashboard.compareMonths')} (${comparisonMonths.length})`}
-                        className="h-7 gap-1.5 px-2 text-[11px] font-medium"
-                      >
-                        <CalendarIcon className="size-3.5" />
-                        {comparisonMonths.length === 1
-                          ? monthLabel(comparisonMonths[0], uiLocale)
-                          : `${t('dashboard.compareMonths')} (${comparisonMonths.length})`}
-                        <ChevronDown className="size-3" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-64 p-2">
-                      <p className="px-2 pb-2 text-xs font-semibold text-foreground">
-                        {t('dashboard.selectComparisonMonths')}
-                      </p>
-                      <div className="max-h-64 overflow-y-auto">
-                        {availableComparisonMonths
-                          .filter((month) => month < selectedMonth)
-                          .slice()
-                          .reverse()
-                          .map((month) => {
-                            const checked = comparisonMonths.includes(month)
-                            return (
-                              <label
-                                key={month}
-                                className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-muted"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  disabled={
-                                    (checked && comparisonMonths.length === 1) ||
-                                    (!checked && comparisonMonths.length >= 24)
-                                  }
-                                  onChange={(event) => toggleComparisonMonth(month, event.target.checked)}
-                                />
-                                <span>{monthLabel(month, uiLocale)}</span>
-                              </label>
-                            )
-                          })}
-                      </div>
-                      {availableComparisonMonths.filter((month) => month < selectedMonth).length === 0 && (
-                        <p className="px-2 py-2 text-xs text-muted-foreground">{t('dashboard.noData')}</p>
-                      )}
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(dateLocale)} → {new Date(`${selectedMonth}-${String(lastCurrentPoint?.day ?? monthLastDay(selectedMonth)).padStart(2, '0')}T00:00:00`).toLocaleDateString(dateLocale)}
-                </p>
-              </div>
-              {!balanceHistoryLoading && lastCurrentPoint && (
-                <div className="text-right">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('dashboard.balancePeriodVariation')}</p>
-                  <span className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-3 mt-2">
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="inline-block w-3 h-0.5 rounded-full bg-emerald-500" />
-                {t('dashboard.balanceCurrentMonthLegend')}
-              </span>
-              {comparisonMonths.length === 1 ? (
-                <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <span className="inline-block w-3 border-t-2 border-dashed border-slate-400" />
-                  {monthLabel(comparisonMonths[0], uiLocale)}
-                </span>
-              ) : (
-                <>
-                  <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="inline-block w-3 h-0.5 rounded-full bg-slate-400" />
-                    {t('dashboard.balanceMedianLegend')}
-                  </span>
-                  {cumulativeData.some((point) => point.band !== null) && (
-                    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="inline-block w-3 h-2 rounded-sm bg-slate-400/25" />
-                      {t('dashboard.balanceRangeLegend')}
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-          <div className="px-1 pb-4 flex-1 min-h-0">
-            {balanceHistoryLoading ? (
-              <Skeleton className="h-full w-full" />
-            ) : cumulativeData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart
-                  data={cumulativeData}
-                  margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
-                  className="cursor-pointer"
-                  onMouseMove={(state) => {
-                    const idx = state?.activeTooltipIndex
-                    const index = idx == null ? NaN : Number(idx)
-                    const point = Number.isInteger(index) ? cumulativeData[index] : undefined
-                    setHoveredDay(point?.day ?? null)
-                  }}
-                  onMouseLeave={() => setHoveredDay(null)}
-                  onClick={(_state) => {
-                    // Access activePayload from the underlying native event target chart state
-                    const chartState = _state as unknown as { activePayload?: Array<{ payload: { day: number } }> }
-                    const payload = chartState?.activePayload ?? []
-                    if (payload[0]) {
-                      const day = String(payload[0].payload.day).padStart(2, '0')
-                      const dateStr = `${selectedMonth}-${day}`
-                      setDrillDown({
-                        title: t('dashboard.drillDownDay', { date: new Date(dateStr + 'T00:00:00').toLocaleDateString(dateLocale) }),
-                        from: dateStr,
-                        to: dateStr,
-                      })
-                    }
-                  }}
-                >
-                  <defs>
-                    <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.18} />
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="day"
-                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval={3}
-                  />
-                  <YAxis
-                    tickFormatter={(v) => {
-                      if (privacyMode) return ''
-                      if (v === 0) return '0'
-                      return formatCompactCurrency(v, userCurrency, locale)
-                    }}
-                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={64}
-                    tickCount={5}
-                    domain={[
-                      (dataMin: number) => Math.min(0, Math.floor(dataMin / 100) * 100),
-                      (dataMax: number) => Math.max(0, Math.ceil(dataMax / 100) * 100),
-                    ]}
-                  />
-                  <RechartsTooltip
-                    content={({ payload, ...props }) => (
-                      <DefaultTooltipContent
-                        {...props}
-                        payload={payload.map((entry) => entry.dataKey === 'current' && typeof entry.value === 'number'
-                          ? {
-                            ...entry,
-                            color: entry.value === 0
-                              ? 'var(--muted-foreground)'
-                              : entry.value > 0 ? '#10B981' : '#F43F5E',
-                          }
-                          : entry)}
-                      />
-                    )}
-                    formatter={(value, name) => {
-                      const fmt = (v: number) => (privacyMode ? MASK : formatCurrency(v, userCurrency, locale))
-                      if (name === 'band') {
-                        const range = value as [number, number] | null
-                        return [range ? `${fmt(range[0])} – ${fmt(range[1])}` : '\u2014', t('dashboard.balanceRangeLegend')]
-                      }
-                      if (name === 'comparison') {
-                        return [
-                          value !== null ? fmt(Number(value)) : '\u2014',
-                          monthLabel(comparisonMonths[0], uiLocale),
-                        ]
-                      }
-                      return [
-                        value !== null ? fmt(Number(value)) : '\u2014',
-                        name === 'current' ? monthLabel(selectedMonth, uiLocale).split(' ')[0] : t('dashboard.balanceMedianLegend'),
-                      ]
-                    }}
-                    labelFormatter={(day) => t('dashboard.day', { day })}
-                    contentStyle={{
-                      background: 'var(--card)',
-                      color: 'var(--foreground)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '0.75rem',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="band"
-                    stroke="none"
-                    fill="#94A3B8"
-                    fillOpacity={0.22}
-                    dot={false}
-                    activeDot={false}
-                    connectNulls={false}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="current"
-                    stroke="#10B981"
-                    strokeWidth={2}
-                    fill="url(#cumGrad)"
-                    dot={false}
-                    activeDot={{ r: 3, fill: '#10B981' }}
-                    connectNulls={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey={comparisonMonths.length === 1 ? 'comparison' : 'median'}
-                    stroke="#94A3B8"
-                    strokeWidth={2}
-                    strokeDasharray={comparisonMonths.length === 1 ? '5 3' : undefined}
-                    dot={false}
-                    activeDot={{ r: 3, fill: '#94A3B8' }}
-                    connectNulls={false}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-muted-foreground text-sm text-center py-12">{t('dashboard.noData')}</p>
-            )}
-          </div>
-          {!balanceHistoryLoading && lastCurrentPoint && (() => {
-            const footerDay = hoveredDay ?? lastDay
-            const point = cumulativeData.find(d => d.day === footerDay)
-            const comparisonValue = comparisonMonths.length === 1 ? point?.comparison : point?.median
-            const rawDelta = point?.current != null && comparisonValue != null
-              ? point.current - comparisonValue
-              : null
-            const formattedDelta = rawDelta == null ? '' : formatCurrency(Math.abs(rawDelta), userCurrency, locale)
-            const footerDelta = formattedDelta === formatCurrency(0, userCurrency, locale) ? 0 : rawDelta
-            return (
-              <div className="h-20 overflow-y-auto px-5 pb-4 pt-0 shrink-0">
-                {point && footerDelta != null && (
-                  <p className="text-xs text-muted-foreground">
-                    {t(comparisonMonths.length === 1 ? 'dashboard.balanceFlowVsMonth' : 'dashboard.balanceFlowVsMedian', {
-                      context: footerDelta > 0 ? 'above' : footerDelta < 0 ? 'below' : 'equal',
-                      day: point.day,
-                      month: monthLabel(comparisonMonths[0], uiLocale),
-                      median: mask(formatCurrency(comparisonValue, userCurrency, locale)),
-                      delta: mask(formattedDelta),
-                    })}
-                    {footerDelta !== 0 && (
-                      <>
-                        {' '}
-                        <span className={footerDelta > 0 ? 'text-emerald-600' : 'text-rose-500'} aria-hidden="true">
-                          {footerDelta > 0 ? '\u25B2' : '\u25BC'}
-                        </span>
-                      </>
-                    )}
-                  </p>
-                )}
-              </div>
-            )
-          })()}
-        </div>
-      </div>
-
-      {/* Goals Progress Widget */}
-      {goalsSummary && goalsSummary.length > 0 && (
-        <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
-          <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-            <p className="text-sm font-semibold text-foreground">{t('goals.dashboardTitle')}</p>
-            <Link to="/goals" className="text-xs font-medium text-primary hover:underline">
-              {t('goals.viewAll')} &rarr;
-            </Link>
-          </div>
-          <div className="divide-y divide-border">
-            {goalsSummary.map((goal) => {
-              const progressColor = goal.percentage >= 100
-                ? 'bg-emerald-500'
-                : goal.percentage >= 60
-                  ? 'bg-blue-500'
-                  : goal.percentage >= 30
-                    ? 'bg-amber-400'
-                    : 'bg-muted-foreground/30'
-              const onTrackConfig: Record<string, { cls: string; key: string }> = {
-                ahead: { cls: 'text-emerald-600', key: 'goals.onTrackAhead' },
-                on_track: { cls: 'text-blue-600', key: 'goals.onTrackOnTrack' },
-                behind: { cls: 'text-amber-600', key: 'goals.onTrackBehind' },
-                overdue: { cls: 'text-rose-600', key: 'goals.onTrackOverdue' },
-                achieved: { cls: 'text-emerald-600', key: 'goals.onTrackAchieved' },
-              }
-              const otc = goal.on_track ? onTrackConfig[goal.on_track] : null
-              const GoalIcon = (goal.icon && ICON_MAP[goal.icon]) || Target
-              return (
-                <div key={goal.id} className="px-5 py-3 flex items-center gap-4">
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-white"
-                    style={{ backgroundColor: goal.color ?? '#6B7280' }}
-                  >
-                    <GoalIcon size={14} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-sm font-medium text-foreground truncate">{goal.name}</span>
-                      <span className="text-xs font-bold tabular-nums text-foreground shrink-0">
-                        {mask(formatCurrency(goal.current_amount, goal.currency, locale))} / {mask(formatCurrency(goal.target_amount, goal.currency, locale))}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 bg-muted/60 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${progressColor}`}
-                          style={{ width: `${Math.min(goal.percentage, 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-[11px] font-bold tabular-nums text-muted-foreground shrink-0">
-                        {goal.percentage.toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
-                      {goal.monthly_contribution != null && goal.monthly_contribution > 0 && (
-                        <span className="tabular-nums">
-                          {mask(formatCurrency(goal.monthly_contribution, goal.currency, locale))}{t('goals.perMonth')}
-                        </span>
-                      )}
-                      {otc && (
-                        <span className={`font-medium ${otc.cls}`}>{t(otc.key)}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+      {layout.persistence.pending && (
+        <div role="status" aria-live="polite" aria-busy="true"
+          className="mb-4 rounded-lg border border-border p-3">
+          <p className="text-sm text-muted-foreground">{t('dashboard.customize.persistence.pending')}</p>
         </div>
       )}
 
-      {/* Period Transactions */}
-      <div>
-        {/* One control bar for both views, so the switch never moves between them. */}
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-foreground">{t('dashboard.periodTransactions')}</p>
-          <div className="flex items-center gap-3">
-            <TransactionsViewSwitcher
-              value={txViewMode}
-              onChange={setTxViewMode}
-              listLabel={t('transactions.listView')}
-              calendarLabel={t('transactions.calendarView')}
-            />
-            {txViewMode === 'list' && (
-              <button
-                onClick={() => { setTxSortDesc(v => !v); setTxPage(1) }}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-              >
-                <ArrowUpDown size={13} />
-                {txSortDesc ? t('dashboard.sortNewest') : t('dashboard.sortOldest')}
-              </button>
-            )}
+      {layout.recovery && (
+        <div role="status" aria-live="polite" aria-busy={layout.persistence.pending || layout.persistence.readPending}
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
+          <div className="space-y-1 text-sm">
+            <p>{t('dashboard.customize.persistence.unsaved')}</p>
+            <p className="text-muted-foreground">{t('dashboard.customize.persistence.retention')}</p>
           </div>
+          <Button ref={reviewTriggerRef} variant="outline" size="sm" aria-haspopup="dialog" disabled={!layout.canReview}
+            onClick={() => {
+              if (!layout.recovery) return
+              const guard = layout.captureRecoveryFocusGuard()
+              setRecoveryFocusGuard(() => guard)
+              layout.reviewRecovery(layout.recovery.attemptId)
+            }}>
+            {t('dashboard.customize.persistence.review')}
+          </Button>
         </div>
+      )}
 
-        {txViewMode === 'calendar' && (
-          <TransactionCalendarView
-            calendar={calendarData}
-            isLoading={calendarLoading}
-            locale={locale}
-            dateLocale={dateLocale}
-            mask={mask}
-            selectedDate={calendarSelectedDate}
-            onSelectedDateChange={setCalendarSelectedDate}
-            onOpenTransaction={handleOpenCalendarTransaction}
-            accounts={accountsList}
-            userCurrency={userCurrency}
-          />
-        )}
+      {layout.showRefreshDisplay && (
+        <div role="status" aria-live="polite" aria-busy={layout.displayReadPending}
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
+          <p className="text-sm text-muted-foreground">{t('dashboard.customize.persistence.stale')}</p>
+          <Button ref={refreshTriggerRef} variant="outline" size="sm" disabled={!layout.canRefreshDisplay}
+            onClick={() => { void layout.refreshDisplay().catch(() => {}) }}>
+            {t('dashboard.customize.persistence.refresh')}
+          </Button>
+        </div>
+      )}
 
-        {txViewMode === 'list' && (
-          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            {txListLoading ? (
-              <div className="p-5 space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : pagedRows.length > 0 ? (
-              <>
-                {isMobile ? (
-                  <div>
-                    {pagedRows.map((row) => (
-                      <div
-                        key={row.key}
-                        className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 bg-card ${row.isProjected ? '' : 'cursor-pointer active:bg-muted/60'
-                          }`}
-                        onClick={() => {
-                          if (row.isProjected) return
-                          if (row.isShared) {
-                            if (row.groupId) navigate(`/groups/${row.groupId}`)
-                            return
-                          }
-                          const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
-                          if (tx) { setEditingTx(tx); setDialogOpen(true) }
-                        }}
-                      >
-                        {/* Category Icon */}
-                        <div className="shrink-0">
-                          <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />
-                        </div>
+      {/* Composition loop (design packet §6.4): the resolved draft drives
+          render order and visibility — while the customize panel is open
+          the stack renders the live draft (immediate preview). */}
+      <DashboardStack ordered={layout.orderedVisible} sections={sections} />
 
-                        {/* Content */}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
-                            {row.groupId && (
-                              <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
-                                {row.isShared && row.parentOwnerName
-                                  ? t('splitGroups.sharedShortBadgeAuthor', { author: row.parentOwnerName })
-                                  : row.groupName ?? t('splitGroups.sharedShortBadge')}
-                              </span>
-                            )}
-                            {row.isProjected && (
-                              <ProjectedTransactionBadge />
-                            )}
-                            {row.installmentNumber != null && row.totalInstallments != null && (
-                              <span className="inline-flex items-center text-[9px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1 py-0.5 rounded-full shrink-0">
-                                {row.installmentNumber}/{row.totalInstallments}
-                              </span>
-                            )}
-                            {row.showPendingBadge && (
-                              <span
-                                title={t('transactions.pending')}
-                                className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
-                              >
-                                <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
-                              </span>
-                            )}
-                            {row.isIgnored && (
-                              <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
-                            )}
-                            {row.attachmentCount > 0 && (
-                              <Paperclip size={11} className="text-muted-foreground shrink-0" />
-                            )}
-                          </div>
-                          {row.accountId && (() => {
-                            const acc = accountsList?.find((a) => a.id === row.accountId)
-                            if (!acc) return null
-                            return (
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <AccountIcon account={acc} size="xs" />
-                                <span className="text-xs text-muted-foreground truncate">{getAccountName(acc)}</span>
-                              </div>
-                            )
-                          })()}
-                          {!row.accountId && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{formatDate(row.date, dateLocale)}</p>
-                          )}
-                        </div>
+      <DashboardLayoutRecoveryDialog
+        review={layout.recoveryReview}
+        busy={layout.persistence.pending || layout.persistence.readPending}
+        onClose={layout.closeRecoveryReview}
+        onRecheck={layout.recheckReviewedRecovery}
+        onReplace={layout.replaceRecovery}
+        onDiscard={layout.discardRecovery}
+        returnFocus={customizeTriggerRef}
+        fallbackFocus={reviewTriggerRef}
+        refreshFocus={refreshTriggerRef}
+        canReturnFocus={recoveryFocusGuard}
+      />
 
-                        {/* Amount */}
-                        <div className="shrink-0 text-right">
-                          <span className={`text-sm font-bold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                            {mask(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '\u2212'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
-                          </span>
-                          {row.isShared && row.parentTotal != null && (
-                            <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                              {t('splitGroups.sharedRowParent', {
-                                total: formatCurrency(Math.abs(row.parentTotal), row.currency, locale),
-                              })}
-                            </div>
-                          )}
-                          {!row.isShared && row.ownerShare != null && (
-                            <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                              {t('splitGroups.ownerRowYourShare', {
-                                share: formatCurrency(Math.abs(row.ownerShare), row.currency, locale),
-                              })}
-                            </div>
-                          )}
-                          {!row.isShared && row.currency !== userCurrency && row.amountPrimary != null && (
-                            <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                              {mask(formatCurrency(Math.abs(row.amountPrimary), userCurrency, locale))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-b border-border hover:bg-transparent">
-                        <TableHead className="pl-5 text-xs font-medium text-muted-foreground hidden sm:table-cell">{t('transactions.date')}</TableHead>
-                        <TableHead className="text-xs font-medium text-muted-foreground">{t('transactions.description')}</TableHead>
-                        <TableHead className="text-xs font-medium text-muted-foreground hidden sm:table-cell">{t('transactions.account')}</TableHead>
-                        <TableHead className="pr-5 text-right text-xs font-medium text-muted-foreground">{t('transactions.amount')}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {pagedRows.map((row) => (
-                        <TableRow
-                          key={row.key}
-                          className={`border-b border-border last:border-0 ${row.isProjected
-                            ? ''
-                            : row.isShared
-                              ? 'cursor-pointer hover:bg-muted'
-                              : 'cursor-pointer hover:bg-muted'
-                            }`}
-                          onClick={() => {
-                            if (row.isProjected) return
-                            if (row.isShared) {
-                              // Shared rows belong to another user — open the
-                              // group instead of the (locked) edit dialog.
-                              if (row.groupId) navigate(`/groups/${row.groupId}`)
-                              return
-                            }
-                            const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
-                            if (tx) { setEditingTx(tx); setDialogOpen(true) }
-                          }}
-                        >
-                          <TableCell className="py-2.5 pl-5 text-sm text-muted-foreground tabular-nums whitespace-nowrap hidden sm:table-cell">
-                            {formatDate(row.date, dateLocale)}
-                          </TableCell>
-                          <TableCell className="py-2.5 pl-5 sm:pl-0">
-                            <div className="flex items-center gap-3">
-                              <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
-                                  {row.groupId && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 shrink-0 uppercase tracking-wide">
-                                      {row.isShared && row.parentOwnerName
-                                        ? t('splitGroups.sharedShortBadgeAuthor', { author: row.parentOwnerName })
-                                        : row.groupName ?? t('splitGroups.sharedShortBadge')}
-                                    </span>
-                                  )}
-                                  {row.isProjected && (
-                                    <ProjectedTransactionBadge />
-                                  )}
-                                  {row.installmentNumber != null && row.totalInstallments != null && (
-                                    <span className="inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full shrink-0">
-                                      {row.installmentNumber}/{row.totalInstallments}
-                                    </span>
-                                  )}
-                                  {row.showPendingBadge && (
-                                    <span
-                                      title={t('transactions.pending')}
-                                      className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
-                                    >
-                                      <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
-                                    </span>
-                                  )}
-                                  {row.isIgnored && (
-                                    <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
-                                      <EyeClosed className="h-3 w-3" />
-                                      {t('transactions.ignored')}
-                                      <span title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
-                                    </span>
-                                  )}
-                                  {row.attachmentCount > 0 && (
-                                    <Paperclip size={12} className="text-muted-foreground shrink-0" />
-                                  )}
-                                </div>
-                                <p className="text-xs text-muted-foreground sm:hidden">{formatDate(row.date, dateLocale)}</p>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-2.5 text-sm text-muted-foreground hidden sm:table-cell">
-                            {(() => {
-                              const acc = row.accountId
-                                ? accountsList?.find((a) => a.id === row.accountId)
-                                : undefined
-                              if (!acc) return <span className="text-muted-foreground">—</span>
-                              return (
-                                <span className="flex items-center gap-2 min-w-0">
-                                  <AccountIcon account={acc} size="sm" />
-                                  <span className="truncate">{getAccountName(acc)}</span>
-                                </span>
-                              )
-                            })()}
-                          </TableCell>
-                          <TableCell className="py-2.5 pr-5 text-right">
-                            <span className={`text-sm font-semibold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                              {mask(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
-                            </span>
-                            {row.isShared && row.parentTotal != null && (
-                              <span className="block text-[10px] text-muted-foreground tabular-nums">
-                                {t('splitGroups.sharedRowParent', {
-                                  total: formatCurrency(Math.abs(row.parentTotal), row.currency, locale),
-                                })}
-                              </span>
-                            )}
-                            {!row.isShared && row.ownerShare != null && (
-                              <span className="block text-[10px] text-muted-foreground tabular-nums">
-                                {t('splitGroups.ownerRowYourShare', {
-                                  share: formatCurrency(Math.abs(row.ownerShare), row.currency, locale),
-                                })}
-                              </span>
-                            )}
-                            {!row.isShared && row.currency !== userCurrency && row.amountPrimary != null && (
-                              <span className="block text-[10px] text-muted-foreground tabular-nums">
-                                {mask(formatCurrency(Math.abs(row.amountPrimary), userCurrency, locale))}
-                              </span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-                {allDisplayRows.length > 10 && (
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-5 py-4 border-t border-border">
-                    <div className="hidden sm:block w-32" />
-                    {txTotalPages > 1 ? (
-                      <div className="flex items-center justify-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={txPage <= 1}
-                          onClick={() => setTxPage(txPage - 1)}
-                        >
-                          {t('dashboard.previous')}
-                        </Button>
-                        <span className="text-sm text-muted-foreground">
-                          {txPage} / {txTotalPages}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={txPage >= txTotalPages}
-                          onClick={() => setTxPage(txPage + 1)}
-                        >
-                          {t('dashboard.next')}
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="hidden sm:block" />
-                    )}
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{t('common.rowsPerPage', 'Rows per page')}</span>
-                      <Select
-                        value={String(txPerPage)}
-                        onValueChange={(val) => {
-                          const nextLimit = Number(val)
-                          setTxPerPage(nextLimit)
-                          setTxPage(1)
-                          try {
-                            localStorage.setItem('securo.dashboard.pageSize', String(nextLimit))
-                          } catch {
-                            // ignored
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="w-[70px] h-8 text-xs">
-                          <SelectValue placeholder={txPerPage} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="10">10</SelectItem>
-                          <SelectItem value="20">20</SelectItem>
-                          <SelectItem value="50">50</SelectItem>
-                          <SelectItem value="100">100</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-muted-foreground text-sm text-center py-8">{t('dashboard.noTransactions')}</p>
-            )}
-          </div>
-        )}
-      </div>
+      <CustomizeDashboardDialog
+        open={layout.customizeOpen}
+        onOpenChange={(next) =>
+          next ? layout.openCustomize() : layout.closeCustomize(true)
+        }
+        draft={layout.draft}
+        canUndo={layout.canUndo}
+        disabled={layout.customizeDisabled}
+        busy={layout.persistence.pending || layout.persistence.readPending}
+        canEdit={layout.canEditCustomize}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          const trigger = customizeTriggerRef.current
+          if (trigger?.isConnected && !trigger.disabled) trigger.focus()
+        }}
+        onReorder={layout.reorder}
+        onMove={layout.move}
+        onToggle={layout.toggleVisible}
+        onReset={layout.reset}
+        onUndo={layout.undoReset}
+      />
 
       <TransactionDrillDown
         filter={
           drillDown
             ? {
-              ...drillDown,
-              // Keep drill-downs consistent with the collection-scoped cards
-              // they open from (e.g. "Categorize now").
-              account_ids:
-                drillDown.account_ids ?? (acctIds && acctIds.length > 0 ? acctIds : undefined),
-            }
+                ...drillDown,
+                // Keep drill-downs consistent with the collection-scoped cards
+                // they open from (e.g. "Categorize now").
+                account_ids:
+                  drillDown.account_ids ?? (acctIds && acctIds.length > 0 ? acctIds : undefined),
+              }
             : null
         }
         onClose={() => setDrillDown(null)}

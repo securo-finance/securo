@@ -52,6 +52,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 
 from app.core.database import Base, get_async_session  # noqa: E402
 from app.main import app  # noqa: E402
+from app.api.dashboard import get_dashboard_layout_session_factory  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.models.passkey import UserPasskey  # noqa: E402,F401
 from app.models.category import Category  # noqa: E402
@@ -207,8 +208,16 @@ async def override_get_async_session() -> AsyncGenerator[AsyncSession, None]:
             yield session
 
 
-# Override the dependency
+def override_get_dashboard_layout_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Keep fresh layout-save sessions on the request fixture's owned engine."""
+    return TestSessionLocal
+
+
+# Override request sessions and the fresh layout-save session factory together.
 app.dependency_overrides[get_async_session] = override_get_async_session
+app.dependency_overrides[get_dashboard_layout_session_factory] = (
+    override_get_dashboard_layout_session_factory
+)
 
 
 @pytest_asyncio.fixture

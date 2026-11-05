@@ -63,6 +63,10 @@ _INVOICE_LINES = [{"description": "Consulting", "quantity": 2, "unit_price": "10
 # on purpose answer a domain rule instead (a draft can't be voided, a sole
 # owner can't leave): that answer is the contract, and the baseline pins it.
 BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
+    ("PUT", "/api/dashboard/layouts/{workspace_id}"): lambda w: {
+        "version": 1, "workspaceId": w["workspace_id"],
+        "items": [{"id": "hero-balance", "visible": True, "order": 0}],
+    },
     ("POST", "/api/budgets"): lambda w: {
         "category_id": w["second_category_id"], "amount": 300, "month": "2026-05-01",
     },
@@ -261,7 +265,9 @@ def request_kwargs(op: Operation, world: dict, empty_body: bool = False) -> dict
     query = query_for(op, world)
     if query:
         kwargs["params"] = query
-    if op.content_type == "application/json":
+    # Explicit raw-JSON recipes may lack an OpenAPI request-body content type.
+    if op.content_type == "application/json" or (
+        op.content_type is None and (op.method, op.path) in BODY_OVERRIDES):
         if empty_body:
             kwargs["json"] = {}
         else:

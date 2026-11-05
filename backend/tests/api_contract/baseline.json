@@ -330,6 +330,7 @@
   "POST /api/workspaces/{workspace_id}/members": 401,
   "PUT /api/agents/{agent_id}/tools": 401,
   "PUT /api/mortgage-payments/{payment_id}": 401,
+  "PUT /api/dashboard/layouts/{workspace_id}": 401,
   "PUT /api/reconciliation/rules/{node}/order": 401
  },
  "empty": {
@@ -733,6 +734,7 @@
   "POST /api/workspaces/{workspace_id}/members": 400,
   "PUT /api/agents/{agent_id}/tools": 200,
   "PUT /api/mortgage-payments/{payment_id}": 404,
+  "PUT /api/dashboard/layouts/{workspace_id}": 200,
   "PUT /api/reconciliation/rules/{node}/order": 400
  },
  "unknown_id": {
@@ -900,7 +902,8 @@
   "POST /api/workspaces/{workspace_id}/archive": 404,
   "POST /api/workspaces/{workspace_id}/members": 404,
   "PUT /api/agents/{agent_id}/tools": 404,
-  "PUT /api/mortgage-payments/{payment_id}": 422
+  "PUT /api/mortgage-payments/{payment_id}": 422,
+  "PUT /api/dashboard/layouts/{workspace_id}": 422
  },
  "viewer": {
   "DELETE /api/accounts/{account_id}": 403,
@@ -1089,6 +1092,7 @@
   "POST /api/workspaces/{workspace_id}/members": 403,
   "PUT /api/agents/{agent_id}/tools": 403,
   "PUT /api/mortgage-payments/{payment_id}": 403,
+  "PUT /api/dashboard/layouts/{workspace_id}": 200,
   "PUT /api/reconciliation/rules/{node}/order": 403
  }
 }

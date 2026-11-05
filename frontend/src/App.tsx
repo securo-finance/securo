@@ -6,6 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/auth-provider'
 import { WorkspaceProvider } from '@/contexts/workspace-provider'
+import { DashboardLayoutProvider } from '@/contexts/dashboard-layout-provider'
 import { CollectionFilterProvider } from '@/contexts/collection-filter-provider'
 import { SidebarStateProvider } from '@/contexts/sidebar-state-provider'
 import { useCrossTabRefresh } from '@/hooks/use-cross-tab-refresh'
@@ -84,6 +85,7 @@ function App() {
         <BrowserRouter>
           <AuthProvider>
             <WorkspaceProvider>
+            <DashboardLayoutProvider>
             <Suspense fallback={<LoadingFallback />}>
               <Routes>
                 <Route path="/setup" element={<SetupPage />} />
@@ -141,6 +143,7 @@ function App() {
               </Routes>
             </Suspense>
             <Toaster />
+            </DashboardLayoutProvider>
             </WorkspaceProvider>
           </AuthProvider>
         </BrowserRouter>
