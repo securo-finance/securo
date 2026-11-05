@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-// Load the real module graph during collection, not inside the 5000ms behavior budget.
+// Load the real module graph during collection, not inside the per-case behavior budget.
 // The test's resetModules still rebuilds App/SDK state after transport spies are installed.
 import '@/App'
 import '@/pages/dashboard'
@@ -172,12 +172,39 @@ const startupReplies = freeze({
 })
 const tick = () => new Promise<void>((resolve) => { queueMicrotask(resolve) })
 
-type ScenarioOwner = { retired: boolean; retire?: () => void; disconnect?: () => void }
+type ScenarioPhase = 'setup' | 'startup' | 'ordinary-save' | 'failed-save' | 'review' | 'replacement-save' | 'fresh-save' | 'cleanup'
+type ScenarioPorts = { cleaning: boolean; issued: number; unsettled: number; readPending?: boolean | null; postreadIssued?: boolean; postreadSettled?: boolean }
+type ScenarioEvent = 'abort' | 'failure' | 'cleanup' | 'joined' | 'replacement-held' | 'replacement-postread'
+type ScenarioSample = ScenarioPorts & { event: ScenarioEvent; elapsedMs: number; behaviorElapsedMs: number | null; phase: ScenarioPhase; retired: boolean }
+type ScenarioOwner = { retired: boolean; retire?: () => void; disconnect?: () => void; phase: ScenarioPhase; bodyStartedAt?: number; inspect?: () => ScenarioPorts; readPending?: () => boolean; diagnosticUnavailable?: boolean; record(event: ScenarioEvent): void }
 let active: { iterator: ReturnType<typeof nativeScenario>; step: Promise<IteratorResult<void>>; owner: ScenarioOwner } | undefined
 
-beforeEach(async ({ signal }) => {
+beforeEach(async ({ signal, task, onTestFinished }) => {
   if (active) throw new Error('Previous native scenario is still owned')
-  const owner: ScenarioOwner = { retired: false }
+  const startedAt = performance.now(), samples: ScenarioSample[] = []
+  const owner: ScenarioOwner = { retired: false, phase: 'setup', record(event) {
+    // Only our observer is guarded; original assertions/errors remain untouched.
+    try {
+      if (samples.length >= 6) return
+      const now = performance.now()
+      samples.push({ event, elapsedMs: now - startedAt,
+        behaviorElapsedMs: owner.bodyStartedAt === undefined ? null : now - owner.bodyStartedAt,
+        phase: owner.phase, retired: owner.retired,
+        ...(owner.inspect?.() ?? { cleaning: false, issued: 0, unsettled: 0 }) })
+    } catch { owner.diagnosticUnavailable = true }
+  } }
+  const onAbort = () => { owner.record('abort') }
+  signal.addEventListener('abort', onAbort, { once: true })
+  // Registered early: the later joined-error callback runs first in stack order.
+  onTestFinished(() => {
+    signal.removeEventListener('abort', onAbort)
+    if (task.result?.state !== 'fail' || vi.isMockFunction(console.error) || vi.isMockFunction(console.warn)) return
+    try {
+      console.error('ACTUAL_APP_DIAGNOSTIC', JSON.stringify({ case: task.name, budgetMs: 20_000,
+        elapsedMs: performance.now() - startedAt, phase: owner.phase, retired: owner.retired,
+        diagnosticUnavailable: owner.diagnosticUnavailable === true, samples }))
+    } catch { owner.diagnosticUnavailable = true }
+  })
   const iterator = nativeScenario(signal, owner)
   const step = iterator.next()
   active = { iterator, step, owner }
@@ -199,14 +226,14 @@ afterEach(async ({ signal, onTestFinished }) => {
     // Joining is complete. Report its error after shared cleanup rather than
     // aborting the remaining afterEach hooks (including global DOM cleanup).
     onTestFinished(() => { throw error })
-  } finally { active = undefined }
+  } finally { owned.owner.record('joined'); active = undefined }
 })
 
 it('actual App keyboard-qualified reviewed Discard restores focus to current enabled Customize before a distinct fresh save', async () => {
   const owned = required(active, 'prepared native scenario')
   owned.step = owned.iterator.next()
   await owned.step
-})
+}, 20_000)
 
 // Only fresh prerequisite evaluation runs in beforeEach. The yield is BEFORE
 // render; the named test owns all native behavior, assertions and finally work.
@@ -274,6 +301,8 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
     const reads = [slot(seed), slot(seed), slot(postUser), slot(serverUser), slot(freshUser)]
     const puts = [slot(committed), slot(undefined), slot(freshCommit)]
     const ports = [...reads, ...puts]
+    owner.inspect = () => ({ cleaning, issued: ports.filter((port) => port.config !== null).length,
+      unsettled: ports.filter((port) => port.config !== null && !port.settled).length })
     owner.retire = () => { cleaning = true; ports.forEach((port) => { port.settle() }) }
     let originalError: InstanceType<typeof axiosModule.AxiosError> | null = null
     const userGets = () => calls.filter((config) => config.method === 'get' && config.url === '/users/me')
@@ -434,6 +463,8 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
       await step(drain)
     }
     yield
+    owner.bodyStartedAt = performance.now()
+    owner.phase = 'startup'
     checkActive()
     // Native App supplies ALL providers, routing, lazy pages and Toaster.
     root = render(<App />, { reactStrictMode: false })
@@ -506,6 +537,7 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
       await user.click(within(editor).getByRole('button', { name: t('dashboard.customize.done') }))
       expect(screen.queryByRole('dialog', { name: editorName })).not.toBeInTheDocument()
     }
+    owner.phase = 'ordinary-save'
     await changeAndDone('dashboard.widgets.spendingCharts', P1)
     await waitFor(() => expect(puts[0]!.config).not.toBeNull())
     expect(calls).toStrictEqual([...startup, puts[0]!.config])
@@ -522,6 +554,7 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
     expect(store.getSnapshot(WS)).toMatchObject({ layout: P1, writable: true, pending: false, readPending: false, recovery: null })
     expect(screen.queryByText(t('dashboard.spendingByCategory'))).not.toBeInTheDocument()
 
+    owner.phase = 'failed-save'
     await changeAndDone('dashboard.widgets.goalsProgress', P2)
     await waitFor(() => expect(puts[1]!.config).not.toBeNull())
     expect(JSON.parse(required(puts[1]!.config, 'PUT2').data as string)).toStrictEqual(P2)
@@ -577,6 +610,7 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
       compare(dialog, 'Opened baseline', P1); compare(dialog, 'Submitted draft', P2)
       return dialog
     }
+    owner.phase = 'review'
     await user.click(notice()); await drain(); retained(); readonlyReview()
     expect(calls).toStrictEqual(afterFailure)
     await user.click(within(screen.getByRole('dialog', { name: reviewTitle })).getByRole('button', { name: 'Close' }))
@@ -638,6 +672,7 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
     await waitFor(() => expect(screen.getByRole('button', { name: customizeName })).toHaveFocus())
     expect(screen.getByText(t('dashboard.spendingByCategory'))).toBeVisible()
     // Positive after discard is a genuinely NEW editor, not failed-PUT replay.
+    owner.phase = 'fresh-save'
     await changeAndDone('dashboard.widgets.balanceEvolution', FRESH)
     await waitFor(() => expect(puts[2]!.config).not.toBeNull())
     expect(JSON.parse(required(puts[2]!.config, 'fresh PUT').data as string)).toStrictEqual(FRESH)
@@ -658,8 +693,10 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
     expect(totals()).toStrictEqual({ ...startupTotals, 'get:/users/me': 5, [`put:/dashboard/layouts/${WS}`]: 3,
       'get:/categories?include_hidden=true': 1, 'get:/category-groups?include_hidden=true': 1 })
     expect(ports.every((port) => port.config !== null && port.settled)).toBe(true)
-  } catch (error: unknown) { primary = error; failed = true }
+  } catch (error: unknown) { owner.record('failure'); primary = error; failed = true }
   finally {
+    owner.phase = 'cleanup'
+    owner.record('cleanup')
     inCleanup = true
     owner.retired = true
     try { await nativeCleanup?.() } catch (error: unknown) { diagnostics.push(error) }

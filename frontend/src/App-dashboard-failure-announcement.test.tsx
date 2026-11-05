@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-// Qualify every real route used below before the 5000ms behavior budget.
+// Qualify every real route used below before the per-case behavior budget.
 // resetModules still rebuilds App/SDK state under the native transport spies.
 import '@/App'
 import '@/pages/dashboard'
@@ -146,12 +146,39 @@ const startupReplies = freeze({
 })
 const tick = () => new Promise<void>((resolve) => { queueMicrotask(resolve) })
 
-type ScenarioOwner = { retired: boolean; retire?: () => void; disconnect?: () => void }
+type ScenarioPhase = 'setup' | 'startup' | 'ordinary-save' | 'failed-save' | 'review' | 'replacement-save' | 'fresh-save' | 'cleanup'
+type ScenarioPorts = { cleaning: boolean; issued: number; unsettled: number; readPending?: boolean | null; postreadIssued?: boolean; postreadSettled?: boolean }
+type ScenarioEvent = 'abort' | 'failure' | 'cleanup' | 'joined' | 'replacement-held' | 'replacement-postread'
+type ScenarioSample = ScenarioPorts & { event: ScenarioEvent; elapsedMs: number; behaviorElapsedMs: number | null; phase: ScenarioPhase; retired: boolean }
+type ScenarioOwner = { retired: boolean; retire?: () => void; disconnect?: () => void; phase: ScenarioPhase; bodyStartedAt?: number; inspect?: () => ScenarioPorts; readPending?: () => boolean; diagnosticUnavailable?: boolean; record(event: ScenarioEvent): void }
 let active: { iterator: ReturnType<typeof nativeScenario>; step: Promise<IteratorResult<void>>; owner: ScenarioOwner } | undefined
 
-beforeEach(async ({ signal }) => {
+beforeEach(async ({ signal, task, onTestFinished }) => {
   if (active) throw new Error('Previous native scenario is still owned')
-  const owner: ScenarioOwner = { retired: false }
+  const startedAt = performance.now(), samples: ScenarioSample[] = []
+  const owner: ScenarioOwner = { retired: false, phase: 'setup', record(event) {
+    // Only our observer is guarded; original assertions/errors remain untouched.
+    try {
+      if (samples.length >= 6) return
+      const now = performance.now()
+      samples.push({ event, elapsedMs: now - startedAt,
+        behaviorElapsedMs: owner.bodyStartedAt === undefined ? null : now - owner.bodyStartedAt,
+        phase: owner.phase, retired: owner.retired,
+        ...(owner.inspect?.() ?? { cleaning: false, issued: 0, unsettled: 0 }) })
+    } catch { owner.diagnosticUnavailable = true }
+  } }
+  const onAbort = () => { owner.record('abort') }
+  signal.addEventListener('abort', onAbort, { once: true })
+  // Registered early: the later joined-error callback runs first in stack order.
+  onTestFinished(() => {
+    signal.removeEventListener('abort', onAbort)
+    if (task.result?.state !== 'fail' || vi.isMockFunction(console.error) || vi.isMockFunction(console.warn)) return
+    try {
+      console.error('ACTUAL_APP_DIAGNOSTIC', JSON.stringify({ case: task.name, budgetMs: 20_000,
+        elapsedMs: performance.now() - startedAt, phase: owner.phase, retired: owner.retired,
+        diagnosticUnavailable: owner.diagnosticUnavailable === true, samples }))
+    } catch { owner.diagnosticUnavailable = true }
+  })
   const iterator = nativeScenario(signal, owner)
   const step = iterator.next()
   active = { iterator, step, owner }
@@ -174,7 +201,7 @@ afterEach(async ({ signal, onTestFinished }) => {
     // Joining is complete. Report its error after shared cleanup rather than
     // aborting the remaining afterEach hooks (including global DOM cleanup).
     onTestFinished(() => { throw error })
-  } finally { active = undefined }
+  } finally { owned.owner.record('joined'); active = undefined }
 })
 
 it.each(['explicit Done', 'implicit browser Back'] as const)(
@@ -182,7 +209,7 @@ it.each(['explicit Done', 'implicit browser Back'] as const)(
   const owned = required(active, 'prepared native scenario')
   owned.step = owned.iterator.next(closeMode)
   await owned.step
-})
+}, 20_000)
 
 // Only fresh prerequisite evaluation runs in beforeEach. The yield is BEFORE
 // render; the named test owns all native behavior, assertions and finally work.
@@ -250,6 +277,8 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
     const reads = [slot(seed), slot(seed), slot(postUser), slot(recheckUser), slot(recheckUser), slot(recheckUser)]
     const puts = [slot(committed), slot(undefined), slot(undefined)]
     const ports = [...reads, ...puts]
+    owner.inspect = () => ({ cleaning, issued: ports.filter((port) => port.config !== null).length,
+      unsettled: ports.filter((port) => port.config !== null && !port.settled).length })
     owner.retire = () => { cleaning = true; ports.forEach((port) => { port.settle() }) }
     const nativeErrors: Array<InstanceType<typeof axiosModule.AxiosError>> = []
     const userGets = () => calls.filter((config) => config.method === 'get' && config.url === '/users/me')
@@ -457,6 +486,8 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
       await step(cleanEvidence)
     }
     const closeMode = yield
+    owner.bodyStartedAt = performance.now()
+    owner.phase = 'startup'
     checkActive()
     // Native App supplies ALL providers, routing, lazy pages and Toaster.
     root = render(<App />, { reactStrictMode: false })
@@ -657,6 +688,7 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
 
     // Positive control: a real changed explicit Done successfully uses the
     // native SDK/envelope/postread, without announcing a failure.
+    owner.phase = 'ordinary-save'
     const positive = await change('dashboard.widgets.spendingCharts', P1)
     await done(positive.editor)
     await waitFor(() => expect(puts[0]!.config).not.toBeNull()); await flush()
@@ -678,6 +710,7 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
     expect(screen.queryByText(t('dashboard.spendingByCategory'))).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: customizeName })).toBeEnabled()
 
+    owner.phase = 'failed-save'
     const edit = await change('dashboard.widgets.balanceEvolution', P2)
     const beforeOriginal = [...calls]
     if (closeMode === 'explicit Done') await done(edit.editor)
@@ -721,6 +754,7 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
       expect(saveSpy.mock.results[1]!.value).toBe(originalSDK); expect(finalizeSpy.mock.results[1]!.value).toBe(originalTask)
       expect(outcomes[1]!.error).toBe(originalError); expect(publicOutcomes[1]!.error).toBe(originalError)
     }
+    owner.phase = 'review'
     await repeatedReview(1)
     const firstReview = await recheck(3, 1)
     expect(firstReview.qualified.attemptId).toBe(originalCapture.attemptId)
@@ -738,6 +772,7 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
     expect(model.recovery).toBe(secondReview.qualified)
     expect(model.permissions).toStrictEqual({ recheck: true, retry: true, reapply: false, discard: true })
     const beforeRetry = [...calls]
+    owner.phase = 'replacement-save'
     await user.dblClick(within(secondReview.ready).getByRole('button', { name: t(key + 'retry') }))
     await waitFor(() => expect(puts[2]!.config).not.toBeNull()); await drainFreeWork()
     expect(calls).toStrictEqual([...beforeRetry, puts[2]!.config]); expect(replaceSpy).toHaveBeenCalledTimes(1)
@@ -799,8 +834,10 @@ async function* nativeScenario(signal: AbortSignal, owner: ScenarioOwner): Async
       'get:/categories?include_hidden=true': 1, 'get:/category-groups?include_hidden=true': 1 })
     expect(calls.slice(beforeOriginal.length).filter((config) => config.method === 'put')).toStrictEqual([puts[1]!.config, puts[2]!.config])
     expect(ports.every((port) => port.config !== null && port.settled)).toBe(true)
-  } catch (error: unknown) { primary = error; failed = true }
+  } catch (error: unknown) { owner.record('failure'); primary = error; failed = true }
   finally {
+    owner.phase = 'cleanup'
+    owner.record('cleanup')
     inCleanup = true
     owner.retired = true
     owner.disconnect?.()
