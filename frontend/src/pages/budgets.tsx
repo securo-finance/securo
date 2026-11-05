@@ -129,7 +129,6 @@ export default function BudgetsPage() {
   const { data: suggestionData, isPending: suggestionsPending, isError: suggestionsError } = useQuery({
     queryKey: ['budgets', 'suggestions', monthParam, suggestMonths],
     queryFn: () => budgetsApi.suggestions(monthParam, suggestMonths),
-    enabled: suggestOpen,
   })
   const historyMonthKeys = useMemo(
     () => Array.from({ length: HISTORY_MONTHS }, (_, index) => shiftMonth(selectedMonth, -(index + 1))),
@@ -180,6 +179,7 @@ export default function BudgetsPage() {
   const totalBudget = allCategories.reduce((sum, category) => sum + (parsedDraftFor(category.id) ?? 0), 0)
   const rowFor = (suggestion: BudgetSuggestion) =>
     suggestEdits[suggestion.category_id] ?? { checked: !suggestion.existing_budget, amount: String(suggestion.suggested_amount) }
+  const suggestionByCategory = new Map((suggestionData?.suggestions ?? []).map((suggestion) => [suggestion.category_id, suggestion]))
   const suggestable = (suggestionData?.suggestions ?? []).filter((suggestion) => !suggestion.existing_budget)
   const batchItems = suggestable.filter((suggestion) => {
     const row = rowFor(suggestion)
@@ -294,6 +294,7 @@ export default function BudgetsPage() {
               <div className="divide-y divide-border border-b border-border">
                 {section.categories.map((category) => {
                   const draft = draftFor(category.id)
+                  const suggestion = suggestionByCategory.get(category.id)
                   const values = history ? [...history].reverse().map((rows) => rows.find((row) => row.category_id === category.id)?.actual_amount ?? 0) : []
                   const changed = changedCategories.has(category.id)
                   const recurring = recurringFor(category.id)
@@ -303,6 +304,7 @@ export default function BudgetsPage() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{category.name}</p>
                         {category.is_hidden && <span className="text-[11px] text-muted-foreground">{t('budgets.hiddenCategory')}</span>}
+                        {suggestion && <p className="text-[11px] text-muted-foreground tabular-nums">{t('budgets.average', { amount: fmt(Number(suggestion.suggested_amount)) })}</p>}
                         {invalidCategories.has(category.id) && <p id={`budget-error-${category.id}`} role="alert" className="text-[11px] text-destructive">{t('budgets.invalidAmount')}</p>}
                       </div>
                       {values.length > 0 && (

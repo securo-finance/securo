@@ -1464,7 +1464,8 @@
     "suggestCreated": "{{count}} बजट बनाए गए",
     "suggestEmpty": "चुनी गई अवधि में खर्च का कोई इतिहास नहीं है।",
     "suggestError": "सुझाव लोड नहीं हो सके। थोड़ी देर बाद फिर से कोशिश करें।",
-    "hiddenCategory": "छिपी हुई"
+    "hiddenCategory": "छिपी हुई",
+    "average": "आमतौर पर {{amount}}"
   },
   "goals": {
     "title": "लक्ष्य",

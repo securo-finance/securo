@@ -1548,7 +1548,8 @@
     "suggestCreated": "Vytvořeno {{count}} rozpočtů",
     "suggestEmpty": "Ve vybraném období není historie výdajů.",
     "suggestError": "Návrhy se nepodařilo načíst. Zkuste to znovu za chvíli.",
-    "hiddenCategory": "Skrytá"
+    "hiddenCategory": "Skrytá",
+    "average": "usually {{amount}}"
   },
   "goals": {
     "title": "Cíle",

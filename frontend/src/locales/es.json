@@ -1468,7 +1468,8 @@
     "suggestCreated": "Se crearon {{count}} presupuestos",
     "suggestEmpty": "Sin historial de gastos en el período seleccionado que sugerir.",
     "suggestError": "No se pudieron cargar las sugerencias. Inténtalo de nuevo en un momento.",
-    "hiddenCategory": "Oculta"
+    "hiddenCategory": "Oculta",
+    "average": "normalmente {{amount}}"
   },
   "goals": {
     "title": "Objetivos",

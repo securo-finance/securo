@@ -70,6 +70,7 @@ describe('Budget settings page', () => {
 
     expect(await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Archived utilities' }) })).toHaveValue('120')
     expect(screen.getByText(t('budgets.hiddenCategory'))).toBeInTheDocument()
+    expect(await screen.findByText(t('budgets.average', { amount: '$880.00' }))).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: t('budgets.suggest') }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()

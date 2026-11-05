@@ -1465,7 +1465,8 @@
     "suggestCreated": "{{count}} Budgets erstellt",
     "suggestEmpty": "Keine Ausgaben im gewählten Zeitraum, aus denen vorgeschlagen werden kann.",
     "suggestError": "Vorschläge konnten nicht geladen werden. Versuche es gleich noch einmal.",
-    "hiddenCategory": "Ausgeblendet"
+    "hiddenCategory": "Ausgeblendet",
+    "average": "meist {{amount}}"
   },
   "goals": {
     "title": "Ziele",

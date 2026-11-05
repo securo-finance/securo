@@ -1466,7 +1466,8 @@
     "suggestCreated": "{{count}} budgetten aangemaakt",
     "suggestEmpty": "Geen uitgavenhistoriek in de geselecteerde periode.",
     "suggestError": "Suggesties konden niet worden geladen. Probeer het zo opnieuw.",
-    "hiddenCategory": "Verborgen"
+    "hiddenCategory": "Verborgen",
+    "average": "meestal {{amount}}"
   },
   "goals": {
     "title": "Doelen",

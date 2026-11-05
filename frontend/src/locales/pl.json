@@ -1517,7 +1517,8 @@
     "suggestCreated": "Utworzono {{count}} budżetów",
     "suggestEmpty": "Brak historii wydatków w wybranym okresie.",
     "suggestError": "Nie udało się wczytać sugestii. Spróbuj ponownie za chwilę.",
-    "hiddenCategory": "Ukryta"
+    "hiddenCategory": "Ukryta",
+    "average": "zwykle {{amount}}"
   },
   "goals": {
     "title": "Cele",

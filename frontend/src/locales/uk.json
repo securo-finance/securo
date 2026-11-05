@@ -1481,7 +1481,8 @@
     "suggestCreated": "Створено бюджетів: {{count}}",
     "suggestEmpty": "Немає історії витрат за обраний період.",
     "suggestError": "Не вдалося завантажити пропозиції. Спробуйте ще раз трохи згодом.",
-    "hiddenCategory": "Прихована"
+    "hiddenCategory": "Прихована",
+    "average": "зазвичай {{amount}}"
   },
   "goals": {
     "title": "Цілі",

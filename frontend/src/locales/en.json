@@ -1464,7 +1464,8 @@
     "suggestCreated": "Created {{count}} budgets",
     "suggestEmpty": "No spending history in the selected period to suggest from.",
     "suggestError": "Could not load suggestions. Try again in a moment.",
-    "hiddenCategory": "Hidden"
+    "hiddenCategory": "Hidden",
+    "average": "usually {{amount}}"
   },
   "goals": {
     "title": "Goals",
