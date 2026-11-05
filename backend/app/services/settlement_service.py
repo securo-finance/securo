@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import case, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -410,6 +410,41 @@ async def delete_settlement(
         return False
     if not await _can_settle_from(session, group, user_id, settlement.from_member_id):
         raise PermissionError("You can only delete settlements you created")
+    # The payer's debit (when made from `account_id`) and the receiver's
+    # credit were written by this settlement, so they go with it: left
+    # behind, they keep moving the account balance for a payment the group
+    # no longer records. Only rows in the current workspace are removed,
+    # as delete_transaction does. A linked existing transaction, a row
+    # another settlement also points at, and a transfer leg are left alone.
+    created: list[Transaction] = []
+    for tx_id in (settlement.transaction_id, settlement.receiver_transaction_id):
+        if tx_id is None or any(tx.id == tx_id for tx in created):
+            continue
+        tx = await session.get(Transaction, tx_id)
+        if (
+            tx is None
+            or tx.source != "settlement"
+            or tx.workspace_id != workspace_id
+            or tx.transfer_pair_id is not None
+        ):
+            continue
+        other = await session.execute(
+            select(GroupSettlement.id).where(
+                GroupSettlement.id != settlement.id,
+                or_(
+                    GroupSettlement.transaction_id == tx_id,
+                    GroupSettlement.receiver_transaction_id == tx_id,
+                ),
+            )
+        )
+        if other.first() is None:
+            created.append(tx)
+    if created:
+        from app.services.attachment_service import cleanup_attachment_files
+
+        await cleanup_attachment_files(session, [tx.id for tx in created])
     await session.delete(settlement)
+    for tx in created:
+        await session.delete(tx)
     await session.commit()
     return True
