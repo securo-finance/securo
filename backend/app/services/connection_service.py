@@ -28,7 +28,7 @@ from app.models.payee import Payee, PayeeMapping
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.providers import get_provider
-from app.providers.enable_banking import _txn_fingerprint
+from app.providers.enable_banking import legacy_fallback_candidates, matches_legacy_fallback
 from app.providers.base import (
     AccountData,
     HoldingData,
@@ -1801,7 +1801,6 @@ async def _find_synced_duplicate(
     # when the stored bank payload independently produces the new identity;
     # same-date/amount rows with different counterparties must stay separate.
     raw = txn_data.raw_data
-    eb_account_uid: str | None = None
     if isinstance(raw, dict) and "transaction_amount" in raw:
         account = await session.get(Account, account_id)
         connection = (
@@ -1811,27 +1810,30 @@ async def _find_synced_duplicate(
         )
         if connection is not None and connection.provider == "enable_banking" and account:
             account_uid = account.external_id or ""
-            if _txn_fingerprint(account_uid, raw) == txn_data.external_id:
-                eb_account_uid = account_uid
-                old_id = (
-                    "0" if str(raw.get("entry_reference") or "").strip() == "0"
-                    else _txn_fingerprint(account_uid, raw, legacy=True)
-                )
-                if old_id not in incoming_external_ids:
-                    # The old key omitted counterparty names, so it can be
-                    # shared by rows that are not this transaction.
-                    legacy_rows = await session.scalars(select(Transaction).where(
+            old_ids = legacy_fallback_candidates(account_uid, txn_data) - incoming_external_ids
+            if old_ids:
+                # An old fingerprint can be shared by distinct counterparties
+                # or duplicate copies. Verify the payload and claim the oldest
+                # matching copy deterministically, without a transaction-date
+                # filter: booking can arrive days after the pending row.
+                legacy_rows = await session.scalars(
+                    select(Transaction).where(
                         Transaction.account_id == account_id,
                         Transaction.source == "sync",
-                        Transaction.external_id == old_id,
-                    ))
-                    for candidate in legacy_rows:
-                        if (
-                            isinstance(candidate.raw_data, dict)
-                            and _txn_fingerprint(account_uid, candidate.raw_data)
-                            == txn_data.external_id
-                        ):
-                            return candidate
+                        Transaction.external_id.in_(old_ids),
+                        Transaction.status.in_(
+                            ["pending"] if txn_data.status == "pending" else ["pending", "posted"]
+                        ),
+                    ).order_by(Transaction.created_at, Transaction.id)
+                )
+                for candidate in legacy_rows:
+                    if matches_legacy_fallback(
+                        account_uid, candidate.external_id, candidate.raw_data, txn_data,
+                        pending_to_posted=(
+                            candidate.status == "pending" and txn_data.status == "posted"
+                        ),
+                    ):
+                        return candidate
 
     # Path 1: installment fingerprint. Highly specific, so we don't require a
     # description match on top.
@@ -1875,32 +1877,6 @@ async def _find_synced_duplicate(
         )
     )
     candidates = list(result.scalars())
-    if eb_account_uid is not None and isinstance(raw, dict):
-        matches = []
-        for candidate in candidates:
-            stored = candidate.raw_data
-            if not isinstance(stored, dict) or candidate.external_id in incoming_external_ids:
-                continue
-            old_id = (
-                "0" if str(stored.get("entry_reference") or "").strip() == "0"
-                else _txn_fingerprint(eb_account_uid, stored, legacy=True)
-            )
-            if candidate.external_id != old_id or candidate.currency != txn_data.currency:
-                continue
-            # Booking can fill in dates on a legacy pending row whose old
-            # description was only "Transaction". Compare the bank identity
-            # with those dates aligned, keeping the counterparty and amount.
-            booked = dict(stored)
-            for key in ("booking_date", "value_date", "transaction_date"):
-                booked[key] = raw.get(key)
-            if _txn_fingerprint(eb_account_uid, booked) == txn_data.external_id:
-                matches.append(candidate)
-        # Every match re-derives this exact bank identity, so several are
-        # copies of one transaction (external_id is not unique). Claim one:
-        # the token-overlap pass below cannot, since legacy rows often only
-        # carry the old "Transaction" description.
-        if matches:
-            return matches[0]
     for candidate in candidates:
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
             continue

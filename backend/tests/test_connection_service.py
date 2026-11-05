@@ -7159,17 +7159,18 @@ async def test_ensure_group_relocates_wallet_when_connection_moves_workspaces(
 
 @pytest.mark.parametrize("entry_reference", [None, "0"])
 @pytest.mark.parametrize("reverse_order", [False, True])
-@pytest.mark.parametrize("legacy_pending", [False, True])
+@pytest.mark.parametrize("distinct_on", ["creditor", "value_date"])
+@pytest.mark.parametrize("legacy_pending,settlement_delay", [(False, 0), (True, 0), (True, 3)])
 async def test_enable_banking_rekeys_legacy_fingerprint_without_merging_counterparties(
     session, test_user, test_workspace, test_categories, entry_reference, reverse_order,
-    legacy_pending,
+    distinct_on, legacy_pending, settlement_delay,
 ):
     from app.providers.enable_banking import EnableBankingProvider
 
     raw = {
         "transaction_amount": {"amount": "12.34", "currency": "BRL"},
         "credit_debit_indicator": "DBIT",
-        "booking_date": "2026-08-20",
+        "booking_date": f"2026-08-{20 + settlement_delay}",
         "value_date": "2026-08-20",
         "remittance_information": [],
         "creditor": {"name": "Coffee Shop"},
@@ -7177,7 +7178,10 @@ async def test_enable_banking_rekeys_legacy_fingerprint_without_merging_counterp
     if entry_reference is not None:
         raw["entry_reference"] = entry_reference
     distinct_raw = deepcopy(raw)
-    distinct_raw["creditor"] = {"name": "Bakery"}
+    if distinct_on == "creditor":
+        distinct_raw["creditor"] = {"name": "Bakery"}
+    else:
+        distinct_raw["value_date"] = "2026-08-21"
     provider_parser = EnableBankingProvider()
     incoming = provider_parser._build_transaction("acc-uid-1", raw, "posted", "auto")
     distinct = provider_parser._build_transaction("acc-uid-1", distinct_raw, "posted", "auto")
@@ -7207,7 +7211,9 @@ async def test_enable_banking_rekeys_legacy_fingerprint_without_merging_counterp
     existing = Transaction(
         user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
         external_id=legacy_id, description="My coffee label", original_description="Transaction",
-        amount=incoming.amount, date=incoming.date, type="debit", currency="BRL",
+        amount=incoming.amount,
+        date=date(2026, 8, 20) if legacy_pending else incoming.date,
+        type="debit", currency="BRL",
         status="pending" if legacy_pending else "posted", source="sync", raw_data=stored_raw,
         category_id=test_categories[0].id,
         notes="Keep my note",
@@ -7282,19 +7288,23 @@ async def test_enable_banking_claims_one_of_several_legacy_rows(
         "8884d2776e1305036056d5f6bcd20ec4" if legacy_pending
         else "92da8ed1d8d86daf9bf06b802eda90f7"
     )
-    for creditor in (first_creditor, "Coffee Shop"):
+    row_ids = []
+    for index, creditor in enumerate((first_creditor, "Coffee Shop")):
         stored_raw = deepcopy(raw)
         stored_raw["creditor"] = {"name": creditor}
         if legacy_pending:
             stored_raw.pop("booking_date")
-        session.add(Transaction(
+        row = Transaction(
             user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
             external_id=legacy_id, description="Transaction", original_description="Transaction",
             amount=incoming.amount, date=incoming.date, type="debit", currency="BRL",
             status="pending" if legacy_pending else "posted", source="sync",
             raw_data=stored_raw,
-        ))
+            created_at=datetime(2026, 8, 21 - index, tzinfo=timezone.utc),
+        )
+        session.add(row)
         await session.flush()
+        row_ids.append(row.id)
     await session.commit()
     account_id = account.id
 
@@ -7318,8 +7328,48 @@ async def test_enable_banking_claims_one_of_several_legacy_rows(
     assert len(rows) == 2
     claimed = [row for row in rows if row.external_id == incoming.external_id]
     assert len(claimed) == 1
+    # The second inserted row is older; insertion order cannot decide the claim.
+    assert claimed[0].id == row_ids[1]
     assert claimed[0].status == "posted"
     assert claimed[0].raw_data["creditor"] == {"name": "Coffee Shop"}
     unclaimed = next(row for row in rows if row.id != claimed[0].id)
     assert unclaimed.external_id == legacy_id
     assert unclaimed.raw_data["creditor"] == {"name": first_creditor}
+
+
+@pytest.mark.parametrize("entry_reference", [None, "0"])
+async def test_enable_banking_pending_does_not_claim_posted_legacy_row(
+    session, test_user, test_workspace, entry_reference,
+):
+    from app.providers.enable_banking import EnableBankingProvider
+    from app.services.connection_service import _find_synced_duplicate
+
+    _, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account.external_id = "acc-uid-1"
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "BRL"},
+        "credit_debit_indicator": "DBIT",
+        "value_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    if entry_reference is not None:
+        raw["entry_reference"] = entry_reference
+    pending = EnableBankingProvider()._build_transaction("acc-uid-1", raw, "pending", "auto")
+    assert pending is not None
+    old_id = entry_reference or "8884d2776e1305036056d5f6bcd20ec4"
+    posted = _eb_row(
+        test_user.id, test_workspace.id, account, old_id, raw, "12.34",
+        date=date(2026, 8, 20), currency="BRL", description="My coffee label",
+        original_description="Transaction",
+    )
+    session.add(posted)
+    await session.flush()
+
+    matched = await _find_synced_duplicate(
+        session, account.id, pending, {pending.external_id},
+    )
+
+    assert matched is None
+    assert posted.external_id == old_id
+    assert posted.status == "posted"
