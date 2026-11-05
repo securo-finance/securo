@@ -28,11 +28,6 @@ from app.models.payee import Payee, PayeeMapping
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.providers import get_provider
-from app.providers.enable_banking import (
-    is_legacy_fallback,
-    legacy_fallback_candidates,
-    matches_legacy_fallback,
-)
 from app.providers.base import (
     AccountData,
     HoldingData,
@@ -1814,6 +1809,11 @@ async def _find_synced_duplicate(
             else None
         )
         if connection is not None and connection.provider == "enable_banking" and account:
+            from app.providers.enable_banking import (
+                legacy_fallback_candidates,
+                matches_legacy_fallback,
+            )
+
             account_uid = account.external_id or ""
             old_ids = legacy_fallback_candidates(account_uid, txn_data)
             if old_ids:
@@ -1846,12 +1846,12 @@ async def _find_synced_duplicate(
         # compatibility path above can claim it. Generic description or
         # installment matches must not override its identity/status rejection.
         # Other synced rows and local imports retain their existing fallbacks.
-        return (
-            legacy_account_uid is not None
-            and candidate.source == "sync"
-            and is_legacy_fallback(
-                legacy_account_uid, candidate.external_id, candidate.raw_data,
-            )
+        if legacy_account_uid is None or candidate.source != "sync":
+            return False
+        from app.providers.enable_banking import is_legacy_fallback
+
+        return is_legacy_fallback(
+            legacy_account_uid, candidate.external_id, candidate.raw_data,
         )
 
     # Path 1: installment fingerprint. Highly specific, so we don't require a
