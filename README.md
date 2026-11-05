@@ -75,12 +75,6 @@ Parts of this codebase were built with help of AI. All code is human-reviewed an
 
 Contributing with AI is welcome. We review the author, not the tool: whatever wrote the diff, you own its quality, its fit with where Securo is going, and everything that happens after it merges. See [Using AI](CONTRIBUTING.md#using-ai).
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
-
-Not sure where to start, or want to talk something through first? [Book 15 minutes](https://cal.com/tassio/15min) — no agenda needed. Something broken, an idea, or just what you think of Securo, all welcome.
-
 ## Support Securo
 
 Securo is free and open source, and it runs entirely on your own infrastructure. If it helps you, a coffee keeps development going:
@@ -88,6 +82,12 @@ Securo is free and open source, and it runs entirely on your own infrastructure.
 <p align="center">
   <a href="https://www.buymeacoffee.com/usesecuro"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="160" alt="Buy Me a Coffee" /></a>
 </p>
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
+
+Not sure where to start, or want to talk something through first? [Book 15 minutes](https://cal.com/tassio/15min) — no agenda needed. Something broken, an idea, or just what you think of Securo, all welcome.
 
 ## License
 
