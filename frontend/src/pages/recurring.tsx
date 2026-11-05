@@ -35,13 +35,14 @@ const TH = 'text-xs font-medium text-muted-foreground py-3'
 /** Compact list cap for the workspace-wide projection (§3.7 bound: 1-50). */
 const RECENT_CHANGES_LIMIT = 20
 
-/**
- * Signed percentage for the price-change rows. The backend sends a Decimal
- * (serialized as a JSON string with two places), so coerce before toFixed.
- */
-function formatSignedPercent(value: string): string {
-  const numeric = Number(value)
-  return `${numeric > 0 ? '+' : ''}${numeric.toFixed(2)}%`
+/** The backend sends percentage units (15.04 means 15.04%, not 1504%). */
+function formatSignedPercent(value: string, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    style: 'percent',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: 'exceptZero',
+  }).format(Number(value) / 100)
 }
 
 /** One read-only price-change row, shared by the recent list and the dialog. */
@@ -69,7 +70,7 @@ function PriceChangeRow({
         {t('recurring.priceChangeAmount', { old: oldAmount, new: newAmount })}
       </span>
       <span className="tabular-nums text-muted-foreground">
-        {t('recurring.priceChangeDelta', { absolute, percent: mask(formatSignedPercent(event.percent_delta)) })}
+        {t('recurring.priceChangeDelta', { absolute, percent: mask(formatSignedPercent(event.percent_delta, locale)) })}
       </span>
       {/* Icon plus always-visible text: readable in grayscale and by screen readers. */}
       <span
@@ -132,7 +133,7 @@ function RecurringTab() {
   const [deletingRecurring, setDeletingRecurring] = useState<RecurringTransaction | null>(null)
   const [historySeries, setHistorySeries] = useState<RecurringTransaction | null>(null)
 
-  const { data: recurringList } = useQuery({
+  const { data: recurringList, isError: recurringListFailed } = useQuery({
     queryKey: ['recurring'],
     queryFn: recurringApi.list,
   })
@@ -358,7 +359,7 @@ function RecurringTab() {
         <div className="px-4 sm:px-5 py-4 border-b border-border">
           <h2 className="text-sm font-semibold text-foreground">{t('recurring.priceChangesTitle')}</h2>
         </div>
-        {recentChangesFailed ? (
+        {recentChangesFailed || (recurringListFailed && !recurringList) ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('common.error')}</p>
         ) : recentChangesPending ? (
           <p className="text-sm text-muted-foreground text-center py-6">{t('common.loading')}</p>
@@ -385,12 +386,12 @@ function RecurringTab() {
           if (!open) setHistorySeries(null)
         }}
       >
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>{t('recurring.priceHistory')}</DialogTitle>
           </DialogHeader>
           {historySeries && (
-            <div className="space-y-4">
+            <div className="min-h-0 overflow-y-auto space-y-4">
               <div className="text-sm space-y-1">
                 <p className="font-medium text-foreground">{historySeries.description}</p>
                 <p className="text-muted-foreground tabular-nums">

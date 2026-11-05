@@ -6,8 +6,10 @@ and exercises the exact eligibility/normalization/stability contract without
 a session. Named cases are the packet's §6.1 table, as amended by §12
 (three clean observations is the minimum that fires; two is insufficient).
 """
+import asyncio
 import calendar
 import random
+import threading
 import time
 import uuid
 from datetime import date
@@ -339,11 +341,20 @@ def test_split_parent_uses_gross_amount():
     # A shared-expense settlement exists on the price-changed parent; the
     # detector must read the merchant gross, never viewer-share math (§5.2).
     TransactionSplit(
+        transaction=rows[3],
         transaction_id=rows[3].id,
         workspace_id=series.workspace_id,
         group_member_id=uuid.uuid4(),
         share_amount=Decimal("33.00"),
     )
+    rows[3].is_shared = True
+    rows[3].viewer_share = Decimal("33.00")
+
+    assert len(rows[3].splits) == 1
+    assert rows[3].splits[0].transaction is rows[3]
+    assert rows[3].splits[0].transaction_id == rows[3].id
+    assert rows[3].viewer_share == Decimal("33.00")
+    assert rows[3].viewer_share != rows[3].amount
 
     events = detect_price_changes(series, rows)
 
@@ -672,3 +683,104 @@ async def test_price_history_handles_large_history(session, test_workspace, test
     # Generous bound: the read is one indexed query plus a linear pass; a
     # regression to per-row lazy loads would blow far past this.
     assert elapsed < 5.0, f"large-history read took {elapsed:.2f}s"
+
+
+async def test_recent_projection_matches_full_history_without_loading_entities(
+    session, test_workspace, test_user
+):
+    from sqlalchemy import event
+
+    workspace_id = test_workspace.id
+    expected = []
+    vectors = [
+        ["10.00", "10.00", "12.00", "12.00", "15.00"],
+        ["17.00", "17.00", "15.00"],
+        ["39.90", "39.90", "39.91"],
+        ["10.00", "11.00"],
+    ]
+    for amounts in vectors:
+        series = _series(workspace_id=workspace_id)
+        rows = _monthly_rows(series, amounts)
+        # Conflicting same-date rows reset the chain; identical rows collapse.
+        if len(rows) == 5:
+            rows.extend([
+                _tx(series, "12.00", rows[2].date),
+                _tx(series, "16.00", rows[4].date),
+            ])
+        rows.extend([
+            _tx(series, "99.00", date(2027, 1, 15), is_ignored=True),
+            _tx(series, "99.00", date(2027, 2, 15), source="recurring"),
+            _tx(series, "99.00", date(2027, 3, 15), currency="USD"),
+            _tx(series, "99.00", date(2027, 4, 15), status="pending"),
+            _tx(series, "99.00", date(2027, 5, 15), transfer_pair_id=uuid.uuid4()),
+            _tx(series, "99.00", date(2027, 6, 15), type="credit"),
+        ])
+        await _persist(session, series, rows)
+        events = detect_price_changes(series, rows)
+        if events:
+            expected.append(events[-1])
+    expected.sort(key=lambda item: (-item.current_date.toordinal(), item.recurring_id))
+    session.expunge_all()
+    statements = []
+    connection = await session.connection()
+
+    def record_sql(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(connection.sync_connection, "before_cursor_execute", record_sql)
+    try:
+        for limit in (1, 50):
+            actual = await get_recent_price_changes(session, workspace_id, limit)
+            assert [item.model_dump() for item in actual] == [
+                item.model_dump() for item in expected[:limit]
+            ]
+            assert not any(isinstance(item, (Transaction, RecurringTransaction))
+                           for item in session.identity_map.values())
+        assert len(statements) == 2
+        for statement in statements:
+            assert "transactions.raw_data" not in statement
+            assert "recurring_transactions.description" not in statement
+            assert "LIMIT" not in statement.upper()
+        assert not (session.new or session.dirty or session.deleted)
+    finally:
+        event.remove(connection.sync_connection, "before_cursor_execute", record_sql)
+
+
+async def test_recent_analysis_is_detached_and_does_not_block_event_loop(
+    session, test_workspace, test_user, monkeypatch
+):
+    from app.services import recurring_price_change_service as service
+
+    series = _series(workspace_id=test_workspace.id)
+    rows = _monthly_rows(series, ["10.00", "10.00", "11.00"])
+    await _persist(session, series, rows)
+    expected = detect_price_changes(series, rows)
+    owner_thread = threading.get_ident()
+    entered = threading.Event()
+    release = threading.Event()
+    analyze = service.analyze_price_changes
+
+    def slow_analysis(evidence, occurrences):
+        assert threading.get_ident() != owner_thread
+        assert not isinstance(evidence, RecurringTransaction)
+        assert all(not isinstance(item, Transaction) for item in occurrences)
+        assert all(not hasattr(item, "_sa_instance_state") for item in [evidence, *occurrences])
+        entered.set()
+        assert release.wait(timeout=2), "event loop could not release pure analysis"
+        return analyze(evidence, occurrences)
+
+    async def heartbeat():
+        while not entered.is_set():
+            await asyncio.sleep(0.001)
+        release.set()
+
+    monkeypatch.setattr(service, "analyze_price_changes", slow_analysis)
+    beat = asyncio.create_task(heartbeat())
+    try:
+        assert await get_recent_price_changes(session, series.workspace_id) == expected
+        await asyncio.wait_for(beat, timeout=2)
+        assert release.is_set()
+    finally:
+        release.set()
+        beat.cancel()
+        await asyncio.gather(beat, return_exceptions=True)

@@ -30,13 +30,16 @@ The detector never uses the series' current ``amount`` as ``previous``: the
 signal describes observed transaction history, not the current schedule
 (§3.4, §5.9).
 """
+import asyncio
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from sqlalchemy import select
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.recurring_transaction import RecurringTransaction
@@ -65,6 +68,37 @@ BASELINE_OCCURRENCE_COUNT = 2
 MINIMUM_CLEAN_OBSERVATIONS = BASELINE_OCCURRENCE_COUNT + 1
 
 
+@dataclass(frozen=True)
+class _SeriesEvidence:
+    """Scalar closure of the detector's series reads; safe outside the session."""
+
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    type: str
+    currency: str
+
+
+@dataclass(frozen=True)
+class _OccurrenceEvidence:
+    """No ORM state, relationships, schedule values or viewer-share amounts."""
+
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    recurring_transaction_id: Optional[uuid.UUID]
+    source: str
+    status: str
+    is_ignored: bool
+    transfer_pair_id: Optional[uuid.UUID]
+    type: str
+    currency: str
+    amount: Decimal
+    date: date
+
+
+_Series = RecurringTransaction | _SeriesEvidence
+_Occurrence = Transaction | _OccurrenceEvidence
+
+
 def _as_decimal(value: Decimal | float | str | int | None) -> Optional[Decimal]:
     """Quantize a persisted amount to two places, never via binary float."""
     if value is None:
@@ -80,7 +114,7 @@ def _as_decimal(value: Decimal | float | str | int | None) -> Optional[Decimal]:
     return decimal_value.quantize(_NOISE_UNIT, rounding=ROUND_HALF_UP)
 
 
-def is_eligible_occurrence(series: RecurringTransaction, tx: Transaction) -> bool:
+def is_eligible_occurrence(series: _Series, tx: _Occurrence) -> bool:
     """Return True when ``tx`` is price-change evidence for ``series`` (§3.2)."""
     if tx.workspace_id != series.workspace_id:
         return False
@@ -114,7 +148,7 @@ class _Observation:
 
 
 def _normalize(
-    series: RecurringTransaction, rows: list[Transaction]
+    series: _Series, rows: Sequence[_Occurrence]
 ) -> list[Optional[_Observation]]:
     """Apply eligibility, ordering, and same-date rules (§3.3).
 
@@ -167,7 +201,7 @@ def _segments(
 
 
 def _build_event(
-    series: RecurringTransaction,
+    series: _Series,
     previous: _Observation,
     current: _Observation,
     delta: Decimal,
@@ -194,7 +228,7 @@ def _build_event(
 
 
 def _detect_events(
-    series: RecurringTransaction, observations: list[Optional[_Observation]]
+    series: _Series, observations: list[Optional[_Observation]]
 ) -> list[RecurringPriceChangeRead]:
     events: list[RecurringPriceChangeRead] = []
     for segment in _segments(observations):
@@ -213,7 +247,7 @@ def _detect_events(
 
 
 def detect_price_changes(
-    series: RecurringTransaction, rows: list[Transaction]
+    series: _Series, rows: Sequence[_Occurrence]
 ) -> list[RecurringPriceChangeRead]:
     """Return every qualifying price change, chronological (oldest first).
 
@@ -226,7 +260,7 @@ def detect_price_changes(
     return _detect_events(series, _normalize(series, rows))
 
 
-def count_clean_observations(series: RecurringTransaction, rows: list[Transaction]) -> int:
+def count_clean_observations(series: _Series, rows: Sequence[_Occurrence]) -> int:
     """Number of clean observations available to the signal chain (§3.3).
 
     Collapsed same-date duplicates count once; ambiguous dates count zero —
@@ -256,7 +290,7 @@ class PriceChangeAnalysis:
 
 
 def analyze_price_changes(
-    series: RecurringTransaction, rows: list[Transaction]
+    series: _Series, rows: Sequence[_Occurrence]
 ) -> PriceChangeAnalysis:
     """Single-pass analysis: normalize once, then derive events and count."""
     observations = _normalize(series, rows)
@@ -328,7 +362,25 @@ async def get_recent_price_changes(
     selection (callers bound it to 1–50 at the route).
     """
     result = await session.execute(
-        select(RecurringTransaction, Transaction)
+        # Keep this scalar projection in the evidence dataclasses' field order.
+        # In particular, do not materialize raw_data or any ORM relationships.
+        select(
+            RecurringTransaction.id,
+            RecurringTransaction.workspace_id,
+            RecurringTransaction.type,
+            RecurringTransaction.currency,
+            Transaction.id,
+            Transaction.workspace_id,
+            Transaction.recurring_transaction_id,
+            Transaction.source,
+            Transaction.status,
+            Transaction.is_ignored,
+            Transaction.transfer_pair_id,
+            Transaction.type,
+            Transaction.currency,
+            Transaction.amount,
+            Transaction.date,
+        )
         .join(
             Transaction,
             Transaction.recurring_transaction_id == RecurringTransaction.id,
@@ -347,13 +399,22 @@ async def get_recent_price_changes(
         .order_by(RecurringTransaction.id, Transaction.date, Transaction.id)
     )
 
-    grouped: dict[uuid.UUID, tuple[RecurringTransaction, list[Transaction]]] = {}
-    for series, tx in result.all():
-        grouped.setdefault(series.id, (series, []))[1].append(tx)
+    # Only detached scalar rows cross the thread boundary, never the session
+    # or an ORM entity. Grouping, normalization and event selection are pure.
+    return await asyncio.to_thread(_recent_from_evidence, result.all(), limit)
+
+
+def _recent_from_evidence(rows: Sequence[Row], limit: int) -> list[RecurringPriceChangeRead]:
+    grouped: dict[uuid.UUID, tuple[_SeriesEvidence, list[_OccurrenceEvidence]]] = {}
+    for row in rows:
+        series_id = row[0]
+        if series_id not in grouped:
+            grouped[series_id] = (_SeriesEvidence(*row[:4]), [])
+        grouped[series_id][1].append(_OccurrenceEvidence(*row[4:]))
 
     latest: list[RecurringPriceChangeRead] = []
-    for series, rows in grouped.values():
-        analysis = analyze_price_changes(series, rows)
+    for series, occurrences in grouped.values():
+        analysis = analyze_price_changes(series, occurrences)
         if not analysis.events:
             continue
         newest = max(

@@ -7,7 +7,7 @@
  * keep that shape (see `increaseEvent`) and the UI must coerce before formatting.
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 
 import RecurringPage from '@/pages/recurring'
 import { formatCurrency } from '@/lib/format'
@@ -32,11 +32,12 @@ const api = vi.hoisted(() => ({
 
 const workspace = vi.hoisted(() => ({ canWrite: true }))
 const privacy = vi.hoisted(() => ({ enabled: false }))
+const display = vi.hoisted(() => ({ locale: 'en-US' }))
 
 vi.mock('@/lib/api', () => api)
 
 vi.mock('@/hooks/use-display-locale', () => ({
-  useDisplayLocale: () => 'en-US',
+  useDisplayLocale: () => display.locale,
   useDateLocale: () => 'en-US',
 }))
 
@@ -148,6 +149,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   workspace.canWrite = true
   privacy.enabled = false
+  display.locale = 'en-US'
   api.categories.list.mockResolvedValue([])
   api.categories.listIncludingHidden.mockResolvedValue([])
   api.categoryGroups.list.mockResolvedValue([])
@@ -167,6 +169,122 @@ afterEach(async () => {
 })
 
 describe('Recurring price history', () => {
+  it.each([
+    ['en-US', '15.04', '+15.04%'],
+    ['en-US', '-9.13', '-9.13%'],
+    ['en-US', '0.00', '0.00%'],
+    ['de-DE', '15.04', '+15,04 %'],
+    ['de-DE', '-9.13', '-9,13 %'],
+    ['de-DE', '0.00', '0,00 %'],
+  ])('formats percentage units and precision for %s / %s', async (locale, percent, expected) => {
+    display.locale = locale
+    api.recurring.recentPriceChanges.mockResolvedValue([
+      { ...increaseEvent, percent_delta: percent },
+    ])
+    renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    const row = await screen.findByTestId('price-change-row')
+    // Normalize only Intl's nonbreaking whitespace, not decimal/sign/units.
+    expect(row.textContent?.replace(/\s/g, ' ')).toContain(`(${expected})`)
+    expect(within(row).getByText(
+      `${formatCurrency(39.9, 'BRL', locale)} → ${formatCurrency(45.9, 'BRL', locale)}`,
+      { normalizer: value => value }
+    )).toBeInTheDocument()
+    expect(within(seriesRow('Netflix')).getByText('4/1/2026')).toBeInTheDocument()
+  })
+
+  it('shows an error instead of unnamed recent events when the series list fails', async () => {
+    api.recurring.list.mockRejectedValue(new Error('list failed'))
+    api.recurring.recentPriceChanges.mockResolvedValue([increaseEvent])
+    renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    expect(await screen.findByText(t('common.error'))).toBeInTheDocument()
+    expect(screen.queryByTestId('price-change-row')).not.toBeInTheDocument()
+    expect(api.recurring.recentPriceChanges).toHaveBeenCalledWith(20)
+    expect(api.recurring.priceHistory).not.toHaveBeenCalled()
+  })
+
+  it('keeps cached series names usable when a list refetch fails', async () => {
+    api.recurring.recentPriceChanges.mockResolvedValue([increaseEvent])
+    const { queryClient } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    const row = await screen.findByTestId('price-change-row')
+    expect(within(row).getByText('Netflix')).toBeInTheDocument()
+    api.recurring.list.mockRejectedValue(new Error('refetch failed'))
+    await queryClient.refetchQueries({ queryKey: ['recurring'], exact: true })
+    await waitFor(() => expect(queryClient.getQueryState(['recurring'])?.status).toBe('error'))
+    expect(within(row).getByText('Netflix')).toBeInTheDocument()
+    expect(screen.queryByText(t('common.error'))).not.toBeInTheDocument()
+  })
+
+  it('preserves recent loading and missing-series response behavior', async () => {
+    api.recurring.list.mockResolvedValue([])
+    api.recurring.recentPriceChanges.mockReturnValue(new Promise(() => {}))
+    const { queryClient } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    expect(await screen.findByText(t('common.loading'))).toBeInTheDocument()
+    queryClient.setQueryData(['recurring', 'recent-price-changes', 20], [increaseEvent])
+    expect(await screen.findByTestId('price-change-row')).toBeInTheDocument()
+    expect(screen.queryByText(t('common.error'))).not.toBeInTheDocument()
+  })
+
+  it.each(['recent', 'history'])('preserves the %s request error state', async (request) => {
+    const { user, queryClient } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    await screen.findByText('Netflix')
+    if (request === 'recent') {
+      api.recurring.recentPriceChanges.mockRejectedValue(new Error('recent failed'))
+      await queryClient.refetchQueries({ queryKey: ['recurring', 'recent-price-changes'] })
+      expect(await screen.findByText(t('common.error'))).toBeInTheDocument()
+    } else {
+      api.recurring.priceHistory.mockRejectedValue(new Error('history failed'))
+      await user.click(historyButton('Netflix'))
+      const dialog = await screen.findByRole('dialog')
+      expect(await within(dialog).findByText(t('common.error'))).toBeInTheDocument()
+    }
+  })
+
+  it('keeps zero and pending history content in the scrollable body', async () => {
+    api.recurring.list.mockResolvedValue([{ ...netflix, amount: 0 }])
+    api.recurring.priceHistory.mockReturnValue(new Promise(() => {}))
+    const { user, queryClient } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    await screen.findByText('Netflix')
+    await user.click(historyButton('Netflix'))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent(`−${money(0)}`)
+    expect(within(dialog).getByText(t('common.loading'))).toBeInTheDocument()
+    queryClient.setQueryData(['recurring', 'price-history', netflix.id], {
+      recurring_id: netflix.id,
+      eligible_occurrence_count: 0,
+      eligibility: 'insufficient_history',
+      changes: [],
+    } satisfies RecurringPriceChangeHistory)
+    expect(await within(dialog).findByText(t('recurring.priceChangeInsufficient'))).toBeInTheDocument()
+    expect(within(dialog).getByRole('heading')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps a long history body scrollable outside its header and close button', async () => {
+    api.recurring.priceHistory.mockResolvedValue({
+      recurring_id: netflix.id,
+      eligible_occurrence_count: 202,
+      eligibility: 'changes_detected',
+      changes: Array.from({ length: 200 }, (_, index) => ({
+        ...increaseEvent, current_transaction_id: `history-${index}`,
+      })),
+    } satisfies RecurringPriceChangeHistory)
+    const { user } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    await screen.findByText('Netflix')
+    await user.click(historyButton('Netflix'))
+    const dialog = await screen.findByRole('dialog')
+    const rows = await within(dialog).findAllByTestId('price-change-row')
+    expect(rows).toHaveLength(200)
+    expect(dialog).toHaveClass('max-h-[90vh]', 'flex', 'flex-col', 'overflow-hidden')
+    const body = rows[0].closest('.overflow-y-auto')
+    expect(body).toHaveClass('min-h-0')
+    expect(body).not.toContainElement(within(dialog).getByRole('heading'))
+    const close = within(dialog).getByRole('button', { name: 'Close' })
+    expect(body).not.toContainElement(close)
+    await user.click(close)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it('renders recent price changes with increase and decrease', async () => {
     api.recurring.recentPriceChanges.mockResolvedValue([increaseEvent, decreaseEvent])
 
