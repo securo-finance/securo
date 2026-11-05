@@ -102,7 +102,6 @@ it('starts a new transaction with no account selected, so one must be chosen', (
   const accountSelect = renderNewTransaction()
 
   expect(accountSelect).toHaveValue('')
-  // The placeholder shows in the closed field but is hidden from the open list.
   const placeholder = accountSelect.selectedOptions[0]
   expect(placeholder).toHaveTextContent(t('transactions.createCounterpartSelectAccount'))
   expect(placeholder).toBeDisabled()
@@ -136,7 +135,7 @@ it('forgets a save variant the browser blocked, so a later plain Save just saves
     />,
   )
 
-  // "Save and new" with no account: the browser blocks the submit.
+  // Required description and amount are empty, so the browser blocks submit.
   await user.click(screen.getByRole('button', { name: t('transactions.moreSaveOptions') }))
   await user.click(await screen.findByRole('menuitem', { name: t('transactions.saveAndNew') }))
   expect(onSave).not.toHaveBeenCalled()

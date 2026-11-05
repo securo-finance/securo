@@ -71,6 +71,7 @@ function makeAccount(): Account {
     masked_number: null,
     institution_name: null,
     institution_logo_url: null,
+    order: 0,
     type: 'checking',
     balance: 100,
     current_balance: 100,
