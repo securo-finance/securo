@@ -374,12 +374,69 @@ async def test_linking_transaction_on_update_creates_receiver_credit(
         settlement.id,
         test_workspace.id,
         test_user.id,
-        GroupSettlementUpdate(amount=Decimal("60.00")),
+        GroupSettlementUpdate(amount=Decimal("55.00")),
     )
     assert updated is not None
     receiver_tx = await session.get(Transaction, updated.receiver_transaction_id)
     assert receiver_tx is not None
-    assert receiver_tx.amount == Decimal("60.00")
+    assert receiver_tx.amount == Decimal("55.00")
+
+    receiver_credit_id = updated.receiver_transaction_id
+    unlinked = await settlement_service.update_settlement(
+        session,
+        group.id,
+        settlement.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementUpdate(transaction_id=None),
+    )
+    assert unlinked is not None
+    assert unlinked.transaction_id is None
+    assert unlinked.receiver_transaction_id == receiver_credit_id
+    assert await session.get(Transaction, receiver_credit_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_create_settlement_rejects_account_owned_by_another_member(
+    session: AsyncSession, test_user, test_workspace
+):
+    other_user, _other_workspace = await _make_user_with_workspace(
+        session, "linked-payer@example.com"
+    )
+    owner_account = await _make_account(session, test_user.id)
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="WrongPayerAccount")
+    )
+    payer = await group_service.create_member(
+        session,
+        group.id,
+        test_workspace.id,
+        GroupMemberCreate(name="Linked payer", linked_user_id=other_user.id),
+    )
+    receiver = await group_service.create_member(
+        session,
+        group.id,
+        test_workspace.id,
+        GroupMemberCreate(name="Receiver"),
+    )
+
+    assert payer is not None
+    assert receiver is not None
+    with pytest.raises(ValueError, match="Payment account must belong to the settlement payer"):
+        await settlement_service.create_settlement(
+            session,
+            group.id,
+            test_workspace.id,
+            test_user.id,
+            GroupSettlementCreate(
+                from_member_id=payer.id,
+                to_member_id=receiver.id,
+                amount=Decimal("5.00"),
+                currency="USD",
+                date=date.today(),
+                account_id=owner_account.id,
+            ),
+        )
 
 
 @pytest.mark.asyncio

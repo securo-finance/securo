@@ -26,10 +26,10 @@ def _make_session_maker():
 async def _backfill_primary_amounts() -> dict:
     """One-time backfill / heal of amount_primary.
 
-    Targets cross-currency rows that were never stamped (``amount_primary`` NULL)
-    or that were stamped with the legacy 1:1 fallback rate (issue #353), and
-    re-stamps them once a real rate is resolvable. Genuine same-currency 1:1 rows
-    are left untouched.
+    Targets rows that were never stamped (``amount_primary`` NULL), were stamped
+    with the legacy 1:1 fallback rate (issue #353), or predate the persisted
+    ``amount_primary_currency`` stamp. Legacy unstamped rows are recalculated into
+    the user's current primary currency when a real rate is resolvable.
     """
     from app.services.fx_rate_service import sync_rates, convert, _resolve_rate
 
@@ -54,12 +54,16 @@ async def _backfill_primary_amounts() -> dict:
                     or_(
                         Transaction.amount_primary.is_(None),
                         Transaction.fx_rate_used == 1,
+                        Transaction.amount_primary_currency.is_(None),
                     )
                 )
             )
             candidate_txs = [
                 tx for tx in tx_result.scalars().all()
-                if tx.currency != _primary(tx.user_id)
+                if (
+                    tx.currency != _primary(tx.user_id)
+                    or tx.amount_primary_currency is None
+                )
             ]
 
             # 3. Sync one historical rate per month that has candidates.

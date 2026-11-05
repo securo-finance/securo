@@ -239,10 +239,10 @@ async def _validate_payer_debit(
     expected_payer_id = payer_user_id or (group.user_id if payer_is_self else None)
     if expected_payer_id is None or account_user_id != expected_payer_id:
         raise ValueError("Linked transaction must belong to the settlement payer")
-    if transaction.currency == currency and abs(Decimal(str(transaction.amount))) != Decimal(
+    if transaction.currency == currency and abs(Decimal(str(transaction.amount))) < Decimal(
         str(amount)
     ):
-        raise ValueError("Linked payer debit amount must match the settlement amount")
+        raise ValueError("Linked payer debit must cover the settlement amount")
 
 
 async def list_settlements(
@@ -432,12 +432,9 @@ async def update_settlement(
             update_data.get("amount", settlement.amount),
             update_data.get("currency", settlement.currency),
         )
-        if (
-            "transaction_id" in update_data
-            and update_data["transaction_id"] is None
-            and settlement.receiver_transaction_id
-        ):
-            raise ValueError("Cannot unlink the payer transaction while a receiver credit exists")
+        # Unlinking the payer's ledger transaction does not undo the cash the
+        # receiver recorded. Keep that mirrored credit attached to the
+        # settlement so amount/date corrections continue to update it.
 
     if settlement.receiver_transaction_id and "to_member_id" in update_data:
         raise ValueError(

@@ -108,12 +108,13 @@ async def test_create_settlement_links_existing_transaction(session: AsyncSessio
         session, group.id, test_workspace.id, test_user.id,
         GroupSettlementCreate(
             from_member_id=a.id, to_member_id=b.id,
-            amount=Decimal("5.00"), currency="USD", date=date.today(),
+            amount=Decimal("3.00"), currency="USD", date=date.today(),
             transaction_id=tx.id,
         ),
     )
     assert s is not None
     assert s.transaction_id == tx.id
+    assert tx.amount == Decimal("5.00")
 
 
 @pytest.mark.asyncio
@@ -124,7 +125,7 @@ async def test_create_settlement_rejects_mismatched_linked_debit_amount(
     account = await _make_account(session, test_user.id, test_workspace.id)
     tx = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
 
-    with pytest.raises(ValueError, match="amount must match"):
+    with pytest.raises(ValueError, match="must cover the settlement amount"):
         await settlement_service.create_settlement(
             session,
             group.id,
@@ -394,7 +395,7 @@ async def test_update_settlement_rejects_mismatched_linked_debit_amount(
     )
 
     assert settlement is not None
-    with pytest.raises(ValueError, match="amount must match"):
+    with pytest.raises(ValueError, match="must cover the settlement amount"):
         await settlement_service.update_settlement(
             session,
             group.id,

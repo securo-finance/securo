@@ -66,10 +66,12 @@ async def _restamp_recurring_fx() -> int:
 async def _restamp_fallback_transactions() -> int:
     """Heal cross-currency transactions that lack a real FX rate.
 
-    Targets rows left NULL or stamped with the legacy 1:1 fallback (issue #353)
-    and *upgrades* them once a real rate for their date is available. Uses only
-    already-stored rates (``allow_fetch=False``) so a large heal never hammers
-    the FX provider — the daily ``sync_fx_rates`` task keeps rates fresh.
+    Targets rows left NULL, stamped with the legacy 1:1 fallback (issue #353),
+    or missing the currency provenance added in migration 103. Legacy rows with
+    no currency stamp are recalculated into the user's current primary currency
+    when a real rate for their date is available. Uses only already-stored rates
+    (``allow_fetch=False``) so a large heal never hammers the FX provider — the
+    daily ``sync_fx_rates`` task keeps rates fresh.
 
     Conservative by construction: ``stamp_primary_amount`` only writes when a real
     rate resolves and leaves the fields untouched otherwise, so an existing row is
@@ -96,17 +98,18 @@ async def _restamp_fallback_transactions() -> int:
                     or_(
                         Transaction.amount_primary.is_(None),
                         Transaction.fx_rate_used == 1,
+                        Transaction.amount_primary_currency.is_(None),
                     )
                 )
             )
             count = 0
             for tx in result.scalars().all():
                 primary = users.get(tx.user_id, settings.default_currency)
-                if tx.currency == primary:
+                if tx.currency == primary and tx.amount_primary_currency is not None:
                     continue  # genuine same-currency row — never touch
-                before = (tx.amount_primary, tx.fx_rate_used)
+                before = (tx.amount_primary, tx.fx_rate_used, tx.amount_primary_currency)
                 await stamp_primary_amount(session, tx.user_id, tx, allow_fetch=False)
-                if (tx.amount_primary, tx.fx_rate_used) != before:
+                if (tx.amount_primary, tx.fx_rate_used, tx.amount_primary_currency) != before:
                     count += 1
             await session.commit()
     finally:
