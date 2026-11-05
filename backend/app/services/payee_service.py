@@ -416,12 +416,19 @@ async def merge_payees(
             .values(target_id=target_id)
         )
 
-    # Delete source payees
+    # Delete source payees. Their fiscal documents would cascade with them,
+    # so each one moves to the target first, unless the target already holds
+    # that kind: uq_payee_tax_id_kind allows one document per kind.
+    held_kinds = {document.kind for document in target.tax_ids}
     for source_id in source_ids:
         if source_id == target_id:
             continue
         source = await get_payee(session, source_id, workspace_id)
         if source:
+            for document in list(source.tax_ids):
+                if document.kind not in held_kinds:
+                    held_kinds.add(document.kind)
+                    target.tax_ids.append(document)
             await session.delete(source)
 
     await session.commit()
