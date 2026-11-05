@@ -110,7 +110,16 @@ async def _get_recurring_projections(
     stmt = (
         select(RecurringTransaction)
         .outerjoin(Category, RecurringTransaction.category_id == Category.id)
-        .where(*filters)
+        .outerjoin(Account, RecurringTransaction.account_id == Account.id)
+        .where(
+            *filters,
+            # S16/S3: a rule on an account excluded from reports must never
+            # project into a rollup (gate amendment 2 — join/filter Account
+            # rather than relying on loaded-account Python checks).
+            # account_id is nullable: a rule with no account has no account
+            # to exclude, so it still projects.
+            or_(Account.id.is_(None), Account.exclude_from_reports == False),
+        )
     )
     if account_ids:
         stmt = stmt.where(RecurringTransaction.account_id.in_(account_ids))
@@ -183,6 +192,7 @@ async def _get_forecast_transactions(
         .where(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
+            Account.exclude_from_reports == False,
             bucket_date >= range_start,
             bucket_date < range_end,
             Transaction.source != "opening_balance",
@@ -205,12 +215,16 @@ async def _get_forecast_transactions(
 
 def _counts_as_user_pnl_row(tx: Transaction) -> bool:
     """Python equivalent of ``counts_as_user_pnl`` for loaded forecast rows."""
+    account = tx.account
     category = tx.category
     return not (
         tx.transfer_pair_id
         or tx.is_ignored
         or tx.exclude_from_pnl
         or tx.source == "settlement"
+        # Belt-and-braces: the SQL layer already filters these out; a loaded
+        # row from an account flagged ``exclude_from_reports`` is not P&L.
+        or (account is not None and account.exclude_from_reports)
         or (category and (category.treat_as_transfer or category.is_ignored))
     )
 
@@ -1299,6 +1313,9 @@ async def _get_open_accounts(
     When ``account_ids`` is provided (an active Collection filter, issue #105),
     restrict to that subset. An empty list returns no accounts — a collection
     with no members shows nothing rather than everything.
+    Accounts flagged ``exclude_from_reports`` are omitted too: this helper is
+    the balance-family chokepoint for rollup totals (S1/S7/S8/S13), while an
+    account's own pages fetch its row directly and stay untouched (S18).
     """
     if account_ids is not None and len(account_ids) == 0:
         return []
@@ -1311,6 +1328,7 @@ async def _get_open_accounts(
                 BankConnection.workspace_id == workspace_id,
             ),
             Account.is_closed == False,
+            Account.exclude_from_reports == False,
         )
     )
     if account_ids:
@@ -1596,6 +1614,10 @@ async def _daily_balance_deltas_by_date(
         .where(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
+            # S7: balance-history deltas must match the excluded-account
+            # anchor from _balance_at/_get_open_accounts, or the chart
+            # would re-introduce excluded accounts between anchor points.
+            Account.exclude_from_reports == False,
             *date_filters,
             Transaction.date <= app_today(),
             Transaction.is_ignored == False,

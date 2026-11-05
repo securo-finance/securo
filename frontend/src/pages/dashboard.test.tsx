@@ -82,6 +82,7 @@ function account(overrides: Partial<Account>): Account {
     shared_balance_group: null,
     is_closed: false,
     closed_at: null,
+    exclude_from_reports: false,
     ...overrides,
   }
 }
@@ -172,6 +173,30 @@ beforeEach(() => {
 })
 
 describe('Dashboard net worth breakdown', () => {
+  it('excludes mirror balances from available cash, cards and loans', async () => {
+    api.accounts.list.mockResolvedValue([
+      ...accounts,
+      account({ id: 'loan', name: 'Loan', type: 'loan', current_balance: -100 }),
+      account({ id: 'mirror-cash', name: 'Mirror Cash', current_balance: 9000, exclude_from_reports: true }),
+      account({ id: 'mirror-card', type: 'credit_card', current_balance: -8000, exclude_from_reports: true }),
+      account({ id: 'mirror-loan', type: 'loan', current_balance: -7000, exclude_from_reports: true }),
+    ])
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+    await screen.findByText('Checking')
+    expect(screen.queryByText('Mirror Cash')).not.toBeInTheDocument()
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+    const tooltip = await screen.findByRole('tooltip')
+    for (const [key, amount] of [
+      ['availableBalance', 1000], ['creditCardBalance', -500], ['loanBalance', -100],
+    ] as const) {
+      const row = within(tooltip).getByText(t(`dashboard.${key}`)).parentElement!
+      expect(row).toHaveTextContent(formatCurrency(amount, 'USD', 'en-US'))
+    }
+  })
   it('counts a shared credit line once in the credit card total', async () => {
     const { user } = renderWithProviders(
       <TooltipProvider delayDuration={0}>

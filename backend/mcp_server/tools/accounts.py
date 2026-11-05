@@ -44,6 +44,9 @@ async def list_accounts(
             "balance": num(r.get("balance")),
             "balance_primary": num(r.get("balance_primary")),
             "is_closed": bool(r.get("is_closed", False)),
+            # Lets an agent explain why a rollup total differs from the sum
+            # of listed balances (the account is kept out of reports).
+            "exclude_from_reports": bool(r.get("exclude_from_reports", False)),
             "institution": r.get("institution_name"),
         })
     return {"items": items, "total": len(items)}

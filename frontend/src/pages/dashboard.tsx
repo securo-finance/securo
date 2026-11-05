@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
+import { getAccountLabel, getAccountName, includedInRollups, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -500,7 +500,9 @@ export default function DashboardPage() {
   // investments - open card bills). Scoped to the active Collection filter,
   // same as the rest of the dashboard.
   const availableBalanceAccounts = useMemo(() => {
-    const all = accountsList ?? []
+    // PR-5 (S2): accounts flagged exclude_from_reports stay listed but drop
+    // out of every rollup sum — including these hero figures.
+    const all = includedInRollups(accountsList ?? [])
     const scoped = activeAccountIds ? all.filter((a) => activeAccountIds.includes(a.id)) : all
     return scoped.filter((a) => a.type === 'checking' || a.type === 'savings')
   }, [accountsList, activeAccountIds])
@@ -517,16 +519,17 @@ export default function DashboardPage() {
   // While accounts are loading or failed to load, treat their balance
   // components as unavailable rather than silently rendering zero.
   const accountsUnavailable = accountsLoading || accountsError
-  const creditCardBalance = sumAccountBalances((accountsList ?? [])
+  const rollupsAccounts = includedInRollups(accountsList ?? [])
+  const creditCardBalance = sumAccountBalances(rollupsAccounts
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card'))
-  const loanBalance = (accountsList ?? [])
+  const loanBalance = rollupsAccounts
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'loan')
     .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
   // Net worth's "Available balance" breakdown row: every account that is not
   // a card or loan (unlike the headline `availableBalance`, which is
   // checking/savings only), so with the card and loan rows it reconciles with
   // `totalBalance` — which sums all account types.
-  const nonCardAccountsBalance = (accountsList ?? [])
+  const nonCardAccountsBalance = rollupsAccounts
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type !== 'credit_card' && a.type !== 'loan')
     .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
 

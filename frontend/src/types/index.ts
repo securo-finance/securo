@@ -216,6 +216,9 @@ export interface Account {
   open_bill_total_primary?: number | null
   is_closed: boolean
   closed_at: string | null
+  // Totals flag (PR-5): excluded from net worth, reports and budgets, but
+  // still listed everywhere — absent on payloads predating this flag.
+  exclude_from_reports: boolean
 }
 
 export interface CreditCardBill {

@@ -8,10 +8,11 @@ non-primary-currency conversion path.
 from decimal import Decimal
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
+from app.main import app
 from app.models.account import Account
 from app.models.fx_rate import FxRate
 
@@ -412,3 +413,150 @@ async def test_account_bills_not_found(client: AsyncClient, auth_headers, test_a
 async def test_list_accounts_requires_auth(client: AsyncClient):
     resp = await client.get("/api/accounts")
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# exclude_from_reports (PR-5, T-16)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_accounts_api_roundtrips_exclude_from_reports(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    """GET carries the flag; PATCH sets/clears it on manual AND connected
+    accounts (the connected-account editable_fields gate, #343 audience)."""
+    # Default: False in AccountRead.
+    resp = await client.get(f"/api/accounts/{test_account.id}", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["exclude_from_reports"] is False
+
+    # Manual account: create -> set -> read back -> clear.
+    create = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Mirror", "type": "savings", "balance": "10.00"},
+    )
+    assert create.status_code == 201, create.text
+    acc_id = create.json()["id"]
+    assert create.json()["exclude_from_reports"] is False
+
+    patched = await client.patch(
+        f"/api/accounts/{acc_id}", headers=auth_headers,
+        json={"exclude_from_reports": True},
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["exclude_from_reports"] is True
+    got = await client.get(f"/api/accounts/{acc_id}", headers=auth_headers)
+    assert got.json()["exclude_from_reports"] is True
+
+    cleared = await client.patch(
+        f"/api/accounts/{acc_id}", headers=auth_headers,
+        json={"exclude_from_reports": False},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["exclude_from_reports"] is False
+
+    # Connected account: the flag itself is editable...
+    connected = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"exclude_from_reports": True},
+    )
+    assert connected.status_code == 200, connected.text
+    assert connected.json()["exclude_from_reports"] is True
+    # ...while provider-owned fields stay rejected by the same gate.
+    rejected = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"name": "Hacked"},
+    )
+    assert rejected.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connected", [False, True], ids=["manual", "connected"])
+@pytest.mark.parametrize("excluded", [False, True], ids=["included", "excluded"])
+async def test_account_exclusion_null_rejected_without_mutation(
+    client: AsyncClient, auth_headers, test_account: Account, connected: bool, excluded: bool
+):
+    if connected:
+        acc_id = str(test_account.id)
+    else:
+        created = await client.post(
+            "/api/accounts", headers=auth_headers,
+            json={"name": "Null regression", "type": "checking", "balance": "10.00"},
+        )
+        assert created.status_code == 201, created.text
+        acc_id = created.json()["id"]
+    url = f"/api/accounts/{acc_id}"
+    seeded = await client.patch(
+        url, headers=auth_headers, json={"exclude_from_reports": excluded},
+    )
+    assert seeded.status_code == 200, seeded.text
+    before = await client.get(url, headers=auth_headers)
+    assert before.status_code == 200, before.text
+
+    # Observe the HTTP response even if a regression raises inside the app.
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        rejected = await http.patch(
+            url, headers=auth_headers,
+            json={"exclude_from_reports": None, "display_name": "Must not be saved"},
+        )
+    assert rejected.status_code == 422, rejected.text
+    assert any(
+        error["loc"] == ["body", "exclude_from_reports"]
+        for error in rejected.json()["detail"]
+    )
+    after = await client.get(url, headers=auth_headers)
+    assert after.status_code == 200, after.text
+    assert after.json() == before.json()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connected", [False, True], ids=["manual", "connected"])
+async def test_account_exclusion_omitted_patch_preserves_boolean_roundtrip(
+    client: AsyncClient, auth_headers, test_account: Account, connected: bool
+):
+    if connected:
+        acc_id = str(test_account.id)
+    else:
+        created = await client.post(
+            "/api/accounts", headers=auth_headers,
+            json={"name": "Omission regression", "type": "checking", "balance": "10.00"},
+        )
+        assert created.status_code == 201, created.text
+        acc_id = created.json()["id"]
+    url = f"/api/accounts/{acc_id}"
+    for excluded in (True, False):
+        patched = await client.patch(
+            url, headers=auth_headers, json={"exclude_from_reports": excluded},
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["exclude_from_reports"] is excluded
+        for payload in ({}, {"display_name": "Omitted exclusion"}):
+            omitted = await client.patch(url, headers=auth_headers, json=payload)
+            assert omitted.status_code == 200, omitted.text
+            assert omitted.json()["exclude_from_reports"] is excluded
+            got = await client.get(url, headers=auth_headers)
+            assert got.status_code == 200, got.text
+            assert got.json()["exclude_from_reports"] is excluded
+
+
+@pytest.mark.asyncio
+async def test_viewer_can_read_but_cannot_change_account_exclusion(
+    client: AsyncClient, viewer_auth_headers, test_account: Account
+):
+    response = await client.get(
+        f"/api/accounts/{test_account.id}", headers=viewer_auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["exclude_from_reports"] is False
+
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=viewer_auth_headers,
+        json={"exclude_from_reports": True},
+    )
+    assert response.status_code == 403
+    unchanged = await client.get(
+        f"/api/accounts/{test_account.id}", headers=viewer_auth_headers,
+    )
+    assert unchanged.json()["exclude_from_reports"] is False

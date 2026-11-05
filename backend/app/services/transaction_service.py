@@ -34,8 +34,8 @@ from app.services.credit_card_service import apply_effective_date, cc_cycle_bill
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
 from app.services._query_filters import (
-    counts_as_pnl,
     counts_as_user_pnl,
+    counts_in_rollup,
     is_not_ignored,
     is_transfer,
     reporting_date_col,
@@ -491,11 +491,13 @@ async def get_transactions(
     # rows). Computed before pagination so it covers the whole result set.
     summary: Optional[dict] = None
     if include_summary:
-        # Income / expense / net use the shared `counts_as_pnl()` definition
-        # (issue #242) so the footer matches the dashboard & reports: paired
-        # transfers, `treat_as_transfer` categories (transfers, investments,
-        # custom) and ignored items are kept OUT of income/expense.
-        pnl_filter = counts_as_pnl()
+        # Income / expense / net use the shared rollup definition
+        # `counts_in_rollup()` — `counts_as_pnl()` (issue #242) plus the
+        # account-level `exclude_from_reports` signal — so the footer
+        # matches the dashboard & reports: paired transfers,
+        # `treat_as_transfer` categories (transfers, investments, custom),
+        # ignored items and excluded accounts are kept OUT of income/expense.
+        pnl_filter = counts_in_rollup()
         pnl_subq = base_query.where(pnl_filter).subquery()
         amount_norm = func.coalesce(
             pnl_subq.c.amount_primary, pnl_subq.c.amount
@@ -515,9 +517,10 @@ async def get_transactions(
                 expense = Decimal(str(row_total or 0))
 
         # Excluded: the absolute total of everything filtered out of P/L for
-        # the same rows — the complement of `counts_as_pnl()`. Surfaces
+        # the same rows — the complement of `counts_in_rollup()`. Surfaces
         # transfer-like movement (e.g. how much was moved/invested) without
-        # distorting income/expense/net.
+        # distorting income/expense/net. Amounts on accounts flagged
+        # `exclude_from_reports` land here too, so nothing silently vanishes.
         excl_subq = base_query.where(not_(pnl_filter)).subquery()
         excl_amount_norm = func.coalesce(
             excl_subq.c.amount_primary, excl_subq.c.amount

@@ -16,8 +16,8 @@ from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
 from app.services._query_filters import (
-    counts_as_pnl,
     counts_as_user_pnl,
+    counts_in_rollup,
     forecast_owner_share_fractions,
     owner_split_offset_by_category,
     reporting_date_col,
@@ -924,9 +924,13 @@ async def get_income_expenses_report(
             func.sum(amount_expr),
         )
         .select_from(Transaction)
+        .join(Account, Transaction.account_id == Account.id)
         .join(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
+            # S10: the investments node is a report node too — an excluded
+            # account's treat_as_transfer outflow must not appear in the Sankey.
+            Account.exclude_from_reports == False,
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",
@@ -1304,7 +1308,7 @@ async def _get_baseline_projection(
             Transaction.date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(),
+            counts_in_rollup(),
             *acct_filter,
         )
     )
@@ -1328,7 +1332,7 @@ async def _get_baseline_projection(
             Transaction.date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(),
+            counts_in_rollup(),
             *acct_filter,
         )
     )
@@ -1470,7 +1474,7 @@ async def get_cash_flow_report(
             flow_date_col <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(),
+            counts_in_rollup(),
             *acct_filter,
         )
     )
@@ -1500,7 +1504,7 @@ async def get_cash_flow_report(
             flow_date_col <= end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(),
+            counts_in_rollup(),
             *acct_filter,
         )
     )

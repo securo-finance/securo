@@ -284,6 +284,32 @@ def counts_on_bill(net_payments: bool = False):
     )
 
 
+def account_counts_in_reports():
+    """SQL filter: the transaction's account is not excluded from reports.
+
+    Join-free (a subquery over ``Account``) so it appends to any transaction
+    query whether or not it already joins ``Account``. An account flagged
+    ``exclude_from_reports`` mirrors an asset/portfolio whose value is
+    already counted elsewhere, so its rows leave every rollup total while
+    the ledger, the account's own pages and exports keep showing them.
+    """
+    return Transaction.account_id.not_in(
+        select(Account.id).where(Account.exclude_from_reports.is_(True))
+    )
+
+
+def counts_in_rollup():
+    """SQL filter: P&L-counting AND the account participates in rollups.
+
+    For rollup consumers of ``counts_as_pnl`` that are not already
+    ``counts_as_user_pnl`` consumers (cash-flow queries, baseline means,
+    shared viewer splits, the transactions-list summary). Deliberately
+    separate from ``counts_as_pnl`` itself: per-account totals keep their
+    own semantics, and ``counts_on_bill`` answers to the bank.
+    """
+    return and_(counts_as_pnl(), account_counts_in_reports())
+
+
 def counts_as_user_pnl():
     """SQL filter for *user-level* P/L (dashboard, reports, budgets).
 
@@ -292,10 +318,15 @@ def counts_as_user_pnl():
     share, so the corresponding settlement credits would double-count.
     Per-account stats still use `counts_as_pnl` because account ledgers
     track real cash through the account, not user P/L.
+
+    Also drops rows on accounts flagged ``exclude_from_reports`` — every
+    consumer here is a rollup total (net worth family included by way of
+    the balance chokepoint in ``dashboard_service._get_open_accounts``).
     """
     return and_(
         counts_as_pnl(),
         Transaction.source != "settlement",
+        account_counts_in_reports(),
     )
 
 
@@ -583,7 +614,9 @@ async def viewer_shared_pnl(
             date_col < month_end,
             date_col <= app_today(),
             Transaction.status == "posted",
-            counts_as_pnl(),
+            # Rollup filter: a parent on an excluded account must not
+            # produce a share that over-subtracts from totals (S15).
+            counts_in_rollup(),
         )
         .group_by(Transaction.currency)
     )
@@ -662,7 +695,10 @@ async def viewer_shared_spending_by_category(
             date_col < month_end,
             date_col <= app_today(),
             Transaction.status == "posted",
-            counts_as_pnl(),
+            # Rollup filter: a parent on an excluded account must not
+            # contribute to shared category spending (S15, §14 gate
+            # amendment 1 — both shared helpers switch together).
+            counts_in_rollup(),
         )
         .group_by(Transaction.category_id, Transaction.currency)
     )

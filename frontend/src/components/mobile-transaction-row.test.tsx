@@ -89,6 +89,7 @@ function makeAccount(): Account {
     shared_balance_group: null,
     is_closed: false,
     closed_at: null,
+    exclude_from_reports: false,
   }
 }
 

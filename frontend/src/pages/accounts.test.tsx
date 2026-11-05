@@ -146,6 +146,38 @@ describe('AccountsPage connection row actions', () => {
   })
 })
 
+describe('AccountDialog report exclusion', () => {
+  it.each([
+    { connectionId: null, excluded: false },
+    { connectionId: null, excluded: true },
+    { connectionId: 'conn-1', excluded: false },
+    { connectionId: 'conn-1', excluded: true },
+  ])('round-trips the positive checkbox: %j', async ({ connectionId, excluded }) => {
+    const account = {
+      ...makeAccount('conn-1'), connection_id: connectionId, exclude_from_reports: excluded,
+    }
+    const onSave = vi.fn()
+    const { user } = renderWithProviders(
+      <AccountDialog open account={account} onClose={vi.fn()} onSave={onSave} loading={false} />,
+    )
+    const checkbox = screen.getByRole('checkbox', { name: t('accounts.includeInReports') })
+    expect(checkbox).toHaveProperty('checked', !excluded)
+    await user.click(checkbox)
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ exclude_from_reports: !excluded }),
+    )
+  })
+
+  it('does not offer an exclusion override when creating an account', () => {
+    renderWithProviders(
+      <AccountDialog open account={null} onClose={vi.fn()} onSave={vi.fn()} loading={false} />,
+    )
+    expect(screen.queryByRole('checkbox', { name: t('accounts.includeInReports') }))
+      .not.toBeInTheDocument()
+  })
+})
+
 describe('AccountDialog account types', () => {
   it.each([
     { kind: 'manual', connectionId: null },

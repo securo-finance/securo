@@ -1116,3 +1116,56 @@ async def test_propose_create_payee_rule_external_apply_writes(
     )).scalar_one()
     assert any(c.get("value") == "UBER" for c in row.conditions)
     assert any(a.get("value") == str(cat.id) for a in row.actions)
+
+
+# --- PR-5: accounts.exclude_from_reports (T-17) -----------------------------
+
+
+async def test_mcp_list_accounts_surfaces_flag_and_reports_inherit(
+    session: AsyncSession, ctx: CallContext, test_user, test_workspace
+):
+    """list_accounts carries the flag; get_net_worth inherits service
+    enforcement (same totals as the service, excluded account dropped)."""
+    from datetime import date, datetime, timezone
+    from decimal import Decimal
+
+    from app.models.account import Account
+    from app.models.transaction import Transaction
+    from app.services.report_service import get_net_worth_report
+
+    mirror = Account(
+        id=uuid.uuid4(), user_id=test_user.id, name="MCP Mirror",
+        type="checking", balance=Decimal("5000"), currency="BRL",
+        exclude_from_reports=True,
+    )
+    checking = Account(
+        id=uuid.uuid4(), user_id=test_user.id, name="MCP Checking",
+        type="checking", balance=Decimal("1000"), currency="BRL",
+    )
+    session.add_all([mirror, checking])
+    await session.commit()
+    for acc, amount in ((mirror, "5000"), (checking, "1000")):
+        session.add(Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, account_id=acc.id,
+            description="opening", amount=Decimal(amount), date=date.today(),
+            type="credit", source="opening_balance", currency="BRL",
+            status="posted", created_at=datetime.now(timezone.utc),
+        ))
+    await session.commit()
+
+    # S21: the projection surfaces the flag.
+    list_accounts = REGISTRY["list_accounts"].handler
+    listed = await list_accounts(session=session, ctx=ctx)
+    items = {i["name"]: i for i in listed["items"]}
+    assert items["MCP Mirror"]["exclude_from_reports"] is True
+    assert items["MCP Checking"]["exclude_from_reports"] is False
+
+    # S22: report tools inherit enforcement — no code change, same numbers.
+    get_net_worth = REGISTRY["get_net_worth"].handler
+    mcp_out = await get_net_worth(session=session, ctx=ctx, months=1, interval="monthly")
+    svc = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, months=1, interval="monthly"
+    )
+    assert mcp_out["summary"]["primary_value"] == svc.summary.primary_value
+    # 1000 only — the 5000 mirror stays out of the MCP total too.
+    assert mcp_out["summary"]["primary_value"] == 1000.0

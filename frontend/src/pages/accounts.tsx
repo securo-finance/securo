@@ -288,21 +288,22 @@ export default function AccountsPage() {
                   const dueClass = dueIn != null && dueIn <= 3 ? 'text-amber-600' : 'text-muted-foreground'
                   const accountMask = formatAccountMask(acc)
                   return (
-                    <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
+                    <div key={acc.id} className={`group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors${acc.exclude_from_reports ? ' opacity-70' : ''}`}>
                       <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
                         <AccountIcon account={acc} />
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
+                          <p className={`text-sm font-medium truncate ${acc.exclude_from_reports ? 'text-muted-foreground' : 'text-foreground'}`}>{getAccountName(acc)}</p>
                           <p className="text-xs text-muted-foreground">
                             {t(cfg.label)}
                             {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}
                             {acc.shared_balance_group && <> · <span>{t('accounts.sharedCreditBalance')}</span></>}
                             {dueText && <> · <span className={dueClass}>{dueText}</span></>}
+                            {acc.exclude_from_reports && <> · <span className="rounded-full border border-border px-1.5 text-[10px]" title={t('accounts.includeInReportsHint')}>{t('accounts.excludedBadge')}</span></>}
                           </p>
                         </div>
                       </Link>
                       <div className="shrink-0 text-right">
-                        <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
+                        <p className={`text-xs sm:text-sm font-semibold tabular-nums ${acc.exclude_from_reports ? 'text-muted-foreground line-through' : (acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                           {mask(formatCurrency(bal, acc.currency, locale))}
                         </p>
                         {isCC && acc.available_credit != null ? (
@@ -455,21 +456,22 @@ export default function AccountsPage() {
                           const dueClass = dueIn != null && dueIn <= 3 ? 'text-amber-600' : 'text-muted-foreground'
                           const accountMask = formatAccountMask(acc)
                           return (
-                            <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
+                            <div key={acc.id} className={`group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors${acc.exclude_from_reports ? ' opacity-70' : ''}`}>
                               <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
                                 <AccountIcon account={acc} />
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
+                                  <p className={`text-sm font-medium truncate ${acc.exclude_from_reports ? 'text-muted-foreground' : 'text-foreground'}`}>{getAccountName(acc)}</p>
                                   <p className="text-xs text-muted-foreground">
                                     {t(cfg.label)}
                                     {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}
                                     {acc.shared_balance_group && <> · <span>{t('accounts.sharedCreditBalance')}</span></>}
                                     {dueText && <> · <span className={dueClass}>{dueText}</span></>}
+                                    {acc.exclude_from_reports && <> · <span className="rounded-full border border-border px-1.5 text-[10px]" title={t('accounts.includeInReportsHint')}>{t('accounts.excludedBadge')}</span></>}
                                   </p>
                                 </div>
                               </Link>
                               <div className="shrink-0 text-right">
-                                <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
+                                <p className={`text-xs sm:text-sm font-semibold tabular-nums ${acc.exclude_from_reports ? 'text-muted-foreground line-through' : (acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                                   {mask(formatCurrency(bal, acc.currency, locale))}
                                 </p>
                                 {isCC && acc.available_credit != null ? (
@@ -773,6 +775,7 @@ export function AccountDialog({
     credit_limit?: number | null
     statement_close_day?: number | null
     payment_due_day?: number | null
+    exclude_from_reports?: boolean
   }) => void
   loading: boolean
 }) {
@@ -807,6 +810,7 @@ export function AccountDialog({
   const [termsOpen, setTermsOpen] = useState(() => account?.loan_original_amount != null)
   const setLoanTerm = <K extends keyof LoanTermsForm>(key: K, value: LoanTermsForm[K]) =>
     setLoanTerms((prev) => ({ ...prev, [key]: value }))
+  const [excludeFromReports, setExcludeFromReports] = useState(account?.exclude_from_reports ?? false)
 
   const properties = (assetsList ?? []).filter((asset) => LOAN_COLLATERAL_TYPES.includes(asset.type))
   // Send the link the select shows: a saved id that is no longer a listed
@@ -831,6 +835,7 @@ export function AccountDialog({
     setSecuredAssetId(account?.secured_asset_id ?? '')
     setLoanTerms(loanTermsFrom(account, account?.currency ?? userCurrency))
     setTermsOpen(account?.loan_original_amount != null)
+    setExcludeFromReports(account?.exclude_from_reports ?? false)
   }
 
   return (
@@ -866,6 +871,9 @@ export function AccountDialog({
                 ...loanTermsPayload(loanTerms),
               }),
               display_name: displayName.trim() || null,
+              // PR-5 (Q-7/A-10): v1 is edit-only — AccountCreate is
+              // unchanged, so the flag rides only on edits.
+              ...(account && { exclude_from_reports: excludeFromReports }),
               ...(isCC && {
                 credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
                 statement_close_day: parseDay(statementCloseDay),
@@ -1070,6 +1078,26 @@ export function AccountDialog({
                   />
                 </div>
               </div>
+            </div>
+          )}
+          {/* PR-5 (S1): totals flag. Positive phrasing (include-in-reports)
+              bound to the inverse of exclude_from_reports. Edit-only — v1
+              adds no create-time field (AccountCreate unchanged, Q-7). */}
+          {account && (
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
+              <div className="space-y-1">
+                <label htmlFor="exclude-from-reports" className="text-sm font-medium text-foreground">
+                  {t('accounts.includeInReports')}
+                </label>
+                <p className="text-xs text-muted-foreground">{t('accounts.includeInReportsHint')}</p>
+              </div>
+              <input
+                id="exclude-from-reports"
+                type="checkbox"
+                checked={!excludeFromReports}
+                onChange={(e) => setExcludeFromReports(!e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+              />
             </div>
           )}
           <DialogFooter>
