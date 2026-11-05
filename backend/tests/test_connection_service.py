@@ -1452,7 +1452,9 @@ async def test_sync_connection_enable_banking_rekeys_row_whose_reference_arrived
     rows = await _account_rows(session, account_id)
     assert [row.id for row in rows] == [held_id]
     assert rows[0].external_id == refetched.external_id
-    assert rows[0].raw_data["entry_reference"] == "2026-09-03.1"
+    raw_data = rows[0].raw_data
+    assert raw_data is not None
+    assert raw_data["entry_reference"] == "2026-09-03.1"
 
 
 @pytest.mark.asyncio
