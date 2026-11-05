@@ -7294,3 +7294,70 @@ async def test_sync_connection_records_and_clears_error_account(
 
     assert result.status == "active"
     assert result.last_sync_error_account_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("table_name", ["transactions", "credit_card_bills"])
+async def test_sync_records_account_when_ownership_update_fails(
+    session: AsyncSession, test_user, test_workspace, table_name,
+):
+    from sqlalchemy.sql.dml import Update
+
+    conn = await _make_connection(session, test_user.id, "Ownership Error Bank")
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, external_id="ownership-error-account", name="Checking",
+        type="checking", balance=Decimal("100"), currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+    account_id, connection_id = account.id, conn.id
+    provider = AsyncMock()
+    provider.refresh_credentials.return_value = {"token": "fresh"}
+    provider.get_accounts.return_value = [AccountData(
+        external_id="ownership-error-account", name="Checking", type="checking",
+        balance=Decimal("100"), currency="BRL",
+    )]
+    execute = session.execute
+
+    async def fail_update(statement, *args, **kwargs):
+        if isinstance(statement, Update) and statement.table.name == table_name:
+            raise RuntimeError("ownership update failed")
+        return await execute(statement, *args, **kwargs)
+
+    with patch("app.services.connection_service.get_provider", return_value=provider), patch.object(
+        session, "execute", side_effect=fail_update,
+    ):
+        with pytest.raises(RuntimeError, match="ownership update failed"):
+            await sync_connection(session, connection_id, test_workspace.id, test_user.id)
+
+    refreshed = await session.get(BankConnection, connection_id)
+    assert refreshed is not None
+    assert refreshed.status == "sync_error"
+    assert refreshed.last_sync_error_account_id == account_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("starting_status", ["error", "expired"])
+@pytest.mark.parametrize("failure_stage", ["refresh_credentials", "get_accounts"])
+async def test_sync_transport_failure_preserves_reconnect_status(
+    session: AsyncSession, test_user, test_workspace, starting_status, failure_stage,
+):
+    conn = await _make_connection(session, test_user.id, "Reconnect Still Required")
+    conn.status = starting_status
+    error_account_id = uuid.uuid4()
+    conn.last_sync_error_account_id = error_account_id
+    await session.commit()
+    connection_id = conn.id
+    provider = AsyncMock()
+    provider.refresh_credentials.return_value = {"token": "fresh"}
+    getattr(provider, failure_stage).side_effect = RuntimeError("transport unavailable")
+
+    with patch("app.services.connection_service.get_provider", return_value=provider):
+        with pytest.raises(RuntimeError, match="transport unavailable"):
+            await sync_connection(session, connection_id, test_workspace.id, test_user.id)
+
+    refreshed = await session.get(BankConnection, connection_id)
+    assert refreshed is not None
+    assert refreshed.status == starting_status
+    assert refreshed.last_sync_error_account_id == error_account_id

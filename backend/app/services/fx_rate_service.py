@@ -20,13 +20,14 @@ _provider = OpenExchangeRatesProvider()
 
 
 async def sync_rates(
-    session: AsyncSession, target_date: Optional[date] = None
+    session: AsyncSession, target_date: Optional[date] = None, *, commit: bool = True,
 ) -> int:
     """Fetch rates from the provider for the given date and upsert into fx_rates.
 
     Only saves rates for currencies in `supported_currencies`.
     Idempotent — existing rates for the same date are updated.
-    Returns the number of rates synced.
+    Returns the number of rates synced. A caller that owns a larger transaction
+    can pass ``commit=False`` to keep fetched rates inside that transaction.
     """
     requested_target = target_date or app_today()
     # Providers cannot return a historical rate for a date that has not
@@ -58,7 +59,8 @@ async def sync_rates(
         await session.execute(stmt)
         count += 1
 
-    await session.commit()
+    if commit:
+        await session.commit()
     logger.info("Synced %d FX rates for %s", count, target)
     return count
 
@@ -70,6 +72,7 @@ async def _resolve_rate(
     target_date: Optional[date] = None,
     *,
     allow_fetch: bool = True,
+    commit_fetched_rates: bool = True,
 ) -> Optional[Decimal]:
     """Resolve the true FX rate, or None when no rate can be found.
 
@@ -78,7 +81,8 @@ async def _resolve_rate(
     Returns None (not a fake 1:1) when no rate is available, so callers that
     persist a conversion can honestly leave it NULL instead of storing a wrong
     amount (issue #353). Pass ``allow_fetch=False`` to skip the on-demand
-    provider call and rely only on already-stored rates.
+    provider call and rely only on already-stored rates. ``commit_fetched_rates=False``
+    keeps an on-demand fetch inside the caller's transaction.
     """
     if from_currency == to_currency:
         return Decimal("1")
@@ -96,7 +100,10 @@ async def _resolve_rate(
     # Step 2: If missing, fetch from provider for exact date
     if allow_fetch and (usd_to_source is None or usd_to_target is None):
         try:
-            synced = await sync_rates(session, target)
+            if commit_fetched_rates:
+                synced = await sync_rates(session, target)
+            else:
+                synced = await sync_rates(session, target, commit=False)
             if synced > 0:
                 logger.info("On-demand sync fetched %d rates for %s", synced, target)
                 if usd_to_source is None:
@@ -289,6 +296,7 @@ async def stamp_primary_amount(
     currency_field: str = "currency",
     *,
     allow_fetch: bool = True,
+    commit_fetched_rates: bool = True,
 ) -> None:
     """Set obj's primary amount and fx_rate_used based on user's primary currency.
 
@@ -301,7 +309,9 @@ async def stamp_primary_amount(
     while an already-stamped row keeps its current value — so re-stamping never
     pushes a visible transaction into limbo. The row heals on a later pass once a
     rate for its date lands. Pass ``allow_fetch=False`` to avoid the on-demand
-    provider call (used by the healer to stay frugal).
+    provider call (used by the healer to stay frugal). A caller that owns a larger
+    transaction can pass ``commit_fetched_rates=False`` so fetching rates does
+    not commit its other changes or release its locks.
     """
     user = await session.get(User, user_id)
     if not user:
@@ -325,7 +335,8 @@ async def stamp_primary_amount(
 
     obj_date = getattr(obj, date_field, None)
     rate = await _resolve_rate(
-        session, obj_currency, primary_currency, obj_date, allow_fetch=allow_fetch
+        session, obj_currency, primary_currency, obj_date, allow_fetch=allow_fetch,
+        commit_fetched_rates=commit_fetched_rates,
     )
 
     if rate is None:

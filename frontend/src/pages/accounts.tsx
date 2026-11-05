@@ -344,7 +344,10 @@ export default function AccountsPage() {
                 const connAccounts = bankAccounts.filter((a) => a.connection_id === conn.id)
                 const needsAttention = conn.status !== 'active'
                 const needsReconnect = conn.status === 'error' || conn.status === 'expired'
-                const failedAccount = connAccounts.find((a) => a.id === conn.last_sync_error_account_id)
+                const isFailedAccount = (a: Account) =>
+                  a.connection_id === conn.id && a.id === conn.last_sync_error_account_id
+                const failedAccount = accountsList?.find(isFailedAccount)
+                  ?? closedAccountsList?.find(isFailedAccount)
                 const syncPending = syncMutation.isPending && syncMutation.variables === conn.id
                 return (
                   <div key={conn.id} className="bg-card rounded-xl border border-border shadow-sm">

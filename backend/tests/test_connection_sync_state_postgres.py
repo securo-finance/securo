@@ -2,6 +2,8 @@
 
 import asyncio
 import importlib.util
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -10,11 +12,17 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import DBAPIError
 
+from app.models.account import Account
 from app.models.bank_connection import BankConnection
-from app.providers.base import ConnectionData
-from app.services import connection_service
+from app.models.fx_rate import FxRate
+from app.models.transaction import Transaction
+from app.providers.base import (
+    AccountData, ConnectionData, ProviderUserActionRequired, SessionExpiredError, TransactionData,
+)
+from app.services import connection_service, fx_rate_service
 
 pytestmark = pytest.mark.asyncio
 
@@ -98,7 +106,7 @@ async def test_reconnect_waits_for_sync_and_refreshes_cached_state(
     assert reconnected.sync_state_version == 2
 
 
-async def test_failed_sync_cannot_overwrite_reconnect_after_rollback(
+async def test_reconnect_waits_for_failed_sync_status_commit(
     session, postgres_sessions, test_user, test_workspace,
 ):
     connection = await _connection(session, test_user, test_workspace)
@@ -122,22 +130,230 @@ async def test_failed_sync_cannot_overwrite_reconnect_after_rollback(
                 sync_session, connection_id, workspace_id, user_id,
             ))
             await asyncio.wait_for(failure_waiting.wait(), timeout=5)
+            reconnect_task = asyncio.create_task(connection_service.handle_oauth_callback(
+                reconnect_session, workspace_id, user_id, "setup-token",
+                provider_name="test", reconnect_connection_id=connection_id,
+            ))
             try:
-                await asyncio.wait_for(connection_service.handle_oauth_callback(
-                    reconnect_session, workspace_id, user_id, "setup-token",
-                    provider_name="test", reconnect_connection_id=connection_id,
-                ), timeout=5)
+                with pytest.raises(TimeoutError):
+                    await asyncio.wait_for(asyncio.shield(reconnect_task), timeout=0.1)
+                provider.handle_oauth_callback.assert_not_awaited()
             finally:
                 release.set()
                 with pytest.raises(RuntimeError, match="temporary provider failure"):
                     await asyncio.wait_for(sync_task, timeout=5)
+                await asyncio.wait_for(reconnect_task, timeout=5)
 
     await session.refresh(connection)
     assert connection.credentials == {"token": "new"}
     assert connection.status == "active"
     assert connection.last_sync_at is None
     assert connection.last_sync_error_account_id is None
+    assert connection.sync_state_version == 2
+
+
+async def test_waiting_expired_failure_is_not_lost_after_processing_failure(
+    session, postgres_sessions, test_user, test_workspace,
+):
+    connection = await _connection(session, test_user, test_workspace)
+    connection_id, user_id, workspace_id = connection.id, test_user.id, test_workspace.id
+    provider = _provider()
+    first_reading = asyncio.Event()
+    fail_first = asyncio.Event()
+    second_reading = asyncio.Event()
+    fail_second = asyncio.Event()
+    first_stamping = asyncio.Event()
+    release_first_stamp = asyncio.Event()
+    first_stamped = asyncio.Event()
+    reads = 0
+
+    async def get_accounts(credentials):
+        nonlocal reads
+        reads += 1
+        if reads == 1:
+            first_reading.set()
+            await fail_first.wait()
+            raise RuntimeError("temporary processing failure")
+        second_reading.set()
+        await fail_second.wait()
+        raise SessionExpiredError("consent expired")
+
+    provider.get_accounts.side_effect = get_accounts
+    update_status = connection_service._set_sync_status_if_current
+    async with postgres_sessions() as first_session, postgres_sessions() as second_session:
+        async def ordered_status_update(sync_session, *args, **kwargs):
+            if sync_session is first_session:
+                first_stamping.set()
+                await release_first_stamp.wait()
+                await update_status(sync_session, *args, **kwargs)
+                first_stamped.set()
+            else:
+                await first_stamped.wait()
+                await update_status(sync_session, *args, **kwargs)
+
+        with patch.object(connection_service, "get_provider", return_value=provider), patch.object(
+            connection_service, "_set_sync_status_if_current", side_effect=ordered_status_update,
+        ):
+            first_task = asyncio.create_task(connection_service.sync_connection(
+                first_session, connection_id, workspace_id, user_id,
+            ))
+            await asyncio.wait_for(first_reading.wait(), timeout=5)
+            second_task = asyncio.create_task(connection_service.sync_connection(
+                second_session, connection_id, workspace_id, user_id,
+            ))
+            fail_first.set()
+            await asyncio.wait_for(first_stamping.wait(), timeout=5)
+            try:
+                await asyncio.wait_for(second_reading.wait(), timeout=0.1)
+                second_read_before_status = True
+            except TimeoutError:
+                second_read_before_status = False
+            finally:
+                release_first_stamp.set()
+                fail_second.set()
+                results = await asyncio.wait_for(
+                    asyncio.gather(first_task, second_task, return_exceptions=True), timeout=5,
+                )
+
+    assert isinstance(results[0], RuntimeError)
+    assert isinstance(results[1], SessionExpiredError)
+    await session.refresh(connection)
+    assert connection.status == "expired"
+    assert connection.sync_state_version == 2
+    assert not second_read_before_status
+
+
+@pytest.mark.parametrize("newer_operation", ["sync", "reconnect"])
+async def test_stale_failure_guard_keeps_newer_committed_result(
+    session, postgres_sessions, test_user, test_workspace, newer_operation,
+):
+    connection = await _connection(session, test_user, test_workspace)
+    connection_id, user_id, workspace_id = connection.id, test_user.id, test_workspace.id
+    stale_version = connection.sync_state_version
+    provider = _provider()
+    with patch.object(connection_service, "get_provider", return_value=provider):
+        if newer_operation == "sync":
+            await connection_service.sync_connection(session, connection_id, workspace_id, user_id)
+        else:
+            await connection_service.handle_oauth_callback(
+                session, workspace_id, user_id, "setup-token",
+                provider_name="test", reconnect_connection_id=connection_id,
+            )
+    newer_credentials = dict(connection.credentials)
+    newer_sync_at = connection.last_sync_at
+    async with postgres_sessions() as stale_session:
+        await connection_service._set_sync_status_if_current(
+            stale_session, connection_id, stale_version, "expired",
+        )
+        await stale_session.commit()
+
+    await session.refresh(connection)
+    assert connection.status == "active"
+    assert connection.sync_state_version == stale_version + 1
+    assert connection.credentials == newer_credentials
+    assert connection.last_sync_at == newer_sync_at
+
+
+async def test_user_action_refresh_commits_metadata_and_status_once(
+    session, test_user, test_workspace,
+):
+    connection = await _connection(session, test_user, test_workspace)
+    connection_id = connection.id
+    provider = _provider()
+    provider.get_institution_logo.return_value = "https://example.invalid/bank-logo.png"
+    provider.trigger_refresh.return_value = "needs_user_action"
+    with patch.object(connection_service, "get_provider", return_value=provider):
+        with pytest.raises(ProviderUserActionRequired):
+            await connection_service.sync_connection(
+                session, connection_id, test_workspace.id, test_user.id,
+                trigger_provider_refresh=True,
+            )
+
+    await session.refresh(connection)
+    assert connection.status == "error"
     assert connection.sync_state_version == 1
+    assert connection.credentials == {"token": "old-refreshed"}
+    assert connection.logo_url == "https://example.invalid/bank-logo.png"
+    assert connection.settings["last_provider_refresh_at"]
+
+
+async def test_fx_fetch_retains_sync_lock_and_failed_import_rolls_back(
+    session, postgres_sessions, test_user, test_workspace,
+):
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    await session.commit()
+    connection = await _connection(session, test_user, test_workspace)
+    connection_id, user_id, workspace_id = connection.id, test_user.id, test_workspace.id
+    provider = _provider()
+    target = date(2025, 6, 15)
+    provider.get_accounts.return_value = [AccountData(
+        external_id="fx-account", name="Euro account", type="checking",
+        balance=Decimal("100"), currency="EUR",
+    )]
+    provider.get_transactions.return_value = [TransactionData(
+        external_id="fx-purchase", description="FX purchase", amount=Decimal("12"),
+        currency="EUR", date=target, type="debit",
+    )]
+    imported = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fail_after_conversion(sync_session, account):
+        # Reaching opening-balance reconciliation means the real FX stamping
+        # path has fetched rates and imported the transaction already.
+        imported.set()
+        await release.wait()
+        await sync_session.execute(text("SELECT 1 / 0"))
+
+    async with postgres_sessions() as sync_session, postgres_sessions() as reconnect_session:
+        with patch.object(connection_service, "get_provider", return_value=provider), patch.object(
+            connection_service, "sync_opening_balance_for_connected_account",
+            side_effect=fail_after_conversion,
+        ), patch.object(
+            fx_rate_service._provider, "fetch_historical",
+            new=AsyncMock(return_value={"EUR": Decimal("2")}),
+        ) as fetch_rates:
+            sync_task = asyncio.create_task(connection_service.sync_connection(
+                sync_session, connection_id, workspace_id, user_id,
+            ))
+            await asyncio.wait_for(imported.wait(), timeout=5)
+            reconnect_task = asyncio.create_task(connection_service.handle_oauth_callback(
+                reconnect_session, workspace_id, user_id, "setup-token",
+                provider_name="test", reconnect_connection_id=connection_id,
+            ))
+            try:
+                with pytest.raises(TimeoutError):
+                    await asyncio.wait_for(asyncio.shield(reconnect_task), timeout=0.1)
+                provider.handle_oauth_callback.assert_not_awaited()
+                fetch_rates.assert_awaited_once_with(target)
+                async with postgres_sessions() as observer:
+                    assert await observer.scalar(select(func.count()).select_from(FxRate)) == 0
+            finally:
+                release.set()
+                with pytest.raises(DBAPIError):
+                    await asyncio.wait_for(sync_task, timeout=5)
+                await asyncio.wait_for(reconnect_task, timeout=5)
+
+    async with postgres_sessions() as observer:
+        assert await observer.scalar(select(func.count()).select_from(FxRate)) == 0
+        assert await observer.scalar(select(func.count()).select_from(Transaction)) == 0
+        assert await observer.scalar(select(func.count()).select_from(Account)) == 0
+        latest = await observer.get(BankConnection, connection_id)
+        assert latest is not None and latest.status == "active"
+        assert latest.credentials == {"token": "new"}
+        assert latest.sync_state_version == 2
+
+
+async def test_standalone_fx_fetch_still_commits_by_default(session, postgres_sessions):
+    target = date(2025, 6, 15)
+    with patch.object(
+        fx_rate_service._provider, "fetch_historical",
+        new=AsyncMock(return_value={"EUR": Decimal("2")}),
+    ):
+        assert await fx_rate_service.sync_rates(session, target) == 1
+
+    async with postgres_sessions() as observer:
+        rate = await observer.scalar(select(FxRate).where(FxRate.quote_currency == "EUR"))
+        assert rate is not None and rate.rate == Decimal("2")
 
 
 async def test_sync_state_migration_defaults_and_round_trip(

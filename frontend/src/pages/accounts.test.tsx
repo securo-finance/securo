@@ -11,6 +11,8 @@ const api = vi.hoisted(() => ({
   sync: vi.fn(),
 }))
 
+const collectionFilter = vi.hoisted(() => ({ activeAccountIds: null as string[] | null }))
+
 vi.mock('@/lib/api', () => ({
   accounts: { list: api.accountsList },
   assets: { list: vi.fn().mockResolvedValue([]) },
@@ -33,7 +35,7 @@ vi.mock('@/contexts/workspace-context', () => ({
 }))
 
 vi.mock('@/contexts/collection-filter-context', () => ({
-  useCollectionFilter: () => ({ activeAccountIds: null }),
+  useCollectionFilter: () => collectionFilter,
 }))
 
 vi.mock('@/hooks/use-privacy-mode', () => ({
@@ -104,6 +106,7 @@ function makeAccount(connectionId: string): Account {
 describe('AccountsPage connection row actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    collectionFilter.activeAccountIds = null
     api.accountsList.mockImplementation((includeClosed: boolean) =>
       Promise.resolve(includeClosed ? [] : [makeAccount('conn-1')]),
     )
@@ -154,6 +157,23 @@ describe('AccountsPage connection row actions', () => {
 
     await screen.findByText(t('accounts.connectionSyncError'))
     expect(screen.queryByRole('button', { name: t('accounts.reconnect') })).not.toBeInTheDocument()
+  })
+
+  it('names a known failed account outside the active collection without adding it to the list', async () => {
+    collectionFilter.activeAccountIds = ['acc-1']
+    const excluded = { ...makeAccount('conn-1'), id: 'acc-2', name: 'Excluded Savings' }
+    api.accountsList.mockImplementation((includeClosed: boolean) =>
+      Promise.resolve(includeClosed ? [] : [makeAccount('conn-1'), excluded]),
+    )
+    api.connectionsList.mockResolvedValue([makeConnection({
+      status: 'sync_error', last_sync_error_account_id: excluded.id,
+    })])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await screen.findByText(t('accounts.connectionAccountError', { account: excluded.name }))
+    expect(screen.queryByText(t('accounts.connectionSyncError'))).not.toBeInTheDocument()
+    expect(screen.getByText('Healthy Checking', { exact: true })).toBeInTheDocument()
+    expect(screen.queryByText(excluded.name, { exact: true })).not.toBeInTheDocument()
   })
 
   it('retries the sync for the connection whose row the retry button sits in', async () => {
