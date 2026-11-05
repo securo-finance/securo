@@ -2317,6 +2317,10 @@ async def _sync_credit_card_bills(
 SyncOutcome = Literal["refreshed", "rate_limited"]
 
 
+class ConnectionSyncValidationError(ValueError):
+    """Required local connection state is missing; its message is safe for clients."""
+
+
 async def _set_sync_status_if_current(
     session: AsyncSession,
     connection_id: uuid.UUID,
@@ -2353,9 +2357,9 @@ async def sync_connection(
         session, connection_id, workspace_id, for_update=True
     )
     if not connection:
-        raise ValueError("Connection not found")
+        raise ConnectionSyncValidationError("Connection not found")
     if not connection.credentials:
-        raise ValueError("Credentials not found")
+        raise ConnectionSyncValidationError("Credentials not found")
 
     # Authorization is workspace-scoped and happens before this service is
     # called. Data imported from a bank connection, however, must always be

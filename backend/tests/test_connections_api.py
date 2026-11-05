@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.bank_connection import BankConnection
 from app.models.user import User
 from app.providers.base import (
+    ProviderNotConfiguredError,
     ProviderRateLimited,
     ProviderUserActionRequired,
     SessionExpiredError,
@@ -262,6 +263,38 @@ async def test_sync_connection_not_found(client: AsyncClient, auth_headers):
         f"/api/connections/{uuid.uuid4()}/sync", headers=auth_headers,
     )
     assert resp.status_code == 404
+    assert resp.json()["detail"] == "Connection not found"
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_missing_credentials(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_connection: BankConnection,
+):
+    test_connection.credentials = None
+    await session.commit()
+    with patch("app.services.connection_service.get_provider") as get_provider:
+        resp = await client.post(
+            f"/api/connections/{test_connection.id}/sync", headers=auth_headers,
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Credentials not found"
+    get_provider.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_unconfigured_provider_returns_unavailable(
+    client: AsyncClient, auth_headers,
+):
+    with patch("app.services.connection_service.sync_connection") as mock_sync:
+        mock_sync.side_effect = ProviderNotConfiguredError("Provider is not configured")
+        resp = await client.post(
+            f"/api/connections/{uuid.uuid4()}/sync", headers=auth_headers,
+        )
+
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Provider is not configured"
 
 
 @pytest.mark.asyncio
@@ -352,22 +385,30 @@ async def test_sync_connection_rate_limited_reports_outcome(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
 async def test_sync_connection_hides_internal_error(
-    client: AsyncClient, auth_headers, caplog
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_connection: BankConnection, caplog, error_type,
 ):
-    connection_id = uuid.uuid4()
+    connection_id = test_connection.id
+    secret = "secret provider token=synthetic-private-token and account details"
+    provider = AsyncMock()
+    provider.refresh_credentials.return_value = {"token": "synthetic-private-token"}
+    provider.trigger_refresh.return_value = "skipped"
+    provider.get_accounts.side_effect = error_type(secret)
     with patch(
-        "app.api.connections.connection_service.sync_connection",
-        new_callable=AsyncMock,
-    ) as mock_sync, caplog.at_level(logging.ERROR, logger="app.api.connections"):
-        mock_sync.side_effect = RuntimeError("secret database details")
+        "app.services.connection_service.get_provider", return_value=provider,
+    ), caplog.at_level(logging.ERROR, logger="app.api.connections"):
         resp = await client.post(
             f"/api/connections/{connection_id}/sync", headers=auth_headers,
         )
 
     assert resp.status_code == 500
     assert resp.json()["detail"] == "Sync failed. Please try again."
-    assert "secret database details" in caplog.text
+    assert "synthetic-private-token" not in resp.text
+    assert secret in caplog.text
+    await session.refresh(test_connection)
+    assert test_connection.status == "sync_error"
 
 
 @pytest.mark.asyncio

@@ -186,7 +186,7 @@ async def sync_connection(
             "merged_count": merged_count,
             "sync_outcome": sync_outcome,
         }
-    except ValueError as e:
+    except connection_service.ConnectionSyncValidationError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ProviderUserActionRequired as e:
         raise HTTPException(
