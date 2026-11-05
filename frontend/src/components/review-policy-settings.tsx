@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState } from 'react'
-import { WorkspaceRefreshStatusContext } from '@/contexts/workspace-provider'
+import { WorkspaceRefreshStatusContext } from '@/contexts/workspace-context'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'

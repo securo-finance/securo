@@ -1,7 +1,7 @@
 """Graph48 initial native candidate: real CHECK, V1 fence, deleted-rule retention.
 
 NOT_RUN at authoring. Existing native fixtures and tests remain unchanged.
-Both schema modes come from the canonical fixture (public must already be 100).
+Both schema modes own fresh resources; Alembic runs the actual migration chain.
 No URL means canonical reported skips, never fabricated native passes.
 """
 import json

@@ -27,6 +27,9 @@ interface WorkspaceContextType {
 
 export const WorkspaceContext = createContext<WorkspaceContextType | null>(null)
 
+// Local refresh state, not a draft store: consumers retain their own edits.
+export const WorkspaceRefreshStatusContext = createContext({ pending: false, failed: false })
+
 export function useWorkspace() {
   const ctx = useContext(WorkspaceContext)
   if (!ctx) {

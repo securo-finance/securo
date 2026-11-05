@@ -1,7 +1,11 @@
+import asyncio
 import os
+import re
+import sys
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -46,6 +50,7 @@ import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
 from sqlalchemy.dialects.postgresql import UUID  # noqa: E402
 from sqlalchemy.ext.compiler import compiles  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker  # noqa: E402
@@ -134,19 +139,96 @@ async def postgres_sessions():
         pytest.skip("isolated PostgreSQL not configured")
     schema = f"postgres_test_{uuid.uuid4().hex}"
     pg_engine = create_async_engine(url)
-    scoped = pg_engine.execution_options(schema_translate_map={None: schema})
+    created = False
     try:
+        scoped = pg_engine.execution_options(schema_translate_map={None: schema})
         async with pg_engine.begin() as conn:
             await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        # Only a confirmed CREATE transaction confers ownership. Ambiguous
+        # outcomes may retain a schema; they never authorize dropping it.
+        created = True
         async with scoped.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         yield async_sessionmaker(scoped, expire_on_commit=False)
     finally:
         try:
-            async with pg_engine.begin() as conn:
-                await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+            if created:
+                async with pg_engine.begin() as conn:
+                    await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
         finally:
             await pg_engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def alembic_postgres_sessions():
+    """Migrate a fresh owned database, never the URL's existing public schema.
+
+    Unlike metadata's schema-only fixture, the unchanged historical migrations
+    create extensions and inspect database-wide catalogs. A separate database
+    isolates those effects too. The test role must explicitly have CREATEDB;
+    there is no fallback to shared tables, privilege grants or forced cleanup.
+    """
+    url = os.environ.get("POSTGRES_TEST_URL")
+    if not url:
+        if os.environ.get("CI"):
+            pytest.fail("CI must supply POSTGRES_TEST_URL for PostgreSQL tests")
+        pytest.skip("isolated PostgreSQL not configured")
+    source_url = make_url(url)
+    if source_url.drivername != "postgresql+asyncpg" or not source_url.database:
+        pytest.fail("Alembic fixture requires a PostgreSQL+asyncpg test database URL")
+
+    database = f"review_alembic_test_{uuid.uuid4().hex}"
+    owned_url = source_url.set(database=database)
+    admin_engine = create_async_engine(source_url, isolation_level="AUTOCOMMIT")
+    owned_engine = create_async_engine(owned_url)
+    created = False
+    try:
+        async with admin_engine.connect() as conn:
+            can_create = await conn.scalar(text(
+                "SELECT rolsuper OR rolcreatedb FROM pg_roles WHERE rolname = current_user"
+            ))
+            if not can_create:
+                pytest.fail("Alembic fixture requires an explicitly authorized CREATEDB test role")
+            await conn.execute(text(f'CREATE DATABASE "{database}" TEMPLATE template0'))
+            created = True
+
+        # A fresh interpreter runs the real env.py and native pgvector types,
+        # not conftest's SQLite Vector shim or create_all + stamp.
+        backend = Path(__file__).resolve().parent.parent
+        process = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "alembic", "-c", str(backend / "alembic.ini"),
+            "upgrade", "head", cwd=backend,
+            env={**os.environ, "DATABASE_URL": owned_url.render_as_string(hide_password=False)},
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        )
+        try:
+            output, _ = await asyncio.wait_for(process.communicate(), timeout=120)
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.communicate()
+        if process.returncode != 0:
+            diagnostic = re.sub(
+                r"postgresql(?:\+asyncpg)?://[^\s]+", "<redacted-test-database-url>",
+                output.decode(errors="replace"),
+            )
+            pytest.fail(f"Real Alembic upgrade failed (exit {process.returncode}):\n{diagnostic}")
+
+        scoped = owned_engine.execution_options(schema_translate_map={None: "public"})
+        async with scoped.connect() as conn:
+            assert await conn.scalar(text("SELECT current_database()")) == database
+            assert await conn.scalar(text("SELECT version_num FROM public.alembic_version")) == "105"
+        yield async_sessionmaker(scoped, expire_on_commit=False)
+    finally:
+        try:
+            await owned_engine.dispose()
+            if created:
+                # Only this successful CREATE confers ownership. No IF EXISTS,
+                # FORCE, backend termination, or cleanup of any other resource.
+                async with admin_engine.connect() as conn:
+                    await conn.execute(text(f'DROP DATABASE "{database}"'))
+        finally:
+            await admin_engine.dispose()
 
 
 @pytest_asyncio.fixture

@@ -2,16 +2,13 @@
 import asyncio
 import copy
 import json
-import os
 import uuid
 from datetime import date
 from decimal import Decimal
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
 from app.models.account import Account
@@ -29,26 +26,12 @@ from app.services.review_conflict import (
 pytestmark = pytest.mark.asyncio
 
 
-@pytest_asyncio.fixture(params=['metadata', 'alembic'])
-async def schema_sessions(request, postgres_sessions):
-    if request.param == 'metadata':
-        yield postgres_sessions
-        return
-    engine = create_async_engine(os.environ['POSTGRES_TEST_URL'])
-    scoped = engine.execution_options(schema_translate_map={None: 'public'})
-    factory = async_sessionmaker(scoped, expire_on_commit=False)
-    tables = ', '.join('public."' + table.name + '"' for table in Base.metadata.sorted_tables)
-    try:
-        async with engine.begin() as connection:
-            # The controller must freshly observe 099, then upgrade to 100
-            # before current-model business cases; historical evidence is not a fresh checkpoint.
-            assert (await connection.execute(text('SELECT version_num FROM public.alembic_version'))).scalar_one() == '105'
-            await connection.execute(text('TRUNCATE ' + tables + ' CASCADE'))
-        yield factory
-    finally:
-        async with engine.begin() as connection:
-            await connection.execute(text('TRUNCATE ' + tables + ' CASCADE'))
-        await engine.dispose()
+@pytest.fixture(params=['metadata', 'alembic'])
+def schema_sessions(request):
+    # Resolve only the selected independently owned native fixture. Keep this
+    # selector synchronous so pytest-asyncio owns async fixture setup/teardown.
+    fixture = 'postgres_sessions' if request.param == 'metadata' else 'alembic_postgres_sessions'
+    return request.getfixturevalue(fixture)
 
 
 async def seed(factory):

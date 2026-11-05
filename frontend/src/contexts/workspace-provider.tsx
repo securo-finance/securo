@@ -1,14 +1,10 @@
-import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { workspaces as workspacesApi, WORKSPACE_STORAGE_KEY } from '@/lib/api'
 import type { ModuleId } from '@/lib/modules'
 import type { Workspace } from '@/types'
-import { WorkspaceContext } from '@/contexts/workspace-context'
-
-
-// Local refresh state, not a draft store: consumers retain their own edits.
-export const WorkspaceRefreshStatusContext = createContext({ pending: false, failed: false })
+import { WorkspaceContext, WorkspaceRefreshStatusContext } from '@/contexts/workspace-context'
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, token } = useAuth()
