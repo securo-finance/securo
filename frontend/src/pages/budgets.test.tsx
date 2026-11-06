@@ -258,6 +258,81 @@ describe('BudgetsPage suggestions', () => {
     expect(within(panel).getAllByText(accountIds ? '$240.00' : '$60.00').length).toBeGreaterThan(0)
   })
 
+  it.each([null, ['account-1']])('keeps category-part amounts and their server-converted value in scope %s', async (accountIds) => {
+    mockBudgets()
+    api.activeAccountIds = accountIds
+    api.transactions.list.mockResolvedValue({ items: [{
+      id: 'category-split', description: 'Category groceries', date: expectedMonth, type: 'debit',
+      amount: 120, amount_primary: 244.93, matched_amount: 30, matched_amount_primary: 61.23,
+      viewer_share: null, currency: 'EUR', status: 'posted', has_category_lines: true,
+      category_lines: [
+        { category_id: 'cat-groceries', amount: 30, category: categories[0] },
+        { category_id: 'cat-utilities', amount: 90, category: categories[1] },
+      ],
+    }], total: 1 })
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    const panel = screen.getByRole('complementary')
+    expect(await within(panel).findByText('Category groceries')).toBeInTheDocument()
+    expect(within(panel).getByText('-€30.00')).toBeInTheDocument()
+    expect(within(panel).getAllByText('$61.23').length).toBeGreaterThan(0)
+    expect(within(panel).queryByText('$244.93')).not.toBeInTheDocument()
+    expect(within(panel).getByText(/Groceries.*€120.00/)).toBeInTheDocument()
+  })
+
+  it.each([
+    { matched: 30, primary: null, expectedAmount: '-€30.00' },
+    { matched: 0, primary: 0, expectedAmount: '-€0.00' },
+  ])('does not replace category-part $matched or missing FX with the parent amount', async ({ matched, primary, expectedAmount }) => {
+    mockBudgets()
+    api.transactions.list.mockResolvedValue({ items: [{
+      id: 'part', description: 'Category part', date: expectedMonth, type: 'debit',
+      amount: 120, amount_primary: 240, matched_amount: matched, matched_amount_primary: primary,
+      currency: 'EUR', status: 'posted',
+    }], total: 1 })
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    const panel = screen.getByRole('complementary')
+    expect(await within(panel).findByText('Category part')).toBeInTheDocument()
+    expect(within(panel).getByText(expectedAmount)).toBeInTheDocument()
+    expect(within(panel).getAllByText('$0.00').length).toBeGreaterThan(0)
+    expect(within(panel).queryByText('$240.00')).not.toBeInTheDocument()
+  })
+
+  it('combines posted category parts and recurring category parts without counting either parent', async () => {
+    mockBudgets()
+    api.activeAccountIds = ['account-1']
+    api.dashboard.spendingByCategory.mockResolvedValue([{ category_id: 'cat-groceries', projected_total: 90 }])
+    api.transactions.list.mockResolvedValue({ items: [{
+      id: 'posted-part', description: 'Posted category groceries', date: expectedMonth, type: 'debit',
+      amount: 120, amount_primary: 240, matched_amount: 30, matched_amount_primary: 60,
+      currency: 'EUR', status: 'posted',
+    }], total: 1 })
+    const projection = {
+      recurring_id: 'bill', account_id: 'account-1', description: 'Projected category groceries',
+      date: expectedMonth, type: 'debit', amount: 100, amount_primary: 200, currency: 'EUR',
+      category_id: null, has_category_lines: true, category_lines: [
+        { category_id: 'cat-groceries', category_name: 'Groceries', category_icon: '', category_color: '#34d399', amount: 15, treat_as_transfer: false },
+        { category_id: 'cat-utilities', category_name: 'Utilities', amount: 85, treat_as_transfer: false },
+      ],
+    }
+    api.dashboard.projectedTransactions.mockResolvedValue([
+      projection,
+      { ...projection, recurring_id: 'other-account', account_id: 'other', description: 'Other account bill' },
+      { ...projection, recurring_id: 'ignored-parts', category_lines: [], description: 'Ignored bill' },
+      { ...projection, recurring_id: 'other-month', date: '2000-01-01', description: 'Old bill' },
+    ])
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    const panel = screen.getByRole('complementary')
+    expect(await within(panel).findByText('Projected category groceries')).toBeInTheDocument()
+    expect(within(panel).getByText('-€30.00')).toBeInTheDocument()
+    expect(within(panel).getByText('-€15.00')).toBeInTheDocument()
+    expect(within(panel).getByText('$90.00')).toBeInTheDocument()
+    expect(within(panel).queryByText('$240.00')).not.toBeInTheDocument()
+    for (const text of ['Other account bill', 'Ignored bill', 'Old bill']) expect(within(panel).queryByText(text)).not.toBeInTheDocument()
+  })
+
   it.each(['transactions', 'projections', 'later-page'])('shows a load error rather than incomplete totals when %s fails', async (failure) => {
     mockBudgets()
     if (failure === 'projections') api.dashboard.projectedTransactions.mockRejectedValue(new Error('unavailable'))
