@@ -97,8 +97,12 @@ async def _apply_growth_rules() -> int:
                         if asset.growth_start_date and today < asset.growth_start_date:
                             continue
 
-                        # Generate all missed periods in a loop
+                        # Generate all missed periods in a loop. A value recorded
+                        # before the growth start accrues nothing until that date,
+                        # matching the backfill in _generate_growth_values.
                         current_date = latest.date
+                        if asset.growth_start_date and current_date < asset.growth_start_date:
+                            current_date = asset.growth_start_date
                         current_amount = float(latest.amount)
                         created = 0
 
