@@ -29,7 +29,10 @@ const api = vi.hoisted(() => ({
   groups: { list: vi.fn() },
   payees: { list: vi.fn() },
   rules: { create: vi.fn(), list: vi.fn() },
-  settings: { attachments: vi.fn() },
+  // currencyPreferences/setDisplayCurrency/auth are reached through
+  // CurrencyQuickSwitch in the balance header.
+  settings: { attachments: vi.fn(), currencyPreferences: vi.fn(), setDisplayCurrency: vi.fn() },
+  auth: { me: vi.fn() },
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -46,7 +49,7 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
 const preferences = vi.hoisted(() => ({ currency_display: 'USD' }))
 
 vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ user: { preferences } }),
+  useAuth: () => ({ user: { preferences }, updateUser: vi.fn() }),
 }))
 
 vi.mock('@/contexts/collection-filter-context', () => ({
@@ -169,6 +172,12 @@ beforeEach(() => {
   api.payees.list.mockResolvedValue([])
   api.rules.list.mockResolvedValue([])
   api.settings.attachments.mockResolvedValue({ enabled: false })
+  // One shortlisted currency keeps the switcher hidden, so these tests stay
+  // about the balance figures rather than the chips.
+  api.settings.currencyPreferences.mockResolvedValue({
+    currency_display: 'USD',
+    quick_currencies: ['USD'],
+  })
 })
 
 describe('Dashboard net worth breakdown', () => {
