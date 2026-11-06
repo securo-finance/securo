@@ -184,6 +184,41 @@ async def test_multiple_banks_fall_back_to_akahu_umbrella_name():
     assert conn.institution_name == "Akahu"
 
 
+@pytest.mark.asyncio
+async def test_get_accounts_preserves_each_institution():
+    institutions = [
+        {"_id": "conn_kiwibank", "name": "Kiwibank", "logo": "https://cdn.akahu.nz/kiwibank.png"},
+        {"_id": "conn_sharesies", "name": "Sharesies", "logo": "https://cdn.akahu.nz/sharesies.png"},
+    ]
+    items = [
+        _account_item(_id=f"acc_{index}", connection=institution)
+        for index, institution in enumerate(institutions)
+    ]
+
+    def handler(request):
+        return httpx.Response(200, json={"success": True, "items": items})
+
+    with _patched_client(handler):
+        accounts = await AkahuProvider().get_accounts(CREDS)
+
+    assert [
+        (account.institution_external_id, account.institution_name, account.institution_logo_url)
+        for account in accounts
+    ] == [
+        (institution["_id"], institution["name"], institution["logo"])
+        for institution in institutions
+    ]
+
+
+@pytest.mark.parametrize("connection", [None, {}, {"name": "Kiwibank"}, {"_id": "conn_bank"}])
+def test_accounts_allow_missing_institution_details(connection):
+    accounts, _, _ = AkahuProvider._parse_accounts({"items": [_account_item(connection=connection)]})
+
+    assert accounts[0].institution_external_id == (connection or {}).get("_id")
+    assert accounts[0].institution_logo_url is None
+    assert accounts[0].institution_name == (connection or {}).get("name")
+
+
 # ----- transactions -----------------------------------------------------------
 
 
