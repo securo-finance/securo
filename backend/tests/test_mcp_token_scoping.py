@@ -12,6 +12,7 @@ import uuid
 from typing import Any, cast
 
 import pytest
+from jose import jwt
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,12 +72,22 @@ def _registry_with(*names: str) -> tuple[MCPRegistry, dict[str, _RecordingClient
 
 @pytest.mark.asyncio
 async def test_discover_sends_each_server_its_own_token():
-    registry, clients = _registry_with(BUILTIN_SERVER_NAME, "notes")
-    await registry.discover(user_id=uuid.uuid4(), workspace_id=uuid.uuid4())
+    registry, clients = _registry_with(BUILTIN_SERVER_NAME, "notes", "calendar")
+    user_id = uuid.uuid4()
+    await registry.discover(user_id=user_id, workspace_id=uuid.uuid4())
 
     verify_request(_bearer(clients[BUILTIN_SERVER_NAME].tokens[0]))
-    with pytest.raises(HTTPException):
-        verify_request(_bearer(clients["notes"].tokens[0]))
+    for name in ("notes", "calendar"):
+        with pytest.raises(HTTPException):
+            verify_request(_bearer(clients[name].tokens[0]))
+
+    # Two extra servers never share an audience, so one can't replay the
+    # other's token either. Checked on discovery and on a call.
+    await registry.call(wire_name="notes__notes_tool", arguments={}, user_id=user_id)
+    await registry.call(wire_name="calendar__calendar_tool", arguments={}, user_id=user_id)
+    for name in ("notes", "calendar"):
+        audiences = {jwt.get_unverified_claims(t)["aud"] for t in clients[name].tokens}
+        assert audiences == {extra_server_audience(name)}
 
 
 @pytest.mark.asyncio
