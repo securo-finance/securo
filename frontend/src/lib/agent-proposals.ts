@@ -16,6 +16,8 @@ export type ProposalKind =
   | 'update_goal'
   | 'update_budget'
   | 'delete_budget'
+  | 'update_transaction_notes'
+  | 'create_category_group'
 
 /** One leg of a transfer pair, as the transfer tools preview it. */
 export interface TransferLeg {
@@ -56,6 +58,7 @@ export function isProposalData(data: unknown): data is ProposalData {
     'update_recurring_transaction', 'cancel_recurring_transaction',
     'create_goal', 'link_transfer', 'unlink_transfer',
     'update_goal', 'update_budget', 'delete_budget',
+    'update_transaction_notes', 'create_category_group',
   ].includes(k)
 }
 

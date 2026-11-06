@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { cleanup, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 
 import ReportsPage from '@/pages/reports'
 import { renderWithProviders, t } from '@/test/utils'
@@ -33,8 +33,10 @@ vi.mock('@/contexts/collection-filter-context', () => ({
   useCollectionFilter: () => ({ activeAccountIds: null, activeWalletIds: null }),
 }))
 
+const privacy = vi.hoisted(() => ({ on: false }))
+
 vi.mock('@/hooks/use-privacy-mode', () => ({
-  usePrivacyMode: () => ({ mask: (value: string) => value, privacyMode: false, MASK: '••••' }),
+  usePrivacyMode: () => ({ mask: (value: string) => value, privacyMode: privacy.on, MASK: '••••' }),
 }))
 
 function emptyReport(type: string): ReportResponse {
@@ -51,6 +53,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 8, 12, 12))
   vi.clearAllMocks()
+  privacy.on = false
   api.reports.netWorth.mockResolvedValue(emptyReport('net_worth'))
   api.reports.incomeExpenses.mockResolvedValue(emptyReport('income_expenses'))
   api.reports.cashFlow.mockResolvedValue(emptyReport('cash_flow'))
@@ -487,5 +490,309 @@ describe('Reports page - year picker (issue #765)', () => {
     await screen.findByRole('heading', { name: t('reports.cashFlow') })
     expect(screen.queryByRole('button', { name: t('reports.year') })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: `${t('reports.year')} 2026` })).not.toBeInTheDocument()
+  })
+})
+
+describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
+  const INFLOW_COLOR = 'rgb(16, 185, 129)'
+  const OUTFLOW_COLOR = 'rgb(244, 63, 94)'
+
+  // Bars grow in over animation frames. Report every frame as long past the
+  // animation so the chart lands on its final geometry straight away.
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
+      setTimeout(() => callback(performance.now() + 60_000), 0))
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  type Segment = { y: number; height: number; rounded: boolean }
+  type Column = { x: number; width: number; inflow?: Segment; outflow?: Segment }
+
+  function report(type: string, trend: Array<{ date: string; breakdowns: Record<string, number> }>, seriesKeys: string[] = []) {
+    const base = emptyReport(type)
+    return {
+      ...base,
+      meta: { ...base.meta, series_keys: seriesKeys },
+      trend: trend.map((point) => ({ ...point, value: 0, change: null })),
+    }
+  }
+
+  async function openTab(tab?: string) {
+    const { user, container } = renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalled())
+    if (tab) await user.click(screen.getByRole('button', { name: t(tab) }))
+    return container
+  }
+
+  async function openCashFlowBars(periods: Array<[date: string, inflow: number, outflow: number]>) {
+    api.reports.cashFlow.mockResolvedValue(
+      report('cash_flow', periods.map(([date, inflow, outflow]) => ({ date, breakdowns: { inflow, outflow } }))),
+    )
+    return barChart(await openTab('reports.cashFlow'))
+  }
+
+  // Tabs draw other charts too (balance projection, composition); the
+  // stacked bars live in their own one.
+  function barChart(container: HTMLElement) {
+    return waitFor(() => {
+      const found = Array.from(container.querySelectorAll<HTMLElement>('.recharts-wrapper'))
+        .find((wrapper) => wrapper.querySelector('.recharts-bar'))
+      expect(found).toBeDefined()
+      return found!
+    })
+  }
+
+  function zeroLine(chart: HTMLElement) {
+    return Number(chart.querySelector('.recharts-reference-line-line')!.getAttribute('y1'))
+  }
+
+  // Recharts draws a downward bar with a negative height; normalise to a top edge.
+  function box(path: Element) {
+    const y = Number(path.getAttribute('y'))
+    const height = Number(path.getAttribute('height'))
+    return { y: Math.min(y, y + height), height: Math.abs(height) }
+  }
+
+  function columns(chart: HTMLElement): Column[] {
+    const byX = new Map<number, Column>()
+    for (const path of chart.querySelectorAll('.recharts-bar-rectangle path')) {
+      const x = Number(path.getAttribute('x'))
+      const column = byX.get(x) ?? { x, width: Number(path.getAttribute('width')) }
+      const segment: Segment = { ...box(path), rounded: path.getAttribute('d')!.includes('A') }
+      if (path.getAttribute('fill') === '#10B981') column.inflow = segment
+      else column.outflow = segment
+      byX.set(x, column)
+    }
+    return [...byX.values()].sort((a, b) => a.x - b.x)
+  }
+
+  // jsdom has no layout, which leaves Recharts unable to map the pointer to a
+  // period. Give the chart the same box the test viewport renders it at.
+  function hoverAt(chart: HTMLElement, clientX: number) {
+    Object.defineProperties(chart, {
+      offsetWidth: { configurable: true, value: 800 },
+      offsetHeight: { configurable: true, value: 300 },
+      getBoundingClientRect: { configurable: true, value: () => DOMRect.fromRect({ width: 800, height: 300 }) },
+    })
+    fireEvent.mouseMove(chart, { clientX, clientY: 100 })
+    return chart.querySelector<HTMLElement>('.recharts-tooltip-wrapper')!
+  }
+
+  async function hoverColumn(chart: HTMLElement, column: Column) {
+    const tooltip = hoverAt(chart, column.x + column.width / 2)
+    await waitFor(() => expect(tooltip).not.toBeEmptyDOMElement())
+    return tooltip
+  }
+
+  function periodX(chart: HTMLElement, date: string) {
+    const tick = Array.from(chart.querySelectorAll('.recharts-xAxis-tick-labels text'))
+      .find((text) => text.textContent === date)!
+    return Number(tick.getAttribute('x'))
+  }
+
+  it('ends a surplus above zero, a deficit below it and break-even exactly on it', async () => {
+    const chart = await openCashFlowBars([
+      ['2026-10-01', 3000, 2500],
+      ['2026-11-01', 2500, 3000],
+      ['2026-12-01', 2000, 2000],
+    ])
+
+    await waitFor(() => {
+      const zero = zeroLine(chart)
+      const [surplus, deficit, breakEven] = columns(chart)
+      const pxPerUnit = surplus.inflow!.height / 3000
+
+      expect(surplus.inflow!.y).toBeCloseTo(zero - 500 * pxPerUnit)
+      expect(deficit.inflow!.y).toBeCloseTo(zero + 500 * pxPerUnit)
+      expect(breakEven.inflow!.y).toBeCloseTo(zero)
+    })
+  })
+
+  it('keeps the inflow and outflow segments at their own lengths, stacked without a gap', async () => {
+    const chart = await openCashFlowBars([['2026-10-01', 3000, 2500]])
+
+    await waitFor(() => {
+      const [{ inflow, outflow }] = columns(chart)
+
+      expect(inflow!.height / outflow!.height).toBeCloseTo(3000 / 2500)
+      expect(outflow!.y).toBeCloseTo(inflow!.y + inflow!.height)
+    })
+  })
+
+  it('rounds whichever segment ends at net flow', async () => {
+    const chart = await openCashFlowBars([
+      ['2026-10-01', 3000, 2500],
+      ['2026-11-01', 0, 1000],
+    ])
+
+    await waitFor(() => {
+      const zero = zeroLine(chart)
+      const [mixed, outflowOnly] = columns(chart)
+
+      expect(mixed.inflow!.rounded).toBe(true)
+      expect(mixed.outflow!.rounded).toBe(false)
+      expect(outflowOnly.inflow).toBeUndefined()
+      expect(outflowOnly.outflow!.rounded).toBe(true)
+      expect(outflowOnly.outflow!.y).toBeGreaterThan(zero)
+    })
+  })
+
+  it('lists inflow, outflow and a net flow coloured by its sign in the tooltip', async () => {
+    const chart = await openCashFlowBars([
+      ['2026-10-01', 3000, 2500],
+      ['2026-11-01', 2500, 3000],
+    ])
+    let surplus!: Column
+    let deficit!: Column
+    await waitFor(() => {
+      ;[surplus, deficit] = columns(chart)
+      expect(deficit).toBeDefined()
+    })
+
+    let tooltip = await hoverColumn(chart, deficit)
+    expect(tooltip).toHaveTextContent('2026-11-01')
+    expect(within(tooltip).getByText(`${t('reports.inflow')}: $2,500.00`)).toHaveStyle({ color: INFLOW_COLOR })
+    expect(within(tooltip).getByText(`${t('reports.outflow')}: -$3,000.00`)).toHaveStyle({ color: OUTFLOW_COLOR })
+    expect(within(tooltip).getByText(`${t('reports.netFlow')}: -$500.00`)).toHaveStyle({ color: OUTFLOW_COLOR })
+
+    tooltip = await hoverColumn(chart, surplus)
+    await waitFor(() => expect(tooltip).toHaveTextContent('2026-10-01'))
+    expect(within(tooltip).getByText(`${t('reports.netFlow')}: $500.00`)).toHaveStyle({ color: INFLOW_COLOR })
+  })
+
+  it('lists both amounts in the tooltip when a period has only one of them', async () => {
+    const chart = await openCashFlowBars([
+      ['2026-10-01', 1200, 0],
+      ['2026-11-01', 0, 800],
+    ])
+    let inflowOnly!: Column
+    let outflowOnly!: Column
+    await waitFor(() => {
+      ;[inflowOnly, outflowOnly] = columns(chart)
+      expect(outflowOnly).toBeDefined()
+    })
+
+    let tooltip = await hoverColumn(chart, inflowOnly)
+    expect(within(tooltip).getByText(`${t('reports.inflow')}: $1,200.00`)).toBeInTheDocument()
+    expect(within(tooltip).getByText(`${t('reports.outflow')}: $0.00`)).toHaveStyle({ color: OUTFLOW_COLOR })
+    expect(within(tooltip).getByText(`${t('reports.netFlow')}: $1,200.00`)).toBeInTheDocument()
+
+    tooltip = await hoverColumn(chart, outflowOnly)
+    await waitFor(() => expect(tooltip).toHaveTextContent('2026-11-01'))
+    expect(within(tooltip).getByText(`${t('reports.inflow')}: $0.00`)).toHaveStyle({ color: INFLOW_COLOR })
+    expect(within(tooltip).getByText(`${t('reports.outflow')}: -$800.00`)).toBeInTheDocument()
+    expect(within(tooltip).getByText(`${t('reports.netFlow')}: -$800.00`)).toBeInTheDocument()
+  })
+
+  it('lists the outflow in the tooltip even when the range has none to draw', async () => {
+    const chart = await openCashFlowBars([['2026-10-01', 1200, 0]])
+    let column!: Column
+    await waitFor(() => {
+      ;[column] = columns(chart)
+      expect(column.inflow).toBeDefined()
+    })
+    expect(column.outflow).toBeUndefined()
+
+    const tooltip = await hoverColumn(chart, column)
+    expect(within(tooltip).getByText(`${t('reports.outflow')}: $0.00`)).toBeInTheDocument()
+  })
+
+  it('shows a zero net flow in the tooltip for a break-even period', async () => {
+    const chart = await openCashFlowBars([['2026-10-01', 2000, 2000]])
+    let column!: Column
+    await waitFor(() => {
+      ;[column] = columns(chart)
+      expect(column.inflow!.y).toBeCloseTo(zeroLine(chart))
+    })
+
+    const tooltip = await hoverColumn(chart, column)
+    expect(within(tooltip).getByText(`${t('reports.netFlow')}: $0.00`)).toHaveStyle({ color: 'var(--muted-foreground)' })
+  })
+
+  it('leaves a month with no cash flow empty, without a bar or a tooltip', async () => {
+    const chart = await openCashFlowBars([
+      ['2026-10-01', 3000, 2500],
+      ['2026-11-01', 0, 0],
+      ['2026-12-01', 2500, 3000],
+    ])
+    let surplus!: Column
+    await waitFor(() => {
+      const drawn = columns(chart)
+      expect(drawn.map(({ x, width }) => x + width / 2)).toEqual([
+        periodX(chart, '2026-10-01'),
+        periodX(chart, '2026-12-01'),
+      ])
+      ;[surplus] = drawn
+    })
+
+    const tooltip = await hoverColumn(chart, surplus)
+    expect(tooltip).toHaveTextContent('2026-10-01')
+
+    hoverAt(chart, periodX(chart, '2026-11-01'))
+    await waitFor(() => expect(tooltip).toBeEmptyDOMElement())
+  })
+
+  it('draws no bars and no tooltip when the whole range has no cash flow', async () => {
+    api.reports.cashFlow.mockResolvedValue(report('cash_flow', [
+      { date: '2026-10-01', breakdowns: { inflow: 0, outflow: 0 } },
+      { date: '2026-11-01', breakdowns: { inflow: 0, outflow: 0 } },
+    ]))
+    const container = await openTab('reports.cashFlow')
+    // The balance projection is the tab's area chart; the other one holds the bars.
+    const chart = await waitFor(() => {
+      const found = Array.from(container.querySelectorAll<HTMLElement>('.recharts-wrapper'))
+        .find((wrapper) => !wrapper.querySelector('.recharts-area') && wrapper.querySelector('.recharts-xAxis-tick-labels text'))
+      expect(found).toBeDefined()
+      return found!
+    })
+
+    expect(chart.querySelectorAll('.recharts-bar-rectangle path')).toHaveLength(0)
+    const tooltip = hoverAt(chart, periodX(chart, '2026-10-01'))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(tooltip).toBeEmptyDOMElement()
+  })
+
+  it('masks every tooltip amount in privacy mode', async () => {
+    privacy.on = true
+    const chart = await openCashFlowBars([['2026-10-01', 3000, 2500]])
+    let column!: Column
+    await waitFor(() => {
+      ;[column] = columns(chart)
+      expect(column.outflow).toBeDefined()
+    })
+
+    const tooltip = await hoverColumn(chart, column)
+    expect(within(tooltip).getByText(`${t('reports.inflow')}: ••••`)).toBeInTheDocument()
+    expect(within(tooltip).getByText(`${t('reports.outflow')}: ••••`)).toBeInTheDocument()
+    expect(within(tooltip).getByText(`${t('reports.netFlow')}: ••••`)).toBeInTheDocument()
+    expect(tooltip).not.toHaveTextContent('$')
+  })
+
+  it('keeps the Net Worth bars stacked by sign, without a net flow row', async () => {
+    api.reports.netWorth.mockResolvedValue(
+      report('net_worth', [{ date: '2026-08-01', breakdowns: { accounts: 3000, liabilities: 2500 } }], ['accounts', 'liabilities']),
+    )
+    const chart = await barChart(await openTab())
+    const segments = () => Array.from(chart.querySelectorAll('.recharts-bar-rectangle path'), box)
+      .sort((a, b) => a.y - b.y)
+    await waitFor(() => {
+      const zero = zeroLine(chart)
+      const [assets, debt] = segments()
+
+      expect(assets.y + assets.height).toBeCloseTo(zero)
+      expect(debt.y).toBeCloseTo(zero)
+      expect(assets.height / debt.height).toBeCloseTo(3000 / 2500)
+    })
+
+    const path = chart.querySelector('.recharts-bar-rectangle path')!
+    const tooltip = await hoverColumn(chart, {
+      x: Number(path.getAttribute('x')),
+      width: Number(path.getAttribute('width')),
+    })
+    expect(tooltip).toHaveTextContent(`${t('reports.accounts')}: $3,000.00`)
+    expect(tooltip).toHaveTextContent(`${t('reports.liabilities')}: -$2,500.00`)
+    expect(tooltip).not.toHaveTextContent(t('reports.netFlow'))
+    expect(screen.queryByTestId('cash-flow-net')).not.toBeInTheDocument()
   })
 })

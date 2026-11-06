@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 
-import AccountsPage from '@/pages/accounts'
+import AccountsPage, { AccountDialog } from '@/pages/accounts'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, BankConnection } from '@/types'
 
@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => ({
   accounts: { list: api.accountsList },
+  assets: { list: vi.fn().mockResolvedValue([]) },
   connections: {
     list: api.connectionsList,
     getProviders: vi.fn().mockResolvedValue([]),
@@ -142,5 +143,26 @@ describe('AccountsPage connection row actions', () => {
     await user.click(retry)
 
     expect(api.sync).toHaveBeenCalledWith('conn-err')
+  })
+})
+
+describe('AccountDialog account types', () => {
+  it.each([
+    { kind: 'manual', connectionId: null },
+    { kind: 'bank-connected', connectionId: 'conn-1' },
+  ])('saves Loan when editing an existing $kind checking account', async ({ connectionId }) => {
+    const account = { ...makeAccount('conn-1'), connection_id: connectionId }
+    const onSave = vi.fn()
+    const { user } = renderWithProviders(
+      <AccountDialog open account={account} onClose={vi.fn()} onSave={onSave} loading={false} />,
+    )
+
+    expect(screen.getByRole('heading', { name: t('accounts.editAccount') })).toBeInTheDocument()
+    const [accountType] = screen.getAllByRole('combobox')
+    expect(accountType).toHaveValue('checking')
+    await user.selectOptions(accountType, 'loan')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'loan' }))
   })
 })

@@ -691,7 +691,7 @@ class TestLinking:
         assert s.terms[0].lines == [
             {
                 "description": "Hosting", "quantity": "1", "unit": None, "unit_price": "1500.00",
-                "tax_rate": None, "product_id": None, "price_id": None, "fiscal_refs": None,
+                "tax_rate": None, "product_id": None, "price_id": None,
             }
         ]
         assert s.terms[0].total == Decimal("1500.00")

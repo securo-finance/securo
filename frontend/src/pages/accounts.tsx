@@ -898,8 +898,7 @@ export function AccountDialog({
                 value={type}
                 onChange={(e) => setType(e.target.value)}
               >
-                {/* A bank-connected account cannot be a loan yet. */}
-                {ACCOUNT_TYPE_OPTIONS.filter((o) => o.value !== 'loan').map((o) => (
+                {ACCOUNT_TYPE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                 ))}
               </select>

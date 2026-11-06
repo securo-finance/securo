@@ -17,22 +17,24 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import String, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.budget import Budget
 from app.models.category import Category
+from app.models.category_group import CategoryGroup
 from app.models.goal import Goal
 from app.models.group import Group, GroupMember
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.budget import BudgetCreate, BudgetUpdate
 from app.schemas.category import CategoryCreate
+from app.schemas.category_group import CategoryGroupCreate
 from app.schemas.goal import GoalCreate, GoalUpdate
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
@@ -40,10 +42,13 @@ from app.schemas.recurring_transaction import (
     WeekendAdjustment,
 )
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
-from app.schemas.transaction import TransactionCreate
+from app.schemas.transaction import TransactionCreate, TransactionUpdate
+from app.schemas.transaction_category_line import TransactionCategoryLinesInput
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import (
     budget_service,
+    category_group_service,
+    category_line_service,
     category_service,
     goal_service,
     recurring_transaction_service,
@@ -53,12 +58,16 @@ from app.services import (
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import (
+    like_literal,
     num,
     parse_date,
     parse_uuid,
     parse_uuid_list,
     resolve_workspace_id,
 )
+
+# The notes column's own length, so a direct call cannot store more than the schema allows.
+NOTES_MAX_LENGTH: int = cast(int, cast(String, Transaction.__table__.c.notes.type).length)
 
 
 # Repeated in EVERY propose_* tool description. The LLM reads these when
@@ -91,6 +100,88 @@ _APPLY_FIELD = {
 }
 
 
+# A split across categories, as `TransactionCategoryLinesInput` takes it.
+_CATEGORY_LINES_FIELD: dict[str, Any] = {
+    "type": "object",
+    "description": "Optional: divide the amount across categories instead of one `category_id`.",
+    "properties": {
+        "share_type": {"type": "string", "enum": ["exact", "percent"]},
+        "lines": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "category_id": {"type": "string", "format": "uuid"},
+                    "amount": {"type": "number", "description": "Required for share_type='exact'"},
+                    "share_pct": {"type": "number", "description": "Required for share_type='percent'"},
+                },
+                "required": ["category_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["share_type", "lines"],
+    "additionalProperties": False,
+}
+
+
+async def _check_category_lines(
+    session: AsyncSession,
+    ws_id,
+    amount: float,
+    category_lines: dict[str, Any],
+    *,
+    tx_type: str,
+    account: Account,
+) -> dict[str, Any]:
+    """Validate a `category_lines` argument with the same math a save runs,
+    so a preview never promises a split the API would refuse. Returns
+    `{payload, preview}` or `{error}`."""
+    try:
+        # Pydantic parses the ids and amounts; its ValidationError is a
+        # ValueError, reported back like any other bad split.
+        payload = TransactionCategoryLinesInput.model_validate(category_lines)
+        resolved = category_line_service.materialize(Decimal(str(amount)), payload)
+    except (ValueError, TypeError, KeyError) as exc:
+        return {"error": f"invalid category_lines: {exc}"}
+    line_cats = {
+        c.id: c
+        for c in (
+            await session.execute(
+                select(Category).where(
+                    Category.id.in_([cid for cid, _, _, _ in resolved]),
+                    Category.workspace_id == ws_id,
+                )
+            )
+        ).scalars()
+    }
+    if len(line_cats) != len({cid for cid, _, _, _ in resolved}):
+        return {"error": "category not found"}
+    # The same eligibility the save checks, so a preview never offers a
+    # split that Apply would then refuse.
+    if any(c.is_ignored or c.is_hidden for c in line_cats.values()):
+        return {"error": "an ignored or hidden category cannot hold part of a transaction"}
+    if (
+        tx_type == "credit"
+        and account.type == "credit_card"
+        and any(c.treat_as_transfer for c in line_cats.values())
+    ):
+        return {"error": "a credit on a credit card cannot have a part in a transfer category"}
+    return {
+        "payload": payload,
+        "preview": [
+            {
+                "category_id": str(cid),
+                "category_name": line_cats[cid].name,
+                "amount": float(part),
+                "share_pct": float(pct) if pct is not None else None,
+            }
+            for cid, part, pct, _ in resolved
+        ],
+    }
+
+
 def _can_apply(ctx: CallContext, apply: bool) -> bool:
     """Gate: writes only happen when the caller is external AND set apply."""
     return bool(apply) and ctx.external
@@ -101,7 +192,11 @@ def _can_apply(ctx: CallContext, apply: bool) -> bool:
     description=_PROPOSAL_PREFACE
     + (
         "Build a preview for re-categorizing one or more transactions. "
-        "Returns a summary of what would change and the resolved category."
+        "Returns a summary of what would change and the resolved category. "
+        "A transaction split across several categories is never "
+        "re-categorized: it is listed with `is_category_split: true` and "
+        "left as is (`skipped_split_count`). Tell the user, and change its "
+        "parts in the app instead."
     ),
     parameters={
         "type": "object",
@@ -158,6 +253,7 @@ async def propose_categorize(
             "amount": num(t.amount),
             "currency": t.currency,
             "current_category_id": str(t.category_id) if t.category_id else None,
+            "is_category_split": bool(t.has_category_lines),
         }
         for t in txs
     ]
@@ -166,6 +262,7 @@ async def propose_categorize(
         "target_category": {"id": str(cat.id), "name": cat.name},
         "affected_count": len(affected),
         "affected": affected,
+        "skipped_split_count": sum(1 for a in affected if a["is_category_split"]),
         "missing_ids": [str(t) for t in tx_ids if str(t) not in {a["id"] for a in affected}],
         "apply_endpoint": "POST /api/transactions/categorize",
     }
@@ -178,6 +275,109 @@ async def propose_categorize(
             session, ws_id, tx_uuids, cat.id
         )
         return {**preview, "applied": True, "updated_count": updated}
+
+    return preview
+
+
+@tool(
+    name="propose_update_transaction_notes",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing one transaction's notes and tags. Tags "
+        "are hashtags inside the notes (e.g. #trip). `notes` replaces the "
+        "free text; `add_tags` and `remove_tags` are applied after it, and a "
+        "tag already present is not added twice. Only the notes change: "
+        "amount, date, account and category are never touched. Returns the "
+        "current notes alongside the result so the user can compare."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "transaction_id": {"type": "string", "format": "uuid"},
+            "notes": {
+                "type": "string",
+                "maxLength": NOTES_MAX_LENGTH,
+                "description": "Replaces the whole notes text; an empty string clears it",
+            },
+            "add_tags": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "Tags to add, with or without the leading #",
+            },
+            "remove_tags": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "Tags to remove, with or without the leading #",
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["transaction_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "transactions"],
+)
+async def propose_update_transaction_notes(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    transaction_id: str,
+    notes: str | None = None,
+    add_tags: list[str] | None = None,
+    remove_tags: list[str] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    if notes is None and not add_tags and not remove_tags:
+        return {"error": "no changes provided"}
+    ws_id = await resolve_workspace_id(session, ctx)
+    tx = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.id == parse_uuid(transaction_id),
+                Transaction.workspace_id == ws_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if tx is None:
+        return {"error": "transaction not found"}
+
+    new_notes = tx.notes if notes is None else (notes.strip() or None)
+    if remove_tags:
+        new_notes = transaction_service.notes_with_tags_removed(new_notes, remove_tags)
+    if add_tags:
+        new_notes = transaction_service.notes_with_tags_added(new_notes, add_tags)
+    if new_notes is not None and len(new_notes) > NOTES_MAX_LENGTH:
+        return {"error": f"notes must be {NOTES_MAX_LENGTH} characters or fewer"}
+    if new_notes == tx.notes:
+        return {"error": "the notes already read like that; nothing to change"}
+
+    preview = {
+        "kind": "update_transaction_notes",
+        "target": {
+            "id": str(tx.id),
+            "description": tx.description,
+            "date": tx.date.isoformat() if tx.date else None,
+            "amount": num(tx.amount),
+            "currency": tx.currency,
+            "notes": tx.notes,
+        },
+        "changes": {"notes": new_notes},
+        # Notes follow a transfer to its other leg, the same as an edit in
+        # the UI, so the preview says so instead of surprising the user.
+        "transfer_pair_id": str(tx.transfer_pair_id) if tx.transfer_pair_id else None,
+        "apply_endpoint": f"PATCH /api/transactions/{tx.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        try:
+            updated = await transaction_service.update_transaction(
+                session, tx.id, ws_id, ctx.user_id, TransactionUpdate(notes=new_notes)
+            )
+        except ValueError as exc:
+            return {**preview, "error": str(exc)}
+        if updated is None:
+            return {**preview, "error": "transaction not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
 
     return preview
 
@@ -219,7 +419,7 @@ async def propose_create_category(
         await session.execute(
             select(Category.id, Category.name).where(
                 Category.workspace_id == ws_id,
-                Category.name.ilike(name.strip()),
+                Category.name.ilike(like_literal(name.strip()), escape="\\"),
             )
         )
     ).first()
@@ -245,6 +445,76 @@ async def propose_create_category(
             CategoryCreate(
                 name=preview["proposed"]["name"],
                 group_id=parse_uuid(group_id) if group_id else None,
+                icon=preview["proposed"]["icon"],
+                color=preview["proposed"]["color"],
+            ),
+        )
+        return {**preview, "applied": True, "id": str(created.id)}
+
+    return preview
+
+
+@tool(
+    name="propose_create_category_group",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Preview the creation of a new category group (e.g. 'Pets', to hold "
+        "'Food', 'Vet' and 'Insurance'). Returns the proposed shape and any "
+        "name collision detected. Once applied, pass the returned id as "
+        "`group_id` to propose_create_category."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 100},
+            "icon": {"type": "string"},
+            "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "categories"],
+)
+async def propose_create_category_group(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    name: str,
+    icon: str | None = None,
+    color: str | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    existing = (
+        await session.execute(
+            select(CategoryGroup.id, CategoryGroup.name).where(
+                CategoryGroup.workspace_id == ws_id,
+                CategoryGroup.name.ilike(like_literal(name.strip()), escape="\\"),
+            )
+        )
+    ).first()
+    preview = {
+        "kind": "create_category_group",
+        "proposed": {
+            "name": name.strip(),
+            "icon": icon or "folder",
+            "color": color or "#6B7280",
+        },
+        "name_collision": {"id": str(existing.id), "name": existing.name} if existing else None,
+        "apply_endpoint": "POST /api/category-groups",
+    }
+
+    if _can_apply(ctx, apply):
+        if existing:
+            return {**preview, "error": f"category group named {existing.name!r} already exists"}
+        created = await category_group_service.create_group(
+            session,
+            ws_id,
+            ctx.user_id,
+            CategoryGroupCreate(
+                name=preview["proposed"]["name"],
                 icon=preview["proposed"]["icon"],
                 color=preview["proposed"]["color"],
             ),
@@ -486,7 +756,13 @@ def _budget_target(budget: Budget, category_name: str | None) -> dict[str, Any]:
         "grupo dos Amigos e divida igualmente'. Use `'exact'` with a "
         "`share_amount` per member, or `'percent'` with `share_pct` per "
         "member, for custom shares. All members must belong to the same "
-        "group as `group_id`. Call `list_groups` first to fetch IDs."
+        "group as `group_id`. Call `list_groups` first to fetch IDs.\n\n"
+        "Category split: pass `category_lines` (instead of `category_id`) "
+        "to divide the amount across several categories, e.g. a receipt "
+        "of 200 as 120 groceries + 80 household. Two or more lines; "
+        "`share_type='exact'` with an `amount` per line adding up to "
+        "`amount`, or `'percent'` with `share_pct` adding up to 100. Cannot "
+        "be combined with `group_id`."
     ),
     parameters={
         "type": "object",
@@ -541,6 +817,7 @@ def _budget_target(budget: Budget, category_name: str | None) -> dict[str, Any]:
                 "required": ["share_type", "members"],
                 "additionalProperties": False,
             },
+            "category_lines": _CATEGORY_LINES_FIELD,
             "apply": _APPLY_FIELD,
         },
         "required": ["description", "amount", "type", "account_id"],
@@ -563,6 +840,7 @@ async def propose_create_transaction(
     notes: str | None = None,
     group_id: str | None = None,
     splits: dict[str, Any] | None = None,
+    category_lines: dict[str, Any] | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
@@ -676,6 +954,22 @@ async def propose_create_transaction(
                     }
                 )
 
+    # Category split: validated with the same math the save runs, so the
+    # preview never promises a split the API would refuse.
+    lines_payload: TransactionCategoryLinesInput | None = None
+    lines_preview: list[dict[str, Any]] | None = None
+    if category_lines:
+        if category_id:
+            return {"error": "pass either category_id or category_lines, not both"}
+        if group_id or splits:
+            return {"error": "a category split cannot be combined with a group split"}
+        checked = await _check_category_lines(
+            session, ws_id, amount, category_lines, tx_type=type, account=acc
+        )
+        if "error" in checked:
+            return checked
+        lines_payload, lines_preview = checked["payload"], checked["preview"]
+
     target_date = parse_date(date) or _today()
     proposed: dict[str, Any] = {
         "description": description.strip(),
@@ -689,6 +983,11 @@ async def propose_create_transaction(
         "category_name": cat.name if cat else None,
         "notes": (notes or None),
     }
+    if lines_preview is not None and lines_payload is not None:
+        proposed["category_lines"] = {
+            "share_type": lines_payload.share_type,
+            "lines": lines_preview,
+        }
     if splits_preview is not None:
         assert splits is not None
         proposed["group_id"] = group_id
@@ -739,6 +1038,7 @@ async def propose_create_transaction(
                     currency=proposed["currency"],
                     notes=notes,
                     splits=splits_payload,
+                    category_lines=lines_payload,
                 ),
             )
         except ValueError as exc:
@@ -755,7 +1055,11 @@ async def propose_create_transaction(
         "Build a preview for adding a recurring transaction / subscription "
         "(e.g. 'Netflix R$55 every month on the 10th'). Frequency is one "
         "of weekly/biweekly/monthly/quarterly/semiannual/yearly. For monthly, "
-        "quarterly, or semiannual use day_of_month (1-31)."
+        "quarterly, or semiannual use day_of_month (1-31). Pass "
+        "`category_lines` instead of `category_id` for a bill split across "
+        "categories (e.g. rent + condo fee + property tax in one payment); "
+        "every occurrence then starts with that split. Same shape as in "
+        "propose_create_transaction."
     ),
     parameters={
         "type": "object",
@@ -775,6 +1079,7 @@ async def propose_create_transaction(
             "account_id": {"type": "string", "format": "uuid"},
             "category_id": {"type": "string", "format": "uuid"},
             "currency": {"type": "string"},
+            "category_lines": _CATEGORY_LINES_FIELD,
             "apply": _APPLY_FIELD,
         },
         "required": ["description", "amount", "type", "frequency", "account_id"],
@@ -798,6 +1103,7 @@ async def propose_create_recurring_transaction(
     end_date: str | None = None,
     category_id: str | None = None,
     currency: str | None = None,
+    category_lines: dict[str, Any] | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
     if frequency in ("monthly", "quarterly", "semiannual") and not day_of_month:
@@ -824,6 +1130,18 @@ async def propose_create_recurring_transaction(
         if cat is None:
             return {"error": "category not found"}
 
+    lines_payload: TransactionCategoryLinesInput | None = None
+    lines_preview: list[dict[str, Any]] | None = None
+    if category_lines:
+        if category_id:
+            return {"error": "pass either category_id or category_lines, not both"}
+        checked = await _check_category_lines(
+            session, ws_id, amount, category_lines, tx_type=type, account=acc
+        )
+        if "error" in checked:
+            return checked
+        lines_payload, lines_preview = checked["payload"], checked["preview"]
+
     target_start = parse_date(start_date) or _today()
     target_end = parse_date(end_date) if end_date else None
     resolved_currency = (currency or acc.currency or "USD").upper()
@@ -843,6 +1161,11 @@ async def propose_create_recurring_transaction(
             "account_name": acc.name,
             "category_id": str(cat.id) if cat else None,
             "category_name": cat.name if cat else None,
+            "category_lines": (
+                {"share_type": lines_payload.share_type, "lines": lines_preview}
+                if lines_payload is not None
+                else None
+            ),
         },
         "apply_endpoint": "POST /api/recurring-transactions",
     }
@@ -864,6 +1187,7 @@ async def propose_create_recurring_transaction(
                 end_date=target_end,
                 account_id=acc.id,
                 category_id=cat.id if cat else None,
+                category_lines=lines_payload,
             ),
         )
         return {**preview, "applied": True, "id": str(created.id)}

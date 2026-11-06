@@ -6,6 +6,7 @@ import type { Account, TransactionCalendarDay, TransactionCalendarItem, Transact
 import { Skeleton } from '@/components/ui/skeleton'
 import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
+import { SplitCategoryIcon } from '@/components/category-lines-display'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { getAccountName } from '@/lib/account-utils'
 import { activityChartData, dayActivity, isCalendarItemInteractive } from '@/lib/calendar-activity'
@@ -816,7 +817,9 @@ function DayPreviewRow({
           : 'bg-background/45 dark:bg-background/25',
       )}
     >
-      <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="xs" />
+      {item.has_category_lines
+        ? <SplitCategoryIcon size="xs" />
+        : <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="xs" />}
       {showDescription && (
         <span className="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground">
           {previewDescription(item.description)}
@@ -1232,11 +1235,18 @@ function CalendarItemRow({
       )}
     >
       <div className="shrink-0">
-        <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />
+        {item.has_category_lines
+          ? <SplitCategoryIcon size="md" />
+          : <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-semibold text-foreground truncate leading-tight">{item.description}</p>
+          {item.has_category_lines && (
+            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
+              {t('categoryLines.badgeShort')}
+            </span>
+          )}
           {item.kind === 'projected' && item.source === 'recurring' && item.status !== 'pending' && (
             <ProjectedTransactionBadge />
           )}
