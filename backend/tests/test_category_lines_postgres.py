@@ -1,4 +1,4 @@
-"""Category lines on real PostgreSQL: foreign keys and migration 103.
+"""Category lines on real PostgreSQL: foreign keys and migration 104.
 
 SQLite test databases do not enforce foreign keys, so the cascade on raw
 deletes, the block on deleting a category still used by a line, and the

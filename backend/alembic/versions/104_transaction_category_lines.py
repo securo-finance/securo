@@ -1,7 +1,7 @@
 """split a transaction across several categories
 
-Revision ID: 103
-Revises: 102
+Revision ID: 104
+Revises: 103
 """
 
 import sqlalchemy as sa
@@ -9,8 +9,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "103"
-down_revision = "102"
+revision = "104"
+down_revision = "103"
 branch_labels = None
 depends_on = None
 
