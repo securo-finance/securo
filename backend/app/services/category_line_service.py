@@ -453,3 +453,53 @@ def copy_lines_to(tx: Transaction, source_lines) -> bool:
     tx.category_id = None
     tx.has_category_lines = True
     return True
+
+
+async def apply_template_split(
+    session: AsyncSession, tx: Transaction, rec: RecurringTransaction
+) -> None:
+    """Give an uncategorized charge that a split recurring bill claims the
+    bill's parts, sized to the charge. A charge already categorized (by the
+    user, a rule or the bank) keeps its category; a split that no longer
+    fits (a transfer part on a card credit, too small an amount) is skipped.
+    """
+    if not rec.has_category_lines or tx.category_id is not None or tx.has_category_lines:
+        return
+    lines = sorted(rec.category_lines, key=lambda line: line.position)
+    if len(lines) < 2:
+        return
+    if lines[0].share_type == "percent":
+        payload = TransactionCategoryLinesInput.model_validate({
+            "share_type": "percent",
+            "lines": [{"category_id": line.category_id, "share_pct": line.share_pct} for line in lines],
+        })
+    else:
+        try:
+            amounts = _distribute(_quantize(abs(Decimal(str(tx.amount)))), _weights(lines))
+        except ValueError:
+            return
+        payload = TransactionCategoryLinesInput.model_validate({
+            "share_type": "exact",
+            "lines": [
+                {"category_id": line.category_id, "amount": amount}
+                for line, amount in zip(lines, amounts)
+            ],
+        })
+    try:
+        async with session.begin_nested():
+            await replace_lines(session, tx, payload)
+    except ValueError:
+        await session.refresh(tx)
+
+
+async def validate_template_lines(session: AsyncSession, rec: RecurringTransaction) -> None:
+    """Re-check a split template after its type or account changed: a debit
+    that becomes a card credit may now carry a transfer part the statement
+    cannot drop."""
+    await session.refresh(rec, ["category_lines"])
+    if not rec.has_category_lines or not rec.category_lines:
+        return
+    categories = await _load_categories(
+        session, rec.workspace_id, [line.category_id for line in rec.category_lines]
+    )
+    await _check_card_credit(session, rec, categories.values())

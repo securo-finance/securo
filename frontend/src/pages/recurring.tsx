@@ -28,6 +28,8 @@ import {
   emptyRow,
   isSplitByCategory,
   largestLineCategoryId,
+  rowBasisPoints,
+  rowCents,
   rowsFromLines,
   type CategoryLineRow,
 } from '@/lib/category-lines'
@@ -378,8 +380,8 @@ function RecurringForm({
         id: row.key, category_id: row.categoryId, position, share_type: lineShareType,
         share_pct: null, notes: null,
         amount: lineShareType === 'exact'
-          ? parseFloat(row.amount.replace(',', '.')) || 0
-          : parseFloat(row.percent.replace(',', '.')) || 0,
+          ? rowCents(row.amount, displayLocale) ?? 0
+          : rowBasisPoints(row.percent) ?? 0,
       })),
     )
     setCategoryId(kept ?? '')

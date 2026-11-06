@@ -381,3 +381,86 @@ async def test_mcp_creates_and_lists_a_split_recurring(
     assert [(p["category_name"], p["amount"]) for p in row["category_lines"]] == [
         (home.name, 700.0), (food.name, 300.0),
     ]
+
+
+# --- Review follow-ups ------------------------------------------------------
+
+
+async def test_an_uncategorized_charge_a_split_bill_claims_takes_its_parts(
+    client, auth_headers, session, test_user, test_categories
+):
+    """The charge was already there when the schedule came due: linking it
+    to the bill hands it the bill's parts."""
+    food, home, _ = test_categories
+    account = await _account(client, auth_headers)
+    resp = await client.post(
+        "/api/transactions", headers=auth_headers,
+        json={"account_id": account["id"], "description": "Rent + condo", "amount": 1000,
+              "date": "2026-01-05", "type": "debit", "currency": "USD"},
+    )
+    assert resp.status_code == 201, resp.text
+    charge = resp.json()
+    await _rent(client, auth_headers, account["id"], food, home, start=date(2026, 1, 5))
+
+    await generate_pending(session, test_user.id, up_to=date(2026, 1, 6), include_manual=True)
+
+    after = (await client.get(f"/api/transactions/{charge['id']}", headers=auth_headers)).json()
+    assert after["recurring_transaction_id"] is not None
+    assert after["has_category_lines"] is True
+    assert _parts(after) == [(str(home.id), Decimal("700.00")), (str(food.id), Decimal("300.00"))]
+
+
+async def test_a_template_turned_card_credit_cannot_keep_a_transfer_part(
+    client, auth_headers, session, test_user, test_categories
+):
+    food, _, _ = test_categories
+    transfer = Category(id=uuid.uuid4(), user_id=test_user.id, name="Card payment", treat_as_transfer=True)
+    session.add(transfer)
+    await session.commit()
+    resp = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Card", "type": "credit_card", "balance": 0, "currency": "USD"},
+    )
+    card = resp.json()
+    account = await _account(client, auth_headers)
+    rent = await _rent(client, auth_headers, account["id"], food, transfer)
+
+    resp = await client.patch(
+        f"/api/recurring-transactions/{rent['id']}", headers=auth_headers,
+        json={"type": "credit", "account_id": card["id"]},
+    )
+    assert resp.status_code == 400
+
+
+async def test_a_series_wide_type_change_validates_every_split_installment(
+    client, auth_headers, session, test_user, test_categories
+):
+    food, _, _ = test_categories
+    transfer = Category(id=uuid.uuid4(), user_id=test_user.id, name="Card payment", treat_as_transfer=True)
+    session.add(transfer)
+    await session.commit()
+    card = (await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Card", "type": "credit_card", "balance": 0, "currency": "USD"},
+    )).json()
+    resp = await client.post(
+        "/api/transactions/installments", headers=auth_headers,
+        json={"installments": 2, "base": {
+            "account_id": card["id"], "description": "Refundable", "amount": 100,
+            "date": "2026-10-10", "type": "debit", "category_id": str(food.id),
+        }},
+    )
+    assert resp.status_code == 201, resp.text
+    first, second = resp.json()
+    # Only the sibling is split, with a transfer part.
+    resp = await client.patch(
+        f"/api/transactions/{second['id']}", headers=auth_headers,
+        json={"category_id": None, "category_lines": _percent((food, 50), (transfer, 50))},
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.patch(
+        f"/api/transactions/{first['id']}", headers=auth_headers,
+        json={"apply_to": "all", "type": "credit", "category_id": None},
+    )
+    assert resp.status_code == 400

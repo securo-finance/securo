@@ -533,6 +533,10 @@ function TransactionForm({
     () => !!transaction?.has_category_lines && !!transaction.category_lines?.length,
   )
   const splitByCategory = lineRows !== null
+  // The parts as the dialog opened, to tell an edited split from a resend.
+  const initialLinesJson = useRef<string | null>(
+    lineRows ? JSON.stringify(buildLinesPayload(lineRows, lineShareType, displayLocale)) : null,
+  )
   const isCreating = !transaction
   const showConversion = currency !== userCurrency && !isSynced
   // Privacy mode hides monetary values across the app, but the edit modal
@@ -881,8 +885,18 @@ function TransactionForm({
         // Category parts follow the same rule as `splits`: absent keeps them,
         // a list replaces them, an empty list undoes the split. While split,
         // the row has no category of its own.
-        const categoryLinesPayload: Pick<TransactionEditPayload, 'category_lines' | 'category_id'> = lineRows
-          ? { category_lines: buildLinesPayload(lineRows, lineShareType, displayLocale), category_id: null }
+        // Parts are sent only when they changed (or the amount did): an edit
+        // to "this and future" installments would otherwise copy this row's
+        // split over siblings that have their own.
+        const builtLines = lineRows ? buildLinesPayload(lineRows, lineShareType, displayLocale) : null
+        const linesEdited =
+          !hadInitialLines ||
+          JSON.stringify(builtLines) !== initialLinesJson.current ||
+          (transaction != null && parsedAmount != null && Number(transaction.amount) !== parsedAmount)
+        const categoryLinesPayload: Pick<TransactionEditPayload, 'category_lines' | 'category_id'> = builtLines
+          ? linesEdited
+            ? { category_lines: builtLines, category_id: null }
+            : { category_id: null }
           : hadInitialLines
             ? { category_lines: { share_type: 'exact', lines: [] } }
             : {}

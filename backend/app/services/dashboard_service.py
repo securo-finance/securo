@@ -1262,6 +1262,9 @@ async def get_projected_transactions(
                         treat_as_transfer=bool(line.category and line.category.treat_as_transfer),
                     )
                     for line in (rec.category_lines if rec.has_category_lines else [])
+                    # An ignored part never counts anywhere, so it is not
+                    # offered to category views either.
+                    if not (line.category and line.category.is_ignored)
                 ],
             ))
 

@@ -141,6 +141,32 @@ export function TransactionDrillDown({
       if (filter?.uncategorized && (pt.category_id != null || parts.length)) continue
       if (filter?.from && pt.date < filter.from) continue
       if (filter?.to && pt.date > filter.to) continue
+      if (!filter?.category_id && parts.length) {
+        // Income and expense views count only the parts that are income or
+        // expense, as the projected totals do.
+        const counted = parts.filter((part) => !part.treat_as_transfer)
+        const share = counted.reduce((sum, part) => sum + part.amount, 0)
+        if (!share) continue
+        const ratio = pt.amount ? share / Math.abs(pt.amount) : 0
+        items.push({
+          key: `proj-${pt.recurring_id}-${pt.date}`,
+          description: pt.description,
+          date: pt.date,
+          type: pt.type,
+          amount: share,
+          amountPrimary: pt.amount_primary != null ? pt.amount_primary * ratio : null,
+          currency: pt.currency,
+          categoryIcon: null,
+          categoryName: null,
+          categoryColor: null,
+          isProjected: true,
+          isPending: false,
+          attachmentCount: 0,
+          partOf: share !== Math.abs(pt.amount) ? Math.abs(pt.amount) : null,
+          transaction: null,
+        })
+        continue
+      }
       if (matchedParts.length) {
         const share = matchedParts.reduce((sum, part) => sum + part.amount, 0)
         const ratio = pt.amount ? share / Math.abs(pt.amount) : 0

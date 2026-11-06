@@ -157,6 +157,11 @@ async def update_recurring_transaction(
     elif "amount" in update_data:
         # An amount edited without new parts resizes the split.
         await category_line_service.rescale_template_lines(session, recurring, old_amount)
+    if {"type", "account_id"} & update_data.keys():
+        # A debit turned card credit may now carry a transfer part the
+        # statement cannot drop.
+        await session.flush()
+        await category_line_service.validate_template_lines(session, recurring)
 
     if schedule_changed:
         recurring.next_occurrence = _first_occurrence_on_or_after(
@@ -398,6 +403,8 @@ async def generate_pending(
             )
             if existing_real is not None:
                 existing_real.recurring_transaction_id = recurring.id
+                # A split bill hands its parts to an uncategorized charge.
+                await category_line_service.apply_template_split(session, existing_real, recurring)
             else:
                 account = await session.get(Account, recurring.account_id)
                 # Only occurrences that already came due reach this point, so

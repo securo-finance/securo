@@ -1479,6 +1479,7 @@ async def handle_oauth_callback(
                 if installment_source is not None and installment_source.has_category_lines
                 else None
             )
+            recurring_link_for_split = None
             if category_id is None:
                 category_id = await _match_pluggy_category(
                     session,
@@ -1534,6 +1535,11 @@ async def handle_oauth_callback(
                 session, user_id, transaction,
                 skip_category_rules=split_source is not None,
             )
+            if recurring_link_for_split is not None:
+                # A split bill hands its parts to the charge it claims.
+                await category_line_service.apply_template_split(
+                    session, transaction, recurring_link_for_split
+                )
             if transaction.category_id is None and not transaction.has_category_lines:
                 transaction.category_id = category_id
 
@@ -2742,6 +2748,7 @@ async def sync_connection(
                     if installment_source is not None and installment_source.has_category_lines
                     else None
                 )
+                recurring_link_for_split = None
                 if category_id is None:
                     category_id = await _match_pluggy_category(
                         session,
@@ -2871,6 +2878,7 @@ async def sync_connection(
                 transaction.recurring_transaction_id = (
                     recurring_link.id if recurring_link else None
                 )
+                recurring_link_for_split = recurring_link
                 session.add(transaction)
                 await session.flush()
                 if recurring_link is not None:
@@ -2882,6 +2890,11 @@ async def sync_connection(
                     session, user_id, transaction,
                     skip_category_rules=split_source is not None,
                 )
+                if recurring_link_for_split is not None:
+                    # A split bill hands its parts to the charge it claims.
+                    await category_line_service.apply_template_split(
+                        session, transaction, recurring_link_for_split
+                    )
                 if transaction.category_id is None and not transaction.has_category_lines:
                     transaction.category_id = category_id
 

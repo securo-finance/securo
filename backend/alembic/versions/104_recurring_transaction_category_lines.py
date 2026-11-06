@@ -55,7 +55,8 @@ def upgrade() -> None:
             sa.Column("share_pct", sa.Numeric(5, 2), nullable=True),
             sa.Column("position", sa.SmallInteger(), nullable=False),
             sa.Column("notes", sa.String(500), nullable=True),
-            sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+            # Not null, as in the model, which always sets it.
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.UniqueConstraint(
                 "recurring_transaction_id", "position",
                 name="uq_recurring_category_line_position",

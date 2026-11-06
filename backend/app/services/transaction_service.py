@@ -1960,9 +1960,12 @@ async def update_transaction(
         await session.flush()
         for row in rows:
             await category_line_service.replace_lines(session, row, lines_payload)
-    elif transaction.has_category_lines and ({"type", "account_id"} & update_data.keys()):
+    elif {"type", "account_id"} & update_data.keys():
+        # Every split installment the edit reached, not only the one opened.
         await session.flush()
-        await category_line_service.validate_existing_lines(session, transaction)
+        for row in rows:
+            if row.has_category_lines:
+                await category_line_service.validate_existing_lines(session, row)
 
     # A changed parcel amount makes the stored series total stale, whatever
     # the scope was: "this" reprices one parcel, "future"/"all" reprice
