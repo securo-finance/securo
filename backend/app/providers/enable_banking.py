@@ -258,6 +258,11 @@ def matches_legacy_fallback(
     aligned = dict(stored_raw)
     if pending_to_posted and isinstance(incoming.raw_data, dict):
         aligned["booking_date"] = incoming.raw_data.get("booking_date")
+        # Some banks only supply the transaction date when booking arrives.
+        # Fill that missing identity field, but never overwrite a known date:
+        # conflicting dates still identify distinct operations.
+        if aligned.get("transaction_date") in (None, ""):
+            aligned["transaction_date"] = incoming.raw_data.get("transaction_date")
     return _txn_fingerprint(account_uid, aligned) == incoming.external_id
 
 

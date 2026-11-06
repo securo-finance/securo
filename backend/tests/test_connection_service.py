@@ -7160,10 +7160,11 @@ async def test_ensure_group_relocates_wallet_when_connection_moves_workspaces(
 @pytest.mark.parametrize("entry_reference", [None, "0"])
 @pytest.mark.parametrize("reverse_order", [False, True])
 @pytest.mark.parametrize("distinct_on", ["creditor", "value_date"])
+@pytest.mark.parametrize("transaction_date", [None, "2026-08-20"])
 @pytest.mark.parametrize("legacy_pending,settlement_delay", [(False, 0), (True, 0), (True, 3)])
 async def test_enable_banking_rekeys_legacy_fingerprint_without_merging_counterparties(
     session, test_user, test_workspace, test_categories, entry_reference, reverse_order,
-    distinct_on, legacy_pending, settlement_delay,
+    distinct_on, transaction_date, legacy_pending, settlement_delay,
 ):
     from app.providers.enable_banking import EnableBankingProvider
 
@@ -7175,6 +7176,8 @@ async def test_enable_banking_rekeys_legacy_fingerprint_without_merging_counterp
         "remittance_information": [],
         "creditor": {"name": "Coffee Shop"},
     }
+    if transaction_date is not None:
+        raw["transaction_date"] = transaction_date
     if entry_reference is not None:
         raw["entry_reference"] = entry_reference
     distinct_raw = deepcopy(raw)
@@ -7204,6 +7207,8 @@ async def test_enable_banking_rekeys_legacy_fingerprint_without_merging_counterp
     stored_raw = deepcopy(raw)
     if legacy_pending:
         stored_raw.pop("booking_date")
+        # Some banks first supply the transaction date when the pending row posts.
+        stored_raw.pop("transaction_date", None)
     legacy_id = entry_reference or (
         "8884d2776e1305036056d5f6bcd20ec4" if legacy_pending
         else "92da8ed1d8d86daf9bf06b802eda90f7"
@@ -7247,6 +7252,8 @@ async def test_enable_banking_rekeys_legacy_fingerprint_without_merging_counterp
     preserved = next(row for row in rows if row.id == existing_id)
     assert preserved.external_id == incoming.external_id
     assert preserved.status == "posted"
+    assert preserved.date == (date(2026, 8, 20) if legacy_pending else incoming.date)
+    assert preserved.raw_data == raw
     assert preserved.description == "My coffee label"
     assert preserved.category_id == test_categories[0].id
     assert preserved.notes == "Keep my note"
@@ -7376,7 +7383,9 @@ async def test_enable_banking_pending_does_not_claim_posted_legacy_row(
 
 
 @pytest.mark.parametrize("entry_reference", [None, "0"])
-@pytest.mark.parametrize("rejection", ["counterparty", "value_date", "pending_on_posted"])
+@pytest.mark.parametrize(
+    "rejection", ["counterparty", "value_date", "transaction_date", "pending_on_posted"],
+)
 @pytest.mark.parametrize("fallback", [None, "sync", "import"])
 async def test_enable_banking_rejected_legacy_rows_cannot_bypass_identity_checks(
     session, test_user, test_workspace, entry_reference, rejection, fallback,
@@ -7393,6 +7402,8 @@ async def test_enable_banking_rejected_legacy_rows_cannot_bypass_identity_checks
         "remittance_information": ["Card payment"],
         "creditor": {"name": "Coffee Shop"},
     }
+    if rejection == "transaction_date":
+        raw["transaction_date"] = "2026-08-20"
     if entry_reference is not None:
         raw["entry_reference"] = entry_reference
     # Captured pre-v0.16.3 key. The shared remittance makes Path 2's generic
@@ -7414,8 +7425,10 @@ async def test_enable_banking_rejected_legacy_rows_cannot_bypass_identity_checks
         incoming_raw["booking_date"] = "2026-08-20"
         if rejection == "counterparty":
             incoming_raw["creditor"] = {"name": "Bakery"}
-        else:
+        elif rejection == "value_date":
             incoming_raw["value_date"] = "2026-08-21"
+        else:
+            incoming_raw["transaction_date"] = "2026-08-21"
     incoming = EnableBankingProvider()._build_transaction(
         "acc-uid-1", incoming_raw, incoming_status, "auto",
     )
