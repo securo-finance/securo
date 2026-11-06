@@ -64,6 +64,7 @@ from app.models.invoice_schedule import (
     SCHEDULE_FREQUENCIES,
     InvoiceSchedule,
     InvoiceScheduleTerm,
+    read_term_lines,
 )
 from app.models.workspace import Workspace
 from app.services import invoice_archive, invoice_service, reconciliation_service
@@ -238,7 +239,11 @@ def _normalise_lines(lines: Any) -> list[dict[str, Any]]:
                 # deleted later must not stop the agreement from billing.
                 "product_id": str(line["product_id"]) if line.get("product_id") else None,
                 "price_id": str(line["price_id"]) if line.get("price_id") else None,
-                "fiscal_refs": clean_fiscal_refs(line.get("fiscal_refs")),
+                **(
+                    # Empty is explicit; legacy null meant inheritance.
+                    {"fiscal_refs": clean_fiscal_refs(line["fiscal_refs"]) or {}}
+                    if "fiscal_refs" in line else {}
+                ),
             }
         )
     return out
@@ -344,7 +349,7 @@ async def update_term(
         term.effective_from = effective_from
     _fill_term(
         term,
-        lines if lines is not None else term.lines,
+        lines if lines is not None else read_term_lines(term.lines),
         discount if discount is not None else term.discount,
     )
     await session.flush()
@@ -950,7 +955,10 @@ def _lines_from_invoice(invoice: Invoice, fallback_description: str) -> list[dic
                 "tax_rate": line.tax_rate,
                 "product_id": line.product_id,
                 "price_id": line.price_id,
-                "fiscal_refs": line.fiscal_refs,
+                # Invoices store both absent and explicitly cleared refs as
+                # null. Conversion cannot recover that distinction: either
+                # becomes product inheritance on the new agreement term.
+                **({"fiscal_refs": line.fiscal_refs} if line.fiscal_refs else {}),
             }
             for line in invoice.lines
         ]
@@ -1059,7 +1067,7 @@ async def _emit(
     from app.services import product_service
 
     lines = await product_service.resolve_lines(
-        session, schedule.workspace_id, [dict(line) for line in term.lines], strict=False
+        session, schedule.workspace_id, read_term_lines(term.lines), strict=False
     )
     # The agreement belongs to the workspace. If its author was deleted,
     # its invoices keep billing with the same nullable attribution.
