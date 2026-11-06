@@ -97,16 +97,26 @@ def _assigned_names(stmt) -> set[str]:
     return {n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)}
 
 
-def _joins_where_it_reads(func, call) -> bool:
-    """True when the statement using `call` also joins the category lines.
+def _call_name(node) -> str | None:
+    if not isinstance(node, ast.Call):
+        return None
+    name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+    return name if isinstance(name, str) else None
 
-    Checked per statement, not per function: a function with two queries
-    must join the lines in both, or the second one cross-joins the alias
-    and multiplies every row. A join counts when the statement calls
-    `with_category_lines` (or a local helper that does), or reads a name
-    built from one (`q = with_category_lines(...)`, later `q.where(...)`).
-    A filter stored in a name (`window_filters = (...)`) counts when a
-    statement that joins reads that name.
+
+def _joins_where_it_reads(func, call) -> bool:
+    """True when the query that reads `call` joins the category lines.
+
+    Checked on the query itself, not the function or the statement: the
+    filter must sit inside a `with_category_lines(...)` call (or a local
+    helper that makes one), or be applied to a query chain built on one
+    (`with_category_lines(select(...)).where(filter)`, or
+    `q.where(filter)` where `q` was built that way). A joined subquery read
+    by an unjoined outer query does not count: the outer query would
+    cross-join the alias and multiply every row.
+
+    A filter stored in a name (`window_filters = (...)`) counts when every
+    place reading that name does so inside a joined query.
     """
     joining = {"with_category_lines"} | {
         inner.name
@@ -115,40 +125,70 @@ def _joins_where_it_reads(func, call) -> bool:
         and inner is not func
         and "with_category_lines" in _called_names(inner)
     }
-    statements = [n for n in ast.walk(func) if isinstance(n, ast.stmt) and n is not func]
+    parents: dict[ast.AST, ast.AST] = {}
+    for node in ast.walk(func):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+
     joined_names: set[str] = set()
+
+    def chain_joined(expr) -> bool:
+        """The query chain `expr` (method calls on a base) starts joined."""
+        while True:
+            if _call_name(expr) in joining:
+                return True
+            if isinstance(expr, ast.Await):
+                expr = expr.value
+            elif isinstance(expr, ast.Call):
+                expr = expr.func
+            elif isinstance(expr, ast.Attribute):
+                expr = expr.value
+            elif isinstance(expr, ast.Name):
+                return expr.id in joined_names
+            else:
+                return False
+
     changed = True
     while changed:
         changed = False
-        for stmt in statements:
-            if (_called_names(stmt) & joining) or (_loaded_names(stmt) & joined_names):
-                new = _assigned_names(stmt) - joined_names
+        for node in ast.walk(func):
+            if isinstance(node, ast.Assign) and chain_joined(node.value):
+                new = _assigned_names(node) - joined_names
                 if new:
                     joined_names |= new
                     changed = True
 
-    def joins(stmt) -> bool:
-        return bool(_called_names(stmt) & joining) or bool(_loaded_names(stmt) & joined_names)
+    def read_inside_join(node) -> bool:
+        child = node
+        parent = parents.get(child)
+        while parent is not None and not isinstance(parent, ast.stmt):
+            if _call_name(parent) in joining:
+                return True
+            if (
+                isinstance(parent, ast.Call)
+                and isinstance(parent.func, ast.Attribute)
+                and child is not parent.func
+                and chain_joined(parent.func.value)
+            ):
+                return True
+            child, parent = parent, parents.get(parent)
+        return False
 
-    # The innermost statement holding the call.
-    holder = min(
-        (s for s in statements if any(n is call for n in ast.walk(s))),
-        key=lambda s: sum(1 for _ in ast.walk(s)),
-    )
-    if joins(holder):
+    if read_inside_join(call):
         return True
-    # Only a filter stored for later can be rescued by the statement that
-    # uses it. A query built here without the join is wrong whatever happens
-    # to its result afterwards (`result.all()`, or a joined query that
-    # happens to reuse the name `result`).
-    if _called_names(holder) & QUERY_CALLS:
+    # Only a filter stored for later can be rescued by where it is used; a
+    # query built without the join is wrong whatever reads its result.
+    holder = parents.get(call)
+    while holder is not None and not isinstance(holder, ast.stmt):
+        holder = parents.get(holder)
+    if holder is None or _called_names(holder) & QUERY_CALLS:
         return False
     stored = _assigned_names(holder)
-    return any(
-        joins(stmt) and (_loaded_names(stmt) & stored)
-        for stmt in statements
-        if stmt is not holder
-    )
+    uses = [
+        n for n in ast.walk(func)
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in stored
+    ]
+    return bool(uses) and all(read_inside_join(n) for n in uses)
 
 
 def _is_whole_row(arg) -> bool:
@@ -202,6 +242,17 @@ async def report(session):
 '''
     assert _problems_in(reused) == ["report:7"]
     assert _problems_in(read_later) == ["report:3"]
+
+
+def test_a_joined_subquery_does_not_excuse_the_outer_query():
+    source = '''
+async def report(session):
+    parts = with_category_lines(select(Transaction.id))
+    rows = await session.execute(
+        select(Transaction).where(Transaction.id.in_(parts), counts_as_pnl(line_category_id()))
+    )
+'''
+    assert _problems_in(source) == ["report:5"]
 
 
 def test_the_check_follows_joined_names_and_stored_filters():
