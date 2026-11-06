@@ -616,6 +616,46 @@ async def test_search_marks_split_rows(client, auth_headers, cats):
     assert meta[plain["id"]]["has_category_lines"] is False
 
 
+@pytest.mark.asyncio
+async def test_rule_preview_marks_split_rows(client, auth_headers, cats):
+    food, transport, income = cats
+    account = await _account(client, auth_headers)
+    split = await _create(
+        client, auth_headers, account["id"], description="PHARMACY 9",
+        category_lines=_exact((food.id, 100), (transport.id, 50)),
+    )
+
+    resp = await client.post(
+        "/api/rules/preview",
+        headers=auth_headers,
+        json={
+            "conditions": [{"field": "description", "op": "contains", "value": "PHARMACY"}],
+            "actions": [{"op": "set_category", "value": str(income.id)}],
+            "apply_to_existing": True,
+            "overwrite_existing_categories": True,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    (item,) = [i for i in resp.json()["sample"] if i["id"] == split["id"]]
+    assert item["current_has_category_lines"] is True
+    assert item["will_change"] is False
+
+
+@pytest.mark.asyncio
+async def test_each_line_carries_its_category(client, auth_headers, cats):
+    food, transport, _ = cats
+    account = await _account(client, auth_headers)
+    body = await _create(
+        client, auth_headers, account["id"],
+        category_lines=_exact((food.id, 100), (transport.id, 50)),
+    )
+    assert [line["category"]["name"] for line in body["category_lines"]] == [food.name, transport.name]
+
+    listed = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    (row,) = [r for r in listed if r["id"] == body["id"]]
+    assert row["category_lines"][1]["category"]["id"] == str(transport.id)
+
+
 # --- Category lifecycle ----------------------------------------------------
 
 

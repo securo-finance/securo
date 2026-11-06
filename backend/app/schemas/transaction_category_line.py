@@ -5,6 +5,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.category import CategoryRead
+
 CategoryLineShareType = Literal["exact", "percent"]
 
 
@@ -42,5 +44,7 @@ class TransactionCategoryLineRead(BaseModel):
     position: int
     notes: Optional[str] = None
     created_at: datetime
+    # Embedded so lists can label each part without a second lookup.
+    category: Optional[CategoryRead] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -20,6 +20,8 @@ import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Cl
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { transactionDescription } from '@/lib/transaction-description'
 import { CategoryIcon } from '@/components/category-icon'
+import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
+import { isSplitByCategory } from '@/lib/category-lines'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { extractApiError } from '@/lib/api-errors'
@@ -1759,7 +1761,12 @@ export default function AccountDetailPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 hidden md:table-cell">
-                          {tx.category ? (
+                          {isSplitByCategory(tx) ? (
+                            <span className="flex items-center gap-1.5">
+                              <TransactionCategoryIcon tx={tx} size="sm" />
+                              <CategorySplitBadge tx={tx} />
+                            </span>
+                          ) : tx.category ? (
                             <span className="flex items-center gap-1.5">
                               <CategoryIcon icon={tx.category.icon} color={tx.category.color} size="sm" />
                               <span className="text-sm text-muted-foreground">{tx.category.name}</span>

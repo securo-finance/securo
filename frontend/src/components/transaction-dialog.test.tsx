@@ -395,3 +395,96 @@ it('does not submit the transaction when Enter is pressed in a mortgage split fi
 
   expect(onSave).not.toHaveBeenCalled()
 })
+
+function splitFixture(): Transaction {
+  const food = { id: 'cat-food', name: 'Food', icon: 'utensils', color: '#f59e0b' }
+  const home = { id: 'cat-home', name: 'Home', icon: 'house', color: '#3b82f6' }
+  return transferLegFixture('unused', {
+    id: 'tx-425',
+    description: 'Supermarket',
+    amount: 150,
+    source: 'manual',
+    transfer_pair_id: null,
+    has_category_lines: true,
+    category_lines: [
+      { id: 'l1', category_id: food.id, amount: 40, share_type: 'exact', share_pct: null, position: 0, notes: null, category: food as never },
+      { id: 'l2', category_id: home.id, amount: 110, share_type: 'exact', share_pct: null, position: 1, notes: null, category: home as never },
+    ],
+  })
+}
+
+function renderSplitDialog(onSave = vi.fn()) {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const rendered = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={splitFixture()}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={onSave}
+      loading={false}
+      error={null}
+    />,
+  )
+  return { ...rendered, onSave }
+}
+
+it('round-trips the parts of a split transaction when it is saved', async () => {
+  const { user, onSave } = renderSplitDialog()
+
+  expect(screen.getByText(t('categoryLines.title'))).toBeInTheDocument()
+  expect(screen.getByText(t('categoryLines.allAllocated'))).toBeInTheDocument()
+  // A split row has no single category to pick, and no split among people.
+  expect(screen.queryByText(t('splitGroups.splitTransaction'))).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  const payload = onSave.mock.calls[0][0]
+  expect(payload.category_id).toBeNull()
+  expect(payload.category_lines).toEqual({
+    share_type: 'exact',
+    lines: [
+      { category_id: 'cat-food', amount: 40 },
+      { category_id: 'cat-home', amount: 110 },
+    ],
+  })
+})
+
+it('blocks saving while the parts do not add up to the amount', async () => {
+  const { user, onSave } = renderSplitDialog()
+
+  const [first] = screen.getAllByRole('textbox', { name: t('categoryLines.partAmount') })
+  await user.clear(first)
+  await user.type(first, '30')
+
+  expect(screen.getByText(t('categoryLines.remaining', { value: '$10.00' }))).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: t('common.save') })).toBeDisabled()
+
+  await user.click(screen.getByRole('button', { name: t('categoryLines.fillRemaining') }))
+  expect(screen.getByRole('button', { name: t('common.save') })).toBeEnabled()
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  expect(onSave.mock.calls[0][0].category_lines.lines.map((l: { amount: number }) => l.amount)).toEqual([30, 120])
+})
+
+it('undoing a split sends an empty list and keeps the largest part as the category', async () => {
+  const { user, onSave } = renderSplitDialog()
+
+  await user.click(screen.getByRole('button', { name: t('categoryLines.undo') }))
+  expect(screen.queryByRole('button', { name: t('categoryLines.undo') })).not.toBeInTheDocument()
+  // Back to a single category, the split can be started again.
+  expect(screen.getByRole('button', { name: t('categoryLines.start') })).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  const payload = onSave.mock.calls[0][0]
+  expect(payload.category_lines).toEqual({ share_type: 'exact', lines: [] })
+  expect(payload.category_id).toBe('cat-home')
+})
+
+it('does not offer a split across categories on a transfer', () => {
+  renderTransferDialog(vi.fn())
+  expect(screen.queryByRole('button', { name: t('categoryLines.start') })).not.toBeInTheDocument()
+})

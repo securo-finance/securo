@@ -45,6 +45,8 @@ import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
 import { CategoryIcon } from '@/components/category-icon'
+import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
+import { isSplitByCategory } from '@/lib/category-lines'
 import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
 import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
@@ -623,6 +625,8 @@ export default function DashboardPage() {
     installmentNumber: number | null
     totalInstallments: number | null
     showPendingBadge: boolean
+    /** Set when the row is split across categories, to label its parts. */
+    splitSource: Transaction | null
   }
 
   const [txPerPage, setTxPerPage] = useState<number>(() => {
@@ -673,6 +677,7 @@ export default function DashboardPage() {
         installmentNumber: tx.installment_number,
         totalInstallments: tx.total_installments,
         showPendingBadge: shouldShowPendingBadge(tx),
+        splitSource: isSplitByCategory(tx) ? tx : null,
       })
     }
     for (const pt of projectedTxs ?? []) {
@@ -700,6 +705,7 @@ export default function DashboardPage() {
         installmentNumber: null,
         totalInstallments: null,
         showPendingBadge: false,
+        splitSource: null,
       })
     }
     rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
@@ -1534,7 +1540,9 @@ export default function DashboardPage() {
                       >
                         {/* Category Icon */}
                         <div className="shrink-0">
-                          <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />
+                          {row.splitSource
+                            ? <TransactionCategoryIcon tx={row.splitSource} size="md" />
+                            : <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />}
                         </div>
 
                         {/* Content */}
@@ -1651,10 +1659,13 @@ export default function DashboardPage() {
                           </TableCell>
                           <TableCell className="py-2.5 pl-5 sm:pl-0">
                             <div className="flex items-center gap-3">
-                              <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
+                              {row.splitSource
+                                ? <TransactionCategoryIcon tx={row.splitSource} size="lg" />
+                                : <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />}
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
+                                  {row.splitSource && <CategorySplitBadge tx={row.splitSource} className="shrink-0" />}
                                   {row.groupId && (
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 shrink-0 uppercase tracking-wide">
                                       {row.isShared && row.parentOwnerName

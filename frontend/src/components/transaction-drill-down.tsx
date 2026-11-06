@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
 import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
+import { TransactionCategoryIcon } from '@/components/category-lines-display'
+import { isSplitByCategory } from '@/lib/category-lines'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { sumDrillDownTotals } from '@/lib/drill-down-totals'
 import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
@@ -41,6 +43,8 @@ type DisplayItem = {
   isPending: boolean
   attachmentCount: number
   transaction: Transaction | null
+  /** Full amount of a split row when only one of its parts is listed. */
+  partOf: number | null
 }
 
 export function TransactionDrillDown({
@@ -98,21 +102,30 @@ export function TransactionDrillDown({
     const items: DisplayItem[] = []
 
     for (const tx of data?.items ?? []) {
+      // A split row listed under one category counts only its part there,
+      // the same share the report it was opened from counted.
+      const isPart = tx.matched_amount != null
+      const matchedLine = isPart
+        ? tx.category_lines?.find((line) => line.category_id === filter?.category_id)
+        : undefined
       items.push({
         key: tx.id,
         description: tx.description,
         date: tx.date,
         type: tx.type as 'debit' | 'credit',
-        amount: Number(tx.amount),
-        amountPrimary: tx.amount_primary != null ? Number(tx.amount_primary) : null,
+        amount: isPart ? Number(tx.matched_amount) : Number(tx.amount),
+        amountPrimary: isPart
+          ? tx.matched_amount_primary != null ? Number(tx.matched_amount_primary) : null
+          : tx.amount_primary != null ? Number(tx.amount_primary) : null,
         currency: tx.currency,
-        categoryIcon: tx.category?.icon ?? null,
-        categoryName: tx.category?.name ?? null,
-        categoryColor: tx.category?.color ?? null,
+        categoryIcon: (matchedLine?.category ?? tx.category)?.icon ?? null,
+        categoryName: (matchedLine?.category ?? tx.category)?.name ?? null,
+        categoryColor: (matchedLine?.category ?? tx.category)?.color ?? null,
         isProjected: false,
         isPending: tx.status === 'pending',
         attachmentCount: tx.attachment_count ?? 0,
         transaction: tx,
+        partOf: isPart ? Math.abs(Number(tx.amount)) : null,
       })
     }
 
@@ -138,6 +151,7 @@ export function TransactionDrillDown({
         isProjected: true,
         isPending: false,
         attachmentCount: 0,
+        partOf: null,
         transaction: null,
       })
     }
@@ -252,11 +266,15 @@ export function TransactionDrillDown({
                     }
                   }}
                 >
-                  <CategoryIcon
-                    icon={item.categoryIcon}
-                    color={item.categoryColor}
-                    size="lg"
-                  />
+                  {item.transaction && isSplitByCategory(item.transaction) && item.partOf == null ? (
+                    <TransactionCategoryIcon tx={item.transaction} size="lg" />
+                  ) : (
+                    <CategoryIcon
+                      icon={item.categoryIcon}
+                      color={item.categoryColor}
+                      size="lg"
+                    />
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
@@ -280,6 +298,9 @@ export function TransactionDrillDown({
                     <p className="text-xs text-muted-foreground">
                       {new Date(item.date + 'T00:00:00').toLocaleDateString(dateLocale)}
                       {item.categoryName && ` · ${item.categoryName}`}
+                      {item.partOf != null && ` · ${t('categoryLines.partOf', {
+                        value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
+                      })}`}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
