@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, case, delete, select, func, or_, not_, update
+from sqlalchemy import CursorResult, case, delete, literal, select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,17 +28,22 @@ from app.schemas.transaction import (
     TransferCreate,
 )
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
-from app.services import reconciliation_service, split_service
+from app.services import category_line_service, reconciliation_service, split_service
 from app.services.account_service import get_account, get_running_balances
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
 from app.services._query_filters import (
+    CATEGORY_LINE,
+    any_line_in,
     counts_as_pnl,
-    counts_as_user_pnl,
+    counts_as_user_pnl_row,
     is_not_ignored,
-    is_transfer,
+    is_transfer_row,
+    line_category_id,
+    line_primary_or_amount,
     reporting_date_col,
+    with_category_lines,
 )
 from app.services.recurring_transaction_service import _advance_date
 
@@ -261,15 +266,24 @@ async def get_transactions(
         base_query = base_query.where(Transaction.account_id.in_(account_ids))
     elif account_id:
         base_query = base_query.where(Transaction.account_id == account_id)
-    if category_ids:
-        base_query = base_query.where(Transaction.category_id.in_(category_ids))
-    elif category_id:
-        base_query = base_query.where(Transaction.category_id == category_id)
+    # A split row matches when any of its parts is in the filter.
+    filter_category_ids = list(category_ids) if category_ids else (
+        [category_id] if category_id else []
+    )
+    if filter_category_ids:
+        base_query = base_query.where(
+            or_(
+                Transaction.category_id.in_(filter_category_ids),
+                any_line_in(filter_category_ids),
+            )
+        )
     if payee_id:
         base_query = base_query.where(Transaction.payee_id == payee_id)
     if uncategorized:
+        # A split row has no category of its own, but every part has one.
         base_query = base_query.where(
             Transaction.category_id == None,
+            Transaction.has_category_lines.is_(False),
             Transaction.transfer_pair_id.is_(None),
         )
     if exclude_transfers:
@@ -277,7 +291,7 @@ async def get_transactions(
     if user_pnl_only:
         # Closed accounts are not excluded here: their history stays in the
         # period totals this list drills into (issue #1112).
-        base_query = base_query.where(counts_as_user_pnl())
+        base_query = base_query.where(counts_as_user_pnl_row())
     if exclude_ignored:
         # Only drops rows; the summary below keeps computing over the same
         # filtered set, so the totals a hidden list shows stay the totals of
@@ -286,7 +300,7 @@ async def get_transactions(
     if txn_type == "transfer":
         # Not a value of the `type` column: a transfer is still stored as a
         # credit or a debit, so this narrows to the transfer family instead.
-        base_query = base_query.where(is_transfer())
+        base_query = base_query.where(is_transfer_row())
     elif txn_type:
         base_query = base_query.where(Transaction.type == txn_type)
     if status:
@@ -491,41 +505,45 @@ async def get_transactions(
     # rows). Computed before pagination so it covers the whole result set.
     summary: Optional[dict] = None
     if include_summary:
-        # Income / expense / net use the shared `counts_as_pnl()` definition
+        # Income / expense / net use the shared `counts_as_pnl` definition
         # (issue #242) so the footer matches the dashboard & reports: paired
         # transfers, `treat_as_transfer` categories (transfers, investments,
-        # custom) and ignored items are kept OUT of income/expense.
-        pnl_filter = counts_as_pnl()
-        pnl_subq = base_query.where(pnl_filter).subquery()
-        amount_norm = func.coalesce(
-            pnl_subq.c.amount_primary, pnl_subq.c.amount
-        )
+        # custom) and ignored items are kept OUT of income/expense. It reads
+        # category parts, so a split row counts part by part and, under a
+        # category filter, only its parts in the filtered categories count.
+        pnl_filter = counts_as_pnl(line_category_id())
+        parts_query = with_category_lines(
+            select(
+                Transaction.type,
+                pnl_filter.label("counts"),
+                func.abs(line_primary_or_amount()).label("amount"),
+            ).select_from(Transaction)
+        ).where(Transaction.id.in_(select(base_query.subquery().c.id)))
+        if filter_category_ids:
+            parts_query = parts_query.where(line_category_id().in_(filter_category_ids))
+        parts_subq = parts_query.subquery()
         summary_rows = await session.execute(
             select(
-                pnl_subq.c.type,
-                func.coalesce(func.sum(func.abs(amount_norm)), 0),
-            ).group_by(pnl_subq.c.type)
+                parts_subq.c.type,
+                parts_subq.c.counts,
+                func.coalesce(func.sum(parts_subq.c.amount), 0),
+            ).group_by(parts_subq.c.type, parts_subq.c.counts)
         )
         income = Decimal("0")
         expense = Decimal("0")
-        for row_type, row_total in summary_rows:
-            if row_type == "credit":
-                income = Decimal(str(row_total or 0))
-            elif row_type == "debit":
-                expense = Decimal(str(row_total or 0))
-
         # Excluded: the absolute total of everything filtered out of P/L for
-        # the same rows — the complement of `counts_as_pnl()`. Surfaces
+        # the same rows (the complement of `counts_as_pnl`). Surfaces
         # transfer-like movement (e.g. how much was moved/invested) without
         # distorting income/expense/net.
-        excl_subq = base_query.where(not_(pnl_filter)).subquery()
-        excl_amount_norm = func.coalesce(
-            excl_subq.c.amount_primary, excl_subq.c.amount
-        )
-        excluded_total = await session.scalar(
-            select(func.coalesce(func.sum(func.abs(excl_amount_norm)), 0))
-        )
-        excluded = Decimal(str(excluded_total or 0))
+        excluded = Decimal("0")
+        for row_type, counts, row_total in summary_rows:
+            row_total = Decimal(str(row_total or 0))
+            if not counts:
+                excluded += row_total
+            elif row_type == "credit":
+                income += row_total
+            elif row_type == "debit":
+                expense += row_total
 
         summary = {
             "income": income,
@@ -551,7 +569,12 @@ async def get_transactions(
         "amount": func.coalesce(Transaction.amount_primary, Transaction.amount),
         "description": Transaction.description,
         "payee": Payee.name,
-        "category": Category.name,
+        # Split rows have no category of their own; keep them together,
+        # apart from uncategorized rows.
+        "category": case(
+            (Transaction.has_category_lines.is_(True), literal("")),
+            else_=Category.name,
+        ),
         "account": Account.name,
         "type": Transaction.type,
         "status": Transaction.status,
@@ -602,6 +625,30 @@ async def get_transactions(
         # by `group_id`, a linked member sees the owner's transactions
         # and the frontend needs `is_shared` to lock them from edits.
         await _tag_shared_view(session, transactions, user_id)
+
+        if filter_category_ids:
+            # The part of each split row inside the filter, so a drill-down
+            # footer computed from the rows matches the report it came from.
+            split_ids = [tx.id for tx in transactions if tx.has_category_lines]
+            if split_ids:
+                matched_rows = await session.execute(
+                    select(CATEGORY_LINE.transaction_id, func.sum(CATEGORY_LINE.amount))
+                    .where(
+                        CATEGORY_LINE.transaction_id.in_(split_ids),
+                        CATEGORY_LINE.category_id.in_(filter_category_ids),
+                    )
+                    .group_by(CATEGORY_LINE.transaction_id)
+                )
+                matched = {row[0]: row[1] for row in matched_rows.all()}
+                for tx in transactions:
+                    if tx.id not in matched:
+                        continue
+                    part = Decimal(str(matched[tx.id]))
+                    tx.matched_amount = part
+                    if tx.amount_primary is not None and tx.amount:
+                        tx.matched_amount_primary = (
+                            Decimal(str(tx.amount_primary)) * part / abs(Decimal(str(tx.amount)))
+                        ).quantize(Decimal("0.01"))
 
         if include_running_balance and from_date and primary_currency:
             running_account = await _running_balance_account(
@@ -845,6 +892,9 @@ async def create_transaction(
 
     await _ensure_category_in_workspace(session, workspace_id, data.category_id)
     await _ensure_payee_in_workspace(session, workspace_id, data.payee_id)
+    splits_by_category = bool(data.category_lines and data.category_lines.lines)
+    if splits_by_category and data.category_id is not None:
+        raise ValueError("Choose either a category or a split across categories")
 
     # Resolve currency: explicit value > account currency
     currency = data.currency or account.currency
@@ -879,9 +929,15 @@ async def create_transaction(
     session.add(transaction)
     await session.flush()  # get ID without committing
 
+    # Lines first, so the rules below see a categorized row and leave its
+    # category alone (they still rename, set the payee, and so on).
+    await category_line_service.replace_lines(session, transaction, data.category_lines)
+
     # Apply rules only if no explicit category provided
     if not data.category_id:
-        await apply_rules_to_transaction(session, user_id, transaction)
+        await apply_rules_to_transaction(
+            session, user_id, transaction, skip_category_rules=splits_by_category
+        )
 
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
@@ -900,7 +956,7 @@ async def create_transaction(
     await reconciliation_service.match_incoming(session, workspace_id, [transaction])
 
     await session.commit()
-    await session.refresh(transaction, ["category", "splits"])
+    await session.refresh(transaction, ["category", "splits", "category_lines"])
     return transaction
 
 
@@ -924,6 +980,8 @@ async def create_installment_series(
     """
     base = data.base
     n = data.installments
+    if base.category_lines and base.category_lines.lines:
+        raise ValueError("An installment series cannot be split across categories")
 
     # Verify account belongs to the workspace (mirrors create_transaction)
     account_result = await session.execute(
@@ -1002,7 +1060,7 @@ async def create_installment_series(
 
     await session.commit()
     for tx in created:
-        await session.refresh(tx, ["category", "splits"])
+        await session.refresh(tx, ["category", "splits", "category_lines"])
     return created
 
 
@@ -1152,7 +1210,7 @@ async def get_transfer_candidates(
     anchor = await get_transaction(session, transaction_id, workspace_id)
     if not anchor:
         return []
-    if anchor.transfer_pair_id is not None:
+    if anchor.transfer_pair_id is not None or anchor.has_category_lines:
         return []
 
     opposing_type = "credit" if anchor.type == "debit" else "debit"
@@ -1167,6 +1225,7 @@ async def get_transfer_candidates(
             Transaction.account_id != anchor.account_id,
             Transaction.type == opposing_type,
             Transaction.transfer_pair_id.is_(None),
+            Transaction.has_category_lines.is_(False),
             Transaction.source != "opening_balance",
             Transaction.date >= from_date,
             Transaction.date <= to_date,
@@ -1287,6 +1346,7 @@ async def link_existing_as_transfer(
         if tx.transfer_pair_id is not None:
             raise ValueError("Transaction is already part of a transfer")
         await _ensure_not_mortgage_linked(session, workspace_id, tx)
+        _ensure_not_split_by_category(tx)
 
     if txns[0].account_id == txns[1].account_id:
         raise ValueError("Transactions must be in different accounts")
@@ -1333,6 +1393,7 @@ async def create_transfer_counterpart(
     if anchor.account_id == to_account_id:
         raise ValueError("Counterpart must be in a different account")
     await _ensure_not_mortgage_linked(session, workspace_id, anchor)
+    _ensure_not_split_by_category(anchor)
 
     to_result = await session.execute(
         select(Account)
@@ -1672,6 +1733,13 @@ async def _category_is_ignored(session: AsyncSession, category_id: Optional[uuid
     return bool(await session.scalar(select(Category.is_ignored).where(Category.id == category_id)))
 
 
+def _ensure_not_split_by_category(tx: Transaction) -> None:
+    """A transfer leaves income and expenses as a whole row, which a row
+    split across categories cannot do."""
+    if tx.has_category_lines:
+        raise ValueError("Undo the split across categories before linking it as a transfer")
+
+
 async def _ensure_not_mortgage_linked(
     session: AsyncSession, workspace_id: uuid.UUID, tx: Transaction
 ) -> None:
@@ -1681,6 +1749,35 @@ async def _ensure_not_mortgage_linked(
         session, workspace_id, tx.id
     ):
         raise ValueError("A mortgage payment with a breakdown cannot also be a transfer")
+
+
+def _check_category_lines_update(
+    tx: Transaction, update_data: dict, lines_payload
+) -> None:
+    """Validate an edit against the row's category split, in place.
+
+    The editor sends `category_id: null` on every save, including for a split
+    row, so that value is dropped rather than read as "uncategorize". A real
+    category or a new amount on a split row needs the lines to say what
+    happens to the split.
+    """
+    splitting = lines_payload is not None and bool(lines_payload.lines)
+    unsplitting = lines_payload is not None and not lines_payload.lines
+    if splitting and update_data.get("category_id") is not None:
+        raise ValueError("Choose either a category or a split across categories")
+    if unsplitting and "category_id" in update_data and update_data["category_id"] is None:
+        # Keep the category the split hands back instead of clearing it.
+        update_data.pop("category_id")
+    if not tx.has_category_lines or unsplitting:
+        return
+    if "category_id" in update_data:
+        if update_data["category_id"] is not None:
+            raise ValueError(
+                "Undo the split across categories before choosing a single category"
+            )
+        update_data.pop("category_id")
+    if not splitting and "amount" in update_data and update_data["amount"] != tx.amount:
+        raise ValueError("Send the category lines along with the new amount")
 
 
 async def update_transaction(
@@ -1702,6 +1799,9 @@ async def update_transaction(
     # service can validate against the new amount.
     splits_payload = data.splits if "splits" in update_data else None
     update_data.pop("splits", None)
+    lines_payload = data.category_lines if "category_lines" in update_data else None
+    update_data.pop("category_lines", None)
+    _check_category_lines_update(transaction, update_data, lines_payload)
 
     # Verify the new account belongs to the workspace before touching the
     # row. When changing the account on one side of a transfer pair,
@@ -1797,6 +1897,23 @@ async def update_transaction(
         if moves_balance and await _has_mortgage_breakdown(session, workspace_id, row.id):
             raise ValueError("Remove the mortgage breakdown before changing this payment")
 
+    # Sibling installments only receive scoped columns, never lines, so a
+    # split sibling cannot take a new amount or a single category from them.
+    for row in rows:
+        if row.id != transaction.id and row.has_category_lines and scoped_update:
+            if scoped_update.get("category_id") is not None or (
+                "amount" in scoped_update and scoped_update["amount"] != row.amount
+            ):
+                raise ValueError(
+                    "An installment in this series is split across categories; edit it on its own"
+                )
+
+    # Undoing a split happens before the column updates, so a category sent
+    # in the same request wins over the one the split hands back.
+    unsplitting = lines_payload is not None and not lines_payload.lines
+    if unsplitting:
+        await category_line_service.replace_lines(session, transaction, lines_payload)
+
     for row in rows:
         # The edited transaction itself reflects the full form payload; the
         # sibling installments only receive the whitelisted fields (and keep
@@ -1820,6 +1937,14 @@ async def update_transaction(
             row_splits,
         )
 
+    # Splitting happens after the column updates, against the final amount.
+    if lines_payload is not None and lines_payload.lines:
+        await session.flush()
+        await category_line_service.replace_lines(session, transaction, lines_payload)
+    elif transaction.has_category_lines and ({"type", "account_id"} & update_data.keys()):
+        await session.flush()
+        await category_line_service.validate_existing_lines(session, transaction)
+
     # A changed parcel amount makes the stored series total stale, whatever
     # the scope was: "this" reprices one parcel, "future"/"all" reprice
     # several. Recompute from the rows themselves so the two always agree.
@@ -1828,7 +1953,7 @@ async def update_transaction(
         await _resync_installment_series_total(session, workspace_id, transaction)
 
     await session.commit()
-    await session.refresh(transaction, ["category", "payee_entity", "splits"])
+    await session.refresh(transaction, ["category", "payee_entity", "splits", "category_lines"])
     return transaction
 
 
@@ -1839,11 +1964,13 @@ async def bulk_update_category(
     category_id: Optional[uuid.UUID] = None,
 ) -> int:
     await _ensure_category_in_workspace(session, workspace_id, category_id)
-    # Principal entries keep no category; skip them rather than fail the batch.
+    # Principal entries keep no category, and a row split across categories
+    # keeps its lines; skip both rather than fail the batch.
     target = [
         Transaction.id.in_(transaction_ids),
         Transaction.workspace_id == workspace_id,
         Transaction.source != MORTGAGE_PRINCIPAL_SOURCE,
+        Transaction.has_category_lines.is_(False),
     ]
     # A category change can alter whether an allocated bank payment contributes
     # to balances, either by entering or leaving an ignored category.
@@ -2079,12 +2206,16 @@ async def bulk_add_to_group(
 
     payload = TransactionSplitsInput(share_type=share_type, splits=chosen)
 
+    # Locked like a single edit, so a split across categories saved in
+    # between cannot slip past the check below and end up next to shares.
     txs_result = await session.execute(
         select(Transaction)
         .where(
             Transaction.id.in_(transaction_ids),
             Transaction.workspace_id == workspace_id,
         )
+        .order_by(Transaction.id)
+        .with_for_update(of=Transaction)
         .options(selectinload(Transaction.splits))
     )
     txs = txs_result.scalars().all()
@@ -2092,7 +2223,7 @@ async def bulk_add_to_group(
     updated = 0
     skipped = 0
     for tx in txs:
-        if tx.transfer_pair_id is not None or tx.splits:
+        if tx.transfer_pair_id is not None or tx.splits or tx.has_category_lines:
             skipped += 1
             continue
         await split_service.replace_splits(session, tx, payload, user_id)

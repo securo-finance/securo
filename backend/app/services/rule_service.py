@@ -1130,6 +1130,7 @@ _PREVIEW_COLUMNS = (
     Transaction.payee_id,
     Transaction.notes,
     Transaction.is_ignored,
+    Transaction.has_category_lines,
 )
 
 
@@ -1208,7 +1209,13 @@ async def apply_rules_to_transaction(
     )
     rules = result.scalars().all()
 
-    category_set = transaction.category_id is not None or skip_category_rules
+    # A row split across categories is categorized: its lines hold the
+    # categories and its own category_id stays null.
+    category_set = (
+        transaction.category_id is not None
+        or transaction.has_category_lines
+        or skip_category_rules
+    )
     # None means "do not filter": a transaction with no workspace at hand
     # has no category list to check against.
     assignable_categories = (
@@ -1333,8 +1340,9 @@ async def preview_rule(
             apply_rule_actions(
                 action_dicts,
                 draft,
-                category_already_set=tx.category_id is not None
-                and not overwrite_existing_categories,
+                # Overwriting never undoes a split across categories.
+                category_already_set=tx.has_category_lines
+                or (tx.category_id is not None and not overwrite_existing_categories),
                 skip_description=_has_manual_description(tx),
                 assignable_category_ids=assignable_categories,
             )
@@ -1424,8 +1432,9 @@ async def apply_single_rule(
         apply_rule_actions(
             actions,
             tx,
-            category_already_set=tx.category_id is not None
-            and not overwrite_existing_categories,
+            # Overwriting never undoes a split across categories.
+            category_already_set=tx.has_category_lines
+            or (tx.category_id is not None and not overwrite_existing_categories),
             skip_description=_has_manual_description(tx),
             assignable_category_ids=assignable_categories,
         )
@@ -1480,13 +1489,15 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                 tx.description = tx.original_description
             tx.description_is_rule_managed = False
         matched = False
-        category_set = False
+        # A split row keeps its lines through a re-apply.
+        category_set = tx.has_category_lines
         for rule in rules:
             conditions = rule.conditions or []
             actions = rule.actions or []
             if evaluate_conditions(rule.conditions_op, conditions, tx):
                 if not matched:
-                    tx.category_id = None
+                    if not tx.has_category_lines:
+                        tx.category_id = None
                     tx.notes = None
                     matched = True
                 category_set = apply_rule_actions(
