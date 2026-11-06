@@ -314,3 +314,18 @@ async def test_scope_is_matched_on_the_routed_path_under_a_root_path(auth_header
         assert resp.status_code == 200, resp.text
         resp = await prefixed.get("/securo/api/workspaces", headers=_bearer(token))
         assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_root_path_is_stripped_only_on_a_segment_boundary(auth_headers: dict, client: AsyncClient):
+    """A root path of `/ap` must not eat the start of `/api/...`: Starlette
+    routes that request as `/api/categories`, so the scope check must too."""
+    from httpx import ASGITransport
+
+    from app.main import app
+
+    token = (await _create(client, auth_headers, ["categories:read"]))["token"]
+    transport = ASGITransport(app=app, root_path="/ap")
+    async with AsyncClient(transport=transport, base_url="http://test") as prefixed:
+        resp = await prefixed.get("/api/categories", headers=_bearer(token))
+        assert resp.status_code == 200, resp.text

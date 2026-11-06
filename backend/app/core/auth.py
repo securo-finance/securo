@@ -11,6 +11,7 @@ from fastapi_users.authentication import (
 )
 from fastapi_users.db import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette._utils import get_route_path
 
 from app.core.auth_policy import require_local_auth_enabled
 from app.core.config import get_settings
@@ -112,15 +113,10 @@ def _bearer(request: Request) -> Optional[str]:
 def _route_path(request: Request) -> str:
     """The path the app routes on, without a mount prefix (`root_path`).
 
-    Behind a server started with a root path such as `/securo`, the scope's
-    path keeps that prefix while routing strips it; scopes are declared on
-    the routed path.
+    Uses the helper Starlette's own router uses, so scopes are checked on
+    exactly the path the request is routed by.
     """
-    path = request.scope["path"]
-    root = request.scope.get("root_path") or ""
-    if root and path.startswith(root):
-        return path[len(root):] or "/"
-    return path
+    return get_route_path(request.scope)
 
 
 async def current_active_user(
