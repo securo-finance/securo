@@ -265,10 +265,9 @@ async def test_the_list_filters_and_totals_a_split_row_by_its_parts(scene):
         **{"from": month, "to": today},
     )
     assert [row["id"] for row in by_invest["items"]] == [target_id]
-    assert by_invest["items"][0]["matched_amount"] == 60
-    assert by_invest["items"][0]["matched_amount_primary"] is None or (
-        by_invest["items"][0]["matched_amount_primary"] == 60
-    )
+    # Money crosses JSON as a decimal string, never a float.
+    assert by_invest["items"][0]["matched_amount"] == "60.00"
+    assert by_invest["items"][0]["matched_amount_primary"] in (None, "60.00")
     # Only the matching part is in the footer, and it is a transfer.
     assert by_invest["summary"]["expense"] == 0
     assert by_invest["summary"]["excluded"] == 60
@@ -292,6 +291,20 @@ async def test_the_list_filters_and_totals_a_split_row_by_its_parts(scene):
 
     pnl_only = await _get(scene, "/api/transactions", user_pnl_only=True)
     assert target_id in {row["id"] for row in pnl_only["items"]}
+
+
+async def test_the_calendar_leaves_out_a_part_whose_category_became_ignored(scene):
+    """A line cannot be saved in an ignored category, but the category can be
+    ignored while the split is saved. The part then drops out, as in every
+    other report."""
+    await _split(scene, (scene["food"], 140), (scene["transport"], 60))
+    scene["transport"].is_ignored = True
+    scene["session"].add(scene["transport"])
+    await scene["session"].commit()
+
+    snap = await _snapshot(scene)
+    assert snap["calendar"][1] == 150 + 140
+    assert snap["expenses"] == 150 + 140
 
 
 async def test_a_split_row_that_is_all_transfer_drops_out_of_user_pnl_lists(scene):

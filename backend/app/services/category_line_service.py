@@ -6,8 +6,8 @@ This module is the only writer of those lines and of
 `Transaction.has_category_lines`, and it keeps four invariants:
 
 - a split transaction has at least two lines,
-- the lines add up to the transaction amount exactly (the rounding residual
-  goes to the last line, as in `split_service`),
+- the lines add up to the transaction amount exactly (leftover cents go to
+  the largest fractions, see `_distribute`),
 - while split, the transaction's own `category_id` is null,
 - every line's category belongs to the transaction's workspace and is
   neither ignored nor hidden. Ignored categories also take a row out of the
@@ -90,18 +90,27 @@ def materialize(
 
 
 def _distribute(total: Decimal, weights: list[Decimal]) -> list[Decimal]:
-    """Split `total` by `weights`, rounding each part to the cent and giving
-    the residual to the last part so the sum is exact."""
+    """Split `total` by `weights` in whole cents, exactly.
+
+    Largest remainder: every part gets the cents its share rounds down to,
+    and the cents left over go one each to the parts with the largest
+    fractions (the later part on a tie, so an even split puts the odd cent
+    last). Rounding each part on its own could hand the last one nothing
+    even when a positive split exists: 4 cents at 37.5/37.5/25 is 1/2/1.
+    """
+    total_cents = int((total * 100).to_integral_value())
     weight_sum = sum(weights, Decimal("0"))
-    amounts: list[Decimal] = []
-    for i, weight in enumerate(weights):
-        if i == len(weights) - 1:
-            amounts.append(total - sum(amounts, Decimal("0")))
-        else:
-            amounts.append(_quantize(total * weight / weight_sum))
-    if any(amount <= 0 for amount in amounts):
+    exact = [Decimal(total_cents) * weight / weight_sum for weight in weights]
+    cents = [int(share) for share in exact]  # floor: shares are positive
+    leftover = total_cents - sum(cents)
+    by_fraction = sorted(
+        range(len(weights)), key=lambda i: (exact[i] - cents[i], i), reverse=True
+    )
+    for i in by_fraction[:leftover]:
+        cents[i] += 1
+    if any(c <= 0 for c in cents):
         raise ValueError("The transaction amount is too small to split this way")
-    return amounts
+    return [Decimal(c) / 100 for c in cents]
 
 
 async def split_block_reason(session: AsyncSession, tx: Transaction) -> Optional[str]:
@@ -254,7 +263,7 @@ async def rescale_lines(session: AsyncSession, tx: Transaction, old_amount: Deci
     a different amount, for instance).
 
     Percent lines get their percentages back; exact lines keep their
-    proportions. The residual goes to the last line. If the new amount is too
+    proportions, in whole cents (see `_distribute`). If the new amount is too
     small to give every line at least a cent, the split is undone instead,
     with the transaction keeping the category of its largest line.
     """

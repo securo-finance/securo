@@ -705,6 +705,47 @@ def test_materialize_exact_and_percent():
     ]
 
 
+def test_materialize_keeps_every_part_positive_when_a_split_exists():
+    """4 cents at 37.5/37.5/25: rounding each part on its own leaves the last
+    with nothing, though 1/2/1 cents is a valid split."""
+    parts = category_line_service.materialize(Decimal("0.04"), _payload("percent", "37.5", "37.5", 25))
+    assert [amount for _, amount, _, _ in parts] == [
+        Decimal("0.01"), Decimal("0.02"), Decimal("0.01"),
+    ]
+
+
+def test_materialize_gives_the_odd_cent_to_the_largest_fraction():
+    parts = category_line_service.materialize(Decimal("10"), _payload("percent", "33.33", "33.34", "33.33"))
+    assert [amount for _, amount, _, _ in parts] == [
+        Decimal("3.33"), Decimal("3.34"), Decimal("3.33"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_finer_than_cents_and_hundredths_is_refused(client, auth_headers, cats):
+    """Validating 33.333 + 66.667 = 100 and then storing 33.33/66.67 would
+    save something other than what was checked."""
+    food, transport, _ = cats
+    account = await _account(client, auth_headers)
+    for lines in (
+        {"share_type": "percent", "lines": [
+            {"category_id": str(food.id), "share_pct": "33.333"},
+            {"category_id": str(transport.id), "share_pct": "66.667"},
+        ]},
+        {"share_type": "exact", "lines": [
+            {"category_id": str(food.id), "amount": "100.005"},
+            {"category_id": str(transport.id), "amount": "49.995"},
+        ]},
+    ):
+        resp = await client.post(
+            "/api/transactions", headers=auth_headers,
+            json={"account_id": account["id"], "description": "x", "amount": 150,
+                  "date": "2026-10-10", "type": "debit", "currency": "USD",
+                  "category_lines": lines},
+        )
+        assert resp.status_code == 422, resp.text
+
+
 async def _split_row(session, test_user, cats, share_type, *parts, amount="150"):
     food, transport, _ = cats
     from app.models.account import Account

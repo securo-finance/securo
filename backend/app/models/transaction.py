@@ -159,8 +159,8 @@ class Transaction(Base):
     payee_name = cast(Optional[str], None)
     running_balance = cast(Optional[float], None)
     running_balance_primary = cast(Optional[float], None)
-    matched_amount = cast(Optional[float], None)
-    matched_amount_primary = cast(Optional[float], None)
+    matched_amount = cast(Optional[Decimal], None)
+    matched_amount_primary = cast(Optional[Decimal], None)
 
 
 # Safety net: `effective_date` is NOT NULL. For non-CC transactions it always

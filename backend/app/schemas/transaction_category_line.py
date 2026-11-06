@@ -13,8 +13,10 @@ class TransactionCategoryLineInput(BaseModel):
     share_type='exact', `share_pct` for share_type='percent'."""
 
     category_id: uuid.UUID
-    amount: Optional[Decimal] = None
-    share_pct: Optional[Decimal] = None
+    # Cents and hundredths of a percent, what the columns store: anything
+    # finer would validate against one total and be saved as another.
+    amount: Optional[Decimal] = Field(default=None, decimal_places=2)
+    share_pct: Optional[Decimal] = Field(default=None, decimal_places=2)
     notes: Optional[str] = Field(default=None, max_length=500)
 
 

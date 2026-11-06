@@ -644,11 +644,11 @@ async def get_transactions(
                     if tx.id not in matched:
                         continue
                     part = Decimal(str(matched[tx.id]))
-                    tx.matched_amount = float(part)
+                    tx.matched_amount = part
                     if tx.amount_primary is not None and tx.amount:
-                        tx.matched_amount_primary = float(
+                        tx.matched_amount_primary = (
                             Decimal(str(tx.amount_primary)) * part / abs(Decimal(str(tx.amount)))
-                        )
+                        ).quantize(Decimal("0.01"))
 
         if include_running_balance and from_date and primary_currency:
             running_account = await _running_balance_account(
@@ -2206,12 +2206,16 @@ async def bulk_add_to_group(
 
     payload = TransactionSplitsInput(share_type=share_type, splits=chosen)
 
+    # Locked like a single edit, so a split across categories saved in
+    # between cannot slip past the check below and end up next to shares.
     txs_result = await session.execute(
         select(Transaction)
         .where(
             Transaction.id.in_(transaction_ids),
             Transaction.workspace_id == workspace_id,
         )
+        .order_by(Transaction.id)
+        .with_for_update(of=Transaction)
         .options(selectinload(Transaction.splits))
     )
     txs = txs_result.scalars().all()

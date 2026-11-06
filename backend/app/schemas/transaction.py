@@ -222,8 +222,8 @@ class TransactionRead(TransactionBase):
     # Set by the paginated list when it is filtered by category: the part of
     # a split row that falls in the filtered categories, so a drill-down
     # total adds up to the report it came from. Null on plain rows.
-    matched_amount: Optional[float] = None
-    matched_amount_primary: Optional[float] = None
+    matched_amount: Optional[Decimal] = None
+    matched_amount_primary: Optional[Decimal] = None
     # Shared-transaction view fields. Set per-request when the viewer
     # is a linked member of one of this transaction's splits but not
     # its owner. The viewer sees their share amount instead of the

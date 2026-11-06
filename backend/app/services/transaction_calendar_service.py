@@ -324,7 +324,14 @@ def _category_parts(tx: Transaction) -> list[tuple[Optional[Category], float]]:
     total = abs(float(tx.amount or 0))
     if not tx.has_category_lines or not tx.category_lines or not total:
         return [(tx.category, 1.0)]
-    return [(line.category, float(line.amount) / total) for line in tx.category_lines]
+    # A line cannot be saved in an ignored category, but the category can be
+    # ignored while the split is being saved; leave that part out, as the
+    # shared P/L filters do.
+    return [
+        (line.category, float(line.amount) / total)
+        for line in tx.category_lines
+        if not (line.category and line.category.is_ignored)
+    ]
 
 
 def _is_transfer_part(tx: Transaction, category: Optional[Category]) -> bool:
