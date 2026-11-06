@@ -20,6 +20,8 @@ from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from pydantic import ValidationError
+
 from app.schemas.transaction import FailedRow, ImportCategoryLine, TransactionImport
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineInput,
@@ -926,9 +928,14 @@ def _collapse_split_groups(
         if (
             len(rows) < 2
             or len(set(indexes)) != len(indexes)
+            # Everything but the category and amount is the transaction's
+            # own, so the parts of one export agree on it; rows that differ
+            # (a rate, a payee, a note, an id) are not one transaction.
             or any(
-                (r.date, r.type, r.currency, r.description)
-                != (first.date, first.type, first.currency, first.description)
+                (r.date, r.type, r.currency, r.description, r.fx_rate, r.payee_raw,
+                 r.notes, r.external_id)
+                != (first.date, first.type, first.currency, first.description, first.fx_rate,
+                    first.payee_raw, first.notes, first.external_id)
                 for r in rows
             )
             or any(not r.category_name for r in rows)
@@ -936,13 +943,19 @@ def _collapse_split_groups(
             continue
         ordered = [p for _, p in sorted(zip(indexes, positions))]
         parts = [transactions[p] for p in ordered]
+        try:
+            lines = [
+                ImportCategoryLine(category_name=part.category_name or "", amount=part.amount)
+                for part in parts
+            ]
+        except ValidationError:
+            # A part that is not a valid line (a zero amount): import the rows
+            # one by one instead of failing the whole preview.
+            continue
         merged_into[ordered[0]] = first.model_copy(update={
             "amount": sum((part.amount for part in parts), Decimal("0")),
             "category_name": None,
-            "category_lines": [
-                ImportCategoryLine(category_name=part.category_name or "", amount=part.amount)
-                for part in parts
-            ],
+            "category_lines": lines,
         })
         absorbed.update(ordered[1:])
 
@@ -1085,11 +1098,16 @@ async def import_transactions(
         select(Category).where(Category.workspace_id == workspace_id)
     )
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
-    category_map = {
-        c.name.strip().lower(): c.id
-        for c in category_result.scalars()
-        if c.id in assignable_categories
-    }
+    assignable = [c for c in category_result.scalars() if c.id in assignable_categories]
+    category_map = {c.name.strip().lower(): c.id for c in assignable}
+    # Two categories sharing a name cannot be told apart from a CSV, so a
+    # split part naming one of them is not resolved (the row imports unsplit
+    # rather than putting money in a category the user did not mean).
+    seen_names: set[str] = set()
+    ambiguous_names: set[str] = set()
+    for c in assignable:
+        name = c.name.strip().lower()
+        (ambiguous_names if name in seen_names else seen_names).add(name)
 
     imported = 0
     landed: list[Transaction] = []
@@ -1243,6 +1261,21 @@ async def import_transactions(
                     await stamp_primary_amount(session, user_id, placeholder)
                 # A split placeholder keeps its split, resized.
                 await category_line_service.rescale_lines(session, placeholder, expected_amount)
+            placeholder_split = (
+                _import_split_payload(txn_data, category_map, ambiguous_names)
+                if placeholder.category_id is None and not placeholder.has_category_lines
+                else None
+            )
+            if placeholder_split is not None:
+                # An uncategorized placeholder takes the split the file
+                # carries, as a new row would.
+                try:
+                    async with session.begin_nested():
+                        await category_line_service.replace_lines(
+                            session, placeholder, placeholder_split
+                        )
+                except ValueError:
+                    await session.refresh(placeholder)
             if placeholder.category_id is None and not placeholder.has_category_lines:
                 placeholder.category_id = preview.category_id
             if import_payee_raw and not placeholder.payee:
@@ -1279,7 +1312,7 @@ async def import_transactions(
         if recurring_link is not None:
             recurring_match_service.advance_past(recurring_link, txn_data.date)
 
-        split_payload = _import_split_payload(txn_data, category_map)
+        split_payload = _import_split_payload(txn_data, category_map, ambiguous_names)
         await apply_rules_to_transaction(
             session,
             user_id,
@@ -1434,15 +1467,21 @@ def normalize_amount(amount_str: str | None, decimal_separator: str | None = Non
 
 
 def _import_split_payload(
-    txn_data: TransactionImport, category_map: dict[str, uuid.UUID]
+    txn_data: TransactionImport,
+    category_map: dict[str, uuid.UUID],
+    ambiguous_names: set[str],
 ) -> TransactionCategoryLinesInput | None:
     """The category split a CSV row carries, with categories resolved by
-    name, or None when it has none or a category is not in the workspace
-    (the row then imports unsplit rather than half-split)."""
+    name, or None when it has none, or a category is missing here or shares
+    its name with another (the row then imports unsplit rather than
+    half-split or split into the wrong category)."""
     lines: list[ImportCategoryLine] = txn_data.category_lines or []
     if len(lines) < 2 or txn_data.force_uncategorized:
         return None
-    resolved = [category_map.get(line.category_name.strip().lower()) for line in lines]
+    names = [line.category_name.strip().lower() for line in lines]
+    if any(name in ambiguous_names for name in names):
+        return None
+    resolved = [category_map.get(name) for name in names]
     if any(category_id is None for category_id in resolved):
         return None
     return TransactionCategoryLinesInput(

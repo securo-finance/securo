@@ -288,3 +288,140 @@ async def test_propose_create_transaction_with_parts(session, client, auth_heade
         ]}},
     )
     assert "error" in bad
+
+
+# --- Review follow-ups ------------------------------------------------------
+
+
+async def test_export_keeps_zero_cent_primary_shares(client, auth_headers, test_categories):
+    """Tiny primary amounts still add up in the column, with zero-cent parts."""
+    food, transport, _ = test_categories
+    account = await _account(client, auth_headers, currency="EUR")
+    resp = await client.post(
+        "/api/transactions", headers=auth_headers,
+        json={"account_id": account["id"], "description": "Tiny", "amount": 1,
+              "date": "2026-10-10", "type": "debit", "currency": "EUR", "amount_primary": "0.01",
+              "category_lines": {"share_type": "exact", "lines": [
+                  {"category_id": str(food.id), "amount": "0.50"},
+                  {"category_id": str(transport.id), "amount": "0.50"},
+              ]}},
+    )
+    assert resp.status_code == 201, resp.text
+    parts = [r for r in await _export_rows(client, auth_headers) if r["split_group"]]
+    primaries = [Decimal(r["amount_primary"]) for r in parts]
+    assert sum(primaries) == Decimal("0.01")
+    assert Decimal("0.00") in primaries
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        # Another rate: not the same transaction.
+        "2026-10-10,Warehouse,-50,debit,USD,Transporte,g1,2,2.0",
+        # A zero part is not a valid line.
+        "2026-10-10,Warehouse,0,debit,USD,Transporte,g1,2,",
+    ],
+)
+async def test_parts_that_disagree_import_row_by_row(client, auth_headers, test_categories, second):
+    content = (
+        "date,description,amount,type,currency,category,split_group,split_index,fx_rate\n"
+        "2026-10-10,Warehouse,-100,debit,USD,Alimentação,g1,1,\n"
+        f"{second}\n"
+    ).encode()
+    preview = await _preview(client, auth_headers, content)
+    assert len(preview) == 2
+    assert all(not row.get("category_lines") for row in preview)
+
+
+async def test_a_category_name_shared_by_two_categories_imports_unsplit(
+    client, auth_headers, session, test_user, test_categories
+):
+    from app.models.category import Category
+
+    food, transport, _ = test_categories
+    session.add(Category(id=uuid.uuid4(), user_id=test_user.id, name=food.name))
+    await session.commit()
+    content = (
+        "date,description,amount,type,currency,category,split_group,split_index\n"
+        f"2026-10-10,Warehouse,-100,debit,USD,{food.name},g1,1\n"
+        f"2026-10-10,Warehouse,-50,debit,USD,{transport.name},g1,2\n"
+    ).encode()
+    preview = await _preview(client, auth_headers, content)
+    account = await _account(client, auth_headers)
+    await _import(client, auth_headers, account["id"], preview)
+    (row,) = (await client.get(
+        "/api/transactions", headers=auth_headers, params={"account_id": account["id"]},
+    )).json()["items"]
+    assert row["has_category_lines"] is False
+
+
+async def test_an_imported_split_fills_an_uncategorized_placeholder(
+    client, auth_headers, session, test_user, test_categories
+):
+    from datetime import date as _date
+
+    from app.services.recurring_transaction_service import generate_pending
+
+    food, transport, _ = test_categories
+    account = await _account(client, auth_headers)
+    resp = await client.post(
+        "/api/recurring-transactions", headers=auth_headers,
+        json={"description": "Warehouse", "amount": 150, "currency": "USD", "type": "debit",
+              "frequency": "monthly", "day_of_month": 10, "start_date": "2026-10-10",
+              "account_id": account["id"]},
+    )
+    assert resp.status_code == 201, resp.text
+    await generate_pending(session, test_user.id, up_to=_date(2026, 10, 10), include_manual=True)
+
+    content = (
+        "date,description,amount,type,currency,category,split_group,split_index\n"
+        f"2026-10-10,Warehouse,-100,debit,USD,{food.name},g1,1\n"
+        f"2026-10-10,Warehouse,-50,debit,USD,{transport.name},g1,2\n"
+    ).encode()
+    preview = await _preview(client, auth_headers, content)
+    await _import(client, auth_headers, account["id"], preview)
+
+    rows = (await client.get(
+        "/api/transactions", headers=auth_headers, params={"account_id": account["id"]},
+    )).json()["items"]
+    (row,) = rows
+    assert row["has_category_lines"] is True
+    assert [Decimal(str(line["amount"])) for line in row["category_lines"]] == [
+        Decimal("100.00"), Decimal("50.00"),
+    ]
+
+
+async def test_list_transactions_reports_the_matched_part(
+    session, client, auth_headers, test_user, test_categories
+):
+    food, transport, _ = test_categories
+    account = await _account(client, auth_headers)
+    split = await _split(client, auth_headers, account["id"], [(food, 100), (transport, 50)])
+
+    result = await REGISTRY["list_transactions"].handler(
+        session=session, ctx=CallContext(user_id=test_user.id, conversation_id=uuid.uuid4()),
+        category_ids=[str(food.id)],
+    )
+    (row,) = [r for r in result["items"] if r["id"] == split["id"]]
+    assert row["matched_amount"] == 100.0
+
+
+async def test_propose_create_transaction_refuses_an_ignored_part(
+    session, client, auth_headers, test_user, test_categories
+):
+    from app.models.category import Category
+
+    food, _, _ = test_categories
+    ignored = Category(id=uuid.uuid4(), user_id=test_user.id, name="Ignored", is_ignored=True)
+    session.add(ignored)
+    await session.commit()
+    account = await _account(client, auth_headers)
+    result = await REGISTRY["propose_create_transaction"].handler(
+        session=session, ctx=CallContext(user_id=test_user.id),
+        description="Receipt", amount=100, type="debit", account_id=account["id"],
+        category_lines={"share_type": "exact", "lines": [
+            {"category_id": str(food.id), "amount": 50},
+            {"category_id": str(ignored.id), "amount": 50},
+        ]},
+    )
+    assert "error" in result

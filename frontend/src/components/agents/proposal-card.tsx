@@ -209,7 +209,7 @@ function renderSummary(
         type: String(p.type ?? '?'),
         date: String(p.date ?? ''),
         account: String((p.account_name as string) ?? '?'),
-      })
+      }) + splitSummary(p as Record<string, unknown>, fmt)
     case 'create_recurring_transaction':
       return t('agents.proposal.summary.createRecurring', {
         description: String(p.description ?? '?'),
@@ -309,6 +309,16 @@ function fmt(amount: unknown, currency: unknown): string {
   } catch {
     return `${c} ${n.toFixed(2)}`
   }
+}
+
+/** " · Food 120.00, Home 80.00" for a proposal split across categories,
+ * so the user sees where the money goes before Apply. */
+function splitSummary(p: Record<string, unknown>, format: typeof fmt): string {
+  const block = p.category_lines as { lines?: Array<Record<string, unknown>> } | undefined
+  if (!block?.lines?.length) return ''
+  return ' · ' + block.lines
+    .map((line) => `${String(line.category_name ?? '?')} ${format(line.amount, p.currency)}`)
+    .join(', ')
 }
 
 function safeStringify(o: unknown): string {

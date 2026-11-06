@@ -3134,6 +3134,7 @@
     "needsCategory": "Jeder Anteil braucht eine Kategorie.",
     "needsValue": "Jeder Anteil braucht einen Betrag über null.",
     "hint": "Berichte zählen jeden Anteil in seiner Kategorie.",
+    "importUnresolved": "Hier nicht gefunden: {{names}}. Wird ohne Aufteilung importiert.",
     "undo": "Aufteilung aufheben",
     "partOf": "Anteil von {{value}}",
     "bulkSkipped_one": "{{count}} aufgeteilte Buchung blieb unverändert",

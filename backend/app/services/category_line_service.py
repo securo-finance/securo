@@ -89,7 +89,9 @@ def materialize(
     raise ValueError(f"Unknown share_type: {payload.share_type}")
 
 
-def _distribute(total: Decimal, weights: list[Decimal]) -> list[Decimal]:
+def _distribute(
+    total: Decimal, weights: list[Decimal], *, allow_zero: bool = False
+) -> list[Decimal]:
     """Split `total` by `weights` in whole cents, exactly.
 
     Largest remainder: every part gets the cents its share rounds down to,
@@ -108,7 +110,9 @@ def _distribute(total: Decimal, weights: list[Decimal]) -> list[Decimal]:
     )
     for i in by_fraction[:leftover]:
         cents[i] += 1
-    if any(c <= 0 for c in cents):
+    # A line must be positive; a figure merely reported per part (the
+    # primary amount in an export) may round down to nothing.
+    if not allow_zero and any(c <= 0 for c in cents):
         raise ValueError("The transaction amount is too small to split this way")
     return [(Decimal(c) / 100).quantize(_CENT) for c in cents]
 
@@ -307,16 +311,13 @@ def csv_export_parts(
     lines = sorted(tx.category_lines, key=lambda line: line.position)
     sign = Decimal("-1") if Decimal(str(tx.amount)) < 0 else Decimal("1")
     primaries: list[Optional[Decimal]] = [None] * len(lines)
-    if tx.amount_primary:
+    if tx.amount_primary is not None:
         primary = Decimal(str(tx.amount_primary))
-        try:
-            shares = _distribute(abs(primary), [line.amount for line in lines])
-            primary_sign = Decimal("-1") if primary < 0 else Decimal("1")
-            primaries = [share * primary_sign for share in shares]
-        except ValueError:
-            # Too small to spread in whole cents: leave the column empty
-            # rather than write parts that do not add up.
-            pass
+        # Zero-cent shares are kept: the column must still add up to the
+        # transaction's primary amount, however small.
+        shares = _distribute(abs(primary), [line.amount for line in lines], allow_zero=True)
+        primary_sign = Decimal("-1") if primary < 0 else Decimal("1")
+        primaries = [share * primary_sign for share in shares]
     return [
         (line.amount * sign, primaries[i], line.category, str(tx.id), str(i + 1))
         for i, line in enumerate(lines)

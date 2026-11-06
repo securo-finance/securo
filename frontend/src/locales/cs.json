@@ -3295,6 +3295,7 @@
     "needsCategory": "Každá část potřebuje kategorii.",
     "needsValue": "Každá část potřebuje částku vyšší než nula.",
     "hint": "Přehledy počítají každou část v její kategorii.",
+    "importUnresolved": "Zde nenalezeno: {{names}}. Importuje se bez rozdělení.",
     "undo": "Zrušit rozdělení",
     "partOf": "část z {{value}}",
     "bulkSkipped_one": "{{count}} rozdělená transakce zůstala beze změny",

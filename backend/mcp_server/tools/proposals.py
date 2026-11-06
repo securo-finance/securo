@@ -923,6 +923,16 @@ async def propose_create_transaction(
         }
         if len(line_cats) != len({cid for cid, _, _, _ in resolved}):
             return {"error": "category not found"}
+        # The same eligibility the save checks, so a preview never offers a
+        # split that Apply would then refuse.
+        if any(c.is_ignored or c.is_hidden for c in line_cats.values()):
+            return {"error": "an ignored or hidden category cannot hold part of a transaction"}
+        if (
+            type == "credit"
+            and acc.type == "credit_card"
+            and any(c.treat_as_transfer for c in line_cats.values())
+        ):
+            return {"error": "a credit on a credit card cannot have a part in a transfer category"}
         lines_preview = [
             {
                 "category_id": str(cid),

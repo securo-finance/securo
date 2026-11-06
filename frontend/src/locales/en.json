@@ -3133,6 +3133,7 @@
     "needsCategory": "Every part needs a category.",
     "needsValue": "Every part needs an amount above zero.",
     "hint": "Reports count each part in its own category.",
+    "importUnresolved": "Not found here: {{names}}. Imports without the split.",
     "undo": "Undo split",
     "partOf": "part of {{value}}",
     "bulkSkipped_one": "{{count}} split transaction was left as is",

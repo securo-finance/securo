@@ -3279,6 +3279,7 @@
     "needsCategory": "Každá časť potrebuje kategóriu.",
     "needsValue": "Každá časť potrebuje sumu vyššiu ako nula.",
     "hint": "Prehľady počítajú každú časť v jej kategórii.",
+    "importUnresolved": "Tu sa nenašlo: {{names}}. Importuje sa bez rozdelenia.",
     "undo": "Zrušiť rozdelenie",
     "partOf": "časť z {{value}}",
     "bulkSkipped_one": "{{count}} rozdelená transakcia zostala bez zmeny",
