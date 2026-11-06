@@ -1,8 +1,9 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChartPie } from 'lucide-react'
 
 import { CategoryIcon } from '@/components/category-icon'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { isSplitByCategory } from '@/lib/category-lines'
@@ -124,27 +125,42 @@ export function CategorySplitBadge({
   compact?: boolean
 }) {
   const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
   const count = tx.category_lines?.length ?? 0
+  // A popover rather than a tooltip: it opens on hover with a mouse and on
+  // tap with touch, and a tap shows the parts instead of opening the row.
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
           className={cn(
             'inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide',
             'text-violet-700 bg-violet-50 border border-violet-200',
             'dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900',
-            'px-1.5 py-0.5 rounded-full cursor-default',
+            'px-1.5 py-0.5 rounded-full cursor-pointer',
             className,
           )}
           aria-label={t('categoryLines.badge', { count })}
+          onClick={(e) => {
+            // Opens on tap; a click outside or Escape closes it.
+            e.stopPropagation()
+            setOpen(true)
+          }}
+          onPointerEnter={(e) => { if (e.pointerType === 'mouse') setOpen(true) }}
+          onPointerLeave={(e) => { if (e.pointerType === 'mouse') setOpen(false) }}
         >
           <ChartPie size={10} />
           {compact ? count : t('categoryLines.badge', { count })}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent className="min-w-48 max-w-72">
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-auto min-w-48 max-w-72 p-3"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onClick={(e) => e.stopPropagation()}
+      >
         <CategoryLinesList tx={tx} />
-      </TooltipContent>
-    </Tooltip>
+      </PopoverContent>
+    </Popover>
   )
 }
