@@ -419,9 +419,11 @@ async def delete_settlement(
     # another settlement also points at, a transfer leg and a row that
     # carries group splits (user-entered allocations) are left alone.
     created: list[Transaction] = []
+    seen: set[uuid.UUID] = set()
     for tx_id in (settlement.transaction_id, settlement.receiver_transaction_id):
-        if tx_id is None or any(tx.id == tx_id for tx in created):
+        if tx_id is None or tx_id in seen:
             continue
+        seen.add(tx_id)
         # Lock the row so a concurrent transfer pairing either lands
         # before this check (and is seen) or waits for the delete.
         tx = (

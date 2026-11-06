@@ -708,3 +708,46 @@ async def test_delete_settlement_keeps_a_debit_that_carries_splits(
         select(TransactionSplit).where(TransactionSplit.transaction_id == debit_id)
     )
     assert len(splits.scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_settlement_cleans_up_attachment_files(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Stored files of the deleted rows are removed; a kept row's are not."""
+    from unittest.mock import AsyncMock, patch
+
+    group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    existing = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    created = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id, to_member_id=b.id,
+            amount=Decimal("12.00"), currency="USD", date=date.today(),
+            account_id=account.id,
+        ),
+    )
+    linked = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id, to_member_id=b.id,
+            amount=Decimal("5.00"), currency="USD", date=date.today(),
+            transaction_id=existing.id,
+        ),
+    )
+    assert created is not None and created.transaction_id is not None
+    assert linked is not None
+
+    cleanup = AsyncMock()
+    with patch("app.services.attachment_service.cleanup_attachment_files", cleanup):
+        assert await settlement_service.delete_settlement(
+            session, group.id, created.id, test_workspace.id, test_user.id
+        ) is True
+        cleanup.assert_awaited_once_with(session, [created.transaction_id])
+
+        cleanup.reset_mock()
+        assert await settlement_service.delete_settlement(
+            session, group.id, linked.id, test_workspace.id, test_user.id
+        ) is True
+        cleanup.assert_not_awaited()
