@@ -327,7 +327,6 @@
       "start_after_invoice": "De afspraak kan niet beginnen na deze factuur.",
       "invoice_not_found": "Factuur niet gevonden.",
       "no_term": "Er geldt geen voorwaarde voor deze periode.",
-      "no_author": "Deze afspraak heeft geen auteur om facturen namens uit te geven.",
       "negative_discount": "Een korting kan niet negatief zijn.",
       "first_term": "De prijs die vanaf het begin geldt, kan niet worden verplaatst of verwijderd. Wijzig hem, of voeg een nieuwe prijs toe vanaf een latere datum.",
       "not_receivable": "Alleen een factuur die u hebt uitgegeven kan bij een afspraak horen.",

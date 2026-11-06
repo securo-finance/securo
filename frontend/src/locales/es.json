@@ -327,7 +327,6 @@
       "start_after_invoice": "El acuerdo no puede empezar después de esta factura.",
       "invoice_not_found": "Factura no encontrada.",
       "no_term": "No hay ninguna condición vigente para este período.",
-      "no_author": "Este acuerdo no tiene un autor con el que emitir facturas.",
       "negative_discount": "Un descuento no puede ser negativo.",
       "first_term": "El precio vigente desde el inicio no se puede mover ni eliminar. Cámbialo o añade un nuevo precio a partir de una fecha posterior.",
       "not_receivable": "Solo una factura emitida por ti puede pertenecer a un acuerdo.",

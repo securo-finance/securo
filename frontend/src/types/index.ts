@@ -501,7 +501,7 @@ export interface PayeeTaxId {
 
 export interface Payee {
   id: string
-  user_id: string
+  user_id: string | null
   name: string
   /** Legal nature, or null when unknown — the normal state for a row sync created. */
   type: 'person' | 'company' | null

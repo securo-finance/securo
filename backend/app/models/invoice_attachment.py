@@ -103,7 +103,7 @@ class InvoiceAttachment(Base):
     )
     # Who uploaded it. Not an owner: the file belongs to the workspace.
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     # Where the file came from, and its name over there.

@@ -327,7 +327,6 @@
       "start_after_invoice": "A megállapodás nem kezdődhet később, mint ez a számla.",
       "invoice_not_found": "A számla nem található.",
       "no_term": "Erre az időszakra nincs érvényes díjszabás.",
-      "no_author": "Ennek a megállapodásnak nincs szerzője, akinek a nevében számlát lehetne kiállítani.",
       "negative_discount": "A kedvezmény nem lehet negatív.",
       "first_term": "A kezdettől érvényes díjszabás nem helyezhető át és nem törölhető. Módosítsd, vagy adj meg új díjszabást egy későbbi dátumtól.",
       "not_receivable": "Csak általad kiállított számla tartozhat megállapodáshoz.",
