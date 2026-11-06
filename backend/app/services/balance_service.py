@@ -21,7 +21,7 @@ are represented in that billing currency for settlement matching.
 import uuid
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from typing import Any, Optional
 
 from sqlalchemy import select
@@ -266,26 +266,64 @@ async def compute_balances(
             remaining -= native_payment
 
         if s.currency == default_currency:
-            converted_tranches = (
+            converted_tranches = [
                 tranche
                 for tranche in legacy_tranches_by_pair.get(pair, [])
                 if tranche["date"] <= s.date and tranche["target_remaining"] > 0
+            ]
+            total_target_remaining = sum(
+                (tranche["target_remaining"] for tranche in converted_tranches),
+                Decimal("0"),
             )
-            for tranche in converted_tranches:
-                if remaining <= 0:
-                    break
-                target_payment = min(remaining, tranche["target_remaining"])
-                if target_payment == tranche["target_remaining"]:
-                    source_payment = tranche["source_remaining"]
-                elif tranche["target_total"]:
-                    source_payment = min(
-                        tranche["source_remaining"],
-                        target_payment * tranche["source_total"] / tranche["target_total"],
+            target_to_allocate = min(remaining, total_target_remaining)
+            target_allocations: list[Decimal] = []
+            allocated_target = Decimal("0")
+            for index, tranche in enumerate(converted_tranches):
+                if index == len(converted_tranches) - 1:
+                    target_payment = min(
+                        tranche["target_remaining"], target_to_allocate - allocated_target
                     )
                 else:
-                    source_payment = Decimal("0")
-                tranche["target_remaining"] -= target_payment
-                tranche["source_remaining"] -= source_payment
+                    target_payment = min(
+                        tranche["target_remaining"],
+                        (
+                            target_to_allocate
+                            * tranche["target_remaining"]
+                            / total_target_remaining
+                        ).quantize(Decimal("0.01"), rounding=ROUND_DOWN),
+                    )
+                target_allocations.append(target_payment)
+                allocated_target += target_payment
+
+            # Distribute cents left by rounding without allowing any tranche
+            # to be paid beyond its converted balance.
+            unallocated_target = target_to_allocate - allocated_target
+            for index, tranche in enumerate(converted_tranches):
+                if unallocated_target <= 0:
+                    break
+                room = tranche["target_remaining"] - target_allocations[index]
+                extra = min(room, unallocated_target)
+                target_allocations[index] += extra
+                unallocated_target -= extra
+
+            for tranche, target_payment in zip(converted_tranches, target_allocations):
+                if target_payment <= 0:
+                    continue
+                new_target_remaining = tranche["target_remaining"] - target_payment
+                if new_target_remaining <= 0:
+                    new_source_remaining = Decimal("0")
+                elif tranche["target_total"]:
+                    new_source_remaining = (
+                        tranche["source_total"]
+                        * new_target_remaining
+                        / tranche["target_total"]
+                    )
+                else:
+                    new_source_remaining = tranche["source_remaining"]
+                tranche["target_remaining"] = new_target_remaining
+                tranche["source_remaining"] = min(
+                    tranche["source_remaining"], new_source_remaining
+                )
                 owed[pair][default_currency] -= target_payment
                 remaining -= target_payment
             if remaining:

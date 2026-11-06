@@ -52,7 +52,9 @@ async def test_restamp_fallback_fx_stamps_legacy_transaction_currency(
         base_currency="USD",
         quote_currency="BRL",
         date=date.today(),
-        rate=Decimal("5.0"),
+        # Deliberately differs from the user's stored conversion below: the
+        # scheduled healer must stamp provenance without revaluing the row.
+        rate=Decimal("4.0"),
         source="test",
     )
     session.add_all([tx, fx_rate])

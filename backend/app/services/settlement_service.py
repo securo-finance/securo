@@ -216,6 +216,8 @@ async def _validate_payer_debit(
     from_member_id: uuid.UUID,
     amount: Decimal,
     currency: str,
+    *,
+    allow_generated_resize: bool = False,
 ) -> None:
     if transaction_id is None:
         return
@@ -239,9 +241,29 @@ async def _validate_payer_debit(
     expected_payer_id = payer_user_id or (group.user_id if payer_is_self else None)
     if expected_payer_id is None or account_user_id != expected_payer_id:
         raise ValueError("Linked transaction must belong to the settlement payer")
-    if transaction.currency == currency and abs(Decimal(str(transaction.amount))) < Decimal(
-        str(amount)
+    if allow_generated_resize and transaction.source == "settlement":
+        return
+    transaction_amount = abs(Decimal(str(transaction.amount)))
+    if transaction.currency == currency:
+        comparable_amount = transaction_amount
+    elif (
+        transaction.amount_primary is not None
+        and transaction.amount_primary_currency == currency
     ):
+        comparable_amount = abs(Decimal(str(transaction.amount_primary)))
+    else:
+        from app.services.fx_rate_service import _resolve_rate
+
+        rate = await _resolve_rate(
+            session, transaction.currency, currency, transaction.date,
+            allow_fetch=False,
+        )
+        if rate is None:
+            raise ValueError(
+                "Cannot validate linked payer debit without an available FX rate"
+            )
+        comparable_amount = (transaction_amount * rate).quantize(Decimal("0.01"))
+    if comparable_amount < Decimal(str(amount)):
         raise ValueError("Linked payer debit must cover the settlement amount")
 
 
@@ -419,6 +441,22 @@ async def update_settlement(
         await _validate_members_in_group(session, group_id, member_check)
 
     payer_transaction_id = update_data.get("transaction_id", settlement.transaction_id)
+    payer_transaction = None
+    if payer_transaction_id is not None:
+        payer_tx_result = await session.execute(
+            select(Transaction).where(Transaction.id == payer_transaction_id).with_for_update()
+        )
+        payer_transaction = payer_tx_result.scalar_one_or_none()
+
+    # Debits created by this service are safe to keep in lockstep with edits to
+    # their settlement. User-linked bank/import transactions remain untouched.
+    generated_payer_debit = (
+        payer_transaction is not None
+        and payer_transaction.id == settlement.transaction_id
+        and payer_transaction.source == "settlement"
+        and not payer_transaction.external_id
+        and not payer_transaction.import_id
+    )
     if "transaction_id" in update_data or (
         payer_transaction_id is not None
         and {"amount", "currency", "from_member_id"}.intersection(update_data)
@@ -431,10 +469,23 @@ async def update_settlement(
             update_data.get("from_member_id", settlement.from_member_id),
             update_data.get("amount", settlement.amount),
             update_data.get("currency", settlement.currency),
+            allow_generated_resize=generated_payer_debit,
         )
         # Unlinking the payer's ledger transaction does not undo the cash the
         # receiver recorded. Keep that mirrored credit attached to the
         # settlement so amount/date corrections continue to update it.
+
+    if generated_payer_debit and {"amount", "currency", "date"}.intersection(update_data):
+        payer_transaction.amount = update_data.get("amount", settlement.amount)
+        payer_transaction.currency = update_data.get("currency", settlement.currency)
+        payer_transaction.date = update_data.get("date", settlement.date)
+        payer_transaction.effective_date = payer_transaction.date
+        payer_transaction.amount_primary = None
+        payer_transaction.amount_primary_currency = None
+        payer_transaction.fx_rate_used = None
+        from app.services.fx_rate_service import stamp_primary_amount
+
+        await stamp_primary_amount(session, payer_transaction.user_id, payer_transaction)
 
     if settlement.receiver_transaction_id and "to_member_id" in update_data:
         raise ValueError(
@@ -470,6 +521,7 @@ async def update_settlement(
         receiver_tx.amount = settlement.amount
         receiver_tx.currency = settlement.currency
         receiver_tx.date = settlement.date
+        receiver_tx.effective_date = settlement.date
         receiver_tx.amount_primary = None
         receiver_tx.amount_primary_currency = None
         receiver_tx.fx_rate_used = None

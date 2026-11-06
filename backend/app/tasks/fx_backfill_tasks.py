@@ -26,10 +26,9 @@ def _make_session_maker():
 async def _backfill_primary_amounts() -> dict:
     """One-time backfill / heal of amount_primary.
 
-    Targets rows that were never stamped (``amount_primary`` NULL), were stamped
-    with the legacy 1:1 fallback rate (issue #353), or predate the persisted
-    ``amount_primary_currency`` stamp. Legacy unstamped rows are recalculated into
-    the user's current primary currency when a real rate is resolvable.
+    Calculates rows with no primary amount, and adds currency provenance to
+    existing primary amounts without changing their amount or FX rate. Existing
+    values may use a user-selected rate and must not be silently revalued.
     """
     from app.services.fx_rate_service import sync_rates, convert, _resolve_rate
 
@@ -46,14 +45,11 @@ async def _backfill_primary_amounts() -> dict:
             def _primary(user_id) -> str:
                 return users.get(user_id, settings.default_currency)
 
-            # 2. Collect candidate transactions: never stamped OR stamped with the
-            #    1:1 fallback. Same-currency rows are filtered out so we never
-            #    re-touch legitimate 1:1 conversions.
+            # 2. Collect transactions that need a value or a currency stamp.
             tx_result = await session.execute(
                 select(Transaction).where(
                     or_(
                         Transaction.amount_primary.is_(None),
-                        Transaction.fx_rate_used == 1,
                         Transaction.amount_primary_currency.is_(None),
                     )
                 )
@@ -61,13 +57,19 @@ async def _backfill_primary_amounts() -> dict:
             candidate_txs = [
                 tx for tx in tx_result.scalars().all()
                 if (
-                    tx.currency != _primary(tx.user_id)
+                    tx.amount_primary is None
+                    or tx.currency != _primary(tx.user_id)
                     or tx.amount_primary_currency is None
                 )
             ]
 
-            # 3. Sync one historical rate per month that has candidates.
-            months = {tx.date.strftime("%Y-%m") for tx in candidate_txs}
+            # Existing amounts only need provenance. Sync rates only for rows
+            # whose primary amount is actually missing.
+            months = {
+                tx.date.strftime("%Y-%m")
+                for tx in candidate_txs
+                if tx.amount_primary is None
+            }
             for month_str in months:
                 try:
                     year, mon = month_str.split("-")
@@ -81,9 +83,15 @@ async def _backfill_primary_amounts() -> dict:
                 except Exception:
                     logger.exception("Failed to sync rates for %s", month_str)
 
-            # 4. Re-stamp candidates only when a real rate is now resolvable.
+            # 4. Stamp provenance without recalculation, or calculate missing
+            # amounts only when a real rate is resolvable.
             for tx in candidate_txs:
                 primary_currency = _primary(tx.user_id)
+                if tx.amount_primary is not None:
+                    if tx.amount_primary_currency is None:
+                        tx.amount_primary_currency = primary_currency
+                        stats["transactions"] += 1
+                    continue
                 try:
                     rate = await _resolve_rate(
                         session, tx.currency, primary_currency, tx.date,
@@ -98,13 +106,11 @@ async def _backfill_primary_amounts() -> dict:
                     logger.exception("Failed to backfill tx %s", tx.id)
             await session.commit()
 
-            # 5. Backfill recurring transactions (same NULL-or-1:1 heal).
+            # 5. Backfill recurring transactions only when their primary amount
+            #    is absent; never replace an existing user-selected conversion.
             rec_result = await session.execute(
                 select(RecurringTransaction).where(
-                    or_(
-                        RecurringTransaction.amount_primary.is_(None),
-                        RecurringTransaction.fx_rate_used == 1,
-                    )
+                    RecurringTransaction.amount_primary.is_(None)
                 )
             )
             candidate_recs = [

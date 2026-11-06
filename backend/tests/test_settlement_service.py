@@ -88,6 +88,47 @@ async def test_create_settlement_happy_path(
 
 
 @pytest.mark.asyncio
+async def test_generated_payer_debit_tracks_settlement_amount_edits(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, payer, receiver = await _setup_group(session, test_user.id, test_workspace.id)
+    payer.is_self = True
+    await session.flush()
+    account = await _make_account(session, test_user.id)
+    settlement = await settlement_service.create_settlement(
+        session,
+        group.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementCreate(
+            from_member_id=payer.id,
+            to_member_id=receiver.id,
+            amount=Decimal("12.00"),
+            currency="USD",
+            date=date(2026, 1, 2),
+            account_id=account.id,
+        ),
+    )
+    assert settlement is not None
+    payer_debit = await session.get(Transaction, settlement.transaction_id)
+    assert payer_debit is not None
+    assert payer_debit.amount == Decimal("12.00")
+
+    await settlement_service.update_settlement(
+        session,
+        group.id,
+        settlement.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementUpdate(amount=Decimal("18.00"), date=date(2026, 1, 5)),
+    )
+
+    await session.refresh(payer_debit)
+    assert payer_debit.amount == Decimal("18.00")
+    assert payer_debit.date == date(2026, 1, 5)
+
+
+@pytest.mark.asyncio
 async def test_administrative_settlement_does_not_create_receiver_credit(
     session: AsyncSession, test_user, test_workspace
 ):
@@ -302,7 +343,6 @@ async def test_linking_transaction_on_update_creates_receiver_credit(
     receiver, _receiver_ws = await _make_user_with_workspace(
         session, "rx-update@example.com"
     )
-    receiver_account = await _make_account(session, receiver.id)
     payer_account = await _make_account(session, test_user.id)
     group = await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="UpdateReceiver")
@@ -335,6 +375,8 @@ async def test_linking_transaction_on_update_creates_receiver_credit(
         ),
     )
     assert settlement is not None
+    assert settlement.receiver_transaction_id is None
+    receiver_account = await _make_account(session, receiver.id)
     tx = Transaction(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -374,12 +416,14 @@ async def test_linking_transaction_on_update_creates_receiver_credit(
         settlement.id,
         test_workspace.id,
         test_user.id,
-        GroupSettlementUpdate(amount=Decimal("55.00")),
+        GroupSettlementUpdate(amount=Decimal("55.00"), date=date(2026, 2, 3)),
     )
     assert updated is not None
     receiver_tx = await session.get(Transaction, updated.receiver_transaction_id)
     assert receiver_tx is not None
     assert receiver_tx.amount == Decimal("55.00")
+    assert receiver_tx.date == date(2026, 2, 3)
+    assert receiver_tx.effective_date == date(2026, 2, 3)
 
     receiver_credit_id = updated.receiver_transaction_id
     unlinked = await settlement_service.update_settlement(

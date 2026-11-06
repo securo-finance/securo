@@ -118,6 +118,52 @@ async def test_create_settlement_links_existing_transaction(session: AsyncSessio
 
 
 @pytest.mark.asyncio
+async def test_cross_currency_linked_debit_is_capped_in_stamped_currency(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    tx = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    tx.currency = "USD"
+    tx.amount = Decimal("100.00")
+    tx.amount_primary = Decimal("80.00")
+    tx.amount_primary_currency = "EUR"
+    await session.flush()
+
+    with pytest.raises(ValueError, match="must cover the settlement amount"):
+        await settlement_service.create_settlement(
+            session,
+            group.id,
+            test_workspace.id,
+            test_user.id,
+            GroupSettlementCreate(
+                from_member_id=a.id,
+                to_member_id=b.id,
+                amount=Decimal("80.01"),
+                currency="EUR",
+                date=date.today(),
+                transaction_id=tx.id,
+            ),
+        )
+
+    accepted = await settlement_service.create_settlement(
+        session,
+        group.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id,
+            to_member_id=b.id,
+            amount=Decimal("80.00"),
+            currency="EUR",
+            date=date.today(),
+            transaction_id=tx.id,
+        ),
+    )
+    assert accepted is not None
+
+
+@pytest.mark.asyncio
 async def test_create_settlement_rejects_mismatched_linked_debit_amount(
     session: AsyncSession, test_user, test_workspace
 ):

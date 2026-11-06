@@ -438,6 +438,83 @@ async def test_legacy_foreign_currency_settlement_closes_converted_balance(
 
 
 @pytest.mark.asyncio
+async def test_default_currency_settlement_weights_legacy_tranches(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, self_m, friends = await _setup(
+        session, test_user, test_workspace.id, n_others=1
+    )
+    friend = friends[0]
+    account = await _make_account(session, test_user.id)
+    for primary_amount in (Decimal("110.00"), Decimal("90.00")):
+        tx = await _make_tx(
+            session, test_user.id, account.id, "100.00", currency="EUR"
+        )
+        tx.amount_primary = primary_amount
+        tx.amount_primary_currency = "USD"
+        await split_service.replace_splits(
+            session,
+            tx,
+            TransactionSplitsInput(
+                share_type="exact",
+                splits=[
+                    TransactionSplitInput(
+                        group_member_id=self_m.id, share_amount=Decimal("50.00")
+                    ),
+                    TransactionSplitInput(
+                        group_member_id=friend.id, share_amount=Decimal("50.00")
+                    ),
+                ],
+            ),
+            test_user.id,
+        )
+
+    await session.commit()
+    await settlement_service.create_settlement(
+        session,
+        group.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementCreate(
+            from_member_id=friend.id,
+            to_member_id=self_m.id,
+            amount=Decimal("50.00"),
+            currency="USD",
+            date=date.today(),
+        ),
+    )
+    await session.commit()
+    await settlement_service.create_settlement(
+        session,
+        group.id,
+        test_workspace.id,
+        test_user.id,
+        GroupSettlementCreate(
+            from_member_id=friend.id,
+            to_member_id=self_m.id,
+            amount=Decimal("25.00"),
+            currency="EUR",
+            date=date.today(),
+        ),
+    )
+    await session.commit()
+
+    balances = await balance_service.compute_balances(
+        session, group.id, test_workspace.id, test_user.id
+    )
+    assert balances is not None
+    friend_line = next(
+        line for line in balances["lines"] if line["member_id"] == friend.id
+    )
+    # The USD payment is shared in proportion to each tranche's converted
+    # value, so a later EUR payment reduces the converted balance by 25 USD
+    # regardless of transaction UUID order.
+    expected_remaining = Decimal("25.00")
+    assert friend_line["currency"] == "USD"
+    assert friend_line["amount"] == expected_remaining
+
+
+@pytest.mark.asyncio
 async def test_foreign_settlement_does_not_clear_future_native_split(
     session: AsyncSession, test_user, test_workspace
 ):
