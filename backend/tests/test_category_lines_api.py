@@ -595,6 +595,27 @@ async def test_rules_never_overwrite_a_split(client, auth_headers, cats):
     assert fresh["has_category_lines"] is True
 
 
+@pytest.mark.asyncio
+async def test_search_marks_split_rows(client, auth_headers, cats):
+    food, transport, _ = cats
+    account = await _account(client, auth_headers)
+    split = await _create(
+        client, auth_headers, account["id"], description="WAREHOUSE 77",
+        category_lines=_exact((food.id, 100), (transport.id, 50)),
+    )
+    plain = await _create(
+        client, auth_headers, account["id"], description="WAREHOUSE 78",
+        category_id=str(food.id),
+    )
+
+    resp = await client.get("/api/search", headers=auth_headers, params={"q": "WAREHOUSE"})
+    assert resp.status_code == 200, resp.text
+    meta = {hit["id"]: hit["meta"] for hit in resp.json()["results"] if hit["type"] == "transaction"}
+    assert meta[split["id"]]["has_category_lines"] is True
+    assert meta[split["id"]]["category_id"] is None
+    assert meta[plain["id"]]["has_category_lines"] is False
+
+
 # --- Category lifecycle ----------------------------------------------------
 
 

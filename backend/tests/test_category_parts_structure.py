@@ -67,12 +67,118 @@ def _calls_name(func, name: str) -> bool:
     )
 
 
+def _called_names(node) -> set[str]:
+    names: set[str] = set()
+    for n in ast.walk(node):
+        if isinstance(n, ast.Call):
+            name = getattr(n.func, "id", None) or getattr(n.func, "attr", None)
+            if isinstance(name, str):
+                names.add(name)
+    return names
+
+
+def _loaded_names(node) -> set[str]:
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def _assigned_names(stmt) -> set[str]:
+    targets = stmt.targets if isinstance(stmt, ast.Assign) else (
+        [stmt.target] if isinstance(stmt, (ast.AnnAssign, ast.AugAssign)) else []
+    )
+    return {n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+
+
+def _joins_where_it_reads(func, call) -> bool:
+    """True when the statement using `call` also joins the category lines.
+
+    Checked per statement, not per function: a function with two queries
+    must join the lines in both, or the second one cross-joins the alias
+    and multiplies every row. A join counts when the statement calls
+    `with_category_lines` (or a local helper that does), or reads a name
+    built from one (`q = with_category_lines(...)`, later `q.where(...)`).
+    A filter stored in a name (`window_filters = (...)`) counts when a
+    statement that joins reads that name.
+    """
+    joining = {"with_category_lines"} | {
+        inner.name
+        for inner in ast.walk(func)
+        if isinstance(inner, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and inner is not func
+        and "with_category_lines" in _called_names(inner)
+    }
+    statements = [n for n in ast.walk(func) if isinstance(n, ast.stmt) and n is not func]
+    joined_names: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for stmt in statements:
+            if (_called_names(stmt) & joining) or (_loaded_names(stmt) & joined_names):
+                new = _assigned_names(stmt) - joined_names
+                if new:
+                    joined_names |= new
+                    changed = True
+
+    def joins(stmt) -> bool:
+        return bool(_called_names(stmt) & joining) or bool(
+            (_loaded_names(stmt) - _assigned_names(stmt)) & joined_names
+        )
+
+    # The innermost statement holding the call.
+    holder = min(
+        (s for s in statements if any(n is call for n in ast.walk(s))),
+        key=lambda s: sum(1 for _ in ast.walk(s)),
+    )
+    if joins(holder):
+        return True
+    stored = _assigned_names(holder)
+    return any(
+        joins(stmt) and (_loaded_names(stmt) & stored)
+        for stmt in statements
+        if stmt is not holder
+    )
+
+
 def _is_whole_row(arg) -> bool:
     return (
         isinstance(arg, ast.Attribute)
         and arg.attr == "category_id"
         and getattr(arg.value, "id", None) == "Transaction"
     )
+
+
+def _problems_in(source: str) -> list[str]:
+    tree = ast.parse(source)
+    return [
+        f"{func.name}:{call.lineno}"
+        for func, call in _calls(tree)
+        if not _is_whole_row(call.args[0]) and not _joins_where_it_reads(func, call)
+    ]
+
+
+def test_the_check_is_per_query_not_per_function():
+    """The guard must catch a second query that forgot the join even when
+    the first one in the same function has it."""
+    source = '''
+async def report(session):
+    first = await session.execute(
+        with_category_lines(select(x)).where(counts_as_pnl(line_category_id()))
+    )
+    second = await session.execute(
+        select(y).where(counts_as_pnl(line_category_id()))
+    )
+'''
+    assert _problems_in(source) == ["report:7"]
+
+
+def test_the_check_follows_joined_names_and_stored_filters():
+    source = '''
+async def tool(session):
+    q = with_category_lines(select(x))
+    q = q.where(is_not_transfer(category_col))
+    filters = (counts_as_user_pnl(line_category_id()),)
+    rows = await session.execute(with_category_lines(select(y)).where(*filters))
+'''
+    assert _problems_in(source) == []
 
 
 def test_every_filter_call_reads_parts_or_says_why_not():
@@ -99,8 +205,8 @@ def test_every_filter_call_reads_parts_or_says_why_not():
             # its own parameter.
             if rel == "app/services/_query_filters.py" and func.name in FILTERS:
                 continue
-            if not _calls_name(func, "with_category_lines"):
-                problems.append(f"{where}: reads parts but never joins them")
+            if not _joins_where_it_reads(func, call):
+                problems.append(f"{where}: reads parts in a query that never joins them")
     assert not problems, "\n".join(problems)
     stale = set(WHOLE_ROW) - whole_row_seen
     assert not stale, f"WHOLE_ROW lists sites that no longer exist: {sorted(stale)}"
