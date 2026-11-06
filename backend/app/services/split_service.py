@@ -136,6 +136,11 @@ async def replace_splits(
     if not payload.splits:
         return
 
+    if transaction.has_category_lines:
+        raise ValueError(
+            "Undo the split across categories before splitting among people"
+        )
+
     member_ids = [s.group_member_id for s in payload.splits]
     if len(set(member_ids)) != len(member_ids):
         raise ValueError("Each member can appear at most once per transaction")

@@ -1,15 +1,15 @@
 """record the currency used for a transaction's primary amount
 
-Revision ID: 103
-Revises: 102
+Revision ID: 106
+Revises: 105
 """
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = "103"
-down_revision = "102"
+revision = "106"
+down_revision = "105"
 branch_labels = None
 depends_on = None
 

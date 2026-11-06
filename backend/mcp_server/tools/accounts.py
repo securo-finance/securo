@@ -41,7 +41,9 @@ async def list_accounts(
             "name": r.get("name"),
             "type": r.get("type"),
             "currency": r.get("currency"),
-            "balance": num(r.get("balance")),
+            # `balance` in the serialized account is the stored column, which
+            # for a manual account is only its opening balance.
+            "balance": num(r.get("current_balance")),
             "balance_primary": num(r.get("balance_primary")),
             "is_closed": bool(r.get("is_closed", False)),
             "institution": r.get("institution_name"),

@@ -14,6 +14,8 @@ from app.models.category_group import CategoryGroup
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
+from app.models.transaction_category_line import TransactionCategoryLine
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.services.category_defaults import (
     CATEGORY_TO_GROUP,
@@ -224,6 +226,16 @@ async def update_category(
     changes = data.model_dump(exclude_unset=True)
     if changes.get("is_hidden") is True and not category.is_system:
         raise CategoryVisibilityError("Only system categories can be hidden")
+    if (
+        (changes.get("is_hidden") is True and not category.is_hidden)
+        or (changes.get("is_ignored") is True and not category.is_ignored)
+    ) and await _used_in_category_lines(session, workspace_id, category_id):
+        # An ignored category takes a row out of the balance, and a split row
+        # stays in the balance as a whole; a hidden one cannot be picked.
+        raise CategoryVisibilityError(
+            "This category is used in transactions split across categories. "
+            "Change those splits first."
+        )
 
     for key, value in changes.items():
         setattr(category, key, value)
@@ -280,10 +292,45 @@ async def get_category_usage(
         )
         counts[key] = int(result.scalar_one())
 
+    # A transaction split across categories references them through its
+    # lines; count each such transaction once.
+    split_count = await session.scalar(
+        select(func.count(func.distinct(TransactionCategoryLine.transaction_id))).where(
+            TransactionCategoryLine.workspace_id == workspace_id,
+            TransactionCategoryLine.category_id == category_id,
+        )
+    )
+    counts["transactions"] += int(split_count or 0)
+    # Likewise a recurring bill split across categories.
+    split_recurring = await session.scalar(
+        select(
+            func.count(func.distinct(RecurringTransactionCategoryLine.recurring_transaction_id))
+        ).where(
+            RecurringTransactionCategoryLine.workspace_id == workspace_id,
+            RecurringTransactionCategoryLine.category_id == category_id,
+        )
+    )
+    counts["recurring_transactions"] += int(split_recurring or 0)
+
     rules = await get_rules_assigning_category(
         session, workspace_id, category_id, include_inactive=True
     )
     return CategoryUsage(**counts, rules=rules)
+
+
+async def _used_in_category_lines(
+    session: AsyncSession, workspace_id: uuid.UUID, category_id: uuid.UUID
+) -> bool:
+    """A part of a split transaction or of a split recurring bill uses it."""
+    for model in (TransactionCategoryLine, RecurringTransactionCategoryLine):
+        found = await session.scalar(
+            select(model.id)
+            .where(model.workspace_id == workspace_id, model.category_id == category_id)
+            .limit(1)
+        )
+        if found is not None:
+            return True
+    return False
 
 
 _Limit = tuple[Decimal, Decimal | None]
@@ -416,6 +463,15 @@ async def _transfer_category_references(
             )
             .values(category_id=destination_id)
         )
+    for line_model in (TransactionCategoryLine, RecurringTransactionCategoryLine):
+        await session.execute(
+            sa_update(line_model)
+            .where(
+                line_model.workspace_id == workspace_id,
+                line_model.category_id == category_id,
+            )
+            .values(category_id=destination_id)
+        )
     await _merge_budgets(session, workspace_id, category_id, destination_id)
     await _repoint_rules(session, workspace_id, category_id, destination_id)
 
@@ -444,6 +500,13 @@ async def delete_category(
         destination = await get_category(session, transfer_to_id, workspace_id)
         if not destination:
             raise CategoryTransferError("Destination category not found.")
+        if (destination.is_ignored or destination.is_hidden) and await _used_in_category_lines(
+            session, workspace_id, category_id
+        ):
+            raise CategoryTransferError(
+                "Transactions split across categories cannot move into an ignored "
+                "or hidden category."
+            )
         await _transfer_category_references(
             session, workspace_id, category_id, transfer_to_id
         )
