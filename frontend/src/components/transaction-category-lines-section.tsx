@@ -52,6 +52,10 @@ export function TransactionCategoryLinesSection({
   // Ignored categories take the whole row out of the balance and hidden ones
   // are out of sight; neither can hold one part of a transaction.
   const usable = categories.filter((c) => !c.is_ignored && !c.is_hidden)
+  const usableGroups = groups.map((group) => ({
+    ...group,
+    categories: (group.categories ?? []).filter((c) => !c.is_ignored && !c.is_hidden),
+  }))
 
   const update = (key: string, patch: Partial<CategoryLineRow>) =>
     onChange(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)), shareType)
@@ -74,6 +78,21 @@ export function TransactionCategoryLinesSection({
       const value = bp && total ? Math.round(total * bp) / 10000 : null
       return { ...row, amount: value != null ? formatAmountInput(value, locale) : '' }
     })
+    // A split that was fully allocated stays so: rounding each share can
+    // leave a cent or a hundredth over or short, which goes to the last part.
+    const last = converted[converted.length - 1]
+    if (check.valid && last) {
+      const after = checkLines(converted, next, total, locale)
+      if (after.remaining !== 0 && after.reason !== 'invalidValue') {
+        if (next === 'percent') {
+          const bp = (rowBasisPoints(last.percent) ?? 0) + after.remaining
+          converted[converted.length - 1] = { ...last, percent: String(bp / 100) }
+        } else {
+          const cents = (rowCents(last.amount, locale) ?? 0) + after.remaining
+          converted[converted.length - 1] = { ...last, amount: formatAmountInput(cents / 100, locale) }
+        }
+      }
+    }
     onChange(converted, next)
   }
 
@@ -135,7 +154,8 @@ export function TransactionCategoryLinesSection({
                 value={row.categoryId}
                 onChange={(value) => update(row.key, { categoryId: value })}
                 categories={usable}
-                groups={groups}
+                groups={usableGroups}
+                currentCategory={row.category}
                 placeholder={t('categoryLines.pickCategory')}
                 className="bg-card"
               />

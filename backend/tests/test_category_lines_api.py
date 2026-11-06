@@ -550,11 +550,40 @@ async def test_bulk_categorize_skips_split_rows(client, auth_headers, cats):
         json={"transaction_ids": [split["id"], plain["id"]], "category_id": str(income.id)},
     )
     assert resp.status_code == 200
-    assert resp.json()["updated"] == 1
+    assert resp.json() == {"updated": 1, "skipped_split": 1}
 
     after = (await client.get(f"/api/transactions/{split['id']}", headers=auth_headers)).json()
     assert after["category_id"] is None
     assert after["has_category_lines"] is True
+
+
+@pytest.mark.asyncio
+async def test_splitting_one_installment_keeps_the_others_categorized(client, auth_headers, cats):
+    """The editor sends a null category with the parts; it must not reach
+    sibling installments edited in the same request and wipe theirs."""
+    food, transport, _ = cats
+    account = await _account(client, auth_headers)
+    resp = await client.post(
+        "/api/transactions/installments", headers=auth_headers,
+        json={"installments": 3, "base": {
+            "account_id": account["id"], "description": "Desk", "amount": 150,
+            "date": "2026-10-10", "type": "debit", "category_id": str(food.id),
+        }},
+    )
+    assert resp.status_code == 201, resp.text
+    first = resp.json()[0]
+
+    resp = await client.patch(
+        f"/api/transactions/{first['id']}", headers=auth_headers,
+        json={"apply_to": "all", "description": "Desk (office)", "category_id": None,
+              "category_lines": _exact((food.id, 100), (transport.id, 50))},
+    )
+    assert resp.status_code == 200, resp.text
+    rows = (await client.get("/api/transactions", headers=auth_headers, params={"q": "Desk"})).json()["items"]
+    assert len(rows) == 3
+    assert all(r["description"] == "Desk (office)" for r in rows)
+    # Every installment stays categorized, one way or the other.
+    assert all(r["category_id"] or r["has_category_lines"] for r in rows)
 
 
 @pytest.mark.asyncio

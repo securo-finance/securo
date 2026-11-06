@@ -596,13 +596,10 @@ export default function TransactionsPage() {
   const bulkCategorizeMutation = useMutation({
     mutationFn: ({ ids, categoryId }: { ids: string[]; categoryId: string | null }) =>
       transactions.bulkCategorize(ids, categoryId),
-    onSuccess: (result, { ids }) => {
+    onSuccess: (result) => {
       // The backend never overwrites a split across categories; say how many
       // of the selected rows it left alone, or the count looks wrong.
-      const idSet = new Set(ids)
-      const skipped = (data?.items ?? []).filter(
-        (tx) => idSet.has(tx.id) && tx.has_category_lines,
-      ).length
+      const skipped = result.skipped_split ?? 0
       invalidateAfterTxMutation()
       setSelectedIds(new Set())
       setBulkCategory('')

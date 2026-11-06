@@ -1765,6 +1765,11 @@ def _check_category_lines_update(
     unsplitting = lines_payload is not None and not lines_payload.lines
     if splitting and update_data.get("category_id") is not None:
         raise ValueError("Choose either a category or a split across categories")
+    if splitting and "category_id" in update_data:
+        # The split clears this row's category itself. Leaving the null in
+        # the update would also reach sibling installments edited in the same
+        # request and wipe categories the split never touches.
+        update_data.pop("category_id")
     if unsplitting and "category_id" in update_data and update_data["category_id"] is None:
         # Keep the category the split hands back instead of clearing it.
         update_data.pop("category_id")
@@ -1955,6 +1960,23 @@ async def update_transaction(
     await session.commit()
     await session.refresh(transaction, ["category", "payee_entity", "splits", "category_lines"])
     return transaction
+
+
+async def count_split_rows(
+    session: AsyncSession, workspace_id: uuid.UUID, transaction_ids: list[uuid.UUID]
+) -> int:
+    """How many of `transaction_ids` are split across categories, which a
+    bulk categorize leaves as they are."""
+    return int(
+        await session.scalar(
+            select(func.count()).select_from(Transaction).where(
+                Transaction.id.in_(transaction_ids),
+                Transaction.workspace_id == workspace_id,
+                Transaction.has_category_lines.is_(True),
+            )
+        )
+        or 0
+    )
 
 
 async def bulk_update_category(

@@ -488,3 +488,47 @@ it('does not offer a split across categories on a transfer', () => {
   renderTransferDialog(vi.fn())
   expect(screen.queryByRole('button', { name: t('categoryLines.start') })).not.toBeInTheDocument()
 })
+
+it('switching a fully allocated split to percentages keeps it allocated', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const tx = splitFixture()
+  const cat = (id: string) => ({ id, name: id, icon: 'tag', color: '#000' })
+  const onSave = vi.fn()
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={{
+        ...tx,
+        amount: 0.03,
+        category_lines: ['a', 'b', 'c'].map((id, position) => ({
+          id, category_id: id, amount: 0.01, share_type: 'exact' as const, share_pct: null,
+          position, notes: null, category: cat(id) as never,
+        })),
+      }}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={onSave}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(screen.getByRole('button', { name: t('categoryLines.byPercent') }))
+  // 33.33 + 33.33 + 33.34: the hundredth left over goes to the last part.
+  expect(screen.getByText(t('categoryLines.allAllocated'))).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  expect(onSave.mock.calls[0][0].category_lines.lines.map((l: { share_pct: number }) => l.share_pct))
+    .toEqual([33.33, 33.33, 33.34])
+})
+
+it('Enter in a field does not save parts that do not add up', async () => {
+  const { user, onSave } = renderSplitDialog()
+  const [first] = screen.getAllByRole('textbox', { name: t('categoryLines.partAmount') })
+  await user.clear(first)
+  await user.type(first, '30{Enter}')
+  expect(onSave).not.toHaveBeenCalled()
+})

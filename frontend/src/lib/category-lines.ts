@@ -1,5 +1,6 @@
 import { parseAmountInput } from '@/lib/format'
 import type {
+  Category,
   CategoryLineShareType,
   Transaction,
   TransactionCategoryLine,
@@ -20,6 +21,8 @@ export interface CategoryLineRow {
   categoryId: string
   amount: string
   percent: string
+  /** The saved category, shown even before the category list loads. */
+  category?: Category | null
 }
 
 let rowSeq = 0
@@ -48,6 +51,7 @@ export function rowsFromLines(
     .map((line) => ({
       key: newRowKey(),
       categoryId: line.category_id,
+      category: line.category ?? null,
       amount: formatAmount(Number(line.amount)),
       percent: line.share_pct != null ? String(Number(line.share_pct)) : '',
     }))
