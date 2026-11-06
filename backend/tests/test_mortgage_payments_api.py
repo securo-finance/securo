@@ -655,6 +655,55 @@ async def test_bank_connected_loan_keeps_split_without_posting_principal(
 
 
 @pytest.mark.asyncio
+async def test_a_connected_loan_with_breakdowns_cannot_be_retyped(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    """A connected account skips the history check that stops a manual one, so
+    the breakdown guard is the only thing left holding the type in place."""
+    from datetime import datetime, timezone
+
+    payment, loan = await _make_payment_and_loan(
+        session, test_user, test_workspace, snapshot_date=date(2026, 5, 31)
+    )
+    connection = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="enable_banking",
+        external_id=f"ext-{uuid.uuid4().hex[:8]}",
+        institution_name="Lender",
+        credentials={"token": "fake"},
+        status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(connection)
+    await session.flush()
+    loan.connection_id = connection.id
+    await session.commit()
+
+    await _post_breakdown(client, auth_headers, payment, loan)
+
+    retyped = await client.patch(
+        f"/api/accounts/{loan.id}", headers=auth_headers, json={"type": "checking"}
+    )
+    assert retyped.status_code == 400
+    assert "mortgage payment breakdowns" in retyped.json()["detail"]
+
+    removed = await client.delete(f"/api/mortgage-payments/{payment.id}", headers=auth_headers)
+    assert removed.status_code == 204
+    assert (
+        await client.patch(
+            f"/api/accounts/{loan.id}", headers=auth_headers, json={"type": "checking"}
+        )
+    ).status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_loan_with_breakdowns_cannot_be_deleted_or_retyped(
     client: AsyncClient,
     auth_headers,

@@ -33,7 +33,11 @@ from app.services._query_filters import (
     is_inside_provider_snapshot,
     is_not_future,
     is_not_ignored,
+    line_amount,
+    line_category_id,
+    line_primary_or_amount,
     reporting_date_col,
+    with_category_lines,
 )
 from app.services import loan_schedule, mortgage_service
 from app.services.credit_card_service import (
@@ -67,9 +71,10 @@ LIABILITY_ACCOUNT_TYPES = frozenset({"credit_card", "loan"})
 def _provider_to_internal_balance(provider: str, account_type: str, balance: Decimal) -> Decimal:
     """Normalize provider balances to positive-for-debt for liabilities.
 
-    A loan's balance is always debt. SimpleFIN reports credit card debt as a
-    negative value and exposes no account type, so only that combination needs
-    a sign flip.
+    A loan's balance is always debt, whichever type the provider reported and
+    whatever sign it used, so the magnitude is the whole answer. SimpleFIN
+    reports credit card debt as a negative value and exposes no account type,
+    so only that combination needs a sign flip.
     """
     if account_type == "loan":
         return abs(balance)
@@ -487,14 +492,18 @@ async def update_account(
     update_data = data.model_dump(exclude_unset=True)
     balance_date = update_data.pop("balance_date", None)
     new_type = update_data.get("type", account.type)
-    if account.connection_id is not None and new_type == "loan":
-        raise ValueError("Bank-connected accounts cannot be loans yet")
     if account.type == "loan" and new_type != "loan" and await _has_mortgage_allocations(session, account):
         raise ValueError("Remove this loan's mortgage payment breakdowns before changing its type")
-    # Switching between a loan and any other type flips what the balance means
+    # Switching a manual account to or from a loan flips what the balance means
     # (money held vs. money owed). That is safe for an account that only has
     # its opening balance; with real history it would silently reinterpret it.
-    if new_type != account.type and "loan" in {account.type, new_type}:
+    # A connected account keeps its provider balance and history: the sync
+    # renormalizes the balance to the new type on its next run.
+    if (
+        account.connection_id is None
+        and new_type != account.type
+        and "loan" in {account.type, new_type}
+    ):
         has_history = await session.scalar(
             select(Transaction.id)
             .where(
@@ -532,42 +541,54 @@ async def update_account(
     # account creation and never overwrites it afterwards, so the override
     # survives subsequent syncs without a separate field.
     if account.connection_id is not None:
+        # The contract terms describe the agreement with the lender, not
+        # anything the provider reports, so a connected loan can carry them
+        # and the sync has nothing to say about them.
         editable_fields = {
             "display_name",
             "type",
+            "secured_asset_id",
             "credit_limit",
             "statement_close_day",
             "payment_due_day",
             "minimum_payment",
             "card_brand",
             "card_level",
+            *LOAN_TERM_FIELDS,
         }
         disallowed = set(update_data.keys()) - editable_fields
         if disallowed:
             raise ValueError("Cannot edit bank-connected accounts")
         old_type = account.type
         new_type = update_data.get("type", account.type)
-        cc_fields = editable_fields - {"display_name", "type"}
+        cc_fields = editable_fields - {"display_name", "type", "secured_asset_id", *LOAN_TERM_FIELDS}
         cc_update = {k: v for k, v in update_data.items() if k in cc_fields}
         if cc_update and new_type != "credit_card":
             raise ValueError("Credit card fields can only be set on credit card accounts")
+        loan_update = {k: v for k, v in update_data.items() if k in LOAN_TERM_FIELDS}
+        if loan_update and new_type != "loan":
+            raise ValueError("Loan contract terms can only be set on loan accounts")
         for key, value in update_data.items():
             setattr(account, key, value)
         # SimpleFIN stores a card's balance with the raw provider sign (negative
         # for debt) under type="checking". When the user flips the type across
         # a liability boundary, the downstream display sites start (or stop)
         # applying the positive-for-debt negation, so the stored value must flip
-        # too — otherwise the card double-counts. Mirror the ingestion-time
+        # too, otherwise the card double-counts. Mirror the ingestion-time
         # normalization (_provider_to_internal_balance) here so the correction
         # is immediate, not deferred to the next sync. Load the provider via
         # session.get (identity-map hit, never a lazy-load that throws).
+        #
+        # Leaving a loan needs that flip for every provider, so the debt the
+        # account showed survives the way back. Entering one does not: the
+        # normalization below takes the magnitude, which makes the flip moot.
         if (old_type in LIABILITY_ACCOUNT_TYPES) != (new_type in LIABILITY_ACCOUNT_TYPES):
             conn = (
                 await session.get(BankConnection, account.connection_id)
                 if account.connection_id is not None
                 else None
             )
-            if conn is not None and conn.provider == "simplefin":
+            if "loan" in (old_type, new_type) or (conn is not None and conn.provider == "simplefin"):
                 account.balance = -account.balance
         if new_type == "loan":
             account.balance = _provider_to_internal_balance("", "loan", account.balance)
@@ -580,6 +601,8 @@ async def update_account(
             account.minimum_payment = None
             account.card_brand = None
             account.card_level = None
+        if new_type != "loan":
+            account.secured_asset_id = None
         if cycle_fields_changed:
             await _recompute_effective_dates(session, account)
         await session.commit()
@@ -1115,9 +1138,24 @@ async def get_account_summary(
     # that the reporting filter drops. Every other account type keeps the
     # reporting view. See `counts_on_bill` for why the bill cannot simply
     # reuse `counts_as_pnl`.
-    summary_filter = (
-        counts_on_bill() if account.type == "credit_card" else counts_as_pnl()
-    )
+    #
+    # The reporting view reads a split transaction part by part, so a part in
+    # a transfer-like category drops out alone; the bill reads whole rows.
+    if account.type == "credit_card":
+        summary_filter = counts_on_bill()
+        summary_amount = effective_amount
+
+        def summary_select(column):
+            return select(column)
+    else:
+        summary_filter = counts_as_pnl(line_category_id())
+        summary_amount = case(
+            (Transaction.currency == account.currency, line_amount()),
+            else_=line_primary_or_amount(),
+        )
+
+        def summary_select(column):
+            return with_category_lines(select(column).select_from(Transaction))
 
     # Intermediate payments into the card (the credit leg of a paired
     # transfer) reduce the bill total, but only by what is left after
@@ -1185,7 +1223,7 @@ async def get_account_summary(
     # Income = SUM of credit transactions in window (excluding opening_balance
     # and paired transfers).
     income_result = await session.execute(
-        _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(
+        _scope(summary_select(func.coalesce(func.sum(summary_amount), 0)).where(
             Transaction.account_id == account_id,
             Transaction.type == "credit",
             Transaction.source != "opening_balance",
@@ -1210,7 +1248,7 @@ async def get_account_summary(
             else_=func.abs(effective_amount),
         )
         expenses_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(signed_for_bill), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.source != "opening_balance",
                 bucket_date <= today,
@@ -1220,7 +1258,7 @@ async def get_account_summary(
         )
     else:
         expenses_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(func.abs(summary_amount)), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.type == "debit",
                 bucket_date <= today,
@@ -1240,7 +1278,7 @@ async def get_account_summary(
         bucket_date > today,
     )
     forecast_income_result = await session.execute(
-        _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(
+        _scope(summary_select(func.coalesce(func.sum(summary_amount), 0)).where(
             Transaction.account_id == account_id,
             Transaction.type == "credit",
             Transaction.source != "opening_balance",
@@ -1252,7 +1290,7 @@ async def get_account_summary(
 
     if account.type == "credit_card":
         forecast_expense_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(signed_for_bill), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.source != "opening_balance",
                 forecast_condition,
@@ -1261,7 +1299,7 @@ async def get_account_summary(
         )
     else:
         forecast_expense_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(func.abs(summary_amount)), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.type == "debit",
                 forecast_condition,
@@ -1350,7 +1388,13 @@ async def get_period_opening_balance(
                 is_inside_provider_snapshot(),
             )
         )
-        opening_balance = float(account.balance) - float(posted_result.scalar() or 0)
+        # The snapshot stores a liability's debt positive, while the walk this
+        # seeds is signed like every other balance on screen. Only a loan
+        # reaches this: a connected card returns 0.0 above.
+        snapshot = float(account.balance)
+        if account.type in LIABILITY_ACCOUNT_TYPES:
+            snapshot = -snapshot
+        opening_balance = snapshot - float(posted_result.scalar() or 0)
         opening_balance -= float(pending_result.scalar() or 0)
 
         if date_from > today:

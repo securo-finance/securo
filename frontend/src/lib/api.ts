@@ -613,6 +613,7 @@ export const transactions = {
     bill_id?: string
     group_id?: string
     unbilled_only?: boolean
+    statement_view?: boolean
     q?: string
     page?: number
     limit?: number
@@ -697,7 +698,7 @@ export const transactions = {
     const { data } = await api.post('/transactions/transfer', transfer)
     return data
   },
-  bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number }> => {
+  bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number; skipped_split?: number }> => {
     const { data } = await api.patch('/transactions/bulk-categorize', {
       transaction_ids: transactionIds,
       category_id: categoryId,

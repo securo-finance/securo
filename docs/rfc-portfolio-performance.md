@@ -95,11 +95,11 @@ telling *money moved* apart from *market moved*:
 | Manual assets (property, private funds…) | user-entered values | first appearance is a contribution; a sale returns `sell_price` the day after `sell_date`, or the last value when no price was entered (an explicit 0 writes it off) |
 
 **Gross values.** Performance uses pre-tax values: income tax withheld on a
-redemption is not an investment loss. Migration `102` stores the provider's
+redemption is not an investment loss. Migration `106` stores the provider's
 gross value next to the net (withdrawable) one. Holdings totals keep using net.
 
 **Exact trade cash.** Synced fixed-income trades carry unit prices such as
-`0.01007794` on quantities in the hundreds of thousands. Migration `103`
+`0.01007794` on quantities in the hundreds of thousands. Migration `107`
 widens `asset_transactions.price` so `quantity × price` reproduces the cash
 the broker reported.
 
@@ -290,7 +290,7 @@ a reinvested dividend") so the owner can see it and undo it.
 
 | Migration | Change |
 |---|---|
-| `099_asset_value_gross_amount` | nullable `asset_values.gross_amount`; backfills exact anchors for Pluggy holdings |
-| `100_asset_transaction_price_precision` | `asset_transactions.price` from `Numeric(18,6)` to `Numeric(28,12)` |
+| `106_asset_value_gross_amount` | nullable `asset_values.gross_amount`; backfills exact anchors for Pluggy holdings |
+| `107_asset_transaction_price_precision` | `asset_transactions.price` from `Numeric(18,6)` to `Numeric(28,12)` |
 
 Both are additive. `downgrade()` reverses each.
