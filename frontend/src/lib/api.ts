@@ -90,6 +90,7 @@ import type {
   BalanceHistory,
   PaginatedTransactions,
   ReportResponse,
+  CategoryStatementResponse,
   Group,
   GroupKind,
   GroupMember,
@@ -602,6 +603,7 @@ export const transactions = {
     category_ids?: string[]
     payee_id?: string
     uncategorized?: boolean
+    shared_as_uncategorized?: boolean
     type?: string
     status?: string
     from?: string
@@ -1661,6 +1663,12 @@ export const reports = {
   cashFlow: async (months = 6, interval = 'daily', baseline = false, accountIds?: string[]): Promise<ReportResponse> => {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    return data
+  },
+  // `month` is "YYYY-MM"; the response covers it and the `months - 1` before it.
+  categoryStatement: async (month: string, months: number, accountIds?: string[]): Promise<CategoryStatementResponse> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get('/reports/category-statement', { params: { month, months, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
   // Oldest and newest transaction dates in the workspace (opening
