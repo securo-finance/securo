@@ -45,7 +45,7 @@ from app.services import admin_service
 from app.services import reconciliation_service, recurring_match_service
 from app.services.text_similarity import token_overlap
 from app.services.account_service import (
-    _simplefin_to_internal_balance,
+    _provider_to_internal_balance,
     sync_opening_balance_for_connected_account,
 )
 from app.services.asset_group_service import (
@@ -2678,7 +2678,7 @@ async def sync_connection(
                 # label; once the user overrides the type to credit_card the
                 # downstream sites negate it, so store positive-for-debt to keep
                 # them provider-agnostic and avoid double-counting.
-                account.balance = _simplefin_to_internal_balance(
+                account.balance = _provider_to_internal_balance(
                     connection.provider,
                     account.type,
                     _account_balance(acc_data, auto_invested_deducted),
@@ -2737,7 +2737,11 @@ async def sync_connection(
                     display_name=institution.name if institution else None,
                     masked_number=acc_data.masked_number,
                     type=acc_data.type,
-                    balance=_account_balance(acc_data, auto_invested_deducted),
+                    balance=_provider_to_internal_balance(
+                        connection.provider,
+                        acc_data.type,
+                        _account_balance(acc_data, auto_invested_deducted),
+                    ),
                     currency=acc_data.currency,
                     credit_limit=acc_data.credit_limit if is_cc else None,
                     statement_close_day=acc_data.statement_close_day if is_cc else None,

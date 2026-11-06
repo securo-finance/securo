@@ -71,6 +71,8 @@ PLUGGY_CLIENT_ID=your-client-id
 PLUGGY_CLIENT_SECRET=your-client-secret
 ```
 
+See [automatic bank synchronization](docs/automatic-bank-sync.md) to configure the minimum polling interval (including PSD2 four-access-per-day limits).
+
 ### Enable Banking — European banks (PSD2)
 
 Sign up at [enablebanking.com](https://enablebanking.com), create a Production application, and download its PEM private key. Save the PEM to `./secrets/` (gitignored), then add:

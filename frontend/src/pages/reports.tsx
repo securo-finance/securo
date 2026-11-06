@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState } from 'react'
 import { loadReportsRange, saveReportsRange, type ReportsRange } from '@/lib/remembered-range'
 import { useTranslation } from 'react-i18next'
-import { useDisplayLocale } from '@/hooks/use-display-locale'
+import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import {
   AreaChart,
@@ -31,7 +31,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
-import { formatCurrency } from '@/lib/format'
+import { formatCompactCurrency, formatCurrency } from '@/lib/format'
 import { localDateString, todayInTimezone } from '@/lib/date-utils'
 import { monthLabel } from '@/lib/month-utils'
 import { periodWindow, windowMonths, type PeriodPreset } from '@/lib/report-period'
@@ -63,16 +63,7 @@ const SLICE_COLORS = [
 ]
 const OTHER_SLICE_COLOR = '#9CA3AF'
 
-function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(value)
-}
-
-/** "Apr 2026" from a YYYY-MM-DD date, in the display locale. */
+/** "Apr 2026" from a YYYY-MM-DD date, in the date locale. */
 function formatShortMonth(isoDate: string, locale: string) {
   const [y, m] = isoDate.split('-').map(Number)
   return new Date(y, m - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' })
@@ -226,6 +217,9 @@ export default function ReportsPage() {
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
+  // Month and day words follow the app language, not the currency locale: a
+  // Portuguese UI showing US dollars still reads "Setembro de 2026".
+  const dateLocale = useDateLocale()
 
   const customDefaults = defaultCustomRange()
   // The page opens on the first tab with the range last used there (issue
@@ -330,9 +324,9 @@ export default function ReportsPage() {
     isCustomRange && !activeWindow
       ? t('reports.customRange')
       : activeWindow && selectedRange.monthAnchor !== undefined
-        ? monthLabel(activeWindow.from.slice(0, 7), locale)
+        ? monthLabel(activeWindow.from.slice(0, 7), dateLocale)
         : activeWindow
-          ? `${formatShortMonth(activeWindow.from, locale)} - ${formatShortMonth(activeWindow.to, locale)}`
+          ? `${formatShortMonth(activeWindow.from, dateLocale)} - ${formatShortMonth(activeWindow.to, dateLocale)}`
           : t(`reports.${RANGE_LABELS[selectedRange.key]}`)
 
   const handleSelectTab = (key: string) => {
@@ -459,7 +453,7 @@ export default function ReportsPage() {
   const formatDay = (iso: string) => {
     const day = new Date(iso + 'T00:00:00')
     const sameYear = day.getFullYear() === new Date().getFullYear()
-    return day.toLocaleDateString(locale, {
+    return day.toLocaleDateString(dateLocale, {
       day: 'numeric',
       month: 'short',
       ...(sameYear ? {} : { year: 'numeric' }),
@@ -1105,7 +1099,7 @@ export default function ReportsPage() {
                       tickFormatter={(v) => {
                         if (privacyMode) return ''
                         if (v === 0) return '0'
-                        return formatCompact(v, userCurrency, locale)
+                        return formatCompactCurrency(v, userCurrency, locale)
                       }}
                       tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                       axisLine={false}
@@ -1205,7 +1199,7 @@ export default function ReportsPage() {
                   tickFormatter={(v) => {
                     if (privacyMode) return ''
                     if (v === 0) return '0'
-                    return formatCompact(v, userCurrency, locale)
+                    return formatCompactCurrency(v, userCurrency, locale)
                   }}
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                   axisLine={false}
@@ -1456,7 +1450,7 @@ export default function ReportsPage() {
                                 : t(currentTab.labelKey)}
                           </span>
                           <span className="text-base font-bold text-foreground tabular-nums">
-                            {mask(formatCompact(
+                            {mask(formatCompactCurrency(
                               snapshotTrendPoint
                                 ? compositionView === 'netWorth' || compositionView === 'net' || !compositionView
                                   ? snapshotTrendPoint.value
@@ -1665,7 +1659,7 @@ export default function ReportsPage() {
                                 </span>
                               </div>
                               <p className="text-xs font-bold tabular-nums text-foreground mb-1">
-                                {mask(formatCompact(item.total, userCurrency, locale))}
+                                {mask(formatCompactCurrency(item.total, userCurrency, locale))}
                               </p>
                               <div style={{ height: 48 }}>
                                 <ResponsiveContainer width="100%" height="100%">
@@ -1736,7 +1730,7 @@ export default function ReportsPage() {
                     tickFormatter={(v) => {
                       if (privacyMode) return ''
                       if (v === 0) return '0'
-                      return formatCompact(v, userCurrency, locale)
+                      return formatCompactCurrency(v, userCurrency, locale)
                     }}
                     tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                     axisLine={false}

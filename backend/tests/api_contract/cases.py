@@ -66,6 +66,10 @@ BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
     ("POST", "/api/budgets"): lambda w: {
         "category_id": w["second_category_id"], "amount": 300, "month": "2026-05-01",
     },
+    ("POST", "/api/budgets/batch"): lambda w: {
+        "month": "2026-05-01",
+        "items": [{"category_id": w["second_category_id"], "amount": 300}],
+    },
     ("POST", "/api/payees/merge"): lambda w: {
         "source_ids": [w["second_payee_id"]], "target_id": w["payee_id"],
     },
@@ -103,6 +107,10 @@ PARAM_WORLD_KEYS_BY_OPERATION: dict[tuple[str, str], dict[str, str]] = {
         ("GET", "statement"),
     )
 }
+PARAM_WORLD_KEYS_BY_OPERATION.update({
+    (method, f"/api/accounts/{{account_id}}/{route}"): {"account_id": "loan_account_id"}
+    for method, route in (("GET", "loan-schedule"), ("POST", "loan-balance"))
+})
 
 @dataclass(frozen=True)
 class KnownBug:

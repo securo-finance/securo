@@ -1,7 +1,7 @@
 """store gross investment values separately from withdrawable balances
 
-Revision ID: 099
-Revises: 098
+Revision ID: 102
+Revises: 101
 Create Date: 2026-10-04
 
 Connected investment providers may expose both a gross market value and the
@@ -14,8 +14,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "099"
-down_revision: Union[str, None] = "098"
+revision: str = "102"
+down_revision: Union[str, None] = "101"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

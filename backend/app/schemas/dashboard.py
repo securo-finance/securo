@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 class DashboardSummary(BaseModel):
     total_balance: dict[str, float]  # currency -> amount
     total_balance_primary: float = 0.0  # consolidated in primary currency
-    projected_balance: dict[str, float] = Field(default_factory=dict)  # current balance plus forecast rows
+    projected_balance: dict[str, float] = Field(
+        default_factory=dict
+    )  # current balance plus forecast rows
     projected_balance_primary: float = 0.0  # consolidated projected balance
     balance_date: str  # ISO date string, e.g. "2026-03-02"
     monthly_income: float
@@ -58,9 +60,20 @@ class DailyBalance(BaseModel):
     balance: Optional[float]  # None for future days beyond cutoff
 
 
+class DailyBaseline(BaseModel):
+    day: int
+    median: Optional[float] = None  # None when fewer than 2 months contribute
+    lower_quartile: Optional[float] = None  # None when fewer than 3 contribute
+    upper_quartile: Optional[float] = None  # None when fewer than 3 contribute
+
+
 class BalanceHistory(BaseModel):
     current: list[DailyBalance]
-    previous: list[DailyBalance]
+    opening_balance: float
+    baseline: list[DailyBaseline]  # cumulative change since month opening
+    comparison: Optional[list[DailyBalance]] = None
+    comparison_month: Optional[str] = None
+    comparison_opening_balance: Optional[float] = None
 
 
 class ProjectedTransaction(BaseModel):

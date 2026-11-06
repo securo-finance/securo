@@ -1,9 +1,10 @@
 import uuid
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from sqlalchemy import select, func, and_, case
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
@@ -12,7 +13,14 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.schemas.budget import BudgetCreate, BudgetUpdate, BudgetVsActual
+from app.schemas.budget import (
+    BudgetBatchCreate,
+    BudgetCreate,
+    BudgetSuggestion,
+    BudgetSuggestionResponse,
+    BudgetUpdate,
+    BudgetVsActual,
+)
 from app.services._query_filters import (
     counts_as_user_pnl,
     owner_split_offset_by_category,
@@ -484,3 +492,230 @@ async def get_budget_vs_actual(
         ))
 
     return sorted(comparisons, key=lambda x: float(x.actual_amount), reverse=True)
+
+
+def _add_months(d: date, n: int) -> date:
+    """First day of the month n months after d (n may be negative)."""
+    index = d.year * 12 + d.month - 1 + n
+    return date(index // 12, index % 12 + 1, 1)
+
+
+async def get_budget_suggestions(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    month: Optional[date] = None,
+    months: int = 3,
+) -> BudgetSuggestionResponse:
+    """Suggest budget amounts from average spending over recent months.
+
+    The window covers the ``months`` calendar months immediately before
+    ``month`` (the target month, default: current). Any month that is not
+    fully in the past yet is excluded so a partial month never skews the
+    average. The suggested amount is the net spending of the window
+    divided by the number of analyzed months, using the same base as the
+    budget vs. actual comparison (posted PnL transactions, credit card
+    accounting mode, split offsets, shared workspace shares, primary
+    currency).
+    """
+    if not month:
+        month = app_today().replace(day=1)
+    target = month.replace(day=1)
+    months = max(1, min(int(months), 24))
+    today = app_today()
+
+    analyzed = [
+        _add_months(target, -offset)
+        for offset in range(1, months + 1)
+        if _add_months(_add_months(target, -offset), 1) <= today
+    ]
+    if not analyzed:
+        return BudgetSuggestionResponse(
+            month=target, months_requested=months, months_analyzed=0, suggestions=[]
+        )
+
+    window_start = min(analyzed)
+    window_end = _add_months(max(analyzed), 1)
+
+    user = await session.get(User, user_id)
+    primary_currency = user.primary_currency if user else get_settings().default_currency
+    accounting_mode = await get_credit_card_accounting_mode(session)
+    report_date = reporting_date_col(accounting_mode)
+
+    cats_result = await session.execute(
+        select(Category, CategoryGroup)
+        .outerjoin(CategoryGroup, Category.group_id == CategoryGroup.id)
+        .where(Category.workspace_id == workspace_id)
+    )
+    all_categories = cats_result.all()
+
+    net_expr = case(
+        (Transaction.type == "debit", _primary_amount_expr()),
+        (Transaction.type == "credit", -_primary_amount_expr()),
+        else_=0,
+    )
+    window_filters = (
+        Transaction.workspace_id == workspace_id,
+        report_date >= window_start,
+        report_date < window_end,
+        report_date <= today,
+        Transaction.category_id.isnot(None),
+        Transaction.status == "posted",
+        counts_as_user_pnl(),
+    )
+
+    spending_result = await session.execute(
+        select(Transaction.category_id, func.sum(net_expr))
+        .where(*window_filters)
+        .group_by(Transaction.category_id)
+    )
+    total_by_cat: dict[str, Decimal] = {}
+    for cat_uuid, net in spending_result.all():
+        net = net or Decimal("0")
+        if net != 0:
+            total_by_cat[str(cat_uuid)] = net
+
+    # Net per category and day in SQL, rolled up to months in Python (SQLite
+    # and Postgres do not share a portable month-truncation function). The
+    # "has spending" check runs on the month total, so a debit and an equal
+    # refund later in the same month leave that month without data.
+    daily_result = await session.execute(
+        select(Transaction.category_id, report_date, func.sum(net_expr))
+        .where(*window_filters)
+        .group_by(Transaction.category_id, report_date)
+    )
+    monthly_net: dict[tuple[str, date], Decimal] = {}
+    for cat_uuid, d, net in daily_result.all():
+        key = (str(cat_uuid), d.replace(day=1))
+        monthly_net[key] = monthly_net.get(key, Decimal("0")) + (net or Decimal("0"))
+    months_with_data: dict[str, set] = {}
+    for (cat_id, month_start), net in monthly_net.items():
+        if net > 0:
+            months_with_data.setdefault(cat_id, set()).add(month_start)
+
+    own_offset = await owner_split_offset_by_category(
+        session,
+        user_id,
+        window_start,
+        window_end,
+        use_effective_date=accounting_mode == "accrual",
+        primary_currency=primary_currency,
+        workspace_id=workspace_id,
+    )
+    for cat_uuid, total in own_offset.items():
+        if cat_uuid is None:
+            continue
+        cat_id = str(cat_uuid)
+        if cat_id in total_by_cat:
+            total_by_cat[cat_id] -= Decimal(str(total))
+            if total_by_cat[cat_id] <= 0:
+                total_by_cat.pop(cat_id)
+
+    from app.services._query_filters import viewer_shared_spending_by_category
+
+    shared_by_cat = await viewer_shared_spending_by_category(
+        session,
+        user_id,
+        window_start,
+        window_end,
+        use_effective_date=accounting_mode == "accrual",
+        primary_currency=primary_currency,
+    )
+    for cat_uuid, total in shared_by_cat.items():
+        if cat_uuid is None:
+            continue
+        cat_id = str(cat_uuid)
+        total_by_cat[cat_id] = total_by_cat.get(cat_id, Decimal("0")) + Decimal(str(total))
+
+    budget_map = await _build_budget_map(session, workspace_id, target)
+    divisor = Decimal(len(analyzed))
+
+    suggestions = []
+    for category, group in all_categories:
+        cat_id = str(category.id)
+        total = total_by_cat.get(cat_id)
+        if total is None or total <= 0:
+            continue
+        suggested = (total / divisor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if suggested <= 0:
+            continue
+        suggestions.append(BudgetSuggestion(
+            category_id=category.id,
+            category_name=category.name,
+            category_icon=category.icon,
+            category_color=category.color,
+            group_id=group.id if group else None,
+            group_name=group.name if group else None,
+            suggested_amount=suggested,
+            total_spent=total,
+            months_with_data=len(months_with_data.get(cat_id, set())),
+        ))
+
+    suggestions.sort(key=lambda s: s.suggested_amount, reverse=True)
+    for s in suggestions:
+        s.existing_budget = str(s.category_id) in budget_map
+
+    return BudgetSuggestionResponse(
+        month=target,
+        months_requested=months,
+        months_analyzed=len(analyzed),
+        suggestions=suggestions,
+    )
+
+
+async def create_budgets_batch(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    data: BudgetBatchCreate,
+) -> list[Budget]:
+    """Create several budgets in one transaction.
+
+    Fails atomically: if any item conflicts with the
+    (user, category, month, is_recurring) unique constraint nothing is
+    written.
+    """
+    month = data.month.replace(day=1)
+    seen: set[uuid.UUID] = set()
+    budgets: list[Budget] = []
+    for item in data.items:
+        if item.category_id in seen:
+            continue
+        seen.add(item.category_id)
+        budgets.append(
+            Budget(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                category_id=item.category_id,
+                amount=item.amount,
+                month=month,
+                is_recurring=data.is_recurring,
+            )
+        )
+    if not budgets:
+        raise ValueError("No budgets to create")
+
+    known = set(
+        (
+            await session.execute(
+                select(Category.id).where(
+                    Category.workspace_id == workspace_id,
+                    Category.id.in_(seen),
+                )
+            )
+        ).scalars()
+    )
+    if known != seen:
+        raise ValueError("Category not found")
+
+    session.add_all(budgets)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise ValueError(
+            "A budget for one of these categories already exists for this month"
+        )
+    for budget in budgets:
+        await session.refresh(budget)
+    return budgets

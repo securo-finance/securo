@@ -15,21 +15,25 @@ unchanged for Securo's own UI.
 
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.budget import Budget
 from app.models.category import Category
+from app.models.goal import Goal
 from app.models.group import Group, GroupMember
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
-from app.schemas.budget import BudgetCreate
+from app.schemas.budget import BudgetCreate, BudgetUpdate
 from app.schemas.category import CategoryCreate
-from app.schemas.goal import GoalCreate
+from app.schemas.goal import GoalCreate, GoalUpdate
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
@@ -329,6 +333,144 @@ async def propose_create_budget(
         return {**preview, "applied": True, "id": str(created.id)}
 
     return preview
+
+
+@tool(
+    name="propose_update_budget",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for changing the amount of an existing budget "
+        "(e.g. 'raise my groceries budget to R$1,500'). Call list_budgets "
+        "first to find the budget_id. For a recurring budget the new amount "
+        "covers every month that budget applies to, the same as editing it "
+        "on the budgets page. Returns the current amount alongside the new "
+        "one so the user can compare."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "budget_id": {"type": "string", "format": "uuid"},
+            "amount": {"type": "number", "exclusiveMinimum": 0},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["budget_id", "amount"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "budgets"],
+)
+async def propose_update_budget(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    budget_id: str,
+    amount: float,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    row = await _budget_with_category_name(session, ws_id, budget_id)
+    if row is None:
+        return {"error": "budget not found"}
+    budget, category_name = row
+
+    if amount <= 0:
+        return {"error": "amount must be greater than zero"}
+    new_amount = Decimal(str(amount))
+    if new_amount == budget.amount:
+        return {"error": "the budget already has that amount; nothing to change"}
+
+    preview = {
+        "kind": "update_budget",
+        "target": _budget_target(budget, category_name),
+        "changes": {"amount": float(new_amount)},
+        "apply_endpoint": f"PATCH /api/budgets/{budget.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        updated = await budget_service.update_budget(
+            session, budget.id, ws_id, BudgetUpdate(amount=new_amount)
+        )
+        if updated is None:
+            return {**preview, "error": "budget not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
+
+    return preview
+
+
+@tool(
+    name="propose_delete_budget",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for deleting a budget (e.g. 'drop the budget for "
+        "streaming'). Call list_budgets first to find the budget_id. "
+        "Deleting a recurring budget removes it from every month it covers; "
+        "the category and its transactions are untouched."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "budget_id": {"type": "string", "format": "uuid"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["budget_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "budgets"],
+)
+async def propose_delete_budget(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    budget_id: str,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    row = await _budget_with_category_name(session, ws_id, budget_id)
+    if row is None:
+        return {"error": "budget not found"}
+    budget, category_name = row
+
+    preview = {
+        "kind": "delete_budget",
+        "target": _budget_target(budget, category_name),
+        "apply_endpoint": f"DELETE /api/budgets/{budget.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        ok = await budget_service.delete_budget(session, budget.id, ws_id)
+        if not ok:
+            return {**preview, "error": "budget not found"}
+        return {**preview, "applied": True, "deleted": True}
+
+    return preview
+
+
+async def _budget_with_category_name(
+    session: AsyncSession, ws_id: uuid.UUID, budget_id: str
+) -> tuple[Budget, str | None] | None:
+    row = (
+        await session.execute(
+            select(Budget, Category.name)
+            .outerjoin(Category, Category.id == Budget.category_id)
+            .where(Budget.id == parse_uuid(budget_id), Budget.workspace_id == ws_id)
+        )
+    ).first()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
+def _budget_target(budget: Budget, category_name: str | None) -> dict[str, Any]:
+    return {
+        "id": str(budget.id),
+        "category_id": str(budget.category_id),
+        "category_name": category_name,
+        "month": budget.month.isoformat(),
+        "amount": num(budget.amount),
+        "currency": budget.currency,
+        "is_recurring": bool(budget.is_recurring),
+    }
 
 
 @tool(
@@ -1025,6 +1167,145 @@ async def propose_create_goal(
             ),
         )
         return {**preview, "applied": True, "id": str(created.id)}
+
+    return preview
+
+
+_GOAL_STATUSES = ["active", "completed", "paused", "archived"]
+
+
+@tool(
+    name="propose_update_goal",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing an existing goal (e.g. 'I have saved "
+        "R$3,000 for the trip now', 'move the deadline to December', "
+        "'pause my car goal'). Call list_goals first to find the goal_id, "
+        "then pass only the fields that change. `current_amount` is the "
+        "progress of a manual goal; a goal that tracks an account, asset or "
+        "net worth computes its progress itself, so it is refused there. "
+        "`status` pauses, archives, completes or reactivates the goal. "
+        "Returns the current values alongside the changes so the user can "
+        "compare."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "goal_id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "target_amount": {"type": "number", "exclusiveMinimum": 0},
+            "current_amount": {
+                "type": "number",
+                "minimum": 0,
+                "description": "How much is saved so far (manual goals only)",
+            },
+            "target_date": {
+                "type": "string",
+                "format": "date",
+                "description": "New deadline (YYYY-MM-DD); an empty string removes it",
+            },
+            "status": {"type": "string", "enum": _GOAL_STATUSES},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["goal_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "goals"],
+)
+async def propose_update_goal(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    goal_id: str,
+    name: str | None = None,
+    target_amount: float | None = None,
+    current_amount: float | None = None,
+    target_date: str | None = None,
+    status: str | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    goal = (
+        await session.execute(
+            select(Goal).where(Goal.id == parse_uuid(goal_id), Goal.workspace_id == ws_id)
+        )
+    ).scalar_one_or_none()
+    if goal is None:
+        return {"error": "goal not found"}
+
+    requested: dict[str, Any] = {}
+    if name is not None:
+        if not name.strip():
+            return {"error": "name cannot be empty"}
+        requested["name"] = name.strip()
+    if target_amount is not None:
+        if target_amount <= 0:
+            return {"error": "target_amount must be greater than zero"}
+        requested["target_amount"] = Decimal(str(target_amount))
+    if current_amount is not None:
+        if goal.tracking_type != "manual":
+            return {
+                "error": (
+                    f"this goal tracks its {goal.tracking_type.replace('_', ' ')}, "
+                    "so its progress cannot be set by hand"
+                )
+            }
+        if current_amount < 0:
+            return {"error": "current_amount cannot be negative"}
+        requested["current_amount"] = Decimal(str(current_amount))
+    if target_date is not None:
+        try:
+            requested["target_date"] = parse_date(target_date)
+        except ValueError:
+            return {"error": f"invalid target_date {target_date!r}; use YYYY-MM-DD"}
+    if status is not None:
+        requested["status"] = status
+    if not requested:
+        return {"error": "no changes provided"}
+
+    # Only what differs from the goal as stored goes into the proposal.
+    update_data = {k: v for k, v in requested.items() if getattr(goal, k) != v}
+    if not update_data:
+        return {"error": "the goal already reads like that; nothing to change"}
+    try:
+        update = GoalUpdate(**update_data)
+    except ValidationError as exc:
+        return {"error": "; ".join(str(e["msg"]) for e in exc.errors())}
+
+    changes: dict[str, Any] = {}
+    for key, value in update.model_dump(exclude_unset=True).items():
+        if isinstance(value, Decimal):
+            changes[key] = float(value)
+        elif key == "target_date":
+            changes[key] = value.isoformat() if value else None
+        else:
+            changes[key] = value
+
+    preview = {
+        "kind": "update_goal",
+        "target": {
+            "id": str(goal.id),
+            "name": goal.name,
+            "target_amount": num(goal.target_amount),
+            "current_amount": num(goal.current_amount),
+            "currency": goal.currency,
+            "target_date": goal.target_date.isoformat() if goal.target_date else None,
+            "status": goal.status,
+            "tracking_type": goal.tracking_type,
+        },
+        "changes": changes,
+        "apply_endpoint": f"PATCH /api/goals/{goal.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        try:
+            updated = await goal_service.update_goal(session, goal.id, ws_id, ctx.user_id, update)
+        except ValueError as exc:
+            return {**preview, "error": str(exc)}
+        if updated is None:
+            return {**preview, "error": "goal not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
 
     return preview
 

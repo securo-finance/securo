@@ -249,6 +249,32 @@ function renderSummary(
         { from: legLabel(from, dateLocale), to: legLabel(to, dateLocale) },
       )
     }
+    case 'update_goal': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      const lines = Object.entries(changes).map(([k, v]) => {
+        const before = tgt[k]
+        return `${k}: ${String(before ?? '∅')} → ${String(v ?? '∅')}`
+      })
+      return t('agents.proposal.summary.updateGoal', {
+        name: String(tgt.name ?? '?'),
+        changes: lines.join(', ') || '—',
+      })
+    }
+    case 'update_budget': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      return t('agents.proposal.summary.updateBudget', {
+        category: String((tgt.category_name as string) ?? tgt.category_id ?? '?'),
+        month: String(tgt.month ?? '?'),
+        before: fmt(tgt.amount, tgt.currency),
+        after: fmt(changes.amount, tgt.currency),
+      })
+    }
+    case 'delete_budget':
+      return t(tgt.is_recurring ? 'agents.proposal.summary.deleteRecurringBudget' : 'agents.proposal.summary.deleteBudget', {
+        category: String((tgt.category_name as string) ?? tgt.category_id ?? '?'),
+        amount: fmt(tgt.amount, tgt.currency),
+        month: String(tgt.month ?? '?'),
+      })
     default:
       return ''
   }
@@ -443,6 +469,22 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       const pairId = String(data.transfer_pair_id)
       await transactions.unlinkTransfer(pairId)
       return pairId
+    }
+    case 'update_goal': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await goals.update(id, (data.changes || {}) as Parameters<typeof goals.update>[1])
+      return id
+    }
+    case 'update_budget': {
+      // Only the amount goes out, the same edit the budgets page makes.
+      const id = String((data.target as Record<string, unknown>).id)
+      await budgets.update(id, { amount: Number((data.changes as Record<string, unknown>).amount) })
+      return id
+    }
+    case 'delete_budget': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await budgets.delete(id)
+      return id
     }
   }
 }

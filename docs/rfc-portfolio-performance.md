@@ -145,11 +145,11 @@ telling *money moved* apart from *market moved*:
 | Manual assets (property, private funds…) | user-entered values | first appearance is a contribution; a sale returns `sell_price` the day after `sell_date`, or the last value when no price was entered (an explicit 0 writes it off) |
 
 **Gross values.** Performance uses pre-tax values: income tax withheld on a
-redemption is not an investment loss. Migration `099` stores the provider's
+redemption is not an investment loss. Migration `102` stores the provider's
 gross value next to the net (withdrawable) one. Holdings totals keep using net.
 
 **Exact trade cash.** Synced fixed-income trades carry unit prices such as
-`0.01007794` on quantities in the hundreds of thousands. Migration `100`
+`0.01007794` on quantities in the hundreds of thousands. Migration `103`
 widens `asset_transactions.price` so `quantity × price` reproduces the cash
 the broker reported.
 

@@ -23,7 +23,7 @@ import {
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { Account, BankConnection } from '@/types'
+import type { Account, BankConnection, LoanAmortization, LoanRatePeriod } from '@/types'
 import { RefreshCw, TriangleAlert, Unlink, Settings } from 'lucide-react'
 import { AccountIcon, ConnectionLogo } from '@/components/account-icon'
 import { getAccountTypeConfig } from '@/lib/account-type-config'
@@ -702,6 +702,56 @@ export default function AccountsPage() {
   )
 }
 
+// The contract terms of a loan as the dialog edits them (inputs hold strings).
+type LoanTermsForm = {
+  kind: string
+  amount: string
+  rate: string
+  period: LoanRatePeriod
+  term: string
+  firstPayment: string
+  amortization: LoanAmortization
+}
+
+const LOAN_KINDS = ['mortgage', 'auto', 'personal', 'student', 'other'] as const
+
+function loanTermsFrom(account: Account | null | undefined, currency: string): LoanTermsForm {
+  return {
+    kind: account?.loan_kind ?? '',
+    amount: account?.loan_original_amount?.toString() ?? '',
+    rate: account?.loan_interest_rate?.toString() ?? '',
+    // Brazilian loans are usually quoted per month; elsewhere a yearly APR.
+    period: account?.loan_rate_period ?? (currency === 'BRL' ? 'monthly' : 'yearly_nominal'),
+    term: account?.loan_term_months?.toString() ?? '',
+    firstPayment: account?.loan_first_payment_date ?? '',
+    amortization: account?.loan_amortization ?? 'price',
+  }
+}
+
+type LoanTermsPayload = Pick<
+  Account,
+  | 'loan_kind'
+  | 'loan_original_amount'
+  | 'loan_interest_rate'
+  | 'loan_rate_period'
+  | 'loan_term_months'
+  | 'loan_first_payment_date'
+  | 'loan_amortization'
+>
+
+function loanTermsPayload(terms: LoanTermsForm): LoanTermsPayload {
+  const number = (value: string) => (value.trim() === '' ? null : Number(value))
+  return {
+    loan_kind: (terms.kind || null) as Account['loan_kind'],
+    loan_original_amount: number(terms.amount),
+    loan_interest_rate: number(terms.rate),
+    loan_rate_period: terms.period,
+    loan_term_months: number(terms.term),
+    loan_first_payment_date: terms.firstPayment || null,
+    loan_amortization: terms.amortization,
+  }
+}
+
 export function AccountDialog({
   open,
   onClose,
@@ -752,6 +802,11 @@ export function AccountDialog({
   const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
   const [paymentDueDay, setPaymentDueDay] = useState(account?.payment_due_day?.toString() ?? '')
   const [securedAssetId, setSecuredAssetId] = useState(account?.secured_asset_id ?? '')
+  const [loanTerms, setLoanTerms] = useState(() => loanTermsFrom(account, account?.currency ?? userCurrency))
+  // Opened by the user, not by the amount: clearing the amount must not collapse it.
+  const [termsOpen, setTermsOpen] = useState(() => account?.loan_original_amount != null)
+  const setLoanTerm = <K extends keyof LoanTermsForm>(key: K, value: LoanTermsForm[K]) =>
+    setLoanTerms((prev) => ({ ...prev, [key]: value }))
 
   const properties = (assetsList ?? []).filter((asset) => LOAN_COLLATERAL_TYPES.includes(asset.type))
   // Send the link the select shows: a saved id that is no longer a listed
@@ -774,6 +829,8 @@ export function AccountDialog({
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
     setSecuredAssetId(account?.secured_asset_id ?? '')
+    setLoanTerms(loanTermsFrom(account, account?.currency ?? userCurrency))
+    setTermsOpen(account?.loan_original_amount != null)
   }
 
   return (
@@ -804,7 +861,10 @@ export function AccountDialog({
                 currency,
               }),
               type,
-              ...(type === 'loan' && { secured_asset_id: securedAssetIsListed ? securedAssetId : null }),
+              ...(type === 'loan' && {
+                secured_asset_id: securedAssetIsListed ? securedAssetId : null,
+                ...loanTermsPayload(loanTerms),
+              }),
               display_name: displayName.trim() || null,
               ...(isCC && {
                 credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
@@ -923,6 +983,55 @@ export function AccountDialog({
                   <option key={asset.id} value={asset.id}>{asset.name}</option>
                 ))}
               </select>
+              <details
+                className="rounded-lg border border-border p-3 mt-2"
+                open={termsOpen}
+                onToggle={(e) => setTermsOpen(e.currentTarget.open)}
+              >
+                <summary className="cursor-pointer text-sm font-medium">{t('accounts.loanTerms')}</summary>
+                <div className="grid grid-cols-2 gap-3 pt-3">
+                  <div className="space-y-1">
+                    <Label>{t('accounts.loanKind')}</Label>
+                    <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary" value={loanTerms.kind} onChange={(e) => setLoanTerm('kind', e.target.value)}>
+                      <option value="">{t('accounts.loanKindNone')}</option>
+                      {LOAN_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>{t(`accounts.loanKinds.${kind}`)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>{t('accounts.loanOriginalAmount')}</Label>
+                    <Input type="number" step="0.01" min="0.01" value={loanTerms.amount} onChange={(e) => setLoanTerm('amount', e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>{t('accounts.loanInterestRate')}</Label>
+                    <Input type="number" step="0.0001" min="0" max="100" value={loanTerms.rate} onChange={(e) => setLoanTerm('rate', e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>{t('accounts.loanRatePeriod')}</Label>
+                    <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary" value={loanTerms.period} onChange={(e) => setLoanTerm('period', e.target.value as LoanRatePeriod)}>
+                      <option value="monthly">{t('accounts.loanRatePeriods.monthly')}</option>
+                      <option value="yearly_effective">{t('accounts.loanRatePeriods.yearly_effective')}</option>
+                      <option value="yearly_nominal">{t('accounts.loanRatePeriods.yearly_nominal')}</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>{t('accounts.loanTermMonths')}</Label>
+                    <Input type="number" step="1" min="1" max="600" value={loanTerms.term} onChange={(e) => setLoanTerm('term', e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>{t('accounts.loanFirstPayment')}</Label>
+                    <DatePickerInput value={loanTerms.firstPayment} onChange={(value) => setLoanTerm('firstPayment', value)} className="w-full justify-start" />
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <Label>{t('accounts.loanAmortization')}</Label>
+                    <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary" value={loanTerms.amortization} onChange={(e) => setLoanTerm('amortization', e.target.value as LoanAmortization)}>
+                      <option value="price">{t('accounts.loanAmortizations.price')}</option>
+                      <option value="sac">{t('accounts.loanAmortizations.sac')}</option>
+                    </select>
+                  </div>
+                </div>
+              </details>
             </div>
           )}
           {type === 'credit_card' && (

@@ -15,6 +15,10 @@ from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.group import Group, GroupMember
+from app.models.mortgage_payment_allocation import (
+    MORTGAGE_PRINCIPAL_SOURCE,
+    MortgagePaymentAllocation,
+)
 from app.models.payee import Payee
 from app.schemas.transaction import (
     DescriptionSuggestion,
@@ -26,7 +30,7 @@ from app.schemas.transaction import (
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import reconciliation_service, split_service
 from app.services.account_service import get_account, get_running_balances
-from app.services.credit_card_service import apply_effective_date
+from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
 from app.services._query_filters import (
@@ -393,10 +397,64 @@ async def get_transactions(
                 ),
             ))
         else:
-            if from_date:
-                base_query = base_query.where(filter_date_col >= from_date)
-            if to_date:
-                base_query = base_query.where(filter_date_col <= to_date)
+            # Single-account date window: if it is exactly one bill cycle of
+            # a credit card account, membership is bill-based, not
+            # window-based. A manual effective_bill_date names a bill by its
+            # DUE date, and a due date can sit inside the NEXT cycle's
+            # purchase window (close 24 / due 18: the Aug bill is due 08-18,
+            # inside the Sep window 07-24 to 08-23), so window bucketing
+            # put overridden txs on the wrong bill and emptied their own
+            # bill (issue #563). The rule: no override stays in the window
+            # exactly as before; an override belongs to this bill when it
+            # falls after the previous bill's due date and on or before
+            # this bill's due date, so every override date maps to exactly
+            # one bill. Any other window shape, or an account whose
+            # close/due days make two bills share a due date (degenerate),
+            # keeps the historical behavior untouched.
+            cycle = None
+            if from_date is not None and to_date is not None:
+                # The list endpoint funnels the single account_id param into
+                # account_ids, so accept either shape when exactly one
+                # account is in scope.
+                single_account = account_id
+                if single_account is None and account_ids is not None and len(account_ids) == 1:
+                    single_account = account_ids[0]
+                if single_account is not None:
+                    acct_row = (
+                        await session.execute(
+                            select(
+                                Account.type,
+                                Account.statement_close_day,
+                                Account.payment_due_day,
+                            ).where(Account.id == single_account)
+                        )
+                    ).first()
+                    if acct_row is not None and acct_row[0] == "credit_card":
+                        cycle = cc_cycle_bill_due_dates(
+                            from_date, to_date, acct_row[1], acct_row[2]
+                        )
+            if cycle is None or cycle["degenerate"]:
+                if from_date:
+                    base_query = base_query.where(filter_date_col >= from_date)
+                if to_date:
+                    base_query = base_query.where(filter_date_col <= to_date)
+            else:
+                from sqlalchemy import and_ as _and
+
+                override = Transaction.effective_bill_date
+                base_query = base_query.where(
+                    or_(
+                        _and(
+                            override.is_(None),
+                            filter_date_col >= from_date,
+                            filter_date_col <= to_date,
+                        ),
+                        _and(
+                            override > cycle["prev"],
+                            override <= cycle["this"],
+                        ),
+                    )
+                )
     if search:
         term = f"%{search}%"
         base_query = base_query.where(
@@ -731,9 +789,15 @@ async def get_transaction(
     session: AsyncSession,
     transaction_id: uuid.UUID,
     workspace_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> Optional[Transaction]:
-    """Fetch a single transaction by id, scoped to the workspace."""
-    result = await session.execute(
+    """Fetch a single transaction by id, scoped to the workspace.
+
+    ``for_update`` takes the row lock a mortgage breakdown save also takes, so
+    a guard that checks for a breakdown and then edits the row cannot interleave
+    with a breakdown being saved in between."""
+    query = (
         select(Transaction)
         .where(
             Transaction.id == transaction_id,
@@ -745,6 +809,9 @@ async def get_transaction(
             selectinload(Transaction.splits),
         )
     )
+    if for_update:
+        query = query.with_for_update(of=Transaction)
+    result = await session.execute(query)
     transaction = result.scalar_one_or_none()
     if transaction:
         count_result = await session.execute(
@@ -1213,6 +1280,7 @@ async def link_existing_as_transfer(
             Transaction.id.in_(transaction_ids),
             Transaction.workspace_id == workspace_id,
         )
+        .with_for_update()
     )
     txns = list(result.scalars().all())
     if len(txns) != 2:
@@ -1221,6 +1289,7 @@ async def link_existing_as_transfer(
     for tx in txns:
         if tx.transfer_pair_id is not None:
             raise ValueError("Transaction is already part of a transfer")
+        await _ensure_not_mortgage_linked(session, workspace_id, tx)
 
     if txns[0].account_id == txns[1].account_id:
         raise ValueError("Transactions must be in different accounts")
@@ -1259,13 +1328,14 @@ async def create_transfer_counterpart(
     """
     from decimal import Decimal
 
-    anchor = await get_transaction(session, transaction_id, workspace_id)
+    anchor = await get_transaction(session, transaction_id, workspace_id, for_update=True)
     if not anchor:
         raise ValueError("Transaction not found")
     if anchor.transfer_pair_id is not None:
         raise ValueError("Transaction is already part of a transfer")
     if anchor.account_id == to_account_id:
         raise ValueError("Counterpart must be in a different account")
+    await _ensure_not_mortgage_linked(session, workspace_id, anchor)
 
     to_result = await session.execute(
         select(Account)
@@ -1392,6 +1462,8 @@ async def _get_series_transactions(
     workspace_id: uuid.UUID,
     tx: Transaction,
     apply_to: str,
+    *,
+    for_update: bool = False,
 ) -> list[Transaction]:
     """Return the sibling installments of ``tx``'s series, ordered by number.
 
@@ -1415,9 +1487,10 @@ async def _get_series_transactions(
         ]
     if apply_to == "future":
         conditions.append(Transaction.installment_number >= tx.installment_number)
-    result = await session.execute(
-        select(Transaction).where(*conditions).order_by(Transaction.installment_number)
-    )
+    query = select(Transaction).where(*conditions).order_by(Transaction.installment_number)
+    if for_update:
+        query = query.with_for_update()
+    result = await session.execute(query)
     return list(result.scalars().all())
 
 
@@ -1576,6 +1649,43 @@ async def _apply_update_to_row(
         await split_service.replace_splits(session, tx, splits_payload, user_id)
 
 
+# Columns that decide how a transaction moves a balance. Changing any of them
+# on a mortgage payment (or its generated principal entry) would leave the
+# saved principal/interest breakdown out of step with the ledger.
+_LEDGER_FIELDS = ("account_id", "amount", "currency", "date", "type", "status", "is_ignored")
+
+
+async def _has_mortgage_breakdown(
+    session: AsyncSession, workspace_id: uuid.UUID, payment_id: uuid.UUID
+) -> bool:
+    linked = await session.scalar(
+        select(MortgagePaymentAllocation.id)
+        .where(
+            MortgagePaymentAllocation.payment_transaction_id == payment_id,
+            MortgagePaymentAllocation.workspace_id == workspace_id,
+        )
+        .limit(1)
+    )
+    return linked is not None
+
+
+async def _category_is_ignored(session: AsyncSession, category_id: Optional[uuid.UUID]) -> bool:
+    if category_id is None:
+        return False
+    return bool(await session.scalar(select(Category.is_ignored).where(Category.id == category_id)))
+
+
+async def _ensure_not_mortgage_linked(
+    session: AsyncSession, workspace_id: uuid.UUID, tx: Transaction
+) -> None:
+    """A payment with a breakdown already moves its principal to the loan, and
+    the principal entry is that movement; neither can become a transfer too."""
+    if tx.source == MORTGAGE_PRINCIPAL_SOURCE or await _has_mortgage_breakdown(
+        session, workspace_id, tx.id
+    ):
+        raise ValueError("A mortgage payment with a breakdown cannot also be a transfer")
+
+
 async def update_transaction(
     session: AsyncSession,
     transaction_id: uuid.UUID,
@@ -1583,7 +1693,7 @@ async def update_transaction(
     user_id: uuid.UUID,
     data: TransactionUpdate,
 ) -> Optional[Transaction]:
-    transaction = await get_transaction(session, transaction_id, workspace_id)
+    transaction = await get_transaction(session, transaction_id, workspace_id, for_update=True)
     if not transaction:
         return None
 
@@ -1659,10 +1769,36 @@ async def update_transaction(
     rows = [transaction]
     scoped_update = None
     if apply_to != "this" and _is_installment(transaction):
-        rows = await _get_series_transactions(session, workspace_id, transaction, apply_to)
+        rows = await _get_series_transactions(
+            session, workspace_id, transaction, apply_to, for_update=True
+        )
         scoped_update = {
             k: v for k, v in update_data.items() if k in installment_scoped_fields
         }
+
+    # The user can remove the breakdown first, edit the payment, then enter
+    # the corrected split. Principal entries are owned by their breakdown.
+    for row in rows:
+        row_update = update_data if row.id == transaction.id else scoped_update or {}
+        changed = {
+            field
+            for field in (*_LEDGER_FIELDS, "category_id", "exclude_from_pnl")
+            if field in row_update and row_update[field] != getattr(row, field)
+        }
+        if row.source == MORTGAGE_PRINCIPAL_SOURCE and changed:
+            raise ValueError("Edit the mortgage breakdown on its bank payment instead")
+        # Balances skip rows in an ignored category, just like ignored rows.
+        # Moving either into or out of an ignored category changes the bank
+        # side of a mortgage allocation and would desync its loan principal.
+        moves_balance = bool(changed & set(_LEDGER_FIELDS)) or (
+            "category_id" in changed
+            and (
+                await _category_is_ignored(session, row.category_id)
+                or await _category_is_ignored(session, row_update["category_id"])
+            )
+        )
+        if moves_balance and await _has_mortgage_breakdown(session, workspace_id, row.id):
+            raise ValueError("Remove the mortgage breakdown before changing this payment")
 
     for row in rows:
         # The edited transaction itself reflects the full form payload; the
@@ -1706,13 +1842,36 @@ async def bulk_update_category(
     category_id: Optional[uuid.UUID] = None,
 ) -> int:
     await _ensure_category_in_workspace(session, workspace_id, category_id)
-    result = await session.execute(
-        update(Transaction)
-        .where(
-            Transaction.id.in_(transaction_ids),
-            Transaction.workspace_id == workspace_id,
+    # Principal entries keep no category; skip them rather than fail the batch.
+    target = [
+        Transaction.id.in_(transaction_ids),
+        Transaction.workspace_id == workspace_id,
+        Transaction.source != MORTGAGE_PRINCIPAL_SOURCE,
+    ]
+    # A category change can alter whether an allocated bank payment contributes
+    # to balances, either by entering or leaving an ignored category.
+    await session.execute(
+        select(Transaction.id).where(*target).order_by(Transaction.id).with_for_update()
+    )
+    linked_query = (
+        select(MortgagePaymentAllocation.id)
+        .join(Transaction, Transaction.id == MortgagePaymentAllocation.payment_transaction_id)
+        .where(*target)
+    )
+    if await _category_is_ignored(session, category_id):
+        linked = await session.scalar(linked_query.limit(1))
+    else:
+        linked = await session.scalar(
+            linked_query.where(
+                Transaction.category_id.in_(
+                    select(Category.id).where(Category.is_ignored.is_(True))
+                )
+            ).limit(1)
         )
-        .values(category_id=category_id)
+    if linked is not None:
+        raise ValueError("Remove the mortgage breakdown before changing this payment")
+    result = await session.execute(
+        update(Transaction).where(*target).values(category_id=category_id)
     )
     await session.commit()
     return cast(CursorResult, result).rowcount
@@ -1961,9 +2120,13 @@ async def toggle_ignore_transaction(
     other field is touched) so the edit dialog can offer ignore as a
     one-click action alongside delete, instead of bundling it into the
     form's Salvar flow."""
-    transaction = await get_transaction(session, transaction_id, workspace_id)
+    transaction = await get_transaction(session, transaction_id, workspace_id, for_update=True)
     if not transaction:
         return None
+    if transaction.source == MORTGAGE_PRINCIPAL_SOURCE:
+        raise ValueError("Edit the mortgage breakdown on its bank payment instead")
+    if await _has_mortgage_breakdown(session, workspace_id, transaction.id):
+        raise ValueError("Remove the mortgage breakdown before changing this payment")
     transaction.is_ignored = not transaction.is_ignored
     await session.commit()
     await session.refresh(transaction)
@@ -2000,7 +2163,7 @@ async def delete_transaction(
     may be "future" (this row + all later installments) or "all" (every row
     in the series); otherwise only the single row is removed. Paired transfer
     legs are cascade-deleted as before. Returns False when not found."""
-    transaction = await get_transaction(session, transaction_id, workspace_id)
+    transaction = await get_transaction(session, transaction_id, workspace_id, for_update=True)
     if not transaction:
         return False
 
@@ -2008,7 +2171,11 @@ async def delete_transaction(
     # delete and the row is part of a series.
     rows: list[Transaction] = [transaction]
     if apply_to != "this" and _is_installment(transaction):
-        rows = await _get_series_transactions(session, workspace_id, transaction, apply_to)
+        rows = await _get_series_transactions(
+            session, workspace_id, transaction, apply_to, for_update=True
+        )
+    if any(row.source == MORTGAGE_PRINCIPAL_SOURCE for row in rows):
+        raise ValueError("Remove the mortgage breakdown on its bank payment instead")
 
     # Clean up attachment files from storage before ORM cascade deletes DB records
     from app.services.attachment_service import cleanup_attachment_files
@@ -2047,7 +2214,7 @@ async def bulk_delete_transactions(
     from app.services.attachment_service import cleanup_attachment_files
 
     result = await session.execute(
-        select(Transaction.id, Transaction.transfer_pair_id)
+        select(Transaction.id, Transaction.transfer_pair_id, Transaction.source)
         .where(
             Transaction.id.in_(transaction_ids),
             Transaction.workspace_id == workspace_id,
@@ -2056,6 +2223,8 @@ async def bulk_delete_transactions(
     transactions = result.all()
     if not transactions:
         return 0
+    if any(row[2] == MORTGAGE_PRINCIPAL_SOURCE for row in transactions):
+        raise ValueError("Remove the mortgage breakdown on its bank payment instead")
 
     valid_ids = [row[0] for row in transactions]
     transfer_pair_ids = {row[1] for row in transactions if row[1]}
