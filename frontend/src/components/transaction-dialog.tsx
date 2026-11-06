@@ -565,19 +565,17 @@ function TransactionForm({
   ).valid
   // The backend refuses these anyway; hiding the action keeps the user from
   // building a split that cannot be saved. A split among people and a split
-  // across categories are exclusive, and recurring or installment series
-  // cannot carry parts yet.
+  // across categories are exclusive.
   const canSplitByCategory =
     !splits &&
-    !isRecurring &&
-    !isInstallment &&
     !isIgnored &&
     !transaction?.transfer_pair_id &&
     !['settlement', 'opening_balance'].includes(seed?.source ?? '') &&
     !seed?.external_id?.startsWith('bill_charge:')
   const startCategorySplit = () => {
     // The chosen category becomes the first part. Shares start empty, so the
-    // editor shows the whole amount as left to allocate.
+    // editor shows the whole amount as left to allocate. A recurring entry or
+    // an installment series carries the same parts to every occurrence.
     const first = emptyRow()
     first.categoryId = categoryId
     setLineShareType('exact')
@@ -939,6 +937,7 @@ function TransactionForm({
               notes,
               fxFields,
               splits,
+              categoryLines: lineRows ? buildLinesPayload(lineRows, lineShareType, displayLocale) : null,
               installmentCount,
               installmentFrequency,
               status,
@@ -1453,7 +1452,6 @@ function TransactionForm({
               <input
                 type="checkbox"
                 checked={isRecurring}
-                disabled={splitByCategory}
                 onChange={(e) => {
                   setIsRecurring(e.target.checked)
                   if (e.target.checked) setIsInstallment(false)
@@ -1466,7 +1464,6 @@ function TransactionForm({
               <input
                 type="checkbox"
                 checked={isInstallment}
-                disabled={splitByCategory}
                 onChange={(e) => {
                   setIsInstallment(e.target.checked)
                   if (e.target.checked) setIsRecurring(false)

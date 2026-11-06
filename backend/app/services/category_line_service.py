@@ -24,6 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.category import Category
+from app.models.recurring_transaction import RecurringTransaction
+from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
 from app.models.mortgage_payment_allocation import (
     MORTGAGE_PRINCIPAL_SOURCE,
     MortgagePaymentAllocation,
@@ -161,7 +163,9 @@ async def _load_categories(
 
 
 async def _validate_line_categories(
-    session: AsyncSession, tx: Transaction, categories: dict[uuid.UUID, Category]
+    session: AsyncSession,
+    tx: Transaction | RecurringTransaction,
+    categories: dict[uuid.UUID, Category],
 ) -> None:
     for category in categories.values():
         if category.is_ignored:
@@ -171,7 +175,9 @@ async def _validate_line_categories(
     await _check_card_credit(session, tx, categories.values())
 
 
-async def _check_card_credit(session: AsyncSession, tx: Transaction, categories) -> None:
+async def _check_card_credit(
+    session: AsyncSession, tx: Transaction | RecurringTransaction, categories
+) -> None:
     """A card statement drops a credit in a transfer-like category as a whole
     (an unpaired card payment), and cannot drop only part of one. Refuse the
     combination rather than leave the bill counting it."""
@@ -322,3 +328,128 @@ def csv_export_parts(
         (line.amount * sign, primaries[i], line.category, str(tx.id), str(i + 1))
         for i, line in enumerate(lines)
     ]
+
+
+# ---------------------------------------------------------------------------
+# Recurring templates and copies
+#
+# A recurring transaction can carry the same split as a transaction. Every
+# occurrence it generates, and every installment of a series, starts with
+# those parts sized to its own amount: percentages are kept, exact parts
+# keep their proportions, in whole cents (see `_distribute`).
+# ---------------------------------------------------------------------------
+
+
+async def replace_template_lines(
+    session: AsyncSession,
+    rec: RecurringTransaction,
+    payload: Optional[TransactionCategoryLinesInput],
+) -> None:
+    """`replace_lines` for a recurring template: same payload semantics and
+    rules (two or more parts, exact total, no ignored or hidden category).
+
+    Editing the template never touches occurrences already generated, as
+    with its category today.
+    """
+    if payload is None:
+        return
+    await session.refresh(rec, ["category_lines"])
+
+    if not payload.lines:
+        if rec.has_category_lines and rec.category_lines:
+            largest = max(rec.category_lines, key=lambda line: (line.amount, -line.position))
+            rec.category_id = largest.category_id
+        await _clear_template(session, rec)
+        return
+
+    if not rec.amount or Decimal(str(rec.amount)) == 0:
+        raise ValueError("A transaction with no amount cannot be split across categories")
+    resolved = materialize(rec.amount, payload)
+    categories = await _load_categories(session, rec.workspace_id, [c for c, _, _, _ in resolved])
+    await _validate_line_categories(session, rec, categories)
+
+    await _clear_template(session, rec)
+    for position, (category_id, amount, share_pct, notes) in enumerate(resolved):
+        rec.category_lines.append(
+            RecurringTransactionCategoryLine(
+                workspace_id=rec.workspace_id,
+                category_id=category_id,
+                amount=amount,
+                share_type=payload.share_type,
+                share_pct=share_pct,
+                position=position,
+                notes=notes,
+            )
+        )
+    rec.category_id = None
+    rec.has_category_lines = True
+    await session.flush()
+
+
+async def _clear_template(session: AsyncSession, rec: RecurringTransaction) -> None:
+    rec.category_lines.clear()
+    rec.has_category_lines = False
+    await session.flush()
+
+
+async def rescale_template_lines(
+    session: AsyncSession, rec: RecurringTransaction, old_amount: Decimal
+) -> None:
+    """Keep a split template consistent after its amount was edited without
+    new parts: percentages are kept, exact parts keep their proportions."""
+    if not rec.has_category_lines:
+        return
+    await session.refresh(rec, ["category_lines"])
+    lines = list(rec.category_lines)
+    if not lines or _quantize(abs(Decimal(str(rec.amount)))) == _quantize(abs(Decimal(str(old_amount)))):
+        return
+    try:
+        amounts = _distribute(_quantize(abs(Decimal(str(rec.amount)))), _weights(lines))
+    except ValueError:
+        largest = max(lines, key=lambda line: (line.amount, -line.position))
+        rec.category_id = largest.category_id
+        await _clear_template(session, rec)
+        return
+    for line, amount in zip(lines, amounts):
+        line.amount = amount
+    await session.flush()
+
+
+def _weights(lines) -> list[Decimal]:
+    if lines[0].share_type == "percent":
+        return [line.share_pct or Decimal("0") for line in lines]
+    return [line.amount for line in lines]
+
+
+def copy_lines_to(tx: Transaction, source_lines) -> bool:
+    """Give a transaction that is being created the split of `source_lines`
+    (a template's or another transaction's), sized to `tx.amount`.
+
+    Returns False, leaving `tx` with the largest part's category, when the
+    amount is too small to give every part a cent. `tx` must be new: its
+    lines are set directly, without loading.
+    """
+    lines = sorted(source_lines, key=lambda line: line.position)
+    if len(lines) < 2:
+        return False
+    try:
+        amounts = _distribute(_quantize(abs(Decimal(str(tx.amount)))), _weights(lines))
+    except ValueError:
+        largest = max(lines, key=lambda line: (line.amount, -line.position))
+        tx.category_id = largest.category_id
+        return False
+    tx.category_lines = [
+        TransactionCategoryLine(
+            workspace_id=tx.workspace_id,
+            category_id=line.category_id,
+            amount=amount,
+            share_type=line.share_type,
+            share_pct=line.share_pct,
+            position=position,
+            notes=line.notes,
+        )
+        for position, (line, amount) in enumerate(zip(lines, amounts))
+    ]
+    tx.category_id = None
+    tx.has_category_lines = True
+    return True

@@ -681,6 +681,23 @@ export default function DashboardPage() {
       })
     }
     for (const pt of projectedTxs ?? []) {
+      // A split template's occurrence shows its parts like a split row.
+      const projectedSplit = pt.has_category_lines && pt.category_lines?.length
+        ? ({
+            has_category_lines: true,
+            currency: pt.currency,
+            category_lines: pt.category_lines.map((part, position) => ({
+              id: `${pt.recurring_id}-${position}`,
+              category_id: part.category_id,
+              amount: part.amount,
+              share_type: 'exact',
+              share_pct: null,
+              position,
+              notes: null,
+              category: { name: part.category_name, icon: part.category_icon, color: part.category_color },
+            })),
+          } as unknown as Transaction)
+        : null
       rows.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,
         description: pt.description,
@@ -705,7 +722,7 @@ export default function DashboardPage() {
         installmentNumber: null,
         totalInstallments: null,
         showPendingBadge: false,
-        splitSource: null,
+        splitSource: projectedSplit,
       })
     }
     rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))

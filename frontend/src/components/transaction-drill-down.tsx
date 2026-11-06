@@ -132,10 +132,37 @@ export function TransactionDrillDown({
     for (const pt of projectedTxs ?? []) {
       // Filter projected txs by drill-down criteria
       if (filter?.type && pt.type !== filter.type) continue
-      if (filter?.category_id && String(pt.category_id) !== filter.category_id) continue
-      if (filter?.uncategorized && pt.category_id != null) continue
+      // A split template counts in a category through its part there.
+      const parts = pt.has_category_lines ? pt.category_lines ?? [] : []
+      const matchedParts = filter?.category_id
+        ? parts.filter((part) => part.category_id === filter.category_id)
+        : []
+      if (filter?.category_id && !matchedParts.length && String(pt.category_id) !== filter.category_id) continue
+      if (filter?.uncategorized && (pt.category_id != null || parts.length)) continue
       if (filter?.from && pt.date < filter.from) continue
       if (filter?.to && pt.date > filter.to) continue
+      if (matchedParts.length) {
+        const share = matchedParts.reduce((sum, part) => sum + part.amount, 0)
+        const ratio = pt.amount ? share / Math.abs(pt.amount) : 0
+        items.push({
+          key: `proj-${pt.recurring_id}-${pt.date}`,
+          description: pt.description,
+          date: pt.date,
+          type: pt.type,
+          amount: share,
+          amountPrimary: pt.amount_primary != null ? pt.amount_primary * ratio : null,
+          currency: pt.currency,
+          categoryIcon: matchedParts[0].category_icon,
+          categoryName: matchedParts[0].category_name,
+          categoryColor: matchedParts[0].category_color,
+          isProjected: true,
+          isPending: false,
+          attachmentCount: 0,
+          partOf: Math.abs(pt.amount),
+          transaction: null,
+        })
+        continue
+      }
 
       items.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,

@@ -39,6 +39,7 @@ from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.transaction_split import TransactionSplit
 from app.models.transaction_category_line import TransactionCategoryLine
+from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
 from app.models.workspace import Workspace, WorkspaceMember
 
 
@@ -70,6 +71,7 @@ _AUTOSTAMP_MODELS = (
     TransactionAttachment,
     TransactionSplit,
     TransactionCategoryLine,
+    RecurringTransactionCategoryLine,
 )
 
 

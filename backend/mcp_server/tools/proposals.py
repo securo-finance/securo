@@ -100,6 +100,88 @@ _APPLY_FIELD = {
 }
 
 
+# A split across categories, as `TransactionCategoryLinesInput` takes it.
+_CATEGORY_LINES_FIELD: dict[str, Any] = {
+    "type": "object",
+    "description": "Optional: divide the amount across categories instead of one `category_id`.",
+    "properties": {
+        "share_type": {"type": "string", "enum": ["exact", "percent"]},
+        "lines": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "category_id": {"type": "string", "format": "uuid"},
+                    "amount": {"type": "number", "description": "Required for share_type='exact'"},
+                    "share_pct": {"type": "number", "description": "Required for share_type='percent'"},
+                },
+                "required": ["category_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["share_type", "lines"],
+    "additionalProperties": False,
+}
+
+
+async def _check_category_lines(
+    session: AsyncSession,
+    ws_id,
+    amount: float,
+    category_lines: dict[str, Any],
+    *,
+    tx_type: str,
+    account: Account,
+) -> dict[str, Any]:
+    """Validate a `category_lines` argument with the same math a save runs,
+    so a preview never promises a split the API would refuse. Returns
+    `{payload, preview}` or `{error}`."""
+    try:
+        # Pydantic parses the ids and amounts; its ValidationError is a
+        # ValueError, reported back like any other bad split.
+        payload = TransactionCategoryLinesInput.model_validate(category_lines)
+        resolved = category_line_service.materialize(Decimal(str(amount)), payload)
+    except (ValueError, TypeError, KeyError) as exc:
+        return {"error": f"invalid category_lines: {exc}"}
+    line_cats = {
+        c.id: c
+        for c in (
+            await session.execute(
+                select(Category).where(
+                    Category.id.in_([cid for cid, _, _, _ in resolved]),
+                    Category.workspace_id == ws_id,
+                )
+            )
+        ).scalars()
+    }
+    if len(line_cats) != len({cid for cid, _, _, _ in resolved}):
+        return {"error": "category not found"}
+    # The same eligibility the save checks, so a preview never offers a
+    # split that Apply would then refuse.
+    if any(c.is_ignored or c.is_hidden for c in line_cats.values()):
+        return {"error": "an ignored or hidden category cannot hold part of a transaction"}
+    if (
+        tx_type == "credit"
+        and account.type == "credit_card"
+        and any(c.treat_as_transfer for c in line_cats.values())
+    ):
+        return {"error": "a credit on a credit card cannot have a part in a transfer category"}
+    return {
+        "payload": payload,
+        "preview": [
+            {
+                "category_id": str(cid),
+                "category_name": line_cats[cid].name,
+                "amount": float(part),
+                "share_pct": float(pct) if pct is not None else None,
+            }
+            for cid, part, pct, _ in resolved
+        ],
+    }
+
+
 def _can_apply(ctx: CallContext, apply: bool) -> bool:
     """Gate: writes only happen when the caller is external AND set apply."""
     return bool(apply) and ctx.external
@@ -735,29 +817,7 @@ def _budget_target(budget: Budget, category_name: str | None) -> dict[str, Any]:
                 "required": ["share_type", "members"],
                 "additionalProperties": False,
             },
-            "category_lines": {
-                "type": "object",
-                "description": "Optional: divide the amount across categories instead of one `category_id`.",
-                "properties": {
-                    "share_type": {"type": "string", "enum": ["exact", "percent"]},
-                    "lines": {
-                        "type": "array",
-                        "minItems": 2,
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "category_id": {"type": "string", "format": "uuid"},
-                                "amount": {"type": "number", "description": "Required for share_type='exact'"},
-                                "share_pct": {"type": "number", "description": "Required for share_type='percent'"},
-                            },
-                            "required": ["category_id"],
-                            "additionalProperties": False,
-                        },
-                    },
-                },
-                "required": ["share_type", "lines"],
-                "additionalProperties": False,
-            },
+            "category_lines": _CATEGORY_LINES_FIELD,
             "apply": _APPLY_FIELD,
         },
         "required": ["description", "amount", "type", "account_id"],
@@ -903,45 +963,12 @@ async def propose_create_transaction(
             return {"error": "pass either category_id or category_lines, not both"}
         if group_id or splits:
             return {"error": "a category split cannot be combined with a group split"}
-        try:
-            # Pydantic parses the ids and amounts; its ValidationError is a
-            # ValueError, reported back like any other bad split.
-            lines_payload = TransactionCategoryLinesInput.model_validate(category_lines)
-            resolved = category_line_service.materialize(Decimal(str(amount)), lines_payload)
-        except (ValueError, TypeError, KeyError) as exc:
-            return {"error": f"invalid category_lines: {exc}"}
-        line_cats = {
-            c.id: c
-            for c in (
-                await session.execute(
-                    select(Category).where(
-                        Category.id.in_([cid for cid, _, _, _ in resolved]),
-                        Category.workspace_id == ws_id,
-                    )
-                )
-            ).scalars()
-        }
-        if len(line_cats) != len({cid for cid, _, _, _ in resolved}):
-            return {"error": "category not found"}
-        # The same eligibility the save checks, so a preview never offers a
-        # split that Apply would then refuse.
-        if any(c.is_ignored or c.is_hidden for c in line_cats.values()):
-            return {"error": "an ignored or hidden category cannot hold part of a transaction"}
-        if (
-            type == "credit"
-            and acc.type == "credit_card"
-            and any(c.treat_as_transfer for c in line_cats.values())
-        ):
-            return {"error": "a credit on a credit card cannot have a part in a transfer category"}
-        lines_preview = [
-            {
-                "category_id": str(cid),
-                "category_name": line_cats[cid].name,
-                "amount": float(part),
-                "share_pct": float(pct) if pct is not None else None,
-            }
-            for cid, part, pct, _ in resolved
-        ]
+        checked = await _check_category_lines(
+            session, ws_id, amount, category_lines, tx_type=type, account=acc
+        )
+        if "error" in checked:
+            return checked
+        lines_payload, lines_preview = checked["payload"], checked["preview"]
 
     target_date = parse_date(date) or _today()
     proposed: dict[str, Any] = {
@@ -1028,7 +1055,11 @@ async def propose_create_transaction(
         "Build a preview for adding a recurring transaction / subscription "
         "(e.g. 'Netflix R$55 every month on the 10th'). Frequency is one "
         "of weekly/biweekly/monthly/quarterly/semiannual/yearly. For monthly, "
-        "quarterly, or semiannual use day_of_month (1-31)."
+        "quarterly, or semiannual use day_of_month (1-31). Pass "
+        "`category_lines` instead of `category_id` for a bill split across "
+        "categories (e.g. rent + condo fee + property tax in one payment); "
+        "every occurrence then starts with that split. Same shape as in "
+        "propose_create_transaction."
     ),
     parameters={
         "type": "object",
@@ -1048,6 +1079,7 @@ async def propose_create_transaction(
             "account_id": {"type": "string", "format": "uuid"},
             "category_id": {"type": "string", "format": "uuid"},
             "currency": {"type": "string"},
+            "category_lines": _CATEGORY_LINES_FIELD,
             "apply": _APPLY_FIELD,
         },
         "required": ["description", "amount", "type", "frequency", "account_id"],
@@ -1071,6 +1103,7 @@ async def propose_create_recurring_transaction(
     end_date: str | None = None,
     category_id: str | None = None,
     currency: str | None = None,
+    category_lines: dict[str, Any] | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
     if frequency in ("monthly", "quarterly", "semiannual") and not day_of_month:
@@ -1097,6 +1130,18 @@ async def propose_create_recurring_transaction(
         if cat is None:
             return {"error": "category not found"}
 
+    lines_payload: TransactionCategoryLinesInput | None = None
+    lines_preview: list[dict[str, Any]] | None = None
+    if category_lines:
+        if category_id:
+            return {"error": "pass either category_id or category_lines, not both"}
+        checked = await _check_category_lines(
+            session, ws_id, amount, category_lines, tx_type=type, account=acc
+        )
+        if "error" in checked:
+            return checked
+        lines_payload, lines_preview = checked["payload"], checked["preview"]
+
     target_start = parse_date(start_date) or _today()
     target_end = parse_date(end_date) if end_date else None
     resolved_currency = (currency or acc.currency or "USD").upper()
@@ -1116,6 +1161,11 @@ async def propose_create_recurring_transaction(
             "account_name": acc.name,
             "category_id": str(cat.id) if cat else None,
             "category_name": cat.name if cat else None,
+            "category_lines": (
+                {"share_type": lines_payload.share_type, "lines": lines_preview}
+                if lines_payload is not None
+                else None
+            ),
         },
         "apply_endpoint": "POST /api/recurring-transactions",
     }
@@ -1137,6 +1187,7 @@ async def propose_create_recurring_transaction(
                 end_date=target_end,
                 account_id=acc.id,
                 category_id=cat.id if cat else None,
+                category_lines=lines_payload,
             ),
         )
         return {**preview, "applied": True, "id": str(created.id)}

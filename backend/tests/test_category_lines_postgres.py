@@ -30,9 +30,11 @@ from app.services import category_line_service
 
 pytestmark = pytest.mark.asyncio
 
-(_MIGRATION_PATH,) = (
-    Path(__file__).resolve().parent.parent / "alembic" / "versions"
-).glob("*_transaction_category_lines.py")
+_VERSIONS = Path(__file__).resolve().parent.parent / "alembic" / "versions"
+(_MIGRATION_PATH,) = [
+    path for path in _VERSIONS.glob("*_transaction_category_lines.py")
+    if path.name.split("_", 1)[1] == "transaction_category_lines.py"
+]
 _SPEC = importlib.util.spec_from_file_location("category_lines_migration", _MIGRATION_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 migration = importlib.util.module_from_spec(_SPEC)
@@ -132,3 +134,58 @@ async def test_downgrade_gives_back_the_largest_line_category(
         )
     ).scalar_one()
     assert flag is False
+
+
+(_RECURRING_MIGRATION_PATH,) = _VERSIONS.glob("*_recurring_transaction_category_lines.py")
+_RECURRING_SPEC = importlib.util.spec_from_file_location(
+    "recurring_category_lines_migration", _RECURRING_MIGRATION_PATH
+)
+assert _RECURRING_SPEC is not None and _RECURRING_SPEC.loader is not None
+recurring_migration = importlib.util.module_from_spec(_RECURRING_SPEC)
+_RECURRING_SPEC.loader.exec_module(recurring_migration)
+
+
+async def test_recurring_downgrade_gives_back_the_largest_part_category(
+    session, test_user, test_workspace
+):
+    from app.models.recurring_transaction import RecurringTransaction
+
+    food = Category(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="Food")
+    home = Category(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="Home")
+    account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Checking", type="checking",
+        balance=0, currency="USD",
+    )
+    session.add_all([food, home, account])
+    await session.flush()
+    rent = RecurringTransaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+        description="Rent", amount=Decimal("1000"), currency="USD", type="debit",
+        frequency="monthly", start_date=date(2026, 1, 5), next_occurrence=date(2026, 1, 5),
+    )
+    session.add(rent)
+    await session.flush()
+    await category_line_service.replace_template_lines(
+        session, rent,
+        TransactionCategoryLinesInput(share_type="exact", lines=[
+            TransactionCategoryLineInput(category_id=food.id, amount=Decimal("300")),
+            TransactionCategoryLineInput(category_id=home.id, amount=Decimal("700")),
+        ]),
+    )
+    await session.commit()
+    schema = session.bind.get_execution_options()["schema_translate_map"][None]
+
+    def run(sync_conn, direction):
+        sync_conn.exec_driver_sql(f'SET search_path TO "{schema}"')
+        with Operations.context(MigrationContext.configure(sync_conn)):
+            getattr(recurring_migration, direction)()
+
+    conn = await session.connection()
+    await conn.run_sync(run, "downgrade")
+    category_id = (
+        await conn.execute(
+            text("SELECT category_id FROM recurring_transactions WHERE id = :id"), {"id": rent.id}
+        )
+    ).scalar_one()
+    assert category_id == home.id
+    await conn.run_sync(run, "upgrade")
