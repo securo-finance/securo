@@ -1362,6 +1362,7 @@ async def preview_rule(
                     type=tx.type,
                     current_category_id=tx.category_id,
                     current_category_name=category_names.get(tx.category_id),
+                    current_has_category_lines=bool(tx.has_category_lines),
                     new_category_id=draft.category_id,
                     new_category_name=category_names.get(draft.category_id),
                     will_change=will_change,

@@ -331,13 +331,18 @@ async def bulk_categorize(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    # Counted before the update: split rows are left alone, and the client
+    # says how many, whatever page it is showing by the time this returns.
+    skipped_split = await transaction_service.count_split_rows(
+        session, ctx.workspace.id, data.transaction_ids
+    )
     try:
         count = await transaction_service.bulk_update_category(
             session, ctx.workspace.id, data.transaction_ids, data.category_id
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    return {"updated": count}
+    return {"updated": count, "skipped_split": skipped_split}
 
 
 @router.patch("/bulk-add-tags")

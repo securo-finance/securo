@@ -550,11 +550,40 @@ async def test_bulk_categorize_skips_split_rows(client, auth_headers, cats):
         json={"transaction_ids": [split["id"], plain["id"]], "category_id": str(income.id)},
     )
     assert resp.status_code == 200
-    assert resp.json()["updated"] == 1
+    assert resp.json() == {"updated": 1, "skipped_split": 1}
 
     after = (await client.get(f"/api/transactions/{split['id']}", headers=auth_headers)).json()
     assert after["category_id"] is None
     assert after["has_category_lines"] is True
+
+
+@pytest.mark.asyncio
+async def test_splitting_one_installment_keeps_the_others_categorized(client, auth_headers, cats):
+    """The editor sends a null category with the parts; it must not reach
+    sibling installments edited in the same request and wipe theirs."""
+    food, transport, _ = cats
+    account = await _account(client, auth_headers)
+    resp = await client.post(
+        "/api/transactions/installments", headers=auth_headers,
+        json={"installments": 3, "base": {
+            "account_id": account["id"], "description": "Desk", "amount": 150,
+            "date": "2026-10-10", "type": "debit", "category_id": str(food.id),
+        }},
+    )
+    assert resp.status_code == 201, resp.text
+    first = resp.json()[0]
+
+    resp = await client.patch(
+        f"/api/transactions/{first['id']}", headers=auth_headers,
+        json={"apply_to": "all", "description": "Desk (office)", "category_id": None,
+              "category_lines": _exact((food.id, 100), (transport.id, 50))},
+    )
+    assert resp.status_code == 200, resp.text
+    rows = (await client.get("/api/transactions", headers=auth_headers, params={"q": "Desk"})).json()["items"]
+    assert len(rows) == 3
+    assert all(r["description"] == "Desk (office)" for r in rows)
+    # Every installment stays categorized, one way or the other.
+    assert all(r["category_id"] or r["has_category_lines"] for r in rows)
 
 
 @pytest.mark.asyncio
@@ -614,6 +643,46 @@ async def test_search_marks_split_rows(client, auth_headers, cats):
     assert meta[split["id"]]["has_category_lines"] is True
     assert meta[split["id"]]["category_id"] is None
     assert meta[plain["id"]]["has_category_lines"] is False
+
+
+@pytest.mark.asyncio
+async def test_rule_preview_marks_split_rows(client, auth_headers, cats):
+    food, transport, income = cats
+    account = await _account(client, auth_headers)
+    split = await _create(
+        client, auth_headers, account["id"], description="PHARMACY 9",
+        category_lines=_exact((food.id, 100), (transport.id, 50)),
+    )
+
+    resp = await client.post(
+        "/api/rules/preview",
+        headers=auth_headers,
+        json={
+            "conditions": [{"field": "description", "op": "contains", "value": "PHARMACY"}],
+            "actions": [{"op": "set_category", "value": str(income.id)}],
+            "apply_to_existing": True,
+            "overwrite_existing_categories": True,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    (item,) = [i for i in resp.json()["sample"] if i["id"] == split["id"]]
+    assert item["current_has_category_lines"] is True
+    assert item["will_change"] is False
+
+
+@pytest.mark.asyncio
+async def test_each_line_carries_its_category(client, auth_headers, cats):
+    food, transport, _ = cats
+    account = await _account(client, auth_headers)
+    body = await _create(
+        client, auth_headers, account["id"],
+        category_lines=_exact((food.id, 100), (transport.id, 50)),
+    )
+    assert [line["category"]["name"] for line in body["category_lines"]] == [food.name, transport.name]
+
+    listed = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    (row,) = [r for r in listed if r["id"] == body["id"]]
+    assert row["category_lines"][1]["category"]["id"] == str(transport.id)
 
 
 # --- Category lifecycle ----------------------------------------------------

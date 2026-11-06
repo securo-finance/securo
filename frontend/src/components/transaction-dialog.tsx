@@ -45,7 +45,16 @@ import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition, RuleConditionNode } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode } from '@/types'
+import { TransactionCategoryLinesSection } from '@/components/transaction-category-lines-section'
+import {
+  buildLinesPayload,
+  checkLines,
+  emptyRow,
+  rowCents,
+  rowsFromLines,
+  type CategoryLineRow,
+} from '@/lib/category-lines'
 import { toast } from 'sonner'
 
 export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
@@ -508,6 +517,22 @@ function TransactionForm({
     const existing = (seed as Transaction | null | undefined)?.splits
     return !!(existing && existing.length > 0)
   })
+  // Split across several categories (#425). `null` = one category (or none).
+  // Seeded from the transaction's lines, so editing round-trips them and
+  // duplicating a split row copies its parts.
+  const [lineRows, setLineRows] = useState<CategoryLineRow[] | null>(() => {
+    const source = seed as Transaction | null | undefined
+    if (!source?.has_category_lines || !source.category_lines?.length) return null
+    return rowsFromLines(source.category_lines, (v) => formatAmountInput(v, displayLocale))
+  })
+  const [lineShareType, setLineShareType] = useState<CategoryLineShareType>(
+    () => (seed as Transaction | null | undefined)?.category_lines?.[0]?.share_type ?? 'exact',
+  )
+  // Editing a row that was split: undoing it must be sent explicitly.
+  const [hadInitialLines] = useState<boolean>(
+    () => !!transaction?.has_category_lines && !!transaction.category_lines?.length,
+  )
+  const splitByCategory = lineRows !== null
   const isCreating = !transaction
   const showConversion = currency !== userCurrency && !isSynced
   // Privacy mode hides monetary values across the app, but the edit modal
@@ -535,6 +560,46 @@ function TransactionForm({
     el.style.height = `${el.scrollHeight + border}px`
   }, [description, isSynced])
   const [isIgnored, setIsIgnored] = useState(seed?.is_ignored ?? false)
+  const linesValid = !lineRows || checkLines(
+    lineRows, lineShareType, parseAmountInput(amount, displayLocale) ?? 0, displayLocale,
+  ).valid
+  // The backend refuses these anyway; hiding the action keeps the user from
+  // building a split that cannot be saved. A split among people and a split
+  // across categories are exclusive, and recurring or installment series
+  // cannot carry parts yet.
+  const canSplitByCategory =
+    !splits &&
+    !isRecurring &&
+    !isInstallment &&
+    !isIgnored &&
+    !transaction?.transfer_pair_id &&
+    !['settlement', 'opening_balance'].includes(seed?.source ?? '') &&
+    !seed?.external_id?.startsWith('bill_charge:')
+  const startCategorySplit = () => {
+    // The chosen category becomes the first part. Shares start empty, so the
+    // editor shows the whole amount as left to allocate.
+    const first = emptyRow()
+    first.categoryId = categoryId
+    setLineShareType('exact')
+    setLineRows([first, emptyRow()])
+    setCategoryId('')
+  }
+  const undoCategorySplit = () => {
+    // Same rule as the backend: the largest part's category stays.
+    let best: CategoryLineRow | null = null
+    for (const row of lineRows ?? []) {
+      if (!row.categoryId) continue
+      const value = lineShareType === 'exact'
+        ? rowCents(row.amount, displayLocale) ?? 0
+        : Number(row.percent.replace(',', '.')) || 0
+      const bestValue = !best ? -1 : lineShareType === 'exact'
+        ? rowCents(best.amount, displayLocale) ?? 0
+        : Number(best.percent.replace(',', '.')) || 0
+      if (value > bestValue) best = row
+    }
+    setCategoryId(best?.categoryId ?? '')
+    setLineRows(null)
+  }
   const [excludeFromReports, setExcludeFromReports] = useState(
     seed?.exclude_from_pnl ?? false,
   )
@@ -611,7 +676,8 @@ function TransactionForm({
     mutationFn: (data: Partial<Rule>) => rulesApi.update(extendRuleTarget!.id, data),
     onSuccess: (updatedRule) => {
       const targetCategoryId = getRuleCategoryId(updatedRule)
-      if (targetCategoryId) setCategoryId(targetCategoryId)
+      // Rules never overwrite a split, so the form keeps its parts too.
+      if (targetCategoryId && !splitByCategory) setCategoryId(targetCategoryId)
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       const applied = updatedRule.applied_count ?? 0
       if (applied > 0) {
@@ -761,6 +827,8 @@ function TransactionForm({
         e.preventDefault()
         const action = pendingActionRef.current
         pendingActionRef.current = 'save'
+        // Enter in a text field submits even while Save is disabled.
+        if (!splitsValid || !linesValid) return
         // Amounts are typed under the display locale's separators (comma
         // decimals on dot_comma), so they must be read back the same way —
         // parseFloat would stop at the first comma and silently save the
@@ -812,6 +880,14 @@ function TransactionForm({
           : hadInitialSplits
             ? { splits: { share_type: 'equal', splits: [] } }
             : {}
+        // Category parts follow the same rule as `splits`: absent keeps them,
+        // a list replaces them, an empty list undoes the split. While split,
+        // the row has no category of its own.
+        const categoryLinesPayload: Pick<TransactionEditPayload, 'category_lines' | 'category_id'> = lineRows
+          ? { category_lines: buildLinesPayload(lineRows, lineShareType, displayLocale), category_id: null }
+          : hadInitialLines
+            ? { category_lines: { share_type: 'exact', lines: [] } }
+            : {}
         const pnlExclusionPayload = transaction
           ? { exclude_from_pnl: excludeFromReports }
           : {}
@@ -825,6 +901,7 @@ function TransactionForm({
               ...pnlExclusionPayload,
               ...overridePayload,
               ...splitsPayload,
+              ...categoryLinesPayload,
             } as TransactionEditPayload
           : {
               description,
@@ -844,6 +921,7 @@ function TransactionForm({
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
+              ...categoryLinesPayload,
             } as TransactionEditPayload
         const recurringData = isCreating && isRecurring
           ? { frequency, end_date: endDate || undefined }
@@ -1019,7 +1097,7 @@ function TransactionForm({
             // Prefill what was last filed under this description, without
             // overwriting anything the user already chose (issue #1127).
             onPick={(suggestion) => {
-              if (!categoryId && suggestion.category_id) setCategoryId(suggestion.category_id)
+              if (!categoryId && !splitByCategory && suggestion.category_id) setCategoryId(suggestion.category_id)
               if (!payeeId && suggestion.payee_id) setPayeeId(suggestion.payee_id)
             }}
             required
@@ -1183,19 +1261,52 @@ function TransactionForm({
           </select>
         </div>
         <div className="space-y-2">
-          <Label>{t('transactions.category')}</Label>
-          <CategorySelect
-            value={categoryId}
-            onChange={setCategoryId}
-            categories={displayCategories}
-            groups={displayCategoryGroups}
-            currentCategory={seed?.category}
-            allowNone={true}
-            creatable
-            className="bg-card"
-          />
+          <div className="flex items-center justify-between min-h-5">
+            <Label>{t('transactions.category')}</Label>
+            {canSplitByCategory && !splitByCategory && (
+              <button
+                type="button"
+                onClick={startCategorySplit}
+                className="text-xs text-primary hover:underline font-medium cursor-pointer"
+              >
+                {t('categoryLines.start')}
+              </button>
+            )}
+          </div>
+          {splitByCategory ? (
+            <div className="h-9 flex items-center px-3 rounded-md border border-dashed border-violet-300 dark:border-violet-800 text-sm text-violet-700 dark:text-violet-300">
+              {t('categoryLines.badge', { count: lineRows.length })}
+            </div>
+          ) : (
+            <CategorySelect
+              value={categoryId}
+              onChange={setCategoryId}
+              categories={displayCategories}
+              groups={displayCategoryGroups}
+              currentCategory={seed?.category}
+              allowNone={true}
+              creatable
+              className="bg-card"
+            />
+          )}
         </div>
       </div>
+      {splitByCategory && (
+        <TransactionCategoryLinesSection
+          amount={parseAmountInput(amount, displayLocale) ?? 0}
+          currency={currency}
+          rows={lineRows}
+          shareType={lineShareType}
+          onChange={(rows, shareType) => {
+            setLineRows(rows)
+            setLineShareType(shareType)
+          }}
+          onUndo={undoCategorySplit}
+          categories={displayCategories}
+          groups={displayCategoryGroups}
+          hideAmounts={hideAmounts}
+        />
+      )}
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
           <Label>{t('payees.payee')}</Label>
@@ -1297,7 +1408,7 @@ function TransactionForm({
           group debt; splitting it would create circular accounting
           (the share would settle a debt that this debit is already
           settling). Hide the section entirely in that case. */}
-      {transaction?.source !== 'settlement' && (
+      {transaction?.source !== 'settlement' && !splitByCategory && (
         <TransactionSplitsSection
           amount={parseAmountInput(amount, displayLocale) ?? 0}
           currency={currency}
@@ -1307,7 +1418,7 @@ function TransactionForm({
         />
       )}
 
-      {!isCreating && transaction?.type === 'debit' && transaction.status === 'posted' && !transaction.is_ignored && !transaction.transfer_pair_id && !transaction.category?.is_ignored && Number(transaction.amount) > 0 && accounts.find(a => a.id === transaction.account_id)?.type !== 'loan' && accounts.some(a => a.type === 'loan' && a.secured_asset_id) && (
+      {!isCreating && !splitByCategory && !transaction?.has_category_lines && transaction?.type === 'debit' && transaction.status === 'posted' && !transaction.is_ignored && !transaction.transfer_pair_id && !transaction.category?.is_ignored && Number(transaction.amount) > 0 && accounts.find(a => a.id === transaction.account_id)?.type !== 'loan' && accounts.some(a => a.type === 'loan' && a.secured_asset_id) && (
         <MortgagePaymentEditor transaction={transaction} accounts={accounts} />
       )}
 
@@ -1342,6 +1453,7 @@ function TransactionForm({
               <input
                 type="checkbox"
                 checked={isRecurring}
+                disabled={splitByCategory}
                 onChange={(e) => {
                   setIsRecurring(e.target.checked)
                   if (e.target.checked) setIsInstallment(false)
@@ -1354,6 +1466,7 @@ function TransactionForm({
               <input
                 type="checkbox"
                 checked={isInstallment}
+                disabled={splitByCategory}
                 onChange={(e) => {
                   setIsInstallment(e.target.checked)
                   if (e.target.checked) setIsRecurring(false)
@@ -1491,7 +1604,7 @@ function TransactionForm({
             <div className="inline-flex">
               <Button
                 type="submit"
-                disabled={loading || !splitsValid}
+                disabled={loading || !splitsValid || !linesValid}
                 className="rounded-r-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
               >
                 {loading ? t('common.loading') : t('common.save')}
@@ -1500,7 +1613,7 @@ function TransactionForm({
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
-                    disabled={loading || !splitsValid}
+                    disabled={loading || !splitsValid || !linesValid}
                     aria-label={t('transactions.moreSaveOptions')}
                     className="rounded-l-none border-l border-l-primary-foreground/20 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
                   >
@@ -1518,7 +1631,7 @@ function TransactionForm({
               </DropdownMenu>
             </div>
           ) : (
-            <Button type="submit" disabled={loading || !splitsValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
+            <Button type="submit" disabled={loading || !splitsValid || !linesValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
               {loading ? t('common.loading') : t('common.save')}
             </Button>
           )}
