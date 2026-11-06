@@ -94,6 +94,7 @@ export default function CategoriesPage() {
   const updateCatMutation = useMutation({
     mutationFn: ({ id, ...data }: Partial<Category> & { id: string }) => categoriesApi.update(id, data),
     onSuccess: () => { invalidateAll(); setCatDialogOpen(false); setEditingCat(null); toast.success(t('categories.updated')) },
+    onError: (err: unknown) => toast.error(extractApiError(err, t('common.error'))),
   })
 
   // Hiding is its own mutation: it can also retire the rules that assign the

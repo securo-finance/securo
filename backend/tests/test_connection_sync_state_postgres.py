@@ -363,7 +363,7 @@ async def test_sync_state_migration_defaults_and_round_trip(
 ):
     connection = await _connection(session, test_user, test_workspace)
     connection_id = connection.id
-    path = Path(__file__).resolve().parents[1] / "alembic/versions/103_bank_connection_sync_state.py"
+    path = Path(__file__).resolve().parents[1] / "alembic/versions/106_bank_connection_sync_state.py"
     spec = importlib.util.spec_from_file_location("sync_state_migration", path)
     assert spec is not None and spec.loader is not None
     migration = importlib.util.module_from_spec(spec)

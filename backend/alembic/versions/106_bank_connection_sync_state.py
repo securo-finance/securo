@@ -1,7 +1,7 @@
 """track connection sync failures and state generation
 
-Revision ID: 103
-Revises: 102
+Revision ID: 106
+Revises: 105
 Create Date: 2026-11-05
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "103"
-down_revision: Union[str, None] = "102"
+revision: str = "106"
+down_revision: Union[str, None] = "105"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

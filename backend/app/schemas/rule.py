@@ -170,6 +170,8 @@ class RulePreviewItem(BaseModel):
     type: str
     current_category_id: Optional[uuid.UUID] = None
     current_category_name: Optional[str] = None
+    # Split across categories: no category of its own, and rules leave it alone.
+    current_has_category_lines: bool = False
     new_category_id: Optional[uuid.UUID] = None
     new_category_name: Optional[str] = None
     # False when the rule matches but leaves the transaction as it is — most

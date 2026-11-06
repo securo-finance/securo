@@ -52,6 +52,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from sqlalchemy import exists, select
+from sqlalchemy.orm import noload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -202,7 +203,13 @@ async def _pool(
         # Not a policy knob: workspace rule overrides must not re-enable it.
         Transaction.source != MORTGAGE_PRINCIPAL_SOURCE,
         ~exists().where(MortgagePaymentAllocation.payment_transaction_id == Transaction.id),
+        # A row split across categories is not one movement: a transfer
+        # leaves income and expenses as a whole row.
+        Transaction.has_category_lines.is_(False),
     )
+    # The pool never holds a split row, so skip the per-batch line query
+    # the relationship would otherwise issue for thousands of rows.
+    query = query.options(noload(Transaction.category_lines))
     if ignored_sources:
         query = query.where(Transaction.source.not_in(ignored_sources))
     result = await session.execute(query)

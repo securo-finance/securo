@@ -1,6 +1,7 @@
 import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
-import { CategoryIcon } from '@/components/category-icon'
+import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
+import { isSplitByCategory } from '@/lib/category-lines'
 import type { Transaction, Account } from '@/types'
 import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -103,7 +104,7 @@ export function MobileTransactionRow({
 
       {/* Category Icon */}
       <div className="shrink-0">
-        <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size="md" />
+        <TransactionCategoryIcon tx={tx} size="md" />
       </div>
 
       {/* Content */}
@@ -118,6 +119,7 @@ export function MobileTransactionRow({
               {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
             </span>
           )}
+          {isSplitByCategory(tx) && <CategorySplitBadge tx={tx} compact className="shrink-0 text-[9px] px-1" />}
           {isTransferTransaction(tx) && (
             <ArrowLeftRight
               className="h-3 w-3 text-blue-600 shrink-0"
