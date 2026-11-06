@@ -426,6 +426,18 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
             })),
           }
         : undefined
+      // A split across categories: send the parts the preview validated.
+      const linesBlock = p.category_lines as { share_type?: string; lines?: Array<Record<string, unknown>> } | undefined
+      const linesPayload = linesBlock && Array.isArray(linesBlock.lines) && linesBlock.lines.length > 1
+        ? {
+            share_type: linesBlock.share_type === 'percent' ? 'percent' : 'exact',
+            lines: linesBlock.lines.map((line) => (
+              linesBlock.share_type === 'percent'
+                ? { category_id: String(line.category_id), share_pct: Number(line.share_pct) }
+                : { category_id: String(line.category_id), amount: Number(line.amount) }
+            )),
+          }
+        : undefined
       const t = await transactions.create({
         description: String(p.description),
         amount: Number(p.amount),
@@ -436,6 +448,7 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         category_id: (p.category_id as string) || undefined,
         notes: (p.notes as string) || undefined,
         ...(splitsPayload ? { splits: splitsPayload } : {}),
+        ...(linesPayload ? { category_lines: linesPayload, category_id: undefined } : {}),
       } as Parameters<typeof transactions.create>[0])
       return t.id
     }

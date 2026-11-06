@@ -1,5 +1,6 @@
 import { useMemo, useRef, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ChartPie } from 'lucide-react'
 import type { ImportReviewTransaction, Category, CategoryGroup } from '@/types'
 import { formatCurrency } from '@/lib/format'
 import {
@@ -211,6 +212,19 @@ export function ImportReviewTable({
                     {tx.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}
                   </TableCell>
                   <TableCell className="py-2.5">
+                    {tx.category_lines?.length ? (
+                      // A split from an export comes back as it was; the
+                      // parts are listed on hover.
+                      <span
+                        title={tx.category_lines
+                          .map((line) => `${line.category_name}: ${formatCurrency(Number(line.amount), userCurrency, locale)}`)
+                          .join('\n')}
+                        className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full"
+                      >
+                        <ChartPie size={10} />
+                        {t('categoryLines.badge', { count: tx.category_lines.length })}
+                      </span>
+                    ) : (
                     <CategorySelect
                       value={tx.selected_category_id !== undefined
                         ? (tx.selected_category_id ?? '')
@@ -223,6 +237,7 @@ export function ImportReviewTable({
                       creatable
                       className="w-full border border-border rounded-md px-2 py-1 text-xs bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                     />
+                    )}
                   </TableCell>
                   <TableCell className="py-2.5 pr-4">
                     {tx.excluded ? (

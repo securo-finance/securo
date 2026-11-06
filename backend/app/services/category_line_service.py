@@ -110,7 +110,7 @@ def _distribute(total: Decimal, weights: list[Decimal]) -> list[Decimal]:
         cents[i] += 1
     if any(c <= 0 for c in cents):
         raise ValueError("The transaction amount is too small to split this way")
-    return [Decimal(c) / 100 for c in cents]
+    return [(Decimal(c) / 100).quantize(_CENT) for c in cents]
 
 
 async def split_block_reason(session: AsyncSession, tx: Transaction) -> Optional[str]:
@@ -289,3 +289,35 @@ async def rescale_lines(session: AsyncSession, tx: Transaction, old_amount: Deci
         line.amount = amount
     await session.flush()
 
+
+
+def csv_export_parts(
+    tx: Transaction,
+) -> list[tuple[Decimal, Optional[Decimal], Optional[Category], str, str]]:
+    """The rows a CSV export writes for `tx`:
+    `(amount, amount_primary, category, split_group, split_index)`.
+
+    A plain transaction is one row with empty split columns. A split one is
+    a row per part, its amounts adding up to the transaction's and its
+    primary amounts distributed the same way, so a column total in a
+    spreadsheet still matches. Lines must be loaded (they are, eagerly).
+    """
+    if not tx.has_category_lines or not tx.category_lines:
+        return [(tx.amount, tx.amount_primary, tx.category, "", "")]
+    lines = sorted(tx.category_lines, key=lambda line: line.position)
+    sign = Decimal("-1") if Decimal(str(tx.amount)) < 0 else Decimal("1")
+    primaries: list[Optional[Decimal]] = [None] * len(lines)
+    if tx.amount_primary:
+        primary = Decimal(str(tx.amount_primary))
+        try:
+            shares = _distribute(abs(primary), [line.amount for line in lines])
+            primary_sign = Decimal("-1") if primary < 0 else Decimal("1")
+            primaries = [share * primary_sign for share in shares]
+        except ValueError:
+            # Too small to spread in whole cents: leave the column empty
+            # rather than write parts that do not add up.
+            pass
+    return [
+        (line.amount * sign, primaries[i], line.category, str(tx.id), str(i + 1))
+        for i, line in enumerate(lines)
+    ]

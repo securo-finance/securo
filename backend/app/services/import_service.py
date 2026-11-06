@@ -20,7 +20,11 @@ from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
-from app.schemas.transaction import TransactionImport, FailedRow
+from app.schemas.transaction import FailedRow, ImportCategoryLine, TransactionImport
+from app.schemas.transaction_category_line import (
+    TransactionCategoryLineInput,
+    TransactionCategoryLinesInput,
+)
 from app.services import category_line_service, reconciliation_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_assignable_category_ids
@@ -665,6 +669,10 @@ def parse_csv(
     payee_cols = ['payee', 'merchant', 'beneficiary', 'beneficiario', 'pagador']
     external_id_cols = [] # External ID must be mapped explicitly
     notes_cols = ['notes', 'nota', 'observacao']
+    # Written by our own export for a transaction split across categories.
+    # Detected only by these exact names: a bank file never has them.
+    split_group_col = 'split_group' if 'split_group' in fieldnames else None
+    split_index_col = 'split_index' if 'split_index' in fieldnames else None
 
     # Normalize the user-supplied column mapping (Securo field -> CSV header).
     mapping = {
@@ -748,6 +756,8 @@ def parse_csv(
     )
 
     transactions = []
+    # Index in `transactions` -> (split_group, split_index) for exported parts.
+    split_keys: dict[int, tuple[str, int]] = {}
     failed_rows = []
     for row in reader:
         # Normalize row keys, and missing cells along with them. A row with
@@ -868,6 +878,11 @@ def parse_csv(
         txn_external_id = row[external_id_col].strip() if external_id_col and row.get(external_id_col) else None
         txn_notes = row[notes_col].strip() if notes_col and row.get(notes_col) else None
 
+        split_group = (row.get(split_group_col) or "").strip() if split_group_col else ""
+        split_index_raw = (row.get(split_index_col) or "").strip() if split_index_col else ""
+        if split_group and split_index_raw.isdigit():
+            split_keys[len(transactions)] = (split_group, int(split_index_raw))
+
         transactions.append(TransactionImport(
             description=row[desc_col].strip(),
             amount=abs(amount),
@@ -881,7 +896,61 @@ def parse_csv(
             notes=txn_notes,
         ))
 
-    return transactions, failed_rows
+    return _collapse_split_groups(transactions, split_keys), failed_rows
+
+
+def _collapse_split_groups(
+    transactions: list[TransactionImport],
+    split_keys: dict[int, tuple[str, int]],
+) -> list[TransactionImport]:
+    """Put a split exported as one row per part back into one transaction.
+
+    A group collapses only when it is unambiguous: two or more rows with the
+    same `split_group`, distinct indexes, the same date, type, currency and
+    description, and a category on every part. Anything else imports row by
+    row, exactly as a file without the columns would, so a hand-edited CSV
+    never fails because of them.
+    """
+    if not split_keys:
+        return transactions
+    groups: dict[str, list[int]] = {}
+    for position, (group, _) in split_keys.items():
+        groups.setdefault(group, []).append(position)
+
+    merged_into: dict[int, TransactionImport] = {}
+    absorbed: set[int] = set()
+    for positions in groups.values():
+        rows = [transactions[p] for p in positions]
+        first = rows[0]
+        indexes = [split_keys[p][1] for p in positions]
+        if (
+            len(rows) < 2
+            or len(set(indexes)) != len(indexes)
+            or any(
+                (r.date, r.type, r.currency, r.description)
+                != (first.date, first.type, first.currency, first.description)
+                for r in rows
+            )
+            or any(not r.category_name for r in rows)
+        ):
+            continue
+        ordered = [p for _, p in sorted(zip(indexes, positions))]
+        parts = [transactions[p] for p in ordered]
+        merged_into[ordered[0]] = first.model_copy(update={
+            "amount": sum((part.amount for part in parts), Decimal("0")),
+            "category_name": None,
+            "category_lines": [
+                ImportCategoryLine(category_name=part.category_name or "", amount=part.amount)
+                for part in parts
+            ],
+        })
+        absorbed.update(ordered[1:])
+
+    return [
+        merged_into.get(i, txn)
+        for i, txn in enumerate(transactions)
+        if i not in absorbed
+    ]
 
 
 async def enrich_with_category_suggestions(
@@ -912,6 +981,9 @@ async def enrich_with_category_suggestions(
         return transactions
 
     for txn in transactions:
+        if txn.category_lines:
+            # A split from an export keeps its own categories.
+            continue
         proxy: Transaction = Transaction(
             description=txn.description,
             amount=txn.amount,
@@ -1207,13 +1279,24 @@ async def import_transactions(
         if recurring_link is not None:
             recurring_match_service.advance_past(recurring_link, txn_data.date)
 
+        split_payload = _import_split_payload(txn_data, category_map)
         await apply_rules_to_transaction(
             session,
             user_id,
             incoming,
-            skip_category_rules=txn_data.force_uncategorized,
+            # A split brought back from an export keeps its categories; rules
+            # never categorize a split row.
+            skip_category_rules=txn_data.force_uncategorized or split_payload is not None,
         )
-        if incoming.category_id is None and not txn_data.force_uncategorized:
+        if split_payload is not None:
+            try:
+                async with session.begin_nested():
+                    await category_line_service.replace_lines(session, incoming, split_payload)
+            except ValueError:
+                # The parts no longer fit (an ignored category, a rule that
+                # ignored the row): keep the transaction, uncategorized.
+                await session.refresh(incoming)
+        elif incoming.category_id is None and not txn_data.force_uncategorized:
             incoming.category_id = csv_category_id
 
         if not txn_data.fx_rate:
@@ -1348,3 +1431,25 @@ def normalize_amount(amount_str: str | None, decimal_separator: str | None = Non
         amount_str = amount_str.replace(',', '.')
 
     return f"-{amount_str}" if negative else amount_str
+
+
+def _import_split_payload(
+    txn_data: TransactionImport, category_map: dict[str, uuid.UUID]
+) -> TransactionCategoryLinesInput | None:
+    """The category split a CSV row carries, with categories resolved by
+    name, or None when it has none or a category is not in the workspace
+    (the row then imports unsplit rather than half-split)."""
+    lines: list[ImportCategoryLine] = txn_data.category_lines or []
+    if len(lines) < 2 or txn_data.force_uncategorized:
+        return None
+    resolved = [category_map.get(line.category_name.strip().lower()) for line in lines]
+    if any(category_id is None for category_id in resolved):
+        return None
+    return TransactionCategoryLinesInput(
+        share_type="exact",
+        lines=[
+            TransactionCategoryLineInput(category_id=category_id, amount=line.amount)
+            for category_id, line in zip(resolved, lines)
+            if category_id is not None
+        ],
+    )

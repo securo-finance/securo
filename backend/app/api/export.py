@@ -20,6 +20,7 @@ from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from app.models.transaction_category_line import TransactionCategoryLine
 from app.schemas.export import BackupRequest
 from app.services.backup_service import build_backup_archive
 
@@ -47,6 +48,16 @@ async def _collect(ctx: WorkspaceContext, session: AsyncSession) -> dict[str, ob
 
     accounts = (await session.execute(select(Account).where(Account.workspace_id == ws_id))).scalars().all()
     transactions = (await session.execute(select(Transaction).where(Transaction.workspace_id == ws_id))).scalars().all()
+    # How each split transaction's amount is spread across categories; a
+    # split row's own category_id is null, so without these the backup
+    # would lose its categories.
+    category_lines = (
+        await session.execute(
+            select(TransactionCategoryLine)
+            .where(TransactionCategoryLine.workspace_id == ws_id)
+            .order_by(TransactionCategoryLine.transaction_id, TransactionCategoryLine.position)
+        )
+    ).scalars().all()
     categories = (await session.execute(select(Category).where(Category.workspace_id == ws_id))).scalars().all()
     category_groups = (await session.execute(select(CategoryGroup).where(CategoryGroup.workspace_id == ws_id))).scalars().all()
     rules = (await session.execute(select(Rule).where(Rule.workspace_id == ws_id))).scalars().all()
@@ -64,6 +75,7 @@ async def _collect(ctx: WorkspaceContext, session: AsyncSession) -> dict[str, ob
     entities = {
         "accounts": accounts,
         "transactions": transactions,
+        "transaction_category_lines": category_lines,
         "categories": categories,
         "category_groups": category_groups,
         "rules": rules,
