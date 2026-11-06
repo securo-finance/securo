@@ -39,6 +39,7 @@ from app.models.invoice_attachment import InvoiceAttachment
 from app.models.invoice_schedule import InvoiceSchedule, InvoiceScheduleTerm
 from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
 from app.models.product import Product, ProductPrice
+from app.models.personal_access_token import PersonalAccessToken
 from app.models.reconciliation import (
     ReconciliationEvent,
     ReconciliationRule,
@@ -53,6 +54,7 @@ from app.core import workspace_autostamp  # noqa: F401, E402
 __all__ = [
     "User",
     "UserPasskey",
+    "PersonalAccessToken",
     "Workspace",
     "WorkspaceMember",
     "WorkspaceTaxId",

@@ -44,6 +44,10 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("POST", "/passkeys/register/options"): "the requester's own credentials",
     ("POST", "/passkeys/register/verify"): "the requester's own credentials",
     ("DELETE", "/passkeys/{passkey_id}"): "the requester's own credentials",
+    # Any member may mint one: the token resolves the member's live role on
+    # every request, so a viewer's token can never write.
+    ("POST", "/api/personal-access-tokens"): "the requester's own credentials, capped at their live role",
+    ("DELETE", "/api/personal-access-tokens/{token_id}"): "the requester's own credentials",
     ("POST", "/passkeys/authenticate/options"): "unauthenticated: this is how you log in",
     ("POST", "/passkeys/authenticate/verify"): "unauthenticated: this is how you log in",
     ("POST", "/passkeys/2fa/options"): "unauthenticated step of login",

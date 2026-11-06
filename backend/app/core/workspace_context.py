@@ -4,6 +4,11 @@ Resolution order:
   1. `X-Workspace-Id` header — explicit selection from the frontend.
   2. The user's first/default workspace (`get_default_workspace`).
 
+A personal access token pins the workspace instead: no header resolves
+to the token's workspace, and a header naming any other workspace is a
+403. A PAT is accepted only here; routes that depend on the user alone,
+or on `current_jwt_writable_workspace`, stay JWT-only.
+
 If neither resolves, raises 404. Returns a `WorkspaceContext` value
 object that carries the workspace + the requester's membership + the
 inferred role. Routes that mutate data check `ctx.role` to enforce
@@ -15,12 +20,14 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import use_resolved_timezone, workspace_timezone
-from app.core.auth import current_active_user
+from app.core.auth import current_active_user, current_active_user_optional
 from app.core.database import get_async_session
+from app.core.personal_access_tokens import authenticate_pat, bearer_token, is_pat
+from app.models.personal_access_token import PersonalAccessToken
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
 from app.services.workspace_service import (
@@ -36,6 +43,9 @@ class WorkspaceContext:
     workspace: Workspace
     member: WorkspaceMember
     user: User
+    # Set when the request authenticated with a read-only personal access
+    # token: the effective role is capped at viewer.
+    read_only: bool = False
 
     @property
     def id(self) -> uuid.UUID:
@@ -48,7 +58,7 @@ class WorkspaceContext:
 
     @property
     def role(self) -> str:
-        return self.member.role
+        return "viewer" if self.read_only else self.member.role
 
     @property
     def can_write(self) -> bool:
@@ -69,32 +79,57 @@ class WorkspaceContext:
 
 
 async def current_workspace(
+    request: Request,
     x_workspace_id: Optional[str] = Header(default=None, alias="X-Workspace-Id"),
-    user: User = Depends(current_active_user),
+    jwt_user: Optional[User] = Depends(current_active_user_optional),
     session: AsyncSession = Depends(get_async_session),
 ) -> AsyncIterator[WorkspaceContext]:
     """Dependency: resolve and validate the current workspace + membership.
 
-    The rest of the request then runs on the workspace's calendar: a
-    workspace with a timezone of its own keeps its books there, any other
+    Accepts the session JWT or a personal access token in the same bearer
+    header. The rest of the request then runs on the workspace's calendar:
+    a workspace with a timezone of its own keeps its books there, any other
     follows the application timezone the session already captured.
     """
-    ctx = await resolve_workspace(x_workspace_id, user, session)
+    raw = bearer_token(request.headers.get("authorization"))
+    if is_pat(raw):
+        pat, user = await authenticate_pat(raw, session)
+        ctx = await resolve_workspace(x_workspace_id, user, session, pat=pat)
+    elif jwt_user is not None:
+        ctx = await resolve_workspace(x_workspace_id, jwt_user, session)
+    else:
+        raise HTTPException(
+            status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Bearer"}
+        )
     with use_resolved_timezone(workspace_timezone(ctx.workspace.timezone)):
         yield ctx
+
+
+def _parse_workspace_id(raw: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(raw)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid X-Workspace-Id")
 
 
 async def resolve_workspace(
     x_workspace_id: Optional[str],
     user: User,
     session: AsyncSession,
+    pat: Optional[PersonalAccessToken] = None,
 ) -> WorkspaceContext:
     """Resolve the workspace a request addresses, without side effects."""
+    if pat is not None:
+        if x_workspace_id and _parse_workspace_id(x_workspace_id) != pat.workspace_id:
+            raise HTTPException(
+                status_code=403, detail="Token is not valid for this workspace"
+            )
+        ctx = await resolve_workspace(str(pat.workspace_id), user, session)
+        ctx.read_only = pat.read_only
+        return ctx
+
     if x_workspace_id:
-        try:
-            ws_uuid = uuid.UUID(x_workspace_id)
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="Invalid X-Workspace-Id")
+        ws_uuid = _parse_workspace_id(x_workspace_id)
         workspace = await session.get(Workspace, ws_uuid)
         if workspace is None or workspace.is_archived:
             raise HTTPException(status_code=404, detail="Workspace not found")
@@ -125,5 +160,19 @@ async def resolve_workspace(
 async def current_writable_workspace(
     ctx: WorkspaceContext = Depends(current_workspace),
 ) -> WorkspaceContext:
+    ctx.require_write()
+    return ctx
+
+
+async def current_jwt_writable_workspace(
+    x_workspace_id: Optional[str] = Header(default=None, alias="X-Workspace-Id"),
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> WorkspaceContext:
+    """Write-gated context that rejects personal access tokens.
+
+    For routes that issue credentials: a PAT must not mint another one.
+    """
+    ctx = await resolve_workspace(x_workspace_id, user, session)
     ctx.require_write()
     return ctx
