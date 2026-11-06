@@ -120,25 +120,30 @@ async def get_transaction_calendar(
             session, tx.amount, tx.currency, primary_currency, tx.amount_primary
         )
 
-        is_transfer = bool(tx.transfer_pair_id) or bool(
-            tx.category and tx.category.treat_as_transfer
-        )
+        parts = _category_parts(tx)
+        is_transfer = _is_transfer_item(tx, parts)
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
         if not ignored and not tx.exclude_from_pnl:
-            if is_transfer or tx.source == "transfer":
-                transfer_delta = await _signed_balance_delta_primary(session, tx, primary_currency)
-                day.transfer_net += transfer_delta
-                day.actual_transfer_net += transfer_delta
-                day.has_transfer = True
-            elif tx.source != "opening_balance":
-                if tx.type == "credit":
-                    day.income += amount_primary
-                    day.actual_income += amount_primary
-                    day.has_income = True
-                else:
-                    day.expense += amount_primary
-                    day.actual_expense += amount_primary
-                    day.has_expense = True
+            # A split row lands part by part: its transfer-like parts in the
+            # transfer bucket, the rest in income or expense.
+            for category, ratio in parts:
+                if _is_transfer_part(tx, category):
+                    transfer_delta = (
+                        await _signed_balance_delta_primary(session, tx, primary_currency)
+                    ) * ratio
+                    day.transfer_net += transfer_delta
+                    day.actual_transfer_net += transfer_delta
+                    day.has_transfer = True
+                elif tx.source != "opening_balance":
+                    part_amount = amount_primary * ratio
+                    if tx.type == "credit":
+                        day.income += part_amount
+                        day.actual_income += part_amount
+                        day.has_income = True
+                    else:
+                        day.expense += part_amount
+                        day.actual_expense += part_amount
+                        day.has_expense = True
 
         day.actual_count += 1
         day.items.append(_actual_item(tx, amount_primary, is_transfer, ignored))
@@ -154,24 +159,26 @@ async def get_transaction_calendar(
         amount_primary = await _positive_primary_amount(
             session, tx.amount, tx.currency, primary_currency, tx.amount_primary
         )
-        is_transfer = bool(tx.transfer_pair_id) or bool(
-            tx.category and tx.category.treat_as_transfer
-        )
+        parts = _category_parts(tx)
+        is_transfer = _is_transfer_item(tx, parts)
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
         if not ignored and not tx.exclude_from_pnl:
-            if is_transfer or tx.source == "transfer":
-                delta = await _signed_balance_delta_primary(session, tx, primary_currency)
-                day.transfer_net += delta
-                day.projected_transfer_net += delta
-                day.has_transfer = True
-            elif tx.type == "credit":
-                day.income += amount_primary
-                day.projected_income += amount_primary
-                day.has_income = True
-            else:
-                day.expense += amount_primary
-                day.projected_expense += amount_primary
-                day.has_expense = True
+            for category, ratio in parts:
+                if _is_transfer_part(tx, category):
+                    delta = (
+                        await _signed_balance_delta_primary(session, tx, primary_currency)
+                    ) * ratio
+                    day.transfer_net += delta
+                    day.projected_transfer_net += delta
+                    day.has_transfer = True
+                elif tx.type == "credit":
+                    day.income += amount_primary * ratio
+                    day.projected_income += amount_primary * ratio
+                    day.has_income = True
+                else:
+                    day.expense += amount_primary * ratio
+                    day.projected_expense += amount_primary * ratio
+                    day.has_expense = True
         day.projected_count += 1
         day.items.append(_forecast_item(tx, amount_primary, is_transfer, ignored))
 
@@ -311,6 +318,30 @@ async def _load_actual_transactions(
     return list(result.scalars().all())
 
 
+def _category_parts(tx: Transaction) -> list[tuple[Optional[Category], float]]:
+    """`(category, share)` for each part of `tx`: one part for a plain row,
+    one per category line for a row split across categories."""
+    total = abs(float(tx.amount or 0))
+    if not tx.has_category_lines or not tx.category_lines or not total:
+        return [(tx.category, 1.0)]
+    return [(line.category, float(line.amount) / total) for line in tx.category_lines]
+
+
+def _is_transfer_part(tx: Transaction, category: Optional[Category]) -> bool:
+    return (
+        bool(tx.transfer_pair_id)
+        or tx.source == "transfer"
+        or bool(category and category.treat_as_transfer)
+    )
+
+
+def _is_transfer_item(tx: Transaction, parts: list[tuple[Optional[Category], float]]) -> bool:
+    """The row reads as a transfer only when all of it is one."""
+    return bool(tx.transfer_pair_id) or all(
+        bool(category and category.treat_as_transfer) for category, _ in parts
+    )
+
+
 async def _positive_primary_amount(
     session: AsyncSession,
     amount: Decimal,
@@ -369,6 +400,7 @@ def _actual_item(
         transfer_pair_id=tx.transfer_pair_id,
         is_transfer=is_transfer,
         is_ignored=ignored,
+        has_category_lines=bool(tx.has_category_lines),
         exclude_from_pnl=bool(tx.exclude_from_pnl),
     )
 
@@ -398,6 +430,7 @@ def _forecast_item(
         transfer_pair_id=tx.transfer_pair_id,
         is_transfer=is_transfer,
         is_ignored=ignored,
+        has_category_lines=bool(tx.has_category_lines),
         exclude_from_pnl=bool(tx.exclude_from_pnl),
     )
 

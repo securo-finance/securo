@@ -19,8 +19,15 @@ from app.services._query_filters import (
     counts_as_pnl,
     counts_as_user_pnl,
     forecast_owner_share_fractions,
+    line_amount,
+    line_amount_primary,
+    line_category_id,
+    line_primary_or_amount,
     owner_split_offset_by_category,
     reporting_date_col,
+    user_pnl_parts,
+    user_pnl_ratio,
+    with_category_lines,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.account_service import get_account_name
@@ -37,7 +44,6 @@ from app.schemas.report import (
 from app.services import invoice_forecast_service
 from app.services.dashboard_service import (
     _account_balance_at,
-    _counts_as_user_pnl_row,
     _get_forecast_transactions,
     _get_open_accounts,
 )
@@ -514,14 +520,18 @@ async def get_income_expenses_report(
 
     label_expr = _interval_label_expr(interval, report_date).label('period')
 
-    # Use amount_primary when available, fall back to amount
-    amount_expr = func.coalesce(Transaction.amount_primary, Transaction.amount)
+    # Use amount_primary when available, fall back to amount. Every query
+    # summing it joins the category lines, so a split transaction counts part
+    # by part (and its transfer-like parts drop out alone).
+    amount_expr = line_primary_or_amount()
 
     result = await session.execute(
-        select(
-            label_expr,
-            func.sum(case((Transaction.type == "credit", amount_expr), else_=0)),
-            func.sum(case((Transaction.type == "debit", amount_expr), else_=0)),
+        with_category_lines(
+            select(
+                label_expr,
+                func.sum(case((Transaction.type == "credit", amount_expr), else_=0)),
+                func.sum(case((Transaction.type == "debit", amount_expr), else_=0)),
+            ).select_from(Transaction)
         )
         .where(
             Transaction.workspace_id == workspace_id,
@@ -529,7 +539,7 @@ async def get_income_expenses_report(
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(line_category_id()),
             *acct_filter,
         )
         .group_by(label_expr)
@@ -589,7 +599,7 @@ async def get_income_expenses_report(
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(Transaction.category_id),
         )
         .group_by(label_expr, Transaction.currency)
     )
@@ -653,7 +663,7 @@ async def get_income_expenses_report(
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(Transaction.category_id),
         )
         .group_by(label_expr, Transaction.currency)
     )
@@ -715,7 +725,8 @@ async def get_income_expenses_report(
             else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
         )
         for tx in forecast_transactions:
-            if not _counts_as_user_pnl_row(tx):
+            pnl_ratio = user_pnl_ratio(tx)
+            if not pnl_ratio:
                 continue
             if tx.amount_primary is not None:
                 amount = abs(float(tx.amount_primary))
@@ -724,7 +735,7 @@ async def get_income_expenses_report(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
                 )
                 amount = abs(float(converted))
-            amount *= float(forecast_fractions.get(tx.id, 1))
+            amount *= float(pnl_ratio) * float(forecast_fractions.get(tx.id, 1))
             tx_report_date = (
                 tx.effective_bill_date
                 or (tx.effective_date if accounting_mode == "accrual" else tx.date)
@@ -854,22 +865,23 @@ async def get_income_expenses_report(
 
     # Build per-category composition for the full date range
     cat_result = await session.execute(
-        select(
-            Category.id,
-            Category.name,
-            Category.color,
-            Transaction.type,
-            func.sum(amount_expr),
+        with_category_lines(
+            select(
+                Category.id,
+                Category.name,
+                Category.color,
+                Transaction.type,
+                func.sum(amount_expr),
+            ).select_from(Transaction)
         )
-        .select_from(Transaction)
-        .outerjoin(Category, Transaction.category_id == Category.id)
+        .outerjoin(Category, line_category_id() == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(line_category_id()),
             *acct_filter,
         )
         .group_by(Category.id, Category.name, Category.color, Transaction.type)
@@ -917,14 +929,15 @@ async def get_income_expenses_report(
     # the transfer_pair_id filter, so only one-sided movements (contributions)
     # appear here.
     inv_result = await session.execute(
-        select(
-            Category.id,
-            Category.name,
-            Category.color,
-            func.sum(amount_expr),
+        with_category_lines(
+            select(
+                Category.id,
+                Category.name,
+                Category.color,
+                func.sum(amount_expr),
+            ).select_from(Transaction)
         )
-        .select_from(Transaction)
-        .join(Category, Transaction.category_id == Category.id)
+        .join(Category, line_category_id() == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
@@ -953,23 +966,24 @@ async def get_income_expenses_report(
 
     # Build per-category trend (sparklines) for the full date range
     cat_trend_result = await session.execute(
-        select(
-            label_expr,
-            Category.id,
-            Category.name,
-            Category.color,
-            Transaction.type,
-            func.sum(amount_expr),
+        with_category_lines(
+            select(
+                label_expr,
+                Category.id,
+                Category.name,
+                Category.color,
+                Transaction.type,
+                func.sum(amount_expr),
+            ).select_from(Transaction)
         )
-        .select_from(Transaction)
-        .outerjoin(Category, Transaction.category_id == Category.id)
+        .outerjoin(Category, line_category_id() == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(line_category_id()),
             *acct_filter,
         )
         .group_by(label_expr, Category.id, Category.name, Category.color, Transaction.type)
@@ -1017,7 +1031,7 @@ async def get_income_expenses_report(
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(Transaction.category_id),
         )
         .group_by(label_expr, Transaction.category_id, Transaction.currency)
     )
@@ -1106,56 +1120,55 @@ async def get_income_expenses_report(
             else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
         )
         for tx in forecast_transactions:
-            if not _counts_as_user_pnl_row(tx):
+            parts = user_pnl_parts(tx)
+            if not parts:
                 continue
-            cat_id_str = str(tx.category_id) if tx.category_id else "uncategorized"
             group = "income" if tx.type == "credit" else "expenses"
             tx_report_date = (
                 tx.effective_bill_date
                 or (tx.effective_date if accounting_mode == "accrual" else tx.date)
             )
             forecast_period_label = _format_date_label(tx_report_date, interval)
-            if cat_id_str != "uncategorized" and cat_id_str not in cat_cache:
-                cat_row = await session.execute(
-                    select(Category.name, Category.color).where(Category.id == tx.category_id)
-                )
-                row = cat_row.one_or_none()
-                cat_cache[cat_id_str] = {
-                    "label": row[0] if row else "Uncategorized",
-                    "color": row[1] if row else "#6B7280",
-                }
-            info = cat_cache.get(
-                cat_id_str, {"label": "Uncategorized", "color": "#6B7280"}
-            )
             if tx.amount_primary is not None:
-                forecast_amount = abs(float(tx.amount_primary))
+                tx_amount = abs(float(tx.amount_primary))
             else:
                 converted, _ = await fx_convert(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
                 )
-                forecast_amount = abs(float(converted))
-            forecast_amount *= float(forecast_fractions.get(tx.id, 1))
-            comp_key = (cat_id_str, group)
-            if comp_key in comp_map:
-                comp_map[comp_key]["value"] += forecast_amount
-            else:
-                comp_map[comp_key] = {
-                    "label": info["label"],
-                    "color": info["color"],
-                    "value": forecast_amount,
-                }
-            if comp_key not in cat_trend_map:
-                cat_trend_map[comp_key] = {
-                    "label": info["label"],
-                    "color": info["color"],
-                    "total": 0.0,
-                    "periods": {},
-                }
-            cat_trend_map[comp_key]["total"] += forecast_amount
-            cat_trend_map[comp_key]["periods"][forecast_period_label] = (
-                cat_trend_map[comp_key]["periods"].get(forecast_period_label, 0.0)
-                + forecast_amount
-            )
+                tx_amount = abs(float(converted))
+            tx_amount *= float(forecast_fractions.get(tx.id, 1))
+            for part_category_id, part_category, ratio in parts:
+                cat_id_str = str(part_category_id) if part_category_id else "uncategorized"
+                if cat_id_str != "uncategorized" and cat_id_str not in cat_cache:
+                    cat_cache[cat_id_str] = {
+                        "label": part_category.name if part_category else "Uncategorized",
+                        "color": part_category.color if part_category else "#6B7280",
+                    }
+                info = cat_cache.get(
+                    cat_id_str, {"label": "Uncategorized", "color": "#6B7280"}
+                )
+                forecast_amount = tx_amount * float(ratio)
+                comp_key = (cat_id_str, group)
+                if comp_key in comp_map:
+                    comp_map[comp_key]["value"] += forecast_amount
+                else:
+                    comp_map[comp_key] = {
+                        "label": info["label"],
+                        "color": info["color"],
+                        "value": forecast_amount,
+                    }
+                if comp_key not in cat_trend_map:
+                    cat_trend_map[comp_key] = {
+                        "label": info["label"],
+                        "color": info["color"],
+                        "total": 0.0,
+                        "periods": {},
+                    }
+                cat_trend_map[comp_key]["total"] += forecast_amount
+                cat_trend_map[comp_key]["periods"][forecast_period_label] = (
+                    cat_trend_map[comp_key]["periods"].get(forecast_period_label, 0.0)
+                    + forecast_amount
+                )
 
         if cursor2.month == 12:
             cursor2 = date(cursor2.year + 1, 1, 1)
@@ -1296,7 +1309,7 @@ async def _get_baseline_projection(
     acct_filter = [Transaction.account_id.in_(account_ids)] if account_ids is not None else []
     cap_start = _add_months(today, -_BASELINE_MAX_LOOKBACK_MONTHS)
     earliest_result = await session.execute(
-        select(func.min(Transaction.date))
+        with_category_lines(select(func.min(Transaction.date)).select_from(Transaction))
         .join(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
@@ -1304,7 +1317,7 @@ async def _get_baseline_projection(
             Transaction.date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(),
+            counts_as_pnl(line_category_id()),
             *acct_filter,
         )
     )
@@ -1314,11 +1327,13 @@ async def _get_baseline_projection(
     window_start = max(earliest_date, cap_start)
 
     rows = await session.execute(
-        select(
-            Transaction.type,
-            Transaction.amount,
-            Transaction.amount_primary,
-            Transaction.currency,
+        with_category_lines(
+            select(
+                Transaction.type,
+                line_amount(),
+                line_amount_primary(),
+                Transaction.currency,
+            ).select_from(Transaction)
         )
         .join(Account, Transaction.account_id == Account.id)
         .where(
@@ -1328,7 +1343,7 @@ async def _get_baseline_projection(
             Transaction.date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(),
+            counts_as_pnl(line_category_id()),
             *acct_filter,
         )
     )
@@ -1455,12 +1470,14 @@ async def get_cash_flow_report(
     # 1a. Past actual transactions [chart_start, today]. Gives the chart a
     #     "real" section before the forecast so the today-marker has meaning.
     past_result = await session.execute(
-        select(
-            flow_date_col,
-            Transaction.type,
-            Transaction.amount,
-            Transaction.amount_primary,
-            Transaction.currency,
+        with_category_lines(
+            select(
+                flow_date_col,
+                Transaction.type,
+                line_amount(),
+                line_amount_primary(),
+                Transaction.currency,
+            ).select_from(Transaction)
         )
         .join(Account, Transaction.account_id == Account.id)
         .where(
@@ -1470,7 +1487,7 @@ async def get_cash_flow_report(
             flow_date_col <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(),
+            counts_as_pnl(line_category_id()),
             *acct_filter,
         )
     )
@@ -1485,12 +1502,14 @@ async def get_cash_flow_report(
 
     # 1b. Future booked transactions whose cash impact is past today.
     booked_result = await session.execute(
-        select(
-            flow_date_col,
-            Transaction.type,
-            Transaction.amount,
-            Transaction.amount_primary,
-            Transaction.currency,
+        with_category_lines(
+            select(
+                flow_date_col,
+                Transaction.type,
+                line_amount(),
+                line_amount_primary(),
+                Transaction.currency,
+            ).select_from(Transaction)
         )
         .join(Account, Transaction.account_id == Account.id)
         .where(
@@ -1500,7 +1519,7 @@ async def get_cash_flow_report(
             flow_date_col <= end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(),
+            counts_as_pnl(line_category_id()),
             *acct_filter,
         )
     )
@@ -1526,7 +1545,8 @@ async def get_cash_flow_report(
         range_date_col=flow_date_col,
     )
     for tx in pending_forecast:
-        if tx.status != "pending" or not _counts_as_user_pnl_row(tx):
+        pnl_ratio = user_pnl_ratio(tx)
+        if tx.status != "pending" or not pnl_ratio:
             continue
         flow_date = tx.effective_bill_date or (tx.effective_date if accrual else tx.date)
         if flow_date > end:
@@ -1535,6 +1555,7 @@ async def get_cash_flow_report(
             amount_primary = abs(float(tx.amount_primary))
         else:
             amount_primary = await _to_primary(Decimal(str(abs(tx.amount))), tx.currency)
+        amount_primary *= float(pnl_ratio)
         if amount_primary:
             if flow_date <= today:
                 # A connected account's provider number is authoritative and
@@ -1553,7 +1574,8 @@ async def get_cash_flow_report(
     # them and the generic pending handling above is sufficient.
     if accrual:
         for tx in pending_forecast:
-            if tx.status != "posted" or not _counts_as_user_pnl_row(tx):
+            pnl_ratio = user_pnl_ratio(tx)
+            if tx.status != "posted" or not pnl_ratio:
                 continue
             if not tx.account or tx.account.type != "credit_card" or tx.date > today:
                 continue
@@ -1564,6 +1586,8 @@ async def get_cash_flow_report(
                 amount_primary = abs(float(tx.amount_primary))
             else:
                 amount_primary = await _to_primary(Decimal(str(abs(tx.amount))), tx.currency)
+            # Only the part the booked flow above counts is moved back.
+            amount_primary *= float(pnl_ratio)
             if tx.type == "debit":
                 current_balance += amount_primary
             else:

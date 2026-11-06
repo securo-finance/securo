@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, case, delete, select, func, or_, not_, update
+from sqlalchemy import CursorResult, case, delete, literal, select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -34,11 +34,16 @@ from app.services.credit_card_service import apply_effective_date, cc_cycle_bill
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
 from app.services._query_filters import (
+    CATEGORY_LINE,
+    any_line_in,
     counts_as_pnl,
-    counts_as_user_pnl,
+    counts_as_user_pnl_row,
     is_not_ignored,
-    is_transfer,
+    is_transfer_row,
+    line_category_id,
+    line_primary_or_amount,
     reporting_date_col,
+    with_category_lines,
 )
 from app.services.recurring_transaction_service import _advance_date
 
@@ -261,15 +266,24 @@ async def get_transactions(
         base_query = base_query.where(Transaction.account_id.in_(account_ids))
     elif account_id:
         base_query = base_query.where(Transaction.account_id == account_id)
-    if category_ids:
-        base_query = base_query.where(Transaction.category_id.in_(category_ids))
-    elif category_id:
-        base_query = base_query.where(Transaction.category_id == category_id)
+    # A split row matches when any of its parts is in the filter.
+    filter_category_ids = list(category_ids) if category_ids else (
+        [category_id] if category_id else []
+    )
+    if filter_category_ids:
+        base_query = base_query.where(
+            or_(
+                Transaction.category_id.in_(filter_category_ids),
+                any_line_in(filter_category_ids),
+            )
+        )
     if payee_id:
         base_query = base_query.where(Transaction.payee_id == payee_id)
     if uncategorized:
+        # A split row has no category of its own, but every part has one.
         base_query = base_query.where(
             Transaction.category_id == None,
+            Transaction.has_category_lines.is_(False),
             Transaction.transfer_pair_id.is_(None),
         )
     if exclude_transfers:
@@ -277,7 +291,7 @@ async def get_transactions(
     if user_pnl_only:
         # Closed accounts are not excluded here: their history stays in the
         # period totals this list drills into (issue #1112).
-        base_query = base_query.where(counts_as_user_pnl())
+        base_query = base_query.where(counts_as_user_pnl_row())
     if exclude_ignored:
         # Only drops rows; the summary below keeps computing over the same
         # filtered set, so the totals a hidden list shows stay the totals of
@@ -286,7 +300,7 @@ async def get_transactions(
     if txn_type == "transfer":
         # Not a value of the `type` column: a transfer is still stored as a
         # credit or a debit, so this narrows to the transfer family instead.
-        base_query = base_query.where(is_transfer())
+        base_query = base_query.where(is_transfer_row())
     elif txn_type:
         base_query = base_query.where(Transaction.type == txn_type)
     if status:
@@ -491,41 +505,45 @@ async def get_transactions(
     # rows). Computed before pagination so it covers the whole result set.
     summary: Optional[dict] = None
     if include_summary:
-        # Income / expense / net use the shared `counts_as_pnl()` definition
+        # Income / expense / net use the shared `counts_as_pnl` definition
         # (issue #242) so the footer matches the dashboard & reports: paired
         # transfers, `treat_as_transfer` categories (transfers, investments,
-        # custom) and ignored items are kept OUT of income/expense.
-        pnl_filter = counts_as_pnl()
-        pnl_subq = base_query.where(pnl_filter).subquery()
-        amount_norm = func.coalesce(
-            pnl_subq.c.amount_primary, pnl_subq.c.amount
-        )
+        # custom) and ignored items are kept OUT of income/expense. It reads
+        # category parts, so a split row counts part by part and, under a
+        # category filter, only its parts in the filtered categories count.
+        pnl_filter = counts_as_pnl(line_category_id())
+        parts_query = with_category_lines(
+            select(
+                Transaction.type,
+                pnl_filter.label("counts"),
+                func.abs(line_primary_or_amount()).label("amount"),
+            ).select_from(Transaction)
+        ).where(Transaction.id.in_(select(base_query.subquery().c.id)))
+        if filter_category_ids:
+            parts_query = parts_query.where(line_category_id().in_(filter_category_ids))
+        parts_subq = parts_query.subquery()
         summary_rows = await session.execute(
             select(
-                pnl_subq.c.type,
-                func.coalesce(func.sum(func.abs(amount_norm)), 0),
-            ).group_by(pnl_subq.c.type)
+                parts_subq.c.type,
+                parts_subq.c.counts,
+                func.coalesce(func.sum(parts_subq.c.amount), 0),
+            ).group_by(parts_subq.c.type, parts_subq.c.counts)
         )
         income = Decimal("0")
         expense = Decimal("0")
-        for row_type, row_total in summary_rows:
-            if row_type == "credit":
-                income = Decimal(str(row_total or 0))
-            elif row_type == "debit":
-                expense = Decimal(str(row_total or 0))
-
         # Excluded: the absolute total of everything filtered out of P/L for
-        # the same rows — the complement of `counts_as_pnl()`. Surfaces
+        # the same rows (the complement of `counts_as_pnl`). Surfaces
         # transfer-like movement (e.g. how much was moved/invested) without
         # distorting income/expense/net.
-        excl_subq = base_query.where(not_(pnl_filter)).subquery()
-        excl_amount_norm = func.coalesce(
-            excl_subq.c.amount_primary, excl_subq.c.amount
-        )
-        excluded_total = await session.scalar(
-            select(func.coalesce(func.sum(func.abs(excl_amount_norm)), 0))
-        )
-        excluded = Decimal(str(excluded_total or 0))
+        excluded = Decimal("0")
+        for row_type, counts, row_total in summary_rows:
+            row_total = Decimal(str(row_total or 0))
+            if not counts:
+                excluded += row_total
+            elif row_type == "credit":
+                income += row_total
+            elif row_type == "debit":
+                expense += row_total
 
         summary = {
             "income": income,
@@ -551,7 +569,12 @@ async def get_transactions(
         "amount": func.coalesce(Transaction.amount_primary, Transaction.amount),
         "description": Transaction.description,
         "payee": Payee.name,
-        "category": Category.name,
+        # Split rows have no category of their own; keep them together,
+        # apart from uncategorized rows.
+        "category": case(
+            (Transaction.has_category_lines.is_(True), literal("")),
+            else_=Category.name,
+        ),
         "account": Account.name,
         "type": Transaction.type,
         "status": Transaction.status,
@@ -602,6 +625,30 @@ async def get_transactions(
         # by `group_id`, a linked member sees the owner's transactions
         # and the frontend needs `is_shared` to lock them from edits.
         await _tag_shared_view(session, transactions, user_id)
+
+        if filter_category_ids:
+            # The part of each split row inside the filter, so a drill-down
+            # footer computed from the rows matches the report it came from.
+            split_ids = [tx.id for tx in transactions if tx.has_category_lines]
+            if split_ids:
+                matched_rows = await session.execute(
+                    select(CATEGORY_LINE.transaction_id, func.sum(CATEGORY_LINE.amount))
+                    .where(
+                        CATEGORY_LINE.transaction_id.in_(split_ids),
+                        CATEGORY_LINE.category_id.in_(filter_category_ids),
+                    )
+                    .group_by(CATEGORY_LINE.transaction_id)
+                )
+                matched = {row[0]: row[1] for row in matched_rows.all()}
+                for tx in transactions:
+                    if tx.id not in matched:
+                        continue
+                    part = Decimal(str(matched[tx.id]))
+                    tx.matched_amount = float(part)
+                    if tx.amount_primary is not None and tx.amount:
+                        tx.matched_amount_primary = float(
+                            Decimal(str(tx.amount_primary)) * part / abs(Decimal(str(tx.amount)))
+                        )
 
         if include_running_balance and from_date and primary_currency:
             running_account = await _running_balance_account(

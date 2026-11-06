@@ -76,7 +76,9 @@ class TransactionCategoryLine(Base):
     )
 
     transaction: Mapped["Transaction"] = relationship(back_populates="category_lines")
-    category: Mapped["Category"] = relationship()
+    # Loaded with the line: loops over loaded transactions read a part's
+    # category flags, and a lazy load raises under asyncio.
+    category: Mapped["Category"] = relationship(lazy="selectin")
 
 
 def _install_sqlite_cleanup(target, connection, **kw) -> None:

@@ -219,6 +219,11 @@ class TransactionRead(TransactionBase):
     # is then null and the categories live in `category_lines`.
     has_category_lines: bool = False
     category_lines: list[TransactionCategoryLineRead] = []
+    # Set by the paginated list when it is filtered by category: the part of
+    # a split row that falls in the filtered categories, so a drill-down
+    # total adds up to the report it came from. Null on plain rows.
+    matched_amount: Optional[float] = None
+    matched_amount_primary: Optional[float] = None
     # Shared-transaction view fields. Set per-request when the viewer
     # is a linked member of one of this transaction's splits but not
     # its owner. The viewer sees their share amount instead of the
