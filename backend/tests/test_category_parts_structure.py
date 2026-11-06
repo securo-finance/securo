@@ -78,7 +78,16 @@ def _called_names(node) -> set[str]:
 
 
 def _loaded_names(node) -> set[str]:
-    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+    """Names read (not assigned) anywhere in `node`."""
+    return {
+        n.id for n in ast.walk(node)
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+    }
+
+
+#: Calls that make a statement a query (or its result) rather than a filter
+#: being prepared for one.
+QUERY_CALLS = {"select", "execute", "scalar", "scalars", "stream"}
 
 
 def _assigned_names(stmt) -> set[str]:
@@ -119,9 +128,7 @@ def _joins_where_it_reads(func, call) -> bool:
                     changed = True
 
     def joins(stmt) -> bool:
-        return bool(_called_names(stmt) & joining) or bool(
-            (_loaded_names(stmt) - _assigned_names(stmt)) & joined_names
-        )
+        return bool(_called_names(stmt) & joining) or bool(_loaded_names(stmt) & joined_names)
 
     # The innermost statement holding the call.
     holder = min(
@@ -130,6 +137,12 @@ def _joins_where_it_reads(func, call) -> bool:
     )
     if joins(holder):
         return True
+    # Only a filter stored for later can be rescued by the statement that
+    # uses it. A query built here without the join is wrong whatever happens
+    # to its result afterwards (`result.all()`, or a joined query that
+    # happens to reuse the name `result`).
+    if _called_names(holder) & QUERY_CALLS:
+        return False
     stored = _assigned_names(holder)
     return any(
         joins(stmt) and (_loaded_names(stmt) & stored)
@@ -168,6 +181,27 @@ async def report(session):
     )
 '''
     assert _problems_in(source) == ["report:7"]
+
+
+def test_a_query_result_is_not_a_stored_filter():
+    """Reusing a name, or reading the result later, never excuses a query
+    that reads parts without joining them."""
+    reused = '''
+async def report(session):
+    result = await session.execute(
+        with_category_lines(select(x)).where(counts_as_pnl(line_category_id()))
+    )
+    result = await session.execute(
+        select(y).where(counts_as_pnl(line_category_id()))
+    )
+'''
+    read_later = '''
+async def report(session):
+    result = await session.execute(select(y).where(counts_as_pnl(line_category_id())))
+    rows = result.all()
+'''
+    assert _problems_in(reused) == ["report:7"]
+    assert _problems_in(read_later) == ["report:3"]
 
 
 def test_the_check_follows_joined_names_and_stored_filters():
