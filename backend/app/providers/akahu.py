@@ -226,6 +226,9 @@ class AkahuProvider(BankProvider):
                     currency=str(balance_obj.get("currency") or "NZD"),
                     credit_limit=_to_decimal(balance_obj.get("limit")),
                     masked_number=mask_last4(raw.get("formatted_account")),
+                    institution_external_id=connection.get("_id"),
+                    institution_name=connection.get("name"),
+                    institution_logo_url=connection.get("logo"),
                 )
             )
         institution_name = connection_names[0] if len(connection_names) == 1 else "Akahu"

@@ -108,6 +108,14 @@ def _is_auto_wallet_name(name: str, institution_name: str) -> bool:
     return bool(re.fullmatch(re.escape(institution_name) + r" \d+", name))
 
 
+def _default_account_display_name(
+    connection: BankConnection, institution: Optional[Institution]
+) -> Optional[str]:
+    if connection.provider == "akahu" or institution is None:
+        return None
+    return institution.name
+
+
 async def _resolve_institution(
     session: AsyncSession,
     connection_id: uuid.UUID,
@@ -1379,7 +1387,7 @@ async def handle_oauth_callback(
             connection_id=connection.id,
             external_id=acc_data.external_id,
             name=acc_data.name,
-            display_name=institution.name if institution else None,
+            display_name=_default_account_display_name(connection, institution),
             masked_number=acc_data.masked_number,
             type=acc_data.type,
             balance=_account_balance(acc_data, auto_invested_deducted),
@@ -2493,10 +2501,8 @@ async def sync_connection(
                 # Backfills existing accounts on next sync (issue #345).
                 if institution is not None:
                     account.institution_id = institution.id
-                    # Only when the user hasn't named the account themselves —
-                    # never overwrite a manual display_name.
                     if account.display_name is None:
-                        account.display_name = institution.name
+                        account.display_name = _default_account_display_name(connection, institution)
                 if acc_data.type == "credit_card":
                     # Preserve existing CC metadata when the provider doesn't
                     # expose it. Pluggy's creditData fields (limit, close/due
@@ -2530,7 +2536,7 @@ async def sync_connection(
                     external_id=acc_data.external_id,
                     stable_external_id=acc_data.stable_external_id,
                     name=acc_data.name,
-                    display_name=institution.name if institution else None,
+                    display_name=_default_account_display_name(connection, institution),
                     masked_number=acc_data.masked_number,
                     type=acc_data.type,
                     balance=_provider_to_internal_balance(
