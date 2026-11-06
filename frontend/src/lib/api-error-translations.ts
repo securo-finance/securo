@@ -9,6 +9,8 @@ import i18n from 'i18next'
  * to the English text instead of showing the wrong translation.
  */
 const KNOWN_MESSAGES: Record<string, string> = {
+  'Connection sync in progress. Please try again shortly.': 'accounts.syncInProgress',
+  'Sync failed. Please try again.': 'accounts.syncRetryError',
   'A category split needs at least two lines': 'categoryLines.errors.tooFewLines',
   'Each category can appear only once in a split': 'categoryLines.errors.duplicateCategory',
   'Each line needs an amount': 'categoryLines.errors.invalidLines',

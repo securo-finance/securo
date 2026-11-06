@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
+import { extractApiError } from '@/lib/api-errors'
 import { accounts, assets, connections, currencies } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
@@ -158,11 +158,7 @@ export default function AccountsPage() {
     },
     onError: (err) => {
       queryClient.invalidateQueries({ queryKey: ['connections'] })
-      const detail = axios.isAxiosError(err)
-        ? err.response?.data?.detail
-        : null
-      const message = typeof detail === 'string' ? detail : detail?.message
-      toast.error(message || t('accounts.syncError'))
+      toast.error(extractApiError(err, t('accounts.syncError')) || t('accounts.syncError'))
     },
   })
 
@@ -176,6 +172,9 @@ export default function AccountsPage() {
       queryClient.invalidateQueries({ queryKey: ['portfolio-trend'] })
       setDisconnectingConnection(null)
       toast.success(t('accounts.disconnected'))
+    },
+    onError: (err) => {
+      toast.error(extractApiError(err, t('common.error')) || t('common.error'))
     },
   })
 
@@ -342,11 +341,12 @@ export default function AccountsPage() {
             <div className="space-y-3">
               {connectionsList.map((conn) => {
                 const connAccounts = bankAccounts.filter((a) => a.connection_id === conn.id)
-                const needsReconnect = conn.status !== 'active'
-                // An error state does not always mean the token is dead: an
-                // upstream auth issue can be fixed without re-pasting, so the
-                // row offers a plain retry next to the reconnect action.
-                const canRetrySync = conn.status === 'error'
+                const needsAttention = conn.status !== 'active'
+                const needsReconnect = conn.status === 'error' || conn.status === 'expired'
+                const isFailedAccount = (a: Account) =>
+                  a.connection_id === conn.id && a.id === conn.last_sync_error_account_id
+                const failedAccount = accountsList?.find(isFailedAccount)
+                  ?? closedAccountsList?.find(isFailedAccount)
                 const syncPending = syncMutation.isPending && syncMutation.variables === conn.id
                 return (
                   <div key={conn.id} className="bg-card rounded-xl border border-border shadow-sm">
@@ -369,7 +369,7 @@ export default function AccountsPage() {
                                   : 'text-[10px] px-1.5 py-0 h-4 border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
                               }
                             >
-                              {t(`accounts.connectionStatus.${conn.status}`, conn.status)}
+                              {t(`accounts.connectionStatus.${conn.status}`, { defaultValue: conn.status })}
                             </Badge>
                           </div>
                           {conn.last_sync_at && (
@@ -390,42 +390,32 @@ export default function AccountsPage() {
                           >
                             <Settings size={14} />
                           </Button>
-                          {canRetrySync && (
+                          {conn.status !== 'expired' && (
                             <Button
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                               onClick={() => syncMutation.mutate(conn.id)}
                               disabled={syncPending}
-                              title={t('accounts.retrySync')}
-                              aria-label={t('accounts.retrySync')}
+                              title={t(needsAttention ? 'accounts.retrySync' : 'accounts.sync')}
+                              aria-label={t(needsAttention ? 'accounts.retrySync' : 'accounts.sync')}
                             >
                               <RefreshCw size={14} className={syncPending ? 'animate-spin' : ''} />
                             </Button>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className={needsReconnect
-                              ? 'relative h-8 w-8 p-0 text-amber-500 hover:bg-amber-500/10 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300'
-                              : 'h-8 w-8 p-0 text-muted-foreground hover:text-foreground'}
-                            onClick={() => needsReconnect ? handleReconnectClick(conn) : syncMutation.mutate(conn.id)}
-                            disabled={syncPending}
-                            title={needsReconnect
-                              ? conn.status === 'expired'
-                                ? t('accounts.connectionExpired')
-                                : t('accounts.connectionError')
-                              : t('accounts.sync')}
-                            aria-label={needsReconnect ? t('accounts.reconnect') : t('accounts.sync')}
-                          >
-                            <RefreshCw size={14} className={syncPending ? 'animate-spin' : ''} />
-                            {needsReconnect && (
-                              <TriangleAlert
-                                size={10}
-                                className="absolute -right-0.5 -top-0.5 rounded-full bg-card text-amber-500"
-                              />
-                            )}
-                          </Button>
+                          {needsReconnect && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 gap-1.5 px-2 text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                              onClick={() => handleReconnectClick(conn)}
+                              title={t('accounts.reconnect')}
+                              aria-label={t('accounts.reconnect')}
+                            >
+                              <TriangleAlert size={14} />
+                              <span className="hidden sm:inline">{t('accounts.reconnect')}</span>
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -439,6 +429,20 @@ export default function AccountsPage() {
                         </div>
                       )}
                     </div>
+                    {needsAttention && (
+                      <div className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/5 px-5 py-2 text-xs text-amber-700 dark:text-amber-300">
+                        <TriangleAlert size={14} className="shrink-0" />
+                        <p>
+                          {conn.status === 'expired'
+                            ? t('accounts.connectionExpired')
+                            : conn.status === 'error'
+                              ? t('accounts.connectionError')
+                              : failedAccount
+                                ? t('accounts.connectionAccountError', { account: getAccountLabel(failedAccount) })
+                                : t('accounts.connectionSyncError')}
+                        </p>
+                      </div>
+                    )}
                     {/* Accounts list */}
                     {connAccounts.length > 0 ? (
                       <div className="divide-y divide-muted">
@@ -676,6 +680,11 @@ export default function AccountsPage() {
       <ConnectionSettingsDialog
         open={!!settingsConnection}
         onClose={() => setSettingsConnection(null)}
+        onReconnect={() => {
+          const connection = settingsConnection
+          setSettingsConnection(null)
+          if (connection) void handleReconnectClick(connection)
+        }}
         connection={settingsConnection}
         supportsAssetSync={
           settingsConnection

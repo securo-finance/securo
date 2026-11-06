@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,8 +32,16 @@ class BankConnection(Base):
     logo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     credentials: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Encrypted tokens
     settings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=dict)
-    status: Mapped[str] = mapped_column(String(50), default="active")  # active, error, expired
+    # error = credentials/user action; sync_error = retryable processing failure.
+    status: Mapped[str] = mapped_column(String(50), default="active")
     last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sync_error_account_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+    )
+    sync_state_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     user: Mapped["User"] = relationship(back_populates="bank_connections")

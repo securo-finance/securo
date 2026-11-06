@@ -1335,6 +1335,8 @@
     "syncDone": "Synchronizácia dokončená",
     "syncRateLimited": "Dosiahnutý denný limit banky, žiadne nové údaje neboli stiahnuté. Skúste to prosím neskôr.",
     "syncError": "Synchronizácia zlyhala",
+    "syncInProgress": "Prebieha synchronizácia pripojenia. Skúste to o chvíľu znova.",
+    "syncRetryError": "Synchronizácia zlyhala. Skúste to znova.",
     "connected": "Banka úspešne prepojená",
     "connectError": "Nepodarilo sa prepojiť banku",
     "disconnected": "Prepojenie odstránené",
@@ -1426,8 +1428,11 @@
     "connectionStatus": {
       "active": "Aktívne",
       "error": "Chyba",
-      "expired": "Vypršané"
-    }
+      "expired": "Vypršané",
+      "sync_error": "Synchronizácia zlyhala"
+    },
+    "connectionSyncError": "Posledná synchronizácia tohto pripojenia zlyhala. Konkrétny účet nebol identifikovaný; všetky prepojené účty sú uvedené nižšie.",
+    "connectionAccountError": "Posledná synchronizácia zlyhala pri spracovaní účtu {{account}}."
   },
   "loans": {
     "title": "Úverová zmluva",

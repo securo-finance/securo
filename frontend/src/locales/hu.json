@@ -1271,6 +1271,8 @@
     "syncDone": "Szinkronizálás kész",
     "syncRateLimited": "Elérted a bank napi korlátját, nem érkeztek új adatok. Próbáld újra később.",
     "syncError": "Sikertelen szinkronizálás",
+    "syncInProgress": "A kapcsolat szinkronizálása folyamatban van. Próbálja újra hamarosan.",
+    "syncRetryError": "A szinkronizálás sikertelen. Próbálja újra.",
     "connected": "Bank sikeresen csatlakoztatva",
     "connectError": "Nem sikerült csatlakoztatni a bankot",
     "disconnected": "Kapcsolat eltávolítva",
@@ -1358,8 +1360,11 @@
     "connectionStatus": {
       "active": "Aktív",
       "error": "Hiba",
-      "expired": "Lejárt"
-    }
+      "expired": "Lejárt",
+      "sync_error": "A szinkronizálás sikertelen"
+    },
+    "connectionSyncError": "Az utolsó szinkronizálás sikertelen volt ennél a kapcsolatnál. Egyetlen számla sem azonosítható; az összes kapcsolt számla alább látható.",
+    "connectionAccountError": "Az utolsó szinkronizálás a(z) {{account}} feldolgozása közben sikertelen volt."
   },
   "loans": {
     "title": "Hitelszerződés",
