@@ -30,6 +30,8 @@ from app.providers.enable_banking import (
     _entry_reference_external_id,
     _map_cash_account_type,
     _txn_fingerprint,
+    legacy_fallback_candidates,
+    matches_legacy_fallback,
 )
 
 
@@ -1271,3 +1273,68 @@ async def test_get_transactions_keeps_pending_siblings_sharing_a_reference(eb_ke
 
     assert sorted(t.status for t in txns) == ["pending", "pending", "posted"]
     assert len({t.external_id for t in txns}) == 3
+
+
+@pytest.mark.parametrize("entry_reference", [None, "0"])
+@pytest.mark.parametrize("pending_to_posted", [False, True])
+@pytest.mark.parametrize("stored_date", ["omitted", None, "", "2026-08-20", "2026-08-19"])
+def test_legacy_fallback_only_fills_missing_transaction_date_when_posting(
+    entry_reference, pending_to_posted, stored_date,
+):
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "BRL"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-23",
+        "value_date": "2026-08-20",
+        "transaction_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    if entry_reference is not None:
+        raw["entry_reference"] = entry_reference
+    incoming = EnableBankingProvider()._build_transaction("acc-uid-1", raw, "posted", "auto")
+    assert incoming is not None
+    stored = dict(raw)
+    if pending_to_posted:
+        stored.pop("booking_date")
+    if stored_date == "omitted":
+        stored.pop("transaction_date")
+    else:
+        stored["transaction_date"] = stored_date
+    original = dict(stored)
+    old_id = entry_reference or _txn_fingerprint("acc-uid-1", stored, legacy=True)
+    assert old_id in legacy_fallback_candidates("acc-uid-1", incoming)
+
+    matched = matches_legacy_fallback(
+        "acc-uid-1", old_id, stored, incoming, pending_to_posted=pending_to_posted,
+    )
+
+    assert matched is (
+        stored_date == "2026-08-20"
+        or (pending_to_posted and stored_date in ("omitted", None, ""))
+    )
+    assert stored == original
+    assert incoming.raw_data == raw
+
+
+@pytest.mark.parametrize("entry_reference", ["bank-reference", "  bank-reference  "])
+def test_nonempty_reference_is_not_a_legacy_fallback(entry_reference):
+    raw = {
+        "entry_reference": entry_reference,
+        "transaction_amount": {"amount": "12.34", "currency": "BRL"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-23",
+        "value_date": "2026-08-20",
+        "transaction_date": "2026-08-20",
+        "creditor": {"name": "Coffee Shop"},
+    }
+    incoming = EnableBankingProvider()._build_transaction("acc-uid-1", raw, "posted", "auto")
+    assert incoming is not None
+    stored = dict(raw)
+    stored.pop("booking_date")
+    stored.pop("transaction_date")
+
+    assert legacy_fallback_candidates("acc-uid-1", incoming) == set()
+    assert not matches_legacy_fallback(
+        "acc-uid-1", entry_reference.strip(), stored, incoming, pending_to_posted=True,
+    )

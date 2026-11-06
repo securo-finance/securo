@@ -1,4 +1,5 @@
 import uuid
+from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -7154,3 +7155,303 @@ async def test_ensure_group_relocates_wallet_when_connection_moves_workspaces(
     assert group.connection_id == conn.id
     assert group.workspace_id == test_workspace.id
     assert group.name == "Moved Wallet"
+
+
+@pytest.mark.parametrize("entry_reference", [None, "0"])
+@pytest.mark.parametrize("reverse_order", [False, True])
+@pytest.mark.parametrize("distinct_on", ["creditor", "value_date"])
+@pytest.mark.parametrize("transaction_date", [None, "2026-08-20"])
+@pytest.mark.parametrize("legacy_pending,settlement_delay", [(False, 0), (True, 0), (True, 3)])
+async def test_enable_banking_rekeys_legacy_fingerprint_without_merging_counterparties(
+    session, test_user, test_workspace, test_categories, entry_reference, reverse_order,
+    distinct_on, transaction_date, legacy_pending, settlement_delay,
+):
+    from app.providers.enable_banking import EnableBankingProvider
+
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "BRL"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": f"2026-08-{20 + settlement_delay}",
+        "value_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    if transaction_date is not None:
+        raw["transaction_date"] = transaction_date
+    if entry_reference is not None:
+        raw["entry_reference"] = entry_reference
+    distinct_raw = deepcopy(raw)
+    if distinct_on == "creditor":
+        distinct_raw["creditor"] = {"name": "Bakery"}
+    else:
+        distinct_raw["value_date"] = "2026-08-21"
+    provider_parser = EnableBankingProvider()
+    incoming = provider_parser._build_transaction("acc-uid-1", raw, "posted", "auto")
+    distinct = provider_parser._build_transaction("acc-uid-1", distinct_raw, "posted", "auto")
+    assert incoming is not None and distinct is not None
+    assert incoming.external_id != distinct.external_id
+
+    connection = await _make_connection(
+        session, test_user.id, "Synthetic Enable Banking", settings={"sync_assets": False},
+    )
+    connection.provider = "enable_banking"
+    account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, connection_id=connection.id,
+        external_id="acc-uid-1", name="Checking", type="checking",
+        balance=Decimal("1000"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    # Fingerprint emitted by v0.16.1 for this payload. Without an IBAN the
+    # old algorithm gave both counterparties this same identifier.
+    stored_raw = deepcopy(raw)
+    if legacy_pending:
+        stored_raw.pop("booking_date")
+        # Some banks first supply the transaction date when the pending row posts.
+        stored_raw.pop("transaction_date", None)
+    legacy_id = entry_reference or (
+        "8884d2776e1305036056d5f6bcd20ec4" if legacy_pending
+        else "92da8ed1d8d86daf9bf06b802eda90f7"
+    )
+    existing = Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+        external_id=legacy_id, description="My coffee label", original_description="Transaction",
+        amount=incoming.amount,
+        date=date(2026, 8, 20) if legacy_pending else incoming.date,
+        type="debit", currency="BRL",
+        status="pending" if legacy_pending else "posted", source="sync", raw_data=stored_raw,
+        category_id=test_categories[0].id,
+        notes="Keep my note",
+    )
+    session.add(existing)
+    await session.commit()
+    existing_id, account_id = existing.id, account.id
+
+    provider = AsyncMock()
+    provider.refresh_credentials.return_value = {"token": "synthetic"}
+    provider.get_institution_logo.return_value = None
+    provider.get_accounts.return_value = [AccountData(
+        external_id="acc-uid-1", name="Checking", type="checking",
+        balance=Decimal("1000"), currency="BRL",
+    )]
+    provider.get_transactions.return_value = (
+        [distinct, incoming] if reverse_order else [incoming, distinct]
+    )
+    with patch("app.services.connection_service.get_provider", return_value=provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, connection.id, test_workspace.id, test_user.id)
+        # A repeated fetch must remain idempotent after re-keying.
+        await sync_connection(session, connection.id, test_workspace.id, test_user.id)
+
+    rows = (await session.scalars(select(Transaction).where(
+        Transaction.account_id == account_id, Transaction.source == "sync",
+    ))).all()
+    assert len(rows) == 2
+    preserved = next(row for row in rows if row.id == existing_id)
+    assert preserved.external_id == incoming.external_id
+    assert preserved.status == "posted"
+    assert preserved.date == (date(2026, 8, 20) if legacy_pending else incoming.date)
+    assert preserved.raw_data == raw
+    assert preserved.description == "My coffee label"
+    assert preserved.category_id == test_categories[0].id
+    assert preserved.notes == "Keep my note"
+    assert {row.external_id for row in rows} == {incoming.external_id, distinct.external_id}
+
+
+@pytest.mark.parametrize("legacy_pending", [False, True])
+@pytest.mark.parametrize("first_creditor", ["Coffee Shop", "Bakery"])
+async def test_enable_banking_claims_one_of_several_legacy_rows(
+    session, test_user, test_workspace, legacy_pending, first_creditor,
+):
+    from app.providers.enable_banking import EnableBankingProvider
+
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "BRL"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "value_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    incoming = EnableBankingProvider()._build_transaction("acc-uid-1", raw, "posted", "auto")
+    assert incoming is not None
+
+    connection = await _make_connection(
+        session, test_user.id, "Synthetic Enable Banking", settings={"sync_assets": False},
+    )
+    connection.provider = "enable_banking"
+    account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, connection_id=connection.id,
+        external_id="acc-uid-1", name="Checking", type="checking",
+        balance=Decimal("1000"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    # external_id has no unique constraint, so a sync race can leave two rows
+    # under one v0.16.1 fingerprint, which never included counterparty names.
+    legacy_id = (
+        "8884d2776e1305036056d5f6bcd20ec4" if legacy_pending
+        else "92da8ed1d8d86daf9bf06b802eda90f7"
+    )
+    row_ids = []
+    for index, creditor in enumerate((first_creditor, "Coffee Shop")):
+        stored_raw = deepcopy(raw)
+        stored_raw["creditor"] = {"name": creditor}
+        if legacy_pending:
+            stored_raw.pop("booking_date")
+        row = Transaction(
+            user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+            external_id=legacy_id, description="Transaction", original_description="Transaction",
+            amount=incoming.amount, date=incoming.date, type="debit", currency="BRL",
+            status="pending" if legacy_pending else "posted", source="sync",
+            raw_data=stored_raw,
+            created_at=datetime(2026, 8, 21 - index, tzinfo=timezone.utc),
+        )
+        session.add(row)
+        await session.flush()
+        row_ids.append(row.id)
+    await session.commit()
+    account_id = account.id
+
+    provider = AsyncMock()
+    provider.refresh_credentials.return_value = {"token": "synthetic"}
+    provider.get_institution_logo.return_value = None
+    provider.get_accounts.return_value = [AccountData(
+        external_id="acc-uid-1", name="Checking", type="checking",
+        balance=Decimal("1000"), currency="BRL",
+    )]
+    provider.get_transactions.return_value = [incoming]
+    with patch("app.services.connection_service.get_provider", return_value=provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, connection.id, test_workspace.id, test_user.id)
+
+    rows = (await session.scalars(select(Transaction).where(
+        Transaction.account_id == account_id, Transaction.source == "sync",
+    ))).all()
+    assert len(rows) == 2
+    claimed = [row for row in rows if row.external_id == incoming.external_id]
+    assert len(claimed) == 1
+    # The second inserted row is older; insertion order cannot decide the claim.
+    assert claimed[0].id == row_ids[1]
+    assert claimed[0].status == "posted"
+    assert claimed[0].raw_data["creditor"] == {"name": "Coffee Shop"}
+    unclaimed = next(row for row in rows if row.id != claimed[0].id)
+    assert unclaimed.external_id == legacy_id
+    assert unclaimed.raw_data["creditor"] == {"name": first_creditor}
+
+
+@pytest.mark.parametrize("entry_reference", [None, "0"])
+async def test_enable_banking_pending_does_not_claim_posted_legacy_row(
+    session, test_user, test_workspace, entry_reference,
+):
+    from app.providers.enable_banking import EnableBankingProvider
+    from app.services.connection_service import _find_synced_duplicate
+
+    _, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account.external_id = "acc-uid-1"
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "BRL"},
+        "credit_debit_indicator": "DBIT",
+        "value_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    if entry_reference is not None:
+        raw["entry_reference"] = entry_reference
+    pending = EnableBankingProvider()._build_transaction("acc-uid-1", raw, "pending", "auto")
+    assert pending is not None
+    old_id = entry_reference or "8884d2776e1305036056d5f6bcd20ec4"
+    posted = _eb_row(
+        test_user.id, test_workspace.id, account, old_id, raw, "12.34",
+        date=date(2026, 8, 20), currency="BRL", description="My coffee label",
+        original_description="Transaction",
+    )
+    session.add(posted)
+    await session.flush()
+
+    matched = await _find_synced_duplicate(
+        session, account.id, pending, {pending.external_id},
+    )
+
+    assert matched is None
+    assert posted.external_id == old_id
+    assert posted.status == "posted"
+
+
+@pytest.mark.parametrize("entry_reference", [None, "0"])
+@pytest.mark.parametrize(
+    "rejection", ["counterparty", "value_date", "transaction_date", "pending_on_posted"],
+)
+@pytest.mark.parametrize("fallback", [None, "sync", "import"])
+async def test_enable_banking_rejected_legacy_rows_cannot_bypass_identity_checks(
+    session, test_user, test_workspace, entry_reference, rejection, fallback,
+):
+    from app.providers.enable_banking import EnableBankingProvider
+    from app.services.connection_service import _find_synced_duplicate
+
+    _, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account.external_id = "acc-uid-1"
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "BRL"},
+        "credit_debit_indicator": "DBIT",
+        "value_date": "2026-08-20",
+        "remittance_information": ["Card payment"],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    if rejection == "transaction_date":
+        raw["transaction_date"] = "2026-08-20"
+    if entry_reference is not None:
+        raw["entry_reference"] = entry_reference
+    # Captured pre-v0.16.3 key. The shared remittance makes Path 2's generic
+    # description match tempting even when the provider identity rejects it.
+    old_id = entry_reference or "838146003656ce860d198c6eddfcc9f8"
+    legacy = _eb_row(
+        test_user.id, test_workspace.id, account, old_id, raw, "12.34",
+        date=date(2026, 8, 20), currency="BRL",
+        status="posted" if rejection == "pending_on_posted" else "pending",
+        description="Card payment", original_description="Card payment",
+    )
+    session.add(legacy)
+    await session.flush()
+    incoming_raw = deepcopy(raw)
+    incoming_status = "posted"
+    if rejection == "pending_on_posted":
+        incoming_status = "pending"
+    else:
+        incoming_raw["booking_date"] = "2026-08-20"
+        if rejection == "counterparty":
+            incoming_raw["creditor"] = {"name": "Bakery"}
+        elif rejection == "value_date":
+            incoming_raw["value_date"] = "2026-08-21"
+        else:
+            incoming_raw["transaction_date"] = "2026-08-21"
+    incoming = EnableBankingProvider()._build_transaction(
+        "acc-uid-1", incoming_raw, incoming_status, "auto",
+    )
+    assert incoming is not None
+
+    expected = None
+    if fallback is not None:
+        # Rejecting one legacy row must not end the search. A nonlegacy twin
+        # or an unclaimed statement import still follows the existing paths.
+        expected = Transaction(
+            user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+            external_id="unrelated-current-key", amount=Decimal("12.34"), type="debit",
+            date=incoming.date, currency="BRL", source=fallback,
+            status="pending" if incoming_status == "posted" else "posted",
+            description="Card payment", original_description="Card payment",
+        )
+        session.add(expected)
+        await session.flush()
+
+    matched = await _find_synced_duplicate(
+        session, account.id, incoming, {incoming.external_id},
+    )
+
+    assert matched is expected
+    assert legacy.external_id == old_id
+    assert legacy.raw_data == raw
