@@ -60,6 +60,8 @@ def materialize(
     lines = payload.lines
     if len(lines) < 2:
         raise ValueError("A category split needs at least two lines")
+    if len({line.category_id for line in lines}) != len(lines):
+        raise ValueError("Each category can appear only once in a split")
 
     if payload.share_type == "exact":
         out = []

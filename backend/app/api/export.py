@@ -18,6 +18,7 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
+from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.transaction_category_line import TransactionCategoryLine
@@ -58,6 +59,18 @@ async def _collect(ctx: WorkspaceContext, session: AsyncSession) -> dict[str, ob
             .order_by(TransactionCategoryLine.transaction_id, TransactionCategoryLine.position)
         )
     ).scalars().all()
+    # The same for split recurring bills: the template's own category_id is
+    # null while it is split.
+    recurring_category_lines = (
+        await session.execute(
+            select(RecurringTransactionCategoryLine)
+            .where(RecurringTransactionCategoryLine.workspace_id == ws_id)
+            .order_by(
+                RecurringTransactionCategoryLine.recurring_transaction_id,
+                RecurringTransactionCategoryLine.position,
+            )
+        )
+    ).scalars().all()
     categories = (await session.execute(select(Category).where(Category.workspace_id == ws_id))).scalars().all()
     category_groups = (await session.execute(select(CategoryGroup).where(CategoryGroup.workspace_id == ws_id))).scalars().all()
     rules = (await session.execute(select(Rule).where(Rule.workspace_id == ws_id))).scalars().all()
@@ -80,6 +93,7 @@ async def _collect(ctx: WorkspaceContext, session: AsyncSession) -> dict[str, ob
         "category_groups": category_groups,
         "rules": rules,
         "recurring_transactions": recurring_transactions,
+        "recurring_transaction_category_lines": recurring_category_lines,
         "budgets": budgets,
         "assets": assets,
         "asset_values": asset_values,

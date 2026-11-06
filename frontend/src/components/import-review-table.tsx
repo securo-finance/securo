@@ -103,10 +103,21 @@ export function ImportReviewTable({
       const ids = categoryIdsByName.get(line.category_name.trim().toLowerCase()) ?? []
       return ids.length === 1 ? ids : []
     })
-  const unresolvedParts = (tx: ImportReviewTransaction): string[] =>
+  // Part names that match no category here, or more than one: either way the
+  // row imports without its split, but the fix differs (create vs rename).
+  const unresolvedParts = (tx: ImportReviewTransaction, ambiguous: boolean): string[] =>
     (tx.category_lines ?? [])
-      .filter((line) => (categoryIdsByName.get(line.category_name.trim().toLowerCase()) ?? []).length !== 1)
+      .filter((line) => {
+        const matches = (categoryIdsByName.get(line.category_name.trim().toLowerCase()) ?? []).length
+        return ambiguous ? matches > 1 : matches === 0
+      })
       .map((line) => line.category_name)
+
+  // Two parts that resolve to the same category: a split holds each once.
+  const repeatsCategory = (tx: ImportReviewTransaction): boolean => {
+    const ids = splitPartIds(tx)
+    return new Set(ids).size !== ids.length
+  }
 
   const filtered = useMemo(() => {
     return transactions.filter(tx => {
@@ -252,9 +263,19 @@ export function ImportReviewTable({
                           <ChartPie size={10} />
                           {t('categoryLines.badge', { count: tx.category_lines.length })}
                         </span>
-                        {unresolvedParts(tx).length > 0 && (
+                        {unresolvedParts(tx, false).length > 0 && (
                           <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                            {t('categoryLines.importUnresolved', { names: unresolvedParts(tx).join(', ') })}
+                            {t('categoryLines.importUnresolved', { names: unresolvedParts(tx, false).join(', ') })}
+                          </span>
+                        )}
+                        {unresolvedParts(tx, true).length > 0 && (
+                          <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                            {t('categoryLines.importAmbiguous', { names: unresolvedParts(tx, true).join(', ') })}
+                          </span>
+                        )}
+                        {repeatsCategory(tx) && (
+                          <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                            {t('categoryLines.errors.duplicateCategory')}
                           </span>
                         )}
                       </span>

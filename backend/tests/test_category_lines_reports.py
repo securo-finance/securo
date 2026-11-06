@@ -288,6 +288,9 @@ async def test_the_list_filters_and_totals_a_split_row_by_its_parts(scene):
 
     transfers = await _get(scene, "/api/transactions", type="transfer")
     assert [row["id"] for row in transfers["items"]] == [target_id]
+    # The row qualifies by its transfer part; its food part is not a transfer.
+    assert transfers["summary"]["expense"] == 0
+    assert transfers["summary"]["excluded"] == 60
 
     pnl_only = await _get(scene, "/api/transactions", user_pnl_only=True)
     assert target_id in {row["id"] for row in pnl_only["items"]}
@@ -391,3 +394,20 @@ async def test_a_forecast_split_projects_part_by_part(scene):
     projected = {b["category_name"]: _r(b["projected_amount"]) for b in budgets}
     assert projected["Alimentação"] == 200
     assert projected.get("Investments", 0) == 0
+
+
+async def test_a_part_in_primary_currency_is_exact(scene):
+    """The part's primary amount is the row's, scaled by the part, without a
+    rounded ratio carried into every total (150 * 100 / 150, not
+    150 * 0.666...)."""
+    target = await scene["create"](
+        150, "debit", description="three ways",
+        category_lines={"share_type": "exact", "lines": [
+            {"category_id": str(scene["food"].id), "amount": 100},
+            {"category_id": str(scene["transport"].id), "amount": 50},
+        ]},
+    )
+    assert target["has_category_lines"] is True
+    rows = await _get(scene, "/api/budgets/comparison", month=scene["day"].isoformat())
+    food = next(row for row in rows if row["category_id"] == str(scene["food"].id))
+    assert Decimal(str(food["actual_amount"])) == Decimal("250")

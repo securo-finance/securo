@@ -16,6 +16,11 @@ const row = (categoryId: string, amount = '', percent = ''): CategoryLineRow => 
 })
 
 describe('checkLines', () => {
+  it('refuses the same category twice', () => {
+    expect(checkLines([row('a', '100'), row('a', '50')], 'exact', 150, 'en-US')).toMatchObject({
+      valid: false, reason: 'duplicateCategory',
+    })
+  })
   it('accepts exact parts that add up to the amount to the cent', () => {
     expect(checkLines([row('a', '0.1'), row('b', '0.2')], 'exact', 0.3, 'en-US')).toEqual({
       valid: true, remaining: 0, reason: null,

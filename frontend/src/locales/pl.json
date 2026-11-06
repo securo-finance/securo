@@ -3246,6 +3246,7 @@
     "needsValue": "Każda część potrzebuje kwoty większej od zera.",
     "hint": "Raporty liczą każdą część w jej kategorii.",
     "importUnresolved": "Nie znaleziono tutaj: {{names}}. Import bez podziału.",
+    "importAmbiguous": "Kilka kategorii nosi nazwę {{names}}. Import bez podziału.",
     "undo": "Cofnij podział",
     "partOf": "część z {{value}}",
     "bulkSkipped_one": "{{count}} podzielona transakcja pozostała bez zmian",
@@ -3254,6 +3255,7 @@
     "bulkSkipped_other": "{{count}} podzielonej transakcji pozostało bez zmian",
     "errors": {
       "tooFewLines": "Podział wymaga co najmniej dwóch kategorii.",
+      "duplicateCategory": "Każda kategoria może wystąpić w podziale tylko raz.",
       "invalidLines": "Każda część potrzebuje dodatniej wartości.",
       "amountMismatch": "Części muszą sumować się do kwoty transakcji.",
       "percentMismatch": "Procenty muszą sumować się do 100.",

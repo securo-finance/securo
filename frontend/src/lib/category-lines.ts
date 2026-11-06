@@ -2,6 +2,7 @@ import { parseAmountInput } from '@/lib/format'
 import type {
   Category,
   CategoryLineShareType,
+  ProjectedTransaction,
   Transaction,
   TransactionCategoryLine,
   TransactionCategoryLinesInput,
@@ -78,7 +79,7 @@ export interface CategoryLinesCheck {
   valid: boolean
   /** Left to allocate: cents in exact mode, hundredths of a percent in percent mode. */
   remaining: number
-  reason: 'tooFewLines' | 'missingCategory' | 'invalidValue' | 'zeroPart' | 'sumMismatch' | null
+  reason: 'tooFewLines' | 'missingCategory' | 'duplicateCategory' | 'invalidValue' | 'zeroPart' | 'sumMismatch' | null
 }
 
 export function checkLines(
@@ -100,6 +101,7 @@ export function checkLines(
   })
   if (rows.length < 2) return fail('tooFewLines')
   if (rows.some((row) => !row.categoryId)) return fail('missingCategory')
+  if (new Set(rows.map((row) => row.categoryId)).size !== rows.length) return fail('duplicateCategory')
   if (values.some((v) => v == null)) return fail('invalidValue')
   if (values.some((v) => v === 0)) return fail('zeroPart')
   if (remaining !== 0) return fail('sumMismatch')
@@ -134,4 +136,28 @@ export function largestLineCategoryId(lines: TransactionCategoryLine[]): string 
     }
   }
   return best?.category_id ?? null
+}
+
+/**
+ * A split template's projected occurrence, shaped like a split row so the
+ * same badge and parts list render for it. Null when the template is not split.
+ */
+export function projectedSplitSource(
+  pt: Pick<ProjectedTransaction, 'recurring_id' | 'currency' | 'has_category_lines' | 'category_lines'>,
+): Pick<Transaction, 'has_category_lines' | 'category_lines' | 'currency'> | null {
+  if (!pt.has_category_lines || !pt.category_lines?.length) return null
+  return {
+    has_category_lines: true,
+    currency: pt.currency,
+    category_lines: pt.category_lines.map((part, position) => ({
+      id: `${pt.recurring_id}-${position}`,
+      category_id: part.category_id,
+      amount: part.amount,
+      share_type: 'exact',
+      share_pct: null,
+      position,
+      notes: null,
+      category: { name: part.category_name, icon: part.category_icon, color: part.category_color },
+    })) as unknown as TransactionCategoryLine[],
+  }
 }

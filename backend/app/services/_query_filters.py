@@ -153,18 +153,6 @@ def line_category_id():
     return func.coalesce(CATEGORY_LINE.category_id, Transaction.category_id)
 
 
-def line_ratio():
-    """The joined part's share of its transaction (1 for a plain row).
-
-    The `* 1.0` keeps SQLite from dividing two integers.
-    """
-    return case(
-        (CATEGORY_LINE.id.is_(None), literal_column("1.0")),
-        else_=(CATEGORY_LINE.amount * literal_column("1.0"))
-        / func.nullif(func.abs(Transaction.amount), 0),
-    )
-
-
 def line_amount():
     """The joined part's amount, with the sign of its transaction."""
     return case(
@@ -175,10 +163,17 @@ def line_amount():
 
 
 def line_amount_primary():
-    """The joined part's `amount_primary` (NULL when the row has none)."""
+    """The joined part's `amount_primary` (NULL when the row has none).
+
+    Multiplying before dividing keeps the result exact whenever the part's
+    share is (150 * 100 / 150 is 100, where 150 * (100 / 150) carries a
+    rounded ratio into every total). The `* 1.0` keeps SQLite from dividing
+    two integers.
+    """
     return case(
         (CATEGORY_LINE.id.is_(None), Transaction.amount_primary),
-        else_=Transaction.amount_primary * line_ratio(),
+        else_=(Transaction.amount_primary * CATEGORY_LINE.amount * literal_column("1.0"))
+        / func.nullif(func.abs(Transaction.amount), 0),
     )
 
 
