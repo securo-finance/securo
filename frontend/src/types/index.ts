@@ -1003,6 +1003,7 @@ export interface AssetImportWarning {
   ticker: string
   reason: string
   wallet: string | null
+  detail: string | null
 }
 
 export interface AssetImportPreview {
