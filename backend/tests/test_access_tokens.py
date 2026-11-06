@@ -264,3 +264,53 @@ async def test_owner_sees_and_revokes_everyone_but_viewer_only_their_own(
     assert resp.status_code == 404
     resp = await client.delete(f"/api/access-tokens/{viewer_token['id']}", headers=auth_headers)
     assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_token_runs_in_its_workspace_without_a_header(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user
+):
+    """A token for a workspace other than the default one still reads that
+    workspace when the request names none."""
+    other = Workspace(id=uuid.uuid4(), name="Other", kind="personal", default_currency="USD", locale="en")
+    session.add(other)
+    await session.flush()
+    session.add(WorkspaceMember(id=uuid.uuid4(), workspace_id=other.id, user_id=test_user.id, role="owner"))
+    await session.commit()
+
+    other_headers = {**auth_headers, "X-Workspace-Id": str(other.id)}
+    resp = await client.post("/api/categories", headers=other_headers, json={"name": "Only in other"})
+    assert resp.status_code == 201, resp.text
+    token = (await _create(client, other_headers, ["categories:read"]))["token"]
+
+    names = {c["name"] for c in (await client.get("/api/categories", headers=_bearer(token))).json()}
+    assert "Only in other" in names
+    default_names = {c["name"] for c in (await client.get("/api/categories", headers=auth_headers)).json()}
+    assert "Only in other" not in default_names
+
+
+@pytest.mark.asyncio
+async def test_workspace_header_is_compared_as_a_uuid(client: AsyncClient, auth_headers: dict, test_workspace):
+    token = (await _create(client, auth_headers, ["categories:read"]))["token"]
+    for spelling in (test_workspace.id.hex, str(test_workspace.id).upper()):
+        resp = await client.get("/api/categories", headers=_bearer(token, **{"X-Workspace-Id": spelling}))
+        assert resp.status_code == 200, (spelling, resp.text)
+    resp = await client.get("/api/categories", headers=_bearer(token, **{"X-Workspace-Id": "not-a-uuid"}))
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_scope_is_matched_on_the_routed_path_under_a_root_path(auth_headers: dict, client: AsyncClient):
+    """Served under a prefix (`uvicorn --root-path /securo`), the request path
+    carries the prefix but scopes are declared on the routed path."""
+    from httpx import ASGITransport
+
+    from app.main import app
+
+    token = (await _create(client, auth_headers, ["categories:read"]))["token"]
+    transport = ASGITransport(app=app, root_path="/securo")
+    async with AsyncClient(transport=transport, base_url="http://test") as prefixed:
+        resp = await prefixed.get("/securo/api/categories", headers=_bearer(token))
+        assert resp.status_code == 200, resp.text
+        resp = await prefixed.get("/securo/api/workspaces", headers=_bearer(token))
+        assert resp.status_code in (401, 403)

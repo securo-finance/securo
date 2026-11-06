@@ -86,10 +86,14 @@ async def current_workspace(
     """
     access_token = getattr(request.state, "access_token", None)
     if access_token is not None:
-        pinned = str(access_token.workspace_id)
-        if x_workspace_id and x_workspace_id != pinned:
-            raise HTTPException(status_code=403, detail="This access token belongs to another workspace")
-        x_workspace_id = pinned
+        if x_workspace_id:
+            try:
+                named = uuid.UUID(x_workspace_id)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="Invalid X-Workspace-Id")
+            if named != access_token.workspace_id:
+                raise HTTPException(status_code=403, detail="This access token belongs to another workspace")
+        x_workspace_id = str(access_token.workspace_id)
     ctx = await resolve_workspace(x_workspace_id, user, session)
     with use_resolved_timezone(workspace_timezone(ctx.workspace.timezone)):
         yield ctx

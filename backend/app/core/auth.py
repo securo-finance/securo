@@ -109,6 +109,20 @@ def _bearer(request: Request) -> Optional[str]:
     return value.strip() if scheme.lower() == "bearer" and value.strip() else None
 
 
+def _route_path(request: Request) -> str:
+    """The path the app routes on, without a mount prefix (`root_path`).
+
+    Behind a server started with a root path such as `/securo`, the scope's
+    path keeps that prefix while routing strips it; scopes are declared on
+    the routed path.
+    """
+    path = request.scope["path"]
+    root = request.scope.get("root_path") or ""
+    if root and path.startswith(root):
+        return path[len(root):] or "/"
+    return path
+
+
 async def current_active_user(
     request: Request,
     user: Optional[User] = Depends(_session_user),
@@ -136,7 +150,7 @@ async def current_active_user(
         if token is not None:
             owner = await session.get(User, token.user_id)
             if owner is not None and owner.is_active:
-                needed = required_scope(request.method, request.scope["path"])
+                needed = required_scope(request.method, _route_path(request))
                 if needed is None or not grants(token.scopes, needed):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
