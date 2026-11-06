@@ -177,6 +177,11 @@ export default function AccountsPage() {
       setDisconnectingConnection(null)
       toast.success(t('accounts.disconnected'))
     },
+    onError: (err) => {
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null
+      const message = typeof detail === 'string' ? detail : detail?.message
+      toast.error(message || t('common.error'))
+    },
   })
 
   const createMutation = useMutation({

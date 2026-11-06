@@ -69,10 +69,9 @@ export default function OAuthCallbackPage() {
             return
           }
         }
-        const message =
-          axios.isAxiosError(err) && err.response?.data?.detail
-            ? String(err.response.data.detail)
-            : t('accounts.connectError')
+        const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null
+        const message = (typeof detail === 'string' ? detail : detail?.message)
+          || t('accounts.connectError')
         sessionStorage.removeItem(submitKey)
         toast.error(message)
         navigate('/accounts', { replace: true })

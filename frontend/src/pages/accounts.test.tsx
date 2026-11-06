@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
+import { AxiosError, AxiosHeaders } from 'axios'
 
 import AccountsPage, { AccountDialog } from '@/pages/accounts'
 import { renderWithProviders, t } from '@/test/utils'
@@ -9,6 +10,9 @@ const api = vi.hoisted(() => ({
   accountsList: vi.fn(),
   connectionsList: vi.fn(),
   sync: vi.fn(),
+  disconnect: vi.fn(),
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
 }))
 
 const collectionFilter = vi.hoisted(() => ({ activeAccountIds: null as string[] | null }))
@@ -20,11 +24,13 @@ vi.mock('@/lib/api', () => ({
     list: api.connectionsList,
     getProviders: vi.fn().mockResolvedValue([]),
     sync: api.sync,
-    delete: vi.fn(),
+    delete: api.disconnect,
     getReauthUrl: vi.fn(),
   },
   currencies: { list: vi.fn().mockResolvedValue([]) },
 }))
+
+vi.mock('sonner', () => ({ toast: { error: api.toastError, success: api.toastSuccess } }))
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
@@ -112,6 +118,30 @@ describe('AccountsPage connection row actions', () => {
     )
     api.connectionsList.mockResolvedValue([])
     api.sync.mockResolvedValue({ sync_outcome: 'success', merged_count: 0 })
+  })
+
+  it('shows sync-in-progress on a blocked disconnect and leaves it retryable', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({})])
+    const message = 'Connection sync in progress. Please try again shortly.'
+    const config = { headers: new AxiosHeaders() }
+    api.disconnect.mockRejectedValueOnce(new AxiosError('conflict', undefined, config, undefined, {
+      status: 409, statusText: 'Conflict', headers: {}, config,
+      data: { detail: { code: 'sync_in_progress', message } },
+    })).mockResolvedValueOnce(undefined)
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.disconnect') }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: t('accounts.disconnect') }))
+    await waitFor(() => expect(api.toastError).toHaveBeenCalledWith(message))
+    expect(api.toastSuccess).not.toHaveBeenCalled()
+    expect(dialog).toBeInTheDocument()
+    const retry = within(dialog).getByRole('button', { name: t('accounts.disconnect') })
+    expect(retry).toBeEnabled()
+    await user.click(retry)
+    await waitFor(() => expect(api.toastSuccess).toHaveBeenCalledWith(t('accounts.disconnected')))
+    expect(api.disconnect).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('offers a retry next to reconnect for a connection in the error state', async () => {

@@ -16,11 +16,13 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 
 from app.models.account import Account
+from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.providers.base import (
-    AccountData, ConnectionData, ProviderUserActionRequired, SessionExpiredError, TransactionData,
+    AccountData, ConnectionData, HoldingData, ProviderUserActionRequired, SessionExpiredError,
+    TransactionData,
 )
 from app.services import connection_service, fx_rate_service
 
@@ -389,3 +391,195 @@ async def test_sync_state_migration_defaults_and_round_trip(
         migration.upgrade()
 
     await sql_connection.run_sync(run)
+
+
+async def test_oauth_fx_import_rolls_back_on_later_database_error(
+    session, postgres_sessions, test_user, test_workspace,
+):
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    await session.commit()
+    user_id, workspace_id = test_user.id, test_workspace.id
+    provider = _provider()
+    target = date(2025, 6, 15)
+    provider.handle_oauth_callback.return_value.accounts = [AccountData(
+        external_id="oauth-fx-account", name="Euro account", type="checking",
+        balance=Decimal("100"), currency="EUR",
+    )]
+    provider.get_transactions.return_value = [TransactionData(
+        external_id="oauth-fx-purchase", description="FX purchase", amount=Decimal("12"),
+        currency="EUR", date=target, type="debit",
+    )]
+
+    async def fail_after_conversion(import_session, account):
+        # Exercise real FX writes before an actual database failure, not a mock
+        # of the stamping helper. Nothing may be visible to another session.
+        async with postgres_sessions() as observer:
+            assert await observer.scalar(select(func.count()).select_from(BankConnection)) == 0
+            assert await observer.scalar(select(func.count()).select_from(FxRate)) == 0
+            assert await observer.scalar(select(func.count()).select_from(Transaction)) == 0
+        await import_session.execute(text("SELECT 1 / 0"))
+
+    async with postgres_sessions() as import_session:
+        with patch.object(connection_service, "get_provider", return_value=provider), patch.object(
+            connection_service, "sync_opening_balance_for_connected_account",
+            side_effect=fail_after_conversion,
+        ), patch.object(
+            fx_rate_service._provider, "fetch_historical",
+            new=AsyncMock(return_value={"EUR": Decimal("2")}),
+        ) as fetch_rates:
+            with pytest.raises(DBAPIError):
+                await connection_service.handle_oauth_callback(
+                    import_session, workspace_id, user_id, "setup-token",
+                    provider_name="test", sync_assets=False,
+                )
+            await import_session.rollback()
+            fetch_rates.assert_awaited_once_with(target)
+
+    async with postgres_sessions() as observer:
+        for model in (BankConnection, Account, Transaction, FxRate):
+            assert await observer.scalar(select(func.count()).select_from(model)) == 0
+
+
+@pytest.mark.parametrize("operation", ["reconnect", "delete"])
+async def test_connection_mutation_times_out_without_disturbing_sync(
+    session, postgres_sessions, test_user, test_workspace, operation,
+):
+    connection = await _connection(session, test_user, test_workspace)
+    connection_id, user_id, workspace_id = connection.id, test_user.id, test_workspace.id
+    provider = _provider()
+    syncing, release = asyncio.Event(), asyncio.Event()
+
+    async def get_accounts(credentials):
+        syncing.set()
+        await release.wait()
+        return []
+
+    provider.get_accounts.side_effect = get_accounts
+    async with postgres_sessions() as sync_session, postgres_sessions() as mutation_session:
+        with patch.object(connection_service, "get_provider", return_value=provider):
+            sync_task = asyncio.create_task(connection_service.sync_connection(
+                sync_session, connection_id, workspace_id, user_id,
+            ))
+            await asyncio.wait_for(syncing.wait(), timeout=5)
+            try:
+                # A wrong workspace must not wait on or reveal the locked row.
+                assert await asyncio.wait_for(connection_service.delete_connection(
+                    mutation_session, connection_id, uuid.uuid4(),
+                ), timeout=0.5) is False
+                await mutation_session.rollback()
+                if operation == "reconnect":
+                    mutation = connection_service.handle_oauth_callback(
+                        mutation_session, workspace_id, user_id, "setup-token",
+                        provider_name="test", reconnect_connection_id=connection_id,
+                    )
+                else:
+                    mutation = connection_service.delete_connection(
+                        mutation_session, connection_id, workspace_id,
+                    )
+                with pytest.raises(connection_service.ConnectionSyncInProgressError):
+                    await asyncio.wait_for(mutation, timeout=3)
+                provider.handle_oauth_callback.assert_not_awaited()
+                assert not sync_task.done()
+                # The timeout must roll back PostgreSQL's aborted transaction
+                # and must not leak its transaction-local timeout to the pool.
+                assert await mutation_session.scalar(text("SHOW lock_timeout")) == "0"
+                unchanged = await mutation_session.get(BankConnection, connection_id)
+                assert unchanged.credentials == {"token": "old"}
+                assert unchanged.sync_state_version == 0
+                await mutation_session.rollback()
+            finally:
+                release.set()
+                await asyncio.wait_for(sync_task, timeout=5)
+
+            # The same operation can succeed after the sync releases its lock.
+            if operation == "reconnect":
+                reconnected = await connection_service.handle_oauth_callback(
+                    mutation_session, workspace_id, user_id, "setup-token",
+                    provider_name="test", reconnect_connection_id=connection_id,
+                )
+                assert reconnected.credentials == {"token": "new"}
+                assert reconnected.sync_state_version == 2
+            else:
+                assert await connection_service.delete_connection(
+                    mutation_session, connection_id, workspace_id,
+                ) is True
+                assert await mutation_session.get(BankConnection, connection_id) is None
+
+
+async def test_bounded_connection_lock_restores_previous_timeout(
+    session, postgres_sessions, test_user, test_workspace,
+):
+    connection = await _connection(session, test_user, test_workspace)
+    connection_id, workspace_id = connection.id, test_workspace.id
+    await session.execute(text("SET LOCAL lock_timeout = '3s'"))
+    locked = await connection_service._get_connection_for_mutation(
+        session, connection_id, workspace_id,
+    )
+    assert locked is not None and locked.id == connection_id
+    assert await session.scalar(text("SHOW lock_timeout")) == "3s"
+    # Restoring the timeout must not release the row lock itself.
+    async with postgres_sessions() as other:
+        with pytest.raises(connection_service.ConnectionSyncInProgressError):
+            await asyncio.wait_for(connection_service._get_connection_for_mutation(
+                other, connection_id, workspace_id,
+            ), timeout=3)
+
+
+async def test_delete_waits_for_sync_and_archives_its_new_holdings(
+    session, postgres_sessions, test_user, test_workspace,
+):
+    connection = await _connection(session, test_user, test_workspace)
+    connection.settings = {"sync_assets": True}
+    await session.commit()
+    connection_id, user_id, workspace_id = connection.id, test_user.id, test_workspace.id
+    provider = _provider()
+    provider.get_holdings.return_value = [HoldingData(
+        external_id="new-holding", name="New holding", currency="USD",
+        current_value=Decimal("100"),
+    )]
+    importing, release = asyncio.Event(), asyncio.Event()
+    sync_holdings = connection_service._sync_holdings
+
+    async def pause_before_holdings(*args, **kwargs):
+        importing.set()
+        await release.wait()
+        await sync_holdings(*args, **kwargs)
+
+    async with postgres_sessions() as sync_session, postgres_sessions() as delete_session:
+        with patch.object(connection_service, "get_provider", return_value=provider), patch.object(
+            connection_service, "_sync_holdings", side_effect=pause_before_holdings,
+        ):
+            sync_task = asyncio.create_task(connection_service.sync_connection(
+                sync_session, connection_id, workspace_id, user_id,
+            ))
+            await asyncio.wait_for(importing.wait(), timeout=5)
+            delete_task = asyncio.create_task(connection_service.delete_connection(
+                delete_session, connection_id, workspace_id,
+            ))
+            try:
+                with pytest.raises(TimeoutError):
+                    await asyncio.wait_for(asyncio.shield(delete_task), timeout=0.1)
+            finally:
+                release.set()
+                await asyncio.wait_for(sync_task, timeout=5)
+                assert await asyncio.wait_for(delete_task, timeout=5) is True
+
+    async with postgres_sessions() as observer:
+        assert await observer.get(BankConnection, connection_id) is None
+        holding = await observer.scalar(select(Asset).where(Asset.external_id == "new-holding"))
+        assert holding is not None and holding.is_archived
+        assert holding.connection_id is None
+
+
+async def test_bounded_connection_lock_does_not_mask_other_database_errors(
+    session, test_user, test_workspace,
+):
+    async def fail_read(*args, **kwargs):
+        await session.execute(text("SELECT 1 / 0"))
+
+    with patch.object(connection_service, "get_connection", side_effect=fail_read):
+        with pytest.raises(DBAPIError) as failure:
+            await connection_service._get_connection_for_mutation(
+                session, uuid.uuid4(), test_workspace.id,
+            )
+    assert getattr(failure.value.orig, "sqlstate", None) == "22012"

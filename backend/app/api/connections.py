@@ -117,6 +117,11 @@ async def oauth_callback(
             reconnect_connection_id=data.reconnect_connection_id,
         )
         return connection
+    except connection_service.ConnectionSyncInProgressError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "sync_in_progress", "message": str(e)},
+        )
     except ProviderUserActionRequired as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -265,7 +270,13 @@ async def delete_connection(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    deleted = await connection_service.delete_connection(session, connection_id, ctx.workspace.id)
+    try:
+        deleted = await connection_service.delete_connection(session, connection_id, ctx.workspace.id)
+    except connection_service.ConnectionSyncInProgressError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "sync_in_progress", "message": str(e)},
+        )
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
 

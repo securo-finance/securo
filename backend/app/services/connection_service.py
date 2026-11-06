@@ -7,8 +7,8 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Literal, Optional
 
-from sqlalchemy import delete, exists, func, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, exists, func, or_, select, text, update
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction
 from sqlalchemy.orm import selectinload
 
@@ -1174,6 +1174,43 @@ async def get_connection(
     return result.scalar_one_or_none()
 
 
+class ConnectionSyncInProgressError(RuntimeError):
+    """A connection mutation could not acquire the running sync's row lock."""
+
+    def __init__(self) -> None:
+        super().__init__("Connection sync in progress. Please try again shortly.")
+
+
+async def _get_connection_for_mutation(
+    session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID,
+) -> Optional[BankConnection]:
+    """Bound reconnect/delete lock waits without changing queued sync behavior.
+
+    SET LOCAL is transaction-scoped, so pooled connections cannot retain the
+    timeout. Restore the previous value after acquisition too: later import or
+    cleanup queries must not inherit this short user-facing lock budget.
+    """
+    if session.get_bind().dialect.name != "postgresql":
+        return await get_connection(session, connection_id, workspace_id, for_update=True)
+
+    previous_timeout = await session.scalar(text("SHOW lock_timeout"))
+    await session.execute(text("SET LOCAL lock_timeout = '1s'"))
+    try:
+        connection = await get_connection(session, connection_id, workspace_id, for_update=True)
+    except DBAPIError as exc:
+        if getattr(exc.orig, "sqlstate", None) != "55P03":
+            raise
+        # A lock timeout aborts PostgreSQL's transaction. No provider calls or
+        # mutation writes have happened yet, and rollback also resets SET LOCAL.
+        await session.rollback()
+        raise ConnectionSyncInProgressError() from exc
+    await session.execute(
+        text("SELECT set_config('lock_timeout', :timeout, true)"),
+        {"timeout": previous_timeout},
+    )
+    return connection
+
+
 async def get_oauth_url(
     provider_name: str,
     user_id: uuid.UUID,
@@ -1305,11 +1342,8 @@ async def handle_oauth_callback(
     reconnect_id = state_payload.get("reconnect_connection_id") or reconnect_connection_id
     existing_reconnect: BankConnection | None = None
     if reconnect_id:
-        existing_reconnect = await get_connection(
-            session,
-            uuid.UUID(str(reconnect_id)),
-            workspace_id,
-            for_update=True,
+        existing_reconnect = await _get_connection_for_mutation(
+            session, uuid.UUID(str(reconnect_id)), workspace_id,
         )
         if not existing_reconnect:
             raise ValueError("Reconnect target connection not found")
@@ -1529,6 +1563,7 @@ async def handle_oauth_callback(
                 user_id,
                 transaction,
                 _bank_converted_amount(txn_data, acct_currency, user_currency),
+                commit_fetched_rates=False,
             )
 
         # After importing the initial batch, reconcile the opening balance so
@@ -3075,9 +3110,7 @@ async def sync_connection(
 async def delete_connection(
     session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> bool:
-    connection = await get_connection(
-        session, connection_id, workspace_id, for_update=True
-    )
+    connection = await _get_connection_for_mutation(session, connection_id, workspace_id)
     if not connection:
         return False
 

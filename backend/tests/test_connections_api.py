@@ -484,3 +484,34 @@ async def test_update_settings_success(
     )
     assert resp.status_code == 200
     assert resp.json()["settings"]["payee_source"] == "merchant"
+
+
+@pytest.mark.parametrize("operation", ["reconnect", "delete"])
+async def test_connection_mutation_reports_sync_in_progress(
+    client: AsyncClient, auth_headers, test_connection, operation,
+):
+    from app.services.connection_service import ConnectionSyncInProgressError
+
+    service = "handle_oauth_callback" if operation == "reconnect" else "delete_connection"
+    with patch(
+        f"app.services.connection_service.{service}",
+        side_effect=ConnectionSyncInProgressError(),
+    ):
+        if operation == "reconnect":
+            response = await client.post(
+                "/api/connections/oauth/callback",
+                json={
+                    "code": "test-token", "provider": "simplefin",
+                    "reconnect_connection_id": str(test_connection.id),
+                },
+                headers=auth_headers,
+            )
+        else:
+            response = await client.delete(
+                f"/api/connections/{test_connection.id}", headers=auth_headers,
+            )
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "sync_in_progress",
+        "message": "Connection sync in progress. Please try again shortly.",
+    }
