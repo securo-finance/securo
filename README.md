@@ -63,7 +63,7 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 
 Everything beyond the core is off by default, needs a single env flag, and costs nothing until you turn it on. Full setup guides live in the [documentation](https://docs.usesecuro.com/):
 
-- **Bank sync**: Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, and SimpleFIN for US and international banks. [Setup guides](https://docs.usesecuro.com/features/bank-sync/)
+- **Bank sync**: Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, and SimpleFIN for US and international banks, and Akahu for New Zealand banks. [Setup guides](https://docs.usesecuro.com/features/bank-sync/)
 - **Login & security**: passkeys (Touch ID, Face ID, security keys), TOTP two-factor, and OIDC single sign-on with account linking and provider role sync. [Guide](https://docs.usesecuro.com/features/security/)
 - **Exchange rates**: a free [Open Exchange Rates](https://openexchangerates.org/) key enables automatic currency conversion; without one, cross-currency amounts fall back to 1:1 with a visual warning. [Details](https://docs.usesecuro.com/deployment/docker/)
 - **Timezone**: balances, budgets, and due dates turn over at midnight in your application timezone, set once in Admin Settings, with per-workspace overrides. [Details](https://docs.usesecuro.com/features/workspaces/)
@@ -71,7 +71,7 @@ Everything beyond the core is off by default, needs a single env flag, and costs
 
 ### Akahu: New Zealand banks
 
-[Akahu](https://www.akahu.nz/) is New Zealand's open finance platform. Each user creates a free [Personal App](https://developers.akahu.nz/docs/personal-apps) at [my.akahu.nz](https://my.akahu.nz/developers), links their banks, and receives an App ID Token and User Token.
+Create a free [Akahu Personal App](https://developers.akahu.nz/docs/personal-apps) at [my.akahu.nz](https://my.akahu.nz/developers) and connect your New Zealand bank accounts. Copy the App ID Token and User Token from the developer page.
 
 Enable the provider:
 
