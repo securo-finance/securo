@@ -7169,3 +7169,29 @@ async def test_sync_simplefin_negative_position_stays_in_the_cash_residual(
     assert balances["brk-1"] == Decimal("383.60")
     dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
     assert dp.value == pytest.approx(957.20 + 889.92)
+
+
+@pytest.mark.asyncio
+async def test_sync_simplefin_lowercase_account_currency_counts_portfolio_once(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A broker that sends its account currency as ``"usd"`` and leaves the
+    positions without one: the positions take the stored account currency,
+    so they are still deducted and the portfolio is counted once."""
+    from datetime import date
+
+    from app.services.report_service import _net_worth_at
+
+    payload = _simplefin_brokerage_payload()
+    brokerage = payload["accounts"][0]
+    brokerage["currency"] = "usd"
+    for holding in brokerage["holdings"]:
+        del holding["currency"]
+    conn = await _make_connection(session, test_user.id, "SimpleFIN Loose Currency")
+    balances = await _sync_simplefin_payload(session, test_user, test_workspace, conn, payload)
+
+    assert balances["brk-1"] == Decimal("483.60")
+    assets = (await session.execute(select(Asset).where(Asset.connection_id == conn.id))).scalars().all()
+    assert {a.currency for a in assets} == {"USD"}
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
+    assert dp.value == pytest.approx(1057.20 + 889.92)

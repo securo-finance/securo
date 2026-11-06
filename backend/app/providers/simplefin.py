@@ -141,6 +141,20 @@ def _iso_currency(value: Any, fallback: Optional[str]) -> Optional[str]:
     return fallback
 
 
+def _account_currency(raw_acc: dict) -> str:
+    """The currency an account is stored in, as ``_parse_accounts`` stores it.
+
+    Every read of an account's currency goes through here. ``get_holdings``
+    used to fall back to the raw value, so a loosely formatted account
+    currency (``"usd"``, or a custom-currency URL, which the SimpleFIN spec
+    allows) gave a holding without its own currency a different label from
+    its account. The sync matches the two exactly before deducting the
+    holding from the balance, so the portfolio was counted twice again
+    (issue #343); a URL would also overflow ``assets.currency``.
+    """
+    return _iso_currency(raw_acc.get("currency"), "USD") or "USD"
+
+
 def _ticker(value: Any) -> Optional[str]:
     """Normalize a holding's symbol for the ``assets.ticker`` column.
 
@@ -202,7 +216,7 @@ def _positions_value(raw_acc: dict) -> Decimal:
     the negative cash residual is what the reports count as the liability,
     so net worth still equals the balance the broker reported.
     """
-    acc_currency = _iso_currency(raw_acc.get("currency"), "USD") or "USD"
+    acc_currency = _account_currency(raw_acc)
     total = Decimal("0")
     for raw in raw_acc.get("holdings") or []:
         if not isinstance(raw, dict):
@@ -468,7 +482,7 @@ class SimpleFinProvider(BankProvider):
         accounts: list[AccountData] = []
         for raw in payload.get("accounts") or []:
             balance = _to_decimal(raw.get("balance")) or Decimal("0")
-            currency = _iso_currency(raw.get("currency"), "USD") or "USD"
+            currency = _account_currency(raw)
             account_id = str(raw.get("id") or "")
             if not account_id:
                 continue
@@ -669,7 +683,7 @@ class SimpleFinProvider(BankProvider):
         self.action_required_warnings.extend(warnings)
         holdings: list[HoldingData] = []
         for raw_acc in payload.get("accounts") or []:
-            acc_currency = raw_acc.get("currency") or "USD"
+            acc_currency = _account_currency(raw_acc)
             acc_id = str(raw_acc.get("id") or "") or None
             acc_name = raw_acc.get("name")
             for raw in raw_acc.get("holdings") or []:

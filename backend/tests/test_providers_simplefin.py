@@ -692,6 +692,47 @@ async def test_get_holdings_crypto_ticker_currency_falls_back_to_account_currenc
     assert holdings[0].ticker == "DOGE"
 
 
+@pytest.mark.parametrize(
+    ("account_currency", "expected"),
+    [("usd", "USD"), ("https://www.example.com/flight-miles.json", "USD"), (None, "USD")],
+)
+@pytest.mark.asyncio
+async def test_get_holdings_without_a_currency_takes_the_stored_account_currency(
+    account_currency, expected
+):
+    """A holding without its own currency takes its account's, as the
+    account is stored. The sync matches the two exactly before deducting the
+    holding from the balance, so a raw ``"usd"`` here counted the portfolio
+    twice (issue #343), and a custom-currency URL would overflow
+    ``assets.currency``."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": "acc-1",
+                        "currency": account_currency,
+                        "balance": "500.00",
+                        "holdings": [
+                            {"id": "h-1", "symbol": "IVV", "market_value": "300.00"},
+                        ],
+                    }
+                ]
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        provider = SimpleFinProvider()
+        accounts = await provider.get_accounts(creds)
+        holdings = await provider.get_holdings(creds)
+    assert accounts[0].currency == expected
+    assert holdings[0].currency == expected
+    assert accounts[0].auto_invested_balance == Decimal("300.00")
+
+
 @pytest.mark.asyncio
 async def test_get_accounts_non_iso_currency_falls_back_to_usd():
     """The same connector quirk on an *account* would overflow accounts.currency.
