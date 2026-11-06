@@ -54,7 +54,7 @@ from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.transfer_detection_service import detect_transfer_pairs
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import FetchedRateCache, stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
@@ -1087,7 +1087,7 @@ async def _stamp_synced_primary_amount(
     transaction: Transaction,
     converted: Optional[Decimal],
     *,
-    commit_fetched_rates: bool = True,
+    fetched_rates: FetchedRateCache,
 ) -> None:
     """Prefer the bank's conversion (see _bank_converted_amount); else use our FX rates.
 
@@ -1097,12 +1097,10 @@ async def _stamp_synced_primary_amount(
         transaction.amount_primary = converted
         transaction.fx_rate_used = converted / transaction.amount
     else:
-        if commit_fetched_rates:
-            await stamp_primary_amount(session, user_id, transaction)
-        else:
-            await stamp_primary_amount(
-                session, user_id, transaction, commit_fetched_rates=False,
-            )
+        await stamp_primary_amount(
+            session, user_id, transaction,
+            persist_fetched_rates=False, fetched_rates=fetched_rates,
+        )
 
 
 async def _find_installment_category(
@@ -1417,6 +1415,7 @@ async def handle_oauth_callback(
     user = await session.get(User, user_id)
     user_currency = user.primary_currency if user else get_settings().default_currency
     new_tx_ids: list[uuid.UUID] = []
+    fetched_rates: FetchedRateCache = {}
 
     use_provider_cats = await admin_service.use_provider_categories(session)
 
@@ -1597,7 +1596,7 @@ async def handle_oauth_callback(
                 user_id,
                 transaction,
                 _bank_converted_amount(txn_data, acct_currency, user_currency),
-                commit_fetched_rates=False,
+                fetched_rates=fetched_rates,
             )
 
         # After importing the initial batch, reconcile the opening balance so
@@ -2537,6 +2536,7 @@ async def sync_connection(
         user = await session.get(User, user_id)
         user_currency = user.primary_currency if user else get_settings().default_currency
         new_tx_ids: list[uuid.UUID] = []
+        fetched_rates: FetchedRateCache = {}
         merged_count = 0
         live_txn_external_ids: dict[uuid.UUID, set[str]] = {}
         incomplete_fetch_account_ids: set[uuid.UUID] = set()
@@ -2949,7 +2949,7 @@ async def sync_connection(
                         placeholder.amount = txn_data.amount
                         await _stamp_synced_primary_amount(
                             session, user_id, placeholder, converted,
-                            commit_fetched_rates=False,
+                            fetched_rates=fetched_rates,
                         )
                         # A split placeholder keeps its split, resized.
                         await category_line_service.rescale_lines(
@@ -3006,7 +3006,7 @@ async def sync_connection(
 
                 await _stamp_synced_primary_amount(
                     session, user_id, transaction, converted,
-                    commit_fetched_rates=False,
+                    fetched_rates=fetched_rates,
                 )
 
             # Reconcile the opening balance after any new transactions land so

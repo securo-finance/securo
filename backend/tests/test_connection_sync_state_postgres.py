@@ -411,8 +411,8 @@ async def test_oauth_fx_import_rolls_back_on_later_database_error(
     )]
 
     async def fail_after_conversion(import_session, account):
-        # Exercise real FX writes before an actual database failure, not a mock
-        # of the stamping helper. Nothing may be visible to another session.
+        # Exercise real FX conversion before an actual database failure, not
+        # a mock of the stamping helper. Imports must not persist cache rows.
         async with postgres_sessions() as observer:
             assert await observer.scalar(select(func.count()).select_from(BankConnection)) == 0
             assert await observer.scalar(select(func.count()).select_from(FxRate)) == 0
@@ -583,3 +583,140 @@ async def test_bounded_connection_lock_does_not_mask_other_database_errors(
                 session, uuid.uuid4(), test_workspace.id,
             )
     assert getattr(failure.value.orig, "sqlstate", None) == "22012"
+
+
+@pytest.mark.parametrize("operation", ["sync", "oauth"])
+async def test_parallel_imports_with_opposite_fx_dates_both_complete(
+    session, postgres_sessions, test_user, test_workspace, operation,
+):
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    await session.commit()
+    user_id, workspace_id = test_user.id, test_workspace.id
+    connection_ids = []
+    if operation == "sync":
+        for token in ("first", "second"):
+            connection = await _connection(session, test_user, test_workspace)
+            connection.credentials = {"token": token}
+            await session.commit()
+            connection_ids.append(connection.id)
+    dates = [date(2025, 6, 15), date(2025, 6, 16)]
+    provider = _provider()
+    provider.refresh_credentials.side_effect = lambda credentials: credentials
+
+    def accounts(credentials):
+        return [AccountData(
+            external_id=credentials["token"], name="Euro account", type="checking",
+            balance=Decimal("100"), currency="EUR",
+        )]
+
+    provider.get_accounts.side_effect = accounts
+    provider.handle_oauth_callback.side_effect = lambda code: ConnectionData(
+        external_id=code, institution_name="Test Bank", credentials={"token": code},
+        accounts=accounts({"token": code}),
+    )
+
+    def transactions(credentials, account_id, since, **kwargs):
+        ordered = dates if credentials["token"] == "first" else list(reversed(dates))
+        return [TransactionData(
+            external_id=f"{account_id}-{target}", description="FX purchase",
+            amount=Decimal("12"), currency="EUR", date=target, type="debit",
+        ) for target in ordered]
+
+    provider.get_transactions.side_effect = transactions
+    first_stamps = set()
+    both_started = asyncio.Event()
+    stamp = connection_service._stamp_synced_primary_amount
+
+    async def pause_after_first(import_session, owner, transaction, *args, **kwargs):
+        await stamp(import_session, owner, transaction, *args, **kwargs)
+        if transaction.account_id not in first_stamps:
+            first_stamps.add(transaction.account_id)
+            if len(first_stamps) == 2:
+                both_started.set()
+            await asyncio.wait_for(both_started.wait(), timeout=5)
+
+    async with postgres_sessions() as first, postgres_sessions() as second:
+        with patch.object(connection_service, "get_provider", return_value=provider), patch.object(
+            connection_service, "_stamp_synced_primary_amount", side_effect=pause_after_first,
+        ), patch.object(
+            fx_rate_service._provider, "fetch_historical",
+            new=AsyncMock(side_effect=[
+                {"EUR": Decimal("2"), "BRL": Decimal("5")},
+                {"BRL": Decimal("5"), "EUR": Decimal("2")},
+                {"EUR": Decimal("2"), "BRL": Decimal("5")},
+                {"BRL": Decimal("5"), "EUR": Decimal("2")},
+            ]),
+        ) as fetch_rates:
+            if operation == "sync":
+                imports = [connection_service.sync_connection(
+                    import_session, connection_id, workspace_id, user_id,
+                ) for import_session, connection_id in zip((first, second), connection_ids)]
+            else:
+                imports = [connection_service.handle_oauth_callback(
+                    import_session, workspace_id, user_id, token,
+                    provider_name="test", sync_assets=False,
+                ) for import_session, token in zip((first, second), ("first", "second"))]
+            results = await asyncio.wait_for(
+                asyncio.gather(*imports, return_exceptions=True), timeout=10,
+            )
+            assert fetch_rates.await_count == 4
+    assert not [result for result in results if isinstance(result, BaseException)], results
+    async with postgres_sessions() as observer:
+        transactions = (await observer.scalars(select(Transaction).where(
+            Transaction.source == "sync",
+        ))).all()
+        assert len(transactions) == 4
+        assert all(tx.amount_primary == Decimal("6") for tx in transactions)
+        assert all(tx.fx_rate_used == Decimal("0.5") for tx in transactions)
+        assert await observer.scalar(select(func.count()).select_from(FxRate)) == 0
+
+
+async def test_fx_refresh_does_not_wait_for_import_and_import_reuses_fetched_date(
+    session, postgres_sessions, test_user, test_workspace,
+):
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    await session.commit()
+    connection = await _connection(session, test_user, test_workspace)
+    connection_id, user_id, workspace_id = connection.id, test_user.id, test_workspace.id
+    target = date(2025, 6, 15)
+    provider = _provider()
+    provider.get_accounts.return_value = [AccountData(
+        external_id="fx-account", name="Euro account", type="checking",
+        balance=Decimal("100"), currency="EUR",
+    )]
+    provider.get_transactions.return_value = [TransactionData(
+        external_id=f"fx-{index}", description="FX purchase", amount=Decimal("12"),
+        currency="EUR", date=target, type="debit",
+    ) for index in range(2)]
+    imported, release = asyncio.Event(), asyncio.Event()
+    reconcile = connection_service.sync_opening_balance_for_connected_account
+
+    async def pause_import(*args):
+        imported.set()
+        await release.wait()
+        await reconcile(*args)
+
+    async with postgres_sessions() as importing, postgres_sessions() as refreshing:
+        with patch.object(connection_service, "get_provider", return_value=provider), patch.object(
+            connection_service, "sync_opening_balance_for_connected_account", side_effect=pause_import,
+        ), patch.object(
+            fx_rate_service._provider, "fetch_historical",
+            new=AsyncMock(return_value={"EUR": Decimal("2")}),
+        ) as fetch:
+            task = asyncio.create_task(connection_service.sync_connection(
+                importing, connection_id, workspace_id, user_id,
+            ))
+            await asyncio.wait_for(imported.wait(), timeout=5)
+            try:
+                fetch.assert_awaited_once_with(target)
+                # The cache writer must be independent of the long bank import.
+                assert await asyncio.wait_for(
+                    fx_rate_service.sync_rates(refreshing, target), timeout=1,
+                ) == 1
+                assert not task.done()
+            finally:
+                release.set()
+                await asyncio.wait_for(task, timeout=5)
+    async with postgres_sessions() as observer:
+        rate = await observer.scalar(select(FxRate).where(FxRate.date == target))
+        assert rate is not None and rate.rate == Decimal("2")
