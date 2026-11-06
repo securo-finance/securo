@@ -9,6 +9,7 @@ from app.models.account import Account
 from app.models.group import Group, GroupMember
 from app.models.group_settlement import GroupSettlement
 from app.models.transaction import Transaction
+from app.models.transaction_split import TransactionSplit
 from app.schemas.group_settlement import (
     GroupSettlementCreate,
     GroupSettlementUpdate,
@@ -415,18 +416,33 @@ async def delete_settlement(
     # behind, they keep moving the account balance for a payment the group
     # no longer records. Only rows in the current workspace are removed,
     # as delete_transaction does. A linked existing transaction, a row
-    # another settlement also points at, and a transfer leg are left alone.
+    # another settlement also points at, a transfer leg and a row that
+    # carries group splits (user-entered allocations) are left alone.
     created: list[Transaction] = []
     for tx_id in (settlement.transaction_id, settlement.receiver_transaction_id):
         if tx_id is None or any(tx.id == tx_id for tx in created):
             continue
-        tx = await session.get(Transaction, tx_id)
+        # Lock the row so a concurrent transfer pairing either lands
+        # before this check (and is seen) or waits for the delete.
+        tx = (
+            await session.execute(
+                select(Transaction)
+                .where(Transaction.id == tx_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
         if (
             tx is None
             or tx.source != "settlement"
             or tx.workspace_id != workspace_id
             or tx.transfer_pair_id is not None
         ):
+            continue
+        has_splits = await session.execute(
+            select(TransactionSplit.id).where(TransactionSplit.transaction_id == tx_id).limit(1)
+        )
+        if has_splits.first() is not None:
             continue
         other = await session.execute(
             select(GroupSettlement.id).where(

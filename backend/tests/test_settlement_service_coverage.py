@@ -670,3 +670,41 @@ async def test_update_settlement_permission_denied(session: AsyncSession, test_u
         await settlement_service.delete_settlement(
             session, group.id, s.id, intruder_ws.id, intruder.id
         )
+
+
+@pytest.mark.asyncio
+async def test_delete_settlement_keeps_a_debit_that_carries_splits(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Group splits on the debit are the user's allocations, so the row stays."""
+    from sqlalchemy import select
+
+    from app.models.transaction_split import TransactionSplit
+
+    group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    s = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id, to_member_id=b.id,
+            amount=Decimal("30.00"), currency="USD", date=date.today(),
+            account_id=account.id,
+        ),
+    )
+    assert s is not None and s.transaction_id is not None
+    debit_id = s.transaction_id
+    session.add(TransactionSplit(
+        transaction_id=debit_id, workspace_id=test_workspace.id,
+        group_member_id=b.id, share_amount=Decimal("30.00"),
+    ))
+    await session.commit()
+
+    assert await settlement_service.delete_settlement(
+        session, group.id, s.id, test_workspace.id, test_user.id
+    ) is True
+
+    assert await session.get(Transaction, debit_id) is not None
+    splits = await session.execute(
+        select(TransactionSplit).where(TransactionSplit.transaction_id == debit_id)
+    )
+    assert len(splits.scalars().all()) == 1
