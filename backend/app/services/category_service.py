@@ -14,6 +14,7 @@ from app.models.category_group import CategoryGroup
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.services.category_defaults import (
@@ -300,6 +301,16 @@ async def get_category_usage(
         )
     )
     counts["transactions"] += int(split_count or 0)
+    # Likewise a recurring bill split across categories.
+    split_recurring = await session.scalar(
+        select(
+            func.count(func.distinct(RecurringTransactionCategoryLine.recurring_transaction_id))
+        ).where(
+            RecurringTransactionCategoryLine.workspace_id == workspace_id,
+            RecurringTransactionCategoryLine.category_id == category_id,
+        )
+    )
+    counts["recurring_transactions"] += int(split_recurring or 0)
 
     rules = await get_rules_assigning_category(
         session, workspace_id, category_id, include_inactive=True
@@ -310,15 +321,16 @@ async def get_category_usage(
 async def _used_in_category_lines(
     session: AsyncSession, workspace_id: uuid.UUID, category_id: uuid.UUID
 ) -> bool:
-    found = await session.scalar(
-        select(TransactionCategoryLine.id)
-        .where(
-            TransactionCategoryLine.workspace_id == workspace_id,
-            TransactionCategoryLine.category_id == category_id,
+    """A part of a split transaction or of a split recurring bill uses it."""
+    for model in (TransactionCategoryLine, RecurringTransactionCategoryLine):
+        found = await session.scalar(
+            select(model.id)
+            .where(model.workspace_id == workspace_id, model.category_id == category_id)
+            .limit(1)
         )
-        .limit(1)
-    )
-    return found is not None
+        if found is not None:
+            return True
+    return False
 
 
 _Limit = tuple[Decimal, Decimal | None]
@@ -451,14 +463,15 @@ async def _transfer_category_references(
             )
             .values(category_id=destination_id)
         )
-    await session.execute(
-        sa_update(TransactionCategoryLine)
-        .where(
-            TransactionCategoryLine.workspace_id == workspace_id,
-            TransactionCategoryLine.category_id == category_id,
+    for line_model in (TransactionCategoryLine, RecurringTransactionCategoryLine):
+        await session.execute(
+            sa_update(line_model)
+            .where(
+                line_model.workspace_id == workspace_id,
+                line_model.category_id == category_id,
+            )
+            .values(category_id=destination_id)
         )
-        .values(category_id=destination_id)
-    )
     await _merge_budgets(session, workspace_id, category_id, destination_id)
     await _repoint_rules(session, workspace_id, category_id, destination_id)
 

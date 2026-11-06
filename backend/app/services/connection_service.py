@@ -1103,6 +1103,15 @@ async def _find_installment_category(
     account_id: uuid.UUID,
     txn_data,
 ) -> Optional[uuid.UUID]:
+    source = await _find_installment_source(session, account_id, txn_data)
+    return source.category_id if source is not None else None
+
+
+async def _find_installment_source(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    txn_data,
+) -> Optional[Transaction]:
     """Reuse the latest user-selected category from an earlier installment.
 
     Pluggy gives every parcel the original purchase date, installment count,
@@ -1112,7 +1121,8 @@ async def _find_installment_category(
 
     Only earlier synced parcels qualify. This keeps manual installment series
     separate and lets a user's most recent category correction become the
-    source of truth for the next imported parcel.
+    source of truth for the next imported parcel. A split parcel hands on its
+    parts (see `_find_installment_source`).
     """
     if (
         txn_data.installment_number is None
@@ -1123,12 +1133,12 @@ async def _find_installment_category(
         return None
 
     result = await session.execute(
-        select(Transaction.category_id)
+        select(Transaction)
         .where(
             Transaction.account_id == account_id,
             Transaction.source == "sync",
-            # A split parcel counts as the latest choice too, and hands on no
-            # single category, rather than letting an older parcel's win.
+            # A split parcel counts as the latest choice too, and hands on its
+            # parts rather than letting an older parcel's category win.
             or_(
                 Transaction.category_id.is_not(None),
                 Transaction.has_category_lines.is_(True),
@@ -1459,9 +1469,17 @@ async def handle_oauth_callback(
                     )
                 continue
 
-            category_id = await _find_installment_category(
+            installment_source = await _find_installment_source(
                 session, account.id, txn_data
             )
+            category_id = installment_source.category_id if installment_source else None
+            # The previous parcel was split: this one starts with the same parts.
+            split_source = (
+                installment_source
+                if installment_source is not None and installment_source.has_category_lines
+                else None
+            )
+            recurring_link_for_split = None
             if category_id is None:
                 category_id = await _match_pluggy_category(
                     session,
@@ -1508,11 +1526,21 @@ async def handle_oauth_callback(
             apply_effective_date(
                 transaction, account, bill_due_date=bill.due_date if bill else None
             )
+            if split_source is not None:
+                category_line_service.copy_lines_to(transaction, split_source.category_lines)
             session.add(transaction)
             await session.flush()
             new_tx_ids.append(transaction.id)
-            await apply_rules_to_transaction(session, user_id, transaction)
-            if transaction.category_id is None:
+            await apply_rules_to_transaction(
+                session, user_id, transaction,
+                skip_category_rules=split_source is not None,
+            )
+            if recurring_link_for_split is not None:
+                # A split bill hands its parts to the charge it claims.
+                await category_line_service.apply_template_split(
+                    session, transaction, recurring_link_for_split
+                )
+            if transaction.category_id is None and not transaction.has_category_lines:
                 transaction.category_id = category_id
 
             acct_currency = acc_data.currency or user_currency
@@ -2710,9 +2738,17 @@ async def sync_connection(
                 converted = _bank_converted_amount(
                     txn_data, acct_currency, user_currency
                 )
-                category_id = await _find_installment_category(
+                installment_source = await _find_installment_source(
                     session, account.id, txn_data
                 )
+                category_id = installment_source.category_id if installment_source else None
+                # The previous parcel was split: this one starts with the same parts.
+                split_source = (
+                    installment_source
+                    if installment_source is not None and installment_source.has_category_lines
+                    else None
+                )
+                recurring_link_for_split = None
                 if category_id is None:
                     category_id = await _match_pluggy_category(
                         session,
@@ -2764,6 +2800,8 @@ async def sync_connection(
                     account,
                     bill_due_date=bill.due_date if bill else None,
                 )
+                if split_source is not None:
+                    category_line_service.copy_lines_to(transaction, split_source.category_lines)
                 preview = await preview_rules_for_transaction(
                     session, user_id, transaction
                 )
@@ -2840,6 +2878,7 @@ async def sync_connection(
                 transaction.recurring_transaction_id = (
                     recurring_link.id if recurring_link else None
                 )
+                recurring_link_for_split = recurring_link
                 session.add(transaction)
                 await session.flush()
                 if recurring_link is not None:
@@ -2847,8 +2886,16 @@ async def sync_connection(
                         recurring_link, txn_data.date
                     )
                 new_tx_ids.append(transaction.id)
-                await apply_rules_to_transaction(session, user_id, transaction)
-                if transaction.category_id is None:
+                await apply_rules_to_transaction(
+                    session, user_id, transaction,
+                    skip_category_rules=split_source is not None,
+                )
+                if recurring_link_for_split is not None:
+                    # A split bill hands its parts to the charge it claims.
+                    await category_line_service.apply_template_split(
+                        session, transaction, recurring_link_for_split
+                    )
+                if transaction.category_id is None and not transaction.has_category_lines:
                     transaction.category_id = category_id
 
                 await _stamp_synced_primary_amount(

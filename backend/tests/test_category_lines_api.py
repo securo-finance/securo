@@ -513,7 +513,8 @@ async def test_an_ignored_transaction_cannot_be_split(client, auth_headers, cats
 
 
 @pytest.mark.asyncio
-async def test_installment_series_cannot_be_split_yet(client, auth_headers, cats):
+async def test_an_installment_series_is_split_installment_by_installment(client, auth_headers, cats):
+    """Each installment carries the same parts (they all have the base amount)."""
     food, transport, _ = cats
     account = await _account(client, auth_headers)
     resp = await client.post(
@@ -528,7 +529,13 @@ async def test_installment_series_cannot_be_split_yet(client, auth_headers, cats
             },
         },
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 201, resp.text
+    created = resp.json()
+    assert len(created) == 3
+    for row in created:
+        assert row["has_category_lines"] is True
+        assert row["category_id"] is None
+        assert _lines(row) == [(str(food.id), Decimal("100")), (str(transport.id), Decimal("50"))]
 
 
 # --- Automations never overwrite a split -----------------------------------

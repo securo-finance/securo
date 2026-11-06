@@ -14,7 +14,7 @@ from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
-from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, DailyBaseline, BalanceHistory
+from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedCategoryLine, ProjectedTransaction, DailyBalance, DailyBaseline, BalanceHistory
 from app.services._query_filters import (
     counts_as_user_pnl,
     line_amount,
@@ -149,17 +149,31 @@ async def _get_recurring_projections(
             intended_day=rec.day_of_month or rec.start_date.day,
             weekend_adjustment=rec.weekend_adjustment,
         )
+        # A split template projects one row per part, in its own category,
+        # so totals by category read the parts; every other total adds the
+        # parts back up to the template amount.
+        parts = (
+            [
+                (line.category_id, float(line.amount))
+                for line in rec.category_lines
+                if not (line.category and line.category.is_ignored)
+                and (include_transfer_like or not (line.category and line.category.treat_as_transfer))
+            ]
+            if rec.has_category_lines and rec.category_lines
+            else [(rec.category_id, float(rec.amount))]
+        )
         for occ_date in occurrences:
             if (rec.id, occ_date) in materialized_occurrences:
                 continue
-            projections.append({
-                "account_id": rec.account_id,
-                "category_id": rec.category_id,
-                "amount": float(rec.amount),
-                "type": rec.type,
-                "currency": rec.currency,
-                "date": occ_date,
-            })
+            for part_category_id, part_amount in parts:
+                projections.append({
+                    "account_id": rec.account_id,
+                    "category_id": part_category_id,
+                    "amount": part_amount,
+                    "type": rec.type,
+                    "currency": rec.currency,
+                    "date": occ_date,
+                })
     return projections
 
 
@@ -1237,6 +1251,21 @@ async def get_projected_transactions(
                 category_icon=cat_icon,
                 category_color=cat_color,
                 category_treat_as_transfer=cat_is_transfer,
+                has_category_lines=bool(rec.has_category_lines),
+                category_lines=[
+                    ProjectedCategoryLine(
+                        category_id=str(line.category_id),
+                        category_name=line.category.name if line.category else None,
+                        category_icon=line.category.icon if line.category else None,
+                        category_color=line.category.color if line.category else None,
+                        amount=float(line.amount),
+                        treat_as_transfer=bool(line.category and line.category.treat_as_transfer),
+                    )
+                    for line in (rec.category_lines if rec.has_category_lines else [])
+                    # An ignored part never counts anywhere, so it is not
+                    # offered to category views either.
+                    if not (line.category and line.category.is_ignored)
+                ],
             ))
 
     return projections

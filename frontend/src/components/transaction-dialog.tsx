@@ -533,6 +533,10 @@ function TransactionForm({
     () => !!transaction?.has_category_lines && !!transaction.category_lines?.length,
   )
   const splitByCategory = lineRows !== null
+  // The parts as the dialog opened, to tell an edited split from a resend.
+  const initialLinesJson = useRef<string | null>(
+    lineRows ? JSON.stringify(buildLinesPayload(lineRows, lineShareType, displayLocale)) : null,
+  )
   const isCreating = !transaction
   const showConversion = currency !== userCurrency && !isSynced
   // Privacy mode hides monetary values across the app, but the edit modal
@@ -565,19 +569,17 @@ function TransactionForm({
   ).valid
   // The backend refuses these anyway; hiding the action keeps the user from
   // building a split that cannot be saved. A split among people and a split
-  // across categories are exclusive, and recurring or installment series
-  // cannot carry parts yet.
+  // across categories are exclusive.
   const canSplitByCategory =
     !splits &&
-    !isRecurring &&
-    !isInstallment &&
     !isIgnored &&
     !transaction?.transfer_pair_id &&
     !['settlement', 'opening_balance'].includes(seed?.source ?? '') &&
     !seed?.external_id?.startsWith('bill_charge:')
   const startCategorySplit = () => {
     // The chosen category becomes the first part. Shares start empty, so the
-    // editor shows the whole amount as left to allocate.
+    // editor shows the whole amount as left to allocate. A recurring entry or
+    // an installment series carries the same parts to every occurrence.
     const first = emptyRow()
     first.categoryId = categoryId
     setLineShareType('exact')
@@ -883,8 +885,18 @@ function TransactionForm({
         // Category parts follow the same rule as `splits`: absent keeps them,
         // a list replaces them, an empty list undoes the split. While split,
         // the row has no category of its own.
-        const categoryLinesPayload: Pick<TransactionEditPayload, 'category_lines' | 'category_id'> = lineRows
-          ? { category_lines: buildLinesPayload(lineRows, lineShareType, displayLocale), category_id: null }
+        // Parts are sent only when they changed (or the amount did): an edit
+        // to "this and future" installments would otherwise copy this row's
+        // split over siblings that have their own.
+        const builtLines = lineRows ? buildLinesPayload(lineRows, lineShareType, displayLocale) : null
+        const linesEdited =
+          !hadInitialLines ||
+          JSON.stringify(builtLines) !== initialLinesJson.current ||
+          (transaction != null && parsedAmount != null && Number(transaction.amount) !== parsedAmount)
+        const categoryLinesPayload: Pick<TransactionEditPayload, 'category_lines' | 'category_id'> = builtLines
+          ? linesEdited
+            ? { category_lines: builtLines, category_id: null }
+            : { category_id: null }
           : hadInitialLines
             ? { category_lines: { share_type: 'exact', lines: [] } }
             : {}
@@ -939,6 +951,7 @@ function TransactionForm({
               notes,
               fxFields,
               splits,
+              categoryLines: lineRows ? buildLinesPayload(lineRows, lineShareType, displayLocale) : null,
               installmentCount,
               installmentFrequency,
               status,
@@ -1453,7 +1466,6 @@ function TransactionForm({
               <input
                 type="checkbox"
                 checked={isRecurring}
-                disabled={splitByCategory}
                 onChange={(e) => {
                   setIsRecurring(e.target.checked)
                   if (e.target.checked) setIsInstallment(false)
@@ -1466,7 +1478,6 @@ function TransactionForm({
               <input
                 type="checkbox"
                 checked={isInstallment}
-                disabled={splitByCategory}
                 onChange={(e) => {
                   setIsInstallment(e.target.checked)
                   if (e.target.checked) setIsRecurring(false)

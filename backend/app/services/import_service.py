@@ -1330,7 +1330,11 @@ async def import_transactions(
                 # ignored the row): keep the transaction, uncategorized.
                 await session.refresh(incoming)
         elif incoming.category_id is None and not txn_data.force_uncategorized:
-            incoming.category_id = csv_category_id
+            if recurring_link is not None:
+                # A split bill hands its parts to the charge it claims.
+                await category_line_service.apply_template_split(session, incoming, recurring_link)
+            if incoming.category_id is None and not incoming.has_category_lines:
+                incoming.category_id = csv_category_id
 
         if not txn_data.fx_rate:
             await stamp_primary_amount(session, user_id, incoming)

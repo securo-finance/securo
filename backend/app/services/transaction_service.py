@@ -980,8 +980,10 @@ async def create_installment_series(
     """
     base = data.base
     n = data.installments
-    if base.category_lines and base.category_lines.lines:
-        raise ValueError("An installment series cannot be split across categories")
+    # Every installment carries the same split (each has the base amount).
+    splits_by_category = bool(base.category_lines and base.category_lines.lines)
+    if splits_by_category and base.category_id is not None:
+        raise ValueError("Choose either a category or a split across categories")
 
     # Verify account belongs to the workspace (mirrors create_transaction)
     account_result = await session.execute(
@@ -1047,7 +1049,10 @@ async def create_installment_series(
     # Rules, FX stamping and splits run after every row has an ID so each
     # parcel is finalized exactly like a single manual transaction.
     for tx in created:
-        if not base.category_id:
+        if splits_by_category:
+            await category_line_service.replace_lines(session, tx, base.category_lines)
+            await apply_rules_to_transaction(session, user_id, tx, skip_category_rules=True)
+        elif not base.category_id:
             await apply_rules_to_transaction(session, user_id, tx)
         if base.fx_rate_used is not None:
             _apply_fx_override(tx, tx.amount, None, base.fx_rate_used)
@@ -1902,10 +1907,16 @@ async def update_transaction(
         if moves_balance and await _has_mortgage_breakdown(session, workspace_id, row.id):
             raise ValueError("Remove the mortgage breakdown before changing this payment")
 
-    # Sibling installments only receive scoped columns, never lines, so a
+    # Without parts in the payload, siblings only receive scoped columns, so a
     # split sibling cannot take a new amount or a single category from them.
+    # With parts, every installment in the scope gets the same split.
     for row in rows:
-        if row.id != transaction.id and row.has_category_lines and scoped_update:
+        if (
+            lines_payload is None
+            and row.id != transaction.id
+            and row.has_category_lines
+            and scoped_update
+        ):
             if scoped_update.get("category_id") is not None or (
                 "amount" in scoped_update and scoped_update["amount"] != row.amount
             ):
@@ -1917,7 +1928,8 @@ async def update_transaction(
     # in the same request wins over the one the split hands back.
     unsplitting = lines_payload is not None and not lines_payload.lines
     if unsplitting:
-        await category_line_service.replace_lines(session, transaction, lines_payload)
+        for row in rows:
+            await category_line_service.replace_lines(session, row, lines_payload)
 
     for row in rows:
         # The edited transaction itself reflects the full form payload; the
@@ -1942,13 +1954,18 @@ async def update_transaction(
             row_splits,
         )
 
-    # Splitting happens after the column updates, against the final amount.
+    # Splitting happens after the column updates, against the final amount,
+    # on every installment the edit reaches.
     if lines_payload is not None and lines_payload.lines:
         await session.flush()
-        await category_line_service.replace_lines(session, transaction, lines_payload)
-    elif transaction.has_category_lines and ({"type", "account_id"} & update_data.keys()):
+        for row in rows:
+            await category_line_service.replace_lines(session, row, lines_payload)
+    elif {"type", "account_id"} & update_data.keys():
+        # Every split installment the edit reached, not only the one opened.
         await session.flush()
-        await category_line_service.validate_existing_lines(session, transaction)
+        for row in rows:
+            if row.has_category_lines:
+                await category_line_service.validate_existing_lines(session, row)
 
     # A changed parcel amount makes the stored series total stale, whatever
     # the scope was: "this" reprices one parcel, "future"/"all" reprice

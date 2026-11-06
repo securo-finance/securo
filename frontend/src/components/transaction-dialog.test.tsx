@@ -443,13 +443,26 @@ it('round-trips the parts of a split transaction when it is saved', async () => 
 
   await user.click(screen.getByRole('button', { name: t('common.save') }))
 
+  // Unchanged parts are not resent, so a scoped installment edit never
+  // copies them over siblings with their own split.
   const payload = onSave.mock.calls[0][0]
   expect(payload.category_id).toBeNull()
-  expect(payload.category_lines).toEqual({
+  expect(payload).not.toHaveProperty('category_lines')
+})
+
+it('sends the parts once they change', async () => {
+  const { user, onSave } = renderSplitDialog()
+  const [first, second] = screen.getAllByRole('textbox', { name: t('categoryLines.partAmount') })
+  await user.clear(first)
+  await user.type(first, '50')
+  await user.clear(second)
+  await user.type(second, '100')
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  expect(onSave.mock.calls[0][0].category_lines).toEqual({
     share_type: 'exact',
     lines: [
-      { category_id: 'cat-food', amount: 40 },
-      { category_id: 'cat-home', amount: 110 },
+      { category_id: 'cat-food', amount: 50 },
+      { category_id: 'cat-home', amount: 100 },
     ],
   })
 })
