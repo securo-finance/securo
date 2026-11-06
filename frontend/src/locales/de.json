@@ -1272,6 +1272,8 @@
     "syncDone": "Synchronisierung abgeschlossen",
     "syncRateLimited": "Tägliches Banklimit erreicht, es wurden keine neuen Daten geladen. Bitte später erneut versuchen.",
     "syncError": "Synchronisierung fehlgeschlagen",
+    "syncInProgress": "Die Verbindung wird gerade synchronisiert. Bitte versuche es in Kürze erneut.",
+    "syncRetryError": "Synchronisierung fehlgeschlagen. Bitte versuche es erneut.",
     "connected": "Bank erfolgreich verbunden",
     "connectError": "Verbindung zur Bank fehlgeschlagen",
     "disconnected": "Verbindung entfernt",

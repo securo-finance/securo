@@ -1,10 +1,10 @@
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { AxiosError, AxiosHeaders } from 'axios'
 import { Route, Routes } from 'react-router-dom'
 
 import OAuthCallbackPage from '@/pages/oauth-callback'
-import { renderWithProviders } from '@/test/utils'
+import { renderWithProviders, t, i18n } from '@/test/utils'
 
 const api = vi.hoisted(() => ({ handleCallback: vi.fn(), toastError: vi.fn() }))
 vi.mock('@/lib/api', () => ({ connections: { handleCallback: api.handleCallback } }))
@@ -15,7 +15,10 @@ beforeEach(() => {
   sessionStorage.clear()
 })
 
-it('shows the bounded sync conflict and returns to accounts to restart reconnect', async () => {
+afterEach(async () => { await i18n.changeLanguage('en') })
+
+it.each(['en', 'pt-BR'])('localizes the bounded sync conflict and returns to accounts to restart reconnect (%s)', async (language) => {
+  await i18n.changeLanguage(language)
   const message = 'Connection sync in progress. Please try again shortly.'
   const config = { headers: new AxiosHeaders() }
   api.handleCallback.mockRejectedValue(new AxiosError('conflict', undefined, config, undefined, {
@@ -30,7 +33,7 @@ it('shows the bounded sync conflict and returns to accounts to restart reconnect
     { route: '/oauth/callback?code=test-code&state=test-state' },
   )
 
-  await waitFor(() => expect(api.toastError).toHaveBeenCalledWith(message))
+  await waitFor(() => expect(api.toastError).toHaveBeenCalledWith(t('accounts.syncInProgress')))
   expect(await screen.findByText('Back to accounts')).toBeInTheDocument()
   expect(api.handleCallback).toHaveBeenCalledExactlyOnceWith('test-code', '', 'test-state')
   expect(sessionStorage.getItem('oauth-submitted:test-code:test-state')).toBeNull()

@@ -1275,6 +1275,8 @@
     "syncDone": "Sincronización completada",
     "syncRateLimited": "Límite diario del banco alcanzado, no se ha obtenido ningún dato nuevo. Inténtalo más tarde.",
     "syncError": "Error de sincronización",
+    "syncInProgress": "La conexión se está sincronizando. Inténtalo de nuevo en unos instantes.",
+    "syncRetryError": "La sincronización falló. Inténtalo de nuevo.",
     "connected": "Banco conectado con éxito",
     "connectError": "Error al conectar el banco",
     "disconnected": "Conexión eliminada",

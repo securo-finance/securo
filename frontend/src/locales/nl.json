@@ -1272,6 +1272,8 @@
     "syncDone": "Synchronisatie voltooid",
     "syncRateLimited": "Dagelijks banklimiet bereikt, er is geen nieuwe data opgehaald. Probeer het later opnieuw.",
     "syncError": "Synchronisatie mislukt",
+    "syncInProgress": "De verbinding wordt gesynchroniseerd. Probeer het over enkele ogenblikken opnieuw.",
+    "syncRetryError": "Synchronisatie mislukt. Probeer het opnieuw.",
     "connected": "Bank succesvol verbonden",
     "connectError": "Kan geen verbinding maken met de bank",
     "disconnected": "Verbinding verwijderd",

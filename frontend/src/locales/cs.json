@@ -1351,6 +1351,8 @@
     "syncDone": "Synchronizace dokončena",
     "syncRateLimited": "Dosáhnuto denního limitu banky, žádná nová data nebyla stažena. Zkuste to prosím později.",
     "syncError": "Synchronizace selhala",
+    "syncInProgress": "Probíhá synchronizace připojení. Zkuste to prosím za chvíli znovu.",
+    "syncRetryError": "Synchronizace selhala. Zkuste to prosím znovu.",
     "connected": "Banka úspěšně propojena",
     "connectError": "Banku se nepodařilo propojit",
     "disconnected": "Propojení odstraněno",

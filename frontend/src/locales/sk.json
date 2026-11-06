@@ -1335,6 +1335,8 @@
     "syncDone": "Synchronizácia dokončená",
     "syncRateLimited": "Dosiahnutý denný limit banky, žiadne nové údaje neboli stiahnuté. Skúste to prosím neskôr.",
     "syncError": "Synchronizácia zlyhala",
+    "syncInProgress": "Prebieha synchronizácia pripojenia. Skúste to o chvíľu znova.",
+    "syncRetryError": "Synchronizácia zlyhala. Skúste to znova.",
     "connected": "Banka úspešne prepojená",
     "connectError": "Nepodarilo sa prepojiť banku",
     "disconnected": "Prepojenie odstránené",

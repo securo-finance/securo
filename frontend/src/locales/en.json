@@ -1271,6 +1271,8 @@
     "syncDone": "Sync completed",
     "syncRateLimited": "Bank daily limit reached, no new data was fetched. Try again later.",
     "syncError": "Sync failed",
+    "syncInProgress": "Connection sync in progress. Please try again shortly.",
+    "syncRetryError": "Sync failed. Please try again.",
     "connected": "Bank connected successfully",
     "connectError": "Failed to connect bank",
     "disconnected": "Connection removed",

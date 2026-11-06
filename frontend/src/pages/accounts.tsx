@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
+import { extractApiError } from '@/lib/api-errors'
 import { accounts, assets, connections, currencies } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
@@ -158,11 +158,7 @@ export default function AccountsPage() {
     },
     onError: (err) => {
       queryClient.invalidateQueries({ queryKey: ['connections'] })
-      const detail = axios.isAxiosError(err)
-        ? err.response?.data?.detail
-        : null
-      const message = typeof detail === 'string' ? detail : detail?.message
-      toast.error(message || t('accounts.syncError'))
+      toast.error(extractApiError(err, t('accounts.syncError')) || t('accounts.syncError'))
     },
   })
 
@@ -178,9 +174,7 @@ export default function AccountsPage() {
       toast.success(t('accounts.disconnected'))
     },
     onError: (err) => {
-      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null
-      const message = typeof detail === 'string' ? detail : detail?.message
-      toast.error(message || t('common.error'))
+      toast.error(extractApiError(err, t('common.error')) || t('common.error'))
     },
   })
 

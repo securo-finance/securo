@@ -1321,6 +1321,8 @@
     "syncDone": "Synchronizacja zakończona",
     "syncRateLimited": "Osiągnięto dzienny limit banku, nie pobrano nowych danych. Spróbuj ponownie później.",
     "syncError": "Synchronizacja nie powiodła się",
+    "syncInProgress": "Trwa synchronizacja połączenia. Spróbuj ponownie za chwilę.",
+    "syncRetryError": "Synchronizacja nie powiodła się. Spróbuj ponownie.",
     "connected": "Pomyślnie połączono bank",
     "connectError": "Nie udało się połączyć banku",
     "disconnected": "Usunięto połączenie",
