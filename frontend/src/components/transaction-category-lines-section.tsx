@@ -147,14 +147,23 @@ export function TransactionCategoryLinesSection({
       </div>
 
       <div className="space-y-2">
-        {rows.map((row) => (
+        {rows.map((row) => {
+          // A category holds one part of a split; the ones other parts
+          // already use are left out of this part's picker.
+          const taken = new Set(
+            rows.filter((r) => r.key !== row.key && r.categoryId).map((r) => r.categoryId),
+          )
+          return (
           <div key={row.key} className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
               <CategorySelect
                 value={row.categoryId}
                 onChange={(value) => update(row.key, { categoryId: value })}
-                categories={usable}
-                groups={usableGroups}
+                categories={usable.filter((c) => !taken.has(c.id))}
+                groups={usableGroups.map((group) => ({
+                  ...group,
+                  categories: group.categories.filter((c) => !taken.has(c.id)),
+                }))}
                 currentCategory={row.category}
                 placeholder={t('categoryLines.pickCategory')}
                 className="bg-card"
@@ -193,7 +202,8 @@ export function TransactionCategoryLinesSection({
               <X size={14} />
             </button>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">

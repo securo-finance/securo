@@ -39,6 +39,7 @@ from app.services._query_filters import (
     counts_as_pnl,
     counts_as_user_pnl_row,
     is_not_ignored,
+    is_transfer,
     is_transfer_row,
     line_category_id,
     line_primary_or_amount,
@@ -521,6 +522,10 @@ async def get_transactions(
         ).where(Transaction.id.in_(select(base_query.subquery().c.id)))
         if filter_category_ids:
             parts_query = parts_query.where(line_category_id().in_(filter_category_ids))
+        if txn_type == "transfer":
+            # The rows qualify by holding a transfer part; their income and
+            # expense parts are not what this filter asks about.
+            parts_query = parts_query.where(is_transfer(line_category_id()))
         parts_subq = parts_query.subquery()
         summary_rows = await session.execute(
             select(

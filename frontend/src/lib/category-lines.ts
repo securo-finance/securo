@@ -2,6 +2,7 @@ import { parseAmountInput } from '@/lib/format'
 import type {
   Category,
   CategoryLineShareType,
+  ProjectedTransaction,
   Transaction,
   TransactionCategoryLine,
   TransactionCategoryLinesInput,
@@ -134,4 +135,28 @@ export function largestLineCategoryId(lines: TransactionCategoryLine[]): string 
     }
   }
   return best?.category_id ?? null
+}
+
+/**
+ * A split template's projected occurrence, shaped like a split row so the
+ * same badge and parts list render for it. Null when the template is not split.
+ */
+export function projectedSplitSource(
+  pt: Pick<ProjectedTransaction, 'recurring_id' | 'currency' | 'has_category_lines' | 'category_lines'>,
+): Pick<Transaction, 'has_category_lines' | 'category_lines' | 'currency'> | null {
+  if (!pt.has_category_lines || !pt.category_lines?.length) return null
+  return {
+    has_category_lines: true,
+    currency: pt.currency,
+    category_lines: pt.category_lines.map((part, position) => ({
+      id: `${pt.recurring_id}-${position}`,
+      category_id: part.category_id,
+      amount: part.amount,
+      share_type: 'exact',
+      share_pct: null,
+      position,
+      notes: null,
+      category: { name: part.category_name, icon: part.category_icon, color: part.category_color },
+    })) as unknown as TransactionCategoryLine[],
+  }
 }

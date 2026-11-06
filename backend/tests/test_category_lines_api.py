@@ -139,6 +139,14 @@ async def test_create_split_by_percent_puts_the_residual_on_the_last_line(
                 {"category_id": "TRANSPORT", "amount": 0},
             ],
         },
+        # The same category twice.
+        {
+            "share_type": "exact",
+            "lines": [
+                {"category_id": "FOOD", "amount": 100},
+                {"category_id": "FOOD", "amount": 50},
+            ],
+        },
     ],
 )
 async def test_invalid_splits_are_refused(client, auth_headers, cats, lines_payload):
@@ -730,6 +738,88 @@ async def test_deleting_a_category_with_a_destination_moves_its_lines(
     assert [line["category_id"] for line in after["category_lines"]] == [
         str(food.id), str(income.id),
     ]
+
+
+@pytest.mark.asyncio
+async def test_moving_into_a_category_the_split_holds_merges_the_parts(
+    client, auth_headers, session, test_user, cats
+):
+    food, transport, income = cats
+    extra = Category(id=uuid.uuid4(), user_id=test_user.id, name="Extra", icon="x", color="#000000")
+    session.add(extra)
+    await session.commit()
+    account = await _account(client, auth_headers)
+    three = await _create(
+        client, auth_headers, account["id"], amount=90,
+        category_lines={"share_type": "percent", "lines": [
+            {"category_id": str(food.id), "share_pct": 50},
+            {"category_id": str(transport.id), "share_pct": 30},
+            {"category_id": str(income.id), "share_pct": 20},
+        ]},
+    )
+    two = await _create(
+        client, auth_headers, account["id"],
+        category_lines=_exact((food.id, 100), (transport.id, 50)),
+    )
+    template = await client.post(
+        "/api/recurring-transactions", headers=auth_headers,
+        json={
+            "description": "Rent", "amount": 100, "currency": "USD", "type": "debit",
+            "frequency": "monthly", "day_of_month": 5, "start_date": "2026-12-05",
+            "account_id": account["id"],
+            "category_lines": _exact((food.id, 70), (transport.id, 30)),
+        },
+    )
+    assert template.status_code == 201, template.text
+
+    resp = await client.delete(
+        f"/api/categories/{transport.id}", headers=auth_headers,
+        params={"transfer_to_category_id": str(food.id)},
+    )
+    assert resp.status_code == 204, resp.text
+
+    # Three parts, two of them now in food: one food part holding both.
+    after = (await client.get(f"/api/transactions/{three['id']}", headers=auth_headers)).json()
+    assert _lines(after) == [(str(food.id), Decimal("72")), (str(income.id), Decimal("18"))]
+    assert [line["share_pct"] for line in after["category_lines"]] == ["80.00", "20.00"]
+    # Two parts that end up in one category are a plain row in it.
+    after = (await client.get(f"/api/transactions/{two['id']}", headers=auth_headers)).json()
+    assert (after["has_category_lines"], after["category_id"], after["category_lines"]) == (
+        False, str(food.id), [],
+    )
+    listed = (await client.get("/api/recurring-transactions", headers=auth_headers)).json()
+    rec = next(row for row in listed if row["id"] == template.json()["id"])
+    assert (rec["has_category_lines"], rec["category_id"]) == (False, str(food.id))
+
+
+@pytest.mark.asyncio
+async def test_a_card_credit_part_keeps_its_category_out_of_transfers(
+    client, auth_headers, session, test_user, cats
+):
+    food, transport, _ = cats
+    savings = Category(
+        id=uuid.uuid4(), user_id=test_user.id, name="Savings", icon="x", color="#000000",
+        treat_as_transfer=True,
+    )
+    session.add(savings)
+    await session.commit()
+    card = await _account(client, auth_headers, name="Card", type_="credit_card")
+    await _create(
+        client, auth_headers, card["id"], type="credit",
+        category_lines=_exact((food.id, 100), (transport.id, 50)),
+    )
+
+    # Neither flagging the category nor moving it into a transfer one.
+    resp = await client.patch(
+        f"/api/categories/{transport.id}", headers=auth_headers, json={"treat_as_transfer": True}
+    )
+    assert resp.status_code == 400
+    resp = await client.delete(
+        f"/api/categories/{transport.id}", headers=auth_headers,
+        params={"transfer_to_category_id": str(savings.id)},
+    )
+    assert resp.status_code == 400
+    assert await session.get(Category, transport.id) is not None
 
 
 @pytest.mark.asyncio

@@ -46,7 +46,7 @@ import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
 import { CategoryIcon } from '@/components/category-icon'
 import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
-import { isSplitByCategory } from '@/lib/category-lines'
+import { isSplitByCategory, projectedSplitSource } from '@/lib/category-lines'
 import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
 import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
@@ -682,22 +682,7 @@ export default function DashboardPage() {
     }
     for (const pt of projectedTxs ?? []) {
       // A split template's occurrence shows its parts like a split row.
-      const projectedSplit = pt.has_category_lines && pt.category_lines?.length
-        ? ({
-            has_category_lines: true,
-            currency: pt.currency,
-            category_lines: pt.category_lines.map((part, position) => ({
-              id: `${pt.recurring_id}-${position}`,
-              category_id: part.category_id,
-              amount: part.amount,
-              share_type: 'exact',
-              share_pct: null,
-              position,
-              notes: null,
-              category: { name: part.category_name, icon: part.category_icon, color: part.category_color },
-            })),
-          } as unknown as Transaction)
-        : null
+      const projectedSplit = projectedSplitSource(pt) as Transaction | null
       rows.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,
         description: pt.description,

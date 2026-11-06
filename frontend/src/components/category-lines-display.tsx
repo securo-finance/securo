@@ -138,7 +138,7 @@ export function CategorySplitBadge({
             'inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide',
             'text-violet-700 bg-violet-50 border border-violet-200',
             'dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900',
-            'px-1.5 py-0.5 rounded-full cursor-pointer',
+            'px-1.5 py-0.5 rounded-full cursor-pointer whitespace-nowrap shrink-0',
             className,
           )}
           aria-label={t('categoryLines.badge', { count })}

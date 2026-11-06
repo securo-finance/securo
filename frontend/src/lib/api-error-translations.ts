@@ -10,6 +10,7 @@ import i18n from 'i18next'
  */
 const KNOWN_MESSAGES: Record<string, string> = {
   'A category split needs at least two lines': 'categoryLines.errors.tooFewLines',
+  'Each category can appear only once in a split': 'categoryLines.errors.duplicateCategory',
   'Each line needs an amount': 'categoryLines.errors.invalidLines',
   'Each line amount must be positive': 'categoryLines.errors.invalidLines',
   'Each line needs a percentage': 'categoryLines.errors.invalidLines',
