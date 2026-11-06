@@ -113,6 +113,12 @@ export function ImportReviewTable({
       })
       .map((line) => line.category_name)
 
+  // Two parts that resolve to the same category: a split holds each once.
+  const repeatsCategory = (tx: ImportReviewTransaction): boolean => {
+    const ids = splitPartIds(tx)
+    return new Set(ids).size !== ids.length
+  }
+
   const filtered = useMemo(() => {
     return transactions.filter(tx => {
       if (searchQuery) {
@@ -265,6 +271,11 @@ export function ImportReviewTable({
                         {unresolvedParts(tx, true).length > 0 && (
                           <span className="text-[11px] text-amber-600 dark:text-amber-400">
                             {t('categoryLines.importAmbiguous', { names: unresolvedParts(tx, true).join(', ') })}
+                          </span>
+                        )}
+                        {repeatsCategory(tx) && (
+                          <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                            {t('categoryLines.errors.duplicateCategory')}
                           </span>
                         )}
                       </span>

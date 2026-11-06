@@ -491,6 +491,13 @@ async def _repoint_rules(
         ]
 
 
+def _join_notes(*notes: Optional[str], limit: int) -> Optional[str]:
+    """Notes from parts that became one, each kept once, cut to the column."""
+    kept = [note.strip() for note in notes if note and note.strip()]
+    joined = "; ".join(dict.fromkeys(kept))
+    return joined[:limit] or None
+
+
 async def _move_category_lines(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -500,8 +507,10 @@ async def _move_category_lines(
     """Move the parts in one category to another, merging where they meet.
 
     A split that already has a part in the destination gets the moved amount
-    added to that part rather than a second part in the same category, and a
-    split left with a single part becomes a plain row in that category.
+    (and its note) added to that part rather than a second part in the same
+    category, and a split left with a single part becomes a plain row in that
+    category. A transaction keeps that last part's note in its own notes; a
+    recurring bill has no notes of its own to keep it in.
     """
     for line_model, owner_model, owner_fk in (
         (TransactionCategoryLine, Transaction, "transaction_id"),
@@ -519,6 +528,7 @@ async def _move_category_lines(
                 .order_by(owner_col, line_model.position)
             )
         ).all()
+        collapsed: dict[uuid.UUID, TransactionCategoryLine | RecurringTransactionCategoryLine] = {}
         for owner_id, group in groupby(lines, key=lambda line: getattr(line, owner_fk)):
             parts = list(group)
             kept = next((line for line in parts if line.category_id == destination_id), None)
@@ -534,14 +544,22 @@ async def _move_category_lines(
                     kept.amount += line.amount
                     if kept.share_pct is not None and line.share_pct is not None:
                         kept.share_pct += line.share_pct
+                    kept.notes = _join_notes(kept.notes, line.notes, limit=500)
                     await session.delete(line)
             if len(remaining) == 1:
-                owner = await session.get(owner_model, owner_id)
-                if owner is None:
-                    continue
-                owner.category_id = remaining[0].category_id
-                owner.has_category_lines = False
-                await session.delete(remaining[0])
+                collapsed[owner_id] = remaining[0]
+        if not collapsed:
+            continue
+        owners = (
+            await session.scalars(select(owner_model).where(owner_model.id.in_(collapsed)))
+        ).all()
+        for owner in owners:
+            last = collapsed[owner.id]
+            owner.category_id = last.category_id
+            owner.has_category_lines = False
+            if isinstance(owner, Transaction) and last.notes:
+                owner.notes = _join_notes(owner.notes, last.notes, limit=1000)
+            await session.delete(last)
     await session.flush()
 
 

@@ -823,6 +823,76 @@ async def test_a_card_credit_part_keeps_its_category_out_of_transfers(
 
 
 @pytest.mark.asyncio
+async def test_a_card_credit_template_part_keeps_its_category_out_of_transfers(
+    client, auth_headers, session, test_user, cats
+):
+    """Same guard when only a recurring template uses the category."""
+    food, transport, _ = cats
+    savings = Category(
+        id=uuid.uuid4(), user_id=test_user.id, name="Savings", icon="x", color="#000000",
+        treat_as_transfer=True,
+    )
+    session.add(savings)
+    await session.commit()
+    card = await _account(client, auth_headers, name="Card", type_="credit_card")
+    template = await client.post(
+        "/api/recurring-transactions", headers=auth_headers,
+        json={
+            "description": "Cashback", "amount": 150, "currency": "USD", "type": "credit",
+            "frequency": "monthly", "day_of_month": 5, "start_date": "2026-12-05",
+            "account_id": card["id"],
+            "category_lines": _exact((food.id, 100), (transport.id, 50)),
+        },
+    )
+    assert template.status_code == 201, template.text
+
+    resp = await client.patch(
+        f"/api/categories/{transport.id}", headers=auth_headers, json={"treat_as_transfer": True}
+    )
+    assert resp.status_code == 400
+    resp = await client.delete(
+        f"/api/categories/{transport.id}", headers=auth_headers,
+        params={"transfer_to_category_id": str(savings.id)},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_moving_a_category_keeps_the_notes_of_merged_parts(
+    client, auth_headers, session, test_user, cats
+):
+    food, transport, income = cats
+    account = await _account(client, auth_headers)
+    three = await _create(
+        client, auth_headers, account["id"], amount=90,
+        category_lines={"share_type": "exact", "lines": [
+            {"category_id": str(food.id), "amount": 40, "notes": "bread"},
+            {"category_id": str(transport.id), "amount": 30, "notes": "bus"},
+            {"category_id": str(income.id), "amount": 20},
+        ]},
+    )
+    two = await _create(
+        client, auth_headers, account["id"], notes="weekly",
+        category_lines={"share_type": "exact", "lines": [
+            {"category_id": str(food.id), "amount": 100},
+            {"category_id": str(transport.id), "amount": 50, "notes": "taxi"},
+        ]},
+    )
+
+    resp = await client.delete(
+        f"/api/categories/{transport.id}", headers=auth_headers,
+        params={"transfer_to_category_id": str(food.id)},
+    )
+    assert resp.status_code == 204, resp.text
+
+    after = (await client.get(f"/api/transactions/{three['id']}", headers=auth_headers)).json()
+    assert [line["notes"] for line in after["category_lines"]] == ["bread; bus", None]
+    # The last part's note moves to the transaction once the split is gone.
+    after = (await client.get(f"/api/transactions/{two['id']}", headers=auth_headers)).json()
+    assert (after["has_category_lines"], after["notes"]) == (False, "weekly; taxi")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("flag", ["is_ignored", "is_hidden"])
 async def test_a_category_in_use_by_lines_cannot_become_ignored_or_hidden(
     client, auth_headers, cats, flag

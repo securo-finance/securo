@@ -1488,6 +1488,10 @@ def _import_split_payload(
     resolved = [category_map.get(name) for name in names]
     if any(category_id is None for category_id in resolved):
         return None
+    if len(set(resolved)) != len(resolved):
+        # Two parts in one category ("Food" and "food"): a split holds each
+        # category once.
+        return None
     return TransactionCategoryLinesInput(
         share_type="exact",
         lines=[

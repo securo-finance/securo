@@ -79,7 +79,7 @@ export interface CategoryLinesCheck {
   valid: boolean
   /** Left to allocate: cents in exact mode, hundredths of a percent in percent mode. */
   remaining: number
-  reason: 'tooFewLines' | 'missingCategory' | 'invalidValue' | 'zeroPart' | 'sumMismatch' | null
+  reason: 'tooFewLines' | 'missingCategory' | 'duplicateCategory' | 'invalidValue' | 'zeroPart' | 'sumMismatch' | null
 }
 
 export function checkLines(
@@ -101,6 +101,7 @@ export function checkLines(
   })
   if (rows.length < 2) return fail('tooFewLines')
   if (rows.some((row) => !row.categoryId)) return fail('missingCategory')
+  if (new Set(rows.map((row) => row.categoryId)).size !== rows.length) return fail('duplicateCategory')
   if (values.some((v) => v == null)) return fail('invalidValue')
   if (values.some((v) => v === 0)) return fail('zeroPart')
   if (remaining !== 0) return fail('sumMismatch')
