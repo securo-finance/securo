@@ -134,6 +134,8 @@ export function TransactionDrillDown({
       if (filter?.type && pt.type !== filter.type) continue
       // A split template counts in a category through its part there.
       const parts = pt.has_category_lines ? pt.category_lines ?? [] : []
+      // Every part ignored: the template counts nowhere, so it lists nowhere.
+      if (pt.has_category_lines && !parts.length) continue
       const matchedParts = filter?.category_id
         ? parts.filter((part) => part.category_id === filter.category_id)
         : []

@@ -464,3 +464,26 @@ async def test_a_series_wide_type_change_validates_every_split_installment(
         json={"apply_to": "all", "type": "credit", "category_id": None},
     )
     assert resp.status_code == 400
+
+
+async def test_a_category_in_a_split_bill_counts_as_used_and_moves_with_it(
+    client, auth_headers, test_categories
+):
+    food, home, income = test_categories
+    account = await _account(client, auth_headers)
+    rent = await _rent(client, auth_headers, account["id"], food, home)
+
+    usage = (await client.get(f"/api/categories/{food.id}/usage", headers=auth_headers)).json()
+    assert usage["recurring_transactions"] == 1
+
+    resp = await client.delete(f"/api/categories/{food.id}", headers=auth_headers)
+    assert resp.status_code in (400, 409), resp.text
+
+    resp = await client.delete(
+        f"/api/categories/{food.id}", headers=auth_headers,
+        params={"transfer_to_category_id": str(income.id)},
+    )
+    assert resp.status_code == 204, resp.text
+    listed = (await client.get("/api/recurring-transactions", headers=auth_headers)).json()
+    (after,) = [r for r in listed if r["id"] == rent["id"]]
+    assert [line["category_id"] for line in after["category_lines"]] == [str(home.id), str(income.id)]
