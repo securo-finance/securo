@@ -323,9 +323,20 @@ class TransferRead(BaseModel):
     transfer_pair_id: uuid.UUID
 
 
+class ImportCategoryLine(BaseModel):
+    """One part of a split read back from a CSV export."""
+
+    category_name: str
+    amount: Decimal = Field(gt=0, decimal_places=2)
+
+
 class TransactionImport(TransactionBase):
     """TransactionBase extended with import-only fields not exposed in read responses."""
     category_name: Optional[str] = None
+    # Set when a CSV carried a split across categories (`split_group` /
+    # `split_index` columns, as the export writes them). The import recreates
+    # the parts; a part whose category is missing imports the row unsplit.
+    category_lines: Optional[list[ImportCategoryLine]] = None
     suggested_category_id: Optional[uuid.UUID] = None
     suggested_category_name: Optional[str] = None
     excluded: bool = False

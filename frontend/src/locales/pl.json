@@ -3245,6 +3245,7 @@
     "needsCategory": "Każda część potrzebuje kategorii.",
     "needsValue": "Każda część potrzebuje kwoty większej od zera.",
     "hint": "Raporty liczą każdą część w jej kategorii.",
+    "importUnresolved": "Nie znaleziono tutaj: {{names}}. Import bez podziału.",
     "undo": "Cofnij podział",
     "partOf": "część z {{value}}",
     "bulkSkipped_one": "{{count}} podzielona transakcja pozostała bez zmian",

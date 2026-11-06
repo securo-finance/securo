@@ -695,6 +695,8 @@ export interface ImportPreviewTransaction {
   category_id?: string | null
   force_uncategorized?: boolean
   notes?: string | null
+  /** A split across categories read back from a CSV export. */
+  category_lines?: { category_name: string; amount: number }[] | null
 }
 
 export interface ImportReviewTransaction extends ImportPreviewTransaction {

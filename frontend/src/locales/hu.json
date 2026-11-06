@@ -3133,6 +3133,7 @@
     "needsCategory": "Minden résznek kell kategória.",
     "needsValue": "Minden résznek nullánál nagyobb összeg kell.",
     "hint": "A jelentések minden részt a saját kategóriájában számolnak.",
+    "importUnresolved": "Itt nem található: {{names}}. Felosztás nélkül importálódik.",
     "undo": "Felosztás visszavonása",
     "partOf": "{{value}} része",
     "bulkSkipped_one": "{{count}} felosztott tranzakció változatlan maradt",

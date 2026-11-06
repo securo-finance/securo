@@ -3135,6 +3135,7 @@
     "needsCategory": "Elk deel heeft een categorie nodig.",
     "needsValue": "Elk deel heeft een bedrag boven nul nodig.",
     "hint": "Rapporten tellen elk deel in zijn eigen categorie.",
+    "importUnresolved": "Hier niet gevonden: {{names}}. Wordt zonder verdeling geïmporteerd.",
     "undo": "Verdeling ongedaan maken",
     "partOf": "deel van {{value}}",
     "bulkSkipped_one": "{{count}} verdeelde transactie is ongewijzigd gelaten",

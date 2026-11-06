@@ -3133,6 +3133,7 @@
     "needsCategory": "各内訳にカテゴリーが必要です。",
     "needsValue": "各内訳には0より大きい金額が必要です。",
     "hint": "レポートは各内訳をそれぞれのカテゴリーで集計します。",
+    "importUnresolved": "ここに見つかりません: {{names}}。分割なしで取り込みます。",
     "undo": "分割を取り消す",
     "partOf": "{{value}} の一部",
     "bulkSkipped_one": "分割された取引 {{count}} 件はそのままにしました",

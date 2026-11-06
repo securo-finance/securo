@@ -209,7 +209,7 @@ function renderSummary(
         type: String(p.type ?? '?'),
         date: String(p.date ?? ''),
         account: String((p.account_name as string) ?? '?'),
-      })
+      }) + splitSummary(p as Record<string, unknown>, fmt)
     case 'create_recurring_transaction':
       return t('agents.proposal.summary.createRecurring', {
         description: String(p.description ?? '?'),
@@ -309,6 +309,16 @@ function fmt(amount: unknown, currency: unknown): string {
   } catch {
     return `${c} ${n.toFixed(2)}`
   }
+}
+
+/** " · Food 120.00, Home 80.00" for a proposal split across categories,
+ * so the user sees where the money goes before Apply. */
+function splitSummary(p: Record<string, unknown>, format: typeof fmt): string {
+  const block = p.category_lines as { lines?: Array<Record<string, unknown>> } | undefined
+  if (!block?.lines?.length) return ''
+  return ' · ' + block.lines
+    .map((line) => `${String(line.category_name ?? '?')} ${format(line.amount, p.currency)}`)
+    .join(', ')
 }
 
 function safeStringify(o: unknown): string {
@@ -426,6 +436,18 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
             })),
           }
         : undefined
+      // A split across categories: send the parts the preview validated.
+      const linesBlock = p.category_lines as { share_type?: string; lines?: Array<Record<string, unknown>> } | undefined
+      const linesPayload = linesBlock && Array.isArray(linesBlock.lines) && linesBlock.lines.length > 1
+        ? {
+            share_type: linesBlock.share_type === 'percent' ? 'percent' : 'exact',
+            lines: linesBlock.lines.map((line) => (
+              linesBlock.share_type === 'percent'
+                ? { category_id: String(line.category_id), share_pct: Number(line.share_pct) }
+                : { category_id: String(line.category_id), amount: Number(line.amount) }
+            )),
+          }
+        : undefined
       const t = await transactions.create({
         description: String(p.description),
         amount: Number(p.amount),
@@ -436,6 +458,7 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         category_id: (p.category_id as string) || undefined,
         notes: (p.notes as string) || undefined,
         ...(splitsPayload ? { splits: splitsPayload } : {}),
+        ...(linesPayload ? { category_lines: linesPayload, category_id: undefined } : {}),
       } as Parameters<typeof transactions.create>[0])
       return t.id
     }

@@ -3137,6 +3137,7 @@
     "needsCategory": "Ogni parte ha bisogno di una categoria.",
     "needsValue": "Ogni parte ha bisogno di un importo maggiore di zero.",
     "hint": "I report contano ogni parte nella sua categoria.",
+    "importUnresolved": "Non trovata qui: {{names}}. Importata senza divisione.",
     "undo": "Annulla divisione",
     "partOf": "parte di {{value}}",
     "bulkSkipped_one": "{{count}} transazione divisa è rimasta invariata",

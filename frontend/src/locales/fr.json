@@ -3137,6 +3137,7 @@
     "needsCategory": "Chaque part doit avoir une catégorie.",
     "needsValue": "Chaque part doit avoir un montant supérieur à zéro.",
     "hint": "Les rapports comptent chaque part dans sa catégorie.",
+    "importUnresolved": "Introuvable ici : {{names}}. Importée sans la répartition.",
     "undo": "Annuler la répartition",
     "partOf": "part de {{value}}",
     "bulkSkipped_one": "{{count}} transaction répartie n'a pas été modifiée",
