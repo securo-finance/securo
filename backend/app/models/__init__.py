@@ -1,4 +1,5 @@
 from app.models.user import User
+from app.models.access_token import AccessToken
 from app.models.passkey import UserPasskey
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceTaxId
 from app.models.category import Category
@@ -51,6 +52,7 @@ from app.models.reconciliation import (
 from app.core import workspace_autostamp  # noqa: F401, E402
 
 __all__ = [
+    "AccessToken",
     "User",
     "UserPasskey",
     "Workspace",
