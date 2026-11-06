@@ -217,6 +217,39 @@ async def test_the_backup_keeps_the_parts(client, auth_headers, test_categories)
     assert metadata["entity_counts"]["transaction_category_lines"] == 2
 
 
+async def test_the_backup_keeps_a_split_recurring_bill(client, auth_headers, test_categories):
+    food, transport, _ = test_categories
+    account = await _account(client, auth_headers)
+    resp = await client.post(
+        "/api/recurring-transactions", headers=auth_headers,
+        json={
+            "description": "Bundle", "amount": 100, "currency": "BRL", "type": "debit",
+            "frequency": "monthly", "day_of_month": 5, "start_date": "2026-12-05",
+            "account_id": account["id"],
+            "category_lines": {"share_type": "percent", "lines": [
+                {"category_id": str(food.id), "share_pct": 60},
+                {"category_id": str(transport.id), "share_pct": 40},
+            ]},
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    template = resp.json()
+
+    resp = await client.get("/api/export/backup", headers=auth_headers)
+    assert resp.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+        lines = json.loads(archive.read("recurring_transaction_category_lines.json"))
+        metadata = json.loads(archive.read("metadata.json"))
+    assert [
+        (line["recurring_transaction_id"], line["category_id"], line["amount"], line["share_pct"])
+        for line in lines
+    ] == [
+        (template["id"], str(food.id), "60.00", "60.00"),
+        (template["id"], str(transport.id), "40.00", "40.00"),
+    ]
+    assert metadata["entity_counts"]["recurring_transaction_category_lines"] == 2
+
+
 # --- MCP --------------------------------------------------------------------
 
 
