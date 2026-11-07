@@ -130,7 +130,7 @@ def _window(calls: list[httpx.Request]) -> tuple[date, date]:
     return date.fromisoformat(params["date_from"]), date.fromisoformat(params["date_to"])
 
 
-async def _fetch_since(since: date, context=None) -> tuple[date, date]:
+async def _fetch_since(since: date, context=None, required=None) -> tuple[date, date]:
     provider = EnableBankingProvider()
     calls: list[httpx.Request] = []
 
@@ -138,8 +138,11 @@ async def _fetch_since(since: date, context=None) -> tuple[date, date]:
         calls.append(request)
         return httpx.Response(200, json={"transactions": {"booked": [], "pending": []}})
 
+    credentials: dict = {"session_id": "s"}
+    if required is not None:
+        credentials["aspsp"] = {"name": "Bank", "required_psu_headers": required}
     with _patch_client(provider, handler), psu_present(context):
-        await provider.get_transactions({"session_id": "s"}, "acc-1", since=since)
+        await provider.get_transactions(credentials, "acc-1", since=since)
     return _window(calls)
 
 
@@ -163,6 +166,65 @@ async def test_user_present_fetch_is_not_clamped(eb_keys):
     since = datetime.now(timezone.utc).date() - timedelta(days=200)
     start, _ = await _fetch_since(since, context=USER)
     assert start == since
+
+
+# A user-present sync whose request had no public IP, for a bank that needs one:
+# it sends no PSU headers, so the bank treats it as a background request.
+NO_IP = PsuContext(headers={"Psu-User-Agent": "Firefox"})
+
+
+@pytest.mark.asyncio
+async def test_headerless_user_present_fetch_is_clamped(eb_keys):
+    today = datetime.now(timezone.utc).date()
+    start, _ = await _fetch_since(
+        today - timedelta(days=200), context=NO_IP, required=["Psu-Ip-Address"]
+    )
+    assert start == today - timedelta(days=89)
+
+
+@pytest.mark.asyncio
+async def test_headerless_user_present_sync_reuses_cached_details(eb_keys):
+    provider = EnableBankingProvider()
+    calls: list[str] = []
+    creds = _credentials({"acc-1": {"name": "Brukskonto", "currency": "NOK"}})
+    creds["aspsp"]["required_psu_headers"] = ["Psu-Ip-Address"]
+    with _patch_client(provider, _bank(calls)), psu_present(NO_IP):
+        await provider.get_accounts(creds)
+
+    assert "/accounts/acc-1/details" not in calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [httpx.Response(503), httpx.ReadTimeout("slow")])
+async def test_cached_account_with_an_unavailable_balance_is_not_synced_as_zero(
+    eb_keys, failure,
+):
+    """With the details cached the balance is the only call, so its failure
+    skips the account for this run like a failed /details does."""
+    provider = EnableBankingProvider()
+    accounts = [{"uid": "acc-1"}, {"uid": "acc-2"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-1":
+            return httpx.Response(200, json={"accounts_data": accounts})
+        if request.url.path == "/accounts/acc-1/balances":
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
+        return httpx.Response(200, json={"balances": [
+            {"balance_type": "CLBD", "balance_amount": {"amount": "5.00", "currency": "NOK"}},
+        ]})
+
+    cache = {uid: {"name": f"Account {uid}", "currency": "NOK"} for uid in ("acc-1", "acc-2")}
+    with _patch_client(provider, handler):
+        result = await provider.get_accounts(_credentials(cache))
+
+    assert [(a.external_id, a.balance) for a in result] == [("acc-2", Decimal("5.00"))]
+
+    # When it was the only account, the failure itself is what the sync sees.
+    accounts = [{"uid": "acc-1"}]
+    with _patch_client(provider, handler), pytest.raises(httpx.HTTPError):
+        await provider.get_accounts(_credentials(cache))
 
 
 @pytest.mark.asyncio

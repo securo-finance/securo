@@ -496,6 +496,14 @@ class EnableBankingProvider(BankProvider):
             timeout=30.0,
         )
 
+    def _present_psu_headers(self) -> dict[str, str]:
+        """The PSU headers a data request sends now; empty when it goes out
+        as a background request, which is how the bank will treat it."""
+        psu = current_psu_context()
+        if psu is None:
+            return {}
+        return _select_psu_headers(psu.headers, self._required_psu_headers)
+
     async def _request(
         self,
         method: str,
@@ -506,9 +514,8 @@ class EnableBankingProvider(BankProvider):
     ) -> dict:
         psu_headers: dict[str, str] = {}
         if _is_data_request(path):
-            psu = current_psu_context()
-            if psu is not None:
-                psu_headers = _select_psu_headers(psu.headers, self._required_psu_headers)
+            psu_headers = self._present_psu_headers()
+            if current_psu_context() is not None:
                 if not psu_headers:
                     logger.warning(
                         "Enable Banking %s %s: the user's request lacks a PSU header "
@@ -784,7 +791,10 @@ class EnableBankingProvider(BankProvider):
         stable_external_id: Optional[str] = None,
         *,
         tolerate_presence_refusal: bool = False,
+        require_balance: bool = False,
     ) -> AccountData:
+        """An account from its details; a failed balance reads as zero unless
+        `require_balance`, when the failure is raised to the caller instead."""
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
         # EB doesn't include balances in the session payload; fetch separately.
@@ -795,6 +805,8 @@ class EnableBankingProvider(BankProvider):
             balance = _balance_decimal(picked)
             currency = _balance_currency(picked, currency)
         except (httpx.HTTPError, SessionExpiredError) as exc:
+            if require_balance:
+                raise
             logger.warning(
                 "Failed to fetch balances for account %s: %s", uid, exc
             )
@@ -834,6 +846,7 @@ class EnableBankingProvider(BankProvider):
                 "cash_account_type": cached.get("cash_account_type"),
             },
             stable_external_id,
+            require_balance=True,
         )
         masked = cached.get("masked_number")
         account.masked_number = masked if isinstance(masked, str) else None
@@ -902,17 +915,24 @@ class EnableBankingProvider(BankProvider):
         if not isinstance(cached_details, dict):
             cached_details = {}
             credentials[ACCOUNT_DETAILS_KEY] = cached_details
-        user_present = current_psu_context() is not None
+        # Present means the requests carry the user's headers: a user-present
+        # sync that cannot send them reaches the bank as a background one.
+        user_present = bool(self._present_psu_headers())
         result: list[AccountData] = []
         transient_error: Optional[httpx.HTTPError] = None
         for uid in uids:
             cached = cached_details.get(uid)
-            if not user_present and isinstance(cached, dict) and cached.get("name"):
-                result.append(
-                    await self._build_cached_account(uid, cached, stable_external_ids.get(uid))
-                )
-                continue
             try:
+                if not user_present and isinstance(cached, dict) and cached.get("name"):
+                    # The balance is then the only call for this account, so
+                    # its failure is handled like a failed /details below
+                    # rather than syncing a zero balance.
+                    result.append(
+                        await self._build_cached_account(
+                            uid, cached, stable_external_ids.get(uid)
+                        )
+                    )
+                    continue
                 details = await self._request("GET", f"/accounts/{uid}/details")
             except httpx.HTTPError as exc:
                 # A *transient* per-account failure. Without details we can't
@@ -922,7 +942,7 @@ class EnableBankingProvider(BankProvider):
                 # transactions are left intact and the next sync retries) rather
                 # than corrupt it. SessionExpiredError is deliberately NOT caught
                 # here: a dead consent is global, never per-account.
-                logger.warning("Failed to fetch details for account %s: %s", uid, exc)
+                logger.warning("Failed to fetch account %s: %s", uid, exc)
                 is_refusal = (
                     isinstance(exc, httpx.HTTPStatusError)
                     and exc.response.status_code < 500
@@ -968,9 +988,10 @@ class EnableBankingProvider(BankProvider):
             # Without the user present, PSD2 banks only serve the last 90 days.
             # A connection that has not synced for a while asks for more (the
             # sync rewinds from last_sync_at), which the bank refuses outright;
-            # ask for what it will give instead.
+            # ask for what it will give instead. A user-present sync that cannot
+            # send the user's headers reaches the bank as a background one.
             oldest_background = _history_start(today, DEFAULT_HISTORY_DAYS)
-            if since < oldest_background and current_psu_context() is None:
+            if since < oldest_background and not self._present_psu_headers():
                 logger.info(
                     "Enable Banking background fetch for account %s: clamping "
                     "date_from %s to %s (90 days)",
