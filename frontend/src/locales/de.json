@@ -1449,6 +1449,17 @@
     "confirmDeleteRecurringDescription": "Das wiederkehrende Budget für \"{{name}}\" wird dauerhaft gelöscht. Diese Definition gilt nicht mehr für zukünftige Monate. Bestehende Transaktionen bleiben unverändert. Diese Aktion kann nicht rückgängig gemacht werden.",
     "repeatEveryMonth": "Jeden Monat wiederholen",
     "recurringLabel": "Wiederkehrend",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Budgets für {{month}}",
+    "otherCategories": "Weitere Kategorien",
+    "noCategories": "Noch keine Kategorien",
+    "total": "Budget {{amount}}",
+    "saved": "Budgets gespeichert",
+    "budgetFor": "Budget für {{category}}",
+    "invalidAmount": "Gib einen gültigen Betrag von null oder mehr ein.",
+    "repeatEveryMonthFor": "Budget für {{category}} jeden Monat wiederholen",
+    "previousMonth": "Vormonat",
+    "nextMonth": "Nächster Monat",
     "suggest": "Aus Verlauf vorschlagen",
     "suggestTitle": "Budgets vorschlagen",
     "suggestDescription": "Vorgeschlagene Limits auf Basis deines durchschnittlichen monatlichen Verbrauchs der letzten {{months}} Monate.",
@@ -1458,7 +1469,9 @@
     "suggestCreate": "Budgets erstellen",
     "suggestCreated": "{{count}} Budgets erstellt",
     "suggestEmpty": "Keine Ausgaben im gewählten Zeitraum, aus denen vorgeschlagen werden kann.",
-    "suggestError": "Vorschläge konnten nicht geladen werden. Versuche es gleich noch einmal."
+    "suggestError": "Vorschläge konnten nicht geladen werden. Versuche es gleich noch einmal.",
+    "hiddenCategory": "Ausgeblendet",
+    "average": "meist {{amount}}"
   },
   "goals": {
     "title": "Ziele",
