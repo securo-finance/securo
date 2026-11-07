@@ -97,6 +97,9 @@ async def test_aws_endpoint_environment_variables_are_ignored(
 ):
     monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
     monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    monkeypatch.delenv("AWS_DEFAULT_PROFILE", raising=False)
+    monkeypatch.delenv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", raising=False)
     monkeypatch.setenv(endpoint_variable, "http://unvalidated.example.com")
     monkeypatch.setenv(
         "AWS_CONFIG_FILE", str(tmp_path / "empty-aws-config")
