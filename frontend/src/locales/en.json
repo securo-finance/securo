@@ -284,6 +284,7 @@
       "only_drafts_deletable": "An issued invoice is never deleted — void it instead.",
       "issued_invoice_immutable": "An issued invoice cannot change. Void it and issue a new one.",
       "over_allocation": "That is more than this invoice still owes.",
+      "transaction_over_allocation": "That is more than this transaction has left to link.",
       "already_allocated": "This transaction is already linked to this invoice.",
       "already_settled": "This invoice is already fully settled.",
       "currency_mismatch": "The transaction is in a different currency.",

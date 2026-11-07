@@ -445,6 +445,102 @@ async def test_same_transaction_twice_on_one_invoice_is_refused(
 
 
 @pytest.mark.asyncio
+async def test_one_payment_settles_no_more_than_it_carried_across_invoices(
+    client: AsyncClient, biz_headers, inflow
+):
+    """3000 arrived. 2000 of it closes the first invoice, so the second
+    can only take the 1000 that is left, not another 2000."""
+    first = await _create(client, biz_headers, total="2000.00")
+    second = await _create(client, biz_headers, total="2000.00")
+
+    linked = await client.post(
+        f"/api/invoices/{first['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert linked.status_code == 201, linked.text
+    assert linked.json()["state"] == "paid"
+
+    rest = await client.post(
+        f"/api/invoices/{second['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert rest.status_code == 201, rest.text
+    body = rest.json()
+    assert body["state"] == "partial"
+    assert body["balance"] == "1000.00"
+    assert [a["amount"] for a in body["allocations"]] == ["1000.00"]
+
+    summary = await client.get("/api/invoices/summary", headers=biz_headers)
+    assert summary.json()["outstanding"] == "1000.00"
+
+
+@pytest.mark.asyncio
+async def test_relinking_a_fully_used_payment_to_the_same_invoice_says_already_linked(
+    client: AsyncClient, biz_headers, inflow
+):
+    """3000 is all on a 5000 invoice. Linking it there again is a repeat,
+    not a payment that ran out, and the answer says so."""
+    invoice = await _create(client, biz_headers, total="5000.00")
+    first = await client.post(
+        f"/api/invoices/{invoice['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert first.status_code == 201, first.text
+    assert first.json()["balance"] == "2000.00"
+
+    again = await client.post(
+        f"/api/invoices/{invoice['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert again.status_code == 400
+    assert again.json()["detail"]["code"] == "already_allocated"
+
+
+@pytest.mark.asyncio
+async def test_cannot_link_more_than_is_left_of_a_payment(
+    client: AsyncClient, biz_headers, inflow
+):
+    first = await _create(client, biz_headers, total="2000.00")
+    second = await _create(client, biz_headers, total="2000.00")
+    third = await _create(client, biz_headers, total="500.00")
+    await client.post(
+        f"/api/invoices/{first['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id), "amount": "2000.00"},
+    )
+
+    too_much = await client.post(
+        f"/api/invoices/{second['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id), "amount": "1500.00"},
+    )
+    assert too_much.status_code == 400
+    assert too_much.json()["detail"]["code"] == "transaction_over_allocation"
+
+    exact = await client.post(
+        f"/api/invoices/{second['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id), "amount": "1000.00"},
+    )
+    assert exact.status_code == 201, exact.text
+
+    spent = await client.post(
+        f"/api/invoices/{third['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert spent.status_code == 400
+    assert spent.json()["detail"]["code"] == "transaction_over_allocation"
+    invoice = await client.get(f"/api/invoices/{third['id']}", headers=biz_headers)
+    assert invoice.json()["state"] == "open"
+    assert invoice.json()["balance"] == "500.00"
+
+
+@pytest.mark.asyncio
 async def test_transaction_from_another_workspace_is_not_found(
     client: AsyncClient, auth_headers, biz_headers, session: AsyncSession, test_user, personal_ws
 ):

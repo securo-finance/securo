@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Uma cobrança emitida nunca é excluída — cancele-a.",
       "issued_invoice_immutable": "Uma cobrança emitida não muda. Cancele e emita outra.",
       "over_allocation": "Isso é mais do que esta cobrança ainda deve.",
+      "transaction_over_allocation": "Isso é mais do que resta desta transação para vincular.",
       "already_allocated": "Esta transação já está vinculada a esta cobrança.",
       "already_settled": "Esta cobrança já está totalmente quitada.",
       "currency_mismatch": "A transação está em outra moeda.",

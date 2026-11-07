@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Kiállított számla nem törölhető – érvénytelenítsd helyette.",
       "issued_invoice_immutable": "Kiállított számla nem módosítható. Érvénytelenítsd, és állíts ki újat.",
       "over_allocation": "Ez több, mint amennyi még hátravan ezen a számlán.",
+      "transaction_over_allocation": "Ez több, mint amennyi ebből a tranzakcióból még hozzárendelhető.",
       "already_allocated": "Ez a tranzakció már össze van kapcsolva ezzel a számlával.",
       "already_settled": "Ez a számla már teljesen ki van egyenlítve.",
       "currency_mismatch": "A tranzakció más pénznemben van.",
