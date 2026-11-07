@@ -941,10 +941,14 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
   })
 
   const pending = removeMutation.isPending
-  const kept = plan?.keep ?? []
-  const failed = isError && !plan
-  // Only a plan that is loaded and not being refreshed can be confirmed.
-  const confirmable = plan !== undefined && !isFetching && plan.remove.length > 0
+  // A failed refresh counts as failed even with an older plan on screen:
+  // that plan is exactly what the server would refuse, so it isn't shown.
+  const failed = isError && !isFetching
+  const kept = !failed && plan ? plan.keep : []
+  // Confirm only the plan just fetched, and only if removing does something:
+  // delete untouched rules, or hand edited ones over to the user.
+  const confirmable =
+    plan !== undefined && !isFetching && !isError && plan.remove.length + plan.keep.length > 0
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose() }}>

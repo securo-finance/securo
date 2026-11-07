@@ -615,7 +615,10 @@ async def _pack_rules_by_state(
         .order_by(Rule.priority, Rule.name)
     )
     if lock:
-        query = query.with_for_update()
+        # Re-read the rows as the database has them now, not as this session
+        # last saw them: classifying stale copies could delete a rule edited
+        # since the preview.
+        query = query.with_for_update().execution_options(populate_existing=True)
     rules = (await session.execute(query)).scalars().all()
     untouched: list[Rule] = []
     edited: list[Rule] = []

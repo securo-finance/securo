@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from httpx import AsyncClient
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -237,6 +237,42 @@ async def test_removal_refuses_a_plan_that_changed(session: AsyncSession, ids):
     with pytest.raises(RulePackRemovalChanged):
         await remove_rule_pack(session, workspace_id, "BR", plan.token)
     assert len(await _rules(session, workspace_id)) == len(built_in_packs()["BR"].rules)
+
+
+@pytest.mark.asyncio
+async def test_removal_rereads_rules_this_session_already_holds(session: AsyncSession, ids):
+    """An edit saved elsewhere after the preview is seen, even though this
+    session still holds the rules as they were."""
+    workspace_id, user_id = ids
+    await create_default_categories(session, user_id, lang="pt-BR")
+    rules = (await install_rule_pack(session, workspace_id, user_id, "BR")).rules
+    plan = await plan_rule_pack_removal(session, workspace_id, "BR")
+    assert plan is not None
+    rule_id = rules[0].id
+    # Another session's edit: straight to the database, this session's copy untouched.
+    await session.execute(update(Rule).where(Rule.id == rule_id).values(priority=99).execution_options(
+        synchronize_session=False
+    ))
+    await session.commit()
+
+    with pytest.raises(RulePackRemovalChanged):
+        await remove_rule_pack(session, workspace_id, "BR", plan.token)
+
+
+@pytest.mark.asyncio
+async def test_a_pack_whose_remaining_rules_are_all_edited_can_still_be_removed(session: AsyncSession, ids):
+    """Nothing to delete, but the edited rules are handed over to the user."""
+    workspace_id, user_id = ids
+    await create_default_categories(session, user_id, lang="pt-BR")
+    for rule in (await install_rule_pack(session, workspace_id, user_id, "BR")).rules:
+        rule.priority += 1
+    await session.commit()
+
+    plan = await plan_rule_pack_removal(session, workspace_id, "BR")
+    assert plan is not None
+    assert (len(plan.remove), len(plan.keep)) == (0, len(built_in_packs()["BR"].rules))
+    await remove_rule_pack(session, workspace_id, "BR", plan.token)
+    assert (await _status(session, workspace_id, "BR")).rules_from_pack == 0
 
 
 @pytest.mark.asyncio
