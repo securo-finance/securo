@@ -37,6 +37,7 @@ from app.providers.base import (
     default_oauth_redirect_uri,
     mask_last4,
 )
+from app.providers.psu import current_psu_context
 
 logger = logging.getLogger(__name__)
 
@@ -278,6 +279,69 @@ def _history_start(today: date, days: int) -> date:
     return today - timedelta(days=days - 1)
 
 
+# PSU headers sent on every user-present data request when the user's request
+# supplied them. Enable Banking's FAQ asks for the user's headers whenever the
+# user triggered the fetch, and for none when the application fetches on its
+# own schedule:
+# https://enablebanking.com/docs/faq/#what-are-the-psu-headers-in-the-endpoints-for-fetching-account-details-balances-and-transactions-used-for
+DEFAULT_PSU_HEADERS = ("Psu-Ip-Address", "Psu-User-Agent")
+
+
+def _is_data_request(path: str) -> bool:
+    """Endpoints EB forwards to the bank and that accept PSU headers."""
+    return path.startswith("/accounts/")
+
+
+def _select_psu_headers(
+    available: dict[str, str], required: Optional[list[str]]
+) -> dict[str, str]:
+    """PSU headers to send with one data request.
+
+    Psu-Ip-Address and Psu-User-Agent go out whenever the user's request had
+    them. An ASPSP's `required_psu_headers` must be sent all together or not
+    at all (EB answers anything in between with PSU_HEADER_NOT_PROVIDED), so
+    when one of them is missing nothing is sent and the request is a plain
+    background one.
+    """
+    by_name = {name.lower(): (name, value) for name, value in available.items()}
+    selected = {name: available[name] for name in DEFAULT_PSU_HEADERS if name in available}
+    for wanted in required or []:
+        match = by_name.get(wanted.lower())
+        if match is None:
+            return {}
+        selected[match[0]] = match[1]
+    return selected
+
+
+def _error_body(resp: httpx.Response) -> dict:
+    try:
+        body = resp.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def _needs_present_user(resp: httpx.Response) -> bool:
+    """True when a header-less data request failed the way a bank that wants
+    the user present refuses one.
+
+    Only consulted for ASPSPs that declare `required_psu_headers`. Such banks
+    answer a background call they do not allow (an endpoint outside their
+    background allowance, or one past its daily quota) with an error EB
+    reports as ASPSP_ERROR, or with a 429 that names the missing header.
+    """
+    body = _error_body(resp)
+    error = body.get("error")
+    if error == "PSU_HEADER_NOT_PROVIDED":
+        return True
+    if resp.status_code == 400 and error == "ASPSP_ERROR":
+        return True
+    if resp.status_code == 429:
+        text = f"{body.get('message') or ''} {body.get('detail') or ''}".lower()
+        return "psu" in text and "header" in text
+    return False
+
+
 def _is_wrong_period_error(resp: httpx.Response) -> bool:
     """True when the bank rejected the requested date range as out of bounds."""
     if resp.status_code != 422:
@@ -296,6 +360,22 @@ class EnableBankingProvider(BankProvider):
     _cached_token: Optional[str] = None
     _cached_token_exp: float = 0.0
     _cached_private_key: Optional[str] = None
+
+    def __init__(self) -> None:
+        # The connected ASPSP's `required_psu_headers`, from the credentials
+        # of the connection being synced. None while unknown.
+        self._required_psu_headers: Optional[list[str]] = None
+        self._institution_name = "The bank"
+
+    def _use_credentials(self, credentials: dict) -> None:
+        aspsp = credentials.get("aspsp") if isinstance(credentials, dict) else None
+        if not isinstance(aspsp, dict):
+            return
+        required = aspsp.get("required_psu_headers")
+        if isinstance(required, list):
+            self._required_psu_headers = [h for h in required if isinstance(h, str)]
+        if isinstance(aspsp.get("name"), str) and aspsp["name"]:
+            self._institution_name = aspsp["name"]
 
     @property
     def name(self) -> str:
@@ -382,11 +462,49 @@ class EnableBankingProvider(BankProvider):
         params: Optional[dict] = None,
         json_body: Optional[dict] = None,
     ) -> dict:
+        psu_headers: dict[str, str] = {}
+        if _is_data_request(path):
+            psu = current_psu_context()
+            if psu is not None:
+                psu_headers = _select_psu_headers(psu.headers, self._required_psu_headers)
+                if not psu_headers:
+                    logger.warning(
+                        "Enable Banking %s %s: the user's request lacks a PSU header "
+                        "the bank requires (%s); sending none",
+                        method,
+                        path,
+                        ", ".join(self._required_psu_headers or []),
+                    )
         async with self._client() as client:
-            resp = await client.request(method, path, params=params, json=json_body)
+            resp = await client.request(
+                method, path, params=params, json=json_body, headers=psu_headers or None
+            )
         if resp.status_code in (401, 410):
             raise SessionExpiredError(
                 f"Enable Banking returned {resp.status_code} for {path}"
+            )
+        if (
+            resp.status_code >= 400
+            and _is_data_request(path)
+            and not psu_headers
+            and self._required_psu_headers
+            and _needs_present_user(resp)
+        ):
+            # Never answered by inventing headers: the bank wants the user,
+            # so the user is asked to sync while present, which sends theirs.
+            logger.warning(
+                "Enable Banking %s %s → %s without PSU headers: %s",
+                method,
+                path,
+                resp.status_code,
+                resp.text[:300],
+            )
+            raise ProviderUserActionRequired(
+                f"{self._institution_name} only answers this request while you are "
+                "present. Sync this connection from Securo to refresh it. If a manual "
+                "sync fails the same way, Securo could not tell your public IP address "
+                "(see TRUSTED_PROXY_HOPS).",
+                code="psu_present_required",
             )
         if resp.status_code == 429:
             # The bank (ASPSP) is throttling us — transient, not a broken
@@ -438,6 +556,28 @@ class EnableBankingProvider(BankProvider):
             countries=sorted(countries),
             institutions=institutions,
         )
+
+    async def _lookup_required_psu_headers(
+        self, name: Optional[str], country: Optional[str]
+    ) -> Optional[list[str]]:
+        """The ASPSP's `required_psu_headers` from GET /aspsps, or None if unknown.
+
+        /aspsps is answered by Enable Banking itself, so this never spends the
+        bank's request allowance. An ASPSP without the field requires none.
+        """
+        if not name:
+            return None
+        params = {"country": country.upper()} if country else None
+        try:
+            data = await self._request("GET", "/aspsps", params=params)
+        except Exception as exc:
+            logger.warning("Could not look up PSU headers required by %s: %s", name, exc)
+            return None
+        for item in data.get("aspsps") or []:
+            if isinstance(item, dict) and item.get("name") == name:
+                required = item.get("required_psu_headers") or []
+                return [h for h in required if isinstance(h, str)]
+        return None
 
     # ----- OAuth (authorization) -----
 
@@ -531,6 +671,16 @@ class EnableBankingProvider(BankProvider):
         institution_name = aspsp.get("name") or "Bank"
         access = data.get("access") or {}
         valid_until = access.get("valid_until")
+        stored_aspsp: dict[str, Any] = {
+            "name": institution_name,
+            "country": aspsp.get("country"),
+        }
+        required_psu_headers = await self._lookup_required_psu_headers(
+            aspsp.get("name"), aspsp.get("country")
+        )
+        if required_psu_headers is not None:
+            stored_aspsp["required_psu_headers"] = required_psu_headers
+        self._use_credentials({"aspsp": stored_aspsp})
 
         accounts: list[AccountData] = []
         for raw_acc in accounts_raw:
@@ -542,10 +692,7 @@ class EnableBankingProvider(BankProvider):
         credentials: dict[str, Any] = {
             "session_id_enc": encrypted_session,
             "valid_until": valid_until,
-            "aspsp": {
-                "name": institution_name,
-                "country": aspsp.get("country"),
-            },
+            "aspsp": stored_aspsp,
         }
         return ConnectionData(
             external_id=session_id,
@@ -636,6 +783,7 @@ class EnableBankingProvider(BankProvider):
         return [a for a in (session_data.get("accounts") or []) if isinstance(a, str)]
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
+        self._use_credentials(credentials)
         session_id = self._session_id(credentials)
         if not session_id:
             raise SessionExpiredError("Enable Banking session_id missing")
@@ -704,6 +852,7 @@ class EnableBankingProvider(BankProvider):
         since: Optional[date] = None,
         payee_source: str = "auto",
     ) -> list[TransactionData]:
+        self._use_credentials(credentials)
         _ = self._session_id(credentials)  # surface expired credentials early
         # Enable Banking reads date_to as an inclusive UTC calendar day, so the
         # window ends on the UTC date regardless of the application calendar;
@@ -891,4 +1040,13 @@ class EnableBankingProvider(BankProvider):
                     )
             except ValueError:
                 pass
+        # Connections linked before the required headers were stored learn
+        # them here, once; the sync saves the returned credentials.
+        aspsp = credentials.get("aspsp")
+        if isinstance(aspsp, dict) and "required_psu_headers" not in aspsp:
+            required = await self._lookup_required_psu_headers(
+                aspsp.get("name"), aspsp.get("country")
+            )
+            if required is not None:
+                return {**credentials, "aspsp": {**aspsp, "required_psu_headers": required}}
         return credentials
