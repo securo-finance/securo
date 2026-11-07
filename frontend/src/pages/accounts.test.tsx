@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
+import { useQuery } from '@tanstack/react-query'
 
 import AccountsPage, { AccountDialog } from '@/pages/accounts'
 import { renderWithProviders, t } from '@/test/utils'
@@ -9,10 +10,13 @@ const api = vi.hoisted(() => ({
   accountsList: vi.fn(),
   connectionsList: vi.fn(),
   sync: vi.fn(),
+  update: vi.fn(),
+  reopen: vi.fn(),
+  canWrite: true,
 }))
 
 vi.mock('@/lib/api', () => ({
-  accounts: { list: api.accountsList },
+  accounts: { list: api.accountsList, update: api.update, reopen: api.reopen },
   assets: { list: vi.fn().mockResolvedValue([]) },
   connections: {
     list: api.connectionsList,
@@ -29,7 +33,7 @@ vi.mock('@/contexts/auth-context', () => ({
 }))
 
 vi.mock('@/contexts/workspace-context', () => ({
-  useWorkspace: () => ({ canWrite: true }),
+  useWorkspace: () => ({ canWrite: api.canWrite }),
 }))
 
 vi.mock('@/contexts/collection-filter-context', () => ({
@@ -37,16 +41,12 @@ vi.mock('@/contexts/collection-filter-context', () => ({
 }))
 
 vi.mock('@/hooks/use-privacy-mode', () => ({
-  usePrivacyMode: () => ({ mask: false }),
+  usePrivacyMode: () => ({ mask: (value: string) => value }),
 }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en',
   useDateLocale: () => 'en-US',
-}))
-
-vi.mock('@/lib/invalidate-queries', () => ({
-  invalidateFinancialQueries: vi.fn(),
 }))
 
 vi.mock('@/components/bank-connect-dialog', () => ({ BankConnectDialog: () => null }))
@@ -143,6 +143,142 @@ describe('AccountsPage connection row actions', () => {
     await user.click(retry)
 
     expect(api.sync).toHaveBeenCalledWith('conn-err')
+  })
+})
+
+function GoalCacheProbe({ loadList, loadSummary }: {
+  loadList: () => Promise<unknown[]>
+  loadSummary: () => Promise<unknown[]>
+}) {
+  useQuery({ queryKey: ['goals', 'active'], queryFn: loadList, staleTime: Infinity })
+  useQuery({ queryKey: ['goals', 'summary'], queryFn: loadSummary, staleTime: Infinity })
+  return null
+}
+
+describe('AccountsPage closed report preferences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.canWrite = true
+    api.connectionsList.mockResolvedValue([])
+    api.update.mockResolvedValue({})
+    api.reopen.mockResolvedValue({})
+  })
+
+  it.each([null, 'conn-1'])('edits reporting without reopening or changing financial fields: %s', async (connectionId) => {
+    const closed = {
+      ...makeAccount('conn-1'), connection_id: connectionId, is_closed: true,
+      closed_at: '2026-10-01T00:00:00Z', exclude_from_reports: false,
+    }
+    api.accountsList.mockImplementation((includeClosed: boolean) => Promise.resolve(includeClosed ? [closed] : []))
+    const loadList = vi.fn().mockResolvedValue([])
+    const loadSummary = vi.fn().mockResolvedValue([])
+    const { user } = renderWithProviders(
+      <><AccountsPage /><GoalCacheProbe loadList={loadList} loadSummary={loadSummary} /></>,
+      { route: '/accounts' },
+    )
+    await waitFor(() => {
+      expect(loadList).toHaveBeenCalledTimes(1)
+      expect(loadSummary).toHaveBeenCalledTimes(1)
+    })
+    const row = (await screen.findByText(closed.name)).parentElement!.parentElement!
+    expect(within(row).getByRole('button', { name: t('accounts.reopen') })).toBeEnabled()
+    await user.click(within(row).getByRole('button', { name: t('common.edit') }))
+    const dialog = screen.getByRole('dialog', { name: t('accounts.editAccount') })
+    expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('combobox')).not.toBeInTheDocument()
+    await user.click(within(dialog).getByRole('checkbox', { name: t('accounts.includeInReports') }))
+    await user.click(within(dialog).getByRole('button', { name: t('common.save') }))
+    await waitFor(() => expect(api.update).toHaveBeenCalledExactlyOnceWith(closed.id, { exclude_from_reports: true }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => {
+      expect(loadList).toHaveBeenCalledTimes(2)
+      expect(loadSummary).toHaveBeenCalledTimes(2)
+    })
+    expect(api.reopen).not.toHaveBeenCalled()
+    expect(api.sync).not.toHaveBeenCalled()
+    expect(closed.is_closed).toBe(true)
+  })
+
+  it('retains the separate Reopen action', async () => {
+    const closed = { ...makeAccount('conn-1'), is_closed: true }
+    api.accountsList.mockImplementation((includeClosed: boolean) => Promise.resolve(includeClosed ? [closed] : []))
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await user.click(await screen.findByRole('button', { name: t('accounts.reopen') }))
+    await waitFor(() => expect(api.reopen).toHaveBeenCalledExactlyOnceWith(closed.id))
+    expect(api.update).not.toHaveBeenCalled()
+  })
+
+  it('does not offer closed-account writes to viewers', async () => {
+    api.canWrite = false
+    const closed = { ...makeAccount('conn-1'), is_closed: true }
+    api.accountsList.mockImplementation((includeClosed: boolean) => Promise.resolve(includeClosed ? [closed] : []))
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    const row = (await screen.findByText(closed.name)).parentElement!.parentElement!
+    expect(within(row).queryByRole('button', { name: t('common.edit') })).not.toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: t('accounts.reopen') })).not.toBeInTheDocument()
+    api.canWrite = true
+  })
+})
+
+describe('AccountDialog report exclusion', () => {
+  it.each(['checking', 'credit_card', 'loan'])(
+    'keeps the %s form and actions inside a viewport-bounded scrollable dialog', async (type) => {
+      const account = { ...makeAccount('conn-1'), type, exclude_from_reports: false }
+      const onSave = vi.fn()
+      const onClose = vi.fn()
+      const { user, rerender } = renderWithProviders(
+        <AccountDialog open account={account} onClose={onClose} onSave={onSave} loading={false} />,
+      )
+      const dialog = screen.getByRole('dialog', { name: t('accounts.editAccount') })
+      expect(dialog).toHaveClass('max-h-[90vh]', 'overflow-y-auto')
+      const checkbox = screen.getByRole('checkbox', { name: t('accounts.includeInReports') })
+      await user.click(checkbox)
+      rerender(<AccountDialog open account={account} onClose={onClose} onSave={onSave} loading />)
+      expect(checkbox).not.toBeChecked()
+      expect(screen.getByRole('button', { name: t('common.loading') })).toBeDisabled()
+      rerender(<AccountDialog open account={account} onClose={onClose} onSave={onSave} loading={false} />)
+      const save = screen.getByRole('button', { name: t('common.save') })
+      const close = screen.getByRole('button', { name: 'Close' })
+      expect(dialog).toContainElement(checkbox)
+      expect(dialog).toContainElement(save)
+      expect(dialog).toContainElement(close)
+      save.focus()
+      await user.keyboard('{Enter}')
+      expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ exclude_from_reports: true }))
+      close.focus()
+      await user.keyboard('{Enter}')
+      expect(onClose).toHaveBeenCalledOnce()
+    },
+  )
+
+  it.each([
+    { connectionId: null, excluded: false },
+    { connectionId: null, excluded: true },
+    { connectionId: 'conn-1', excluded: false },
+    { connectionId: 'conn-1', excluded: true },
+  ])('round-trips the positive checkbox: %j', async ({ connectionId, excluded }) => {
+    const account = {
+      ...makeAccount('conn-1'), connection_id: connectionId, exclude_from_reports: excluded,
+    }
+    const onSave = vi.fn()
+    const { user } = renderWithProviders(
+      <AccountDialog open account={account} onClose={vi.fn()} onSave={onSave} loading={false} />,
+    )
+    const checkbox = screen.getByRole('checkbox', { name: t('accounts.includeInReports') })
+    expect(checkbox).toHaveProperty('checked', !excluded)
+    await user.click(checkbox)
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ exclude_from_reports: !excluded }),
+    )
+  })
+
+  it('does not offer an exclusion override when creating an account', () => {
+    renderWithProviders(
+      <AccountDialog open account={null} onClose={vi.fn()} onSave={vi.fn()} loading={false} />,
+    )
+    expect(screen.queryByRole('checkbox', { name: t('accounts.includeInReports') }))
+      .not.toBeInTheDocument()
   })
 })
 

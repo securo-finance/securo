@@ -123,7 +123,10 @@ async def get_transaction_calendar(
         parts = _category_parts(tx)
         is_transfer = _is_transfer_item(tx, parts)
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
-        if not ignored and not tx.exclude_from_pnl:
+        participates = requested_account_ids is not None or not (
+            tx.account and tx.account.exclude_from_reports
+        )
+        if participates and not ignored and not tx.exclude_from_pnl:
             # A split row lands part by part: its transfer-like parts in the
             # transfer bucket, the rest in income or expense.
             for category, ratio in parts:
@@ -149,7 +152,8 @@ async def get_transaction_calendar(
         day.items.append(_actual_item(tx, amount_primary, is_transfer, ignored))
 
     forecast_rows = await _get_forecast_transactions(
-        session, workspace_id, grid_start, grid_end, requested_account_ids
+        session, workspace_id, grid_start, grid_end, requested_account_ids,
+        for_calendar_display=True,
     )
     forecast_deltas: dict[date, float] = {}
     for tx in forecast_rows:
@@ -162,7 +166,10 @@ async def get_transaction_calendar(
         parts = _category_parts(tx)
         is_transfer = _is_transfer_item(tx, parts)
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
-        if not ignored and not tx.exclude_from_pnl:
+        participates = requested_account_ids is not None or not (
+            tx.account and tx.account.exclude_from_reports
+        )
+        if participates and not ignored and not tx.exclude_from_pnl:
             for category, ratio in parts:
                 if _is_transfer_part(tx, category):
                     delta = (
@@ -185,7 +192,7 @@ async def get_transaction_calendar(
         # Forecast rows are excluded from actual deltas but included in the
         # projected walk. The seed already contains forecast rows before the
         # grid; rows inside the grid are applied here.
-        if not ignored:
+        if participates and not ignored:
             forecast_deltas[tx.date] = forecast_deltas.get(tx.date, 0.0) + await _signed_balance_delta_primary(
                 session, tx, primary_currency
             )
@@ -199,13 +206,13 @@ async def get_transaction_calendar(
         requested_account_ids,
     )
     start_balance += carried_projected_delta
-    for item, signed_delta, parts in projected_items:
+    for item, signed_delta, parts, participates in projected_items:
         day = days[item.date]
         # Ignored projections stay out of every aggregate, exactly like ignored
         # actuals: out of the activity buckets here, and out of the balance deltas
         # built in _project_recurring_items. A recurring the user chose to ignore
         # must not move a projected balance that will not move once it posts.
-        if not item.is_ignored:
+        if participates and not item.is_ignored:
             # A split template lands part by part, like a split actual.
             for part_is_transfer, ratio in parts:
                 part_delta = signed_delta * ratio
@@ -487,7 +494,7 @@ async def _project_recurring_items(
     end: date,
     account_ids: Optional[list[uuid.UUID]],
 ) -> tuple[
-    list[tuple[TransactionCalendarItem, float, list[tuple[bool, float]]]], dict[date, float], float
+    list[tuple[TransactionCalendarItem, float, list[tuple[bool, float]], bool]], dict[date, float], float
 ]:
     stmt = (
         select(RecurringTransaction)
@@ -509,7 +516,7 @@ async def _project_recurring_items(
     result = await session.execute(stmt)
     recurring_rows = list(result.scalars().all())
 
-    items: list[tuple[TransactionCalendarItem, float, list[tuple[bool, float]]]] = []
+    items: list[tuple[TransactionCalendarItem, float, list[tuple[bool, float]], bool]] = []
     deltas: dict[date, float] = {}
     carried_delta = 0.0
     for rec in recurring_rows:
@@ -526,10 +533,11 @@ async def _project_recurring_items(
         )
         category = rec.category
         account = rec.account
+        participates = account_ids is not None or not (account and account.exclude_from_reports)
         amount_primary = await _positive_primary_amount(
             session, rec.amount, rec.currency, primary_currency, rec.amount_primary
         )
-        signed_delta = amount_primary if rec.type == "credit" else -amount_primary
+        signed_delta = (amount_primary if rec.type == "credit" else -amount_primary) if participates else 0.0
         is_transfer = bool(category and category.treat_as_transfer)
         is_ignored = bool(category and category.is_ignored)
         template_total = abs(float(rec.amount or 0))
@@ -565,7 +573,7 @@ async def _project_recurring_items(
                 is_ignored=is_ignored,
                 has_category_lines=bool(rec.has_category_lines),
             )
-            items.append((item, signed_delta, parts))
+            items.append((item, signed_delta, parts, participates))
             # The row is still listed, but an ignored occurrence never moves the
             # projected balance: _daily_balance_deltas_by_date already leaves the
             # posted version out, so counting the projection here would promise a

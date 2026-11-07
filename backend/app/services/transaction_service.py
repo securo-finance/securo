@@ -38,6 +38,7 @@ from app.services._query_filters import (
     any_line_in,
     counts_as_pnl,
     counts_as_user_pnl_row,
+    counts_in_rollup,
     is_not_ignored,
     is_transfer,
     is_transfer_row,
@@ -263,7 +264,10 @@ async def get_transactions(
 
     # Apply filters
     # Multi-id filters take precedence over single-id filters.
-    if account_ids:
+    selected_account_ids = account_ids if account_ids is not None else (
+        [account_id] if account_id is not None else None
+    )
+    if account_ids is not None:
         base_query = base_query.where(Transaction.account_id.in_(account_ids))
     elif account_id:
         base_query = base_query.where(Transaction.account_id == account_id)
@@ -292,7 +296,7 @@ async def get_transactions(
     if user_pnl_only:
         # Closed accounts are not excluded here: their history stays in the
         # period totals this list drills into (issue #1112).
-        base_query = base_query.where(counts_as_user_pnl_row())
+        base_query = base_query.where(counts_as_user_pnl_row(selected_account_ids))
     if exclude_ignored:
         # Only drops rows; the summary below keeps computing over the same
         # filtered set, so the totals a hidden list shows stay the totals of
@@ -506,13 +510,12 @@ async def get_transactions(
     # rows). Computed before pagination so it covers the whole result set.
     summary: Optional[dict] = None
     if include_summary:
-        # Income / expense / net use the shared `counts_as_pnl` definition
-        # (issue #242) so the footer matches the dashboard & reports: paired
-        # transfers, `treat_as_transfer` categories (transfers, investments,
-        # custom) and ignored items are kept OUT of income/expense. It reads
-        # category parts, so a split row counts part by part and, under a
-        # category filter, only its parts in the filtered categories count.
-        pnl_filter = counts_as_pnl(line_category_id())
+        # Statement footers retain their own-account formula. Rollup footers
+        # also respect the account preference, part by category part.
+        pnl_filter = (
+            counts_as_pnl(line_category_id())
+            if in_statement_view else counts_in_rollup(line_category_id(), selected_account_ids)
+        )
         parts_query = with_category_lines(
             select(
                 Transaction.type,
@@ -536,10 +539,8 @@ async def get_transactions(
         )
         income = Decimal("0")
         expense = Decimal("0")
-        # Excluded: the absolute total of everything filtered out of P/L for
-        # the same rows (the complement of `counts_as_pnl`). Surfaces
-        # transfer-like movement (e.g. how much was moved/invested) without
-        # distorting income/expense/net.
+        # The complement includes transfer-like parts and excluded accounts
+        # without distorting income, expense or net.
         excluded = Decimal("0")
         for row_type, counts, row_total in summary_rows:
             row_total = Decimal(str(row_total or 0))

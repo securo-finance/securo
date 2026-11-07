@@ -16,6 +16,7 @@ from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedCategoryLine, ProjectedTransaction, DailyBalance, DailyBaseline, BalanceHistory
 from app.services._query_filters import (
+    account_counts_in_reports,
     counts_as_user_pnl,
     line_amount,
     line_amount_primary,
@@ -117,7 +118,14 @@ async def _get_recurring_projections(
     stmt = (
         select(RecurringTransaction)
         .outerjoin(Category, RecurringTransaction.category_id == Category.id)
-        .where(*filters)
+        .outerjoin(Account, RecurringTransaction.account_id == Account.id)
+        .where(
+            *filters,
+            # Unassigned rules still project; selection below overrides only
+            # the totals preference, not workspace membership.
+            *([or_(Account.id.is_(None), Account.exclude_from_reports == False)]
+              if account_ids is None else []),
+        )
     )
     if account_ids:
         stmt = stmt.where(RecurringTransaction.account_id.in_(account_ids))
@@ -184,6 +192,8 @@ async def _get_forecast_transactions(
     range_end: date,
     account_ids: Optional[list[uuid.UUID]] = None,
     range_date_col=None,
+    *,
+    for_calendar_display: bool = False,
 ) -> list[Transaction]:
     """Return real rows that belong to the forecast, not the current balance.
 
@@ -204,6 +214,7 @@ async def _get_forecast_transactions(
         .where(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
+            *([] if for_calendar_display else [account_counts_in_reports(account_ids)]),
             bucket_date >= range_start,
             bucket_date < range_end,
             Transaction.source != "opening_balance",
@@ -400,7 +411,7 @@ async def get_summary(
             report_date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
+            counts_as_user_pnl(line_category_id(), account_ids),
             *acct_filter,
         )
     )
@@ -488,7 +499,7 @@ async def get_summary(
         Transaction.category_id.is_(None),
         Transaction.has_category_lines.is_(False),
         Transaction.source != "opening_balance",
-        counts_as_user_pnl(Transaction.category_id),
+        counts_as_user_pnl(Transaction.category_id, account_ids),
         *acct_filter,
     ]
     pending_categorization_result = await session.execute(
@@ -554,7 +565,7 @@ async def get_summary(
             report_date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
+            counts_as_user_pnl(line_category_id(), account_ids),
             Transaction.amount_primary.isnot(None),
             *acct_filter,
         )
@@ -618,7 +629,7 @@ async def get_summary(
                 report_date < month_end,
                 report_date <= today,
                 Transaction.status == "posted",
-                counts_as_user_pnl(Transaction.category_id),
+                counts_as_user_pnl(Transaction.category_id, account_ids),
             )
             .group_by(Transaction.currency)
         )
@@ -813,7 +824,7 @@ async def get_spending_by_category(
             report_date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
+            counts_as_user_pnl(line_category_id(), account_ids),
             *acct_filter,
         )
         .group_by(Category.id, Category.name, Category.icon, Category.color)
@@ -1026,7 +1037,7 @@ async def get_monthly_trend(
             Transaction.source != "opening_balance",
             report_date <= today,
             Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
+            counts_as_user_pnl(line_category_id(), account_ids),
             *acct_filter,
         )
         .group_by(month_label)
@@ -1337,6 +1348,8 @@ async def _get_open_accounts(
     When ``account_ids`` is provided (an active Collection filter, issue #105),
     restrict to that subset. An empty list returns no accounts — a collection
     with no members shows nothing rather than everything.
+    Implicit balances omit accounts flagged ``exclude_from_reports``;
+    explicit selection restores their ordinary balances.
     """
     if account_ids is not None and len(account_ids) == 0:
         return []
@@ -1349,6 +1362,7 @@ async def _get_open_accounts(
                 BankConnection.workspace_id == workspace_id,
             ),
             Account.is_closed == False,
+            *([Account.exclude_from_reports == False] if account_ids is None else []),
         )
     )
     if account_ids:
@@ -1634,6 +1648,7 @@ async def _daily_balance_deltas_by_date(
         .where(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
+            account_counts_in_reports(account_ids),
             *date_filters,
             Transaction.date <= app_today(),
             Transaction.is_ignored == False,
@@ -1792,6 +1807,7 @@ async def get_balance_history_months(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             Account.type != "loan",
+            account_counts_in_reports(account_ids),
             Transaction.date <= app_today(),
             Transaction.status == "posted",
             Transaction.is_ignored == False,
@@ -1843,7 +1859,11 @@ async def get_balance_history(
     if loan_ids:
         if account_ids is None:
             balance_account_ids = list((await session.execute(
-                select(Account.id).where(Account.workspace_id == workspace_id, Account.type != "loan")
+                select(Account.id).where(
+                    Account.workspace_id == workspace_id,
+                    Account.type != "loan",
+                    Account.exclude_from_reports == False,
+                )
             )).scalars())
         else:
             balance_account_ids = [i for i in account_ids if i not in loan_ids]

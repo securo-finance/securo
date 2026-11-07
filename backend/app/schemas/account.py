@@ -3,7 +3,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.json_schema import SkipJsonSchema
 
 LoanKind = Literal["mortgage", "auto", "personal", "student", "other"]
 LoanRatePeriod = Literal["monthly", "yearly_effective", "yearly_nominal"]
@@ -63,6 +64,16 @@ class AccountUpdate(BaseModel):
     loan_term_months: Optional[int] = Field(default=None, ge=1, le=600)
     loan_first_payment_date: Optional[date] = None
     loan_amortization: Optional[LoanAmortization] = None
+    # None is an internal omission sentinel, not a valid request value/default.
+    exclude_from_reports: bool | SkipJsonSchema[None] = Field(default_factory=lambda: None)
+
+    @field_validator("exclude_from_reports")
+    @classmethod
+    def validate_exclude_from_reports(cls, value: Optional[bool]) -> bool:
+        # Omission keeps the default unset; an explicit null cannot be persisted.
+        if value is None:
+            raise ValueError("exclude_from_reports cannot be null")
+        return value
 
 
 class AccountRead(AccountBase):
@@ -114,6 +125,9 @@ class AccountRead(AccountBase):
     open_bill_total_primary: Optional[float] = None
     is_closed: bool = False
     closed_at: Optional[datetime] = None
+    # True when the account is kept out of rollup totals (net worth,
+    # reports, budgets) while staying visible everywhere else.
+    exclude_from_reports: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

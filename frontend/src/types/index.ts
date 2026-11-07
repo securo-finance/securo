@@ -216,6 +216,8 @@ export interface Account {
   open_bill_total_primary?: number | null
   is_closed: boolean
   closed_at: string | null
+  // Omitted from implicit totals, but still visible and explicitly selectable.
+  exclude_from_reports: boolean
 }
 
 export interface CreditCardBill {

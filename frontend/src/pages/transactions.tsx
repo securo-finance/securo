@@ -110,7 +110,7 @@ export default function TransactionsPage() {
   const { mask } = usePrivacyMode()
   const isMobile = useIsMobile()
   const { user } = useAuth()
-  const { activeAccountIds } = useCollectionFilter()
+  const { activeAccountIds, activeCollectionId, activeCollection } = useCollectionFilter()
   const { canWrite, hasModule } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
@@ -356,7 +356,6 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     if (viewMode === 'calendar') {
-      setFilterAccountIds((prev) => prev.length > 1 ? [] : prev)
       setSelectedIds(new Set())
       setLastSelectedId(null)
       setBulkCategory('')
@@ -429,13 +428,14 @@ export default function TransactionsPage() {
   })
 
   const calendarMonth = steppedMonth
-  const calendarAccountIds = filterAccountIds.length === 1 ? filterAccountIds : []
+  const calendarAccountIds = filterAccountIds.length > 0 ? filterAccountIds : activeAccountIds
+  const calendarCollectionPending = filterAccountIds.length === 0 && !!activeCollectionId && !activeCollection
   const { data: calendarData, isLoading: calendarLoading, isFetching: calendarFetching, refetch: refetchCalendar } = useQuery({
-    queryKey: ['transactions', 'calendar', calendarMonth, calendarAccountIds],
-    enabled: viewMode === 'calendar',
+    queryKey: ['transactions', 'calendar', calendarMonth, calendarCollectionPending ? 'unresolved' : calendarAccountIds],
+    enabled: viewMode === 'calendar' && !noAccounts && !calendarCollectionPending,
     queryFn: () => transactions.calendar({
       month: `${calendarMonth}-01`,
-      account_ids: calendarAccountIds.length === 1 ? calendarAccountIds : undefined,
+      account_ids: calendarAccountIds ?? undefined,
     }),
   })
 
@@ -1442,7 +1442,6 @@ export default function TransactionsPage() {
             view={{
               value: viewMode,
               onChange: (value) => {
-                if (value === 'calendar' && filterAccountIds.length > 1) setFilterAccountIds([])
                 setViewMode(value)
               },
               listLabel: t('transactions.listView'),
@@ -1455,7 +1454,7 @@ export default function TransactionsPage() {
             onAdd={canWrite ? () => { setEditingTx(null); setDialogOpen(true) } : undefined}
             onDuplicate={duplicableTx ? () => handleDuplicateTransaction(duplicableTx) : undefined}
             onTransfer={canWrite ? () => setTransferDialogOpen(true) : undefined}
-            onRefresh={noAccounts ? undefined : () => {
+            onRefresh={noAccounts || (viewMode === 'calendar' && calendarCollectionPending) ? undefined : () => {
               void refreshTransactionsView({
                 viewMode,
                 refetchList: refetch,
@@ -1576,8 +1575,8 @@ export default function TransactionsPage() {
 
       {viewMode === 'calendar' && (
         <TransactionCalendarView
-          calendar={calendarData}
-          isLoading={calendarLoading}
+          calendar={noAccounts || calendarCollectionPending ? undefined : calendarData}
+          isLoading={calendarCollectionPending || calendarLoading}
           locale={locale}
           dateLocale={dateLocale}
           mask={mask}

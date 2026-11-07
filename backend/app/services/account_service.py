@@ -348,6 +348,7 @@ def serialize_account(
         "previous_balance": float(previous_balance or 0),
         "is_closed": acc.is_closed,
         "closed_at": acc.closed_at,
+        "exclude_from_reports": acc.exclude_from_reports,
         "credit_limit": float(acc.credit_limit) if acc.credit_limit is not None else None,
         "statement_close_day": acc.statement_close_day,
         "payment_due_day": acc.payment_due_day,
@@ -555,13 +556,19 @@ async def update_account(
             "card_brand",
             "card_level",
             *LOAN_TERM_FIELDS,
+            # User reporting preference, not provider-owned data: a
+            # connected mirror account (#343) is the primary audience for
+            # this flag, so it must pass the connected-edit gate.
+            "exclude_from_reports",
         }
         disallowed = set(update_data.keys()) - editable_fields
         if disallowed:
             raise ValueError("Cannot edit bank-connected accounts")
         old_type = account.type
         new_type = update_data.get("type", account.type)
-        cc_fields = editable_fields - {"display_name", "type", "secured_asset_id", *LOAN_TERM_FIELDS}
+        # Credit-card metadata fields = everything editable except display
+        # name, type, loan terms, and the reporting preference.
+        cc_fields = editable_fields - {"display_name", "type", "secured_asset_id", *LOAN_TERM_FIELDS, "exclude_from_reports"}
         cc_update = {k: v for k, v in update_data.items() if k in cc_fields}
         if cc_update and new_type != "credit_card":
             raise ValueError("Credit card fields can only be set on credit card accounts")

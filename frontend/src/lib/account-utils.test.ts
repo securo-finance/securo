@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  includedInRollups,
   sidebarAccountBalance,
   sidebarAccounts,
   sortAccountsByAbsoluteBalance,
@@ -161,5 +162,29 @@ describe('sidebarAccountBalance', () => {
 
     expect(amount).toBe(90)
     expect(isPrimary).toBe(true)
+  })
+})
+
+describe('includedInRollups', () => {
+  it('drops accounts flagged out of reports and keeps the rest in order', () => {
+    const accounts = [
+      { id: '1', name: 'Excluded Brokerage', exclude_from_reports: true },
+      { id: '2', name: 'Checking', exclude_from_reports: false },
+      // Older payloads: an absent field counts as included.
+      { id: '3', name: 'Legacy 401k' },
+    ]
+
+    expect(includedInRollups(accounts).map((account) => account.id)).toEqual(['2', '3'])
+  })
+
+  it('leaves the API account list untouched', () => {
+    const accounts = [
+      { name: 'Excluded', exclude_from_reports: true },
+      { name: 'Alpha', exclude_from_reports: false },
+    ]
+
+    includedInRollups(accounts)
+
+    expect(accounts.map((account) => account.name)).toEqual(['Excluded', 'Alpha'])
   })
 })

@@ -16,8 +16,8 @@ from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
 from app.services._query_filters import (
-    counts_as_pnl,
     counts_as_user_pnl,
+    counts_in_rollup,
     forecast_owner_share_fractions,
     line_amount,
     line_amount_primary,
@@ -542,7 +542,7 @@ async def get_income_expenses_report(
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
+            counts_as_user_pnl(line_category_id(), account_ids),
             *acct_filter,
         )
         .group_by(label_expr)
@@ -602,7 +602,7 @@ async def get_income_expenses_report(
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
+            counts_as_user_pnl(Transaction.category_id, account_ids),
         )
         .group_by(label_expr, Transaction.currency)
     )
@@ -666,7 +666,7 @@ async def get_income_expenses_report(
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
+            counts_as_user_pnl(Transaction.category_id, account_ids),
         )
         .group_by(label_expr, Transaction.currency)
     )
@@ -884,7 +884,7 @@ async def get_income_expenses_report(
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
+            counts_as_user_pnl(line_category_id(), account_ids),
             *acct_filter,
         )
         .group_by(Category.id, Category.name, Category.color, Transaction.type)
@@ -940,9 +940,11 @@ async def get_income_expenses_report(
                 func.sum(amount_expr),
             ).select_from(Transaction)
         )
+        .join(Account, Transaction.account_id == Account.id)
         .join(Category, line_category_id() == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
+            *([Account.exclude_from_reports == False] if account_ids is None else []),
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",
@@ -986,7 +988,7 @@ async def get_income_expenses_report(
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
+            counts_as_user_pnl(line_category_id(), account_ids),
             *acct_filter,
         )
         .group_by(label_expr, Category.id, Category.name, Category.color, Transaction.type)
@@ -1034,7 +1036,7 @@ async def get_income_expenses_report(
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
+            counts_as_user_pnl(Transaction.category_id, account_ids),
         )
         .group_by(label_expr, Transaction.category_id, Transaction.currency)
     )
@@ -1320,7 +1322,7 @@ async def _get_baseline_projection(
             Transaction.date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(line_category_id()),
+            counts_in_rollup(line_category_id(), account_ids),
             *acct_filter,
         )
     )
@@ -1346,7 +1348,7 @@ async def _get_baseline_projection(
             Transaction.date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(line_category_id()),
+            counts_in_rollup(line_category_id(), account_ids),
             *acct_filter,
         )
     )
@@ -1490,7 +1492,7 @@ async def get_cash_flow_report(
             flow_date_col <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(line_category_id()),
+            counts_in_rollup(line_category_id(), account_ids),
             *acct_filter,
         )
     )
@@ -1522,7 +1524,7 @@ async def get_cash_flow_report(
             flow_date_col <= end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
-            counts_as_pnl(line_category_id()),
+            counts_in_rollup(line_category_id(), account_ids),
             *acct_filter,
         )
     )
