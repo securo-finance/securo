@@ -287,6 +287,27 @@ def _history_start(today: date, days: int) -> date:
 DEFAULT_PSU_HEADERS = ("Psu-Ip-Address", "Psu-User-Agent")
 
 
+# Key in the connection credentials holding what /details said about each
+# account, by uid: what a background sync needs to name an account without
+# calling /details, which some banks only answer with the user present.
+ACCOUNT_DETAILS_KEY = "account_details"
+
+
+def _details_summary(raw: dict) -> dict[str, Optional[str]]:
+    """The part of an account's details payload the sync uses.
+
+    The masked number is kept rather than the identifier itself, so the cache
+    holds nothing the account row does not already show.
+    """
+    name = raw.get("display_name") or raw.get("product") or raw.get("name")
+    return {
+        "name": name if isinstance(name, str) else None,
+        "cash_account_type": raw.get("cash_account_type"),
+        "currency": raw.get("currency"),
+        "masked_number": mask_last4(_account_identifier(raw)),
+    }
+
+
 def _is_data_request(path: str) -> bool:
     """Endpoints EB forwards to the bank and that accept PSU headers."""
     return path.startswith("/accounts/")
@@ -713,6 +734,7 @@ class EnableBankingProvider(BankProvider):
         self._use_credentials({"aspsp": stored_aspsp})
 
         accounts: list[AccountData] = []
+        account_details: dict[str, dict] = {}
         for raw_acc in accounts_raw:
             if isinstance(raw_acc, str):
                 continue  # restricted clients can return account IDs as strings
@@ -723,12 +745,16 @@ class EnableBankingProvider(BankProvider):
             accounts.append(
                 await self._build_account(raw_acc, tolerate_presence_refusal=True)
             )
+            uid = raw_acc.get("uid") or raw_acc.get("account_uid")
+            if uid:
+                account_details[uid] = _details_summary(raw_acc)
 
         encrypted_session = encrypt(session_id) or session_id
         credentials: dict[str, Any] = {
             "session_id_enc": encrypted_session,
             "valid_until": valid_until,
             "aspsp": stored_aspsp,
+            ACCOUNT_DETAILS_KEY: account_details,
         }
         return ConnectionData(
             external_id=session_id,
@@ -796,6 +822,23 @@ class EnableBankingProvider(BankProvider):
             stable_external_id=stable_external_id,
         )
 
+    async def _build_cached_account(
+        self, uid: str, cached: dict, stable_external_id: Optional[str]
+    ) -> AccountData:
+        """An account named from cached details; only its balance is fetched."""
+        account = await self._build_account(
+            {
+                "uid": uid,
+                "currency": cached.get("currency"),
+                "display_name": cached.get("name"),
+                "cash_account_type": cached.get("cash_account_type"),
+            },
+            stable_external_id,
+        )
+        masked = cached.get("masked_number")
+        account.masked_number = masked if isinstance(masked, str) else None
+        return account
+
     # ----- account / transaction fetches -----
 
     def _session_id(self, credentials: dict) -> str:
@@ -851,9 +894,24 @@ class EnableBankingProvider(BankProvider):
             for entry in (data.get("accounts_data") or [])
             if isinstance(entry, dict) and entry.get("uid")
         }
+        # A background sync names known accounts from the cached details:
+        # banks cap unattended calls per endpoint (often 4 a day), and some do
+        # not allow /details without the user at all. A user-present sync
+        # reads them fresh, which also refreshes the cache.
+        cached_details = credentials.get(ACCOUNT_DETAILS_KEY)
+        if not isinstance(cached_details, dict):
+            cached_details = {}
+            credentials[ACCOUNT_DETAILS_KEY] = cached_details
+        user_present = current_psu_context() is not None
         result: list[AccountData] = []
         transient_error: Optional[httpx.HTTPError] = None
         for uid in uids:
+            cached = cached_details.get(uid)
+            if not user_present and isinstance(cached, dict) and cached.get("name"):
+                result.append(
+                    await self._build_cached_account(uid, cached, stable_external_ids.get(uid))
+                )
+                continue
             try:
                 details = await self._request("GET", f"/accounts/{uid}/details")
             except httpx.HTTPError as exc:
@@ -873,6 +931,7 @@ class EnableBankingProvider(BankProvider):
                 if not is_refusal:
                     transient_error = exc
                 continue
+            cached_details[uid] = _details_summary(details)
             result.append(await self._build_account(details, stable_external_ids.get(uid)))
         # Skipping is only safe while something still syncs. When the bank refuses
         # every account, an empty list would pass for a successful sync: the
@@ -906,6 +965,20 @@ class EnableBankingProvider(BankProvider):
         # newest transactions until its own date caught up.
         today = datetime.now(timezone.utc).date()
         if since is not None:
+            # Without the user present, PSD2 banks only serve the last 90 days.
+            # A connection that has not synced for a while asks for more (the
+            # sync rewinds from last_sync_at), which the bank refuses outright;
+            # ask for what it will give instead.
+            oldest_background = _history_start(today, DEFAULT_HISTORY_DAYS)
+            if since < oldest_background and current_psu_context() is None:
+                logger.info(
+                    "Enable Banking background fetch for account %s: clamping "
+                    "date_from %s to %s (90 days)",
+                    account_external_id,
+                    since.isoformat(),
+                    oldest_background.isoformat(),
+                )
+                since = oldest_background
             return await self._fetch_transactions(
                 account_external_id, since, today, payee_source
             )
