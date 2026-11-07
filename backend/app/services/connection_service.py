@@ -1804,11 +1804,92 @@ def _merge_sync_metadata(
         transaction.payee = txn_data.payee
 
 
+#: How many days an Enable Banking card hold can precede the booked entry that
+#: settles it. PayPal books the charge a day after the hold; banks take one to
+#: three banking days, which a weekend stretches to five calendar days.
+_EB_HOLD_SETTLE_DAYS = 5
+
+
+def _eb_merchant_texts(raw: dict) -> list[str]:
+    """The merchant wording an Enable Banking entry carries.
+
+    Read from the payload rather than from the row, so a description the user
+    edited, or the provider's "Transaction" placeholder for an entry that names
+    nothing, never counts as a merchant.
+    """
+    remittance = raw.get("remittance_information")
+    if isinstance(remittance, list):
+        remittance = " ".join(str(part) for part in remittance if part)
+    values = [remittance, raw.get("additional_information")]
+    for party in ("creditor", "debtor"):
+        party_obj = raw.get(party)
+        name = party_obj.get("name") if isinstance(party_obj, dict) else None
+        values.append(name if isinstance(name, str) and name.strip() else raw.get(f"{party}_name"))
+    return [value.strip() for value in values if isinstance(value, str) and value.strip()]
+
+
+async def _find_settled_eb_hold(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    txn_data,
+    live_external_ids: set[str],
+) -> Optional[Transaction]:
+    """The pending Enable Banking hold that a booked entry settles, if unique.
+
+    Some institutions (PayPal among them) list a card authorization as a
+    pending entry and the charge as a booked entry with a different
+    entry_reference, booked a day or more later. The date and reference
+    both differ, so neither the pending↔posted twin nor the re-key can pair
+    them, and the hold stays behind next to the charge (#1232).
+
+    A held pending row is the booked entry's hold only when it agrees on the
+    amount, currency and type, names the same merchant, is dated up to
+    `_EB_HOLD_SETTLE_DAYS` before the booked entry, and has left the
+    provider's feed: a hold the provider still returns is a purchase of its
+    own that has not booked yet. Rows the user ignored stay as they are.
+    More than one candidate is ambiguous, so none is chosen.
+    """
+    raw = txn_data.raw_data if isinstance(txn_data.raw_data, dict) else {}
+    if txn_data.status != "posted" or not raw.get("credit_debit_indicator"):
+        return None
+    booked_texts = _eb_merchant_texts(raw)
+    if not booked_texts:
+        return None
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.source == "sync",
+            Transaction.status == "pending",
+            Transaction.is_ignored.is_(False),
+            Transaction.raw_data.is_not(None),
+            Transaction.amount == txn_data.amount,
+            Transaction.currency == txn_data.currency,
+            Transaction.type == txn_data.type,
+            Transaction.date >= txn_data.date - timedelta(days=_EB_HOLD_SETTLE_DAYS),
+            Transaction.date <= txn_data.date,
+            Transaction.external_id != txn_data.external_id,
+        )
+    )
+    holds = [
+        candidate
+        for candidate in result.scalars()
+        if candidate.external_id not in live_external_ids
+        and isinstance(candidate.raw_data, dict)
+        and any(
+            token_overlap(held, booked) >= 0.7
+            for held in _eb_merchant_texts(candidate.raw_data)
+            for booked in booked_texts
+        )
+    ]
+    return holds[0] if len(holds) == 1 else None
+
+
 async def _find_synced_duplicate(
     session: AsyncSession,
     account_id: uuid.UUID,
     txn_data,
     incoming_external_ids: set[str],
+    live_external_ids: Optional[set[str]] = None,
 ) -> Optional[Transaction]:
     """Find an existing row that the incoming `txn_data` is a twin of.
 
@@ -1829,6 +1910,13 @@ async def _find_synced_duplicate(
     decides whether to upgrade its status (pending→posted + swap external_id),
     enrich an imported row, or skip the incoming insert. Synthetic bill-charge rows
     (`bill_charge:*`) are excluded — they have their own idempotency keys.
+
+    ``live_external_ids`` is every id the provider returned for the account
+    in this fetch, pending ones included even when the connection does not
+    import them. Only with it can a booked entry claim the pending hold it
+    settles, since that needs to know the hold has left the feed. Leave it
+    out when the fetch was cut short, as a partial set would make a hold the
+    provider still lists look gone.
     """
     # Path 1: installment fingerprint. Highly specific, so we don't require a
     # description match on top.
@@ -2000,7 +2088,7 @@ async def _find_synced_duplicate(
     # Path 5: local import history from before the account was connected.
     # Posting lag and statement exports can shift the date or shorten the
     # merchant description, so accept only one exact normalized merchant/payee.
-    return await find_unique_transaction_match(
+    local_match = await find_unique_transaction_match(
         session,
         account_id,
         txn_data,
@@ -2008,6 +2096,13 @@ async def _find_synced_duplicate(
         unclaimed_only=True,
         exclude_external_ids=incoming_external_ids,
     )
+    if local_match is not None or live_external_ids is None:
+        return local_match
+
+    # Path 6: Enable Banking hold settled under a new reference and date, see
+    # `_find_settled_eb_hold`. Last, so it never takes a row another path
+    # would have matched.
+    return await _find_settled_eb_hold(session, account_id, txn_data, live_external_ids)
 
 
 async def _cleanup_phantom_duplicates(
@@ -2633,6 +2728,13 @@ async def sync_connection(
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
             incoming_txn_external_ids = {txn.external_id for txn in transactions_data}
+            # A partial fetch can't tell a pending hold that left the feed
+            # from one it never reached, so it claims no holds.
+            hold_live_ids = (
+                None
+                if account.id in incomplete_fetch_account_ids
+                else live_txn_external_ids[account.id]
+            )
             for txn_data in transactions_data:
                 existing = await session.execute(
                     select(Transaction)
@@ -2696,7 +2798,11 @@ async def sync_connection(
                 # status, fingerprint match collapses it instead of letting
                 # both rows land.
                 synced_dup = await _find_synced_duplicate(
-                    session, account.id, txn_data, incoming_txn_external_ids
+                    session,
+                    account.id,
+                    txn_data,
+                    incoming_txn_external_ids,
+                    live_external_ids=hold_live_ids,
                 )
                 if synced_dup:
                     if synced_dup.original_description is None:
