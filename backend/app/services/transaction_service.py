@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
@@ -107,6 +108,15 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
         transaction.amount_primary = (amount * Decimal(str(fx_rate_used))).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
+
+
+async def _set_primary_currency(session: AsyncSession, user_id: uuid.UUID, transaction) -> None:
+    if transaction.amount_primary is None:
+        transaction.amount_primary_currency = None
+        return
+    user = await session.get(User, user_id)
+    if user is not None:
+        transaction.amount_primary_currency = user.primary_currency
 
 
 async def get_transactions(
@@ -947,6 +957,7 @@ async def create_transaction(
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
         _apply_fx_override(transaction, data.amount, data.amount_primary, data.fx_rate_used)
+        await _set_primary_currency(session, user_id, transaction)
     else:
         await stamp_primary_amount(session, user_id, transaction)
 
@@ -1061,8 +1072,10 @@ async def create_installment_series(
             await apply_rules_to_transaction(session, user_id, tx)
         if base.fx_rate_used is not None:
             _apply_fx_override(tx, tx.amount, None, base.fx_rate_used)
+            await _set_primary_currency(session, user_id, tx)
         elif base.amount_primary is not None:
             _apply_fx_override(tx, tx.amount, base.amount_primary, None)
+            await _set_primary_currency(session, user_id, tx)
         else:
             await stamp_primary_amount(session, user_id, tx)
         if base.splits is not None:
@@ -1192,6 +1205,7 @@ async def create_transfer(
     # For cross-currency transfers, both sides should show the same primary amount
     if from_account.currency != to_account.currency and debit_tx.amount_primary is not None:
         credit_tx.amount_primary = debit_tx.amount_primary
+        credit_tx.amount_primary_currency = debit_tx.amount_primary_currency
         if credit_tx.amount and Decimal(str(credit_tx.amount)):
             credit_tx.fx_rate_used = debit_tx.amount_primary / Decimal(str(credit_tx.amount))
 
@@ -1457,6 +1471,7 @@ async def create_transfer_counterpart(
     # Cross-currency: keep both sides on the same primary amount.
     if anchor.currency != to_account.currency and anchor.amount_primary is not None:
         counterpart_tx.amount_primary = anchor.amount_primary
+        counterpart_tx.amount_primary_currency = anchor.amount_primary_currency
         if counterpart_tx.amount and Decimal(str(counterpart_tx.amount)):
             counterpart_tx.fx_rate_used = Decimal(str(anchor.amount_primary)) / Decimal(
                 str(counterpart_tx.amount)
@@ -1647,6 +1662,7 @@ async def _apply_update_to_row(
     if has_fx_override:
         if override_amount_primary is None and override_fx_rate is None:
             tx.amount_primary = None
+            tx.amount_primary_currency = None
             tx.fx_rate_used = None
             await stamp_primary_amount(session, user_id, tx)
         else:
@@ -1656,6 +1672,7 @@ async def _apply_update_to_row(
                 override_amount_primary,
                 override_fx_rate,
             )
+            await _set_primary_currency(session, user_id, tx)
     elif needs_restamp or heals_fx_on_post:
         await stamp_primary_amount(session, user_id, tx)
 

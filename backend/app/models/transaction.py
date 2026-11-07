@@ -62,6 +62,9 @@ class Transaction(Base):
         Boolean, default=False, server_default="false"
     )
     amount_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    # Currency represented by amount_primary. Nullable for legacy rows whose
+    # historical display currency cannot be established safely.
+    amount_primary_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
     fx_rate_used: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=20, scale=10), nullable=True)
     # Installment (parcelamento) metadata. Populated from provider data when available.
     # `installment_number` is 1-indexed (e.g. 3 for "3/12"). Storing alongside the

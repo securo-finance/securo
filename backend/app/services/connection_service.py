@@ -1093,6 +1093,9 @@ async def _stamp_synced_primary_amount(
     """
     if converted is not None:
         transaction.amount_primary = converted
+        user = await session.get(User, user_id)
+        if user is not None:
+            transaction.amount_primary_currency = user.primary_currency
         transaction.fx_rate_used = converted / transaction.amount
     else:
         await stamp_primary_amount(session, user_id, transaction)
