@@ -1152,10 +1152,12 @@ def _eb_txn(raw: dict, status: str = "posted") -> TransactionData:
 
 
 async def _sync_eb(
-    session, conn, workspace_id, user_id, txns: list[TransactionData], *, incomplete=False,
+    session, conn, workspace_id, user_id, txns: list[TransactionData], *,
+    incomplete=False, truncated=False,
 ):
     mock_provider = AsyncMock()
     mock_provider.incomplete_account_ids = {"eb-account"} if incomplete else set()
+    mock_provider.truncated_account_ids = {"eb-account"} if truncated else set()
     mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
     mock_provider.get_accounts = AsyncMock(return_value=[
         AccountData(
@@ -1591,12 +1593,17 @@ def _paypal_payload(
     creditor: str = "MERCADO CENTRAL",
     amount: str = "4.83",
     currency: str = "EUR",
+    debtor: str | None = None,
+    remittance: list[str] | None = None,
 ) -> dict:
     """A PayPal card purchase as Enable Banking returns it (LU): the hold is a
     pending entry, and the charge a booked entry with its own reference,
     dated a day later. Neither carries a booking date or remittance text, and
-    PayPal pads the merchant name to 22 characters."""
+    PayPal pads the merchant name to 22 characters. Other institutions also
+    name the account holder as the debtor of a card purchase."""
+    party = {"debtor": {"name": debtor}} if debtor else {}
     return {
+        **party,
         "entry_reference": entry_ref,
         "status": "BOOK" if booked else "PDNG",
         "bank_transaction_code": {
@@ -1610,7 +1617,7 @@ def _paypal_payload(
         "booking_date": None,
         "value_date": None,
         "transaction_date": transaction_date,
-        "remittance_information": [],
+        "remittance_information": remittance or [],
     }
 
 
@@ -1711,11 +1718,13 @@ async def test_sync_connection_enable_banking_hold_still_returned_is_not_claimed
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("partial", ["incomplete", "truncated"])
 async def test_sync_connection_enable_banking_hold_not_claimed_after_partial_fetch(
-    session: AsyncSession, test_user, test_workspace,
+    session: AsyncSession, test_user, test_workspace, partial,
 ):
-    """A fetch cut short says nothing about the holds it never reached, so the
-    charge lands as its own row and the hold stays until a complete fetch."""
+    """A fetch cut short, or one whose pages stopped before the last, says
+    nothing about the holds it never reached, so the charge lands as its own
+    row and the hold stays until a complete fetch."""
     conn, account = await _eb_account(session, test_user.id, test_workspace.id)
     account_id = account.id
     await session.commit()
@@ -1725,7 +1734,7 @@ async def test_sync_connection_enable_banking_hold_not_claimed_after_partial_fet
 
     await _sync_eb(
         session, conn, test_workspace.id, test_user.id,
-        await _eb_fetch([charge], []), incomplete=True,
+        await _eb_fetch([charge], []), **{partial: True},
     )
 
     rows = await _account_rows(session, account_id)
@@ -1849,7 +1858,7 @@ async def test_sync_connection_enable_banking_hold_claim_date_window(
 @pytest.mark.parametrize(
     "hold_fields",
     [
-        {"creditor": "PARCEL LOGISTICS"},
+        {"creditor": "PARCEL LOGISTICS", "debtor": "EXAMPLE TRADING SL"},
         {"amount": "4.38"},
         {"currency": "USD"},
         {"ignored": True},
@@ -1860,15 +1869,19 @@ async def test_sync_connection_enable_banking_charge_leaves_other_hold_alone(
     session: AsyncSession, test_user, test_workspace, hold_fields,
 ):
     """A hold that names another merchant, or is for another amount or
-    currency, is another purchase. A hold the user ignored stays ignored, so
-    the charge never inherits the flag and drops out of the totals."""
+    currency, is another purchase. The account holder named as the debtor of
+    both is not a merchant they share. A hold the user ignored stays ignored,
+    so the charge never inherits the flag and drops out of the totals."""
     conn, account = await _eb_account(session, test_user.id, test_workspace.id)
     account_id = account.id
     await session.commit()
     fields = dict(hold_fields)
     ignored = fields.pop("ignored", False)
-    hold = _paypal_payload("1HD00000AA0000001", "2026-11-04", booked=False, **fields)
-    charge = _paypal_payload("7PY00000AA0000001", "2026-11-05", booked=True)
+    debtor = fields.pop("debtor", None)
+    hold = _paypal_payload(
+        "1HD00000AA0000001", "2026-11-04", booked=False, debtor=debtor, **fields,
+    )
+    charge = _paypal_payload("7PY00000AA0000001", "2026-11-05", booked=True, debtor=debtor)
     await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [hold])
     if ignored:
         (held,) = await _account_rows(session, account_id)
@@ -1883,6 +1896,41 @@ async def test_sync_connection_enable_banking_charge_leaves_other_hold_alone(
     assert sorted((row.date, row.status, row.is_ignored) for row in rows) == [
         (date(2026, 11, 4), "pending", ignored),
         (date(2026, 11, 5), "posted", False),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_claimed_hold_rekeys_by_booked_date(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A hold claimed by a charge booked five days later keeps the hold's
+    date. When a later fetch changes the charge's payload, and so its id, the
+    row is re-keyed by the booked date it stores, instead of the charge
+    landing a second time."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    hold = _paypal_payload("1HD00000AA0000001", "2026-10-31", booked=False)
+    charge = _paypal_payload("7PY00000AA0000001", "2026-11-05", booked=True)
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [hold])
+    (held,) = await _account_rows(session, account_id)
+    held_id = held.id
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    enriched = _paypal_payload(
+        "7PY00000AA0000001", "2026-11-05", booked=True,
+        remittance=["PAYPAL *MERCADO CENTRAL"],
+    )
+    assert _eb_txn(enriched).external_id != _eb_txn(charge).external_id
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([enriched], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.date, row.external_id) for row in rows] == [
+        (held_id, date(2026, 10, 31), _eb_txn(enriched).external_id),
     ]
 
 

@@ -297,6 +297,13 @@ class EnableBankingProvider(BankProvider):
     _cached_token_exp: float = 0.0
     _cached_private_key: Optional[str] = None
 
+    def __init__(self) -> None:
+        # External ids of accounts whose transaction pages stopped before the
+        # last one (a repeated cursor or the page cap). What was read is still
+        # imported, but it is not the whole feed, so the sync layer must not
+        # take an entry missing from it as one the bank stopped listing.
+        self.truncated_account_ids: set[str] = set()
+
     @property
     def name(self) -> str:
         return "enable_banking"
@@ -787,9 +794,18 @@ class EnableBankingProvider(BankProvider):
                     "(repeated continuation key); stopping pagination",
                     account_external_id,
                 )
+                self.truncated_account_ids.add(account_external_id)
                 break
             seen_continuation_keys.add(next_continuation_key)
             continuation_key = next_continuation_key
+        else:
+            logger.warning(
+                "Enable Banking returned more than %d transaction pages for "
+                "account %s; stopping pagination",
+                TRANSACTION_PAGE_LIMIT,
+                account_external_id,
+            )
+            self.truncated_account_ids.add(account_external_id)
         # While an operation settles, an institution can list it as booked and
         # still as pending in the same response. The two spellings differ (the
         # booked one carries the booking date), so they hash to different ids:

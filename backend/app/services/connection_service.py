@@ -1815,17 +1815,35 @@ def _eb_merchant_texts(raw: dict) -> list[str]:
 
     Read from the payload rather than from the row, so a description the user
     edited, or the provider's "Transaction" placeholder for an entry that names
-    nothing, never counts as a merchant.
+    nothing, never counts as a merchant. Only the counterparty on the far side
+    of the entry counts: the creditor of a debit, the debtor of a credit. The
+    near side is usually the account holder, the same on every entry.
     """
     remittance = raw.get("remittance_information")
     if isinstance(remittance, list):
         remittance = " ".join(str(part) for part in remittance if part)
-    values = [remittance, raw.get("additional_information")]
-    for party in ("creditor", "debtor"):
-        party_obj = raw.get(party)
-        name = party_obj.get("name") if isinstance(party_obj, dict) else None
-        values.append(name if isinstance(name, str) and name.strip() else raw.get(f"{party}_name"))
+    indicator = raw.get("credit_debit_indicator")
+    party = "creditor" if isinstance(indicator, str) and indicator.upper() == "DBIT" else "debtor"
+    party_obj = raw.get(party)
+    name = party_obj.get("name") if isinstance(party_obj, dict) else None
+    if not isinstance(name, str) or not name.strip():
+        name = raw.get(f"{party}_name")
+    values = [remittance, raw.get("additional_information"), name]
     return [value.strip() for value in values if isinstance(value, str) and value.strip()]
+
+
+def _eb_entry_date(raw: dict) -> Optional[date]:
+    """The date an Enable Banking payload gives its entry, read the way the
+    provider reads it: the booking date, else the value date, else the
+    transaction date."""
+    for key in ("booking_date", "value_date", "transaction_date"):
+        value = raw.get(key)
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value[:10])
+            except ValueError:
+                continue
+    return None
 
 
 async def _find_settled_eb_hold(
@@ -2037,6 +2055,11 @@ async def _find_synced_duplicate(
     # itself competes, and it is the single candidate: two identical purchases
     # on one day are ambiguous, and picking one would hang its category and
     # notes on the other.
+    #
+    # A row that took over the pending hold it settled (Path 6) keeps the
+    # hold's date, up to `_EB_HOLD_SETTLE_DAYS` before the booking. It is
+    # compared by the date its stored booked payload carries as well, so a
+    # later change to that payload still re-keys it.
     entry_ref = raw.get("entry_reference")
     entry_ref = entry_ref.strip() if isinstance(entry_ref, str) else ""
     if entry_ref and entry_ref != "0":
@@ -2047,7 +2070,8 @@ async def _find_synced_duplicate(
                 Transaction.source.in_(LOCAL_IMPORT_SOURCES),
             ),
             Transaction.raw_data.is_not(None),
-            Transaction.date >= txn_data.date - timedelta(days=3),
+            Transaction.date
+            >= txn_data.date - timedelta(days=3 + _EB_HOLD_SETTLE_DAYS),
             Transaction.date <= txn_data.date + timedelta(days=3),
             Transaction.amount == txn_data.amount,
             Transaction.type == txn_data.type,
@@ -2062,6 +2086,11 @@ async def _find_synced_duplicate(
             if candidate.external_id in incoming_external_ids:
                 continue
             if not isinstance(candidate.raw_data, dict):
+                continue
+            stored_date = _eb_entry_date(candidate.raw_data)
+            if abs((candidate.date - txn_data.date).days) > 3 and (
+                stored_date is None or abs((stored_date - txn_data.date).days) > 3
+            ):
                 continue
             candidate_ref = candidate.raw_data.get("entry_reference")
             if isinstance(candidate_ref, str):
@@ -2728,13 +2757,14 @@ async def sync_connection(
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
             incoming_txn_external_ids = {txn.external_id for txn in transactions_data}
-            # A partial fetch can't tell a pending hold that left the feed
-            # from one it never reached, so it claims no holds.
-            hold_live_ids = (
-                None
-                if account.id in incomplete_fetch_account_ids
-                else live_txn_external_ids[account.id]
+            # A fetch cut short, or one whose pages stopped before the last,
+            # can't tell a pending hold that left the feed from one it never
+            # reached, so it claims no holds.
+            truncated = getattr(provider, "truncated_account_ids", None)
+            partial_feed = account.id in incomplete_fetch_account_ids or (
+                isinstance(truncated, set) and acc_data.external_id in truncated
             )
+            hold_live_ids = None if partial_feed else live_txn_external_ids[account.id]
             for txn_data in transactions_data:
                 existing = await session.execute(
                     select(Transaction)
