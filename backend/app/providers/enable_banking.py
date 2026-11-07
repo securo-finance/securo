@@ -321,6 +321,10 @@ def _error_body(resp: httpx.Response) -> dict:
     return body if isinstance(body, dict) else {}
 
 
+# EB's wording for an ASPSP_ERROR it has no further reason for.
+_GENERIC_ASPSP_ERROR_MESSAGE = "error interacting with aspsp"
+
+
 def _error_detail(body: dict) -> str:
     """The bank's own reason, when EB relays one in `detail`."""
     detail = body.get("detail")
@@ -336,9 +340,10 @@ def _needs_present_user(resp: httpx.Response, requires_psu_headers: bool) -> boo
     Banks answer a background call they do not allow (an endpoint outside
     their background allowance, or one past its daily quota) with an error
     that names the missing PSU header, which counts whatever /aspsps said.
-    They can also answer with EB's generic ASPSP_ERROR; that only counts for
-    an ASPSP that declares `required_psu_headers`, and not when EB relays the
-    bank's reason and it is something else.
+    They can also answer with EB's generic ASPSP_ERROR, which carries no
+    reason at all; that only counts for an ASPSP that declares
+    `required_psu_headers`. An ASPSP_ERROR that gives any other reason, in
+    `message` or `detail`, is not a presence refusal.
     """
     if resp.status_code >= 500:
         return False
@@ -346,13 +351,15 @@ def _needs_present_user(resp: httpx.Response, requires_psu_headers: bool) -> boo
     error = body.get("error")
     if error == "PSU_HEADER_NOT_PROVIDED":
         return True
-    message = body.get("message") if isinstance(body.get("message"), str) else ""
+    raw_message = body.get("message")
+    message = raw_message if isinstance(raw_message, str) else ""
     detail = _error_detail(body)
     text = f"{message} {detail}".lower()
     if "psu" in text and "header" in text:
         return True
     if resp.status_code == 400 and error == "ASPSP_ERROR":
-        return requires_psu_headers and not detail
+        generic = message.strip().lower() in ("", _GENERIC_ASPSP_ERROR_MESSAGE)
+        return requires_psu_headers and generic and not detail
     return False
 
 

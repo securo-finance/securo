@@ -298,9 +298,15 @@ async def test_a_generic_aspsp_error_without_metadata_is_a_plain_error(eb_keys):
 
 
 @pytest.mark.asyncio
-async def test_an_aspsp_error_with_another_reason_is_a_plain_error(eb_keys):
+@pytest.mark.parametrize(
+    "body",
+    [
+        {**ASPSP_ERROR, "detail": {"message": "Service temporarily unavailable"}},
+        {**ASPSP_ERROR, "message": "Service temporarily unavailable"},
+    ],
+)
+async def test_an_aspsp_error_with_another_reason_is_a_plain_error(eb_keys, body):
     """A bank that wants headers can still fail for something else."""
-    body = {**ASPSP_ERROR, "detail": {"message": "Service temporarily unavailable"}}
     with pytest.raises(httpx.HTTPStatusError):
         await _fetch_balance(["Psu-Ip-Address"], 400, body)
 
