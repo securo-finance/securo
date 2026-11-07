@@ -247,7 +247,7 @@ async def _fetch_balance(required, status, body, context=None):
     ("status", "body"),
     [
         (400, ASPSP_ERROR),
-        (429, MISSING_HEADER_429),
+        (403, {"code": 403, "message": "HTTP header is required: PSU-IP-Address."}),
         (422, {"code": 422, "message": "x", "error": "PSU_HEADER_NOT_PROVIDED"}),
     ],
 )
@@ -271,9 +271,13 @@ async def test_refusal_with_the_users_headers_is_a_plain_error(eb_keys):
 
 
 @pytest.mark.asyncio
-async def test_a_real_rate_limit_stays_a_rate_limit(eb_keys):
+@pytest.mark.parametrize("body", [PLAIN_429, MISSING_HEADER_429])
+@pytest.mark.parametrize("required", [["Psu-Ip-Address"], None])
+async def test_a_429_stays_a_rate_limit_whatever_its_body(eb_keys, body, required):
+    """A 429 that names the PSU header is still the bank's daily allowance
+    running out: it resets on its own, so the connection is not errored."""
     with pytest.raises(ProviderRateLimited):
-        await _fetch_balance(["Psu-Ip-Address"], 429, PLAIN_429)
+        await _fetch_balance(required, 429, body)
 
 
 MISSING_HEADER_400 = {
@@ -283,7 +287,13 @@ MISSING_HEADER_400 = {
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("status", "body"), [(429, MISSING_HEADER_429), (400, MISSING_HEADER_400)])
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (400, MISSING_HEADER_400),
+        (403, {"code": 403, "message": "HTTP header is required: PSU-IP-Address."}),
+    ],
+)
 async def test_a_refusal_naming_the_header_counts_without_aspsp_metadata(eb_keys, status, body):
     """/aspsps can fail or omit the field; the bank's own words still count."""
     with pytest.raises(ProviderUserActionRequired) as exc:
@@ -437,6 +447,67 @@ async def test_sync_still_reports_a_balance_that_needs_the_user(eb_keys):
     }
     with _patch_client(provider, handler), pytest.raises(ProviderUserActionRequired):
         await provider.get_accounts(credentials)
+
+
+def _two_accounts_one_refused(refused: set[str]):
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-1":
+            return httpx.Response(200, json={"accounts_data": [{"uid": "acc-1"}, {"uid": "acc-2"}]})
+        uid = path.split("/")[2]
+        if uid in refused:
+            return httpx.Response(400, json=ASPSP_ERROR)
+        if path.endswith("/details"):
+            return httpx.Response(200, json={"uid": uid, "currency": "NOK", "name": uid})
+        return httpx.Response(200, json={"balances": [
+            {"balance_type": "CLBD", "balance_amount": {"amount": "5.00", "currency": "NOK"}},
+        ]})
+
+    return handler
+
+
+REQUIRES_IP = {"name": "Bank", "required_psu_headers": ["Psu-Ip-Address"]}
+
+
+@pytest.mark.asyncio
+async def test_a_presence_refusal_skips_only_that_account(eb_keys):
+    """Like a refused /details: the other accounts still sync."""
+    provider = EnableBankingProvider()
+    credentials = {"session_id": "sess-1", "aspsp": REQUIRES_IP}
+    with _patch_client(provider, _two_accounts_one_refused({"acc-1"})):
+        result = await provider.get_accounts(credentials)
+
+    assert [a.external_id for a in result] == ["acc-2"]
+
+
+@pytest.mark.asyncio
+async def test_a_presence_refusal_of_every_account_fails_the_sync(eb_keys):
+    provider = EnableBankingProvider()
+    credentials = {"session_id": "sess-1", "aspsp": REQUIRES_IP}
+    with _patch_client(provider, _two_accounts_one_refused({"acc-1", "acc-2"})), \
+            pytest.raises(ProviderUserActionRequired) as exc:
+        await provider.get_accounts(credentials)
+
+    assert exc.value.code == "psu_present_required"
+
+
+@pytest.mark.asyncio
+async def test_the_proxy_hint_goes_to_the_log_not_to_the_user(eb_keys, caplog):
+    """A member cannot act on TRUSTED_PROXY_HOPS; whoever runs the server can."""
+    no_ip = PsuContext(headers={"Psu-User-Agent": BROWSER_UA})
+    with caplog.at_level("WARNING"), pytest.raises(ProviderUserActionRequired) as exc:
+        await _fetch_balance(["Psu-Ip-Address"], 400, ASPSP_ERROR, context=no_ip)
+
+    assert "TRUSTED_PROXY_HOPS" not in str(exc.value)
+    assert "TRUSTED_PROXY_HOPS" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_background_refusal_logs_no_proxy_hint(eb_keys, caplog):
+    with caplog.at_level("WARNING"), pytest.raises(ProviderUserActionRequired):
+        await _fetch_balance(["Psu-Ip-Address"], 400, ASPSP_ERROR)
+
+    assert "TRUSTED_PROXY_HOPS" not in caplog.text
 
 
 # ----- the API opens the context, the scheduler does not -----

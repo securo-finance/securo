@@ -532,6 +532,16 @@ class EnableBankingProvider(BankProvider):
             raise SessionExpiredError(
                 f"Enable Banking returned {resp.status_code} for {path}"
             )
+        if resp.status_code == 429:
+            # The bank (ASPSP) is throttling us — transient, not a broken
+            # connection. Surface a distinct type so sync can skip-and-retry
+            # instead of erroring the connection. This holds whatever the body
+            # says: a bank whose daily background allowance has run out can
+            # answer 429 naming the PSU header it wanted, and that is still a
+            # limit that resets on its own, not a refusal.
+            raise ProviderRateLimited(
+                f"Enable Banking {method} {path} → 429: {resp.text[:200]}"
+            )
         if (
             resp.status_code >= 400
             and _is_data_request(path)
@@ -547,19 +557,20 @@ class EnableBankingProvider(BankProvider):
                 resp.status_code,
                 resp.text[:300],
             )
+            if current_psu_context() is not None:
+                # The user did sync, but their request had no public IP to
+                # pass on. Only the operator can fix that, so the hint is for
+                # the log, not for the member reading the error.
+                logger.warning(
+                    "A user-triggered Enable Banking sync reached %s without the "
+                    "user's PSU headers; check that TRUSTED_PROXY_HOPS matches the "
+                    "reverse proxies in front of the backend",
+                    self._institution_name,
+                )
             raise ProviderUserActionRequired(
                 f"{self._institution_name} only answers this request while you are "
-                "present. Sync this connection from Securo to refresh it. If a manual "
-                "sync fails the same way, Securo could not tell your public IP address "
-                "(see TRUSTED_PROXY_HOPS).",
+                "present. Sync this connection from Securo to refresh it.",
                 code="psu_present_required",
-            )
-        if resp.status_code == 429:
-            # The bank (ASPSP) is throttling us — transient, not a broken
-            # connection. Surface a distinct type so sync can skip-and-retry
-            # instead of erroring the connection.
-            raise ProviderRateLimited(
-                f"Enable Banking {method} {path} → 429: {resp.text[:200]}"
             )
         if resp.status_code >= 400:
             raise httpx.HTTPStatusError(
@@ -920,6 +931,7 @@ class EnableBankingProvider(BankProvider):
         user_present = bool(self._present_psu_headers())
         result: list[AccountData] = []
         transient_error: Optional[httpx.HTTPError] = None
+        presence_refusal: Optional[ProviderUserActionRequired] = None
         for uid in uids:
             cached = cached_details.get(uid)
             try:
@@ -934,6 +946,19 @@ class EnableBankingProvider(BankProvider):
                     )
                     continue
                 details = await self._request("GET", f"/accounts/{uid}/details")
+                cached_details[uid] = _details_summary(details)
+                result.append(
+                    await self._build_account(details, stable_external_ids.get(uid))
+                )
+            except ProviderUserActionRequired as exc:
+                # A bank refusing one account without the user present says
+                # nothing about the others, so this account is skipped for the
+                # run like a refused /details, and the rest still sync.
+                if exc.code != "psu_present_required":
+                    raise
+                logger.warning("Account %s needs the user present: %s", uid, exc)
+                presence_refusal = presence_refusal or exc
+                continue
             except httpx.HTTPError as exc:
                 # A *transient* per-account failure. Without details we can't
                 # safely name/type the account, and a bare-uid AccountData would
@@ -951,8 +976,6 @@ class EnableBankingProvider(BankProvider):
                 if not is_refusal:
                     transient_error = exc
                 continue
-            cached_details[uid] = _details_summary(details)
-            result.append(await self._build_account(details, stable_external_ids.get(uid)))
         # Skipping is only safe while something still syncs. When the bank refuses
         # every account, an empty list would pass for a successful sync: the
         # connection stays "active", last_sync_at keeps moving and the balances
@@ -963,6 +986,10 @@ class EnableBankingProvider(BankProvider):
             # failure, rather than as accounts_unavailable.
             if transient_error is not None:
                 raise transient_error
+            # Every account wanted the user (or was otherwise refused): say
+            # what the user can do about it rather than the generic refusal.
+            if presence_refusal is not None:
+                raise presence_refusal
             raise ProviderUserActionRequired(
                 f"The bank refused all {len(uids)} account(s) on this connection. "
                 "Retry later, or reconnect if it keeps failing.",
