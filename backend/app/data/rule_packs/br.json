@@ -1,8 +1,5 @@
 {
-  "manifest_version": 1,
   "id": "securo/rules-br",
-  "version": "1.0.0",
-  "default_locale": "pt-BR",
   "name": {
     "en": "Brazil",
     "pt-BR": "Brasil"
@@ -11,31 +8,15 @@
     "en": "Common merchants and transfer patterns, mapped to the default categories.",
     "pt-BR": "Estabelecimentos e padrões de transferência comuns, mapeados para as categorias padrão."
   },
-  "author": {
-    "name": "Securo",
-    "github": "securo-finance"
-  },
+  "version": "1.0.0",
   "repository": "https://github.com/securo-finance/securo",
   "license": "AGPL-3.0-only",
-  "securo": ">=0.19.0",
-  "applies_to": {
-    "currencies": [
-      "BRL"
-    ],
-    "countries": [
-      "BR"
-    ]
-  },
-  "privacy": {
-    "data_leaves_instance": false
-  },
+  "min_securo_version": "0.19.0",
   "contributes": {
     "rules": [
       {
         "key": "99-ride-hailing",
-        "name": {
-          "pt-BR": "99 (Ride-hailing)"
-        },
+        "name": "99 (Ride-hailing)",
         "conditions_op": "or",
         "conditions": [
           {
@@ -59,9 +40,7 @@
       },
       {
         "key": "ifood-rappi",
-        "name": {
-          "pt-BR": "iFood / Rappi"
-        },
+        "name": "iFood / Rappi",
         "conditions_op": "or",
         "conditions": [
           {
@@ -85,9 +64,7 @@
       },
       {
         "key": "mercado-livre",
-        "name": {
-          "pt-BR": "Mercado Livre"
-        },
+        "name": "Mercado Livre",
         "conditions_op": "or",
         "conditions": [
           {
@@ -111,9 +88,7 @@
       },
       {
         "key": "pix-recebido",
-        "name": {
-          "pt-BR": "Pix Recebido"
-        },
+        "name": "Pix Recebido",
         "conditions_op": "and",
         "conditions": [
           {
@@ -132,9 +107,7 @@
       },
       {
         "key": "transferencia",
-        "name": {
-          "pt-BR": "Transferência"
-        },
+        "name": "Transferência",
         "conditions_op": "and",
         "conditions": [
           {
@@ -153,9 +126,7 @@
       },
       {
         "key": "shopee-magazine-luiza",
-        "name": {
-          "pt-BR": "Shopee / Magazine Luiza"
-        },
+        "name": "Shopee / Magazine Luiza",
         "conditions_op": "or",
         "conditions": [
           {
@@ -184,9 +155,7 @@
       },
       {
         "key": "drogaria-farmacia",
-        "name": {
-          "pt-BR": "Drogaria / Farmácia"
-        },
+        "name": "Drogaria / Farmácia",
         "conditions_op": "or",
         "conditions": [
           {
@@ -220,9 +189,7 @@
       },
       {
         "key": "uber-eats",
-        "name": {
-          "pt-BR": "Uber Eats"
-        },
+        "name": "Uber Eats",
         "conditions_op": "or",
         "conditions": [
           {
@@ -246,9 +213,7 @@
       },
       {
         "key": "claro-vivo-tim",
-        "name": {
-          "pt-BR": "Claro / Vivo / Tim"
-        },
+        "name": "Claro / Vivo / Tim",
         "conditions_op": "or",
         "conditions": [
           {
@@ -277,9 +242,7 @@
       },
       {
         "key": "posto-shell-combustivel",
-        "name": {
-          "pt-BR": "Posto / Shell (Combustível)"
-        },
+        "name": "Posto / Shell (Combustível)",
         "conditions_op": "or",
         "conditions": [
           {
@@ -308,9 +271,7 @@
       },
       {
         "key": "supermercado-carrefour-assai",
-        "name": {
-          "pt-BR": "Supermercado / Carrefour / Assaí"
-        },
+        "name": "Supermercado / Carrefour / Assaí",
         "conditions_op": "or",
         "conditions": [
           {
@@ -339,9 +300,7 @@
       },
       {
         "key": "smart-fit-academia",
-        "name": {
-          "pt-BR": "Smart Fit / Academia"
-        },
+        "name": "Smart Fit / Academia",
         "conditions_op": "or",
         "conditions": [
           {
@@ -365,9 +324,7 @@
       },
       {
         "key": "aluguel",
-        "name": {
-          "pt-BR": "Aluguel"
-        },
+        "name": "Aluguel",
         "conditions_op": "or",
         "conditions": [
           {
@@ -386,9 +343,7 @@
       },
       {
         "key": "salario-folha",
-        "name": {
-          "pt-BR": "Salário / Folha"
-        },
+        "name": "Salário / Folha",
         "conditions_op": "and",
         "conditions": [
           {
@@ -407,9 +362,7 @@
       },
       {
         "key": "dizimo-doacao",
-        "name": {
-          "pt-BR": "Dízimo / Doação"
-        },
+        "name": "Dízimo / Doação",
         "conditions_op": "or",
         "conditions": [
           {
@@ -438,9 +391,7 @@
       },
       {
         "key": "pix-enviado",
-        "name": {
-          "pt-BR": "Pix Enviado"
-        },
+        "name": "Pix Enviado",
         "conditions_op": "and",
         "conditions": [
           {
@@ -459,9 +410,7 @@
       },
       {
         "key": "estacionamento-pedagio",
-        "name": {
-          "pt-BR": "Estacionamento / Pedágio"
-        },
+        "name": "Estacionamento / Pedágio",
         "conditions_op": "or",
         "conditions": [
           {
@@ -490,9 +439,7 @@
       },
       {
         "key": "barbearia-salao",
-        "name": {
-          "pt-BR": "Barbearia / Salão"
-        },
+        "name": "Barbearia / Salão",
         "conditions_op": "or",
         "conditions": [
           {
@@ -521,9 +468,7 @@
       },
       {
         "key": "iptu-ipva-imposto",
-        "name": {
-          "pt-BR": "IPTU / IPVA / Imposto"
-        },
+        "name": "IPTU / IPVA / Imposto",
         "conditions_op": "or",
         "conditions": [
           {
@@ -557,9 +502,7 @@
       },
       {
         "key": "condominio",
-        "name": {
-          "pt-BR": "Condomínio"
-        },
+        "name": "Condomínio",
         "conditions_op": "or",
         "conditions": [
           {
@@ -578,9 +521,7 @@
       },
       {
         "key": "curso-escola-faculdade",
-        "name": {
-          "pt-BR": "Curso / Escola / Faculdade"
-        },
+        "name": "Curso / Escola / Faculdade",
         "conditions_op": "or",
         "conditions": [
           {

@@ -78,6 +78,14 @@ def test_every_pack_file_is_listed_and_named_after_its_id():
         assert packs[name.upper()].source == f"securo/rules-{name}"
 
 
+def test_plain_text_is_english():
+    manifest = json.loads((PACKS_DIR / "br.json").read_text(encoding="utf-8"))
+    assert isinstance(manifest["contributes"]["rules"][0]["name"], str)
+    pack = built_in_packs()["BR"]
+    assert pack.names == {"en": "Brazil", "pt-BR": "Brasil"}
+    assert pack.name == "Brazil"
+
+
 def test_flags():
     assert built_in_packs()["BR"].flag == "\U0001F1E7\U0001F1F7"
     assert built_in_packs()["EU"].flag == "\U0001F1EA\U0001F1FA"
@@ -86,14 +94,19 @@ def test_flags():
 @pytest.mark.parametrize(
     "change",
     [
-        lambda m: m["privacy"].update(data_leaves_instance=True),
+        lambda m: m.update(network=[{"host": "example.com", "purpose": "x"}]),
+        lambda m: m.update(runtime={"entrypoint": "x:y"}),
         lambda m: m["contributes"]["rules"][0].update(key="Not A Key"),
-        lambda m: m.update(default_locale="fr"),
-        lambda m: m.update(manifest_version=2),
+        lambda m: m.update(name={"pt-BR": "Brasil"}),
+        lambda m: m.update(min_securo_version=">=0.19"),
+        lambda m: m.pop("min_securo_version"),
         lambda m: m["contributes"]["rules"].append(m["contributes"]["rules"][0]),
         lambda m: m["contributes"].update(categories=[]),
     ],
-    ids=["leaks data", "bad key", "no default-locale text", "unknown version", "duplicate key", "not just rules"],
+    ids=[
+        "data pack reaches the network", "data pack runs code", "bad key", "translation without en",
+        "a range instead of a minimum", "no minimum version", "duplicate key", "not just rules",
+    ],
 )
 def test_a_pack_that_breaks_the_contract_is_rejected(tmp_path, change):
     manifest = json.loads((PACKS_DIR / "br.json").read_text(encoding="utf-8"))

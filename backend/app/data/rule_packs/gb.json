@@ -1,8 +1,5 @@
 {
-  "manifest_version": 1,
   "id": "securo/rules-gb",
-  "version": "1.0.0",
-  "default_locale": "en",
   "name": {
     "en": "United Kingdom",
     "pt-BR": "Reino Unido"
@@ -11,31 +8,15 @@
     "en": "Common merchants and transfer patterns, mapped to the default categories.",
     "pt-BR": "Estabelecimentos e padrões de transferência comuns, mapeados para as categorias padrão."
   },
-  "author": {
-    "name": "Securo",
-    "github": "securo-finance"
-  },
+  "version": "1.0.0",
   "repository": "https://github.com/securo-finance/securo",
   "license": "AGPL-3.0-only",
-  "securo": ">=0.19.0",
-  "applies_to": {
-    "currencies": [
-      "GBP"
-    ],
-    "countries": [
-      "GB"
-    ]
-  },
-  "privacy": {
-    "data_leaves_instance": false
-  },
+  "min_securo_version": "0.19.0",
   "contributes": {
     "rules": [
       {
         "key": "tesco-sainsbury-s-asda",
-        "name": {
-          "en": "Tesco / Sainsbury's / Asda"
-        },
+        "name": "Tesco / Sainsbury's / Asda",
         "conditions_op": "or",
         "conditions": [
           {
@@ -64,9 +45,7 @@
       },
       {
         "key": "deliveroo-just-eat",
-        "name": {
-          "en": "Deliveroo / Just Eat"
-        },
+        "name": "Deliveroo / Just Eat",
         "conditions_op": "or",
         "conditions": [
           {
@@ -90,9 +69,7 @@
       },
       {
         "key": "tfl-trainline",
-        "name": {
-          "en": "TfL / Trainline"
-        },
+        "name": "TfL / Trainline",
         "conditions_op": "or",
         "conditions": [
           {
@@ -116,9 +93,7 @@
       },
       {
         "key": "greggs-costa-pret",
-        "name": {
-          "en": "Greggs / Costa / Pret"
-        },
+        "name": "Greggs / Costa / Pret",
         "conditions_op": "or",
         "conditions": [
           {
@@ -147,9 +122,7 @@
       },
       {
         "key": "shell-bp-esso-fuel",
-        "name": {
-          "en": "Shell / BP / Esso (Fuel)"
-        },
+        "name": "Shell / BP / Esso (Fuel)",
         "conditions_op": "or",
         "conditions": [
           {
@@ -178,9 +151,7 @@
       },
       {
         "key": "boots-superdrug",
-        "name": {
-          "en": "Boots / Superdrug"
-        },
+        "name": "Boots / Superdrug",
         "conditions_op": "or",
         "conditions": [
           {
@@ -204,9 +175,7 @@
       },
       {
         "key": "sky-bt-virgin-media",
-        "name": {
-          "en": "Sky / BT / Virgin Media"
-        },
+        "name": "Sky / BT / Virgin Media",
         "conditions_op": "or",
         "conditions": [
           {
@@ -235,9 +204,7 @@
       },
       {
         "key": "argos",
-        "name": {
-          "en": "Argos"
-        },
+        "name": "Argos",
         "conditions_op": "or",
         "conditions": [
           {
@@ -256,9 +223,7 @@
       },
       {
         "key": "m-s",
-        "name": {
-          "en": "M&S"
-        },
+        "name": "M&S",
         "conditions_op": "or",
         "conditions": [
           {
@@ -282,9 +247,7 @@
       },
       {
         "key": "aldi-lidl-morrisons-waitrose",
-        "name": {
-          "en": "Aldi / Lidl / Morrisons / Waitrose"
-        },
+        "name": "Aldi / Lidl / Morrisons / Waitrose",
         "conditions_op": "or",
         "conditions": [
           {
@@ -318,9 +281,7 @@
       },
       {
         "key": "hmrc-council-tax",
-        "name": {
-          "en": "HMRC / Council Tax"
-        },
+        "name": "HMRC / Council Tax",
         "conditions_op": "or",
         "conditions": [
           {
@@ -344,9 +305,7 @@
       },
       {
         "key": "nhs-bupa",
-        "name": {
-          "en": "NHS / Bupa"
-        },
+        "name": "NHS / Bupa",
         "conditions_op": "or",
         "conditions": [
           {
@@ -370,9 +329,7 @@
       },
       {
         "key": "salary-wages",
-        "name": {
-          "en": "Salary / Wages"
-        },
+        "name": "Salary / Wages",
         "conditions_op": "and",
         "conditions": [
           {
@@ -391,9 +348,7 @@
       },
       {
         "key": "charity-donation",
-        "name": {
-          "en": "Charity / Donation"
-        },
+        "name": "Charity / Donation",
         "conditions_op": "or",
         "conditions": [
           {
@@ -422,9 +377,7 @@
       },
       {
         "key": "rent-mortgage",
-        "name": {
-          "en": "Rent / Mortgage"
-        },
+        "name": "Rent / Mortgage",
         "conditions_op": "or",
         "conditions": [
           {

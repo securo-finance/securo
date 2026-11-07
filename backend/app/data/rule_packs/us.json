@@ -1,8 +1,5 @@
 {
-  "manifest_version": 1,
   "id": "securo/rules-us",
-  "version": "1.0.0",
-  "default_locale": "en",
   "name": {
     "en": "United States",
     "pt-BR": "Estados Unidos"
@@ -11,31 +8,15 @@
     "en": "Common merchants and transfer patterns, mapped to the default categories.",
     "pt-BR": "Estabelecimentos e padrões de transferência comuns, mapeados para as categorias padrão."
   },
-  "author": {
-    "name": "Securo",
-    "github": "securo-finance"
-  },
+  "version": "1.0.0",
   "repository": "https://github.com/securo-finance/securo",
   "license": "AGPL-3.0-only",
-  "securo": ">=0.19.0",
-  "applies_to": {
-    "currencies": [
-      "USD"
-    ],
-    "countries": [
-      "US"
-    ]
-  },
-  "privacy": {
-    "data_leaves_instance": false
-  },
+  "min_securo_version": "0.19.0",
   "contributes": {
     "rules": [
       {
         "key": "lyft",
-        "name": {
-          "en": "Lyft"
-        },
+        "name": "Lyft",
         "conditions_op": "or",
         "conditions": [
           {
@@ -54,9 +35,7 @@
       },
       {
         "key": "doordash-grubhub",
-        "name": {
-          "en": "DoorDash / Grubhub"
-        },
+        "name": "DoorDash / Grubhub",
         "conditions_op": "or",
         "conditions": [
           {
@@ -80,9 +59,7 @@
       },
       {
         "key": "walmart-target-costco",
-        "name": {
-          "en": "Walmart / Target / Costco"
-        },
+        "name": "Walmart / Target / Costco",
         "conditions_op": "or",
         "conditions": [
           {
@@ -111,9 +88,7 @@
       },
       {
         "key": "venmo-zelle-cashapp",
-        "name": {
-          "en": "Venmo / Zelle / CashApp"
-        },
+        "name": "Venmo / Zelle / CashApp",
         "conditions_op": "or",
         "conditions": [
           {
@@ -142,9 +117,7 @@
       },
       {
         "key": "starbucks-dunkin",
-        "name": {
-          "en": "Starbucks / Dunkin"
-        },
+        "name": "Starbucks / Dunkin",
         "conditions_op": "or",
         "conditions": [
           {
@@ -168,9 +141,7 @@
       },
       {
         "key": "chevron-shell-exxon-fuel",
-        "name": {
-          "en": "Chevron / Shell / Exxon (Fuel)"
-        },
+        "name": "Chevron / Shell / Exxon (Fuel)",
         "conditions_op": "or",
         "conditions": [
           {
@@ -199,9 +170,7 @@
       },
       {
         "key": "whole-foods-trader-joe-s-kroger",
-        "name": {
-          "en": "Whole Foods / Trader Joe's / Kroger"
-        },
+        "name": "Whole Foods / Trader Joe's / Kroger",
         "conditions_op": "or",
         "conditions": [
           {
@@ -230,9 +199,7 @@
       },
       {
         "key": "cvs-walgreens",
-        "name": {
-          "en": "CVS / Walgreens"
-        },
+        "name": "CVS / Walgreens",
         "conditions_op": "or",
         "conditions": [
           {
@@ -256,9 +223,7 @@
       },
       {
         "key": "t-mobile-at-t-verizon",
-        "name": {
-          "en": "T-Mobile / AT&T / Verizon"
-        },
+        "name": "T-Mobile / AT&T / Verizon",
         "conditions_op": "or",
         "conditions": [
           {
@@ -292,9 +257,7 @@
       },
       {
         "key": "comcast-xfinity",
-        "name": {
-          "en": "Comcast / Xfinity"
-        },
+        "name": "Comcast / Xfinity",
         "conditions_op": "or",
         "conditions": [
           {
@@ -318,9 +281,7 @@
       },
       {
         "key": "home-depot-lowe-s",
-        "name": {
-          "en": "Home Depot / Lowe's"
-        },
+        "name": "Home Depot / Lowe's",
         "conditions_op": "or",
         "conditions": [
           {
@@ -349,9 +310,7 @@
       },
       {
         "key": "planet-fitness-ymca",
-        "name": {
-          "en": "Planet Fitness / YMCA"
-        },
+        "name": "Planet Fitness / YMCA",
         "conditions_op": "or",
         "conditions": [
           {
@@ -375,9 +334,7 @@
       },
       {
         "key": "chipotle-mcdonald-s-subway",
-        "name": {
-          "en": "Chipotle / McDonald's / Subway"
-        },
+        "name": "Chipotle / McDonald's / Subway",
         "conditions_op": "or",
         "conditions": [
           {
@@ -406,9 +363,7 @@
       },
       {
         "key": "paycheck-direct-deposit",
-        "name": {
-          "en": "Paycheck / Direct Deposit"
-        },
+        "name": "Paycheck / Direct Deposit",
         "conditions_op": "and",
         "conditions": [
           {
@@ -427,9 +382,7 @@
       },
       {
         "key": "donations-charity",
-        "name": {
-          "en": "Donations / Charity"
-        },
+        "name": "Donations / Charity",
         "conditions_op": "or",
         "conditions": [
           {
@@ -463,9 +416,7 @@
       },
       {
         "key": "taxes-irs",
-        "name": {
-          "en": "Taxes / IRS"
-        },
+        "name": "Taxes / IRS",
         "conditions_op": "or",
         "conditions": [
           {
@@ -494,9 +445,7 @@
       },
       {
         "key": "rent-mortgage",
-        "name": {
-          "en": "Rent / Mortgage"
-        },
+        "name": "Rent / Mortgage",
         "conditions_op": "or",
         "conditions": [
           {

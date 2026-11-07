@@ -14,13 +14,14 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from app.services.category_defaults import DEFAULT_CATEGORIES, name_variants
 
@@ -32,8 +33,7 @@ PACK_FILES = ("br", "us", "eu", "gb")
 
 _KEY_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,63}$"
 _LOCALE_PATTERN = r"^[a-z]{2,3}(-[A-Z]{2})?$"
-
-LocalizedText = dict[str, str]
+_VERSION_PATTERN = r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$"
 
 
 # --- Manifest (the subset a rule pack uses) ----------------------------------
@@ -43,26 +43,24 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class _Author(_Model):
-    name: str
-    url: str | None = None
-    github: str | None = None
+def _translated(text: str | dict[str, str]) -> dict[str, str]:
+    """Plain text, or text per locale with English as the fallback."""
+    if isinstance(text, str):
+        return {"en": text}
+    if "en" not in text:
+        raise ValueError("translated text needs an `en` entry")
+    bad = [locale for locale in text if not re.match(_LOCALE_PATTERN, locale)]
+    if bad:
+        raise ValueError(f"not a locale: {', '.join(bad)}")
+    return text
 
 
-class _AppliesTo(_Model):
-    currencies: list[str] = []
-    countries: list[str] = []
-    locales: list[str] = []
-    workspace_kinds: list[str] = []
-
-
-class _Privacy(_Model):
-    data_leaves_instance: Literal[False]
+Text = Annotated[dict[str, str], BeforeValidator(_translated)]
 
 
 class _ManifestRule(_Model):
     key: str = Field(pattern=_KEY_PATTERN)
-    name: LocalizedText
+    name: str = Field(min_length=1, max_length=255)
     conditions_op: Literal["and", "or"]
     conditions: list[dict[str, Any]] = Field(min_length=1)
     actions: list[dict[str, Any]] = Field(min_length=1)
@@ -74,40 +72,25 @@ class _Contributes(_Model):
 
     rules: list[_ManifestRule] = Field(min_length=1)
 
-
-class _Manifest(_Model):
-    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
-
-    schema_url: str | None = Field(default=None, alias="$schema")
-    manifest_version: Literal[1]
-    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,38}/[a-z0-9][a-z0-9-]{0,63}$")
-    version: str
-    default_locale: str = Field(pattern=_LOCALE_PATTERN)
-    name: LocalizedText
-    description: LocalizedText
-    author: _Author
-    repository: str
-    license: str
-    securo: str
-    applies_to: _AppliesTo | None = None
-    privacy: _Privacy
-    contributes: _Contributes
-
     @model_validator(mode="after")
-    def _every_text_has_the_default_locale(self) -> _Manifest:
-        texts = {"name": self.name, "description": self.description}
-        texts |= {f"rule {r.key}": r.name for r in self.contributes.rules}
-        missing = [label for label, text in texts.items() if self.default_locale not in text]
-        if missing:
-            raise ValueError(f"no {self.default_locale} text for: {', '.join(missing)}")
-        return self
-
-    @model_validator(mode="after")
-    def _rule_keys_are_unique(self) -> _Manifest:
-        keys = [r.key for r in self.contributes.rules]
+    def _rule_keys_are_unique(self) -> _Contributes:
+        keys = [r.key for r in self.rules]
         if len(keys) != len(set(keys)):
             raise ValueError("rule keys must be unique")
         return self
+
+
+class _Manifest(_Model):
+    """A data plugin needs no runtime, network or scopes, so it can't declare them."""
+
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,38}/[a-z0-9][a-z0-9-]{0,63}$")
+    name: Text
+    description: Text
+    version: str = Field(pattern=_VERSION_PATTERN)
+    repository: str = Field(pattern=r"^https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+$")
+    license: str = Field(min_length=2)
+    min_securo_version: str = Field(pattern=_VERSION_PATTERN)
+    contributes: _Contributes
 
 
 # --- Loaded packs --------------------------------------------------------------
@@ -117,7 +100,6 @@ class _Manifest(_Model):
 class PackRule:
     key: str
     name: str
-    """In the pack's default locale: the name the installed rule gets."""
     conditions_op: str
     conditions: list[dict[str, Any]]
     actions: list[dict[str, Any]]
@@ -142,13 +124,13 @@ class RulePack:
     source: str
     """The manifest id, recorded on every rule the pack installs."""
     version: str
-    default_locale: str
-    names: LocalizedText
+    names: dict[str, str]
+    """The pack's name per locale; always has `en`."""
     rules: tuple[PackRule, ...]
 
     @property
     def name(self) -> str:
-        return self.names.get("en", self.names[self.default_locale])
+        return self.names["en"]
 
     @property
     def flag(self) -> str:
@@ -167,17 +149,15 @@ class RulePack:
 
 def load_pack(path: Path) -> RulePack:
     manifest = _Manifest.model_validate(json.loads(path.read_text(encoding="utf-8")))
-    locale = manifest.default_locale
     return RulePack(
         code=path.stem.upper(),
         source=manifest.id,
         version=manifest.version,
-        default_locale=locale,
-        names=dict(manifest.name),
+        names=manifest.name,
         rules=tuple(
             PackRule(
                 key=r.key,
-                name=r.name[locale],
+                name=r.name,
                 conditions_op=r.conditions_op,
                 conditions=r.conditions,
                 actions=r.actions,

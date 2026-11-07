@@ -1,8 +1,5 @@
 {
-  "manifest_version": 1,
   "id": "securo/rules-eu",
-  "version": "1.0.0",
-  "default_locale": "en",
   "name": {
     "en": "Europe",
     "pt-BR": "Europa"
@@ -11,28 +8,15 @@
     "en": "Common merchants and transfer patterns, mapped to the default categories.",
     "pt-BR": "Estabelecimentos e padrões de transferência comuns, mapeados para as categorias padrão."
   },
-  "author": {
-    "name": "Securo",
-    "github": "securo-finance"
-  },
+  "version": "1.0.0",
   "repository": "https://github.com/securo-finance/securo",
   "license": "AGPL-3.0-only",
-  "securo": ">=0.19.0",
-  "applies_to": {
-    "currencies": [
-      "EUR"
-    ]
-  },
-  "privacy": {
-    "data_leaves_instance": false
-  },
+  "min_securo_version": "0.19.0",
   "contributes": {
     "rules": [
       {
         "key": "bolt-freenow",
-        "name": {
-          "en": "Bolt / FreeNow"
-        },
+        "name": "Bolt / FreeNow",
         "conditions_op": "or",
         "conditions": [
           {
@@ -56,9 +40,7 @@
       },
       {
         "key": "deliveroo-just-eat-glovo",
-        "name": {
-          "en": "Deliveroo / Just Eat / Glovo"
-        },
+        "name": "Deliveroo / Just Eat / Glovo",
         "conditions_op": "or",
         "conditions": [
           {
@@ -87,9 +69,7 @@
       },
       {
         "key": "lidl-aldi-carrefour",
-        "name": {
-          "en": "Lidl / Aldi / Carrefour"
-        },
+        "name": "Lidl / Aldi / Carrefour",
         "conditions_op": "or",
         "conditions": [
           {
@@ -118,9 +98,7 @@
       },
       {
         "key": "sepa-transfer",
-        "name": {
-          "en": "SEPA Transfer"
-        },
+        "name": "SEPA Transfer",
         "conditions_op": "or",
         "conditions": [
           {
@@ -144,9 +122,7 @@
       },
       {
         "key": "wolt",
-        "name": {
-          "en": "Wolt"
-        },
+        "name": "Wolt",
         "conditions_op": "or",
         "conditions": [
           {
@@ -165,9 +141,7 @@
       },
       {
         "key": "flixbus-blablacar",
-        "name": {
-          "en": "Flixbus / BlaBlaCar"
-        },
+        "name": "Flixbus / BlaBlaCar",
         "conditions_op": "or",
         "conditions": [
           {
@@ -191,9 +165,7 @@
       },
       {
         "key": "rossmann-dm",
-        "name": {
-          "en": "Rossmann / DM"
-        },
+        "name": "Rossmann / DM",
         "conditions_op": "or",
         "conditions": [
           {
@@ -217,9 +189,7 @@
       },
       {
         "key": "ikea",
-        "name": {
-          "en": "IKEA"
-        },
+        "name": "IKEA",
         "conditions_op": "or",
         "conditions": [
           {
@@ -238,9 +208,7 @@
       },
       {
         "key": "deutsche-bahn-sncf-renfe",
-        "name": {
-          "en": "Deutsche Bahn / SNCF / Renfe"
-        },
+        "name": "Deutsche Bahn / SNCF / Renfe",
         "conditions_op": "or",
         "conditions": [
           {
@@ -274,9 +242,7 @@
       },
       {
         "key": "albert-heijn-rewe-mercadona-edeka",
-        "name": {
-          "en": "Albert Heijn / Rewe / Mercadona / Edeka"
-        },
+        "name": "Albert Heijn / Rewe / Mercadona / Edeka",
         "conditions_op": "or",
         "conditions": [
           {
@@ -310,9 +276,7 @@
       },
       {
         "key": "miete-loyer-rent",
-        "name": {
-          "en": "Miete / Loyer (Rent)"
-        },
+        "name": "Miete / Loyer (Rent)",
         "conditions_op": "or",
         "conditions": [
           {
@@ -336,9 +300,7 @@
       },
       {
         "key": "gehalt-salaire-salary",
-        "name": {
-          "en": "Gehalt / Salaire (Salary)"
-        },
+        "name": "Gehalt / Salaire (Salary)",
         "conditions_op": "and",
         "conditions": [
           {
@@ -357,9 +319,7 @@
       },
       {
         "key": "spende-don-donation",
-        "name": {
-          "en": "Spende / Don (Donation)"
-        },
+        "name": "Spende / Don (Donation)",
         "conditions_op": "or",
         "conditions": [
           {
@@ -388,9 +348,7 @@
       },
       {
         "key": "steuer-impot-tax",
-        "name": {
-          "en": "Steuer / Impôt (Tax)"
-        },
+        "name": "Steuer / Impôt (Tax)",
         "conditions_op": "or",
         "conditions": [
           {
