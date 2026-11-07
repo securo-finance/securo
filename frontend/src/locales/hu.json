@@ -3190,8 +3190,6 @@
     "noneInstalled": "Ebben a munkaterületben nincs telepített bővítmény.",
     "remove": "Bővítmény eltávolítása",
     "removeAria": "{{name}} eltávolítása",
-    "catalogTitle": "Bővítménykatalógus",
-    "catalogHint": "Minden bővítmény a forráskódja egy adott verziójához van rögzítve.",
     "catalogFailed": "A katalógust nem sikerült betölteni.",
     "catalogEmpty": "A katalógusban még nincs bővítmény.",
     "viewSource": "Forráskód megtekintése",
@@ -3242,6 +3240,89 @@
       "unresolved": "Kihagyja a kategória nélküli szabályokat: {{items}}:",
       "defaults_one": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz",
       "defaults_other": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz"
+    },
+    "page": {
+      "section": "Katalógus",
+      "notice": "A bővítményeket a Securo nem ellenőrzi. Mielőtt bármi érvénybe lép, pontosan látod, mi változik, és semmi sem hagyja el a szerveredet.",
+      "search": "Bővítmények keresése",
+      "type": {
+        "data": "Adatok",
+        "interface": "Felület",
+        "code": "Kód"
+      },
+      "status": {
+        "installed": "Telepítve",
+        "updates": "Frissíthető"
+      },
+      "clear": "Szűrők törlése",
+      "trendingHint": "A leggyorsabban növekvők a méretükhöz képest",
+      "newestHint": "Az elmúlt 30 napban érkeztek",
+      "sortBy": "Rendezés",
+      "sort": {
+        "popular": "Népszerű",
+        "trending": "Felkapott",
+        "updated": "Nemrég frissített",
+        "newest": "Legújabb",
+        "name": "Név"
+      },
+      "noResults": "Egy bővítmény sem felel meg ezeknek a szűrőknek.",
+      "byOwner": "készítő: {{owner}}",
+      "updated": "Frissítve {{when}}",
+      "count_one": "{{count}} bővítmény",
+      "count_other": "{{count}} bővítmény",
+      "stars_one": "{{count}} csillag",
+      "stars_other": "{{count}} csillag",
+      "authors_one": "{{count}} szerző",
+      "authors_other": "{{count}} szerző",
+      "clearSearch": "Keresés törlése",
+      "facet": {
+        "type": "Típus",
+        "content": "Tartalom",
+        "language": "Nyelv",
+        "status": "Állapot"
+      },
+      "view": {
+        "all": "Összes",
+        "trending": "Felkapott",
+        "new": "Új"
+      },
+      "any": "Bármelyik",
+      "trendingEmpty": "Ezen a héten egy bővítmény sem kapott csillagot.",
+      "newEmpty": "Az elmúlt 30 napban nem érkezett új bővítmény."
+    },
+    "kindName": {
+      "category_groups": "Kategóriacsoportok",
+      "categories": "Kategóriák",
+      "rules": "Szabályok",
+      "csv_presets": "CSV-sablonok",
+      "fiscal_jurisdictions": "Adójoghatóságok",
+      "invoice_labels": "Számlacímkék",
+      "widgets": "Widgetek",
+      "reports": "Jelentések",
+      "dashboard_layouts": "Irányítópult-elrendezések",
+      "connectors": "Banki kapcsolatok",
+      "parsers": "Fájlolvasók",
+      "price_providers": "Árszolgáltatók",
+      "agent_tools": "Ügynökeszközök"
+    },
+    "detail": {
+      "overview": "Áttekintés",
+      "inside": "Tartalom",
+      "insideHint": "Minden, amit ez a bővítmény hozzáad egy munkaterülethez. Telepítéskor látod, mi van már meg.",
+      "noReadme": "A szerző még nem írt README-t ehhez a bővítményhez.",
+      "loadFailed": "Nem sikerült betölteni a bővítmény részleteit.",
+      "contentsUnavailable": "A Securo ezen verziója nem tudja listázni a bővítmény tartalmát.",
+      "version": "Verzió",
+      "license": "Licenc",
+      "requires": "Szükséges",
+      "updated": "Frissítve",
+      "languages": "Nyelvek",
+      "builtIn": "alapértelmezett",
+      "when": "Ha",
+      "previewNote": "Telepítés előtt minden változást látsz, és semmi sem hagyja el a szerveredet.",
+      "notFound": "Ez a bővítmény nincs a katalógusban.",
+      "type": "Típus",
+      "added": "Hozzáadva"
     }
   }
 }

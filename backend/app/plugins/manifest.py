@@ -91,7 +91,9 @@ class Condition(_Model):
 
 
 class ConditionGroup(_Model):
-    conditions_op: Literal["and", "or"]
+    """Leaves joined by their own operator, keyed as the rule engine reads it."""
+
+    op: Literal["and", "or"] = "or"
     conditions: list[Condition] = Field(min_length=1)
 
 

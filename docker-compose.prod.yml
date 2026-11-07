@@ -44,7 +44,7 @@ x-backend-env: &backend-env
   # Data plugins (categories and rules) from the plugin catalog, opt-in.
   # No extra container: the catalog is fetched only when someone opens it.
   PLUGINS_ENABLED: ${PLUGINS_ENABLED:-false}
-  PLUGINS_INDEX_URL: ${PLUGINS_INDEX_URL:-https://raw.githubusercontent.com/securo-finance/plugins/main/index.json}
+  PLUGINS_INDEX_URL: ${PLUGINS_INDEX_URL:-https://plugins.usesecuro.com/v1/index.json}
   # The backend is reached through the bundled nginx frontend below, so rate
   # limiting needs to trust exactly one reverse-proxy hop to key by real
   # client IP instead of nginx's own container address.

@@ -3194,8 +3194,6 @@
     "noneInstalled": "No hay plugins instalados en este espacio de trabajo.",
     "remove": "Quitar plugin",
     "removeAria": "Quitar {{name}}",
-    "catalogTitle": "Catálogo de plugins",
-    "catalogHint": "Cada plugin está fijado a una versión concreta de su código fuente.",
     "catalogFailed": "No se pudo cargar el catálogo.",
     "catalogEmpty": "El catálogo aún no tiene plugins.",
     "viewSource": "Ver código fuente",
@@ -3246,6 +3244,89 @@
       "unresolved": "Omite {{items}} cuya categoría no existe:",
       "defaults_one": "También crea {{count}} categoría predeterminada que usan sus reglas",
       "defaults_other": "También crea {{count}} categorías predeterminadas que usan sus reglas"
+    },
+    "page": {
+      "section": "Catálogo",
+      "notice": "Securo no revisa los plugins. Antes de aplicar nada ves exactamente qué cambia, y nada sale de tu servidor.",
+      "search": "Buscar plugins",
+      "type": {
+        "data": "Datos",
+        "interface": "Interfaz",
+        "code": "Código"
+      },
+      "status": {
+        "installed": "Instalados",
+        "updates": "Con actualización"
+      },
+      "clear": "Quitar filtros",
+      "trendingHint": "Los que más crecen, en proporción a su tamaño",
+      "newestHint": "Llegaron en los últimos 30 días",
+      "sortBy": "Ordenar por",
+      "sort": {
+        "popular": "Populares",
+        "trending": "Tendencia",
+        "updated": "Actualizados recientemente",
+        "newest": "Más nuevos",
+        "name": "Nombre"
+      },
+      "noResults": "Ningún plugin coincide con estos filtros.",
+      "byOwner": "de {{owner}}",
+      "updated": "Actualizado {{when}}",
+      "count_one": "{{count}} plugin",
+      "count_other": "{{count}} plugins",
+      "stars_one": "{{count}} estrella",
+      "stars_other": "{{count}} estrellas",
+      "authors_one": "{{count}} autor",
+      "authors_other": "{{count}} autores",
+      "clearSearch": "Borrar búsqueda",
+      "facet": {
+        "type": "Tipo",
+        "content": "Contenido",
+        "language": "Idioma",
+        "status": "Estado"
+      },
+      "view": {
+        "all": "Todos",
+        "trending": "Tendencia",
+        "new": "Nuevos"
+      },
+      "any": "Cualquiera",
+      "trendingEmpty": "Ningún plugin ganó estrellas esta semana.",
+      "newEmpty": "Ningún plugin se unió en los últimos 30 días."
+    },
+    "kindName": {
+      "category_groups": "Grupos de categorías",
+      "categories": "Categorías",
+      "rules": "Reglas",
+      "csv_presets": "Plantillas CSV",
+      "fiscal_jurisdictions": "Jurisdicciones fiscales",
+      "invoice_labels": "Etiquetas de factura",
+      "widgets": "Widgets",
+      "reports": "Informes",
+      "dashboard_layouts": "Diseños de panel",
+      "connectors": "Conectores bancarios",
+      "parsers": "Lectores de archivos",
+      "price_providers": "Proveedores de precios",
+      "agent_tools": "Herramientas del agente"
+    },
+    "detail": {
+      "overview": "Resumen",
+      "inside": "Qué incluye",
+      "insideHint": "Todo lo que este plugin añade a un espacio. Al instalarlo ves lo que ya tienes.",
+      "noReadme": "El autor aún no ha escrito un README para este plugin.",
+      "loadFailed": "No se pudieron cargar los detalles del plugin.",
+      "contentsUnavailable": "Esta versión de Securo no puede listar el contenido de este plugin.",
+      "version": "Versión",
+      "license": "Licencia",
+      "requires": "Requiere",
+      "updated": "Actualizado",
+      "languages": "Idiomas",
+      "builtIn": "predeterminada",
+      "when": "Cuando",
+      "previewNote": "Al instalar ves cada cambio antes de aplicar nada, y nada sale de tu servidor.",
+      "notFound": "Este plugin no está en el catálogo.",
+      "type": "Tipo",
+      "added": "Añadido"
     }
   }
 }

@@ -8,10 +8,10 @@ the catalog unreachable.
 """
 from __future__ import annotations
 
-import asyncio
+import logging
 import uuid
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +22,10 @@ from app.models.rule import Rule
 from app.models.workspace_plugin import WorkspacePlugin
 from app.plugins import index, sync
 from app.plugins.manifest import Manifest
+from app.services.category_defaults import DEFAULT_CATEGORIES, DEFAULT_GROUPS
 from app.services.rule_packs import built_in_packs
+
+logger = logging.getLogger(__name__)
 
 Action = Literal["install", "update", "remove"]
 
@@ -42,17 +45,19 @@ class PluginChanged(Exception):
 @dataclass(frozen=True)
 class CatalogItem:
     entry: index.IndexEntry
-    manifest: Manifest | None
-    error: str | None
     installed: WorkspacePlugin | None
-
-    @property
-    def compatible(self) -> bool:
-        return self.manifest is not None and index.is_compatible(self.manifest)
 
     @property
     def update_available(self) -> bool:
         return self.installed is not None and self.installed.commit != self.entry.commit
+
+
+@dataclass(frozen=True)
+class PluginDetails:
+    item: CatalogItem
+    readme: str | None
+    contents: dict[str, list[dict[str, Any]]] | None
+    """What the plugin brings, references resolved; None when it can't be read here."""
 
 
 @dataclass(frozen=True)
@@ -70,23 +75,69 @@ async def installed_plugins(session: AsyncSession, workspace_id: uuid.UUID) -> d
 
 
 async def catalog(session: AsyncSession, workspace_id: uuid.UUID) -> list[CatalogItem]:
-    """Every plugin in the catalog, with its manifest and where this workspace stands.
-
-    A plugin whose manifest can't be read is still listed, with the reason, so
-    it doesn't silently disappear.
-    """
+    """Every plugin in the catalog and where this workspace stands with it: one request."""
     installed = await installed_plugins(session, workspace_id)
     async with index.http_client() as client:
         entries = await index.fetch_index(client)
+    return [CatalogItem(entry, installed.get(entry.id)) for entry in entries]
 
-        async def load(entry: index.IndexEntry) -> CatalogItem:
-            try:
-                manifest, error = await index.fetch_manifest(client, entry), None
-            except index.PluginIndexError as exc:
-                manifest, error = None, str(exc)
-            return CatalogItem(entry, manifest, error, installed.get(entry.id))
 
-        return list(await asyncio.gather(*(load(entry) for entry in entries)))
+async def details(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str) -> PluginDetails:
+    """One plugin, opened from the catalog: its README and everything it contains.
+
+    Both are optional here. A README or manifest that can't be fetched or
+    doesn't match its checksum leaves its part out (installing still refuses
+    such a manifest) rather than hiding what the catalog does know.
+    """
+    installed = (await installed_plugins(session, workspace_id)).get(plugin_id)
+    async with index.http_client() as client:
+        entry = next((e for e in await index.fetch_index(client) if e.id == plugin_id), None)
+        if entry is None:
+            raise PluginNotFound
+        readme = await _optional(index.fetch_readme(client, entry))
+        manifest = await _optional(index.fetch_manifest(client, entry)) if entry.supported else None
+    return PluginDetails(CatalogItem(entry, installed), readme, contents(manifest) if manifest else None)
+
+
+async def _optional(call):
+    try:
+        return await call
+    except index.PluginIndexError as exc:
+        logger.warning("Plugin details incomplete: %s", exc)
+        return None
+
+
+def contents(manifest: Manifest) -> dict[str, list[dict[str, Any]]]:
+    """The manifest's items, with every key it references resolved to a name."""
+    own_groups = {g.key: g.name for g in manifest.contributes.category_groups}
+    own_categories = {c.key: c.name for c in manifest.contributes.categories}
+
+    def ref(key: str | None, own: dict, defaults: dict) -> dict[str, Any] | None:
+        if key is None:
+            return None
+        if key in own:
+            return {"key": key, "name": own[key], "default": False}
+        return {"key": key, "name": defaults[key]["names"], "default": True}
+
+    return {
+        "category_groups": [g.model_dump() for g in manifest.contributes.category_groups],
+        "categories": [
+            c.model_dump(exclude={"group"}) | {"group": ref(c.group, own_groups, DEFAULT_GROUPS)}
+            for c in manifest.contributes.categories
+        ],
+        "rules": [
+            {
+                **rule.template(),
+                "actions": [
+                    action.model_dump(exclude_none=True)
+                    | {"category": ref(str(action.value), own_categories, DEFAULT_CATEGORIES)
+                       if action.op == "set_category" else None}
+                    for action in rule.actions
+                ],
+            }
+            for rule in manifest.contributes.rules
+        ],
+    }
 
 
 async def plan(
@@ -152,9 +203,11 @@ async def _target(
             raise PluginNotFound
         if entry.revoked:
             raise PluginUnavailable(f"revoked: {entry.revoked_reason or 'no reason given'}")
+        if not entry.compatible:
+            raise PluginUnavailable(f"needs Securo {entry.min_securo_version} or newer")
+        if not entry.supported:
+            raise PluginUnavailable("contributes something this Securo version can't apply")
         manifest = await index.fetch_manifest(client, entry)
-    if not index.is_compatible(manifest):
-        raise PluginUnavailable(f"needs Securo {manifest.min_securo_version} or newer")
     if action == "update" and installed is not None and installed.commit == entry.commit:
         raise PluginUnavailable("already up to date")
     return entry.commit, manifest

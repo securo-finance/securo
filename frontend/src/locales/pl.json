@@ -3312,8 +3312,6 @@
     "noneInstalled": "W tym obszarze roboczym nie zainstalowano wtyczek.",
     "remove": "Usuń wtyczkę",
     "removeAria": "Usuń {{name}}",
-    "catalogTitle": "Katalog wtyczek",
-    "catalogHint": "Każda wtyczka jest przypięta do konkretnej wersji swojego kodu źródłowego.",
     "catalogFailed": "Nie udało się wczytać katalogu.",
     "catalogEmpty": "Katalog nie ma jeszcze wtyczek.",
     "viewSource": "Zobacz kod źródłowy",
@@ -3372,6 +3370,95 @@
       "defaults_few": "Tworzy też {{count}} domyślne kategorie potrzebne regułom",
       "defaults_many": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom",
       "defaults_other": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom"
+    },
+    "page": {
+      "section": "Katalog",
+      "notice": "Wtyczki nie są sprawdzane przez Securo. Zanim cokolwiek zostanie zastosowane, widzisz dokładnie, co się zmieni, a nic nie opuszcza Twojego serwera.",
+      "search": "Szukaj wtyczek",
+      "type": {
+        "data": "Dane",
+        "interface": "Interfejs",
+        "code": "Kod"
+      },
+      "status": {
+        "installed": "Zainstalowane",
+        "updates": "Z aktualizacją"
+      },
+      "clear": "Wyczyść filtry",
+      "trendingHint": "Najszybciej rosnące względem swojej wielkości",
+      "newestHint": "Dodane w ciągu ostatnich 30 dni",
+      "sortBy": "Sortuj według",
+      "sort": {
+        "popular": "Popularne",
+        "trending": "Na fali",
+        "updated": "Ostatnio zaktualizowane",
+        "newest": "Najnowsze",
+        "name": "Nazwa"
+      },
+      "noResults": "Żadna wtyczka nie pasuje do tych filtrów.",
+      "byOwner": "autor: {{owner}}",
+      "updated": "Zaktualizowano {{when}}",
+      "count_one": "{{count}} wtyczka",
+      "count_few": "{{count}} wtyczki",
+      "count_many": "{{count}} wtyczek",
+      "count_other": "{{count}} wtyczek",
+      "stars_one": "{{count}} gwiazdka",
+      "stars_few": "{{count}} gwiazdki",
+      "stars_many": "{{count}} gwiazdek",
+      "stars_other": "{{count}} gwiazdek",
+      "authors_one": "{{count}} autor",
+      "authors_few": "{{count}} autorów",
+      "authors_many": "{{count}} autorów",
+      "authors_other": "{{count}} autorów",
+      "clearSearch": "Wyczyść wyszukiwanie",
+      "facet": {
+        "type": "Typ",
+        "content": "Zawartość",
+        "language": "Język",
+        "status": "Status"
+      },
+      "view": {
+        "all": "Wszystkie",
+        "trending": "Popularne",
+        "new": "Nowe"
+      },
+      "any": "Dowolny",
+      "trendingEmpty": "W tym tygodniu żadna wtyczka nie zdobyła gwiazdek.",
+      "newEmpty": "W ciągu ostatnich 30 dni nie dodano żadnej wtyczki."
+    },
+    "kindName": {
+      "category_groups": "Grupy kategorii",
+      "categories": "Kategorie",
+      "rules": "Reguły",
+      "csv_presets": "Szablony CSV",
+      "fiscal_jurisdictions": "Jurysdykcje podatkowe",
+      "invoice_labels": "Etykiety faktur",
+      "widgets": "Widżety",
+      "reports": "Raporty",
+      "dashboard_layouts": "Układy pulpitu",
+      "connectors": "Połączenia bankowe",
+      "parsers": "Czytniki plików",
+      "price_providers": "Dostawcy cen",
+      "agent_tools": "Narzędzia agenta"
+    },
+    "detail": {
+      "overview": "Przegląd",
+      "inside": "Zawartość",
+      "insideHint": "Wszystko, co ta wtyczka dodaje do przestrzeni. Przy instalacji zobaczysz, co już masz.",
+      "noReadme": "Autor nie napisał jeszcze README dla tej wtyczki.",
+      "loadFailed": "Nie udało się wczytać szczegółów wtyczki.",
+      "contentsUnavailable": "Ta wersja Securo nie potrafi wyświetlić zawartości tej wtyczki.",
+      "version": "Wersja",
+      "license": "Licencja",
+      "requires": "Wymaga",
+      "updated": "Zaktualizowano",
+      "languages": "Języki",
+      "builtIn": "domyślna",
+      "when": "Gdy",
+      "previewNote": "Przed instalacją widzisz każdą zmianę i nic nie opuszcza twojego serwera.",
+      "notFound": "Tej wtyczki nie ma w katalogu.",
+      "type": "Typ",
+      "added": "Dodano"
     }
   }
 }

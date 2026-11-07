@@ -3192,8 +3192,6 @@
     "noneInstalled": "Geen plugins geïnstalleerd in deze werkruimte.",
     "remove": "Plugin verwijderen",
     "removeAria": "{{name}} verwijderen",
-    "catalogTitle": "Plugincatalogus",
-    "catalogHint": "Elke plugin is vastgezet op een specifieke versie van de broncode.",
     "catalogFailed": "Kon de catalogus niet laden.",
     "catalogEmpty": "De catalogus heeft nog geen plugins.",
     "viewSource": "Broncode bekijken",
@@ -3244,6 +3242,89 @@
       "unresolved": "Slaat {{items}} over waarvan de categorie ontbreekt:",
       "defaults_one": "Maakt ook {{count}} standaardcategorie die de regels nodig hebben",
       "defaults_other": "Maakt ook {{count}} standaardcategorieën die de regels nodig hebben"
+    },
+    "page": {
+      "section": "Catalogus",
+      "notice": "Plugins worden niet door Securo beoordeeld. Voordat er iets wordt toegepast zie je precies wat er verandert, en niets verlaat je server.",
+      "search": "Plugins zoeken",
+      "type": {
+        "data": "Gegevens",
+        "interface": "Interface",
+        "code": "Code"
+      },
+      "status": {
+        "installed": "Geïnstalleerd",
+        "updates": "Update beschikbaar"
+      },
+      "clear": "Filters wissen",
+      "trendingHint": "Snelst groeiend, naar verhouding van hun grootte",
+      "newestHint": "Toegevoegd in de laatste 30 dagen",
+      "sortBy": "Sorteren op",
+      "sort": {
+        "popular": "Populair",
+        "trending": "Trending",
+        "updated": "Recent bijgewerkt",
+        "newest": "Nieuwste",
+        "name": "Naam"
+      },
+      "noResults": "Geen plugins voldoen aan deze filters.",
+      "byOwner": "door {{owner}}",
+      "updated": "Bijgewerkt {{when}}",
+      "count_one": "{{count}} plugin",
+      "count_other": "{{count}} plugins",
+      "stars_one": "{{count}} ster",
+      "stars_other": "{{count}} sterren",
+      "authors_one": "{{count}} auteur",
+      "authors_other": "{{count}} auteurs",
+      "clearSearch": "Zoekopdracht wissen",
+      "facet": {
+        "type": "Type",
+        "content": "Inhoud",
+        "language": "Taal",
+        "status": "Status"
+      },
+      "view": {
+        "all": "Alle",
+        "trending": "Trending",
+        "new": "Nieuw"
+      },
+      "any": "Alle",
+      "trendingEmpty": "Geen plugin kreeg deze week sterren.",
+      "newEmpty": "Er kwam de afgelopen 30 dagen geen plugin bij."
+    },
+    "kindName": {
+      "category_groups": "Categoriegroepen",
+      "categories": "Categorieën",
+      "rules": "Regels",
+      "csv_presets": "CSV-sjablonen",
+      "fiscal_jurisdictions": "Fiscale rechtsgebieden",
+      "invoice_labels": "Factuurlabels",
+      "widgets": "Widgets",
+      "reports": "Rapporten",
+      "dashboard_layouts": "Dashboard-indelingen",
+      "connectors": "Bankkoppelingen",
+      "parsers": "Bestandslezers",
+      "price_providers": "Prijsaanbieders",
+      "agent_tools": "Agenttools"
+    },
+    "detail": {
+      "overview": "Overzicht",
+      "inside": "Inhoud",
+      "insideHint": "Alles wat deze plugin aan een werkruimte toevoegt. Bij installatie zie je wat je al hebt.",
+      "noReadme": "De auteur heeft nog geen README voor deze plugin geschreven.",
+      "loadFailed": "De plugindetails konden niet worden geladen.",
+      "contentsUnavailable": "Deze versie van Securo kan de inhoud van deze plugin niet tonen.",
+      "version": "Versie",
+      "license": "Licentie",
+      "requires": "Vereist",
+      "updated": "Bijgewerkt",
+      "languages": "Talen",
+      "builtIn": "standaard",
+      "when": "Als",
+      "previewNote": "Bij installatie zie je elke wijziging voordat er iets wordt toegepast, en niets verlaat je server.",
+      "notFound": "Deze plugin staat niet in de catalogus.",
+      "type": "Type",
+      "added": "Toegevoegd"
     }
   }
 }

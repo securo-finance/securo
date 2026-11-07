@@ -3190,8 +3190,6 @@
     "noneInstalled": "このワークスペースにインストールされたプラグインはありません。",
     "remove": "プラグインを削除",
     "removeAria": "{{name}} を削除",
-    "catalogTitle": "プラグインカタログ",
-    "catalogHint": "各プラグインはソースコードの特定のバージョンに固定されています。",
     "catalogFailed": "カタログを読み込めませんでした。",
     "catalogEmpty": "カタログにはまだプラグインがありません。",
     "viewSource": "ソースを見る",
@@ -3242,6 +3240,89 @@
       "unresolved": "カテゴリがないためスキップ: {{items}}:",
       "defaults_one": "ルール用のデフォルトカテゴリも {{count}} 件作成します",
       "defaults_other": "ルール用のデフォルトカテゴリも {{count}} 件作成します"
+    },
+    "page": {
+      "section": "カタログ",
+      "notice": "プラグインは Securo によって審査されていません。適用する前に何が変わるかを正確に確認でき、データはサーバーの外に出ません。",
+      "search": "プラグインを検索",
+      "type": {
+        "data": "データ",
+        "interface": "インターフェース",
+        "code": "コード"
+      },
+      "status": {
+        "installed": "インストール済み",
+        "updates": "アップデートあり"
+      },
+      "clear": "フィルターを解除",
+      "trendingHint": "規模に対して最も伸びているもの",
+      "newestHint": "過去30日間に追加",
+      "sortBy": "並べ替え",
+      "sort": {
+        "popular": "人気",
+        "trending": "トレンド",
+        "updated": "最近更新",
+        "newest": "新しい順",
+        "name": "名前"
+      },
+      "noResults": "条件に一致するプラグインはありません。",
+      "byOwner": "作成者: {{owner}}",
+      "updated": "{{when}}に更新",
+      "count_one": "{{count}} 件のプラグイン",
+      "count_other": "{{count}} 件のプラグイン",
+      "stars_one": "スター {{count}}",
+      "stars_other": "スター {{count}}",
+      "authors_one": "{{count}} 人の作者",
+      "authors_other": "{{count}} 人の作者",
+      "clearSearch": "検索をクリア",
+      "facet": {
+        "type": "種類",
+        "content": "内容",
+        "language": "言語",
+        "status": "状態"
+      },
+      "view": {
+        "all": "すべて",
+        "trending": "トレンド",
+        "new": "新着"
+      },
+      "any": "すべて",
+      "trendingEmpty": "今週スターを獲得したプラグインはありません。",
+      "newEmpty": "過去 30 日間に追加されたプラグインはありません。"
+    },
+    "kindName": {
+      "category_groups": "カテゴリグループ",
+      "categories": "カテゴリ",
+      "rules": "ルール",
+      "csv_presets": "CSV プリセット",
+      "fiscal_jurisdictions": "税務管轄",
+      "invoice_labels": "請求書ラベル",
+      "widgets": "ウィジェット",
+      "reports": "レポート",
+      "dashboard_layouts": "ダッシュボードのレイアウト",
+      "connectors": "銀行コネクタ",
+      "parsers": "ファイルリーダー",
+      "price_providers": "価格プロバイダー",
+      "agent_tools": "エージェントツール"
+    },
+    "detail": {
+      "overview": "概要",
+      "inside": "含まれるもの",
+      "insideHint": "このプラグインがワークスペースに追加するすべての項目。インストール時に既存のものを確認できます。",
+      "noReadme": "作者はまだこのプラグインの README を書いていません。",
+      "loadFailed": "プラグインの詳細を読み込めませんでした。",
+      "contentsUnavailable": "この Securo のバージョンではこのプラグインの内容を表示できません。",
+      "version": "バージョン",
+      "license": "ライセンス",
+      "requires": "必要条件",
+      "updated": "更新",
+      "languages": "言語",
+      "builtIn": "既定",
+      "when": "条件",
+      "previewNote": "インストール前にすべての変更を確認でき、データがサーバーの外に出ることはありません。",
+      "notFound": "このプラグインはカタログにありません。",
+      "type": "種類",
+      "added": "追加日"
     }
   }
 }

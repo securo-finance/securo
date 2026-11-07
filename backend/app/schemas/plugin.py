@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,30 +16,81 @@ class InstalledPluginRead(BaseModel):
     installed_at: datetime
 
 
-class PluginContentsRead(BaseModel):
-    category_groups: int
-    categories: int
-    rules: int
-
-
 class PluginCatalogRead(BaseModel):
     """A plugin in the catalog and where this workspace stands with it."""
 
     id: str
+    owner: str
     repository: str
+    release: str
     commit: str
+    name: dict[str, str]
+    description: dict[str, str]
+    version: str
+    license: str
+    min_securo_version: str
+    contributes: dict[str, int] = Field(description="How many items of each kind the plugin brings.")
+    locales: list[str]
+    topics: list[str]
+    stars: int
+    stars_7d: int = Field(description="Stars gained in the last 7 days.")
+    added_at: datetime | None
+    updated_at: datetime | None
     revoked: bool
-    revoked_reason: str | None = None
-    error: str | None = Field(default=None, description="Why the plugin's manifest couldn't be read.")
-    name: dict[str, str] | None = None
-    description: dict[str, str] | None = None
-    version: str | None = None
-    license: str | None = None
-    min_securo_version: str | None = None
-    contributes: PluginContentsRead | None = None
-    compatible: bool = False
-    installed_version: str | None = None
-    update_available: bool = False
+    revoked_reason: str | None
+    compatible: bool = Field(description="This Securo is at least min_securo_version.")
+    supported: bool = Field(description="This Securo can apply everything the plugin contributes.")
+    installed_version: str | None
+    update_available: bool
+
+
+class PluginRefRead(BaseModel):
+    """An item a plugin points at: one of its own, or a built-in default."""
+
+    key: str
+    name: dict[str, str]
+    default: bool
+
+
+class PluginGroupRead(BaseModel):
+    key: str
+    name: dict[str, str]
+    icon: str
+    color: str
+
+
+class PluginCategoryRead(PluginGroupRead):
+    group: PluginRefRead | None
+    treat_as_transfer: bool
+
+
+class PluginRuleActionRead(BaseModel):
+    op: str
+    value: str | bool | None = None
+    category: PluginRefRead | None = Field(description="For set_category: the category it sets.")
+
+
+class PluginRuleRead(BaseModel):
+    key: str
+    name: str
+    priority: int
+    conditions_op: Literal["and", "or"]
+    conditions: list[dict[str, Any]] = Field(description="Leaves (field, op, value) and groups (op, conditions).")
+    actions: list[PluginRuleActionRead]
+
+
+class PluginContentsRead(BaseModel):
+    category_groups: list[PluginGroupRead]
+    categories: list[PluginCategoryRead]
+    rules: list[PluginRuleRead]
+
+
+class PluginDetailRead(BaseModel):
+    """One plugin opened from the catalog."""
+
+    plugin: PluginCatalogRead
+    readme: str | None = Field(description="Markdown, from the catalog's verified copy.")
+    contents: PluginContentsRead | None = Field(description="Null when this Securo can't read what it contains.")
 
 
 class PluginItemRead(BaseModel):

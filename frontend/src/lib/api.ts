@@ -67,6 +67,7 @@ import type {
   PluginAction,
   PluginCatalogEntry,
   PluginPlan,
+  PluginDetail,
   RuleImportResponse,
   RulePreviewResponse,
   ImportLog,
@@ -1878,6 +1879,11 @@ export const plugins = {
   /** The catalog: fetched from the index now, so only call it when the user asks. */
   catalog: async (): Promise<PluginCatalogEntry[]> => {
     const { data } = await api.get('/plugins/catalog')
+    return data
+  },
+  /** One plugin with its README and contents: fetched from the catalog when it's opened. */
+  details: async (pluginId: string): Promise<PluginDetail> => {
+    const { data } = await api.get(`/plugins/${pluginId}`)
     return data
   },
   plan: async (pluginId: string, action: PluginAction): Promise<PluginPlan> => {

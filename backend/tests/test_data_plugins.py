@@ -1,8 +1,11 @@
 """Data plugins from the catalog: manifests, install, update, remove, and the API."""
 import copy
+import hashlib
+import json
 import uuid
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 import httpx
 import pytest
@@ -23,11 +26,12 @@ from app.plugins.manifest import parse_manifest
 from app.plugins.provenance import is_untouched
 from app.plugins.sync import SyncPlanChanged
 from app.services.category_service import create_default_categories
+from app.services.rule_engine import evaluate_conditions
 
 PLUGIN = "maria/casa"
 REPO = "https://github.com/maria/securo-casa"
 V1, V2 = "a" * 40, "b" * 40
-INDEX_URL = "https://raw.githubusercontent.com/securo-finance/plugins/main/index.json"
+INDEX_URL = "https://plugins.usesecuro.com/v1/index.json"
 
 MANIFEST = {
     "id": PLUGIN,
@@ -60,29 +64,52 @@ MANIFEST = {
 
 
 class Catalog:
-    """A fake catalog: the index and manifests by commit, served over httpx."""
+    """A fake static catalog: the index, and manifest copies addressed by commit."""
 
     def __init__(self) -> None:
-        self.entries: dict[str, dict] = {PLUGIN: {"id": PLUGIN, "repository": REPO, "commit": V1}}
         self.manifests: dict[str, dict] = {V1: copy.deepcopy(MANIFEST)}
+        self.commit = V1
+        self.extra: dict = {}
+        """Fields to override on the index entry (revoked, manifest path...)."""
+        self.tampered = False
         self.down = False
+        self.readme = b"# Home\n\nCategories for a home with pets."
+
+    def _body(self, commit: str) -> bytes:
+        return json.dumps(self.manifests[commit]).encode()
+
+    def index(self) -> dict:
+        m = self.manifests[self.commit]
+        entry = {
+            "id": PLUGIN, "repository": REPO, "release": f"v{m['version']}", "commit": self.commit,
+            "manifest": f"manifests/{self.commit}.json",
+            "manifest_sha256": hashlib.sha256(self._body(self.commit)).hexdigest(),
+            "name": m["name"], "description": m["description"], "version": m["version"], "license": m["license"],
+            "min_securo_version": m["min_securo_version"],
+            "contributes": {kind: len(items) for kind, items in m["contributes"].items()},
+            "stars": 12, "stars_7d": 3,
+            "readme": f"readmes/{self.commit}.md", "readme_sha256": hashlib.sha256(self.readme).hexdigest(),
+        }
+        return {"plugins": [entry | self.extra]}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if self.down:
             raise httpx.ConnectError("down")
         url = str(request.url)
         if url == INDEX_URL:
-            return httpx.Response(200, json={"plugins": list(self.entries.values())})
-        for commit, manifest in self.manifests.items():
-            if url == f"https://raw.githubusercontent.com/maria/securo-casa/{commit}/securo-plugin.json":
-                return httpx.Response(200, json=manifest)
+            return httpx.Response(200, json=self.index())
+        for commit in self.manifests:
+            if url == f"https://plugins.usesecuro.com/v1/manifests/{commit}.json":
+                return httpx.Response(200, content=self._body(commit) + (b" " if self.tampered else b""))
+        if url == f"https://plugins.usesecuro.com/v1/readmes/{self.commit}.md":
+            return httpx.Response(200, content=self.readme + (b" " if self.tampered else b""))
         return httpx.Response(404)
 
     def publish(self, commit: str, change) -> None:
         manifest = copy.deepcopy(self.manifests[V1])
         change(manifest)
         self.manifests[commit] = manifest
-        self.entries[PLUGIN]["commit"] = commit
+        self.commit = commit
 
 
 @pytest.fixture
@@ -92,6 +119,7 @@ def catalog(monkeypatch) -> Catalog:
         index, "http_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(fake.handle))
     )
     index._manifests.clear()
+    index._readmes.clear()
     monkeypatch.setenv("PLUGINS_ENABLED", "true")
     return fake
 
@@ -121,6 +149,19 @@ async def _of(session, model, workspace_id, **where):
 def test_the_example_manifest_is_valid():
     manifest = parse_manifest(MANIFEST)
     assert manifest.description == {"en": "Categories and rules for a home with pets."}
+
+
+def test_a_condition_group_is_stored_the_way_the_rule_engine_reads_it():
+    manifest: dict[str, Any] = copy.deepcopy(MANIFEST)
+    manifest["contributes"]["rules"][0]["conditions"] = [
+        {"op": "or", "conditions": [
+            {"field": "description", "op": "contains", "value": "PETZ"},
+            {"field": "description", "op": "contains", "value": "COBASI"},
+        ]},
+    ]
+    rule = parse_manifest(manifest).contributes.rules[0].template()
+    assert rule["conditions"][0]["op"] == "or"
+    assert evaluate_conditions(rule["conditions_op"], rule["conditions"], Transaction(description="COBASI 12"))
 
 
 @pytest.mark.parametrize(
@@ -329,7 +370,7 @@ async def test_remove_keeps_history_and_what_the_user_made_theirs(session: Async
 async def test_a_revoked_plugin_cannot_be_installed_but_can_be_removed(session: AsyncSession, ids, catalog):
     workspace_id, user_id = ids
     await _install(session, workspace_id, user_id)
-    catalog.entries[PLUGIN] |= {"revoked": True, "revoked_reason": "malicious rules"}
+    catalog.extra |= {"revoked": True, "revoked_reason": "malicious rules"}
     with pytest.raises(service.PluginUnavailable, match="malicious rules"):
         await service.plan(session, workspace_id, PLUGIN, "update", lang="en")
     catalog.down = True  # removing doesn't need the catalog at all
@@ -351,6 +392,41 @@ async def test_a_manifest_naming_another_plugin_is_refused(session: AsyncSession
     catalog.manifests[V1]["id"] = "evil/impostor"
     with pytest.raises(index.PluginIndexError):
         await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
+
+
+@pytest.mark.asyncio
+async def test_a_manifest_that_does_not_match_its_checksum_is_refused(session: AsyncSession, ids, catalog):
+    workspace_id, _ = ids
+    catalog.tampered = True
+    with pytest.raises(index.PluginIndexError, match="checksum"):
+        await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
+
+
+@pytest.mark.asyncio
+async def test_manifests_are_read_only_from_the_catalog_host(session: AsyncSession, ids, catalog):
+    workspace_id, _ = ids
+    catalog.extra["manifest"] = "https://evil.example.com/securo-plugin.json"
+    with pytest.raises(index.PluginIndexError, match="catalog's host"):
+        await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
+
+
+@pytest.mark.asyncio
+async def test_a_plugin_with_contributions_this_version_cannot_apply_is_listed_not_installable(
+    session: AsyncSession, ids, catalog
+):
+    workspace_id, _ = ids
+    catalog.extra["contributes"] = {"rules": 2, "csv_presets": 1}
+    items = await service.catalog(session, workspace_id)
+    assert items[0].entry.supported is False
+    with pytest.raises(service.PluginUnavailable, match="can't apply"):
+        await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_index_entry_is_skipped(session: AsyncSession, ids, catalog):
+    workspace_id, _ = ids
+    catalog.extra["commit"] = "not-a-commit"
+    assert await service.catalog(session, workspace_id) == []
 
 
 @pytest.mark.asyncio
@@ -385,6 +461,7 @@ async def test_removal_only_touches_its_own_workspace(session: AsyncSession, ids
 async def test_everything_is_hidden_while_plugins_are_off(client: AsyncClient, auth_headers: dict, monkeypatch):
     monkeypatch.delenv("PLUGINS_ENABLED", raising=False)
     assert (await client.get("/api/plugins/catalog", headers=auth_headers)).status_code == 404
+    assert (await client.get(f"/api/plugins/{PLUGIN}", headers=auth_headers)).status_code == 404
     info = (await client.get("/api/info")).json()
     assert info["features"]["plugins"] is False
 
@@ -394,7 +471,10 @@ async def test_api_catalog_plan_and_apply(client: AsyncClient, auth_headers: dic
     entries = (await client.get("/api/plugins/catalog", headers=auth_headers)).json()
     assert entries[0]["id"] == PLUGIN
     assert entries[0]["contributes"] == {"category_groups": 1, "categories": 2, "rules": 2}
-    assert entries[0]["compatible"] is True and entries[0]["installed_version"] is None
+    assert (entries[0]["owner"], entries[0]["stars"], entries[0]["stars_7d"]) == ("maria", 12, 3)
+    assert entries[0]["compatible"] is True and entries[0]["supported"] is True
+    assert entries[0]["installed_version"] is None
+    assert "manifest_sha256" not in entries[0]
 
     plan = (await client.get(f"/api/plugins/{PLUGIN}/plan", params={"action": "install"}, headers=auth_headers)).json()
     body = {"action": "install", "commit": plan["commit"], "token": plan["token"]}
@@ -431,3 +511,47 @@ def test_access_tokens_cannot_reach_plugins():
     assert required_scope("GET", "/api/plugins/catalog") is None
     assert required_scope("POST", f"/api/plugins/{PLUGIN}/apply") is None
 
+
+# --- Opening a plugin ----------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_details_show_the_readme_and_what_the_plugin_contains(client: AsyncClient, auth_headers, catalog):
+    response = await client.get(f"/api/plugins/{PLUGIN}", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["plugin"]["id"] == PLUGIN and "readme" not in body["plugin"]
+    assert body["readme"].startswith("# Home")
+    contents = body["contents"]
+    assert [g["key"] for g in contents["category_groups"]] == ["home"]
+    pets, garden = contents["categories"]
+    assert pets["group"] == {"key": "home", "name": {"en": "Home", "pt-BR": "Casa"}, "default": False}
+    assert garden["group"]["default"] is True and garden["group"]["name"]["en"]
+    petshop, garden_center = contents["rules"]
+    assert petshop["actions"][0]["category"]["name"]["pt-BR"] == "Bichos"
+    assert garden_center["actions"][0]["category"]["default"] is True
+
+
+@pytest.mark.asyncio
+async def test_details_leave_out_what_does_not_match_its_checksum(client: AsyncClient, auth_headers, catalog):
+    catalog.tampered = True
+    body = (await client.get(f"/api/plugins/{PLUGIN}", headers=auth_headers)).json()
+    assert body["readme"] is None and body["contents"] is None
+    assert body["plugin"]["id"] == PLUGIN
+
+
+@pytest.mark.asyncio
+async def test_details_never_read_a_readme_off_the_catalog_host(client: AsyncClient, auth_headers, catalog):
+    catalog.extra = {"readme": "https://evil.example.com/readme.md"}
+    body = (await client.get(f"/api/plugins/{PLUGIN}", headers=auth_headers)).json()
+    assert body["readme"] is None and body["contents"] is not None
+
+
+@pytest.mark.asyncio
+async def test_details_of_a_plugin_this_securo_cannot_apply_have_no_contents(
+    client: AsyncClient, auth_headers, catalog
+):
+    catalog.extra = {"contributes": {"widgets": 2}}
+    body = (await client.get(f"/api/plugins/{PLUGIN}", headers=auth_headers)).json()
+    assert body["contents"] is None and body["readme"].startswith("# Home")
+    assert (await client.get("/api/plugins/nobody/nothing", headers=auth_headers)).status_code == 404

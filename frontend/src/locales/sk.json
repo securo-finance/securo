@@ -3346,8 +3346,6 @@
     "noneInstalled": "V tomto pracovnom priestore nie sú nainštalované žiadne pluginy.",
     "remove": "Odstrániť plugin",
     "removeAria": "Odstrániť {{name}}",
-    "catalogTitle": "Katalóg pluginov",
-    "catalogHint": "Každý plugin je pripnutý ku konkrétnej verzii svojho zdrojového kódu.",
     "catalogFailed": "Katalóg sa nepodarilo načítať.",
     "catalogEmpty": "Katalóg zatiaľ neobsahuje žiadne pluginy.",
     "viewSource": "Zobraziť zdrojový kód",
@@ -3406,6 +3404,95 @@
       "defaults_few": "Vytvorí aj {{count}} predvolené kategórie pre pravidlá",
       "defaults_many": "Vytvorí aj {{count}} predvolených kategórií pre pravidlá",
       "defaults_other": "Vytvorí aj {{count}} predvolených kategórií pre pravidlá"
+    },
+    "page": {
+      "section": "Katalóg",
+      "notice": "Pluginy Securo nekontroluje. Pred použitím uvidíte presne, čo sa zmení, a nič neopustí váš server.",
+      "search": "Hľadať pluginy",
+      "type": {
+        "data": "Údaje",
+        "interface": "Rozhranie",
+        "code": "Kód"
+      },
+      "status": {
+        "installed": "Nainštalované",
+        "updates": "S aktualizáciou"
+      },
+      "clear": "Zrušiť filtre",
+      "trendingHint": "Najrýchlejšie rastúce vzhľadom na svoju veľkosť",
+      "newestHint": "Pridané za posledných 30 dní",
+      "sortBy": "Zoradiť podľa",
+      "sort": {
+        "popular": "Obľúbené",
+        "trending": "Populárne",
+        "updated": "Nedávno aktualizované",
+        "newest": "Najnovšie",
+        "name": "Názov"
+      },
+      "noResults": "Týmto filtrom nezodpovedá žiadny plugin.",
+      "byOwner": "od {{owner}}",
+      "updated": "Aktualizované {{when}}",
+      "count_one": "{{count}} plugin",
+      "count_few": "{{count}} pluginy",
+      "count_many": "{{count}} pluginov",
+      "count_other": "{{count}} pluginov",
+      "stars_one": "{{count}} hviezda",
+      "stars_few": "{{count}} hviezdy",
+      "stars_many": "{{count}} hviezd",
+      "stars_other": "{{count}} hviezd",
+      "authors_one": "{{count}} autor",
+      "authors_few": "{{count}} autori",
+      "authors_many": "{{count}} autorov",
+      "authors_other": "{{count}} autorov",
+      "clearSearch": "Vymazať hľadanie",
+      "facet": {
+        "type": "Typ",
+        "content": "Obsah",
+        "language": "Jazyk",
+        "status": "Stav"
+      },
+      "view": {
+        "all": "Všetko",
+        "trending": "Populárne",
+        "new": "Nové"
+      },
+      "any": "Ľubovoľný",
+      "trendingEmpty": "Tento týždeň žiadny plugin nezískal hviezdy.",
+      "newEmpty": "Za posledných 30 dní nepribudol žiadny plugin."
+    },
+    "kindName": {
+      "category_groups": "Skupiny kategórií",
+      "categories": "Kategórie",
+      "rules": "Pravidlá",
+      "csv_presets": "Šablóny CSV",
+      "fiscal_jurisdictions": "Daňové jurisdikcie",
+      "invoice_labels": "Popisky faktúr",
+      "widgets": "Widgety",
+      "reports": "Prehľady",
+      "dashboard_layouts": "Rozloženia panela",
+      "connectors": "Bankové pripojenia",
+      "parsers": "Čítačky súborov",
+      "price_providers": "Poskytovatelia cien",
+      "agent_tools": "Nástroje agenta"
+    },
+    "detail": {
+      "overview": "Prehľad",
+      "inside": "Čo obsahuje",
+      "insideHint": "Všetko, čo tento plugin pridá do priestoru. Pri inštalácii uvidíte, čo už máte.",
+      "noReadme": "Autor zatiaľ pre tento plugin nenapísal README.",
+      "loadFailed": "Podrobnosti pluginu sa nepodarilo načítať.",
+      "contentsUnavailable": "Táto verzia Securo nevie vypísať obsah tohto pluginu.",
+      "version": "Verzia",
+      "license": "Licencia",
+      "requires": "Vyžaduje",
+      "updated": "Aktualizované",
+      "languages": "Jazyky",
+      "builtIn": "predvolená",
+      "when": "Keď",
+      "previewNote": "Pred inštaláciou uvidíte každú zmenu a nič neopustí váš server.",
+      "notFound": "Tento plugin nie je v katalógu.",
+      "type": "Typ",
+      "added": "Pridané"
     }
   }
 }

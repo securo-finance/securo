@@ -657,21 +657,69 @@ export interface InstalledPlugin {
 
 export interface PluginCatalogEntry {
   id: string
+  owner: string
   repository: string
+  release: string
   commit: string
+  name: LocalizedText
+  description: LocalizedText
+  version: string
+  license: string
+  min_securo_version: string
+  /** How many items of each kind the plugin brings, by contribution kind. */
+  contributes: Record<string, number>
+  locales: string[]
+  /** The repository's GitHub topics. */
+  topics: string[]
+  stars: number
+  /** Stars gained in the last 7 days. */
+  stars_7d: number
+  added_at: string | null
+  updated_at: string | null
   revoked: boolean
   revoked_reason: string | null
-  /** Why the manifest couldn't be read; the rest is then missing. */
-  error: string | null
-  name: LocalizedText | null
-  description: LocalizedText | null
-  version: string | null
-  license: string | null
-  min_securo_version: string | null
-  contributes: Record<PluginItemKind, number> | null
+  /** This Securo is at least min_securo_version. */
   compatible: boolean
+  /** This Securo can apply everything the plugin contributes. */
+  supported: boolean
   installed_version: string | null
   update_available: boolean
+}
+
+/** An item a plugin points at: one of its own, or a built-in default. */
+export interface PluginRef {
+  key: string
+  name: LocalizedText
+  default: boolean
+}
+
+export interface PluginContents {
+  category_groups: { key: string; name: LocalizedText; icon: string; color: string }[]
+  categories: {
+    key: string
+    name: LocalizedText
+    icon: string
+    color: string
+    group: PluginRef | null
+    treat_as_transfer: boolean
+  }[]
+  rules: {
+    key: string
+    name: string
+    priority: number
+    conditions_op: 'and' | 'or'
+    conditions: RuleConditionNode[]
+    actions: { op: string; value?: string | boolean | null; category: PluginRef | null }[]
+  }[]
+}
+
+/** One plugin opened from the catalog. */
+export interface PluginDetail {
+  plugin: PluginCatalogEntry
+  /** Markdown, from the catalog's verified copy. */
+  readme: string | null
+  /** Null when this Securo can't read what the plugin contains. */
+  contents: PluginContents | null
 }
 
 export interface PluginItem {

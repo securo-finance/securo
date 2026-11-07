@@ -17,7 +17,7 @@ from app.schemas.plugin import (
     InstalledPluginRead,
     PluginApplyRequest,
     PluginCatalogRead,
-    PluginContentsRead,
+    PluginDetailRead,
     PluginItemRead,
     PluginPlanRead,
 )
@@ -37,26 +37,15 @@ def _lang(ctx: WorkspaceContext) -> str:
 
 
 def _catalog_read(item: service.CatalogItem) -> PluginCatalogRead:
-    read = PluginCatalogRead(
-        id=item.entry.id,
-        repository=item.entry.repository,
-        commit=item.entry.commit,
-        revoked=item.entry.revoked,
-        revoked_reason=item.entry.revoked_reason,
-        error=item.error,
+    entry = item.entry
+    return PluginCatalogRead(
+        **entry.model_dump(exclude={"manifest", "manifest_sha256", "readme", "readme_sha256"}),
+        owner=entry.owner,
+        compatible=entry.compatible,
+        supported=entry.supported,
         installed_version=item.installed.version if item.installed else None,
         update_available=item.update_available,
     )
-    if item.manifest is not None:
-        m = item.manifest
-        read.name, read.description, read.version = m.name, m.description, m.version
-        read.license, read.min_securo_version, read.compatible = m.license, m.min_securo_version, item.compatible
-        read.contributes = PluginContentsRead(
-            category_groups=len(m.contributes.category_groups),
-            categories=len(m.contributes.categories),
-            rules=len(m.contributes.rules),
-        )
-    return read
 
 
 def _plan_read(plan: service.PluginPlan) -> PluginPlanRead:
@@ -105,9 +94,21 @@ async def get_catalog(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """The plugin catalog. Fetched from the index now, never in the background."""
+    """The plugin catalog: one request to the index, now, never in the background."""
     items = await _guarded(service.catalog(session, ctx.workspace.id))
     return [_catalog_read(item) for item in items]
+
+
+@router.get("/{owner}/{name}", response_model=PluginDetailRead)
+async def get_details(
+    owner: str,
+    name: str,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """One plugin from the catalog: its README and what it contains, fetched when it's opened."""
+    details = await _guarded(service.details(session, ctx.workspace.id, f"{owner}/{name}"))
+    return PluginDetailRead(plugin=_catalog_read(details.item), readme=details.readme, contents=details.contents)
 
 
 @router.get("/{owner}/{name}/plan", response_model=PluginPlanRead)

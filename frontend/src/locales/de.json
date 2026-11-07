@@ -3191,8 +3191,6 @@
     "noneInstalled": "In diesem Arbeitsbereich sind keine Plugins installiert.",
     "remove": "Plugin entfernen",
     "removeAria": "{{name}} entfernen",
-    "catalogTitle": "Plugin-Katalog",
-    "catalogHint": "Jedes Plugin ist auf eine bestimmte Version seines Quellcodes festgelegt.",
     "catalogFailed": "Der Katalog konnte nicht geladen werden.",
     "catalogEmpty": "Der Katalog enthält noch keine Plugins.",
     "viewSource": "Quellcode ansehen",
@@ -3243,6 +3241,89 @@
       "unresolved": "Überspringt {{items}}, deren Kategorie fehlt:",
       "defaults_one": "Erstellt außerdem {{count}} Standardkategorie, die seine Regeln brauchen",
       "defaults_other": "Erstellt außerdem {{count}} Standardkategorien, die seine Regeln brauchen"
+    },
+    "page": {
+      "section": "Katalog",
+      "notice": "Plugins werden nicht von Securo geprüft. Bevor etwas angewendet wird, siehst du genau, was sich ändert, und nichts verlässt deinen Server.",
+      "search": "Plugins suchen",
+      "type": {
+        "data": "Daten",
+        "interface": "Oberfläche",
+        "code": "Code"
+      },
+      "status": {
+        "installed": "Installiert",
+        "updates": "Update verfügbar"
+      },
+      "clear": "Filter zurücksetzen",
+      "trendingHint": "Am schnellsten wachsend, gemessen an ihrer Größe",
+      "newestHint": "In den letzten 30 Tagen hinzugekommen",
+      "sortBy": "Sortieren nach",
+      "sort": {
+        "popular": "Beliebt",
+        "trending": "Im Trend",
+        "updated": "Kürzlich aktualisiert",
+        "newest": "Neueste",
+        "name": "Name"
+      },
+      "noResults": "Keine Plugins entsprechen diesen Filtern.",
+      "byOwner": "von {{owner}}",
+      "updated": "Aktualisiert {{when}}",
+      "count_one": "{{count}} Plugin",
+      "count_other": "{{count}} Plugins",
+      "stars_one": "{{count}} Stern",
+      "stars_other": "{{count}} Sterne",
+      "authors_one": "{{count}} Autor",
+      "authors_other": "{{count}} Autoren",
+      "clearSearch": "Suche löschen",
+      "facet": {
+        "type": "Typ",
+        "content": "Inhalt",
+        "language": "Sprache",
+        "status": "Status"
+      },
+      "view": {
+        "all": "Alle",
+        "trending": "Im Trend",
+        "new": "Neu"
+      },
+      "any": "Beliebig",
+      "trendingEmpty": "Kein Plugin hat diese Woche Sterne bekommen.",
+      "newEmpty": "In den letzten 30 Tagen kam kein Plugin hinzu."
+    },
+    "kindName": {
+      "category_groups": "Kategoriegruppen",
+      "categories": "Kategorien",
+      "rules": "Regeln",
+      "csv_presets": "CSV-Vorlagen",
+      "fiscal_jurisdictions": "Steuerjurisdiktionen",
+      "invoice_labels": "Rechnungsbeschriftungen",
+      "widgets": "Widgets",
+      "reports": "Berichte",
+      "dashboard_layouts": "Dashboard-Layouts",
+      "connectors": "Bankverbindungen",
+      "parsers": "Dateileser",
+      "price_providers": "Preisanbieter",
+      "agent_tools": "Agent-Werkzeuge"
+    },
+    "detail": {
+      "overview": "Übersicht",
+      "inside": "Inhalt",
+      "insideHint": "Alles, was dieses Plugin einem Bereich hinzufügt. Bei der Installation sehen Sie, was schon vorhanden ist.",
+      "noReadme": "Der Autor hat noch kein README für dieses Plugin geschrieben.",
+      "loadFailed": "Die Plugin-Details konnten nicht geladen werden.",
+      "contentsUnavailable": "Diese Securo-Version kann den Inhalt dieses Plugins nicht auflisten.",
+      "version": "Version",
+      "license": "Lizenz",
+      "requires": "Benötigt",
+      "updated": "Aktualisiert",
+      "languages": "Sprachen",
+      "builtIn": "Standard",
+      "when": "Wenn",
+      "previewNote": "Vor der Installation sehen Sie jede Änderung, und nichts verlässt Ihren Server.",
+      "notFound": "Dieses Plugin ist nicht im Katalog.",
+      "type": "Typ",
+      "added": "Hinzugefügt"
     }
   }
 }

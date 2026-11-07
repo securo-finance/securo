@@ -3190,8 +3190,6 @@
     "noneInstalled": "No plugins installed in this workspace.",
     "remove": "Remove plugin",
     "removeAria": "Remove {{name}}",
-    "catalogTitle": "Plugin catalog",
-    "catalogHint": "Each plugin is pinned to a specific version of its source.",
     "catalogFailed": "Couldn't load the catalog.",
     "catalogEmpty": "The catalog has no plugins yet.",
     "viewSource": "View source",
@@ -3242,6 +3240,89 @@
       "unresolved": "Skips {{items}} whose category is missing:",
       "defaults_one": "Also creates {{count}} default category its rules need",
       "defaults_other": "Also creates {{count}} default categories its rules need"
+    },
+    "page": {
+      "section": "Catalog",
+      "notice": "Plugins aren't reviewed by Securo. Before anything is applied you see exactly what changes, and nothing leaves your server.",
+      "search": "Search plugins",
+      "type": {
+        "data": "Data",
+        "interface": "Interface",
+        "code": "Code"
+      },
+      "status": {
+        "installed": "Installed",
+        "updates": "Updates available"
+      },
+      "clear": "Clear filters",
+      "trendingHint": "Fastest-growing, relative to their size",
+      "newestHint": "Joined in the last 30 days",
+      "sortBy": "Sort by",
+      "sort": {
+        "popular": "Popular",
+        "trending": "Trending",
+        "updated": "Recently updated",
+        "newest": "Newest",
+        "name": "Name"
+      },
+      "noResults": "No plugins match these filters.",
+      "byOwner": "by {{owner}}",
+      "updated": "Updated {{when}}",
+      "count_one": "{{count}} plugin",
+      "count_other": "{{count}} plugins",
+      "stars_one": "{{count}} star",
+      "stars_other": "{{count}} stars",
+      "authors_one": "{{count}} author",
+      "authors_other": "{{count}} authors",
+      "clearSearch": "Clear search",
+      "facet": {
+        "type": "Type",
+        "content": "Content",
+        "language": "Language",
+        "status": "Status"
+      },
+      "view": {
+        "all": "All",
+        "trending": "Trending",
+        "new": "New"
+      },
+      "any": "Any",
+      "trendingEmpty": "No plugin gained stars this week.",
+      "newEmpty": "No plugin joined in the last 30 days."
+    },
+    "kindName": {
+      "category_groups": "Category groups",
+      "categories": "Categories",
+      "rules": "Rules",
+      "csv_presets": "CSV presets",
+      "fiscal_jurisdictions": "Fiscal jurisdictions",
+      "invoice_labels": "Invoice labels",
+      "widgets": "Widgets",
+      "reports": "Reports",
+      "dashboard_layouts": "Dashboard layouts",
+      "connectors": "Bank connectors",
+      "parsers": "File parsers",
+      "price_providers": "Price providers",
+      "agent_tools": "Agent tools"
+    },
+    "detail": {
+      "overview": "Overview",
+      "inside": "What's inside",
+      "insideHint": "Everything this plugin adds to a workspace. Installing shows which of these you already have.",
+      "noReadme": "The author hasn't written a README for this plugin.",
+      "loadFailed": "Couldn't load this plugin's details.",
+      "contentsUnavailable": "This version of Securo can't list what this plugin contains.",
+      "version": "Version",
+      "license": "License",
+      "requires": "Requires",
+      "updated": "Updated",
+      "languages": "Languages",
+      "builtIn": "built-in",
+      "when": "When",
+      "previewNote": "Installing shows every change before anything is applied, and nothing leaves your server.",
+      "notFound": "This plugin isn't in the catalog.",
+      "type": "Type",
+      "added": "Added"
     }
   }
 }
