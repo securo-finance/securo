@@ -408,6 +408,9 @@ class EnableBankingProvider(BankProvider):
         # of the connection being synced. None while unknown.
         self._required_psu_headers: Optional[list[str]] = None
         self._institution_name = "The bank"
+        # Accounts whose transactions this sync fetched only in part; the
+        # sync then leaves last_sync_at alone so the rest is asked for again.
+        self.incomplete_account_ids: set[str] = set()
 
     def _use_credentials(self, credentials: dict) -> None:
         aspsp = credentials.get("aspsp") if isinstance(credentials, dict) else None
@@ -1012,22 +1015,7 @@ class EnableBankingProvider(BankProvider):
         # newest transactions until its own date caught up.
         today = datetime.now(timezone.utc).date()
         if since is not None:
-            # Without the user present, PSD2 banks only serve the last 90 days.
-            # A connection that has not synced for a while asks for more (the
-            # sync rewinds from last_sync_at), which the bank refuses outright;
-            # ask for what it will give instead. A user-present sync that cannot
-            # send the user's headers reaches the bank as a background one.
-            oldest_background = _history_start(today, DEFAULT_HISTORY_DAYS)
-            if since < oldest_background and not self._present_psu_headers():
-                logger.info(
-                    "Enable Banking background fetch for account %s: clamping "
-                    "date_from %s to %s (90 days)",
-                    account_external_id,
-                    since.isoformat(),
-                    oldest_background.isoformat(),
-                )
-                since = oldest_background
-            return await self._fetch_transactions(
+            return await self._fetch_transactions_since(
                 account_external_id, since, today, payee_source
             )
         try:
@@ -1053,6 +1041,68 @@ class EnableBankingProvider(BankProvider):
                 today,
                 payee_source,
             )
+
+    async def _fetch_transactions_since(
+        self,
+        account_external_id: str,
+        since: date,
+        today: date,
+        payee_source: str,
+    ) -> list[TransactionData]:
+        """The window from `since`, cut to 90 days only when the bank refuses it.
+
+        A connection that has not synced for a while asks for more than 90
+        days (the sync rewinds from last_sync_at). Many banks serve that, but
+        PSD2 banks may refuse anything older than 90 days without the user
+        present, either as WRONG_TRANSACTIONS_PERIOD or the way they refuse
+        any background call they do not allow. Only then is the request
+        repeated with the last 90 days.
+
+        A cut made on a background request leaves the account marked
+        incomplete, so the sync keeps last_sync_at where it was and a later
+        sync, one with the user present, asks for the full window again. A
+        cut the bank imposes with the user's headers is final: only fresh
+        SCA could unlock older data, and a reconnect starts from 90 days
+        anyway, so holding the cursor back would only repeat the refusal.
+        """
+        oldest_background = _history_start(today, DEFAULT_HISTORY_DAYS)
+        # Whether the request carries the user's headers decides whether a
+        # cut range can still be fetched later.
+        refused_in_background = not self._present_psu_headers()
+        try:
+            return await self._fetch_transactions(
+                account_external_id, since, today, payee_source
+            )
+        except (httpx.HTTPStatusError, ProviderUserActionRequired) as exc:
+            if since >= oldest_background:
+                raise
+            if isinstance(exc, httpx.HTTPStatusError):
+                if not _is_wrong_period_error(exc.response):
+                    raise
+            elif exc.code != "psu_present_required":
+                raise
+        transactions = await self._fetch_transactions(
+            account_external_id, oldest_background, today, payee_source
+        )
+        if refused_in_background:
+            self.incomplete_account_ids.add(account_external_id)
+            logger.warning(
+                "Enable Banking refused transactions of account %s from %s without "
+                "the user present; fetched from %s and kept the earlier range for a "
+                "sync with the user present",
+                account_external_id,
+                since.isoformat(),
+                oldest_background.isoformat(),
+            )
+        else:
+            logger.warning(
+                "Enable Banking refused transactions of account %s from %s with the "
+                "user present; fetched from %s, the earlier range needs a new consent",
+                account_external_id,
+                since.isoformat(),
+                oldest_background.isoformat(),
+            )
+        return transactions
 
     async def _fetch_transactions(
         self,

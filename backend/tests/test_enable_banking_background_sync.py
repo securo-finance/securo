@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bank_connection import BankConnection
-from app.providers.base import AccountData
+from app.providers.base import AccountData, ProviderUserActionRequired
 from app.providers.enable_banking import ACCOUNT_DETAILS_KEY, EnableBankingProvider
 from app.providers.psu import PsuContext, psu_present
 from app.services.connection_service import sync_connection
@@ -125,47 +125,105 @@ async def test_oauth_callback_caches_details_from_the_session(eb_keys):
     assert conn.credentials[ACCOUNT_DETAILS_KEY]["acc-1"]["name"] == "Brukskonto"
 
 
-def _window(calls: list[httpx.Request]) -> tuple[date, date]:
-    params = calls[0].url.params
+def _window(request: httpx.Request) -> tuple[date, date]:
+    params = request.url.params
     return date.fromisoformat(params["date_from"]), date.fromisoformat(params["date_to"])
 
 
-async def _fetch_since(since: date, context=None, required=None) -> tuple[date, date]:
+# How a bank refuses a window older than it serves: EB's own period error, or
+# the reasonless ASPSP_ERROR a PSD2 bank gives a background call it does not
+# allow (Sparebanken Vest's "Missing PSU-IP-Address header").
+WRONG_PERIOD = httpx.Response(422, json={"error": "WRONG_TRANSACTIONS_PERIOD", "message": "x"})
+PRESENCE_REFUSAL = httpx.Response(
+    400, json={"code": 400, "error": "ASPSP_ERROR", "message": "Error interacting with ASPSP"}
+)
+TODAY = datetime.now(timezone.utc).date()
+OLDEST_SERVED = TODAY - timedelta(days=89)
+
+
+async def _fetch_since(since: date, context=None, required=None, refuse_before=None):
+    """The windows requested, and the provider, for a fetch from `since`.
+
+    `refuse_before` is the response the bank gives a window that starts
+    before the last 90 days; None serves every window.
+    """
+    provider = EnableBankingProvider()
+    windows: list[tuple[date, date]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        window = _window(request)
+        windows.append(window)
+        if refuse_before is not None and window[0] < OLDEST_SERVED:
+            return refuse_before
+        return httpx.Response(200, json={"transactions": {"booked": [], "pending": []}})
+
+    credentials: dict = {"session_id": "s", "aspsp": {"name": "Bank"}}
+    if required is not None:
+        credentials["aspsp"]["required_psu_headers"] = required
+    with _patch_client(provider, handler), psu_present(context):
+        await provider.get_transactions(credentials, "acc-1", since=since)
+    return windows, provider
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("context", [None, USER])
+async def test_a_long_window_the_bank_serves_is_not_cut(eb_keys, context):
+    """The full window is tried first, for every bank."""
+    since = TODAY - timedelta(days=200)
+    windows, provider = await _fetch_since(since, context=context)
+    assert windows == [(since, TODAY)]
+    assert provider.incomplete_account_ids == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("refusal", "required"),
+    [(WRONG_PERIOD, None), (PRESENCE_REFUSAL, ["Psu-Ip-Address"])],
+)
+async def test_a_refused_background_window_is_cut_and_kept_for_later(
+    eb_keys, refusal, required,
+):
+    since = TODAY - timedelta(days=200)
+    windows, provider = await _fetch_since(since, required=required, refuse_before=refusal)
+    assert windows == [(since, TODAY), (OLDEST_SERVED, TODAY)]
+    # The sync keeps last_sync_at, so the cut range is asked for again.
+    assert provider.incomplete_account_ids == {"acc-1"}
+
+
+@pytest.mark.asyncio
+async def test_a_window_refused_with_the_user_present_is_cut_for_good(eb_keys):
+    """With the user's headers the refusal is final: only new SCA would help."""
+    since = TODAY - timedelta(days=200)
+    windows, provider = await _fetch_since(since, context=USER, refuse_before=WRONG_PERIOD)
+    assert windows == [(since, TODAY), (OLDEST_SERVED, TODAY)]
+    assert provider.incomplete_account_ids == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("refusal", "error"),
+    [(WRONG_PERIOD, httpx.HTTPStatusError), (PRESENCE_REFUSAL, ProviderUserActionRequired)],
+)
+async def test_a_refused_window_inside_90_days_is_not_retried(eb_keys, refusal, error):
+    since = TODAY - timedelta(days=20)
     provider = EnableBankingProvider()
     calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
-        return httpx.Response(200, json={"transactions": {"booked": [], "pending": []}})
+        return refusal
 
-    credentials: dict = {"session_id": "s"}
-    if required is not None:
-        credentials["aspsp"] = {"name": "Bank", "required_psu_headers": required}
-    with _patch_client(provider, handler), psu_present(context):
+    credentials = {"session_id": "s", "aspsp": {"name": "Bank", "required_psu_headers": ["Psu-Ip-Address"]}}
+    with _patch_client(provider, handler), pytest.raises(error):
         await provider.get_transactions(credentials, "acc-1", since=since)
-    return _window(calls)
+    assert len(calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_background_fetch_is_clamped_to_90_days(eb_keys):
-    today = datetime.now(timezone.utc).date()
-    start, end = await _fetch_since(today - timedelta(days=200))
-    assert end == today
-    assert (end - start).days + 1 == 90
-
-
-@pytest.mark.asyncio
-async def test_background_fetch_inside_90_days_is_unchanged(eb_keys):
-    since = datetime.now(timezone.utc).date() - timedelta(days=20)
-    start, _ = await _fetch_since(since)
-    assert start == since
-
-
-@pytest.mark.asyncio
-async def test_user_present_fetch_is_not_clamped(eb_keys):
-    since = datetime.now(timezone.utc).date() - timedelta(days=200)
-    start, _ = await _fetch_since(since, context=USER)
-    assert start == since
+async def test_another_error_on_a_long_window_is_not_retried(eb_keys):
+    since = TODAY - timedelta(days=200)
+    with pytest.raises(httpx.HTTPStatusError):
+        await _fetch_since(since, refuse_before=httpx.Response(403, json={"error": "X"}))
 
 
 # A user-present sync whose request had no public IP, for a bank that needs one:
@@ -174,12 +232,55 @@ NO_IP = PsuContext(headers={"Psu-User-Agent": "Firefox"})
 
 
 @pytest.mark.asyncio
-async def test_headerless_user_present_fetch_is_clamped(eb_keys):
-    today = datetime.now(timezone.utc).date()
-    start, _ = await _fetch_since(
-        today - timedelta(days=200), context=NO_IP, required=["Psu-Ip-Address"]
+async def test_a_headerless_user_present_cut_is_kept_for_later(eb_keys):
+    since = TODAY - timedelta(days=200)
+    windows, provider = await _fetch_since(
+        since, context=NO_IP, required=["Psu-Ip-Address"], refuse_before=PRESENCE_REFUSAL
     )
-    assert start == today - timedelta(days=89)
+    assert windows[-1] == (OLDEST_SERVED, TODAY)
+    assert provider.incomplete_account_ids == {"acc-1"}
+
+
+@pytest.mark.asyncio
+async def test_a_cut_window_keeps_last_sync_at(
+    eb_keys, session: AsyncSession, test_user, test_workspace,
+):
+    """End to end: the background cut leaves last_sync_at where it was, so the
+    next sync, with the user present, asks for the same full window."""
+    last_sync = datetime.now(timezone.utc) - timedelta(days=200)
+    conn = BankConnection(
+        user_id=test_user.id, workspace_id=test_workspace.id, provider="enable_banking",
+        external_id="sess-1", institution_name="Bank", status="active", last_sync_at=last_sync,
+        credentials={
+            "session_id": "sess-1",
+            "aspsp": {"name": "Bank", "country": "NO", "required_psu_headers": ["Psu-Ip-Address"]},
+            ACCOUNT_DETAILS_KEY: {"acc-1": {"name": "Brukskonto", "currency": "NOK"}},
+        },
+    )
+    session.add(conn)
+    await session.commit()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/transactions"):
+            if _window(request)[0] < OLDEST_SERVED:
+                return PRESENCE_REFUSAL
+            return httpx.Response(200, json={"transactions": {"booked": [], "pending": []}})
+        return _bank([])(request)
+
+    provider = EnableBankingProvider()
+    with _patch_client(provider, handler), \
+         patch("app.services.connection_service.get_provider", return_value=provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        _, _, outcome = await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    assert outcome == "refreshed"
+    session.expunge_all()
+    stored = await session.get(BankConnection, conn.id)
+    assert stored is not None and stored.status == "active"
+    assert stored.last_sync_at is not None
+    assert stored.last_sync_at.replace(tzinfo=timezone.utc) == last_sync
 
 
 @pytest.mark.asyncio
