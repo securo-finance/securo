@@ -142,11 +142,11 @@ export function getAccountLabel(account: {
 }
 
 /**
- * Accounts that count toward rollup totals (net worth, reports, budgets).
+ * Accounts that count toward implicit rollup totals.
  *
  * `exclude_from_reports` is a totals flag, not a hide flag: the account stays
- * in lists and ledgers, it just leaves the sums (PR-5, §2/S2). An absent
- * field (payloads predating this flag) counts as included. Pure — the
+ * in lists and ledgers. Explicit account selections bypass this filter.
+ * An absent field counts as included. Pure: the
  * input is never mutated, matching sortAccountsByDisplayName's React Query
  * safety.
  */

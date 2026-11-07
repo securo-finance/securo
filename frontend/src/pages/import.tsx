@@ -136,6 +136,7 @@ function TransactionImportPanel() {
         payee_raw: rt.payee_raw ?? undefined,
         notes: rt.notes ?? undefined,
         category_name: rt.category_name ?? undefined,
+        category_lines: rt.category_lines ?? undefined,
         excluded: rt.excluded,
         category_id: rt.selected_category_id !== undefined
           ? (rt.selected_category_id ?? undefined)

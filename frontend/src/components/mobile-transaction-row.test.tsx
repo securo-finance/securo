@@ -3,7 +3,10 @@ import { render, screen } from '@testing-library/react'
 import { MobileTransactionRow } from './mobile-transaction-row'
 import type { Account, Category, Transaction } from '@/types'
 
-vi.mock('react-i18next', () => ({
+// Partial: the split badge reads the display locale, whose module sets up
+// i18next with `initReactI18next` from this package.
+vi.mock('react-i18next', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
 }))
 

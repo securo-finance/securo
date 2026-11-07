@@ -33,7 +33,11 @@ from app.services._query_filters import (
     is_inside_provider_snapshot,
     is_not_future,
     is_not_ignored,
+    line_amount,
+    line_category_id,
+    line_primary_or_amount,
     reporting_date_col,
+    with_category_lines,
 )
 from app.services import loan_schedule, mortgage_service
 from app.services.credit_card_service import (
@@ -552,7 +556,7 @@ async def update_account(
             "card_brand",
             "card_level",
             *LOAN_TERM_FIELDS,
-            # User reporting preference, not provider-owned data — a
+            # User reporting preference, not provider-owned data: a
             # connected mirror account (#343) is the primary audience for
             # this flag, so it must pass the connected-edit gate.
             "exclude_from_reports",
@@ -1141,9 +1145,24 @@ async def get_account_summary(
     # that the reporting filter drops. Every other account type keeps the
     # reporting view. See `counts_on_bill` for why the bill cannot simply
     # reuse `counts_as_pnl`.
-    summary_filter = (
-        counts_on_bill() if account.type == "credit_card" else counts_as_pnl()
-    )
+    #
+    # The reporting view reads a split transaction part by part, so a part in
+    # a transfer-like category drops out alone; the bill reads whole rows.
+    if account.type == "credit_card":
+        summary_filter = counts_on_bill()
+        summary_amount = effective_amount
+
+        def summary_select(column):
+            return select(column)
+    else:
+        summary_filter = counts_as_pnl(line_category_id())
+        summary_amount = case(
+            (Transaction.currency == account.currency, line_amount()),
+            else_=line_primary_or_amount(),
+        )
+
+        def summary_select(column):
+            return with_category_lines(select(column).select_from(Transaction))
 
     # Intermediate payments into the card (the credit leg of a paired
     # transfer) reduce the bill total, but only by what is left after
@@ -1211,7 +1230,7 @@ async def get_account_summary(
     # Income = SUM of credit transactions in window (excluding opening_balance
     # and paired transfers).
     income_result = await session.execute(
-        _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(
+        _scope(summary_select(func.coalesce(func.sum(summary_amount), 0)).where(
             Transaction.account_id == account_id,
             Transaction.type == "credit",
             Transaction.source != "opening_balance",
@@ -1236,7 +1255,7 @@ async def get_account_summary(
             else_=func.abs(effective_amount),
         )
         expenses_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(signed_for_bill), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.source != "opening_balance",
                 bucket_date <= today,
@@ -1246,7 +1265,7 @@ async def get_account_summary(
         )
     else:
         expenses_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(func.abs(summary_amount)), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.type == "debit",
                 bucket_date <= today,
@@ -1266,7 +1285,7 @@ async def get_account_summary(
         bucket_date > today,
     )
     forecast_income_result = await session.execute(
-        _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(
+        _scope(summary_select(func.coalesce(func.sum(summary_amount), 0)).where(
             Transaction.account_id == account_id,
             Transaction.type == "credit",
             Transaction.source != "opening_balance",
@@ -1278,7 +1297,7 @@ async def get_account_summary(
 
     if account.type == "credit_card":
         forecast_expense_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(signed_for_bill), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.source != "opening_balance",
                 forecast_condition,
@@ -1287,7 +1306,7 @@ async def get_account_summary(
         )
     else:
         forecast_expense_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(func.abs(summary_amount)), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.type == "debit",
                 forecast_condition,

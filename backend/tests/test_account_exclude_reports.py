@@ -1,11 +1,7 @@
-"""PR-5: accounts.exclude_from_reports — rollup totals honor the flag.
+"""Implicit totals honor account exclusion without hiding accounts or history.
 
-Named cases T-1…T-15 and T-18 from the design packet §7 (T-16 lives in
-test_accounts_api_coverage.py, T-17 in test_agents_mcp_tools.py — the
-packet's "unless noted" files). Each case pins a surface of the 28-surface
-map (§2.3): an excluded account leaves every rollup total while staying
-visible in lists, ledgers, its own pages, card bills and exports (§4).
-Fixtures follow test_report_service.py / test_dashboard_service.py.
+Direct account pages, card bills and exports keep their ordinary amounts.
+Fixtures follow test_report_service.py and test_dashboard_service.py.
 """
 
 import uuid
@@ -220,7 +216,7 @@ async def _make_recurring(
 
 
 # ---------------------------------------------------------------------------
-# T-1 — net worth report
+# Net worth report
 # ---------------------------------------------------------------------------
 
 
@@ -256,7 +252,7 @@ async def test_net_worth_excludes_flagged_account(
 
 
 # ---------------------------------------------------------------------------
-# T-2 — #343 regression pin: portfolio + wallet mirror counts once
+# Portfolio and wallet mirror count once (#343)
 # ---------------------------------------------------------------------------
 
 
@@ -284,7 +280,7 @@ async def test_regression_343_portfolio_wallet_mirror_counts_once(
 
     await _set_flag(session, mirror)
 
-    # Counted once — via the wallet, not twice.
+    # Counted once via the wallet, not twice.
     dp = await _net_worth_at(session, test_workspace.id, date.today(), "BRL")
     assert dp.breakdowns["accounts"] == 1000.0
     assert dp.breakdowns["assets"] == 10000.0
@@ -297,7 +293,7 @@ async def test_regression_343_portfolio_wallet_mirror_counts_once(
 
 
 # ---------------------------------------------------------------------------
-# T-3 — excluded and closed are orthogonal (§4 interaction matrix)
+# Excluded and closed are orthogonal
 # ---------------------------------------------------------------------------
 
 
@@ -336,7 +332,7 @@ async def test_excluded_and_closed_are_orthogonal(
     ids = {a.id for a in await _get_open_accounts(session, test_workspace.id)}
     assert closed_excluded.id not in ids
 
-    # Lists keep the row (S17) and carry the flag in the payload.
+    # Lists keep the row and carry the flag in the payload.
     rows = await account_service.get_accounts(
         session, test_workspace.id, include_closed=True
     )
@@ -346,7 +342,7 @@ async def test_excluded_and_closed_are_orthogonal(
 
 
 # ---------------------------------------------------------------------------
-# T-4 — income vs expenses report
+# Income versus expenses report
 # ---------------------------------------------------------------------------
 
 
@@ -394,7 +390,7 @@ async def test_income_expenses_excludes_flagged_account(
 
 
 # ---------------------------------------------------------------------------
-# T-5 — split offsets respect the exclusion (both shared helpers, §14 gate 1)
+# Owner offsets and invited shares respect exclusion
 # ---------------------------------------------------------------------------
 
 
@@ -439,7 +435,7 @@ async def test_split_offsets_respect_account_exclusion(
         session, test_user.id, month_start, month_end,
         workspace_id=test_workspace.id,
     )
-    # Only the included parent's non-owner share may subtract (S15).
+    # Only the included parent's non-owner share may subtract.
     assert income_off == 0.0
     assert expense_off == 40.0
 
@@ -531,7 +527,7 @@ async def test_split_offsets_respect_account_exclusion(
 
 
 # ---------------------------------------------------------------------------
-# T-6 — Sankey composition + investments group
+# Sankey composition and investments group
 # ---------------------------------------------------------------------------
 
 
@@ -603,7 +599,7 @@ async def test_historical_investments_respect_exclusion_not_closure(
 
 
 # ---------------------------------------------------------------------------
-# T-7 — cash-flow anchor and flows
+# Cash-flow anchor and flows
 # ---------------------------------------------------------------------------
 
 
@@ -637,7 +633,7 @@ async def test_cash_flow_anchor_and_flows_exclude_flagged_account(
 
 
 # ---------------------------------------------------------------------------
-# T-8 — baseline projection means
+# Baseline projection means
 # ---------------------------------------------------------------------------
 
 
@@ -675,7 +671,7 @@ async def test_baseline_projection_excludes_flagged_account(
 
 
 # ---------------------------------------------------------------------------
-# T-9 — budgets: actual + projected + prev-month
+# Budget actuals, projections and previous month
 # ---------------------------------------------------------------------------
 
 
@@ -728,7 +724,7 @@ async def test_budget_actuals_and_projections_exclude_flagged_account(
 
 
 # ---------------------------------------------------------------------------
-# T-10 — dashboard summary + forecast layer (S1/S3/S4/S16)
+# Dashboard summary and forecast layer
 # ---------------------------------------------------------------------------
 
 
@@ -763,18 +759,18 @@ async def test_dashboard_summary_and_forecast_exclude_flagged_account(
     await _set_flag(session, mirror)
 
     after = await get_summary(session, test_workspace.id, test_user.id, month=month_start)
-    # S1: hero balance drops the mirror.
+    # Implicit balance drops the mirror.
     assert after.total_balance["BRL"] == pytest.approx(950.0)
-    # S4: monthly P&L drops the mirror's rows.
+    # Monthly P&L drops the mirror's rows.
     assert after.monthly_expenses == pytest.approx(50.0)
     assert after.monthly_income == pytest.approx(0.0)
-    # S3/S16: no excluded-account recurring rules or forecast rows — with
+    # No excluded-account recurring rules or forecast rows, with
     # zero included-account forecast activity, projected == current exactly.
     assert after.projected_balance["BRL"] == pytest.approx(950.0)
 
 
 # ---------------------------------------------------------------------------
-# T-11 — balance history, monthly trend, spending by category
+# Balance history, monthly trend and spending by category
 # ---------------------------------------------------------------------------
 
 
@@ -826,7 +822,7 @@ async def test_balance_history_and_trend_exclude_flagged_account(
 
 
 # ---------------------------------------------------------------------------
-# T-12 — goals net-worth tracking
+# Goals net-worth tracking
 # ---------------------------------------------------------------------------
 
 
@@ -862,12 +858,12 @@ async def test_goal_net_worth_tracking_respects_exclusion(
     await _set_flag(session, mirror)
 
     after = await _resolve_current_amount(session, goal, test_user.id)
-    # Accounts drop the mirror; assets stay (S28 is a non-goal).
+    # Accounts drop the mirror; assets stay.
     assert float(after) == pytest.approx(3000.0)
 
 
 # ---------------------------------------------------------------------------
-# T-13 — the account's own pages keep their totals (S18)
+# The account's own pages keep their totals
 # ---------------------------------------------------------------------------
 
 
@@ -902,7 +898,7 @@ async def test_account_own_pages_keep_totals_when_excluded(
 
 
 # ---------------------------------------------------------------------------
-# T-14 — CSV export keeps excluded accounts' rows (S26 pin)
+# CSV export keeps excluded accounts' rows
 # ---------------------------------------------------------------------------
 
 
@@ -910,7 +906,7 @@ async def test_export_rows_keep_excluded_account_transactions(
     client, auth_headers, session: AsyncSession, test_account, test_transactions
 ):
     # test_account is connection-backed: the PATCH also proves the flag
-    # passes the connected-account edit gate (part of T-16's story).
+    # passes the connected-account edit gate.
     resp = await client.patch(
         f"/api/accounts/{test_account.id}", headers=auth_headers,
         json={"exclude_from_reports": True},
@@ -925,7 +921,7 @@ async def test_export_rows_keep_excluded_account_transactions(
 
 
 # ---------------------------------------------------------------------------
-# T-15 — transactions-list summary footer + excluded bucket
+# Transactions-list summary footer and excluded bucket
 # ---------------------------------------------------------------------------
 
 
@@ -945,7 +941,7 @@ async def test_transaction_summary_footer_excludes_and_excluded_bucket_absorbs(
         session, test_workspace.id, test_user.id, include_summary=True
     )
     assert summary is not None
-    # Rows stay visible — the flag is a totals flag, not a hide flag.
+    # Rows stay visible: the flag is a totals flag, not a hide flag.
     assert total == 4
     assert len(rows) == 4
     # Footer P&L excludes the mirror…
@@ -957,7 +953,7 @@ async def test_transaction_summary_footer_excludes_and_excluded_bucket_absorbs(
 
 
 # ---------------------------------------------------------------------------
-# T-18 — credit-card bill totals unchanged (S19 pin)
+# Credit-card bill totals unchanged
 # ---------------------------------------------------------------------------
 
 

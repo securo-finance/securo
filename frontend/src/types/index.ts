@@ -216,8 +216,7 @@ export interface Account {
   open_bill_total_primary?: number | null
   is_closed: boolean
   closed_at: string | null
-  // Totals flag (PR-5): excluded from net worth, reports and budgets, but
-  // still listed everywhere — absent on payloads predating this flag.
+  // Omitted from implicit totals, but still visible and explicitly selectable.
   exclude_from_reports: boolean
 }
 
@@ -327,6 +326,14 @@ export interface Transaction {
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
+  // Split across several categories (#425): `category_id` is then null and
+  // each part lives in `category_lines`, adding up to `amount`.
+  has_category_lines?: boolean
+  category_lines?: TransactionCategoryLine[]
+  // Set by a list filtered by category: the part of a split row that falls
+  // in the filter, so totals built from rows match the report they came from.
+  matched_amount?: number | null
+  matched_amount_primary?: number | null
   // Shared-transaction view fields. Set per-request when the viewer
   // is a linked split member but not the owner. Render `viewer_share`
   // as the amount and treat the row as read-only — editing belongs
@@ -375,6 +382,7 @@ export interface InstallmentSeriesInput {
     fx_rate_used?: number | null
     effective_bill_date?: string | null
     splits?: TransactionSplitsInput | null
+    category_lines?: TransactionCategoryLinesInput | null
   }
   installments: number
   first_installment_status?: 'posted' | 'pending'
@@ -382,6 +390,33 @@ export interface InstallmentSeriesInput {
 }
 
 export type ShareType = 'equal' | 'exact' | 'percent'
+
+export type CategoryLineShareType = 'exact' | 'percent'
+
+export interface TransactionCategoryLine {
+  id: string
+  category_id: string
+  amount: number
+  share_type: CategoryLineShareType
+  share_pct: number | null
+  position: number
+  notes: string | null
+  category?: Category | null
+}
+
+export interface TransactionCategoryLineInput {
+  category_id: string
+  amount?: number | null
+  share_pct?: number | null
+  notes?: string | null
+}
+
+// Same semantics as `splits`: leave it out to keep the current parts, send
+// two or more lines to split, send an empty list to undo the split.
+export interface TransactionCategoryLinesInput {
+  share_type: CategoryLineShareType
+  lines: TransactionCategoryLineInput[]
+}
 
 export interface TransactionSplit {
   id: string
@@ -410,8 +445,9 @@ export interface TransactionSplitsInput {
 // TransactionSplitsInput the split section produces, not the
 // TransactionSplit[] rows the API returns, so the edit payload type reflects
 // the form's actual shape.
-export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits'> & {
+export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits' | 'category_lines'> & {
   splits?: TransactionSplitsInput | null
+  category_lines?: TransactionCategoryLinesInput
 }
 
 export type GroupKind = 'social' | 'cost_center' | 'project' | 'client' | 'other'
@@ -504,7 +540,7 @@ export interface PayeeTaxId {
 
 export interface Payee {
   id: string
-  user_id: string
+  user_id: string | null
   name: string
   /** Legal nature, or null when unknown — the normal state for a row sync created. */
   type: 'person' | 'company' | null
@@ -611,6 +647,7 @@ export interface RulePreviewItem {
   type: 'debit' | 'credit'
   current_category_id: string | null
   current_category_name: string | null
+  current_has_category_lines?: boolean
   new_category_id: string | null
   new_category_name: string | null
   will_change: boolean
@@ -661,6 +698,8 @@ export interface ImportPreviewTransaction {
   category_id?: string | null
   force_uncategorized?: boolean
   notes?: string | null
+  /** A split across categories read back from a CSV export. */
+  category_lines?: { category_name: string; amount: number }[] | null
 }
 
 export interface ImportReviewTransaction extends ImportPreviewTransaction {
@@ -695,6 +734,9 @@ export interface RecurringTransaction {
   next_occurrence: string
   amount_primary: number | null
   fx_rate_used: number | null
+  /** Split across categories: every occurrence starts with these parts. */
+  has_category_lines?: boolean
+  category_lines?: TransactionCategoryLine[]
 }
 
 export interface ProjectedTransaction {
@@ -711,6 +753,16 @@ export interface ProjectedTransaction {
   category_icon: string | null
   category_color: string | null
   category_treat_as_transfer: boolean
+  /** Split recurring template: the parts, in the occurrence's currency. */
+  has_category_lines?: boolean
+  category_lines?: {
+    category_id: string
+    category_name: string | null
+    category_icon: string | null
+    category_color: string | null
+    amount: number
+    treat_as_transfer: boolean
+  }[]
 }
 
 export interface TransactionCalendarItem {
@@ -735,6 +787,7 @@ export interface TransactionCalendarItem {
   is_transfer: boolean
   is_ignored: boolean
   exclude_from_pnl: boolean
+  has_category_lines?: boolean
 }
 
 export interface TransactionCalendarDay {

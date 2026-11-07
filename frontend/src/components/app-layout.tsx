@@ -203,7 +203,8 @@ export function AppLayout() {
   const visibleAccounts = activeAccountIds
     ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
     : allAccounts
-  const totalBalance = sumAccountsTotal(includedInRollups(visibleAccounts))
+  const totalBalance = sumAccountsTotal(activeAccountIds === null
+    ? includedInRollups(visibleAccounts) : visibleAccounts)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (

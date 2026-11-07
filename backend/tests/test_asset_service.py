@@ -755,6 +755,13 @@ def test_next_due_date_yearly():
     assert _next_due_date(date(2025, 6, 15), "yearly") == date(2026, 6, 15)
 
 
+def test_next_due_date_yearly_from_leap_day():
+    from app.services.asset_service import _next_due_date
+    from app.tasks.asset_tasks import _next_due_date as task_next_due_date
+    assert _next_due_date(date(2024, 2, 29), "yearly") == date(2025, 2, 28)
+    assert task_next_due_date(date(2024, 2, 29), "yearly") == date(2025, 2, 28)
+
+
 def test_generate_growth_values_empty_when_future():
     """No values generated when start date is in the future."""
     from app.services.asset_service import _generate_growth_values
@@ -1139,3 +1146,54 @@ async def test_portfolio_trend_checks_each_missing_currency_once(
 
     assert result["total"] == 0.0
     assert calls == [("GBP", "BRL")]
+
+
+@pytest.mark.asyncio
+async def test_growth_rule_task_starts_at_growth_start_date(session: AsyncSession, test_user: User):
+    """A value recorded before growth_start_date accrues nothing before it."""
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock, patch
+    from zoneinfo import ZoneInfo
+
+    from sqlalchemy import select
+
+    from app.tasks import asset_tasks
+
+    today = date.today()
+    start = today - timedelta(days=3)
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Late start",
+        type="investment",
+        currency="BRL",
+        valuation_method="growth_rule",
+        growth_type="absolute",
+        growth_rate=Decimal("1"),
+        growth_frequency="daily",
+        growth_start_date=start,
+    )
+    session.add(asset)
+    await session.flush()
+    session.add(AssetValue(
+        id=uuid.uuid4(), asset_id=asset.id, amount=Decimal("100"),
+        date=today - timedelta(days=10), source="manual",
+    ))
+    await session.commit()
+
+    @asynccontextmanager
+    async def _session():
+        yield session
+
+    with patch.object(asset_tasks, "_make_session_maker", return_value=(AsyncMock(), _session)), \
+         patch.object(asset_tasks, "get_timezone", new=AsyncMock(return_value=ZoneInfo("UTC"))), \
+         patch.object(asset_tasks, "get_workspace_timezone", new=AsyncMock(return_value=ZoneInfo("UTC"))), \
+         patch.object(asset_tasks, "today_in", return_value=today):
+        assert await asset_tasks._apply_growth_rules() == 3
+
+    rows = (await session.execute(
+        select(AssetValue).where(AssetValue.asset_id == asset.id, AssetValue.source == "rule")
+        .order_by(AssetValue.date)
+    )).scalars().all()
+    assert [r.date for r in rows] == [start + timedelta(days=i) for i in (1, 2, 3)]
+    assert [r.amount for r in rows] == [Decimal("101"), Decimal("102"), Decimal("103")]

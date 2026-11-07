@@ -1,22 +1,22 @@
-"""accounts.exclude_from_reports — keep an account visible but out of rollup totals
+"""accounts.exclude_from_reports: keep an account visible but out of rollup totals
 
 A tracking or investment account that mirrors an asset/portfolio (or whose
-balance already embeds its holdings — issues #679 / #343 family) double-counts
+balance already embeds its holdings, issues #679 / #343 family) double-counts
 in net worth and reports. This additive boolean says "this account's numbers
-are not real money for reporting purposes": the account stays in lists,
-ledgers, its own pages and exports, but leaves every rollup total.
+are omitted from implicit totals": the account stays in lists, ledgers,
+its own pages, exports and deliberately selected account totals.
 
 No index: the filter rides existing Account selects over a small per-
 workspace row count (`is_closed` sets the precedent).
 
-Revision ID: 103
-Revises: 102
+Revision ID: 107
+Revises: 106
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "103"
-down_revision = "102"
+revision = "107"
+down_revision = "106"
 branch_labels = None
 depends_on = None
 

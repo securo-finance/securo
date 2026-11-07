@@ -861,7 +861,8 @@ export function AccountDialog({
           onSubmit={(e) => {
             e.preventDefault()
             if (account?.is_closed) {
-              onSave({ exclude_from_reports: excludeFromReports })
+              onSave(excludeFromReports !== (account.exclude_from_reports ?? false)
+                ? { exclude_from_reports: excludeFromReports } : {})
               return
             }
             const isCC = type === 'credit_card'
@@ -872,7 +873,7 @@ export function AccountDialog({
             const isConnected = !!account?.connection_id
             // Editing: only move the opening balance when the date was changed.
             const dateChanged = !account || balanceDate !== formSource?.balanceDate
-            onSave({
+            const values = {
               ...(!isConnected && {
                 name,
                 balance: parseFloat(balance),
@@ -881,19 +882,37 @@ export function AccountDialog({
               }),
               type,
               ...(type === 'loan' && {
-                secured_asset_id: securedAssetIsListed ? securedAssetId : null,
+                ...((!account || securedAssetId !== (account.secured_asset_id ?? '')) && {
+                  secured_asset_id: securedAssetIsListed ? securedAssetId : null,
+                }),
                 ...loanTermsPayload(loanTerms),
               }),
               display_name: displayName.trim() || null,
-              // PR-5 (Q-7/A-10): v1 is edit-only — AccountCreate is
-              // unchanged, so the flag rides only on edits.
               ...(account && { exclude_from_reports: excludeFromReports }),
               ...(isCC && {
                 credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
                 statement_close_day: parseDay(statementCloseDay),
                 payment_due_day: parseDay(paymentDueDay),
               }),
-            })
+            }
+            if (!account) {
+              onSave(values)
+              return
+            }
+            // Untouched fields must not overwrite newer provider/other-tab data.
+            const baseline: Record<string, unknown> = {
+              ...account,
+              balance: Number(account.balance),
+              display_name: account.display_name?.trim() || null,
+              exclude_from_reports: account.exclude_from_reports ?? false,
+              secured_asset_id: account.secured_asset_id ?? null,
+              credit_limit: account.credit_limit ?? null,
+              statement_close_day: account.statement_close_day ?? null,
+              payment_due_day: account.payment_due_day ?? null,
+              ...loanTermsPayload(loanTermsFrom(account, account.currency)),
+            }
+            onSave(Object.fromEntries(Object.entries(values)
+              .filter(([key, value]) => value !== baseline[key])))
           }}
           className="space-y-4"
         >
@@ -1001,6 +1020,11 @@ export function AccountDialog({
                 onChange={(e) => setSecuredAssetId(e.target.value)}
               >
                 <option value="">{t('accounts.noSecuredProperty')}</option>
+                {securedAssetId && !properties.some((asset) => asset.id === securedAssetId) && (
+                  <option value={securedAssetId} disabled>
+                    {assetsList?.find((asset) => asset.id === securedAssetId)?.name ?? securedAssetId}
+                  </option>
+                )}
                 {properties.map((asset) => (
                   <option key={asset.id} value={asset.id}>{asset.name}</option>
                 ))}
@@ -1096,9 +1120,7 @@ export function AccountDialog({
             </div>
           )}
           </fieldset>
-          {/* PR-5 (S1): totals flag. Positive phrasing (include-in-reports)
-              bound to the inverse of exclude_from_reports. Edit-only — v1
-              adds no create-time field (AccountCreate unchanged, Q-7). */}
+          {/* The edit-only inclusion control is the inverse of exclusion. */}
           {account && (
             <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
               <div className="space-y-1">

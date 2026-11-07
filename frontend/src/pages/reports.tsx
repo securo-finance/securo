@@ -405,7 +405,9 @@ export default function ReportsPage() {
           ? reports.incomeExpenses(months, interval, acctIds, period, days, apiStart, apiEnd)
           : reports.netWorth(months, interval, acctIds, walletIds, period, apiStart, apiEnd),
     // Only request a custom report with both committed endpoints.
-    enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
+    enabled: currentTab.enabled
+      && (!noAccounts || (activeTab === 'net_worth' && !!activeWalletIds?.length))
+      && (!isCustomRange || hasCustomRange),
   })
 
   const summary = data?.summary

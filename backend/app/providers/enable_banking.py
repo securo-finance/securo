@@ -658,6 +658,7 @@ class EnableBankingProvider(BankProvider):
             if isinstance(entry, dict) and entry.get("uid")
         }
         result: list[AccountData] = []
+        transient_error: Optional[httpx.HTTPError] = None
         for uid in uids:
             try:
                 details = await self._request("GET", f"/accounts/{uid}/details")
@@ -670,8 +671,30 @@ class EnableBankingProvider(BankProvider):
                 # than corrupt it. SessionExpiredError is deliberately NOT caught
                 # here: a dead consent is global, never per-account.
                 logger.warning("Failed to fetch details for account %s: %s", uid, exc)
+                is_refusal = (
+                    isinstance(exc, httpx.HTTPStatusError)
+                    and exc.response.status_code < 500
+                    and exc.response.status_code != 408
+                )
+                if not is_refusal:
+                    transient_error = exc
                 continue
             result.append(await self._build_account(details, stable_external_ids.get(uid)))
+        # Skipping is only safe while something still syncs. When the bank refuses
+        # every account, an empty list would pass for a successful sync: the
+        # connection stays "active", last_sync_at keeps moving and the balances
+        # silently go stale. The next sync that reaches an account clears this.
+        if uids and not result:
+            # A 5xx, timeout or network failure says nothing about the accounts,
+            # so it surfaces as the original error, like any other provider
+            # failure, rather than as accounts_unavailable.
+            if transient_error is not None:
+                raise transient_error
+            raise ProviderUserActionRequired(
+                f"The bank refused all {len(uids)} account(s) on this connection. "
+                "Retry later, or reconnect if it keeps failing.",
+                code="accounts_unavailable",
+            )
         return result
 
     async def get_transactions(

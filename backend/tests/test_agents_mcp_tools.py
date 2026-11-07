@@ -6,6 +6,8 @@ dashboard) just check that the wrapper returns a serializable shape, not
 the full numeric correctness of those services.
 """
 import uuid
+from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 import pytest_asyncio
@@ -13,6 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # Importing this package registers all tools into mcp_server.registry.REGISTRY.
 import mcp_server.tools  # noqa: F401
+from app.models.account import Account
+from app.models.transaction import Transaction
+from app.schemas.account import AccountCreate
+from app.services import account_service
 from mcp_server.auth import CallContext
 from mcp_server.registry import REGISTRY
 
@@ -219,6 +225,58 @@ async def test_list_recurring_transactions_returns_empty_dict_with_no_data(
     handler = REGISTRY["list_recurring_transactions"].handler
     r = await handler(session=session, ctx=ctx)
     assert r == {"items": [], "total": 0}
+
+
+async def test_list_accounts_reports_current_balance(
+    session: AsyncSession, ctx: CallContext, test_user, test_account, test_connection
+):
+    """A manual account's balance is its opening balance plus its
+    transactions, as on the Accounts page, not the stored opening amount."""
+    ws_id = test_account.workspace_id
+    manual = await account_service.create_account(
+        session,
+        ws_id,
+        test_user.id,
+        AccountCreate(name="Manual", type="checking", balance=Decimal("100.00"), currency="BRL"),
+    )
+    for amount, tx_type in (("50.00", "credit"), ("20.00", "debit")):
+        session.add(
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=ws_id,
+                account_id=manual.id,
+                description=f"Seeded {tx_type}",
+                amount=Decimal(amount),
+                date=date.today() - timedelta(days=1),
+                type=tx_type,
+                source="manual",
+                currency="BRL",
+            )
+        )
+    session.add(
+        Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=ws_id,
+            connection_id=test_connection.id,
+            external_id="card-ext-1",
+            name="Connected Card",
+            type="credit_card",
+            balance=Decimal("300.00"),
+            currency="BRL",
+        )
+    )
+    await session.commit()
+
+    handler = REGISTRY["list_accounts"].handler
+    r = await handler(session=session, ctx=ctx)
+    balances = {item["name"]: item["balance"] for item in r["items"]}
+    assert balances["Manual"] == pytest.approx(130.00)
+    # A connected account reports what the bank sent, as before.
+    assert balances["Conta Corrente"] == pytest.approx(1500.00)
+    # A card is debt, so it comes back negative, as on the Accounts page.
+    assert balances["Connected Card"] == pytest.approx(-300.00)
 
 
 async def test_list_assets_empty(session: AsyncSession, ctx: CallContext):
@@ -1118,7 +1176,7 @@ async def test_propose_create_payee_rule_external_apply_writes(
     assert any(a.get("value") == str(cat.id) for a in row.actions)
 
 
-# --- PR-5: accounts.exclude_from_reports (T-17) -----------------------------
+# --- Account report preference -------------------------------------------
 
 
 async def test_mcp_list_accounts_surfaces_flag_and_reports_inherit(
@@ -1153,19 +1211,19 @@ async def test_mcp_list_accounts_surfaces_flag_and_reports_inherit(
         ))
     await session.commit()
 
-    # S21: the projection surfaces the flag.
+    # The account projection surfaces the flag.
     list_accounts = REGISTRY["list_accounts"].handler
     listed = await list_accounts(session=session, ctx=ctx)
     items = {i["name"]: i for i in listed["items"]}
     assert items["MCP Mirror"]["exclude_from_reports"] is True
     assert items["MCP Checking"]["exclude_from_reports"] is False
 
-    # S22: report tools inherit enforcement — no code change, same numbers.
+    # Report tools inherit the default participation rule.
     get_net_worth = REGISTRY["get_net_worth"].handler
     mcp_out = await get_net_worth(session=session, ctx=ctx, months=1, interval="monthly")
     svc = await get_net_worth_report(
         session, test_workspace.id, test_user.id, months=1, interval="monthly"
     )
     assert mcp_out["summary"]["primary_value"] == svc.summary.primary_value
-    # 1000 only — the 5000 mirror stays out of the MCP total too.
+    # 1000 only: the 5000 mirror stays out of the MCP total too.
     assert mcp_out["summary"]["primary_value"] == 1000.0

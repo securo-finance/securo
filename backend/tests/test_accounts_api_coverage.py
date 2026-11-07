@@ -417,7 +417,7 @@ async def test_list_accounts_requires_auth(client: AsyncClient):
 
 
 # ---------------------------------------------------------------------------
-# exclude_from_reports (PR-5, T-16)
+# Account report preference
 # ---------------------------------------------------------------------------
 
 

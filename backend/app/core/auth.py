@@ -11,6 +11,7 @@ from fastapi_users.authentication import (
 )
 from fastapi_users.db import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette._utils import get_route_path
 
 from app.core.auth_policy import require_local_auth_enabled
 from app.core.config import get_settings
@@ -99,5 +100,58 @@ auth_backend = AuthenticationBackend(
 
 fastapi_users = FastAPIUsers[User, uuid.UUID](get_user_manager, [auth_backend])
 
-current_active_user = fastapi_users.current_user(active=True)
+_session_user = fastapi_users.current_user(active=True, optional=True)
 current_superuser = fastapi_users.current_user(active=True, superuser=True)
+
+
+def _bearer(request: Request) -> Optional[str]:
+    header = request.headers.get("authorization") or ""
+    scheme, _, value = header.partition(" ")
+    return value.strip() if scheme.lower() == "bearer" and value.strip() else None
+
+
+def _route_path(request: Request) -> str:
+    """The path the app routes on, without a mount prefix (`root_path`).
+
+    Uses the helper Starlette's own router uses, so scopes are checked on
+    exactly the path the request is routed by.
+    """
+    return get_route_path(request.scope)
+
+
+async def current_active_user(
+    request: Request,
+    user: Optional[User] = Depends(_session_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> User:
+    """The signed-in user, from a session JWT or an access token.
+
+    An access token only reaches the routes its scopes open (see
+    `app.core.access_token_scopes`); anything else answers 403, and routes
+    that depend on `current_superuser` or fastapi-users' own dependencies
+    never accept one. The token is kept on `request.state.access_token` so
+    workspace resolution can pin the request to the token's workspace.
+    """
+    if user is not None:
+        return user
+
+    from fastapi import HTTPException, status
+
+    from app.core.access_token_scopes import grants, required_scope
+    from app.services.access_token_service import authenticate, looks_like_access_token
+
+    raw = _bearer(request)
+    if raw and looks_like_access_token(raw):
+        token = await authenticate(session, raw)
+        if token is not None:
+            owner = await session.get(User, token.user_id)
+            if owner is not None and owner.is_active:
+                needed = required_scope(request.method, _route_path(request))
+                if needed is None or not grants(token.scopes, needed):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="This access token's scopes don't cover this request.",
+                    )
+                request.state.access_token = token
+                return owner
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")

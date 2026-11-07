@@ -131,7 +131,7 @@ beforeEach(() => {
   ]
 })
 
-describe('sidebar account rollup — approved PR-5 contract', () => {
+describe('sidebar account rollup selection', () => {
   it('excludes the mirror from the header but keeps both own-balance rows visible', async () => {
     renderWithProviders(<AppLayout />)
     const total = await header()
@@ -167,9 +167,9 @@ describe('sidebar account rollup — approved PR-5 contract', () => {
   })
 
   it.each([
-    { scope: 'excluded only', ids: ['Mirror'], checking: false, mirror: true, total: '$0.00' },
+    { scope: 'excluded only', ids: ['Mirror'], checking: false, mirror: true, total: '$300.00' },
     { scope: 'included only', ids: ['Checking'], checking: true, mirror: false, total: '$100.00' },
-    { scope: 'both', ids: ['Checking', 'Mirror'], checking: true, mirror: true, total: '$100.00' },
+    { scope: 'both', ids: ['Checking', 'Mirror'], checking: true, mirror: true, total: '$400.00' },
     { scope: 'empty / wallet-only', ids: [], checking: false, mirror: false, total: '$0.00' },
   ])('intersects Collection membership and exclusion: $scope', async ({ ids, checking, mirror, total }) => {
     // This included account must never leak from outside the Collection.
@@ -188,7 +188,7 @@ describe('sidebar account rollup — approved PR-5 contract', () => {
     const view = renderWithProviders(<AppLayout />)
     const button = await header()
     expectRow('Mirror', '$300.00')
-    expectIncludedTotal(button, '$0.00')
+    expectIncludedTotal(button, '$300.00')
     state.activeAccountIds = null
     view.rerender(<AppLayout />)
     expectRow('Checking', '$100.00')
@@ -249,5 +249,28 @@ describe('sidebar unchanged calculation and privacy baselines', () => {
     expect(collapse).toHaveAttribute('aria-expanded', 'true')
     await user.click(collapse)
     expect(sidebar().getByRole('button', { name: t('nav.expandSidebar') })).toHaveAttribute('aria-expanded', 'false')
+  })
+})
+
+describe('collection totals', () => {
+  it.each([
+    { scope: 'absent', ids: null, total: '$800.00' },
+    { scope: 'included control', ids: ['Checking'], total: '$100.00' },
+    { scope: 'flagged only', ids: ['Mirror'], total: '$300.00' },
+    { scope: 'mixed duplicate', ids: ['Checking', 'Mirror', 'Mirror'], total: '$400.00' },
+    { scope: 'empty', ids: [], total: '$0.00' },
+    { scope: 'foreign only', ids: ['not-in-workspace'], total: '$0.00' },
+  ])('uses deliberate account selection rather than the default flag: $scope', async ({ ids, total }) => {
+    state.accounts.push(account('Outside', 700))
+    state.activeAccountIds = ids
+    renderWithProviders(<AppLayout />)
+    const button = await header()
+    // The rendered header is the real reducer/formatting consumer; no test
+    // implementation computes the application's subtotal for it.
+    expect(within(button).getByText(total)).toBeVisible()
+    if (ids?.includes('Mirror') || ids === null) expectRow('Mirror', '$300.00')
+    if (ids !== null) {
+      expect(sidebar().queryByRole('link', { name: /^Outside/ })).not.toBeInTheDocument()
+    }
   })
 })

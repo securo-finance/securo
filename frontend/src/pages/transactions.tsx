@@ -53,7 +53,7 @@ import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
 import { isManualInstallmentSeriesRow } from '@/lib/installment-series'
-import { CategoryIcon } from '@/components/category-icon'
+import { TransactionCategoryIcon, TransactionCategoryLabel } from '@/components/category-lines-display'
 import { CategorySelect } from '@/components/category-select'
 import { CategoryPicker } from '@/components/category-picker'
 import { TransactionDialog, type SaveAction, type TransactionSavePayload } from '@/components/transaction-dialog'
@@ -110,7 +110,7 @@ export default function TransactionsPage() {
   const { mask } = usePrivacyMode()
   const isMobile = useIsMobile()
   const { user } = useAuth()
-  const { activeAccountIds } = useCollectionFilter()
+  const { activeAccountIds, activeCollectionId, activeCollection } = useCollectionFilter()
   const { canWrite, hasModule } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
@@ -356,7 +356,6 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     if (viewMode === 'calendar') {
-      setFilterAccountIds((prev) => prev.length > 1 ? [] : prev)
       setSelectedIds(new Set())
       setLastSelectedId(null)
       setBulkCategory('')
@@ -429,13 +428,14 @@ export default function TransactionsPage() {
   })
 
   const calendarMonth = steppedMonth
-  const calendarAccountIds = filterAccountIds.length === 1 ? filterAccountIds : []
+  const calendarAccountIds = filterAccountIds.length > 0 ? filterAccountIds : activeAccountIds
+  const calendarCollectionPending = filterAccountIds.length === 0 && !!activeCollectionId && !activeCollection
   const { data: calendarData, isLoading: calendarLoading, isFetching: calendarFetching, refetch: refetchCalendar } = useQuery({
-    queryKey: ['transactions', 'calendar', calendarMonth, calendarAccountIds],
-    enabled: viewMode === 'calendar',
+    queryKey: ['transactions', 'calendar', calendarMonth, calendarCollectionPending ? 'unresolved' : calendarAccountIds],
+    enabled: viewMode === 'calendar' && !noAccounts && !calendarCollectionPending,
     queryFn: () => transactions.calendar({
       month: `${calendarMonth}-01`,
-      account_ids: calendarAccountIds.length === 1 ? calendarAccountIds : undefined,
+      account_ids: calendarAccountIds ?? undefined,
     }),
   })
 
@@ -597,10 +597,15 @@ export default function TransactionsPage() {
     mutationFn: ({ ids, categoryId }: { ids: string[]; categoryId: string | null }) =>
       transactions.bulkCategorize(ids, categoryId),
     onSuccess: (result) => {
+      // The backend never overwrites a split across categories; say how many
+      // of the selected rows it left alone, or the count looks wrong.
+      const skipped = result.skipped_split ?? 0
       invalidateAfterTxMutation()
       setSelectedIds(new Set())
       setBulkCategory('')
-      toast.success(t('transactions.bulkSuccess', { count: result.updated }))
+      toast.success(t('transactions.bulkSuccess', { count: result.updated }), {
+        description: skipped > 0 ? t('categoryLines.bulkSkipped', { count: skipped }) : undefined,
+      })
     },
     onError: (error) => {
       toast.error(extractApiError(error))
@@ -1128,7 +1133,7 @@ export default function TransactionsPage() {
       : ''
     return (
       <div className="flex items-center gap-2 md:gap-3">
-        <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size="lg" />
+        <TransactionCategoryIcon tx={tx} size="lg" />
         <div className="min-w-0 flex-1">
           {/* The column has a fixed width, so a row carrying several badges
               (transfer with its counterpart account, report exclusion, an
@@ -1316,11 +1321,7 @@ export default function TransactionsPage() {
       case 'category':
         return (
           <TableCell key={col.id} style={widthStyle} className={baseClass}>
-            {tx.category ? (
-              <span className="text-sm text-muted-foreground">{tx.category.name}</span>
-            ) : (
-              <span className="text-xs text-muted-foreground italic">{t('transactions.noCategory')}</span>
-            )}
+            <TransactionCategoryLabel tx={tx} />
           </TableCell>
         )
       case 'account': {
@@ -1441,7 +1442,6 @@ export default function TransactionsPage() {
             view={{
               value: viewMode,
               onChange: (value) => {
-                if (value === 'calendar' && filterAccountIds.length > 1) setFilterAccountIds([])
                 setViewMode(value)
               },
               listLabel: t('transactions.listView'),
@@ -1454,7 +1454,7 @@ export default function TransactionsPage() {
             onAdd={canWrite ? () => { setEditingTx(null); setDialogOpen(true) } : undefined}
             onDuplicate={duplicableTx ? () => handleDuplicateTransaction(duplicableTx) : undefined}
             onTransfer={canWrite ? () => setTransferDialogOpen(true) : undefined}
-            onRefresh={noAccounts ? undefined : () => {
+            onRefresh={noAccounts || (viewMode === 'calendar' && calendarCollectionPending) ? undefined : () => {
               void refreshTransactionsView({
                 viewMode,
                 refetchList: refetch,
@@ -1575,8 +1575,8 @@ export default function TransactionsPage() {
 
       {viewMode === 'calendar' && (
         <TransactionCalendarView
-          calendar={calendarData}
-          isLoading={calendarLoading}
+          calendar={noAccounts || calendarCollectionPending ? undefined : calendarData}
+          isLoading={calendarCollectionPending || calendarLoading}
           locale={locale}
           dateLocale={dateLocale}
           mask={mask}
