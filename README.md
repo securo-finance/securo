@@ -94,7 +94,8 @@ Use the region configured on your Garage server. S3 support is an optional
 dependency and is not in the default backend image. With the prebuilt images, set
 `BACKEND_IMAGE=ghcr.io/securo-finance/securo-backend:latest-s3` (or a
 `<version>-s3` tag) in `.env`; when building from source, set `BACKEND_EXTRAS=s3`;
-for direct installs, use `pip install -e ".[s3]"`. For Amazon S3, omit
+then run `docker compose up -d --build` to rebuild and recreate the containers.
+For direct installs, use `pip install -e ".[s3]"`. For Amazon S3, omit
 `STORAGE_S3_ENDPOINT_URL`, use the bucket's AWS region, and leave
 `STORAGE_S3_ADDRESSING_STYLE=auto` (the default). `virtual` is also supported.
 Temporary credentials can include `STORAGE_S3_SESSION_TOKEN`. Omit both access
@@ -105,11 +106,13 @@ files. HTTPS certificate verification remains enabled; `http://` endpoints are
 rejected unless `STORAGE_S3_ALLOW_INSECURE_HTTP=true` is set (local development
 only, as data is sent unencrypted).
 
-Grant the application only read/write/delete access to its bucket objects
-(`s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on AWS). Garage uses its own
-bucket permissions: grant the dedicated application key read and write; owner
-permissions are not needed. Configure the same storage settings for all backend,
-worker, and MCP processes. Restart/recreate the containers after changing `.env`.
+On AWS, grant `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on the
+bucket's objects, plus `s3:ListBucket` on the bucket so missing objects return
+404 instead of 403. Garage uses its own bucket permissions: grant the dedicated
+application key read and write; owner permissions are not needed. Configure the
+same storage settings for all backend, worker, and MCP processes. After changing
+`.env`, run `docker compose up -d` to recreate containers with the new settings
+(use `docker compose -f docker-compose.prod.yml up -d` for the production file).
 Local attachment volumes are unused in S3 mode. AI knowledge documents and
 embedding caches still use their separate local storage settings.
 
@@ -140,7 +143,7 @@ SECURO_S3_TEST_REGION=garage \
 SECURO_S3_TEST_BUCKET=securo-storage-tests \
 SECURO_S3_TEST_ACCESS_KEY=test-key \
 SECURO_S3_TEST_SECRET_KEY=test-secret \
-uv run --directory backend pytest tests/test_s3_storage_integration.py -v
+uv run --directory backend --extra dev --extra s3 pytest tests/test_s3_storage_integration.py -v
 ```
 
 ## AI-Assisted Development
