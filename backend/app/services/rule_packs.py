@@ -1,29 +1,30 @@
 """Rule packs shipped with Securo, read from `app/data/rule_packs/*.json`.
 
-Each file is a plugin manifest (v1) that contributes only rules, so the
-built-in packs go through the same contract a third-party pack will. They
-are part of the core and work whether or not plugins are enabled.
-
-A rule installed from a pack records its origin (`Rule.source`,
-`Rule.source_key`) and a hash of its content at install time
-(`Rule.source_hash`). Comparing that hash with the rule as it is now tells an
-untouched pack rule from one the user edited.
+Each file is a plugin manifest (v1) that contributes only rules, and each is
+installed, updated and removed by the same sync a catalog plugin goes
+through (`app.plugins.sync`). They are part of the core: they work whether
+or not plugins are enabled, and have no catalog entry.
 """
 from __future__ import annotations
 
-import copy
-import hashlib
 import json
-import re
+import uuid
+from collections import Counter, defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.rule import Rule
+from app.plugins import sync
+from app.plugins.manifest import Manifest, parse_manifest
+from app.plugins.manifest import Rule as PackRule
 from app.services.category_defaults import DEFAULT_CATEGORIES, name_variants
+from app.services.rule_service import existing_rule_names
 
 PACKS_DIR = Path(__file__).resolve().parent.parent / "data" / "rule_packs"
 
@@ -31,141 +32,42 @@ PACKS_DIR = Path(__file__).resolve().parent.parent / "data" / "rule_packs"
 #: `PACKS_DIR/<name>.json` with the manifest id `securo/rules-<name>`.
 PACK_FILES = ("br", "us", "eu", "gb")
 
-_KEY_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,63}$"
-_LOCALE_PATTERN = r"^[a-z]{2,3}(-[A-Z]{2})?$"
-_VERSION_PATTERN = r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$"
-
-
-# --- Manifest (the subset a rule pack uses) ----------------------------------
-
-
-class _Model(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-def _translated(text: str | dict[str, str]) -> dict[str, str]:
-    """Plain text, or text per locale with English as the fallback."""
-    if isinstance(text, str):
-        return {"en": text}
-    if "en" not in text:
-        raise ValueError("translated text needs an `en` entry")
-    bad = [locale for locale in text if not re.match(_LOCALE_PATTERN, locale)]
-    if bad:
-        raise ValueError(f"not a locale: {', '.join(bad)}")
-    return text
-
-
-Text = Annotated[dict[str, str], BeforeValidator(_translated)]
-
-
-class _ManifestRule(_Model):
-    key: str = Field(pattern=_KEY_PATTERN)
-    name: str = Field(min_length=1, max_length=255)
-    conditions_op: Literal["and", "or"]
-    conditions: list[dict[str, Any]] = Field(min_length=1)
-    actions: list[dict[str, Any]] = Field(min_length=1)
-    priority: int = Field(default=0, ge=0, le=1000)
-
-
-class _Contributes(_Model):
-    """A rule pack contributes rules and nothing else."""
-
-    rules: list[_ManifestRule] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def _rule_keys_are_unique(self) -> _Contributes:
-        keys = [r.key for r in self.rules]
-        if len(keys) != len(set(keys)):
-            raise ValueError("rule keys must be unique")
-        return self
-
-
-class _Manifest(_Model):
-    """A data plugin needs no runtime, network or scopes, so it can't declare them."""
-
-    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,38}/[a-z0-9][a-z0-9-]{0,63}$")
-    name: Text
-    description: Text
-    version: str = Field(pattern=_VERSION_PATTERN)
-    repository: str = Field(pattern=r"^https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+$")
-    license: str = Field(min_length=2)
-    min_securo_version: str = Field(pattern=_VERSION_PATTERN)
-    contributes: _Contributes
-
-
-# --- Loaded packs --------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class PackRule:
-    key: str
-    name: str
-    conditions_op: str
-    conditions: list[dict[str, Any]]
-    actions: list[dict[str, Any]]
-    priority: int
-
-    def template(self) -> dict[str, Any]:
-        """A fresh rule template, the shape `rule_service` builds rules from."""
-        return {
-            "key": self.key,
-            "name": self.name,
-            "conditions_op": self.conditions_op,
-            "conditions": copy.deepcopy(self.conditions),
-            "actions": copy.deepcopy(self.actions),
-            "priority": self.priority,
-        }
-
 
 @dataclass(frozen=True)
 class RulePack:
     code: str
-    """What the API calls the pack (`BR`)."""
-    source: str
-    """The manifest id, recorded on every rule the pack installs."""
-    version: str
-    names: dict[str, str]
-    """The pack's name per locale; always has `en`."""
-    rules: tuple[PackRule, ...]
+    """What the API calls the pack (`BR`): its file name, upper-cased."""
+    manifest: Manifest
+
+    @property
+    def source(self) -> str:
+        """The manifest id, recorded on every rule the pack installs."""
+        return self.manifest.id
+
+    @property
+    def names(self) -> dict[str, str]:
+        """The pack's name per locale; always has `en`."""
+        return self.manifest.name
 
     @property
     def name(self) -> str:
         return self.names["en"]
 
     @property
+    def rules(self) -> list[PackRule]:
+        return self.manifest.contributes.rules
+
+    @property
     def flag(self) -> str:
         """The regional-indicator flag for the code (EU has one too)."""
         return "".join(chr(0x1F1E6 + ord(letter) - ord("A")) for letter in self.code)
 
-    def category_keys(self) -> set[str]:
-        """Default-category keys the pack's rules assign."""
-        return {
-            action["value"]
-            for rule in self.rules
-            for action in rule.actions
-            if action["op"] == "set_category"
-        }
-
 
 def load_pack(path: Path) -> RulePack:
-    manifest = _Manifest.model_validate(json.loads(path.read_text(encoding="utf-8")))
-    return RulePack(
-        code=path.stem.upper(),
-        source=manifest.id,
-        version=manifest.version,
-        names=manifest.name,
-        rules=tuple(
-            PackRule(
-                key=r.key,
-                name=r.name,
-                conditions_op=r.conditions_op,
-                conditions=r.conditions,
-                actions=r.actions,
-                priority=r.priority,
-            )
-            for r in manifest.contributes.rules
-        ),
-    )
+    manifest = parse_manifest(json.loads(path.read_text(encoding="utf-8")))
+    if manifest.contributes.categories or manifest.contributes.category_groups:
+        raise ValueError(f"{path.name}: a built-in rule pack contributes rules only")
+    return RulePack(code=path.stem.upper(), manifest=manifest)
 
 
 @cache
@@ -178,33 +80,138 @@ def get_pack(code: str) -> RulePack | None:
     return built_in_packs().get(code)
 
 
-# --- Telling untouched rules from edited ones -------------------------------------
+# --- Installing, listing and removing ----------------------------------------------
 
 
-def rule_content_hash(
-    *,
-    name: str,
-    conditions_op: str,
-    conditions: Any,
-    actions: Any,
-    priority: int,
-) -> str:
-    """Fingerprint of everything the rule editor can change but `is_active`:
-    switching a pack rule off doesn't make it the user's own."""
-    payload = json.dumps(
-        {
-            "name": name,
-            "conditions_op": conditions_op,
-            "conditions": conditions,
-            "actions": actions,
-            "priority": priority,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        default=str,
+@dataclass(frozen=True)
+class RulePackInstallResult:
+    rules: list[Rule]
+    unresolved: int
+    categories_created: int = 0
+
+
+async def install_rule_pack(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    pack_code: str,
+    lang: str = "pt-BR",
+    create_missing_categories: bool = False,
+) -> RulePackInstallResult:
+    """Install (or bring up to date) a built-in pack in a workspace, without a preview.
+
+    Rules the workspace already has, by key or by name, are left alone. With
+    `create_missing_categories`, default categories the pack needs and the
+    workspace lacks are created first, named in `lang`; otherwise rules that
+    need them are skipped and counted as unresolved.
+    """
+    pack = get_pack(pack_code)
+    if pack is None:
+        return RulePackInstallResult([], 0)
+    options = {"lang": lang, "create_default_categories": create_missing_categories}
+    plan = await sync.plan_sync(session, workspace_id, pack.source, pack.manifest, **options)
+    result = await sync.apply_sync(
+        session, workspace_id, user_id, pack.source, pack.manifest, plan.token, **options
     )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    await session.commit()
+    return RulePackInstallResult(
+        rules=result.created[sync.RULES],
+        unresolved=len(plan.unresolved),
+        categories_created=len(plan.default_categories),
+    )
+
+
+@dataclass(frozen=True)
+class RulePackStatus:
+    pack: RulePack
+    installed: bool
+    """Every rule of the pack is in the workspace, by key or by name."""
+    rules_from_pack: int
+    """Rules in the workspace that still come from the pack."""
+
+
+async def list_rule_packs(session: AsyncSession, workspace_id: uuid.UUID) -> list[RulePackStatus]:
+    """The built-in packs and where the workspace stands with each.
+
+    Rules installed before packs recorded their origin carry no key, so a
+    pack rule also counts as present when a rule has its name, as it always
+    did.
+    """
+    names = await existing_rule_names(session, workspace_id)
+    rows = (
+        await session.execute(
+            select(Rule.source, Rule.source_key).where(Rule.workspace_id == workspace_id, Rule.source.isnot(None))
+        )
+    ).all()
+    keys_by_source: dict[str, set[str]] = defaultdict(set)
+    for source, key in rows:
+        keys_by_source[source].add(key)
+    count_by_source = Counter(source for source, _ in rows)
+    return [
+        RulePackStatus(
+            pack=pack,
+            installed=all(r.key in keys_by_source[pack.source] or r.name in names for r in pack.rules),
+            rules_from_pack=count_by_source[pack.source],
+        )
+        for pack in built_in_packs().values()
+    ]
+
+
+@dataclass(frozen=True)
+class RuleRef:
+    id: uuid.UUID
+    name: str
+
+
+@dataclass(frozen=True)
+class RulePackRemoval:
+    remove: list[RuleRef]
+    """Pack rules still exactly as installed: removing the pack deletes them."""
+    keep: list[RuleRef]
+    """Pack rules the user edited: they stay, as the user's own."""
+    token: str
+    """Identifies this plan; removal is refused under another."""
+
+
+def _removal(plan: sync.SyncPlan) -> RulePackRemoval:
+    def refs(bucket: str) -> list[RuleRef]:
+        return [RuleRef(id=i.id, name=i.name) for i in plan.of(bucket, sync.RULES) if i.id is not None]
+
+    return RulePackRemoval(remove=refs("delete"), keep=refs("release"), token=plan.token)
+
+
+async def plan_rule_pack_removal(
+    session: AsyncSession, workspace_id: uuid.UUID, pack_code: str
+) -> RulePackRemoval | None:
+    """What removing a pack would delete and what it would keep.
+
+    Only rules that record coming from the pack are considered; a rule with
+    no recorded origin is never touched.
+    """
+    pack = get_pack(pack_code)
+    if pack is None:
+        return None
+    return _removal(await sync.plan_sync(session, workspace_id, pack.source, None))
+
+
+async def remove_rule_pack(
+    session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID, pack_code: str, token: str
+) -> RulePackRemoval | None:
+    """Remove a pack: delete its untouched rules and hand the edited ones over.
+
+    `token` is the one from the plan the user confirmed; if the plan differs
+    now, `sync.SyncPlanChanged` is raised and nothing is removed.
+    Transactions keep the categories the rules already gave them.
+    """
+    pack = get_pack(pack_code)
+    if pack is None:
+        return None
+    result = await sync.apply_sync(session, workspace_id, user_id, pack.source, None, token)
+    await session.commit()
+    return _removal(result.plan)
+
+
+# --- Rules installed before packs recorded their origin -----------------------------
 
 
 def find_pack_rule(
@@ -225,22 +232,22 @@ def find_pack_rule(
     category ids to names). An edited rule never matches, and neither does a
     rule two packs could equally have produced.
     """
-    matches = [
-        (pack, rule)
-        for pack in built_in_packs().values()
-        for rule in pack.rules
-        if rule.name == name
-        and rule.conditions_op == conditions_op
-        and rule.conditions == conditions
-        and rule.priority == priority
-        and _same_actions(actions, rule.actions, category_names)
-    ]
+    matches = []
+    for pack in built_in_packs().values():
+        for rule in pack.rules:
+            template = rule.template()
+            if (
+                rule.name == name
+                and rule.conditions_op == conditions_op
+                and template["conditions"] == conditions
+                and rule.priority == priority
+                and _same_actions(actions, template["actions"], category_names)
+            ):
+                matches.append((pack, rule))
     return matches[0] if len(matches) == 1 else None
 
 
-def _same_actions(
-    actions: Any, expected: list[dict[str, Any]], category_names: Mapping[str, str]
-) -> bool:
+def _same_actions(actions: Any, expected: list[dict[str, Any]], category_names: Mapping[str, str]) -> bool:
     if not isinstance(actions, list) or len(actions) != len(expected):
         return False
     for action, want in zip(actions, expected):

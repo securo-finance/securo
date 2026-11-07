@@ -17,6 +17,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { IconPicker } from '@/components/icon-picker'
+import { PluginsSection } from '@/components/plugins-section'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { CategoryIcon } from '@/components/category-icon'
 import {
   Popover,
@@ -83,6 +85,7 @@ export default function WorkspaceSettingsPage() {
   const navigate = useNavigate()
   const localeForFormat = useDateLocale()
   const { current, canManage, workspaces: allWorkspaces, refresh, switchWorkspace } = useWorkspace()
+  const { pluginsEnabled } = useFeatureFlags()
   const { user: currentUser, updateUser } = useAuth()
   const queryClient = useQueryClient()
 
@@ -595,6 +598,8 @@ export default function WorkspaceSettingsPage() {
           </ul>
         )}
       </section>
+
+      {pluginsEnabled && <PluginsSection />}
 
       {/* Danger zone — owners only */}
       {canManage && (

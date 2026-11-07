@@ -1,9 +1,5 @@
 # backend/app/services/rule_service.py
-import hashlib
-import json
 import uuid
-from collections import Counter, defaultdict
-from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import delete, select
@@ -31,7 +27,6 @@ from app.services.category_defaults import (
     name_variants,
 )
 from app.services.category_service import get_assignable_category_ids
-from app.services.rule_packs import RulePack, built_in_packs, get_pack, rule_content_hash
 from app.services.rule_engine import (
     apply_rule_actions,
     compile_rule_regex,
@@ -82,7 +77,7 @@ def _flatten_conditions(conditions: list) -> list:
     return leaves
 
 
-async def _validate_rule_definition(
+async def validate_rule_definition(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     conditions: list,
@@ -190,7 +185,7 @@ CURRENCY_TO_PACK = {
 }
 
 
-def _resolve_categories_by_internal_key(
+def resolve_default_category_keys(
     categories_by_name: dict[str, str],
 ) -> dict[str, str]:
     """Map default-category internal keys (e.g. 'transport') to the user's actual
@@ -269,7 +264,7 @@ async def create_default_rules(
         cat_query = cat_query.where(Category.user_id == user_id)
     result = await session.execute(cat_query)
     categories = {cat.name: str(cat.id) for cat in result.scalars().all()}
-    key_to_id = _resolve_categories_by_internal_key(categories)
+    key_to_id = resolve_default_category_keys(categories)
 
     resolved, _unresolved = _build_rules_from_templates(UNIVERSAL_RULES, key_to_id)
 
@@ -292,23 +287,7 @@ async def create_default_rules(
     return rules
 
 
-class RulePackInstallResult:
-    """Outcome of installing a country-specific rule pack."""
-
-    __slots__ = ("rules", "unresolved", "categories_created")
-
-    def __init__(
-        self,
-        rules: list[Rule],
-        unresolved: int,
-        categories_created: int = 0,
-    ) -> None:
-        self.rules = rules
-        self.unresolved = unresolved
-        self.categories_created = categories_created
-
-
-async def _ensure_categories_for_keys(
+async def ensure_default_categories(
     session: AsyncSession,
     workspace_id: Optional[uuid.UUID],
     user_id: uuid.UUID,
@@ -320,6 +299,7 @@ async def _ensure_categories_for_keys(
     Idempotent — categories are matched across language variants, so a
     user with English defaults won't get Portuguese duplicates if `lang`
     happens to be pt-BR. Returns the count of newly-created categories.
+    Flushes but doesn't commit: it runs inside the caller's transaction.
     """
     from app.models.category_group import CategoryGroup
 
@@ -398,233 +378,8 @@ async def _ensure_categories_for_keys(
             treat_as_transfer=data.get("treat_as_transfer", False),
         )
         session.add(cat)
-    await session.commit()
+    await session.flush()
     return len(missing_keys)
-
-
-async def install_rule_pack(
-    session: AsyncSession,
-    workspace_id: uuid.UUID,
-    user_id: uuid.UUID,
-    pack_code: str,
-    lang: str = "pt-BR",
-    create_missing_categories: bool = False,
-) -> RulePackInstallResult:
-    """Install a built-in rule pack into a workspace.
-
-    Skips pack rules the workspace already has, by key or by name. Each new
-    rule records the pack it came from and a hash of its content, so it can
-    later be told apart from a rule the user edited.
-
-    When `create_missing_categories=True`, creates any default categories
-    referenced by the pack that the workspace is missing, so a workspace in
-    a degenerate state (or never seeded) can opt into "install pack, fill in
-    what's needed". `lang` controls the names of newly-created categories.
-    """
-    pack = get_pack(pack_code)
-    if pack is None:
-        return RulePackInstallResult([], 0)
-
-    categories_created = 0
-    if create_missing_categories:
-        categories_created = await _ensure_categories_for_keys(
-            session, workspace_id, user_id, pack.category_keys(), lang
-        )
-
-    result = await session.execute(select(Category).where(Category.workspace_id == workspace_id))
-    categories = {cat.name: str(cat.id) for cat in result.scalars().all()}
-    key_to_id = _resolve_categories_by_internal_key(categories)
-    resolved, unresolved = _build_rules_from_templates(
-        [rule.template() for rule in pack.rules], key_to_id
-    )
-
-    existing_names = await _get_existing_rule_names_for_workspace(session, workspace_id)
-    existing_keys = await _installed_keys(session, workspace_id, pack.source)
-
-    rules: list[Rule] = []
-    for rule_data in resolved:
-        if rule_data["name"] in existing_names or rule_data["key"] in existing_keys:
-            continue
-        rule = Rule(
-            user_id=user_id,
-            workspace_id=workspace_id,
-            name=rule_data["name"],
-            conditions_op=rule_data["conditions_op"],
-            conditions=rule_data["conditions"],
-            actions=rule_data["actions"],
-            priority=rule_data["priority"],
-            is_active=True,
-            source=pack.source,
-            source_key=rule_data["key"],
-        )
-        rule.source_hash = _content_hash(rule)
-        session.add(rule)
-        rules.append(rule)
-
-    await session.commit()
-    return RulePackInstallResult(rules, unresolved, categories_created)
-
-
-@dataclass(frozen=True)
-class RulePackStatus:
-    pack: RulePack
-    installed: bool
-    """Every rule of the pack is in the workspace, by key or by name."""
-    rules_from_pack: int
-    """Rules in the workspace that still come from the pack."""
-
-
-async def list_rule_packs(session: AsyncSession, workspace_id: uuid.UUID) -> list[RulePackStatus]:
-    """The built-in packs and where the workspace stands with each.
-
-    Rules installed before packs recorded their origin carry no key, so a
-    pack rule also counts as present when a rule has its name, as it always
-    did.
-    """
-    names = await _get_existing_rule_names_for_workspace(session, workspace_id)
-    rows = (
-        await session.execute(
-            select(Rule.source, Rule.source_key).where(
-                Rule.workspace_id == workspace_id, Rule.source.isnot(None)
-            )
-        )
-    ).all()
-    keys_by_source: dict[str, set[str]] = defaultdict(set)
-    for source, key in rows:
-        keys_by_source[source].add(key)
-    count_by_source = Counter(source for source, _ in rows)
-
-    statuses = []
-    for pack in built_in_packs().values():
-        keys = keys_by_source[pack.source]
-        statuses.append(
-            RulePackStatus(
-                pack=pack,
-                installed=all(r.key in keys or r.name in names for r in pack.rules),
-                rules_from_pack=count_by_source[pack.source],
-            )
-        )
-    return statuses
-
-
-@dataclass(frozen=True)
-class RuleRef:
-    id: uuid.UUID
-    name: str
-
-
-@dataclass(frozen=True)
-class RulePackRemoval:
-    remove: list[RuleRef]
-    """Pack rules still exactly as installed: removing the pack deletes them."""
-    keep: list[RuleRef]
-    """Pack rules the user edited: they stay, as the user's own."""
-
-    @property
-    def token(self) -> str:
-        """Identifies this exact plan. Removal goes ahead only when the plan
-        at that moment carries the token the user confirmed."""
-        payload = json.dumps(
-            {"remove": sorted(str(r.id) for r in self.remove), "keep": sorted(str(r.id) for r in self.keep)},
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(payload.encode()).hexdigest()
-
-
-class RulePackRemovalChanged(Exception):
-    """The plan differs from the one the user confirmed."""
-
-
-async def plan_rule_pack_removal(
-    session: AsyncSession, workspace_id: uuid.UUID, pack_code: str
-) -> RulePackRemoval | None:
-    """What removing a pack would delete and what it would keep.
-
-    Only rules that record coming from the pack are considered; a rule with
-    no recorded origin is never touched.
-    """
-    pack = get_pack(pack_code)
-    if pack is None:
-        return None
-    untouched, edited = await _pack_rules_by_state(session, workspace_id, pack)
-    return RulePackRemoval(remove=_refs(untouched), keep=_refs(edited))
-
-
-async def remove_rule_pack(
-    session: AsyncSession, workspace_id: uuid.UUID, pack_code: str, token: str
-) -> RulePackRemoval | None:
-    """Remove a pack: delete its untouched rules and hand the edited ones over.
-
-    `token` is the one from the plan the user confirmed. The rules are locked
-    and classified again, and if anything changed since (a rule was edited,
-    the request reached another workspace) nothing is removed and
-    `RulePackRemovalChanged` is raised.
-
-    Transactions keep the categories the rules already gave them; only the
-    rules go. Edited rules lose their origin, so from now on they are the
-    user's own and a reinstall doesn't count them as the pack's.
-    """
-    pack = get_pack(pack_code)
-    if pack is None:
-        return None
-    untouched, edited = await _pack_rules_by_state(session, workspace_id, pack, lock=True)
-    removal = RulePackRemoval(remove=_refs(untouched), keep=_refs(edited))
-    if removal.token != token:
-        await session.rollback()
-        raise RulePackRemovalChanged
-    for rule in untouched:
-        await session.delete(rule)
-    for rule in edited:
-        rule.source = rule.source_key = rule.source_hash = None
-    await session.commit()
-    return removal
-
-
-def _content_hash(rule: Rule) -> str:
-    return rule_content_hash(
-        name=rule.name,
-        conditions_op=rule.conditions_op,
-        conditions=rule.conditions,
-        actions=rule.actions,
-        priority=rule.priority or 0,
-    )
-
-
-def _refs(rules: list[Rule]) -> list[RuleRef]:
-    return [RuleRef(id=rule.id, name=rule.name) for rule in rules]
-
-
-async def _installed_keys(session: AsyncSession, workspace_id: uuid.UUID, source: str) -> set[str]:
-    rows = await session.execute(
-        select(Rule.source_key).where(Rule.workspace_id == workspace_id, Rule.source == source)
-    )
-    return {key for (key,) in rows.all() if key}
-
-
-async def _pack_rules_by_state(
-    session: AsyncSession, workspace_id: uuid.UUID, pack: RulePack, *, lock: bool = False
-) -> tuple[list[Rule], list[Rule]]:
-    """The workspace's rules from `pack`, split into (untouched, edited).
-
-    With `lock`, the rows stay locked until the transaction ends, so an edit
-    saved meanwhile waits instead of slipping between check and delete.
-    """
-    query = (
-        select(Rule)
-        .where(Rule.workspace_id == workspace_id, Rule.source == pack.source)
-        .order_by(Rule.priority, Rule.name)
-    )
-    if lock:
-        # Re-read the rows as the database has them now, not as this session
-        # last saw them: classifying stale copies could delete a rule edited
-        # since the preview.
-        query = query.with_for_update().execution_options(populate_existing=True)
-    rules = (await session.execute(query)).scalars().all()
-    untouched: list[Rule] = []
-    edited: list[Rule] = []
-    for rule in rules:
-        (untouched if rule.source_hash == _content_hash(rule) else edited).append(rule)
-    return untouched, edited
 
 
 async def get_rules(session: AsyncSession, workspace_id: uuid.UUID) -> list[Rule]:
@@ -720,7 +475,7 @@ async def import_rules(
             skipped += 1
             continue
         try:
-            await _validate_rule_definition(
+            await validate_rule_definition(
                 session,
                 workspace_id,
                 [condition.model_dump() for condition in incoming.conditions],
@@ -766,11 +521,11 @@ async def create_rule(
     user_id: uuid.UUID,
     data: RuleCreate,
 ) -> Rule:
-    existing_names = await _get_existing_rule_names_for_workspace(session, workspace_id)
+    existing_names = await existing_rule_names(session, workspace_id)
     if data.name in existing_names:
         raise DuplicateRuleError(f"A rule named '{data.name}' already exists")
 
-    await _validate_rule_definition(session, workspace_id, data.conditions, data.actions)
+    await validate_rule_definition(session, workspace_id, data.conditions, data.actions)
 
     rule = Rule(
         user_id=user_id,
@@ -801,7 +556,7 @@ async def update_rule(
     )
 
     if "name" in update_data and update_data["name"] != rule.name:
-        existing_names = await _get_existing_rule_names_for_workspace(session, workspace_id)
+        existing_names = await existing_rule_names(session, workspace_id)
         if update_data["name"] in existing_names:
             raise DuplicateRuleError(f"A rule named '{update_data['name']}' already exists")
 
@@ -810,7 +565,7 @@ async def update_rule(
     if data.actions is not None:
         update_data["actions"] = [a.model_dump() for a in data.actions]
 
-    await _validate_rule_definition(
+    await validate_rule_definition(
         session,
         workspace_id,
         update_data.get("conditions", rule.conditions or []),
@@ -834,7 +589,7 @@ async def delete_rule(session: AsyncSession, rule_id: uuid.UUID, workspace_id: u
     return True
 
 
-async def _get_existing_rule_names_for_workspace(
+async def existing_rule_names(
     session: AsyncSession, workspace_id: uuid.UUID
 ) -> set[str]:
     """Get the set of existing rule names in a workspace."""
@@ -1019,7 +774,7 @@ async def preview_rule(
     changing, because saving would change nothing.
     """
     will_apply = is_active and apply_to_existing
-    await _validate_rule_definition(session, workspace_id, conditions, actions or [])
+    await validate_rule_definition(session, workspace_id, conditions, actions or [])
 
     # Every transaction is evaluated in Python, so only the columns the engine
     # reads and `_rule_preview` copies are worth fetching — notably not

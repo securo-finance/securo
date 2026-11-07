@@ -3354,5 +3354,74 @@
       "categoryInUse": "Tato kategorie obsahuje části rozdělených transakcí. Nejprve upravte tato rozdělení.",
       "destinationInvalid": "Části rozdělených transakcí nemohou přejít do ignorované ani skryté kategorie."
     }
+  },
+  "plugins": {
+    "title": "Pluginy",
+    "hint": "Kategorie a pravidla od komunity. Každou změnu si před použitím zkontrolujete a nic neopustí váš server.",
+    "browse": "Procházet katalog",
+    "noneInstalled": "V tomto pracovním prostoru nejsou nainstalované žádné pluginy.",
+    "remove": "Odebrat plugin",
+    "removeAria": "Odebrat {{name}}",
+    "catalogTitle": "Katalog pluginů",
+    "catalogHint": "Každý plugin je připnutý ke konkrétní verzi svého zdrojového kódu.",
+    "catalogFailed": "Katalog se nepodařilo načíst.",
+    "catalogEmpty": "Katalog zatím neobsahuje žádné pluginy.",
+    "viewSource": "Zobrazit zdrojový kód",
+    "revoked": "Odvoláno",
+    "unavailable": "Nedostupné",
+    "needsVersion": "Vyžaduje Securo {{version}}",
+    "updateAvailable": "Dostupná aktualizace",
+    "installed": "Nainstalováno",
+    "install": "Nainstalovat",
+    "update": "Aktualizovat",
+    "andMore": "a dalších {{count}}",
+    "planTitle": {
+      "install": "Nainstalovat {{name}}?",
+      "update": "Aktualizovat {{name}}?",
+      "remove": "Odebrat {{name}}?"
+    },
+    "planIntro": "Toto se v tomto pracovním prostoru změní:",
+    "planNothing": "V tomto pracovním prostoru se nic nezmění.",
+    "planFailed": "Nepodařilo se načíst, co by se změnilo.",
+    "planChanged": "Od tohoto náhledu se něco změnilo. Zkontrolujte ho znovu.",
+    "privacy": "Tento plugin pouze přidává data do tohoto pracovního prostoru. Nic se nikam neodesílá.",
+    "history": "Transakce si ponechají své současné kategorie.",
+    "confirm": {
+      "install": "Nainstalovat",
+      "update": "Aktualizovat",
+      "remove": "Odebrat"
+    },
+    "done": {
+      "install": "{{name}} nainstalováno",
+      "update": "{{name}} aktualizováno",
+      "remove": "{{name}} odebráno"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} skupina",
+      "category_groups_few": "{{count}} skupiny",
+      "category_groups_many": "{{count}} skupin",
+      "category_groups_other": "{{count}} skupin",
+      "categories_one": "{{count}} kategorie",
+      "categories_few": "{{count}} kategorie",
+      "categories_many": "{{count}} kategorií",
+      "categories_other": "{{count}} kategorií",
+      "rules_one": "{{count}} pravidlo",
+      "rules_few": "{{count}} pravidla",
+      "rules_many": "{{count}} pravidel",
+      "rules_other": "{{count}} pravidel"
+    },
+    "plan": {
+      "create": "Přidá: {{items}}",
+      "update": "Aktualizuje: {{items}}",
+      "delete": "Smaže: {{items}}",
+      "keep": "Ponechá beze změny vámi upravené: {{items}}:",
+      "release": "Předá vám (upravené nebo stále používané): {{items}}:",
+      "existing": "Přeskočí, co už máte: {{items}}:",
+      "unresolved": "Přeskočí pravidla bez kategorie: {{items}}:",
+      "defaults_one": "Vytvoří také {{count}} výchozí kategorii pro pravidla",
+      "defaults_few": "Vytvoří také {{count}} výchozí kategorie pro pravidla",
+      "defaults_many": "Vytvoří také {{count}} výchozích kategorií pro pravidla",
+      "defaults_other": "Vytvoří také {{count}} výchozích kategorií pro pravidla"
+    }
   }
 }

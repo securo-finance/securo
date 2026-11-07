@@ -22,6 +22,7 @@ import { isConditionGroup } from '@/lib/rule-conditions'
 import { normalizeRuleMatchValue, ruleSearchText } from '@/lib/rule-match-utils'
 import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Search, Power } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { localized } from '@/lib/localized-text'
 import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -783,11 +784,6 @@ export default function RulesPage() {
   )
 }
 
-/** The pack's name in the UI language, falling back to English. */
-function packName(pack: RulePack, lang: string): string {
-  return pack.names[lang] ?? pack.names[lang.split('-')[0]] ?? pack.name
-}
-
 function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
@@ -857,7 +853,7 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
             >
               <span className="text-2xl">{pack.flag}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">{packName(pack, i18n.language)}</p>
+                <p className="text-sm font-semibold text-foreground">{localized(pack.names, i18n.language)}</p>
                 <p className="text-xs text-muted-foreground">
                   {t('rules.packRuleCount', { count: pack.rule_count })}
                 </p>
@@ -885,7 +881,7 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
                   variant="ghost"
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                   onClick={() => setRemoving(pack)}
-                  aria-label={t('rules.removePackAria', { name: packName(pack, i18n.language) })}
+                  aria-label={t('rules.removePackAria', { name: localized(pack.names, i18n.language) })}
                   title={t('rules.removePack')}
                 >
                   <Trash2 size={13} />
@@ -954,7 +950,7 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
     <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose() }}>
       <DialogContent className="sm:max-w-md" showCloseButton={!pending}>
         <DialogHeader>
-          <DialogTitle>{t('rules.removePackTitle', { name: packName(pack, i18n.language) })}</DialogTitle>
+          <DialogTitle>{t('rules.removePackTitle', { name: localized(pack.names, i18n.language) })}</DialogTitle>
           <DialogDescription>
             {failed
               ? t('rules.removePackPreviewFailed')

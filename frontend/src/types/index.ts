@@ -641,6 +641,65 @@ export interface RulePackRemoval {
   token: string
 }
 
+/** Text per locale; always has `en`. */
+export type LocalizedText = Record<string, string>
+
+export type PluginAction = 'install' | 'update' | 'remove'
+export type PluginItemKind = 'category_groups' | 'categories' | 'rules'
+
+export interface InstalledPlugin {
+  plugin_id: string
+  name: LocalizedText
+  version: string
+  commit: string
+  installed_at: string
+}
+
+export interface PluginCatalogEntry {
+  id: string
+  repository: string
+  commit: string
+  revoked: boolean
+  revoked_reason: string | null
+  /** Why the manifest couldn't be read; the rest is then missing. */
+  error: string | null
+  name: LocalizedText | null
+  description: LocalizedText | null
+  version: string | null
+  license: string | null
+  min_securo_version: string | null
+  contributes: Record<PluginItemKind, number> | null
+  compatible: boolean
+  installed_version: string | null
+  update_available: boolean
+}
+
+export interface PluginItem {
+  kind: PluginItemKind
+  key: string
+  name: string
+}
+
+/** What installing, updating or removing a plugin does, item by item. */
+export interface PluginPlan {
+  action: PluginAction
+  plugin_id: string
+  version: string | null
+  commit: string | null
+  token: string
+  create: PluginItem[]
+  update: PluginItem[]
+  delete: PluginItem[]
+  /** Edited by the user: left as they are. */
+  keep: PluginItem[]
+  /** No longer the plugin's (edited, or still in use): handed over to the user. */
+  release: PluginItem[]
+  /** Already in the workspace by name: left alone. */
+  existing: PluginItem[]
+  unresolved: PluginItem[]
+  default_categories: string[]
+}
+
 export interface RuleExportPayload {
   format: 'securo-categorization-rules'
   version: number

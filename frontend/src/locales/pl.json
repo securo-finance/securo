@@ -3304,5 +3304,74 @@
       "categoryInUse": "Ta kategoria zawiera części podzielonych transakcji. Najpierw zmień te podziały.",
       "destinationInvalid": "Części podzielonych transakcji nie mogą trafić do ignorowanej ani ukrytej kategorii."
     }
+  },
+  "plugins": {
+    "title": "Wtyczki",
+    "hint": "Kategorie i reguły tworzone przez społeczność. Sprawdzasz każdą zmianę przed jej zastosowaniem, a nic nie opuszcza Twojego serwera.",
+    "browse": "Przeglądaj katalog",
+    "noneInstalled": "W tym obszarze roboczym nie zainstalowano wtyczek.",
+    "remove": "Usuń wtyczkę",
+    "removeAria": "Usuń {{name}}",
+    "catalogTitle": "Katalog wtyczek",
+    "catalogHint": "Każda wtyczka jest przypięta do konkretnej wersji swojego kodu źródłowego.",
+    "catalogFailed": "Nie udało się wczytać katalogu.",
+    "catalogEmpty": "Katalog nie ma jeszcze wtyczek.",
+    "viewSource": "Zobacz kod źródłowy",
+    "revoked": "Unieważniona",
+    "unavailable": "Niedostępna",
+    "needsVersion": "Wymaga Securo {{version}}",
+    "updateAvailable": "Dostępna aktualizacja",
+    "installed": "Zainstalowana",
+    "install": "Zainstaluj",
+    "update": "Zaktualizuj",
+    "andMore": "i {{count}} więcej",
+    "planTitle": {
+      "install": "Zainstalować {{name}}?",
+      "update": "Zaktualizować {{name}}?",
+      "remove": "Usunąć {{name}}?"
+    },
+    "planIntro": "Oto co zmieni się w tym obszarze roboczym:",
+    "planNothing": "Nic się nie zmienia w tym obszarze roboczym.",
+    "planFailed": "Nie udało się wczytać, co by się zmieniło.",
+    "planChanged": "Coś się zmieniło od tego podglądu. Sprawdź go ponownie.",
+    "privacy": "Ta wtyczka tylko dodaje dane do tego obszaru roboczego. Nic nie jest nigdzie wysyłane.",
+    "history": "Transakcje zachowują swoje obecne kategorie.",
+    "confirm": {
+      "install": "Zainstaluj",
+      "update": "Zaktualizuj",
+      "remove": "Usuń"
+    },
+    "done": {
+      "install": "Zainstalowano {{name}}",
+      "update": "Zaktualizowano {{name}}",
+      "remove": "Usunięto {{name}}"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} grupa",
+      "category_groups_few": "{{count}} grupy",
+      "category_groups_many": "{{count}} grup",
+      "category_groups_other": "{{count}} grup",
+      "categories_one": "{{count}} kategoria",
+      "categories_few": "{{count}} kategorie",
+      "categories_many": "{{count}} kategorii",
+      "categories_other": "{{count}} kategorii",
+      "rules_one": "{{count}} reguła",
+      "rules_few": "{{count}} reguły",
+      "rules_many": "{{count}} reguł",
+      "rules_other": "{{count}} reguł"
+    },
+    "plan": {
+      "create": "Dodaje: {{items}}",
+      "update": "Aktualizuje: {{items}}",
+      "delete": "Usuwa: {{items}}",
+      "keep": "Zostawia bez zmian edytowane przez Ciebie: {{items}}:",
+      "release": "Przekazuje Tobie (edytowane lub wciąż używane): {{items}}:",
+      "existing": "Pomija to, co już masz: {{items}}:",
+      "unresolved": "Pomija reguły bez kategorii: {{items}}:",
+      "defaults_one": "Tworzy też {{count}} domyślną kategorię potrzebną regułom",
+      "defaults_few": "Tworzy też {{count}} domyślne kategorie potrzebne regułom",
+      "defaults_many": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom",
+      "defaults_other": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom"
+    }
   }
 }

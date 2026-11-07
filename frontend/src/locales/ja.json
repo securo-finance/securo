@@ -3182,5 +3182,66 @@
       "categoryInUse": "このカテゴリーには分割された取引の内訳があります。先にそれらの分割を変更してください。",
       "destinationInvalid": "分割された取引の内訳は、無視または非表示のカテゴリーに移せません。"
     }
+  },
+  "plugins": {
+    "title": "プラグイン",
+    "hint": "コミュニティが作ったカテゴリとルール。適用前にすべての変更を確認でき、データはサーバーの外に出ません。",
+    "browse": "カタログを見る",
+    "noneInstalled": "このワークスペースにインストールされたプラグインはありません。",
+    "remove": "プラグインを削除",
+    "removeAria": "{{name}} を削除",
+    "catalogTitle": "プラグインカタログ",
+    "catalogHint": "各プラグインはソースコードの特定のバージョンに固定されています。",
+    "catalogFailed": "カタログを読み込めませんでした。",
+    "catalogEmpty": "カタログにはまだプラグインがありません。",
+    "viewSource": "ソースを見る",
+    "revoked": "取り消し済み",
+    "unavailable": "利用不可",
+    "needsVersion": "Securo {{version}} が必要",
+    "updateAvailable": "アップデートあり",
+    "installed": "インストール済み",
+    "install": "インストール",
+    "update": "アップデート",
+    "andMore": "ほか {{count}} 件",
+    "planTitle": {
+      "install": "{{name}} をインストールしますか？",
+      "update": "{{name}} をアップデートしますか？",
+      "remove": "{{name}} を削除しますか？"
+    },
+    "planIntro": "このワークスペースで変わる内容:",
+    "planNothing": "このワークスペースで変わるものはありません。",
+    "planFailed": "変更内容を読み込めませんでした。",
+    "planChanged": "このプレビューの後に変更がありました。もう一度確認してください。",
+    "privacy": "このプラグインはこのワークスペースにデータを追加するだけです。どこにも送信されません。",
+    "history": "取引は現在のカテゴリを保持します。",
+    "confirm": {
+      "install": "インストール",
+      "update": "アップデート",
+      "remove": "削除"
+    },
+    "done": {
+      "install": "{{name}} をインストールしました",
+      "update": "{{name}} をアップデートしました",
+      "remove": "{{name}} を削除しました"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} グループ",
+      "category_groups_other": "{{count}} グループ",
+      "categories_one": "{{count}} カテゴリ",
+      "categories_other": "{{count}} カテゴリ",
+      "rules_one": "{{count}} ルール",
+      "rules_other": "{{count}} ルール"
+    },
+    "plan": {
+      "create": "追加: {{items}}",
+      "update": "更新: {{items}}",
+      "delete": "削除: {{items}}",
+      "keep": "編集済みのためそのまま: {{items}}:",
+      "release": "あなたに引き継ぎ (編集済みまたは使用中): {{items}}:",
+      "existing": "既にあるためスキップ: {{items}}:",
+      "unresolved": "カテゴリがないためスキップ: {{items}}:",
+      "defaults_one": "ルール用のデフォルトカテゴリも {{count}} 件作成します",
+      "defaults_other": "ルール用のデフォルトカテゴリも {{count}} 件作成します"
+    }
   }
 }
