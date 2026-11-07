@@ -1,14 +1,14 @@
 """Allow encrypted provider credentials in app settings.
 
-Revision ID: 102
-Revises: 101
+Revision ID: 107
+Revises: 106
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "102"
-down_revision = "101"
+revision = "107"
+down_revision = "106"
 branch_labels = None
 depends_on = None
 
