@@ -1810,26 +1810,56 @@ def _merge_sync_metadata(
 _EB_HOLD_SETTLE_DAYS = 5
 
 
-def _eb_merchant_texts(raw: dict) -> list[str]:
-    """The merchant wording an Enable Banking entry carries.
-
-    Read from the payload rather than from the row, so a description the user
-    edited, or the provider's "Transaction" placeholder for an entry that names
-    nothing, never counts as a merchant. Only the counterparty on the far side
-    of the entry counts: the creditor of a debit, the debtor of a credit. The
-    near side is usually the account holder, the same on every entry.
-    """
-    remittance = raw.get("remittance_information")
-    if isinstance(remittance, list):
-        remittance = " ".join(str(part) for part in remittance if part)
+def _eb_counterparty(raw: dict) -> Optional[str]:
+    """The party across from the account on an Enable Banking entry: the
+    creditor of a debit, the debtor of a credit. The near side is usually the
+    account holder, the same on every entry, so it never names a merchant."""
     indicator = raw.get("credit_debit_indicator")
-    party = "creditor" if isinstance(indicator, str) and indicator.upper() == "DBIT" else "debtor"
+    if not isinstance(indicator, str):
+        return None
+    party = {"DBIT": "creditor", "CRDT": "debtor"}.get(indicator.upper())
+    if party is None:
+        return None
     party_obj = raw.get(party)
     name = party_obj.get("name") if isinstance(party_obj, dict) else None
     if not isinstance(name, str) or not name.strip():
         name = raw.get(f"{party}_name")
-    values = [remittance, raw.get("additional_information"), name]
-    return [value.strip() for value in values if isinstance(value, str) and value.strip()]
+    return name.strip() if isinstance(name, str) and name.strip() else None
+
+
+def _eb_remittance(raw: dict) -> Optional[str]:
+    """The remittance text of an Enable Banking entry, its parts joined."""
+    remittance = raw.get("remittance_information")
+    if isinstance(remittance, list):
+        remittance = " ".join(str(part) for part in remittance if part)
+    return remittance.strip() if isinstance(remittance, str) and remittance.strip() else None
+
+
+def _eb_same_merchant(held: dict, booked: dict) -> bool:
+    """Whether two Enable Banking payloads name the same merchant.
+
+    Each field is compared only with the same field on the other entry: the
+    counterparty with the counterparty, the remittance text with the
+    remittance text. Every one of them that both entries carry has to match,
+    so a counterparty on both decides even when the remittance text agrees,
+    and the two have to share at least one. `additional_information` is left
+    out: it often names the kind of entry ("VISA DEBIT PURCHASE") rather than
+    the merchant, and would pair two purchases of the same amount at
+    different shops.
+
+    Read from the payloads rather than from the rows, so a description the
+    user edited, or the provider's "Transaction" placeholder for an entry
+    that names nothing, never counts as a merchant.
+    """
+    shared = False
+    for read in (_eb_counterparty, _eb_remittance):
+        held_text, booked_text = read(held), read(booked)
+        if held_text is None or booked_text is None:
+            continue
+        if token_overlap(held_text, booked_text) < 0.7:
+            return False
+        shared = True
+    return shared
 
 
 def _eb_entry_date(raw: dict) -> Optional[date]:
@@ -1861,17 +1891,19 @@ async def _find_settled_eb_hold(
     them, and the hold stays behind next to the charge (#1232).
 
     A held pending row is the booked entry's hold only when it agrees on the
-    amount, currency and type, names the same merchant, is dated up to
-    `_EB_HOLD_SETTLE_DAYS` before the booked entry, and has left the
-    provider's feed: a hold the provider still returns is a purchase of its
-    own that has not booked yet. Rows the user ignored stay as they are.
-    More than one candidate is ambiguous, so none is chosen.
+    amount, currency and type, names the same merchant (`_eb_same_merchant`),
+    is dated up to `_EB_HOLD_SETTLE_DAYS` before the booked entry, and has
+    left the provider's feed: a hold the provider still returns is a purchase
+    of its own that has not booked yet. Rows the user ignored stay as they
+    are. More than one candidate is ambiguous, so none is chosen.
+
+    Only for Enable Banking connections: `sync_connection` decides that from
+    the connection's provider.
     """
     raw = txn_data.raw_data if isinstance(txn_data.raw_data, dict) else {}
-    if txn_data.status != "posted" or not raw.get("credit_debit_indicator"):
+    if txn_data.status != "posted":
         return None
-    booked_texts = _eb_merchant_texts(raw)
-    if not booked_texts:
+    if _eb_counterparty(raw) is None and _eb_remittance(raw) is None:
         return None
     result = await session.execute(
         select(Transaction).where(
@@ -1893,11 +1925,7 @@ async def _find_settled_eb_hold(
         for candidate in result.scalars()
         if candidate.external_id not in live_external_ids
         and isinstance(candidate.raw_data, dict)
-        and any(
-            token_overlap(held, booked) >= 0.7
-            for held in _eb_merchant_texts(candidate.raw_data)
-            for booked in booked_texts
-        )
+        and _eb_same_merchant(candidate.raw_data, raw)
     ]
     return holds[0] if len(holds) == 1 else None
 
@@ -1932,9 +1960,10 @@ async def _find_synced_duplicate(
     ``live_external_ids`` is every id the provider returned for the account
     in this fetch, pending ones included even when the connection does not
     import them. Only with it can a booked entry claim the pending hold it
-    settles, since that needs to know the hold has left the feed. Leave it
-    out when the fetch was cut short, as a partial set would make a hold the
-    provider still lists look gone.
+    settles, since that needs to know the hold has left the feed. Pass it
+    only for an Enable Banking connection, and leave it out when the fetch
+    was cut short, as a partial set would make a hold the provider still
+    lists look gone.
     """
     # Path 1: installment fingerprint. Highly specific, so we don't require a
     # description match on top.
@@ -2130,7 +2159,7 @@ async def _find_synced_duplicate(
 
     # Path 6: Enable Banking hold settled under a new reference and date, see
     # `_find_settled_eb_hold`. Last, so it never takes a row another path
-    # would have matched.
+    # would have matched. Only Enable Banking syncs pass `live_external_ids`.
     return await _find_settled_eb_hold(session, account_id, txn_data, live_external_ids)
 
 
@@ -2757,6 +2786,8 @@ async def sync_connection(
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
             incoming_txn_external_ids = {txn.external_id for txn in transactions_data}
+            # A booked entry can claim the pending hold it settles only on an
+            # Enable Banking connection (Path 6 of `_find_synced_duplicate`).
             # A fetch cut short, or one whose pages stopped before the last,
             # can't tell a pending hold that left the feed from one it never
             # reached, so it claims no holds.
@@ -2764,7 +2795,8 @@ async def sync_connection(
             partial_feed = account.id in incomplete_fetch_account_ids or (
                 isinstance(truncated, set) and acc_data.external_id in truncated
             )
-            hold_live_ids = None if partial_feed else live_txn_external_ids[account.id]
+            claims_holds = connection.provider == "enable_banking" and not partial_feed
+            hold_live_ids = live_txn_external_ids[account.id] if claims_holds else None
             for txn_data in transactions_data:
                 existing = await session.execute(
                     select(Transaction)

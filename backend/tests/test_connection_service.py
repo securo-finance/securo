@@ -1590,20 +1590,26 @@ def _paypal_payload(
     transaction_date: str,
     *,
     booked: bool,
-    creditor: str = "MERCADO CENTRAL",
+    creditor: str | None = "MERCADO CENTRAL",
     amount: str = "4.83",
     currency: str = "EUR",
     debtor: str | None = None,
     remittance: list[str] | None = None,
+    additional_information: str | None = None,
 ) -> dict:
     """A PayPal card purchase as Enable Banking returns it (LU): the hold is a
     pending entry, and the charge a booked entry with its own reference,
     dated a day later. Neither carries a booking date or remittance text, and
     PayPal pads the merchant name to 22 characters. Other institutions also
-    name the account holder as the debtor of a card purchase."""
-    party = {"debtor": {"name": debtor}} if debtor else {}
+    name the account holder as the debtor of a card purchase, or put the
+    kind of entry in `additional_information`."""
+    extra: dict[str, object] = {}
+    if debtor:
+        extra["debtor"] = {"name": debtor}
+    if additional_information:
+        extra["additional_information"] = additional_information
     return {
-        **party,
+        **extra,
         "entry_reference": entry_ref,
         "status": "BOOK" if booked else "PDNG",
         "bank_transaction_code": {
@@ -1613,7 +1619,7 @@ def _paypal_payload(
         },
         "transaction_amount": {"currency": currency, "amount": amount},
         "credit_debit_indicator": "DBIT",
-        "creditor": {"name": creditor.ljust(22)},
+        "creditor": {"name": creditor.ljust(22)} if creditor else None,
         "booking_date": None,
         "value_date": None,
         "transaction_date": transaction_date,
@@ -1896,6 +1902,94 @@ async def test_sync_connection_enable_banking_charge_leaves_other_hold_alone(
     assert sorted((row.date, row.status, row.is_ignored) for row in rows) == [
         (date(2026, 11, 4), "pending", ignored),
         (date(2026, 11, 5), "posted", False),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("hold_fields", "charge_fields", "claimed"),
+    [
+        (
+            {"creditor": "PARCEL LOGISTICS", "additional_information": "VISA DEBIT PURCHASE"},
+            {"additional_information": "VISA DEBIT PURCHASE"},
+            False,
+        ),
+        (
+            {"creditor": "PARCEL LOGISTICS", "remittance": ["CARD PURCHASE"]},
+            {"remittance": ["CARD PURCHASE"]},
+            False,
+        ),
+        ({"remittance": ["ORDER 5531"]}, {"remittance": ["ORDER 7720"]}, False),
+        ({"creditor": None, "remittance": ["MERCADO CENTRAL"]}, {}, False),
+        (
+            {"creditor": None, "remittance": ["MERCADO CENTRAL MADRID"]},
+            {"creditor": None, "remittance": ["MERCADO CENTRAL MADRID"]},
+            True,
+        ),
+        ({}, {"remittance": ["PAYPAL *MERCADO CENTRAL"]}, True),
+    ],
+    ids=[
+        "same-additional-information",
+        "same-remittance-other-counterparty",
+        "same-counterparty-other-remittance",
+        "merchant-in-other-fields",
+        "remittance-only",
+        "remittance-on-charge-only",
+    ],
+)
+async def test_sync_connection_enable_banking_hold_claim_compares_like_fields(
+    session: AsyncSession, test_user, test_workspace, hold_fields, charge_fields, claimed,
+):
+    """The merchant check compares each field only with the same field on
+    the other entry. A counterparty both entries name has to match, and so
+    does remittance text both carry. Text both carry in
+    `additional_information`, often the kind of entry, never pairs two
+    purchases, and neither does a name that appears in different fields on
+    the two entries. A field only one entry carries is not compared."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    hold = _paypal_payload("1HD00000AA0000001", "2026-11-04", booked=False, **hold_fields)
+    charge = _paypal_payload("7PY00000AA0000001", "2026-11-05", booked=True, **charge_fields)
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [hold])
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    if claimed:
+        assert [(row.date, row.status) for row in rows] == [(date(2026, 11, 4), "posted")]
+    else:
+        assert sorted((row.date, row.status) for row in rows) == [
+            (date(2026, 11, 4), "pending"),
+            (date(2026, 11, 5), "posted"),
+        ]
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_hold_claim_is_enable_banking_only(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Only an Enable Banking connection claims holds. The same entries
+    synced through another provider leave the hold next to the charge, as
+    before."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    conn.provider = "pluggy"
+    account_id = account.id
+    await session.commit()
+    hold = _paypal_payload("1HD00000AA0000001", "2026-11-04", booked=False)
+    charge = _paypal_payload("7PY00000AA0000001", "2026-11-05", booked=True)
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [hold])
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert sorted((row.date, row.status) for row in rows) == [
+        (date(2026, 11, 4), "pending"),
+        (date(2026, 11, 5), "posted"),
     ]
 
 
