@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
-import { assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
+import { accounts as accountsApi, assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -53,11 +53,15 @@ import {
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
+import { PropertyEquitySummary } from '@/components/property-equity-summary'
+import { LOAN_COLLATERAL_TYPES } from '@/lib/property-equity'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
+import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } from '@/lib/asset-portfolio-share'
+import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 import { formatCurrency } from '@/lib/format'
 
 // Renders a logo image when one is available, falling back to the asset's
@@ -273,6 +277,11 @@ export default function AssetsPage() {
     queryKey: ['portfolio-trend'],
     queryFn: () => assets.portfolioTrend(),
   })
+  // Loans secured against a property show up in that property's detail.
+  const { data: accountsList } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => accountsApi.list(),
+  })
   // Scope the portfolio chart + total to the active collection's wallets too.
   // Trend rows are keyed by asset id, so we keep only the in-collection asset
   // columns and recompute each row's `_total`.
@@ -303,12 +312,6 @@ export default function AssetsPage() {
   // wallets?" without needing the user to spell it out.
   const totalValue = (assetsList ?? []).reduce(
     (acc: number, a: { current_value?: number | null }) => acc + Number(a.current_value || 0),
-    0,
-  )
-  // Portfolio total in the user's primary currency — denominator for the
-  // "% da carteira" column in the holdings table.
-  const portfolioTotalPrimary = (assetsList ?? []).reduce(
-    (acc, a) => acc + Number(a.current_value_primary ?? a.current_value ?? 0),
     0,
   )
   const byType: Record<string, number> = {}
@@ -477,11 +480,14 @@ export default function AssetsPage() {
 
     let iterations = 0
     while (iterations < 10000) {
-      const next = new Date(d)
-      if (formGrowthFrequency === 'daily') next.setDate(next.getDate() + 1)
-      else if (formGrowthFrequency === 'weekly') next.setDate(next.getDate() + 7)
-      else if (formGrowthFrequency === 'monthly') next.setMonth(next.getMonth() + 1)
-      else if (formGrowthFrequency === 'yearly') next.setFullYear(next.getFullYear() + 1)
+      // Same steps as the backend's _next_due_date: monthly clamps the day to
+      // 28 and yearly clamps Feb 29 to Feb 28, so the preview matches what
+      // gets saved.
+      let next: Date
+      if (formGrowthFrequency === 'daily') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+      else if (formGrowthFrequency === 'weekly') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)
+      else if (formGrowthFrequency === 'monthly') next = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), 28))
+      else if (formGrowthFrequency === 'yearly') next = new Date(d.getFullYear() + 1, d.getMonth(), d.getMonth() === 1 ? Math.min(d.getDate(), 28) : d.getDate())
       else break
       if (next > today) break
       if (formGrowthType === 'percentage') {
@@ -497,6 +503,23 @@ export default function AssetsPage() {
 
   const activeAssets = useMemo(() => assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? [], [assetsList])
   const soldAssets = assetsList?.filter(a => a.sell_date) ?? []
+  // Denominator for the "% of portfolio" column: current holdings only, in the
+  // user's primary currency, so the active rows add up to 100%. Assets with
+  // no resolvable FX rate are left out of the denominator (their rows show
+  // a dash) instead of being summed at a fake 1:1 rate (issue #574).
+  const portfolioTotalPrimary = getPortfolioTotalPrimary(activeAssets, userCurrency)
+
+  // Currencies of active assets that cannot be converted to the user's
+  // display currency: shown in a page-level banner and kept out of totals.
+  const unconvertedCurrencies = useMemo(() => {
+    const currencies = new Set<string>()
+    for (const a of activeAssets) {
+      if (a.current_value != null && a.currency !== userCurrency && a.current_value_primary == null) {
+        currencies.add(a.currency)
+      }
+    }
+    return [...currencies].sort()
+  }, [activeAssets, userCurrency])
 
   // Debounced ticker search. Runs only when the market-price method is
   // selected and the query is non-trivial — keeps the autocomplete snappy
@@ -625,21 +648,41 @@ export default function AssetsPage() {
     setDialogOpen(true)
   }
 
+  // Holdings driven by the transactions ledger: quantity, buy date and cost
+  // basis come from the transactions, not from this form.
+  const editingIsLedgerBacked = !!editingAsset
+    && editingAsset.valuation_method === 'market_price'
+    && (editingAsset.average_price != null || (editingAsset.transaction_count ?? 0) > 0)
+
   function buildPayload() {
     const isMarket = formMethod === 'market_price'
+    const ledgerBacked = editingIsLedgerBacked
     const payload: Record<string, unknown> = {
       name: formName,
       type: formType,
       currency: formCurrency,
       group_id: formGroupId || null,
       valuation_method: formMethod,
-      purchase_date: formPurchaseDate || null,
-      // Tickers have no total purchase price — the cost basis is derived from
-      // the unit-price buy (and then the ledger). Only manual/growth assets
-      // carry a total purchase price.
-      purchase_price: isMarket ? null : (formPurchasePrice ? parseFloat(formPurchasePrice) : null),
-      sell_date: isMarket ? null : (formSellDate || null),
-      sell_price: isMarket ? null : (formSellPrice ? parseFloat(formSellPrice) : null),
+    }
+
+    // A ledger-backed holding derives its buy date, quantity and cost basis
+    // from its transactions, so an edit must not overwrite them.
+    if (!ledgerBacked) {
+      payload.purchase_date = formPurchaseDate || null
+    }
+
+    // Tickers have no total purchase price: the cost basis is derived from
+    // the unit-price buy (and then the ledger). Only manual/growth assets
+    // carry a total purchase price and sale info. On edit a ticker leaves
+    // these fields untouched instead of clearing them.
+    if (!isMarket) {
+      payload.purchase_price = formPurchasePrice ? parseFloat(formPurchasePrice) : null
+      payload.sell_date = formSellDate || null
+      payload.sell_price = formSellPrice ? parseFloat(formSellPrice) : null
+    } else if (!editingAsset) {
+      payload.purchase_price = null
+      payload.sell_date = null
+      payload.sell_price = null
     }
 
     if (formMethod === 'growth_rule') {
@@ -652,7 +695,9 @@ export default function AssetsPage() {
     if (isMarket) {
       payload.ticker = (selectedQuote?.symbol || formTickerQuery || '').toUpperCase()
       payload.ticker_exchange = selectedQuote?.exchange ?? null
-      payload.units = formUnits ? parseFloat(formUnits) : null
+      if (!ledgerBacked) {
+        payload.units = formUnits ? parseFloat(formUnits) : null
+      }
       // Opening buy price per unit (defaults to the live quote on the server
       // when omitted). Only meaningful on create.
       if (!editingAsset) {
@@ -717,10 +762,14 @@ export default function AssetsPage() {
     const isProviderOwned = isSynced && !isMarketPriced
     const hasCost = asset.average_price != null && asset.total_invested != null
     const profit = getAssetProfit(asset)
-    const pctOfPortfolio =
-      portfolioTotalPrimary > 0 && asset.current_value_primary != null
-        ? (asset.current_value_primary / portfolioTotalPrimary) * 100
-        : null
+    // Foreign-currency asset the backend could not convert (no FX rate):
+    // keep it out of primary-currency totals and flag it instead.
+    const unconverted =
+      !asset.sell_date &&
+      asset.current_value != null &&
+      asset.currency !== userCurrency &&
+      asset.current_value_primary == null
+    const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
 
     return (
@@ -744,6 +793,16 @@ export default function AssetsPage() {
                   >
                     <AlertTriangle size={9} />
                     {t('assets.noPriceBadge')}
+                  </Badge>
+                )}
+                {unconverted && (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 gap-0.5 shrink-0"
+                    title={t('assets.noFxRateTitle')}
+                  >
+                    <AlertTriangle size={9} />
+                    {t('assets.noFxRate')}
                   </Badge>
                 )}
                 {asset.sell_date && (
@@ -800,6 +859,9 @@ export default function AssetsPage() {
                 {asset.current_value_primary != null && asset.currency !== userCurrency && (
                   <span className="block text-[10px] text-muted-foreground">{mask(formatCurrency(asset.current_value_primary, userCurrency, locale))}</span>
                 )}
+                {unconverted && (
+                  <span className="block text-[10px] text-amber-600 dark:text-amber-400">{t('assets.noFxRate')}</span>
+                )}
               </>
             ) : <span className="text-muted-foreground">—</span>}
           </div>
@@ -827,7 +889,17 @@ export default function AssetsPage() {
         </div>
 
         {isExpanded && (
-          isMarketPriced ? (
+          <>
+          {LOAN_COLLATERAL_TYPES.includes(asset.type) && (
+            <PropertyEquitySummary
+              asset={asset}
+              loans={accountsList ?? []}
+              currency={userCurrency}
+              locale={locale}
+              mask={mask}
+            />
+          )}
+          {isMarketPriced ? (
             <>
               {/* Value-evolution chart on top, then the buy/sell ledger. */}
               <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} chartOnly />
@@ -843,7 +915,8 @@ export default function AssetsPage() {
             </>
           ) : (
             <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} />
-          )
+          )}
+          </>
         )}
       </div>
     )
@@ -936,9 +1009,23 @@ export default function AssetsPage() {
   function renderWalletSection(wallet: AssetGroup, walletAssets: Asset[]) {
     const isCollapsed = collapsedWallets.has(wallet.id)
     const isSynced = wallet.source !== 'manual'
-    // Sum in wallet's reported current_value (already computed by backend).
-    // Fall back to per-asset sum if the rollup is stale after a move.
-    const total = walletAssets.reduce((s, a) => s + (a.current_value_primary ?? a.current_value ?? 0), 0) || wallet.current_value_primary || wallet.current_value
+    // Sum in the user's primary currency. Fall back to the wallet's own
+    // rollup if the per-asset sum is empty (rollup already excludes
+    // unconvertible assets, so it agrees with this one).
+    const total =
+      walletAssets.reduce((s, a) => s + (getAssetValuePrimary(a, userCurrency) ?? 0), 0) ||
+      wallet.current_value_primary ||
+      0
+    // Native values of assets the backend could not convert (no FX rate),
+    // grouped by currency and listed below the total. They are deliberately
+    // NOT added to the number above: that would mix unconverted currencies
+    // (issue #574).
+    const unconvertedSums = new Map<string, number>()
+    for (const a of walletAssets) {
+      if (getAssetValuePrimary(a, userCurrency) == null && a.current_value != null && a.currency !== userCurrency) {
+        unconvertedSums.set(a.currency, (unconvertedSums.get(a.currency) ?? 0) + Number(a.current_value))
+      }
+    }
 
     // Only show the institution as a subtitle when it's actually
     // additional information — if the user hasn't renamed the wallet,
@@ -980,9 +1067,16 @@ export default function AssetsPage() {
               )}
             </div>
           </button>
-          <span className="text-sm font-bold tabular-nums text-foreground shrink-0">
-            {mask(formatCurrency(total, userCurrency, locale))}
-          </span>
+          <div className="flex flex-col items-end shrink-0">
+            <span className="text-sm font-bold tabular-nums text-foreground">
+              {mask(formatCurrency(total, userCurrency, locale))}
+            </span>
+            {[...unconvertedSums.entries()].map(([currency, amount]) => (
+              <span key={currency} className="text-[10px] text-amber-600 dark:text-amber-400 tabular-nums">
+                + {mask(formatCurrency(amount, currency, locale))} {currency} · {t('assets.noFxRate')}
+              </span>
+            ))}
+          </div>
           {canWrite && (
             <>
               <button
@@ -1071,6 +1165,15 @@ export default function AssetsPage() {
         />
       ) : (
       <>
+      {/* Assets that have no resolvable FX rate are left out of the totals
+          below; explain that so the numbers do not look wrong (issue #574). */}
+      {unconvertedCurrencies.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>{t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })}</span>
+        </div>
+      )}
+
       {/* Portfolio Chart */}
       {portfolioData && portfolioData.trend.length > 0 && (
         <PortfolioChart
@@ -1116,9 +1219,9 @@ export default function AssetsPage() {
           )}
 
           {activeAssets.length === 0 && soldAssets.length === 0 && (
-            <div className="text-center py-16">
-              <Package className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
-              <p className="text-muted-foreground">{t('assets.noAssets')}</p>
+            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-center py-16 text-muted-foreground">
+              <Package size={32} className="mx-auto mb-2 opacity-50" />
+              <p>{t('assets.noAssets')}</p>
             </div>
           )}
         </div>
@@ -1132,7 +1235,7 @@ export default function AssetsPage() {
           <DialogHeader>
             <DialogTitle>{editingAsset ? t('assets.editAsset') : t('assets.addAsset')}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
             {/* Name */}
             <div className="space-y-2">
               <Label>{t('assets.name')}</Label>
@@ -1359,7 +1462,7 @@ export default function AssetsPage() {
                 ) : (
                   <div className="space-y-2">
                     <Label>{t('assets.quantity')}</Label>
-                    <Input type="number" step="any" min="0" value={formUnits} onChange={e => setFormUnits(e.target.value)} placeholder="10" />
+                    <Input type="number" step="any" min="0" value={formUnits} onChange={e => setFormUnits(e.target.value)} placeholder="10" disabled={editingIsLedgerBacked} />
                   </div>
                 )}
 
@@ -1440,7 +1543,7 @@ export default function AssetsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t('assets.purchaseDate')}</Label>
-                <DatePickerInput value={formPurchaseDate} onChange={setFormPurchaseDate} />
+                <DatePickerInput value={formPurchaseDate} onChange={setFormPurchaseDate} disabled={editingIsLedgerBacked} />
               </div>
               {formMethod !== 'market_price' && (
                 <div className="space-y-2">
@@ -2456,9 +2559,9 @@ function AssetTransactionsTab({
         </div>
       ) : (txs ?? []).length === 0 ? (
         holdingsWithoutCost.length === 0 ? (
-          <div className="text-center py-16">
-            <TrendingUp className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
-            <p className="text-muted-foreground">{t('assets.noTransactions')}</p>
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-center py-16 text-muted-foreground">
+            <TrendingUp size={32} className="mx-auto mb-2 opacity-50" />
+            <p>{t('assets.noTransactions')}</p>
           </div>
         ) : null
       ) : (
@@ -2623,9 +2726,9 @@ function AssetTransactionsTab({
               <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
                 <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
                 <span className="text-sm font-bold tabular-nums text-foreground">
-                  {formatCurrency(
+                  {formatTransactionTotal(
                     parseFloat(formQuantity) * parseFloat(formPrice) + (formFee ? parseFloat(formFee) : 0) * (formKind === 'buy' ? 1 : -1),
-                    'USD',
+                    getTransactionTotalCurrency(holdings, formHolding, editingTx),
                     locale,
                   )}
                 </span>

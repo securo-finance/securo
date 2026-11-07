@@ -2,13 +2,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import case, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.group import Group, GroupMember
 from app.models.group_settlement import GroupSettlement
 from app.models.transaction import Transaction
+from app.models.transaction_split import TransactionSplit
 from app.schemas.group_settlement import (
     GroupSettlementCreate,
     GroupSettlementUpdate,
@@ -110,27 +111,40 @@ async def _create_payment_transaction(
 
 
 async def _pick_default_account_for_user(
-    session: AsyncSession, user_id: uuid.UUID
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    preferred_workspace_id: Optional[uuid.UUID] = None,
 ) -> Optional[Account]:
     """Return the user's first non-archived checking/savings account
     across any workspace they belong to. Used as the auto-target for
     receiver-side settlement credits — the receiver may sit in a
-    different workspace than where the settlement was recorded."""
+    different workspace than where the settlement was recorded.
+
+    Accounts in `preferred_workspace_id` (the group's workspace) come
+    first, so a user with several workspaces is credited where the group
+    lives rather than wherever the alphabetically first account is (#1143).
+    """
     from app.models.workspace import WorkspaceMember
 
     # Resolve the workspaces the user can write to. Pick the first
-    # account that lives in any of them; ties broken by name.
+    # account the user owns in any of them; ties broken by name. A shared
+    # workspace also holds other members' accounts, which must never
+    # receive this user's credit.
     user_workspaces_subq = select(WorkspaceMember.workspace_id).where(
         WorkspaceMember.user_id == user_id
     )
     result = await session.execute(
         select(Account)
         .where(
+            Account.user_id == user_id,
             Account.workspace_id.in_(user_workspaces_subq),
             Account.is_closed.is_(False),
             Account.type.in_(("checking", "savings")),
         )
-        .order_by(Account.name)
+        .order_by(
+            case((Account.workspace_id == preferred_workspace_id, 0), else_=1),
+            Account.name,
+        )
     )
     return result.scalars().first()
 
@@ -142,15 +156,18 @@ async def _create_receiver_credit(
     currency: str,
     when,
     description: str,
+    preferred_workspace_id: Optional[uuid.UUID] = None,
 ) -> Optional[Transaction]:
     """Mirror a settlement credit on the receiver's side.
 
-    Picks the receiver's first checking/savings account from any
-    workspace they belong to and stamps the credit there. Returns None
+    Picks the receiver's first checking/savings account, preferring the
+    group's workspace, and stamps the credit there. Returns None
     silently when the receiver has no suitable account — they can do
     it manually or the next time they reconcile from their bank sync.
     """
-    account = await _pick_default_account_for_user(session, receiver_user_id)
+    account = await _pick_default_account_for_user(
+        session, receiver_user_id, preferred_workspace_id
+    )
     if account is None:
         return None
     tx = Transaction(
@@ -305,6 +322,7 @@ async def create_settlement(
             data.currency,
             data.date,
             receiver_desc,
+            preferred_workspace_id=group.workspace_id,
         )
         if receiver_tx is not None:
             receiver_tx_id = receiver_tx.id
@@ -393,6 +411,58 @@ async def delete_settlement(
         return False
     if not await _can_settle_from(session, group, user_id, settlement.from_member_id):
         raise PermissionError("You can only delete settlements you created")
+    # The payer's debit (when made from `account_id`) and the receiver's
+    # credit were written by this settlement, so they go with it: left
+    # behind, they keep moving the account balance for a payment the group
+    # no longer records. Only rows in the current workspace are removed,
+    # as delete_transaction does. A linked existing transaction, a row
+    # another settlement also points at, a transfer leg and a row that
+    # carries group splits (user-entered allocations) are left alone.
+    created: list[Transaction] = []
+    seen: set[uuid.UUID] = set()
+    for tx_id in (settlement.transaction_id, settlement.receiver_transaction_id):
+        if tx_id is None or tx_id in seen:
+            continue
+        seen.add(tx_id)
+        # Lock the row so a concurrent transfer pairing either lands
+        # before this check (and is seen) or waits for the delete.
+        tx = (
+            await session.execute(
+                select(Transaction)
+                .where(Transaction.id == tx_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+        if (
+            tx is None
+            or tx.source != "settlement"
+            or tx.workspace_id != workspace_id
+            or tx.transfer_pair_id is not None
+        ):
+            continue
+        has_splits = await session.execute(
+            select(TransactionSplit.id).where(TransactionSplit.transaction_id == tx_id).limit(1)
+        )
+        if has_splits.first() is not None:
+            continue
+        other = await session.execute(
+            select(GroupSettlement.id).where(
+                GroupSettlement.id != settlement.id,
+                or_(
+                    GroupSettlement.transaction_id == tx_id,
+                    GroupSettlement.receiver_transaction_id == tx_id,
+                ),
+            )
+        )
+        if other.first() is None:
+            created.append(tx)
+    if created:
+        from app.services.attachment_service import cleanup_attachment_files
+
+        await cleanup_attachment_files(session, [tx.id for tx in created])
     await session.delete(settlement)
+    for tx in created:
+        await session.delete(tx)
     await session.commit()
     return True

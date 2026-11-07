@@ -12,6 +12,7 @@ from fastapi_users import schemas as fu_schemas
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import is_valid_timezone
 from app.core.auth import current_active_user, get_user_manager, UserManager
 from app.core.auth_policy import local_auth_enabled, require_local_auth_enabled
 from app.core.database import get_async_session
@@ -144,6 +145,9 @@ async def update_workspace(
     if workspace is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
     updates = body.model_dump(exclude_unset=True)
+    timezone = updates.get("timezone")
+    if timezone is not None and not is_valid_timezone(timezone):
+        raise HTTPException(status_code=400, detail="Invalid IANA timezone")
     for key, value in updates.items():
         setattr(workspace, key, value)
     # Changing the workspace currency follows through to the acting

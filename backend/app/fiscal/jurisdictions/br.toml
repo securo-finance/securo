@@ -2,3 +2,25 @@
 # registrations that NFS-e asks for.
 code = "BR"
 kinds = ["cnpj", "cpf", "ie", "im"]
+
+# What a fiscal document needs per line and the invoice cannot invent.
+# NCM classifies goods, NBS and the LC 116 service code classify services,
+# and the municipal code is what each city's NFS-e system actually keys on.
+[[product_fields]]
+key = "ncm"
+kinds = ["product"]
+[[product_fields]]
+key = "cest"
+kinds = ["product"]
+[[product_fields]]
+key = "gtin"
+kinds = ["product"]
+[[product_fields]]
+key = "service_code"
+kinds = ["service"]
+[[product_fields]]
+key = "nbs"
+kinds = ["service"]
+[[product_fields]]
+key = "municipal_service_code"
+kinds = ["service"]

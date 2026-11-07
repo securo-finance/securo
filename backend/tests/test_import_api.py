@@ -265,6 +265,46 @@ async def test_list_import_logs(client: AsyncClient, auth_headers, test_account:
 
 
 @pytest.mark.asyncio
+async def test_list_import_logs_returns_account_currency(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_workspace
+):
+    """Totals are in the account's currency, not the user's display one (#881)."""
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    test_workspace.default_currency = "USD"
+    eur_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Euro Account",
+        type="checking",
+        balance=0,
+        currency="EUR",
+    )
+    session.add(eur_account)
+    await session.commit()
+
+    resp = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(eur_account.id),
+            "transactions": [
+                {"description": "EUR TXN", "amount": "25.00", "date": "2026-02-20", "type": "debit"},
+            ],
+            "filename": "eur.csv",
+            "detected_format": "csv",
+        },
+    )
+    assert resp.status_code == 201
+
+    logs = (await client.get("/api/import-logs", headers=auth_headers)).json()
+    log = next(entry for entry in logs if entry["filename"] == "eur.csv")
+    assert log["account_currency"] == "EUR"
+    assert log["account_name"] == "Euro Account"
+    assert float(log["total_debit"]) == 25.0
+
+
+@pytest.mark.asyncio
 async def test_delete_import_log(client: AsyncClient, auth_headers, test_account: Account):
     # Create an import
     resp = await client.post(

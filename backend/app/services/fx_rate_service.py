@@ -8,6 +8,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.models.fx_rate import FxRate
 from app.models.user import User
@@ -27,14 +28,14 @@ async def sync_rates(
     Idempotent — existing rates for the same date are updated.
     Returns the number of rates synced.
     """
-    requested_target = target_date or date.today()
+    requested_target = target_date or app_today()
     # Providers cannot return a historical rate for a date that has not
     # happened yet. Treat a future request as a request for today's latest
     # published rate and store it under today's date.
-    target = min(requested_target, date.today())
+    target = min(requested_target, app_today())
     supported = set(get_settings().supported_currencies.split(","))
 
-    if target == date.today():
+    if target == app_today():
         rates = await _provider.fetch_latest()
     else:
         rates = await _provider.fetch_historical(target)
@@ -82,11 +83,11 @@ async def _resolve_rate(
     if from_currency == to_currency:
         return Decimal("1")
 
-    requested_target = target_date or date.today()
+    requested_target = target_date or app_today()
     # A future transaction must use the latest real rate, never query a
     # not-yet-existing historical snapshot. Looking up against today also
     # lets the closest-rate fallback select the last cached business day.
-    target = min(requested_target, date.today())
+    target = min(requested_target, app_today())
 
     # Step 1: Try exact date
     usd_to_source = await _get_exact_date_rate(session, from_currency, target)
@@ -143,7 +144,7 @@ async def get_rate(
     if rate is None:
         logger.warning(
             "No FX rate found for %s -> %s on %s, returning 1",
-            from_currency, to_currency, target_date or date.today(),
+            from_currency, to_currency, target_date or app_today(),
         )
         return Decimal("1")
     return rate
@@ -196,6 +197,56 @@ async def _get_closest_rate(session: AsyncSession, currency: str, target: date) 
     return result
 
 
+async def has_rate(
+    session: AsyncSession,
+    from_currency: str,
+    to_currency: str,
+    target_date: Optional[date] = None,
+    *,
+    allow_fetch: bool = True,
+) -> bool:
+    """Whether a real FX rate can be resolved between two currencies.
+
+    Same resolution chain as :func:`get_rate` (exact date, on-demand fetch,
+    closest stored date), but reports availability instead of falling back
+    to 1:1. Callers use this to tell a genuine conversion apart from an
+    unresolvable one (issue #574).
+    """
+    rate = await _resolve_rate(
+        session, from_currency, to_currency, target_date, allow_fetch=allow_fetch
+    )
+    return rate is not None
+
+
+async def convert_or_none(
+    session: AsyncSession,
+    amount: Decimal,
+    from_currency: str,
+    to_currency: str,
+    target_date: Optional[date] = None,
+    *,
+    allow_fetch: bool = True,
+    decimals: int = 2,
+) -> tuple[Optional[Decimal], Optional[Decimal]]:
+    """Convert an amount, or return (None, None) when no rate can be resolved.
+
+    Same precision rules as :func:`convert`, but never falls back to 1:1.
+    Callers keep the primary-currency value NULL instead of displaying a
+    fake amount, so mixed-currency totals never silently sum raw foreign
+    values (issue #574).
+    """
+    if from_currency == to_currency:
+        return amount, Decimal("1")
+
+    rate = await _resolve_rate(
+        session, from_currency, to_currency, target_date, allow_fetch=allow_fetch
+    )
+    if rate is None:
+        return None, None
+    converted = amount * rate
+    return converted.quantize(Decimal(1).scaleb(-decimals)), rate
+
+
 async def convert(
     session: AsyncSession,
     amount: Decimal,
@@ -204,12 +255,18 @@ async def convert(
     target_date: Optional[date] = None,
     *,
     allow_fetch: bool = True,
+    decimals: int = 2,
 ) -> tuple[Decimal, Decimal]:
     """Convert an amount from one currency to another.
 
     Returns (converted_amount, rate_used). Uses the 1:1 fallback from
     :func:`get_rate` when no rate is available, so this is for live reads, not
     for persisting a stored conversion.
+
+    ``decimals`` controls the precision of the converted amount. Monetary
+    amounts keep the two-decimal default; asset values pass the price-field
+    precision (``ASSET_PRICE_DECIMALS``) so a sub-cent market price survives
+    the conversion instead of rounding to 0.00 (issue #622).
     """
     if from_currency == to_currency:
         return amount, Decimal("1")
@@ -218,7 +275,7 @@ async def convert(
         session, from_currency, to_currency, target_date, allow_fetch=allow_fetch
     )
     converted = amount * rate
-    return converted.quantize(Decimal("0.01")), rate
+    return converted.quantize(Decimal(1).scaleb(-decimals)), rate
 
 
 async def stamp_primary_amount(

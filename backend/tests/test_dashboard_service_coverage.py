@@ -40,13 +40,9 @@ from app.services.dashboard_service import (
 @pytest.fixture
 def projection_today(monkeypatch):
     """Keep current-month projection cases away from the last day of a month."""
-    class ProjectionDate(date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 1, 15)
-
-    monkeypatch.setattr("app.services.dashboard_service.date", ProjectionDate)
-    return ProjectionDate.today()
+    today = date(2026, 1, 15)
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: today)
+    return today
 
 
 async def _seed_fx(session, today=None):
@@ -418,7 +414,7 @@ async def test_balance_history_with_future_projections(
 
     history = await get_balance_history(session, test_workspace.id, test_user.id, month=month_start)
     assert len(history.current) > 0
-    assert len(history.previous) > 0
+    assert len(history.baseline) == len(history.current)
 
 
 def test_signed_expr_helpers_smoke():

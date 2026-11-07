@@ -34,6 +34,7 @@ export const CURRENCIES = [
   { code: 'COP', flag: '\u{1F1E8}\u{1F1F4}', symbol: '$' },
   { code: 'CLP', flag: '\u{1F1E8}\u{1F1F1}', symbol: '$' },
   { code: 'DOP', flag: '\u{1F1E9}\u{1F1F4}', symbol: 'RD$' },
+  { code: 'KZT', flag: '\u{1F1F0}\u{1F1FF}', symbol: '₸' },
   { code: 'RUB', flag: '\u{1F1F7}\u{1F1FA}', symbol: '₽' },
   { code: 'GTQ', flag: '\u{1F1EC}\u{1F1F9}', symbol: 'Q' },
   { code: 'PHP', flag: '\u{1F1F5}\u{1F1ED}', symbol: '₱' },
@@ -52,6 +53,12 @@ export const CURRENCIES = [
   { code: 'SAR', flag: '\u{1F1F8}\u{1F1E6}', symbol: 'ر.س' },
   { code: 'QAR', flag: '\u{1F1F6}\u{1F1E6}', symbol: 'ر.ق' },
   { code: 'JMD', flag: '\u{1F1EF}\u{1F1F2}', symbol: 'J$' },
+  { code: 'RSD', flag: '\u{1F1F7}\u{1F1F8}', symbol: 'RSD' },
+  { code: 'MKD', flag: '\u{1F1F2}\u{1F1F0}', symbol: 'ден' },
+  { code: 'HKD', flag: '\u{1F1ED}\u{1F1F0}', symbol: 'HK$' },
+  { code: 'TWD', flag: '\u{1F1F9}\u{1F1FC}', symbol: 'NT$' },
+  { code: 'ZAR', flag: '\u{1F1FF}\u{1F1E6}', symbol: 'R' },
+  { code: 'GEL', flag: '\u{1F1EC}\u{1F1EA}', symbol: '₾' },
 ] as const
 
 interface CurrencySelectProps {

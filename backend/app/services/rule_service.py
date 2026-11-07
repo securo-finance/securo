@@ -19,16 +19,19 @@ from app.schemas.rule import (
     RulePreviewResponse,
     RuleUpdate,
 )
-
-from app.services.category_service import get_hidden_category_ids
-
+from app.services.category_defaults import (
+    CATEGORY_TO_GROUP,
+    DEFAULT_CATEGORIES,
+    DEFAULT_GROUPS,
+    localized_name,
+    name_variants,
+)
+from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import (
     apply_rule_actions,
     compile_rule_regex,
     evaluate_conditions,
 )
-
-from app.services.category_service import DEFAULT_CATEGORIES_I18N
 
 
 class DuplicateRuleError(Exception):
@@ -38,7 +41,12 @@ class DuplicateRuleError(Exception):
 
 _ALLOWED_CONDITION_FIELDS = {
     "description", "payee", "notes", "amount", "type", "account_id", "payee_id", "date",
+    "status",
 }
+# Status is a closed set, so only equality makes sense and the value must be one
+# of the statuses a transaction can carry.
+_STATUS_CONDITION_OPS = {"equals", "not_equals"}
+_STATUS_CONDITION_VALUES = {"pending", "posted"}
 _ALLOWED_CONDITION_OPS = {
     "contains", "not_contains", "equals", "not_equals", "starts_with",
     "ends_with", "regex", "gt", "gte", "lt", "lte",
@@ -79,6 +87,12 @@ async def _validate_rule_definition(
         field = _rule_item_value(condition, "field")
         op = _rule_item_value(condition, "op")
         if field not in _ALLOWED_CONDITION_FIELDS or op not in _ALLOWED_CONDITION_OPS:
+            raise ValueError("Invalid rule condition")
+        if field == "status" and (
+            op not in _STATUS_CONDITION_OPS
+            or str(_rule_item_value(condition, "value") or "").strip().lower()
+            not in _STATUS_CONDITION_VALUES
+        ):
             raise ValueError("Invalid rule condition")
         if op == "regex":
             compile_rule_regex(str(_rule_item_value(condition, "value") or ""))
@@ -570,11 +584,8 @@ def _resolve_categories_by_internal_key(
     which language the user's categories were created in.
     """
     key_to_id: dict[str, str] = {}
-    non_name_fields = {"icon", "color", "treat_as_transfer"}
-    for internal_key, data in DEFAULT_CATEGORIES_I18N.items():
-        for field, value in data.items():
-            if field in non_name_fields:
-                continue
+    for internal_key, data in DEFAULT_CATEGORIES.items():
+        for value in data["names"].values():
             cat_id = categories_by_name.get(value)
             if cat_id:
                 key_to_id[internal_key] = cat_id
@@ -709,16 +720,6 @@ async def _ensure_categories_for_keys(
     happens to be pt-BR. Returns the count of newly-created categories.
     """
     from app.models.category_group import CategoryGroup
-    from app.services.category_group_service import (
-        CATEGORY_TO_GROUP,
-        DEFAULT_GROUPS_I18N,
-    )
-    from app.services.category_service import DEFAULT_CATEGORIES_I18N
-
-    non_name_fields = {"icon", "color", "treat_as_transfer", "position"}
-
-    def variants(data: dict) -> set[str]:
-        return {v for k, v in data.items() if k not in non_name_fields}
 
     existing_cats = list(
         (
@@ -736,8 +737,8 @@ async def _ensure_categories_for_keys(
     missing_keys = [
         key
         for key in internal_keys
-        if (data := DEFAULT_CATEGORIES_I18N.get(key))
-        and not (variants(data) & existing_cat_names)
+        if (data := DEFAULT_CATEGORIES.get(key))
+        and not (name_variants(data) & existing_cat_names)
     ]
     if not missing_keys:
         return 0
@@ -759,11 +760,11 @@ async def _ensure_categories_for_keys(
     }
     groups_by_key: dict[str, CategoryGroup] = {}
     for gkey in needed_group_keys:
-        gdata = DEFAULT_GROUPS_I18N.get(gkey)
+        gdata = DEFAULT_GROUPS.get(gkey)
         if not gdata:
             continue
         match = next(
-            (g for g in existing_groups if g.name in variants(gdata)), None
+            (g for g in existing_groups if g.name in name_variants(gdata)), None
         )
         if match:
             groups_by_key[gkey] = match
@@ -771,7 +772,7 @@ async def _ensure_categories_for_keys(
         group = CategoryGroup(
             user_id=user_id,
             workspace_id=workspace_id,
-            name=gdata.get(lang, gdata["en"]),
+            name=localized_name(gdata, lang),
             icon=gdata["icon"],
             color=gdata["color"],
             position=gdata["position"],
@@ -782,12 +783,12 @@ async def _ensure_categories_for_keys(
     await session.flush()
 
     for key in missing_keys:
-        data = DEFAULT_CATEGORIES_I18N[key]
+        data = DEFAULT_CATEGORIES[key]
         target_group = groups_by_key.get(CATEGORY_TO_GROUP.get(key))
         cat = Category(
             user_id=user_id,
             workspace_id=workspace_id,
-            name=data.get(lang, data["en"]),
+            name=localized_name(data, lang),
             icon=data["icon"],
             color=data["color"],
             is_system=True,
@@ -1129,6 +1130,7 @@ _PREVIEW_COLUMNS = (
     Transaction.payee_id,
     Transaction.notes,
     Transaction.is_ignored,
+    Transaction.has_category_lines,
 )
 
 
@@ -1207,11 +1209,19 @@ async def apply_rules_to_transaction(
     )
     rules = result.scalars().all()
 
-    category_set = transaction.category_id is not None or skip_category_rules
-    hidden_categories = (
-        await get_hidden_category_ids(session, transaction.workspace_id)
+    # A row split across categories is categorized: its lines hold the
+    # categories and its own category_id stays null.
+    category_set = (
+        transaction.category_id is not None
+        or transaction.has_category_lines
+        or skip_category_rules
+    )
+    # None means "do not filter": a transaction with no workspace at hand
+    # has no category list to check against.
+    assignable_categories = (
+        await get_assignable_category_ids(session, transaction.workspace_id)
         if getattr(transaction, "workspace_id", None) is not None
-        else set()
+        else None
     )
 
     for rule in rules:
@@ -1222,7 +1232,7 @@ async def apply_rules_to_transaction(
                 actions,
                 transaction,
                 category_set,
-                hidden_category_ids=hidden_categories,
+                assignable_category_ids=assignable_categories,
             )
 
 
@@ -1302,6 +1312,10 @@ async def preview_rule(
         action if isinstance(action, dict) else action.model_dump() for action in actions or []
     ]
 
+    # The save path skips `set_category` at an unavailable target, so a preview that
+    # did not would promise a move that saving never makes.
+    assignable_categories = await get_assignable_category_ids(session, workspace_id)
+
     matched = 0
     changed = 0
     sample: list[RulePreviewItem] = []
@@ -1326,9 +1340,11 @@ async def preview_rule(
             apply_rule_actions(
                 action_dicts,
                 draft,
-                category_already_set=tx.category_id is not None
-                and not overwrite_existing_categories,
+                # Overwriting never undoes a split across categories.
+                category_already_set=tx.has_category_lines
+                or (tx.category_id is not None and not overwrite_existing_categories),
                 skip_description=_has_manual_description(tx),
+                assignable_category_ids=assignable_categories,
             )
             will_change = _rule_effect_state(draft) != before
             if will_change:
@@ -1346,6 +1362,7 @@ async def preview_rule(
                     type=tx.type,
                     current_category_id=tx.category_id,
                     current_category_name=category_names.get(tx.category_id),
+                    current_has_category_lines=bool(tx.has_category_lines),
                     new_category_id=draft.category_id,
                     new_category_name=category_names.get(draft.category_id),
                     will_change=will_change,
@@ -1391,7 +1408,7 @@ async def apply_single_rule(
     conditions = rule.conditions or []
     actions = rule.actions or []
 
-    hidden_categories = await get_hidden_category_ids(session, workspace_id)
+    assignable_categories = await get_assignable_category_ids(session, workspace_id)
     count = 0
     for tx in transactions:
         matches = evaluate_conditions(rule.conditions_op, conditions, tx)
@@ -1416,10 +1433,11 @@ async def apply_single_rule(
         apply_rule_actions(
             actions,
             tx,
-            category_already_set=tx.category_id is not None
-            and not overwrite_existing_categories,
+            # Overwriting never undoes a split across categories.
+            category_already_set=tx.has_category_lines
+            or (tx.category_id is not None and not overwrite_existing_categories),
             skip_description=_has_manual_description(tx),
-            hidden_category_ids=hidden_categories,
+            assignable_category_ids=assignable_categories,
         )
         after = (
             tx.category_id,
@@ -1454,7 +1472,7 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
     )
     rules = rules_result.scalars().all()
 
-    hidden_categories = await get_hidden_category_ids(session, workspace_id)
+    assignable_categories = await get_assignable_category_ids(session, workspace_id)
     count = 0
     for tx in transactions:
         preserve_manual_description = _has_manual_description(tx)
@@ -1472,13 +1490,15 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                 tx.description = tx.original_description
             tx.description_is_rule_managed = False
         matched = False
-        category_set = False
+        # A split row keeps its lines through a re-apply.
+        category_set = tx.has_category_lines
         for rule in rules:
             conditions = rule.conditions or []
             actions = rule.actions or []
             if evaluate_conditions(rule.conditions_op, conditions, tx):
                 if not matched:
-                    tx.category_id = None
+                    if not tx.has_category_lines:
+                        tx.category_id = None
                     tx.notes = None
                     matched = True
                 category_set = apply_rule_actions(
@@ -1486,7 +1506,7 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                     tx,
                     category_set,
                     skip_description=preserve_manual_description,
-                    hidden_category_ids=hidden_categories,
+                    assignable_category_ids=assignable_categories,
                 )
 
         after = (

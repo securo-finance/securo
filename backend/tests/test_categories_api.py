@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.exc import IntegrityError
@@ -112,6 +114,27 @@ async def test_delete_category(client: AsyncClient, auth_headers, test_categorie
 
 
 @pytest.mark.asyncio
+async def test_delete_system_category(client: AsyncClient, auth_headers, test_categories):
+    # test_categories contains seeded system categories
+    system_cat = test_categories[0]
+    assert system_cat.is_system is True
+
+    response = await client.delete(f"/api/categories/{system_cat.id}", headers=auth_headers)
+    assert response.status_code == 204
+
+    categories = await client.get("/api/categories?include_hidden=true", headers=auth_headers)
+    assert str(system_cat.id) not in {category["id"] for category in categories.json()}
+
+
+@pytest.mark.asyncio
+async def test_delete_category_not_found(client: AsyncClient, auth_headers):
+    fake_id = uuid.uuid4()
+    response = await client.delete(f"/api/categories/{fake_id}", headers=auth_headers)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Category not found"
+
+
+@pytest.mark.asyncio
 async def test_delete_referenced_category_returns_conflict(
     client: AsyncClient,
     auth_headers,
@@ -204,15 +227,6 @@ async def test_delete_category_does_not_translate_unrelated_errors(
                 )
     finally:
         await session.rollback()
-
-
-@pytest.mark.asyncio
-async def test_delete_system_category_fails(
-    client: AsyncClient, auth_headers, test_categories: list[Category]
-):
-    cat_id = str(test_categories[0].id)  # system category
-    response = await client.delete(f"/api/categories/{cat_id}", headers=auth_headers)
-    assert response.status_code == 400
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,8 @@ const state = vi.hoisted(() => ({
     is_superuser: false,
     preferences: { onboarding_completed: true },
   },
+  theme: 'light',
+  setTheme: vi.fn(),
   workspace: { id: 'synthetic', name: 'Synthetic workspace', kind: 'personal', role: 'owner' },
   auth: {
     oidcConfig: vi.fn(),
@@ -72,7 +74,7 @@ vi.mock('@/lib/webauthn', () => ({
   startPasskeyRegistration: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
-vi.mock('next-themes', () => ({ useTheme: () => ({ theme: 'light', setTheme: vi.fn() }) }))
+vi.mock('next-themes', () => ({ useTheme: () => ({ theme: state.theme, setTheme: state.setTheme }) }))
 vi.mock('@/components/collection-selector', () => ({ CollectionSelector: () => null }))
 vi.mock('@/components/command-palette', () => ({ CommandPalette: () => null }))
 vi.mock('@/components/global-chat-panel', () => ({ GlobalChatPanel: () => null }))
@@ -89,6 +91,8 @@ function openMenu(surface: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.removeItem('securo.sidebar.collapsed')
+  state.theme = 'light'
   state.user = { ...state.user, is_2fa_enabled: true }
   state.auth.oidcConfig.mockResolvedValue({
     enabled: true,
@@ -100,6 +104,43 @@ beforeEach(() => {
   ])
   state.auth.disable2fa.mockResolvedValue({})
   state.auth.deletePasskey.mockResolvedValue(undefined)
+})
+
+it('collapses the desktop sidebar and persists the preference', async () => {
+  const { user } = renderWithProviders(<AppLayout />)
+
+  const toggle = screen.getByRole('button', { name: t('nav.collapseSidebar') })
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+  await user.click(toggle)
+
+  expect(localStorage.getItem('securo.sidebar.collapsed')).toBe('true')
+  expect(screen.getByRole('button', { name: t('nav.expandSidebar') })).toHaveAttribute('aria-expanded', 'false')
+  expect(document.querySelector('aside')).toHaveAttribute('data-collapsed', 'true')
+  expect(document.querySelector('main')).toHaveClass('lg:ml-16')
+
+  await user.click(screen.getByRole('button', { name: /Synthetic workspace/ }))
+  expect(screen.getByRole('menuitem', { name: /Workspace settings/ })).toBeInTheDocument()
+})
+
+it('offers System after Dark in the theme button (#1203)', async () => {
+  state.theme = 'dark'
+  const { user } = renderWithProviders(<AppLayout />)
+
+  const buttons = screen.getAllByRole('button', { name: t('settings.themeSystem') })
+  expect(buttons.length).toBeGreaterThan(0)
+  await user.click(buttons[0])
+
+  expect(state.setTheme).toHaveBeenCalledWith('system')
+})
+
+it('restores a collapsed desktop sidebar from local storage', () => {
+  localStorage.setItem('securo.sidebar.collapsed', 'true')
+
+  renderWithProviders(<AppLayout />)
+
+  expect(screen.getByRole('button', { name: t('nav.expandSidebar') })).toHaveAttribute('aria-expanded', 'false')
+  expect(document.querySelector('main')).toHaveClass('lg:ml-16')
 })
 
 it.each(['desktop', 'mobile'])(

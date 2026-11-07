@@ -81,7 +81,7 @@ class ReconciliationRule(Base):
     #: it: in a workspace with several members, "who changed this" is the
     #: first question asked when matching starts behaving differently.
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     #: Which policy document this belongs to: invoices or recurring bills.
     node: Mapped[str] = mapped_column(String(64))
@@ -149,7 +149,7 @@ class ReconciliationSuggestion(Base):
             name="ck_reconciliation_suggestion_status",
         ),
         CheckConstraint(
-            "expectation_kind IN ('invoice', 'recurring')",
+            "expectation_kind IN ('invoice', 'recurring', 'transaction')",
             name="ck_reconciliation_suggestion_kind",
         ),
         # The queue is always read as "what is still open here", so that is
@@ -199,7 +199,7 @@ class ReconciliationSuggestion(Base):
         DateTime(timezone=True), nullable=True
     )
     resolved_by: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -264,6 +264,6 @@ class ReconciliationEvent(Base):
     #: Null means the system did it on its own: the difference a reader
     #: most often wants: was this me, or was this the rules?
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     detail: Mapped[dict[str, Any]] = mapped_column(_Json, default=dict)

@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { GroupForm } from '@/components/group-form'
 import { PageHeader } from '@/components/page-header'
-import { Archive, ChevronRight, Plus, Trash2, Users } from 'lucide-react'
+import { Archive, ChevronRight, Plus, Search, Trash2, Users, X } from 'lucide-react'
 import type { Group, GroupKind } from '@/types'
 
 type StatusFilter = 'active' | 'archived' | 'all'
@@ -28,15 +28,33 @@ type StatusFilter = 'active' | 'archived' | 'all'
 export default function GroupsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  const statusParam = searchParams.get('status')
+  const statusFilter: StatusFilter = statusParam === 'archived' || statusParam === 'all' ? statusParam : 'active'
+  const search = searchParams.get('q') ?? ''
+  const [searchQuery, setSearchQuery] = useState(search.trim())
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Group | null>(null)
   const [deletingGroup, setDeletingGroup] = useState<Group | null>(null)
-  const includeArchived = statusFilter !== 'active'
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(search.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  const updateFilter = (key: 'q' | 'status', value: string) => {
+    if (key === 'status') setSearchQuery(search.trim())
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous)
+      if (value && !(key === 'status' && value === 'active')) next.set(key, value)
+      else next.delete(key)
+      return next
+    }, { replace: key === 'q' })
+  }
 
   const [name, setName] = useState('')
   const [kind, setKind] = useState<GroupKind>('social')
@@ -44,9 +62,9 @@ export default function GroupsPage() {
   const [notes, setNotes] = useState('')
 
 
-  const { data: list, isLoading } = useQuery({
-    queryKey: ['groups', { includeArchived }],
-    queryFn: () => groupsApi.list(includeArchived),
+  const { data: list = [], isLoading } = useQuery({
+    queryKey: ['groups', { q: searchQuery, status: statusFilter }],
+    queryFn: () => groupsApi.list(statusFilter !== 'active', { q: searchQuery || undefined, status: statusFilter }),
   })
 
   const createMutation = useMutation({
@@ -128,14 +146,6 @@ export default function GroupsPage() {
     }
   }
 
-  const visibleGroups = (list ?? []).filter((g) =>
-    statusFilter === 'active'
-      ? !g.is_archived
-      : statusFilter === 'archived'
-        ? g.is_archived
-        : true,
-  )
-
   return (
     <div>
       <PageHeader
@@ -158,7 +168,7 @@ export default function GroupsPage() {
         {(['active', 'archived', 'all'] as StatusFilter[]).map((s) => (
           <button
             key={s}
-            onClick={() => setStatusFilter(s)}
+            onClick={() => updateFilter('status', s)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               statusFilter === s
                 ? 'bg-primary text-primary-foreground'
@@ -170,6 +180,27 @@ export default function GroupsPage() {
         ))}
       </div>
 
+      <div className="rounded-xl border border-border bg-card shadow-sm transition-colors mb-4 focus-within:border-primary/40 focus-within:ring-[3px] focus-within:ring-primary/10">
+        <div className="flex items-center gap-1.5 px-2 py-1.5">
+          <div className="relative flex min-w-0 flex-1 items-center gap-1 px-2.5 py-1 min-h-9">
+            <Search size={15} className="pointer-events-none shrink-0 text-muted-foreground/70" />
+            <input
+              type="search"
+              aria-label={t('splitGroups.searchPlaceholder')}
+              placeholder={t('splitGroups.searchPlaceholder')}
+              value={search}
+              onChange={(e) => updateFilter('q', e.target.value)}
+              className="min-w-0 flex-1 bg-transparent px-1.5 text-[13.5px] outline-none placeholder:text-muted-foreground/75"
+            />
+          </div>
+          {search && (
+            <Button variant="ghost" size="icon-sm" aria-label={t('splitGroups.clearSearch')} onClick={() => updateFilter('q', '')}>
+              <X size={15} />
+            </Button>
+          )}
+        </div>
+      </div>
+
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden mb-4">
         {isLoading ? (
           <div className="p-6 space-y-3">
@@ -177,15 +208,17 @@ export default function GroupsPage() {
               <Skeleton key={i} className="h-14 w-full" />
             ))}
           </div>
-        ) : visibleGroups.length === 0 ? (
+        ) : list.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
             <Users size={32} className="mx-auto mb-2 opacity-50" />
-            <p>{t('splitGroups.empty')}</p>
-            <p className="text-xs mt-1">{t('splitGroups.emptyHint')}</p>
+            <p>{t(searchQuery ? 'common.noResults' : 'splitGroups.empty')}</p>
+            {!searchQuery && (
+              <p className="text-xs mt-1">{t('splitGroups.emptyHint')}</p>
+            )}
           </div>
         ) : (
           <ul className="divide-y divide-border">
-            {visibleGroups.map((group) => (
+            {list.map((group) => (
               <li
                 key={group.id}
                 className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted cursor-pointer transition-colors"

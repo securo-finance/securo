@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { workspaces as workspacesApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,6 +32,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  BookOpen,
   Check,
   ChevronsUpDown,
   Download,
@@ -63,6 +65,9 @@ const ROLE_LABEL_KEY: Record<string, string> = {
 // Fallback when a workspace hasn't set its own color yet.
 const DEFAULT_COLOR = '#6366F1'
 
+// The help documentation, opened only when the user asks for it.
+export const DOCS_URL = 'https://docs.usesecuro.com'
+
 function workspaceIcon(w: Workspace): string {
   return w.icon || WORKSPACE_KIND_ICON[w.kind as WorkspaceKind] || 'briefcase'
 }
@@ -85,6 +90,8 @@ interface AccountMenuProps {
   agentsEnabled: boolean
   /** True when local password/passkey auth is enabled. */
   localAuthEnabled: boolean
+  /** Compact the trigger to its workspace icon on desktop. */
+  collapsed?: boolean
 }
 
 /**
@@ -104,6 +111,7 @@ export function WorkspaceSwitcher({
   onUpdateAvailable,
   agentsEnabled,
   localAuthEnabled,
+  collapsed = false,
 }: AccountMenuProps) {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
@@ -151,14 +159,21 @@ export function WorkspaceSwitcher({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm hover:bg-sidebar-accent transition-colors text-left">
+          <button
+            className={cn(
+              'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm hover:bg-sidebar-accent transition-colors text-left',
+              collapsed && 'lg:justify-center lg:px-2',
+            )}
+            aria-label={current.name}
+            title={current.name}
+          >
             <CategoryIcon
               icon={workspaceIcon(current)}
               color={workspaceColor(current)}
               size="sm"
               className="shrink-0"
             />
-            <div className="flex-1 min-w-0">
+            <div className={cn('flex-1 min-w-0', collapsed && 'lg:hidden')}>
               <p className="text-xs font-semibold truncate">{current.name}</p>
               <p className="text-[10px] text-sidebar-muted/70 truncate">
                 {user.email}
@@ -167,7 +182,7 @@ export function WorkspaceSwitcher({
                 )}
               </p>
             </div>
-            <ChevronsUpDown size={13} className="text-sidebar-muted/60 shrink-0" />
+            <ChevronsUpDown size={13} className={cn('text-sidebar-muted/60 shrink-0', collapsed && 'lg:hidden')} />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64" side="top">
@@ -283,6 +298,13 @@ export function WorkspaceSwitcher({
             <Download size={14} />
             {t('update.menuItem')}
           </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => window.open(DOCS_URL, '_blank', 'noopener,noreferrer')}
+            className="flex items-center gap-2"
+          >
+            <BookOpen size={14} />
+            {t('nav.documentation')}
+          </DropdownMenuItem>
 
           {/* Language sub-menu */}
           <DropdownMenuSub>
@@ -383,11 +405,25 @@ export function WorkspaceSwitcher({
                   {currentLang === 'nl' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                  onClick={() => i18n.changeLanguage('cs')}
+                  className="flex items-center gap-2"
+                >
+                  <span className="flex-1">Čeština</span>
+                  {currentLang === 'cs' && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   onClick={() => i18n.changeLanguage('sk')}
                   className="flex items-center gap-2"
                 >
                   <span className="flex-1">Slovenčina</span>
                   {currentLang === 'sk' && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => i18n.changeLanguage('hu')}
+                  className="flex items-center gap-2"
+                >
+                  <span className="flex-1">Magyar</span>
+                  {currentLang === 'hu' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => i18n.changeLanguage('el')}

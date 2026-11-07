@@ -17,7 +17,7 @@ COPY pyproject.toml uv.lock ./
 # Space-separated optional extras to install (e.g. "s3" for STORAGE_PROVIDER=s3).
 ARG BACKEND_EXTRAS=""
 # renovate: datasource=pypi depName=uv
-RUN pip install --no-cache-dir uv==0.12.15 \
+RUN pip install --no-cache-dir uv==0.13.0 \
     && uv export --frozen --no-emit-project $(for e in $BACKEND_EXTRAS; do printf -- '--extra %s ' "$e"; done) -o /tmp/requirements.txt \
     && pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt \
     && pip uninstall -y uv \

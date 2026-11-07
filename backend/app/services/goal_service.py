@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.models.account import Account
 from app.models.asset import Asset
@@ -71,7 +72,7 @@ async def _resolve_current_amount(
         account = await session.get(Account, goal.account_id)
         if account:
             # Use dashboard's balance logic so manual accounts are computed correctly
-            bal = Decimal(str(await _account_balance_at(session, account, date.today())))
+            bal = Decimal(str(await _account_balance_at(session, account, app_today())))
             return await _convert_amount(session, bal, account.currency, goal_currency)
         return goal.current_amount
     elif goal.tracking_type == "asset" and goal.asset_id:
@@ -94,9 +95,16 @@ async def _resolve_current_amount(
         # Reuse dashboard's account query and balance logic so manual accounts
         # (whose balance is computed from transactions) are handled correctly.
         accounts = await _get_open_accounts(session, workspace_id)
-        today = date.today()
+        today = app_today()
         total = Decimal("0")
+        seen_shared: set[str] = set()
         for acc in accounts:
+            # Cards on one consolidated credit line each carry the whole
+            # line's debt; count it once.
+            if acc.shared_balance_group and acc.type == "credit_card":
+                if acc.shared_balance_group in seen_shared:
+                    continue
+                seen_shared.add(acc.shared_balance_group)
             bal = Decimal(str(await _account_balance_at(session, acc, today)))
             total += await _convert_amount(session, bal, acc.currency, goal_currency)
 
@@ -147,7 +155,7 @@ def _compute_monthly_contribution(
 ) -> Optional[float]:
     if not target_date:
         return None
-    today = date.today()
+    today = app_today()
     if today >= target_date:
         return 0.0
     remaining = target - current
@@ -168,7 +176,7 @@ def _compute_on_track(
         return None
     if current >= target:
         return "achieved"
-    today = date.today()
+    today = app_today()
     if today > target_date:
         return "overdue"
 

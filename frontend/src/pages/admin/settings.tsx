@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
+import { TimezoneSettings } from '@/components/timezone-settings'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays } from 'lucide-react'
@@ -107,9 +108,11 @@ export default function AdminSettingsPage() {
     },
   })
 
-  const { data: regSetting, isLoading: settingsLoading } = useQuery({
+  // The effective state, not the saved row: with nothing saved,
+  // REGISTRATION_ENABLED decides.
+  const { data: regStatus, isLoading: settingsLoading } = useQuery({
     queryKey: ['admin', 'settings', 'registration_enabled'],
-    queryFn: () => adminApi.getSetting('registration_enabled'),
+    queryFn: () => adminApi.registrationStatus(),
   })
 
   const updateSettingMutation = useMutation({
@@ -274,7 +277,7 @@ export default function AdminSettingsPage() {
 
   const users = usersData?.items ?? []
   const isSelf = (u: AdminUser) => u.id === currentUser?.id
-  const isEnabled = regSetting?.value === 'true'
+  const isEnabled = regStatus?.enabled === true
 
   const filteredUsers = users
 
@@ -368,6 +371,8 @@ export default function AdminSettingsPage() {
           </div>
         )}
       </div>
+
+      <TimezoneSettings />
 
       {/* Theme and Customization Section */}
       <div className="grid grid-cols-1 gap-6 mb-8">

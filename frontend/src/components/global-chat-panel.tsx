@@ -10,7 +10,8 @@
  * Conversation persistence: the active conversationId is kept in
  * localStorage keyed by agent. Re-opening the panel resumes the same
  * thread instead of starting fresh — the explicit "+" button is the
- * only way to start a new one.
+ * only way to start a new one, unless the stored conversation was deleted
+ * elsewhere, in which case it is forgotten and the next message starts one.
  *
  * Page context: each send forwards a `page_context` snapshot built
  * from the active page's registration (or a synthesized fallback).
@@ -185,7 +186,7 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                     variant="ghost"
                     className="-ml-1 px-1.5"
                     onClick={() => setView('chat')}
-                    aria-label="Back to chat"
+                    aria-label={t('agents.globalChat.backToChat')}
                   >
                     <ArrowLeft className="h-4 w-4" />
                   </Button>
@@ -291,7 +292,7 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                 </Link>
               </Button>
               <DialogPrimitive.Close asChild>
-                <Button size="sm" variant="ghost" aria-label="Close">
+                <Button size="sm" variant="ghost" aria-label={t('common.close')}>
                   <X className="h-4 w-4" />
                 </Button>
               </DialogPrimitive.Close>
@@ -329,6 +330,11 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                 agent={activeAgent}
                 conversationId={conversationId}
                 onConversationCreated={(id) => setConversationForActive(id)}
+                // The stored conversation was deleted (e.g. from the Agents
+                // page): forget it so the next message starts a new one.
+                onConversationMissing={(id) => {
+                  if (id === conversationId) setConversationForActive(null)
+                }}
                 focusSignal={focusBump}
                 getPageContext={() => getEffectivePageChatContext()}
               />

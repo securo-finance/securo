@@ -58,9 +58,19 @@ DEFAULT_LABELS: dict[str, str] = {
     "tax": "Tax",
     "total": "Total",
     "paid": "Paid",
+    "deducted": "Deductions",
     "balance": "Balance due",
+    "statement": "Statement of account",
+    "history": "Payments and deductions",
+    "date": "Date",
+    "payment": "Payment received",
+    "withholdingTax": "Tax withheld",
+    "gatewayFee": "Processing fee",
+    "fxDifference": "Currency difference",
+    "otherDeduction": "Other deduction",
     "paymentDetails": "Payment details",
     "notes": "Notes",
+    "schedule": "Payment schedule",
 }
 
 #: Shipped label packs, by language. Deliberately few: this is the set
@@ -89,8 +99,18 @@ LABEL_PACKS: dict[str, dict[str, str]] = {
         "tax": "Impostos",
         "total": "Total",
         "paid": "Recebido",
+        "deducted": "Deduções",
         "balance": "Saldo devedor",
+        "statement": "Extrato da fatura",
+        "history": "Pagamentos e deduções",
+        "date": "Data",
+        "payment": "Pagamento recebido",
+        "withholdingTax": "Imposto retido",
+        "gatewayFee": "Taxa de processamento",
+        "fxDifference": "Diferença de câmbio",
+        "otherDeduction": "Outra dedução",
         "paymentDetails": "Dados para pagamento",
+        "schedule": "Cronograma de pagamento",
         "notes": "Observações",
     },
     "es": {
@@ -109,8 +129,18 @@ LABEL_PACKS: dict[str, dict[str, str]] = {
         "tax": "Impuestos",
         "total": "Total",
         "paid": "Cobrado",
+        "deducted": "Deducciones",
         "balance": "Saldo pendiente",
+        "statement": "Estado de cuenta",
+        "history": "Pagos y deducciones",
+        "date": "Fecha",
+        "payment": "Pago recibido",
+        "withholdingTax": "Impuesto retenido",
+        "gatewayFee": "Comisión de procesamiento",
+        "fxDifference": "Diferencia de cambio",
+        "otherDeduction": "Otra deducción",
         "paymentDetails": "Datos de pago",
+        "schedule": "Calendario de pagos",
         "notes": "Notas",
     },
     "fr": {
@@ -129,8 +159,18 @@ LABEL_PACKS: dict[str, dict[str, str]] = {
         "tax": "TVA",
         "total": "Total",
         "paid": "Réglé",
+        "deducted": "Déductions",
         "balance": "Reste à payer",
+        "statement": "Relevé de compte",
+        "history": "Paiements et déductions",
+        "date": "Date",
+        "payment": "Paiement reçu",
+        "withholdingTax": "Impôt retenu",
+        "gatewayFee": "Frais de traitement",
+        "fxDifference": "Écart de change",
+        "otherDeduction": "Autre déduction",
         "paymentDetails": "Coordonnées de paiement",
+        "schedule": "Échéancier",
         "notes": "Notes",
     },
     "de": {
@@ -149,8 +189,18 @@ LABEL_PACKS: dict[str, dict[str, str]] = {
         "tax": "USt.",
         "total": "Gesamt",
         "paid": "Bezahlt",
+        "deducted": "Abzüge",
         "balance": "Offener Betrag",
+        "statement": "Kontoauszug",
+        "history": "Zahlungen und Abzüge",
+        "date": "Datum",
+        "payment": "Zahlung erhalten",
+        "withholdingTax": "Einbehaltene Steuer",
+        "gatewayFee": "Bearbeitungsgebühr",
+        "fxDifference": "Währungsdifferenz",
+        "otherDeduction": "Sonstiger Abzug",
         "paymentDetails": "Zahlungsinformationen",
+        "schedule": "Zahlungsplan",
         "notes": "Hinweise",
     },
     "it": {
@@ -169,8 +219,18 @@ LABEL_PACKS: dict[str, dict[str, str]] = {
         "tax": "IVA",
         "total": "Totale",
         "paid": "Incassato",
+        "deducted": "Trattenute",
         "balance": "Saldo dovuto",
+        "statement": "Estratto conto",
+        "history": "Pagamenti e trattenute",
+        "date": "Data",
+        "payment": "Pagamento ricevuto",
+        "withholdingTax": "Ritenuta d'acconto",
+        "gatewayFee": "Commissione di elaborazione",
+        "fxDifference": "Differenza di cambio",
+        "otherDeduction": "Altra trattenuta",
         "paymentDetails": "Dati per il pagamento",
+        "schedule": "Scadenze di pagamento",
         "notes": "Note",
     },
 }
@@ -222,6 +282,24 @@ class DocumentLine:
     unit: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class DocumentMovement:
+    """One settlement on a statement: money that arrived, or an amount
+    closed without it. The description is already in the document's
+    language and says what kind it was, never the bank's own text."""
+
+    day: _date
+    description: str
+    amount: Decimal
+
+
+@dataclass(frozen=True)
+class DocumentInstallment:
+    label: Optional[str]
+    due_date: _date
+    amount: Decimal
+
+
 @dataclass
 class InvoiceDocument:
     """Everything a renderer needs, and nothing it has to look up."""
@@ -237,6 +315,9 @@ class InvoiceDocument:
     tax_total: Decimal
     total: Decimal
     amount_paid: Decimal
+    #: Settled without money arriving: tax withheld, a fee kept. Shown
+    #: so that total, paid and balance add up on the page.
+    amount_deducted: Decimal
     balance: Decimal
     issuer: DocumentParty
     client: DocumentParty
@@ -258,6 +339,16 @@ class InvoiceDocument:
     #: difference between showing a document and claiming to have written
     #: one.
     direction: str = "receivable"
+    #: The dates the money is expected on, when there is more than one.
+    #: Rendered as a small table under the header so the client sees
+    #: the same split they agreed to.
+    installments: list[DocumentInstallment] = field(default_factory=list)
+    #: Set on a statement of account: what settled the invoice, in date
+    #: order. Empty on the invoice itself, which is the document as issued.
+    movements: list[DocumentMovement] = field(default_factory=list)
+    #: A statement of account rather than the invoice: titled as one, and
+    #: always showing what is paid, deducted and left.
+    statement: bool = False
 
 
 def _label_map(
@@ -414,12 +505,17 @@ async def build_document(
         state=invoice_service.derive_state(invoice),
         issue_date=invoice.issue_date,
         due_date=invoice.due_date,
+        installments=[
+            DocumentInstallment(label=i.label, due_date=i.due_date, amount=i.amount)
+            for i in invoice.installments
+        ],
         currency=invoice.currency,
         subtotal=invoice.subtotal or Decimal("0"),
         discount=invoice.discount or Decimal("0"),
         tax_total=invoice.tax_total or Decimal("0"),
         total=invoice.total or Decimal("0"),
         amount_paid=invoice_service.allocated_total(invoice),
+        amount_deducted=invoice_service.deducted_total(invoice),
         balance=invoice_service.balance(invoice),
         issuer=issuer,
         client=client,
@@ -475,6 +571,52 @@ async def build_document(
     )
 
 
+#: The document label for each deduction kind, so a statement names the
+#: reason in the document's language.
+_DEDUCTION_LABEL = {
+    "withholding_tax": "withholdingTax",
+    "gateway_fee": "gatewayFee",
+    "fx_difference": "fxDifference",
+    "other": "otherDeduction",
+}
+
+
+async def build_statement(
+    session: AsyncSession,
+    invoice: Invoice,
+    settings: InvoiceSettings,
+    workspace: Workspace,
+) -> InvoiceDocument:
+    """The invoice's statement of account: the document with what settled
+    it since, and how that arrives at the balance.
+
+    The invoice as issued stays what it was (see `invoice_archive`); this
+    is the other document, the one that is supposed to change. Payments
+    are named as payments, not by the bank's text, which is the
+    workspace's own record and has no business on a page sent out. Notes
+    on deductions stay off it for the same reason.
+    """
+    from dataclasses import replace
+
+    document = await build_document(session, invoice, settings, workspace)
+    labels = document.labels
+    movements: list[DocumentMovement] = []
+    for allocation in invoice.allocations:
+        day = (
+            allocation.transaction.date
+            if allocation.transaction is not None
+            else allocation.allocated_at.date()
+        )
+        movements.append(DocumentMovement(day, labels["payment"], allocation.amount))
+    for deduction in invoice.deductions:
+        description = labels[_DEDUCTION_LABEL.get(deduction.kind, "otherDeduction")]
+        if deduction.tax_kind:
+            description = f"{description} ({deduction.tax_kind.upper()})"
+        movements.append(DocumentMovement(deduction.deducted_at.date(), description, deduction.amount))
+    movements.sort(key=lambda m: m.day)
+    return replace(document, movements=movements, statement=True)
+
+
 def document_payload(document: InvoiceDocument) -> dict[str, Any]:
     """The document as JSON, for the on-screen renderer and the share page.
 
@@ -494,6 +636,7 @@ def document_payload(document: InvoiceDocument) -> dict[str, Any]:
         "tax_total": str(document.tax_total),
         "total": str(document.total),
         "amount_paid": str(document.amount_paid),
+        "amount_deducted": str(document.amount_deducted),
         "balance": str(document.balance),
         "issuer": {
             "name": document.issuer.name,
@@ -527,4 +670,8 @@ def document_payload(document: InvoiceDocument) -> dict[str, Any]:
         "custom_fields": [{"label": k, "value": v} for k, v in document.custom_fields],
         "has_line_items": document.has_line_items,
         "direction": document.direction,
+        "installments": [
+            {"label": i.label, "due_date": i.due_date.isoformat(), "amount": str(i.amount)}
+            for i in document.installments
+        ],
     }

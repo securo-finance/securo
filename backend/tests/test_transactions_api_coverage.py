@@ -52,6 +52,89 @@ async def test_list_filter_by_type(client: AsyncClient, auth_headers, test_trans
     assert all(t["type"] == "credit" for t in resp.json()["items"])
 
 
+async def _seed_transfers(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_account: Account
+) -> tuple[set[str], set[str]]:
+    """A paired transfer plus a one-sided row in a `treat_as_transfer`
+    category. Returns (transfer ids, transfer descriptions)."""
+    other = await _manual_account(client, auth_headers, "Savings")
+    resp = await client.post(
+        "/api/transactions/transfer", headers=auth_headers,
+        json={
+            "from_account_id": str(test_account.id),
+            "to_account_id": other,
+            "amount": "300.00",
+            "date": date.today().isoformat(),
+            "description": "PAIRED TRANSFER",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    paired_ids = {resp.json()["debit"]["id"], resp.json()["credit"]["id"]}
+
+    investments = Category(
+        id=uuid.uuid4(), user_id=test_user.id, name="Investments",
+        icon="trending-up", color="#0EA5E9", treat_as_transfer=True,
+    )
+    session.add(investments)
+    await session.flush()
+    one_sided = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=test_account.id,
+        category_id=investments.id, description="BROKER APPLICATION",
+        amount=500, currency="BRL", date=date.today(), type="debit", source="manual",
+    )
+    session.add(one_sided)
+    await session.commit()
+    return paired_ids | {str(one_sided.id)}, {"PAIRED TRANSFER", "BROKER APPLICATION"}
+
+
+@pytest.mark.asyncio
+async def test_list_filter_by_type_transfer(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+    test_account: Account, test_transactions,
+):
+    transfer_ids, _ = await _seed_transfers(client, auth_headers, session, test_user, test_account)
+
+    resp = await client.get("/api/transactions?type=transfer&limit=500", headers=auth_headers)
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    # Paired legs and the treat_as_transfer row, and none of the plain
+    # income/expense fixtures.
+    assert {t["id"] for t in items} == transfer_ids
+
+
+@pytest.mark.asyncio
+async def test_list_filter_by_income_expense_unchanged_by_transfers(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+    test_account: Account, test_transactions,
+):
+    transfer_ids, _ = await _seed_transfers(client, auth_headers, session, test_user, test_account)
+
+    # Income/Expense stay a plain type filter, so a transfer leg of that
+    # type still shows up there, exactly as before.
+    for typ in ("credit", "debit"):
+        resp = await client.get(f"/api/transactions?type={typ}&limit=500", headers=auth_headers)
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert items and all(t["type"] == typ for t in items)
+        assert any(t["id"] in transfer_ids for t in items)
+
+
+@pytest.mark.asyncio
+async def test_export_filter_by_type_transfer(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+    test_account: Account, test_transactions,
+):
+    _, descriptions = await _seed_transfers(client, auth_headers, session, test_user, test_account)
+
+    resp = await client.get("/api/transactions/export?type=transfer", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.text
+    for desc in descriptions:
+        assert desc in body
+    for fixture_tx in test_transactions:
+        assert fixture_tx.description not in body
+
+
 @pytest.mark.asyncio
 async def test_list_search_query(client: AsyncClient, auth_headers, test_transactions):
     resp = await client.get("/api/transactions?q=UBER", headers=auth_headers)

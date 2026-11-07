@@ -181,6 +181,8 @@ async def delete_user(
     from app.models.category import Category
     from app.models.category_group import CategoryGroup
     from app.models.bank_connection import BankConnection
+    from app.models.invoice import Invoice
+    from app.models.invoice_schedule import InvoiceSchedule
 
     # Delete attachments for user's transactions
     tx_ids_query = select(Transaction.id).where(Transaction.user_id == user_id)
@@ -205,7 +207,16 @@ async def delete_user(
     await session.execute(delete(Asset).where(Asset.user_id == user_id))
 
     await session.execute(delete(PayeeMapping).where(PayeeMapping.user_id == user_id))
-    await session.execute(delete(Payee).where(Payee.user_id == user_id))
+    # Billing records belong to the workspace and RESTRICT client deletion.
+    # Keep their clients and let the creator FK clear when the user is deleted;
+    # unrelated user payees retain the existing cleanup behavior.
+    await session.execute(
+        delete(Payee).where(
+            Payee.user_id == user_id,
+            ~select(Invoice.id).where(Invoice.payee_id == Payee.id).exists(),
+            ~select(InvoiceSchedule.id).where(InvoiceSchedule.payee_id == Payee.id).exists(),
+        )
+    )
     await session.execute(delete(Account).where(Account.user_id == user_id))
     await session.execute(delete(Category).where(Category.user_id == user_id))
     await session.execute(delete(CategoryGroup).where(CategoryGroup.user_id == user_id))
@@ -224,6 +235,16 @@ async def get_app_setting(session: AsyncSession, key: str) -> Optional[AppSettin
     return result.scalar_one_or_none()
 
 
+async def delete_app_setting(session: AsyncSession, key: str) -> bool:
+    """Remove a saved setting. Returns False when nothing was saved."""
+    setting = await get_app_setting(session, key)
+    if setting is None:
+        return False
+    await session.delete(setting)
+    await session.commit()
+    return True
+
+
 async def set_app_setting(session: AsyncSession, key: str, value: str) -> AppSetting:
     setting = await get_app_setting(session, key)
     if setting:
@@ -237,10 +258,13 @@ async def set_app_setting(session: AsyncSession, key: str, value: str) -> AppSet
 
 
 async def is_registration_enabled(session: AsyncSession) -> bool:
+    """Whether public sign-up is open.
+
+    The value an administrator saved wins; with nothing saved, the
+    REGISTRATION_ENABLED environment variable decides."""
     setting = await get_app_setting(session, "registration_enabled")
     if setting:
         return setting.value.lower() == "true"
-    # Fall back to env var
     return get_settings().registration_enabled
 
 

@@ -1,0 +1,19 @@
+"""Contract cases: owner happy path, shard 3 of 4. See harness.py."""
+import pytest
+from httpx import AsyncClient
+
+from tests.api_contract.cases import VARIANT_OK, Operation
+from tests.api_contract.harness import check_case, headers_for, params_for
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("variant", "op"), params_for((VARIANT_OK,), shard=3, shards=4))
+async def test_contract(
+    client: AsyncClient,
+    world,
+    world_headers,
+    variant: str,
+    op: Operation,
+):
+    headers = headers_for(variant, op, *world_headers)
+    await check_case(client, variant, op, world, headers)

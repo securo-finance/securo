@@ -18,15 +18,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { agents } from '@/lib/api'
 import type { Agent } from '@/lib/api'
+import { BUILTIN_MCP_SERVER, type AgentTemplate } from '@/lib/agent-templates'
 
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   agent?: Agent | null
   providers: string[]
+  /** When set (create mode only), the form starts filled from this template. */
+  preset?: AgentTemplate | null
 }
 
-export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
+export function AgentFormDialog({ open, onOpenChange, agent, preset }: Props) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const isEdit = !!agent
@@ -60,9 +63,11 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
       setAutoContext(agent.auto_context ?? true)
       setIsDefault(agent.is_default ?? false)
     } else {
-      setName('')
-      setDescription('')
-      setSystemPrompt('')
+      // A template preset (if any) fills the form as a starting point;
+      // everything stays editable before the agent is created.
+      setName(preset ? t(preset.nameKey) : '')
+      setDescription(preset ? t(preset.descriptionKey) : '')
+      setSystemPrompt(preset?.systemPrompt ?? '')
       // Pre-select the user's default connection (or the only one,
       // if there's just one) so the form is one click closer to done.
       setConnectionId('')
@@ -71,7 +76,7 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
       setAutoContext(true)
       setIsDefault(false)
     }
-  }, [agent, open])
+  }, [agent, open, preset, t])
 
   // When connections load (or the dialog opens), pre-select the most
   // sensible default: the user-flagged default connection, or the only
@@ -88,7 +93,16 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
 
   const saveMut = useMutation({
     mutationFn: (payload: Partial<Agent> & { name: string }) =>
-      isEdit && agent ? agents.update(agent.id, payload) : agents.create(payload),
+      isEdit && agent
+        ? agents.update(agent.id, payload)
+        : agents.create({
+            ...payload,
+            // An agent started from a template is saved with the template's
+            // tool scope in the same call, like the one-click path.
+            ...(preset && preset.tools.length > 0
+              ? { tools: preset.tools.map((tool) => ({ server: BUILTIN_MCP_SERVER, tool_name: tool, enabled: true })) }
+              : {}),
+          }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agents'] })
       onOpenChange(false)
@@ -128,6 +142,11 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? t('agents.form.editTitle') : t('agents.form.createTitle')}</DialogTitle>
+          {!isEdit && preset && (
+            <p className="text-xs text-muted-foreground">
+              {t('agents.templates.presetHint', { template: t(preset.nameKey) })}
+            </p>
+          )}
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid gap-2">

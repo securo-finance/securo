@@ -35,10 +35,20 @@ class InvoiceLineInput(BaseModel):
     # A percentage, not an amount — and only meaningful when the
     # workspace shows tax fields at all.
     tax_rate: Optional[Decimal] = Field(default=None, ge=0, le=100)
+    #: Where the line came from, when it came from the catalog. The
+    #: values above are still the line's own; these only remember.
+    product_id: Optional[uuid.UUID] = None
+    price_id: Optional[uuid.UUID] = None
+    #: Fiscal references for this line (a goods or service code). Filled
+    #: from the product when omitted; a line may bring its own.
+    fiscal_refs: Optional[dict[str, str]] = None
 
 
 class InvoiceLineRead(BaseModel):
     id: uuid.UUID
+    product_id: Optional[uuid.UUID] = None
+    price_id: Optional[uuid.UUID] = None
+    fiscal_refs: Optional[dict[str, str]] = None
     description: str
     quantity: Decimal
     unit: Optional[str] = None
@@ -57,6 +67,50 @@ class AllocationTransaction(BaseModel):
     description: Optional[str] = None
     date: Optional[_Date] = None
     amount: Optional[Decimal] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InstallmentInput(BaseModel):
+    due_date: _Date
+    amount: Decimal = Field(..., gt=0)
+    #: "Entrada", "2/3", "On delivery". Optional.
+    label: Optional[str] = Field(default=None, max_length=60)
+
+
+class InstallmentRead(BaseModel):
+    id: uuid.UUID
+    position: int
+    label: Optional[str] = None
+    due_date: _Date
+    amount: Decimal
+    #: Derived: how much of this installment the settled money covers,
+    #: read first-to-last, and what it reads as. Never stored.
+    settled: Decimal = Decimal("0")
+    state: str = "open"
+
+
+DeductionKind = Literal["withholding_tax", "gateway_fee", "fx_difference", "other"]
+
+
+class DeductionCreate(BaseModel):
+    kind: DeductionKind
+    amount: Decimal = Field(..., gt=0)
+    #: Which tax, in the jurisdiction's words (`irrf`, `iss`, `irpf`).
+    tax_kind: Optional[str] = Field(default=None, max_length=30)
+    note: Optional[str] = Field(default=None, max_length=500)
+    #: The payment it was noticed on, when there was one.
+    transaction_id: Optional[uuid.UUID] = None
+
+
+class InvoiceDeductionRead(BaseModel):
+    id: uuid.UUID
+    kind: DeductionKind
+    tax_kind: Optional[str] = None
+    amount: Decimal
+    note: Optional[str] = None
+    transaction_id: Optional[uuid.UUID] = None
+    deducted_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -113,6 +167,9 @@ class InvoiceCreate(BaseModel):
     internal_notes: Optional[str] = None
     custom_fields: Optional[dict[str, Any]] = None
     lines: Optional[list[InvoiceLineInput]] = None
+    #: When the money is expected in more than one date. Must add up to
+    #: the total; the invoice's due date becomes the last of them.
+    installments: Optional[list[InstallmentInput]] = None
 
 
 class InvoiceUpdate(BaseModel):
@@ -129,11 +186,24 @@ class InvoiceUpdate(BaseModel):
     internal_notes: Optional[str] = None
     custom_fields: Optional[dict[str, Any]] = None
     lines: Optional[list[InvoiceLineInput]] = None
+    #: Draft only. An empty list clears the schedule.
+    installments: Optional[list[InstallmentInput]] = None
 
 
 class InvoicePayee(BaseModel):
     id: uuid.UUID
     name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InvoiceScheduleRef(BaseModel):
+    """Just enough of the agreement to label the invoice with it."""
+
+    id: uuid.UUID
+    name: str
+    frequency: str
+    status: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -166,8 +236,13 @@ class InvoiceRead(BaseModel):
     tax_total: Decimal
     total: Decimal
     amount_paid: Decimal = Decimal("0")
+    #: Settled without cash (tax withheld, fees kept). Not in `amount_paid`.
+    amount_deducted: Decimal = Decimal("0")
     balance: Decimal = Decimal("0")
     days_overdue: int = 0
+    #: When the next money is late after: the first unpaid installment's
+    #: date, or the due date. Null once nothing is owed.
+    next_due_date: Optional[_Date] = None
     notes: Optional[str]
     internal_notes: Optional[str]
     custom_fields: Optional[dict[str, Any]]
@@ -176,8 +251,17 @@ class InvoiceRead(BaseModel):
     #: can open. Null until someone asks for one, and null again once
     #: revoked.
     share_token: Optional[str] = None
+    #: Which agreement and period this invoice answers for, when it
+    #: was born from or linked to one. Provenance only.
+    schedule_id: Optional[uuid.UUID] = None
+    schedule: Optional[InvoiceScheduleRef] = None
+    sequence: Optional[int] = None
+    period_start: Optional[_Date] = None
+    period_end: Optional[_Date] = None
     lines: list[InvoiceLineRead] = []
     allocations: list[InvoiceAllocationRead] = []
+    installments: list[InstallmentRead] = []
+    deductions: list[InvoiceDeductionRead] = []
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

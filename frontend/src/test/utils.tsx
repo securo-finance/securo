@@ -18,6 +18,7 @@ import { render, type RenderOptions, type RenderResult } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 
 import i18n from '@/lib/i18n'
+import { SidebarStateProvider } from '@/contexts/sidebar-state-provider'
 
 /**
  * Retries and caching are useful in the app and only add flake in a test: a
@@ -65,15 +66,17 @@ export function renderWithProviders(
     return (
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={[route]}>
-            {path ? (
-              <Routes>
-                <Route path={path} element={children} />
-              </Routes>
-            ) : (
-              children
-            )}
-          </MemoryRouter>
+          <SidebarStateProvider>
+            <MemoryRouter initialEntries={[route]}>
+              {path ? (
+                <Routes>
+                  <Route path={path} element={children} />
+                </Routes>
+              ) : (
+                children
+              )}
+            </MemoryRouter>
+          </SidebarStateProvider>
         </QueryClientProvider>
       </I18nextProvider>
     )

@@ -116,10 +116,10 @@ export function ImportHistory({ entity }: ImportHistoryProps) {
                   {isStatement && (
                     <>
                       <td className="hidden px-4 py-3 text-right font-medium text-emerald-600 sm:table-cell">
-                        {formatCurrency(log.total_credit, userCurrency, locale)}
+                        {formatCurrency(log.total_credit, log.account_currency ?? userCurrency, locale)}
                       </td>
                       <td className="hidden px-4 py-3 text-right font-medium text-rose-600 sm:table-cell">
-                        {formatCurrency(log.total_debit, userCurrency, locale)}
+                        {formatCurrency(log.total_debit, log.account_currency ?? userCurrency, locale)}
                       </td>
                     </>
                   )}

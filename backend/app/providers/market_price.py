@@ -172,14 +172,12 @@ class YFinanceProvider(MarketPriceProvider):
         creation time; we just update the price and let ``current_value``
         recompute from ``units × last_price``.
 
-        Note on minor-unit currencies (GBp, ZAc on LSE/JSE): those are
-        normalized to GBP/ZAR ×0.01 at creation (via ``get_quote``), but
-        on refresh we only get the raw trading-currency close. The batch
-        preserves the same unit as the upstream quote, so internal
-        consistency is maintained as long as the asset's stored currency
-        matches the ticker's reporting unit. If Yahoo changes a listing's
-        reporting unit mid-stream the price will appear off by 100× — rare
-        enough to address reactively rather than pre-emptively.
+        Note on minor-unit currencies (GBp, ZAc on LSE/JSE): ``download``
+        returns the raw pence/cents close, so ``*.L`` / ``*.JO`` tickers get
+        a follow-up ``fast_info.currency`` lookup and are scaled ×0.01 to
+        match the GBP/ZAR normalization ``get_quote`` applies at creation.
+        If that lookup fails for a ticker its price is returned as ``None``
+        rather than raw, so the caller falls back to ``get_quote``.
         """
         if not symbols:
             return {}
@@ -196,6 +194,39 @@ class YFinanceProvider(MarketPriceProvider):
                 raise MarketPriceRateLimitedError(
                     "Yahoo Finance rate-limited the batch price download"
                 )
+
+            # Normalize minor-unit prices (GBp → GBP, ZAc → ZAR, both ×0.01).
+            # yf.download returns raw pence/cents for LSE/JSE tickers without
+            # a currency tag; we fetch fast_info.currency only for the tickers
+            # that actually need it (*.L and *.JO suffixes) to keep the extra
+            # round-trips minimal.
+            candidates = [
+                s for s, p in chunk_prices.items()
+                if p is not None and (s.endswith(".L") or s.endswith(".JO"))
+            ]
+            if candidates:
+                try:
+                    currencies = await asyncio.to_thread(
+                        self._get_currencies_sync, candidates
+                    )
+                except Exception as e:  # pragma: no cover (upstream flakiness, not logic)
+                    logger.warning(
+                        "minor-unit currency check failed for %s: %s", candidates, e
+                    )
+                    currencies = {}
+                for sym in candidates:
+                    currency = currencies.get(sym)
+                    if not currency:
+                        # Unit unknown: a raw pence/cents close could be
+                        # 100× off, so drop it and let the caller fall back
+                        # to ``get_quote``, which normalizes on its own.
+                        chunk_prices[sym] = None
+                        continue
+                    conv = _MINOR_UNIT_CURRENCIES.get(currency)
+                    price = chunk_prices[sym]
+                    if conv is not None and price is not None:
+                        chunk_prices[sym] = price * Decimal(str(conv[1]))
+
             out.update(chunk_prices)
         return out
 
@@ -249,9 +280,29 @@ class YFinanceProvider(MarketPriceProvider):
             return list(response.get("quotes") or [])
         except _rate_limit_exception_types():
             raise MarketPriceRateLimitedError("Yahoo Finance rate-limited the search")
-        except Exception as e:  # pragma: no cover — upstream flakiness, not logic
+        except Exception as e:  # pragma: no cover (upstream flakiness, not logic)
             logger.warning("yfinance search failed for %r: %s", query, e)
             return []
+
+    @staticmethod
+    def _get_currencies_sync(symbols: list[str]) -> dict[str, Optional[str]]:
+        """Return ``fast_info.currency`` for each symbol.
+
+        Used by ``get_latest_prices`` to identify minor-unit tickers (GBp,
+        ZAc) after a ``yf.download`` batch, which returns raw prices without
+        currency metadata. Only called for the small subset of tickers whose
+        exchange suffix suggests a minor-unit quote (``*.L``, ``*.JO``).
+        """
+        import yfinance as yf
+
+        out: dict[str, Optional[str]] = {}
+        for sym in symbols:
+            try:
+                currency = _fast_info_value(yf.Ticker(sym).fast_info, "currency")
+                out[sym] = str(currency) if currency is not None else None
+            except Exception:
+                out[sym] = None
+        return out
 
     @staticmethod
     def _download_prices_sync(symbols: list[str]) -> dict[str, Optional[Decimal]]:
@@ -283,7 +334,7 @@ class YFinanceProvider(MarketPriceProvider):
                 # Swallowing upstream failures silently would leave callers
                 # unable to distinguish "no data" from "request blew up".
             )
-        except Exception as e:  # pragma: no cover — upstream flakiness
+        except Exception as e:  # pragma: no cover (upstream flakiness)
             logger.warning("yfinance batch download failed for %d symbols: %s", len(symbols), e)
             return out
 

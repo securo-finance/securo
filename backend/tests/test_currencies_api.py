@@ -227,3 +227,75 @@ async def test_currencies_include_jmd_with_metadata(client: AsyncClient):
     assert jmd["symbol"] == "J$"
     assert jmd["name"] == "Jamaican Dollar"
     assert jmd["flag"] == "🇯🇲"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_rsd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    rsd = next((currency for currency in data if currency["code"] == "RSD"), None)
+
+    assert rsd is not None
+    assert rsd["symbol"] == "RSD"
+    assert rsd["name"] == "Serbian Dinar"
+    assert rsd["flag"] == "🇷🇸"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_mkd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    mkd = next((currency for currency in data if currency["code"] == "MKD"), None)
+
+    assert mkd is not None
+    assert mkd["symbol"] == "ден"
+    assert mkd["name"] == "Macedonian Denar"
+    assert mkd["flag"] == "🇲🇰"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_hkd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    hkd = next((currency for currency in data if currency["code"] == "HKD"), None)
+
+    assert hkd is not None
+    assert hkd["symbol"] == "HK$"
+    assert hkd["name"] == "Hong Kong Dollar"
+    assert hkd["flag"] == "🇭🇰"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_twd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    twd = next((currency for currency in data if currency["code"] == "TWD"), None)
+
+    assert twd is not None
+    assert twd["symbol"] == "NT$"
+    assert twd["name"] == "New Taiwan Dollar"
+    assert twd["flag"] == "🇹🇼"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_zar_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    zar = next((currency for currency in data if currency["code"] == "ZAR"), None)
+
+    assert zar is not None
+    assert zar["symbol"] == "R"
+    assert zar["name"] == "South African Rand"
+    assert zar["flag"] == "🇿🇦"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_gel_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    gel = next((currency for currency in data if currency["code"] == "GEL"), None)
+
+    assert gel is not None
+    assert gel["symbol"] == "₾"
+    assert gel["name"] == "Georgian Lari"
+    assert gel["flag"] == "🇬🇪"

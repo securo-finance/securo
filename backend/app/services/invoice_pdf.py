@@ -113,6 +113,14 @@ def _para(
     return Paragraph(escape(text).replace("\n", "<br/>"), style)
 
 
+def _title(document: InvoiceDocument) -> str:
+    """What the page says it is. A statement must never read as the
+    invoice: the invoice is the document as issued, and a second page
+    with the same title and different figures is the drift the archive
+    exists to prevent."""
+    return document.labels["statement"] if document.statement else document.labels["invoice"]
+
+
 def _label(text: str) -> Paragraph:
     """A section label. Small, spaced, quiet — the same treatment the web
     preview gives it, so the two read as one design."""
@@ -181,7 +189,7 @@ def _draw_header(canvas, document: InvoiceDocument, accent, logo_bytes) -> float
 
     canvas.setFont("Helvetica-Bold", 19)
     canvas.setFillColor(INK)
-    canvas.drawString(MARGIN, y - 6.5 * mm, document.labels["invoice"])
+    canvas.drawString(MARGIN, y - 6.5 * mm, _title(document))
 
     if document.number:
         canvas.setFont("Helvetica-Bold", 12.5)
@@ -240,6 +248,83 @@ def _draw_parties_and_dates(canvas, document: InvoiceDocument, y: float) -> floa
     return y - 11 * mm
 
 
+def _schedule_table(document: InvoiceDocument) -> Optional[Table]:
+    """The schedule, when the money is expected on more than one date.
+
+    Drawn under the dates and above the lines: it is about when, not
+    what. A table rather than part of the header so that a long one
+    breaks across pages the way the lines do, instead of running off
+    the bottom of page one.
+    """
+    if not document.installments:
+        return None
+    # The same treatment as the lines below it: a ruled header, a hairline
+    # between rows, and every money column right-aligned, header included.
+    header = [
+        _label(document.labels["schedule"]),
+        _label(document.labels["dueDate"]),
+        _para(document.labels["amount"].upper(), size=7, color=MUTED, bold=True, align=TA_RIGHT),
+    ]
+    rows = [header]
+    for index, installment in enumerate(document.installments, start=1):
+        rows.append([
+            _para(installment.label or f"{index}/{len(document.installments)}"),
+            _para(installment.due_date.isoformat(), color=MUTED),
+            _para(_money(installment.amount, document.currency), align=TA_RIGHT),
+        ])
+    table = Table(
+        rows,
+        colWidths=[CONTENT_WIDTH * 0.5, CONTENT_WIDTH * 0.25, CONTENT_WIDTH * 0.25],
+        repeatRows=1,
+        splitInRow=1,
+    )
+    table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, RULE),
+        ("LINEBELOW", (0, 1), (-1, -2), 0.4, RULE),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return table
+
+
+def _movements_table(document: InvoiceDocument) -> Optional[Table]:
+    """On a statement: every payment and deduction, by date, so the reader
+    can walk from the total to the balance line by line."""
+    if not document.movements:
+        return None
+    header = [
+        _label(document.labels["history"]),
+        _label(document.labels["date"]),
+        _para(document.labels["amount"].upper(), size=7, color=MUTED, bold=True, align=TA_RIGHT),
+    ]
+    rows = [header]
+    for movement in document.movements:
+        rows.append([
+            _para(movement.description),
+            _para(movement.day.isoformat(), color=MUTED),
+            _para(_money(movement.amount, document.currency), align=TA_RIGHT),
+        ])
+    table = Table(
+        rows,
+        colWidths=[CONTENT_WIDTH * 0.5, CONTENT_WIDTH * 0.25, CONTENT_WIDTH * 0.25],
+        repeatRows=1,
+        splitInRow=1,
+    )
+    table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, RULE),
+        ("LINEBELOW", (0, 1), (-1, -2), 0.4, RULE),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return table
+
+
 def _lines_table(document: InvoiceDocument) -> Optional[Table]:
     if not document.lines:
         return None
@@ -291,10 +376,18 @@ def _totals_table(document: InvoiceDocument, accent) -> Table:
     if document.tax_total and document.tax_total > 0:
         rows.append((document.labels["tax"], _money(document.tax_total, document.currency), False))
     rows.append((document.labels["total"], _money(document.total, document.currency), True))
-    # Paid and balance only once money has moved: on an untouched invoice
-    # they restate the total twice and add nothing.
-    if document.amount_paid and document.amount_paid > 0:
-        rows.append((document.labels["paid"], _money(document.amount_paid, document.currency), False))
+    # Paid and balance only once something has settled: on an untouched
+    # invoice they restate the total twice and add nothing. Deductions get
+    # their own row, or the page would say total 3,000, paid 1,455,
+    # balance 1,500, and the 45 the client withheld would be missing.
+    paid = document.amount_paid or Decimal("0")
+    deducted = document.amount_deducted or Decimal("0")
+    # A statement always shows them: saying what is left is its purpose.
+    if paid > 0 or deducted > 0 or document.statement:
+        if paid > 0:
+            rows.append((document.labels["paid"], _money(paid, document.currency), False))
+        if deducted > 0:
+            rows.append((document.labels["deducted"], _money(deducted, document.currency), False))
         rows.append((document.labels["balance"], _money(document.balance, document.currency), True))
 
     width = 74 * mm
@@ -410,7 +503,7 @@ def render_pdf(document: InvoiceDocument, logo_bytes: Optional[bytes] = None) ->
     accent = _accent(document.accent_color)
     buffer = io.BytesIO()
     canvas = pdf_canvas.Canvas(buffer, pagesize=A4)
-    canvas.setTitle(f"{document.labels['invoice']} {document.number or ''}".strip())
+    canvas.setTitle(f"{_title(document)} {document.number or ''}".strip())
 
     footer, closing = _footer_flowables(document)
     footer_height = _footer_height(footer, closing)
@@ -425,55 +518,29 @@ def render_pdf(document: InvoiceDocument, logo_bytes: Optional[bytes] = None) ->
     pages: list[list] = []
     y = _draw_parties_and_dates(canvas, document, _draw_header(canvas, document, accent, logo_bytes))
 
-    if lines is not None:
-        remaining: Optional[Table] = lines
-        # Whether the next attempt is happening on an otherwise empty
-        # page, which is what tells a "too full" failure apart from a
-        # "will never fit" one.
-        on_fresh_page = False
-        while remaining is not None:
-            available = y - floor
-            # The totals must share the last page with the table, so the
-            # final chunk needs room for both.
-            needed = remaining.wrap(CONTENT_WIDTH, PAGE_HEIGHT)[1]
-            if needed + totals_height + 8 * mm <= available:
-                remaining.drawOn(canvas, MARGIN, y - needed)
-                y -= needed
-                remaining = None
-                break
+    # The totals must share the last page with the last table, so its
+    # final chunk needs room for both.
+    reserve = totals_height + 8 * mm
 
-            parts = remaining.split(CONTENT_WIDTH, available)
-            if len(parts) < 2:
-                # Cannot split into this space. Normally that means the
-                # page is too full, and a fresh one solves it.
-                #
-                # If we are *already* at the top of a fresh page, it does
-                # not: the content will not fit anywhere, and asking for
-                # another page would ask forever. Draw it and move on —
-                # an overrun on one invoice beats a request that never
-                # returns and holds a worker until it is killed.
-                if on_fresh_page:
-                    remaining.drawOn(canvas, MARGIN, y - needed)
-                    remaining = None
-                    break
-                pages.append([])
-                canvas.showPage()
-                y = _draw_continuation_header(canvas, document, accent)
-                on_fresh_page = True
-                continue
-
-            head, tail = parts[0], parts[1]
-            head_height = head.wrap(CONTENT_WIDTH, PAGE_HEIGHT)[1]
-            head.drawOn(canvas, MARGIN, y - head_height)
-            pages.append([])
-            canvas.showPage()
-            y = _draw_continuation_header(canvas, document, accent)
-            remaining = tail
-            # The page the tail lands on carries only the continuation
-            # header, so it counts as fresh for the same reason.
-            on_fresh_page = True
+    # When, what, then (on a statement) what settled it. Each table is
+    # flowed in turn; only the last one has to leave room for the totals.
+    tables = [
+        table
+        for table in (_schedule_table(document), lines, _movements_table(document))
+        if table is not None
+    ]
+    for index, table in enumerate(tables):
+        last = index == len(tables) - 1
+        y = _flow(canvas, document, accent, table, y, floor, pages, reserve=reserve if last else 0.0)
+        if not last:
+            y -= 8 * mm
 
     y -= 8 * mm
+    if y - totals_height < floor:
+        # Whatever the tables did, the totals never sink into the footer.
+        pages.append([])
+        canvas.showPage()
+        y = _draw_continuation_header(canvas, document, accent)
     totals.drawOn(canvas, PAGE_WIDTH - MARGIN - 74 * mm, y - totals_height)
 
     _draw_footer(canvas, footer, closing)
@@ -485,6 +552,72 @@ def render_pdf(document: InvoiceDocument, logo_bytes: Optional[bytes] = None) ->
     return buffer.getvalue()
 
 
+def _flow(
+    canvas,
+    document: InvoiceDocument,
+    accent,
+    table: Table,
+    y: float,
+    floor: float,
+    pages: list[list],
+    reserve: float = 0.0,
+) -> float:
+    """Draw `table` downwards from `y`, breaking onto continuation pages
+    as needed, and return the y just under it.
+
+    `reserve` is room the last chunk must leave under itself on its page,
+    for whatever has to share that page with it. `pages` grows by one per
+    page break, for the page count.
+    """
+    remaining: Optional[Table] = table
+    # Whether the next attempt is happening on an otherwise empty page,
+    # which is what tells a "too full" failure apart from a "will never
+    # fit" one.
+    on_fresh_page = False
+    while remaining is not None:
+        available = y - floor
+        needed = remaining.wrap(CONTENT_WIDTH, PAGE_HEIGHT)[1]
+        if needed + reserve <= available:
+            remaining.drawOn(canvas, MARGIN, y - needed)
+            return y - needed
+
+        parts = remaining.split(CONTENT_WIDTH, available)
+        if len(parts) == 1 and reserve:
+            # The whole of it fits this page, but not with what has to
+            # follow it. Split so the tail and what follows share the
+            # next page, instead of drawing it whole over the reserve.
+            parts = remaining.split(CONTENT_WIDTH, available - reserve)
+        if len(parts) < 2:
+            # Cannot split into this space. Normally that means the page
+            # is too full, and a fresh one solves it.
+            #
+            # If we are *already* at the top of a fresh page, it does
+            # not: the content will not fit anywhere, and asking for
+            # another page would ask forever. Draw it and move on; an
+            # overrun on one invoice beats a request that never returns
+            # and holds a worker until it is killed.
+            if on_fresh_page:
+                remaining.drawOn(canvas, MARGIN, y - needed)
+                return y - needed
+            pages.append([])
+            canvas.showPage()
+            y = _draw_continuation_header(canvas, document, accent)
+            on_fresh_page = True
+            continue
+
+        head, tail = parts[0], parts[1]
+        head_height = head.wrap(CONTENT_WIDTH, PAGE_HEIGHT)[1]
+        head.drawOn(canvas, MARGIN, y - head_height)
+        pages.append([])
+        canvas.showPage()
+        y = _draw_continuation_header(canvas, document, accent)
+        remaining = tail
+        # The page the tail lands on carries only the continuation
+        # header, so it counts as fresh for the same reason.
+        on_fresh_page = True
+    return y
+
+
 def _draw_continuation_header(canvas, document: InvoiceDocument, accent) -> float:
     """A slim masthead for pages 2+.
 
@@ -494,7 +627,7 @@ def _draw_continuation_header(canvas, document: InvoiceDocument, accent) -> floa
     y = PAGE_HEIGHT - MARGIN
     canvas.setFont("Helvetica-Bold", 11)
     canvas.setFillColor(INK)
-    canvas.drawString(MARGIN, y - 4 * mm, document.labels["invoice"])
+    canvas.drawString(MARGIN, y - 4 * mm, _title(document))
     if document.number:
         canvas.setFont("Helvetica-Bold", 11)
         canvas.setFillColor(accent)

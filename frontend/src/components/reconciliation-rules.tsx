@@ -41,6 +41,7 @@ import type {
 } from '@/types'
 import { Plus, RotateCcw, Trash2, Zap, HelpCircle, ChevronUp, ChevronDown, Power, Download, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ACCOUNT_TYPE_CONFIG } from '@/lib/account-type-config'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 
 /** Names for the rules we ship. Kept here rather than sent by the API so
@@ -54,6 +55,9 @@ const SHIPPED_NAME: Record<string, string> = {
   same_client_several_invoices: 'reconciliation.rule.severalInvoices',
   similar_description: 'reconciliation.rule.similarDescription',
   same_account_exact: 'reconciliation.rule.sameAccountExact',
+  destination_named_in_description: 'reconciliation.rule.destinationNamed',
+  exact_amount_nearby: 'reconciliation.rule.exactAmountNearby',
+  close_amount_wider_window: 'reconciliation.rule.closeAmountWiderWindow',
 }
 
 /** What the file says it is. A categorization export dropped into the
@@ -62,13 +66,31 @@ const SHIPPED_NAME: Record<string, string> = {
 const POLICY_FORMAT = 'securo-reconciliation-rules'
 
 const NODE_TITLE: Record<string, string> = {
+  'reconciliation.match_transfer': 'reconciliation.node.transfers',
   'reconciliation.match_invoice': 'reconciliation.node.invoices',
   'reconciliation.match_recurring': 'reconciliation.node.recurring',
 }
 
 const NODE_HINT: Record<string, string> = {
+  'reconciliation.match_transfer': 'reconciliation.node.transfersHint',
   'reconciliation.match_invoice': 'reconciliation.node.invoicesHint',
   'reconciliation.match_recurring': 'reconciliation.node.recurringHint',
+}
+
+/** What each set is called when it is a card of its own, rather than a
+ *  strip inside one. A strip could lean on the heading above it for the
+ *  word *rules*; a card has to carry its own name, and it has to say
+ *  what it decides rather than which machinery decides it. */
+const CARD_TITLE: Record<string, string> = {
+  'reconciliation.match_transfer': 'reconciliation.card.transfers',
+  'reconciliation.match_invoice': 'reconciliation.card.invoices',
+  'reconciliation.match_recurring': 'reconciliation.card.recurring',
+}
+
+const CARD_HINT: Record<string, string> = {
+  'reconciliation.match_transfer': 'reconciliation.card.transfersHint',
+  'reconciliation.match_invoice': 'reconciliation.card.invoicesHint',
+  'reconciliation.match_recurring': 'reconciliation.card.recurringHint',
 }
 
 /** The whole order with two entries exchanged.
@@ -263,6 +285,17 @@ function conditionSummary(
 
   if (when.counterparty === 'same_payee') parts.push(t('reconciliation.cond.samePayee'))
   if (when.same_account) parts.push(t('reconciliation.cond.sameAccount'))
+  if (when.different_account) parts.push(t('reconciliation.cond.differentAccount'))
+  if (when.account_types?.length)
+    parts.push(
+      t('reconciliation.cond.accountTypes', {
+        kinds: when.account_types
+          .map((kind) => t(ACCOUNT_TYPE_CONFIG[kind]?.label ?? kind))
+          .join(', '),
+      }),
+    )
+  if (when.account_name_in_description)
+    parts.push(t('reconciliation.cond.accountNamed'))
 
   if (when.amount?.match === 'exact') parts.push(t('reconciliation.cond.amountExact'))
   else if (when.amount?.match === 'tolerance')
@@ -288,6 +321,12 @@ function conditionSummary(
     parts.push(
       t('reconciliation.cond.similarity', { min: when.description_similarity.min }),
     )
+
+  // Last, because both answer the same question and it is the one asked
+  // after everything else has already fitted: several candidates got
+  // this far, now what?
+  if (when.tie_break === 'closest_date') parts.push(t('reconciliation.cond.closestDate'))
+  if (when.unique_candidate) parts.push(t('reconciliation.cond.uniqueCandidate'))
 
   return parts.join(' · ') || t('reconciliation.cond.none')
 }
@@ -403,6 +442,28 @@ const EMPTY: ReconciliationConditions = {
   date: { before_days: 5, after_days: 30 },
 }
 
+const TRANSFER_NODE = 'reconciliation.match_transfer'
+
+/** What a brand new rule starts as, which is not the same in every set.
+ *
+ *  A transfer is by definition money crossing between two accounts, so a
+ *  rule written here without `different_account` is not a loose transfer
+ *  rule: it is one that would pair a debit and a credit sitting on the
+ *  *same* account, which is never a transfer and is sometimes a
+ *  correction. The window starts at the two days the shipped rules use
+ *  rather than the month an invoice is allowed, because a transfer that
+ *  takes a month did not happen. */
+function blankFor(node: string): ReconciliationConditions {
+  if (node !== TRANSFER_NODE) return EMPTY
+  return {
+    different_account: true,
+    amount: { match: 'exact' },
+    date: { before_days: 2, after_days: 2 },
+    tie_break: 'closest_date',
+    unique_candidate: true,
+  }
+}
+
 function RuleEditor({ open, node, rule, onClose }: EditorProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -419,8 +480,13 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
 
   const [name, setName] = useState(rule?.name ?? '')
   const [outcome, setOutcome] = useState<'link' | 'suggest'>(rule?.outcome ?? 'suggest')
-  const [trigger, setTrigger] = useState<Trigger>(rule?.trigger ?? 'money_arrives')
-  const [when, setWhen] = useState<ReconciliationConditions>(rule?.when ?? EMPTY)
+  // A transfer rule runs at any moment, because both its legs are money
+  // moving. Seeding a new one with 'both' keeps the field it cannot show
+  // from sending a value that would quietly narrow it.
+  const [trigger, setTrigger] = useState<Trigger>(
+    rule?.trigger ?? (node === TRANSFER_NODE ? 'both' : 'money_arrives'),
+  )
+  const [when, setWhen] = useState<ReconciliationConditions>(rule?.when ?? blankFor(node))
 
   // The dialog is mounted once and reused, so it has to be re-seeded
   // whenever it opens, and the seed has to be *forgotten* when it closes.
@@ -435,8 +501,8 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
     setSeeded(key)
     setName(rule?.name ?? '')
     setOutcome(rule?.outcome ?? 'suggest')
-    setTrigger(rule?.trigger ?? 'money_arrives')
-    setWhen(rule?.when ?? EMPTY)
+    setTrigger(rule?.trigger ?? (node === TRANSFER_NODE ? 'both' : 'money_arrives'))
+    setWhen(rule?.when ?? blankFor(node))
   }
 
   const save = useMutation({
@@ -504,7 +570,14 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                 />,
               )}
 
-            {field(
+            {/* Not for transfers. The two moments are *money arrived* and
+                *a document was written*, and a transfer has only the
+                first: both its legs are money moving, and there is no
+                document to look back from. Offering the choice would be
+                offering a radio button whose second option can never be
+                the right answer. */}
+            {node !== TRANSFER_NODE &&
+              field(
               t('reconciliation.field.trigger'),
               t('reconciliation.field.triggerHint'),
               <div className="space-y-1.5">
@@ -722,9 +795,93 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
           <Step
             index={3}
             title={t('reconciliation.step.match')}
-            hint={t('reconciliation.step.matchHint')}
+            hint={t(node === TRANSFER_NODE ? 'reconciliation.step.matchHintTransfer' : 'reconciliation.step.matchHint')}
           >
-            {field(
+            {/* The signals only a transfer has. Shown for this set alone
+                because they are meaningless anywhere else: an invoice has
+                no second account to be named by, and asking about credit
+                cards in the invoice editor would be a field that can
+                never do anything. */}
+            {node === TRANSFER_NODE &&
+              field(
+                t('reconciliation.field.transferSignals'),
+                t('reconciliation.field.transferSignalsHint'),
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!when.account_name_in_description}
+                      onChange={(e) =>
+                        setWhen({
+                          ...when,
+                          account_name_in_description: e.target.checked || undefined,
+                        })
+                      }
+                    />
+                    {t('reconciliation.cond.accountNamed')}
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={when.tie_break === 'closest_date'}
+                      onChange={(e) =>
+                        setWhen({
+                          ...when,
+                          tie_break: e.target.checked ? 'closest_date' : undefined,
+                        })
+                      }
+                    />
+                    {t('reconciliation.cond.closestDate')}
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!when.unique_candidate}
+                      onChange={(e) =>
+                        setWhen({
+                          ...when,
+                          unique_candidate: e.target.checked || undefined,
+                        })
+                      }
+                    />
+                    {t('reconciliation.cond.uniqueCandidate')}
+                  </label>
+                  <div className="pt-1">
+                    <p className="text-xs text-muted-foreground mb-1">
+                      {t('reconciliation.field.accountTypes')}
+                    </p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {(Object.keys(ACCOUNT_TYPE_CONFIG) as (keyof typeof ACCOUNT_TYPE_CONFIG)[]).map(
+                        (kind) => (
+                          <label
+                            key={kind}
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!when.account_types?.includes(kind as never)}
+                              onChange={(e) => {
+                                const current = when.account_types ?? []
+                                const next = e.target.checked
+                                  ? [...current, kind as never]
+                                  : current.filter((item) => item !== kind)
+                                setWhen({
+                                  ...when,
+                                  account_types: next.length ? next : undefined,
+                                })
+                              }}
+                            />
+                            {t(ACCOUNT_TYPE_CONFIG[kind].label)}
+                          </label>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                </div>,
+              )}
+
+            {node !== TRANSFER_NODE &&
+              field(
               t('reconciliation.field.counterparty'),
               null,
               <select
@@ -741,7 +898,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
 
             {field(
               t('reconciliation.field.amountMatch'),
-              t('reconciliation.field.amountMatchHint'),
+              t(node === TRANSFER_NODE ? 'reconciliation.field.amountMatchHintTransfer' : 'reconciliation.field.amountMatchHint'),
               <>
                 <div className="flex gap-2">
                   <select
@@ -883,7 +1040,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
 
             {field(
               t('reconciliation.field.window'),
-              t('reconciliation.field.windowHint'),
+              t(node === TRANSFER_NODE ? 'reconciliation.field.windowHintTransfer' : 'reconciliation.field.windowHint'),
               <div className="flex gap-2">
                 <div className="flex-1">
                   <span className="text-xs text-muted-foreground">
@@ -980,8 +1137,13 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
   const [pending, setPending] = useState<{
     file: ReconciliationPolicyFile
     name: string
+    /** Which card the file was dropped on. The import is scoped to it,
+     *  so a file carrying every set cannot rewrite the invoice rules
+     *  from a button sitting under *Transfers*. */
+    node: string
   } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const importTarget = useRef<string | null>(null)
 
   const { data: nodes } = useQuery<ReconciliationNode[]>({
     queryKey: ['reconciliation-rules'],
@@ -1039,14 +1201,14 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
   })
 
   const exporting = useMutation({
-    mutationFn: () => reconciliationApi.exportRules(),
+    mutationFn: (node: string) => reconciliationApi.exportRules(node),
     onSuccess: () => toast.success(t('reconciliation.exported')),
     onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
   const importing = useMutation({
-    mutationFn: (file: ReconciliationPolicyFile) =>
-      reconciliationApi.importRules(file, true),
+    mutationFn: ({ file, node }: { file: ReconciliationPolicyFile; node: string }) =>
+      reconciliationApi.importRules(file, true, node),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['reconciliation-rules'] })
       setPending(null)
@@ -1064,7 +1226,11 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
         toast.error(t('reconciliation.invalidImportFile'))
         return
       }
-      setPending({ file: parsed, name: file.name })
+      setPending({
+        file: parsed,
+        name: file.name,
+        node: importTarget.current ?? '',
+      })
     } catch {
       toast.error(t('reconciliation.invalidImportFile'))
     }
@@ -1072,125 +1238,85 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
 
   if (!nodes) return null
 
-  // One set is the shape today, and the card is laid out for it: no strip
-  // naming a list the card already names, and adding lives in the header.
-  const single = nodes.length === 1 ? nodes[0] : null
-
-  // Nothing here is live for this workspace. A card of rules that cannot
-  // act on anything, under a heading saying so, is furniture, and while
-  // there were two sets one of them was always live, which is why the
-  // page could carry the honest label instead.
+  // Nothing here is live for this workspace.
   if (!nodes.some((group) => group.active)) return null
 
   return (
     <>
-      {/* One card for matching, not one per set. The two sets are real:
-          separate ordered lists, matched against different kinds of
-          promise, but a whole card each, with its own frame, heading and
-          button, is a lot of furniture for a list that is often one rule
-          long. They are sections of the same thing. */}
-      <SectionCard>
-        <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <p className="text-sm font-semibold text-foreground">
-              {t('reconciliation.matchingTitle')}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {t('reconciliation.matchingHint')}
-            </p>
-          </div>
-          {/* A policy is worth more than one workspace. Somebody who has
-              worked out how their clients' banks actually behave should
-              be able to hand that to the next machine without retyping
-              eleven thresholds. */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 h-8"
-              onClick={() => exporting.mutate()}
-              disabled={exporting.isPending}
-            >
-              <Download size={12} />
-              <span className="hidden sm:inline">{t('rules.export')}</span>
-            </Button>
-            {canWrite && single && (
-              // With one set, the card is the list, and adding belongs
-              // where the list is named; the same place, shape and word
-              // as on the categorization card above.
+      {/* **One card per set, not one card for matching.**
+       *
+       *  This was one card with the sets as muted strips inside it, under
+       *  a heading that said *reconciliation*. It failed the first time
+       *  somebody went looking: they scanned the page for transfer rules,
+       *  found a card about reconciliation, and stopped. The question
+       *  they asked next is the one that settles it: *is a transfer a
+       *  reconciliation?* Nobody should have to decide that to find a
+       *  switch.
+       *
+       *  So each set is named for what it decides and carries its own
+       *  frame, its own button and its own file. Transfers first, because
+       *  it is the set every workspace has. */}
+      {nodes.map((group) => (
+        <SectionCard key={group.node}>
+          <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                {t(CARD_TITLE[group.node] ?? NODE_TITLE[group.node] ?? group.node)}
+                {!group.active && (
+                  <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
+                    {t('reconciliation.node.inactive')}
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t(CARD_HINT[group.node] ?? NODE_HINT[group.node] ?? '')}
+              </p>
+            </div>
+            {/* A policy is worth more than one workspace. Somebody who has
+                worked out how their banks actually behave should be able
+                to hand that to the next machine without retyping eleven
+                thresholds. Scoped to this set, so the file says what the
+                heading above it says. */}
+            <div className="flex items-center gap-1.5 shrink-0">
               <Button
                 size="sm"
-                className="gap-1.5 h-8 order-last"
-                onClick={() => setEditing({ node: single.node, rule: null })}
+                variant="outline"
+                className="gap-1.5 h-8"
+                onClick={() => exporting.mutate(group.node)}
+                disabled={exporting.isPending}
               >
-                <Plus size={13} />
-                <span className="hidden sm:inline">{t('rules.add')}</span>
+                <Download size={12} />
+                <span className="hidden sm:inline">{t('rules.export')}</span>
               </Button>
-            )}
-            {canWrite && (
-              <>
+              {canWrite && (
                 <Button
                   size="sm"
                   variant="outline"
                   className="gap-1.5 h-8"
-                  onClick={() => fileInput.current?.click()}
+                  onClick={() => {
+                    importTarget.current = group.node
+                    fileInput.current?.click()
+                  }}
                   disabled={importing.isPending}
                 >
                   <Upload size={12} />
                   <span className="hidden sm:inline">{t('rules.import')}</span>
                 </Button>
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  data-testid="reconciliation-import-input"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    if (file) void readFile(file)
-                    event.target.value = ''
-                  }}
-                />
-              </>
-            )}
-          </div>
-        </div>
-
-      {nodes.map((group) => (
-        <div key={group.node}>
-          {/* Only when there is more than one set to tell apart. A strip
-              naming the single list that follows it, inside a card that
-              already names it, is a heading for a heading. */}
-          {!single && (
-          <div className="px-4 sm:px-5 py-2 bg-muted/40 border-b border-border flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-            <p className="text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">
-                {t(NODE_TITLE[group.node] ?? group.node)}
-              </span>
-              <span className="mx-1.5">·</span>
-              {t(NODE_HINT[group.node] ?? '')}
-              {!group.active && (
-                <span className="ml-2 text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
-                  {t('reconciliation.node.inactive')}
-                </span>
               )}
-            </p>
-            {canWrite && (
-              // The same word as the list above, from the same key. Two
-              // names for one act made two lists of rules read as two
-              // features that happen to sit near each other.
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 h-8"
-                onClick={() => setEditing({ node: group.node, rule: null })}
-              >
-                <Plus size={13} />
-                <span className="hidden sm:inline">{t('rules.add')}</span>
-              </Button>
-            )}
+              {canWrite && (
+                // Last and solid, the same place, shape and word as on
+                // the categorization card above.
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => setEditing({ node: group.node, rule: null })}
+                >
+                  <Plus size={13} />
+                  <span className="hidden sm:inline">{t('rules.add')}</span>
+                </Button>
+              )}
+            </div>
           </div>
-          )}
 
           <div className="divide-y divide-border">
             {group.rules.map((rule, index) => (
@@ -1359,9 +1485,24 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
               ))}
             </div>
           )}
-        </div>
+        </SectionCard>
       ))}
-      </SectionCard>
+
+      {/* One input for every card. Which card asked is held on a ref set
+          just before the click, because the file dialog is the browser's
+          and carries nothing of ours back. */}
+      <input
+        ref={fileInput}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        data-testid="reconciliation-import-input"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) void readFile(file)
+          event.target.value = ''
+        }}
+      />
 
       <DeleteConfirmationDialog
         open={deleting !== null}
@@ -1413,7 +1554,9 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
             <Button
               type="button"
               variant="destructive"
-              onClick={() => { if (pending) importing.mutate(pending.file) }}
+              onClick={() => {
+                if (pending) importing.mutate({ file: pending.file, node: pending.node })
+              }}
               disabled={!pending || importing.isPending}
             >
               {t('rules.confirmOverwriteImport')}

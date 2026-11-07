@@ -1,5 +1,79 @@
+import type { Account } from '@/types'
+
 export function getAccountName(account: { name: string; display_name?: string | null }): string {
   return account.display_name ?? account.name
+}
+
+/**
+ * Total of the accounts' primary-currency balances. Cards on one shared credit
+ * line each report the whole line's balance, so each `shared_balance_group`
+ * counts once, the same way the backend totals it.
+ */
+export function sumAccountBalances(
+  accounts: readonly Pick<Account, 'balance_primary' | 'current_balance' | 'shared_balance_group'>[],
+): number {
+  const seenGroups = new Set<string>()
+  return accounts.reduce((sum, a) => {
+    if (a.shared_balance_group) {
+      if (seenGroups.has(a.shared_balance_group)) return sum
+      seenGroups.add(a.shared_balance_group)
+    }
+    return sum + Number(a.balance_primary ?? a.current_balance)
+  }, 0)
+}
+
+/**
+ * The accounts the sidebar lists. Loans and financing are long-term debt, not
+ * money to move day to day: they live on the Accounts page and in net worth.
+ */
+export function sidebarAccounts<T extends Pick<Account, 'type'>>(accounts: readonly T[]): T[] {
+  return accounts.filter((account) => account.type !== 'loan')
+}
+
+/**
+ * The number a sidebar account row shows.
+ *
+ * Every card on one shared credit line repeats the contract-wide balance, so
+ * the row for such a card leads with its own open bill (the one due today or
+ * later) instead; the "shared" label next to the name still identifies the
+ * line. Without an open bill, and for every other account, the balance stands.
+ * The returned amount is signed like a balance: money owed is negative.
+ */
+export function sidebarAccountBalance(
+  account: Pick<
+    Account,
+    | 'type'
+    | 'shared_balance_group'
+    | 'balance_primary'
+    | 'current_balance'
+    | 'open_bill_total'
+    | 'open_bill_total_primary'
+  >,
+): { amount: number; isPrimary: boolean } {
+  const sharedCard =
+    account.type === 'credit_card' && account.shared_balance_group != null
+  if (sharedCard && account.open_bill_total != null) {
+    const raw = account.open_bill_total_primary ?? account.open_bill_total
+    // A bill is an amount to pay, so the row shows it as debt.
+    return {
+      amount: -Number(raw) || 0,
+      isPrimary: account.open_bill_total_primary != null,
+    }
+  }
+  return {
+    amount: Number(account.balance_primary ?? account.current_balance) || 0,
+    isPrimary: account.balance_primary != null,
+  }
+}
+
+/**
+ * The accounts total the sidebar shows. Loans are long-term debt that the
+ * net worth already counts, so they stay out of this money-on-hand total.
+ */
+export function sumAccountsTotal(
+  accounts: readonly Pick<Account, 'type' | 'balance_primary' | 'current_balance' | 'shared_balance_group'>[],
+): number {
+  return sumAccountBalances(accounts.filter((account) => account.type !== 'loan'))
 }
 
 /**
@@ -15,6 +89,25 @@ export function sortAccountsByDisplayName<
       sensitivity: 'base',
     }),
   )
+}
+
+/**
+ * Return a presentation-only copy with the largest account balances first.
+ * Debt accounts participate by magnitude, matching the balance list in the
+ * sidebar, while invalid/missing balances sort as zero.
+ * Pass a selector to compare multi-currency accounts in a common currency.
+ */
+export function sortAccountsByAbsoluteBalance<
+  T extends { current_balance?: number | string | null },
+>(
+  accounts: readonly T[],
+  getBalance: (account: T) => number | string | null | undefined = (account) => account.current_balance,
+): T[] {
+  return [...accounts].sort((left, right) => {
+    const leftBalance = Number(getBalance(left)) || 0
+    const rightBalance = Number(getBalance(right)) || 0
+    return Math.abs(rightBalance) - Math.abs(leftBalance)
+  })
 }
 
 /**

@@ -486,7 +486,7 @@ function MobileFilterDetail({
     return <MobileSelectionView options={[allOption, ...menu.groups.map(({ id, name }) => ({ value: id, label: name }))]} selectedValue={menu.groupId} onChange={menu.onGroupIdChange} />
   }
   if (menu.view === 'type') {
-    const options = [allOption, { value: 'credit', label: t('transactions.income') }, { value: 'debit', label: t('transactions.expense') }]
+    const options = [allOption, { value: 'credit', label: t('transactions.income') }, { value: 'debit', label: t('transactions.expense') }, { value: 'transfer', label: t('transactions.transfer') }]
     return <MobileSelectionView options={options} selectedValue={menu.type} onChange={menu.onTypeChange} />
   }
   if (menu.view === 'status') {

@@ -1,7 +1,6 @@
 import json
 import logging
 import uuid
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
@@ -38,7 +37,6 @@ from app.schemas.asset import (
     MarketSymbolQuote,
 )
 from app.services import asset_import_service, asset_service, asset_transaction_service
-from app.services.fx_rate_service import convert
 
 logger = logging.getLogger(__name__)
 
@@ -156,18 +154,13 @@ async def refresh_asset_price(
 
     # Stamp the primary-currency fields so the refresh response has the same
     # shape as the list endpoint — the React Query cache update needs them
-    # to keep the row rendering consistent (BRL rollup, gain/loss).
+    # to keep the row rendering consistent (BRL rollup, gain/loss). When no
+    # FX rate can be resolved the fields stay NULL: the UI then shows the
+    # native value flagged as unconverted instead of a fake 1:1 number
+    # (issue #574).
     primary_currency = ctx.user.primary_currency
-    if refreshed.currency != primary_currency and refreshed.current_value is not None:
-        converted, _ = await convert(
-            session, Decimal(str(refreshed.current_value)), refreshed.currency, primary_currency,
-        )
-        refreshed.current_value_primary = float(converted)
-        if refreshed.gain_loss is not None:
-            gl_converted, _ = await convert(
-                session, Decimal(str(refreshed.gain_loss)), refreshed.currency, primary_currency,
-            )
-            refreshed.gain_loss_primary = float(gl_converted)
+    if refreshed.currency != primary_currency:
+        await asset_service.stamp_primary_values(session, refreshed, primary_currency)
     return refreshed
 
 
@@ -179,17 +172,16 @@ async def list_assets(
 ):
     assets = await asset_service.get_assets(session, ctx.workspace.id, include_archived=include_archived)
     primary_currency = ctx.user.primary_currency
+    rates: dict = {}
     for asset in assets:
-        if asset.currency != primary_currency and asset.current_value is not None:
-            converted, _ = await convert(
-                session, Decimal(str(asset.current_value)), asset.currency, primary_currency,
+        # stamp_primary_values leaves current_value_primary NULL when no FX rate
+        # can be resolved, instead of stamping a fake 1:1 value. The UI
+        # shows the native amount flagged as unconverted and keeps it out
+        # of primary-currency totals (issue #574).
+        if asset.currency != primary_currency:
+            await asset_service.stamp_primary_values(
+                session, asset, primary_currency, rates
             )
-            asset.current_value_primary = float(converted)
-            if asset.gain_loss is not None:
-                gl_converted, _ = await convert(
-                    session, Decimal(str(asset.gain_loss)), asset.currency, primary_currency,
-                )
-                asset.gain_loss_primary = float(gl_converted)
     return assets
 
 

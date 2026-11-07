@@ -1,6 +1,6 @@
 [project]
 name = "securo-backend"
-version = "0.16.0"
+version = "0.18.0"
 description = "Securo API - Personal Finance Manager"
 requires-python = ">=3.11"
 # These ranges express intent; the resolved versions live in uv.lock, which is
@@ -11,7 +11,7 @@ dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
     "sqlalchemy>=2.0.0",
-    "alembic>=1.13.0",
+    "alembic>=1.17.1",
     "asyncpg>=0.29.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.5.0",
@@ -46,6 +46,8 @@ dependencies = [
     # agents feature pay zero cost (the package is installed but never
     # imported).
     "fastembed>=0.4.0",
+    # Resolve the host's IANA timezone when no app setting or TZ override exists.
+    "tzlocal>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -63,18 +65,26 @@ dev = [
     # Upper-bounded so CI lint stays deterministic: ruff 0.16 reformats the
     # historical alembic/ migration import blocks. Bump deliberately (with the
     # accompanying reformat) rather than letting CI float to a newer release.
-    "ruff>=0.16.4,<0.17",
+    "ruff>=0.17,<0.18",
     # Pinned exactly, for the same reason as ruff above: ty is pre-1.0 and each
     # 0.0.x release can add new checks, so letting it float would turn a green
     # CI red on an unrelated PR. Bump deliberately, together with whatever
     # annotations the new release asks for.
-    "ty==0.0.81",
+    "ty==0.0.86",
 ]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+# Ship the category taxonomy in wheels/non-editable installs; without this it
+# only exists in editable (-e) installs and the backend crashes at import.
+app = ["data/*.json"]
+
 [tool.pytest.ini_options]
+# Fail on configuration/marker typos, duplicate parameter IDs and unexpected
+# xfail passes instead of silently weakening the suite.
+strict = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
@@ -99,6 +109,9 @@ omit = [
 # Match ruff's target-version: check against the oldest Python we support, so a
 # 3.12+-only construct is caught here rather than by a self-hoster on 3.11.
 python-version = "3.11"
+
+[tool.ty.rules]
+unused-ignore-comment = "error"
 
 [tool.ruff]
 line-length = 100

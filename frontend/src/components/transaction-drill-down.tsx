@@ -5,8 +5,11 @@ import { useQuery } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
 import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
+import { TransactionCategoryIcon } from '@/components/category-lines-display'
+import { isSplitByCategory } from '@/lib/category-lines'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { sumDrillDownTotals } from '@/lib/drill-down-totals'
+import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -40,6 +43,8 @@ type DisplayItem = {
   isPending: boolean
   attachmentCount: number
   transaction: Transaction | null
+  /** Full amount of a split row when only one of its parts is listed. */
+  partOf: number | null
 }
 
 export function TransactionDrillDown({
@@ -97,31 +102,95 @@ export function TransactionDrillDown({
     const items: DisplayItem[] = []
 
     for (const tx of data?.items ?? []) {
+      // A split row listed under one category counts only its part there,
+      // the same share the report it was opened from counted.
+      const isPart = tx.matched_amount != null
+      const matchedLine = isPart
+        ? tx.category_lines?.find((line) => line.category_id === filter?.category_id)
+        : undefined
       items.push({
         key: tx.id,
         description: tx.description,
         date: tx.date,
         type: tx.type as 'debit' | 'credit',
-        amount: Number(tx.amount),
-        amountPrimary: tx.amount_primary != null ? Number(tx.amount_primary) : null,
+        amount: isPart ? Number(tx.matched_amount) : Number(tx.amount),
+        amountPrimary: isPart
+          ? tx.matched_amount_primary != null ? Number(tx.matched_amount_primary) : null
+          : tx.amount_primary != null ? Number(tx.amount_primary) : null,
         currency: tx.currency,
-        categoryIcon: tx.category?.icon ?? null,
-        categoryName: tx.category?.name ?? null,
-        categoryColor: tx.category?.color ?? null,
+        categoryIcon: (matchedLine?.category ?? tx.category)?.icon ?? null,
+        categoryName: (matchedLine?.category ?? tx.category)?.name ?? null,
+        categoryColor: (matchedLine?.category ?? tx.category)?.color ?? null,
         isProjected: false,
         isPending: tx.status === 'pending',
         attachmentCount: tx.attachment_count ?? 0,
         transaction: tx,
+        partOf: isPart ? Math.abs(Number(tx.amount)) : null,
       })
     }
 
     for (const pt of projectedTxs ?? []) {
       // Filter projected txs by drill-down criteria
       if (filter?.type && pt.type !== filter.type) continue
-      if (filter?.category_id && String(pt.category_id) !== filter.category_id) continue
-      if (filter?.uncategorized && pt.category_id != null) continue
+      // A split template counts in a category through its part there.
+      const parts = pt.has_category_lines ? pt.category_lines ?? [] : []
+      // Every part ignored: the template counts nowhere, so it lists nowhere.
+      if (pt.has_category_lines && !parts.length) continue
+      const matchedParts = filter?.category_id
+        ? parts.filter((part) => part.category_id === filter.category_id)
+        : []
+      if (filter?.category_id && !matchedParts.length && String(pt.category_id) !== filter.category_id) continue
+      if (filter?.uncategorized && (pt.category_id != null || parts.length)) continue
       if (filter?.from && pt.date < filter.from) continue
       if (filter?.to && pt.date > filter.to) continue
+      if (!filter?.category_id && parts.length) {
+        // Income and expense views count only the parts that are income or
+        // expense, as the projected totals do.
+        const counted = parts.filter((part) => !part.treat_as_transfer)
+        const share = counted.reduce((sum, part) => sum + part.amount, 0)
+        if (!share) continue
+        const ratio = pt.amount ? share / Math.abs(pt.amount) : 0
+        items.push({
+          key: `proj-${pt.recurring_id}-${pt.date}`,
+          description: pt.description,
+          date: pt.date,
+          type: pt.type,
+          amount: share,
+          amountPrimary: pt.amount_primary != null ? pt.amount_primary * ratio : null,
+          currency: pt.currency,
+          categoryIcon: null,
+          categoryName: null,
+          categoryColor: null,
+          isProjected: true,
+          isPending: false,
+          attachmentCount: 0,
+          partOf: share !== Math.abs(pt.amount) ? Math.abs(pt.amount) : null,
+          transaction: null,
+        })
+        continue
+      }
+      if (matchedParts.length) {
+        const share = matchedParts.reduce((sum, part) => sum + part.amount, 0)
+        const ratio = pt.amount ? share / Math.abs(pt.amount) : 0
+        items.push({
+          key: `proj-${pt.recurring_id}-${pt.date}`,
+          description: pt.description,
+          date: pt.date,
+          type: pt.type,
+          amount: share,
+          amountPrimary: pt.amount_primary != null ? pt.amount_primary * ratio : null,
+          currency: pt.currency,
+          categoryIcon: matchedParts[0].category_icon,
+          categoryName: matchedParts[0].category_name,
+          categoryColor: matchedParts[0].category_color,
+          isProjected: true,
+          isPending: false,
+          attachmentCount: 0,
+          partOf: Math.abs(pt.amount),
+          transaction: null,
+        })
+        continue
+      }
 
       items.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,
@@ -137,6 +206,7 @@ export function TransactionDrillDown({
         isProjected: true,
         isPending: false,
         attachmentCount: 0,
+        partOf: null,
         transaction: null,
       })
     }
@@ -145,23 +215,27 @@ export function TransactionDrillDown({
     return items
   }, [data, projectedTxs, filter])
 
-  // Close on Escape
+  // Close on Escape, unless the key belongs to a dialog opened from the
+  // panel (Radix marks the Escape it handled as defaultPrevented).
   useEffect(() => {
     if (!filter) return
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape' || e.defaultPrevented || hasOpenDialog()) return
+      onClose()
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
   }, [filter, onClose])
 
-  // Close on click outside
+  // Close on click outside. The transaction dialog opened from a row, and its
+  // popovers and selects, are portaled to the body; clicks there keep the
+  // panel open so the next row can be edited once the dialog closes.
   useEffect(() => {
     if (!filter) return
     const handleClick = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose()
-      }
+      if (!panelRef.current || panelRef.current.contains(e.target as Node)) return
+      if (isInsideOverlayLayer(e.target) || hasOpenDialog()) return
+      onClose()
     }
     // Delay to avoid closing immediately from the click that opened it
     const timer = setTimeout(() => {
@@ -247,11 +321,15 @@ export function TransactionDrillDown({
                     }
                   }}
                 >
-                  <CategoryIcon
-                    icon={item.categoryIcon}
-                    color={item.categoryColor}
-                    size="lg"
-                  />
+                  {item.transaction && isSplitByCategory(item.transaction) && item.partOf == null ? (
+                    <TransactionCategoryIcon tx={item.transaction} size="lg" />
+                  ) : (
+                    <CategoryIcon
+                      icon={item.categoryIcon}
+                      color={item.categoryColor}
+                      size="lg"
+                    />
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
@@ -275,6 +353,9 @@ export function TransactionDrillDown({
                     <p className="text-xs text-muted-foreground">
                       {new Date(item.date + 'T00:00:00').toLocaleDateString(dateLocale)}
                       {item.categoryName && ` · ${item.categoryName}`}
+                      {item.partOf != null && ` · ${t('categoryLines.partOf', {
+                        value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
+                      })}`}
                     </p>
                   </div>
                   <div className="text-right shrink-0">

@@ -5,11 +5,13 @@ from decimal import Decimal
 from typing import Any, Optional, cast
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import Asset
+from app.core.app_clock import app_today
+from app.models.account import Account
+from app.models.asset import ASSET_PRICE_DECIMALS, LOAN_COLLATERAL_TYPES, Asset
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.user import User
@@ -20,7 +22,8 @@ from app.providers.market_price import (
     get_market_price_provider,
 )
 from app.schemas.asset import AssetCreate, AssetUpdate, AssetValueCreate, AssetRead, AssetValueRead
-from app.services.fx_rate_service import convert, stamp_primary_amount
+from app.services.asset_group_service import ensure_group_in_workspace
+from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +46,8 @@ def _next_due_date(last_date: date, frequency: str) -> date:
         day = min(last_date.day, 28)
         return date(year, month, day)
     elif frequency == "yearly":
-        return date(last_date.year + 1, last_date.month, last_date.day)
+        day = min(last_date.day, 28) if last_date.month == 2 else last_date.day
+        return date(last_date.year + 1, last_date.month, day)
     return last_date + timedelta(days=1)
 
 
@@ -79,7 +83,7 @@ def _generate_growth_values(
     When growth_start_date is set, growth iteration begins from that date — not
     from base_date — so the asset accrues no growth for the gap between
     purchase and the configured growth start."""
-    today = date.today()
+    today = app_today()
     if growth_start_date and today < growth_start_date:
         return []
 
@@ -396,6 +400,53 @@ async def get_assets(
     return reads
 
 
+async def stamp_primary_values(
+    session: AsyncSession,
+    asset: AssetRead,
+    primary_currency: str,
+    rates: Optional[dict[str, Optional[Decimal]]] = None,
+) -> None:
+    """Fill ``current_value_primary`` and ``gain_loss_primary`` in place.
+
+    When no FX rate can be resolved both stay NULL instead of a fake 1:1
+    value, so primary-currency totals never silently sum raw foreign
+    amounts (issue #574). An asset already in ``primary_currency`` gets its
+    native amounts copied across; callers that reserve NULL for "same
+    currency" skip those assets before calling.
+
+    List callers pass one ``rates`` dict for the whole request. It keeps
+    the rate resolved for each currency, a missing one included, so a
+    currency with no rate today costs one on-demand provider fetch per
+    request instead of one per asset.
+    """
+    if asset.current_value is None:
+        return
+    if asset.currency == primary_currency:
+        asset.current_value_primary = asset.current_value
+        asset.gain_loss_primary = asset.gain_loss
+        return
+    if rates is not None and asset.currency in rates:
+        rate = rates[asset.currency]
+    else:
+        # Resolving the rate for one unit keeps it unrounded, so both
+        # amounts below round exactly as convert_or_none would.
+        _, rate = await convert_or_none(
+            session, Decimal("1"), asset.currency, primary_currency
+        )
+        if rates is not None:
+            rates[asset.currency] = rate
+    if rate is None:
+        return
+    quantum = Decimal(1).scaleb(-ASSET_PRICE_DECIMALS)
+    asset.current_value_primary = float(
+        (Decimal(str(asset.current_value)) * rate).quantize(quantum)
+    )
+    if asset.gain_loss is not None:
+        asset.gain_loss_primary = float(
+            (Decimal(str(asset.gain_loss)) * rate).quantize(quantum)
+        )
+
+
 async def get_asset(
     session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[AssetRead]:
@@ -425,6 +476,7 @@ async def create_asset(
     market_provider: Optional[MarketPriceProvider] = None,
 ) -> AssetRead:
     """Create an asset, optionally with an initial value."""
+    await ensure_group_in_workspace(session, data.group_id, workspace_id)
     # Market-priced path: fetch a live quote first so we can derive currency
     # and the initial value from the ticker. Validate up-front rather than
     # half-creating an asset and failing on a 5xx from Yahoo.
@@ -528,7 +580,7 @@ async def create_asset(
                 asset_id=asset.id,
                 amount=initial_amount,
                 price=Decimal(str(quote.price)),
-                date=date.today(),
+                date=app_today(),
                 source="sync",
             )
         )
@@ -539,13 +591,13 @@ async def create_asset(
         value = AssetValue(
             asset_id=asset.id,
             amount=data.current_value,
-            date=date.today(),
+            date=app_today(),
             source="manual",
         )
         session.add(value)
     elif data.valuation_method == "growth_rule" and data.purchase_price is not None:
         # Seed the initial value from purchase price
-        base_date = data.purchase_date or data.growth_start_date or date.today()
+        base_date = data.purchase_date or data.growth_start_date or app_today()
         seed = AssetValue(
             asset_id=asset.id,
             amount=data.purchase_price,
@@ -592,7 +644,7 @@ async def create_asset(
                 quantity=Decimal(str(data.units)),
                 price=buy_price,
                 fee=Decimal("0"),
-                date=data.purchase_date or date.today(),
+                date=data.purchase_date or app_today(),
                 source="manual",
             )
         )
@@ -619,6 +671,17 @@ async def create_asset(
     return _asset_to_read(asset, latest, count, tx_count or 0)
 
 
+# Fields a ledger-backed holding derives from its transactions (see
+# asset_transaction_service.recompute_and_cache); an asset update ignores them.
+_LEDGER_DERIVED_FIELDS = (
+    "units",
+    "purchase_price",
+    "purchase_date",
+    "sell_date",
+    "sell_price",
+)
+
+
 async def update_asset(
     session: AsyncSession,
     asset_id: uuid.UUID,
@@ -636,10 +699,38 @@ async def update_asset(
         return None
 
     update_data = data.model_dump(exclude_unset=True)
+    if "group_id" in update_data:
+        await ensure_group_in_workspace(session, update_data["group_id"], workspace_id)
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
+    # Stored uppercase, as on create, so the ledger's ticker filter (which
+    # compares against the uppercased input) keeps matching after an edit.
+    if update_data.get("ticker"):
+        update_data["ticker"] = update_data["ticker"].upper()
+
+    tx_count = await session.scalar(
+        select(func.count()).select_from(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
+    ) or 0
+    # Ledger-backed holdings derive their position (units, cost basis, buy and
+    # sell dates) from the transactions ledger. Editing the holding itself
+    # (e.g. renaming it) must never overwrite those cached values, or the cost
+    # basis is lost and the holding looks like it has no buys (issue #965).
+    is_ledger = asset.average_price is not None or tx_count > 0
+    if is_ledger:
+        for key in _LEDGER_DERIVED_FIELDS:
+            update_data.pop(key, None)
+
     for key, value in update_data.items():
         setattr(asset, key, value)
+
+    # Only a property or a vehicle can secure a loan, so an asset that changes
+    # to another type releases its loans instead of leaving them linked to it.
+    if asset.type not in LOAN_COLLATERAL_TYPES:
+        await session.execute(
+            sa_update(Account)
+            .where(Account.secured_asset_id == asset.id)
+            .values(secured_asset_id=None)
+        )
 
     # Regenerate growth-rule values if requested
     if regenerate_growth and asset.valuation_method == "growth_rule":
@@ -657,7 +748,7 @@ async def update_asset(
         )
         # Regenerate from purchase_price
         if asset.purchase_price and asset.growth_type and asset.growth_rate and asset.growth_frequency:
-            base_date = asset.purchase_date or asset.growth_start_date or date.today()
+            base_date = asset.purchase_date or asset.growth_start_date or app_today()
             backfill = _generate_growth_values(
                 asset_id=asset.id,
                 base_amount=float(asset.purchase_price),
@@ -699,7 +790,7 @@ async def update_asset(
     await session.refresh(asset)
     latest = await _get_latest_value(session, asset.id)
     count = await _get_value_count(session, asset.id)
-    return _asset_to_read(asset, latest, count)
+    return _asset_to_read(asset, latest, count, tx_count)
 
 
 async def delete_asset(
@@ -851,6 +942,24 @@ async def get_portfolio_trend(
     user = await session.get(User, user_id) if user_id is not None else None
     primary_currency = user.primary_currency if user else get_settings().default_currency
 
+    # Assets whose currency has no resolvable FX rate cannot be expressed in
+    # the primary currency. Excluding them keeps the chart's total honest
+    # instead of summing raw foreign amounts at a fake 1:1 rate (issue
+    # #574); the holdings table still shows them in their original currency
+    # flagged as unconverted.
+    # One lookup per distinct currency: a missing rate can trigger a
+    # provider sync, which must not repeat for every asset in it.
+    convertible_currencies = {primary_currency}
+    for currency in {asset.currency for asset in active_assets} - {primary_currency}:
+        if await has_rate(session, currency, primary_currency):
+            convertible_currencies.add(currency)
+    convertible_assets = [
+        asset for asset in active_assets if asset.currency in convertible_currencies
+    ]
+    if not convertible_assets:
+        return {"assets": [], "trend": [], "total": 0.0}
+    active_assets = convertible_assets
+
     values_map = await _load_asset_native_values(session, active_assets)
 
     asset_meta: list[dict[str, Any]] = []
@@ -908,7 +1017,7 @@ async def get_portfolio_trend(
 
     for d in sorted_dates:
         row: dict[str, object] = {"date": d.isoformat()}
-        date_total = 0.0
+        date_total = Decimal("0")
         for aid in [a["id"] for a in asset_meta]:
             if d in value_lookup[aid]:
                 last_known[aid] = value_lookup[aid][d]
@@ -927,15 +1036,18 @@ async def get_portfolio_trend(
             currency = asset_currency[aid]
             if native != 0.0 and currency != primary_currency:
                 converted, _ = await convert(
-                    session, Decimal(str(native)), currency, primary_currency, d
+                    session, Decimal(str(native)), currency, primary_currency, d,
+                    decimals=ASSET_PRICE_DECIMALS,
                 )
-                val = round(float(converted), 2)
+                val = converted
             else:
-                val = round(native, 2)
+                val = Decimal(str(native))
 
-            row[aid] = val
+            # Each series point is shown in monetary decimals, but the total
+            # sums the unrounded values so sub-cent holdings still add up.
+            row[aid] = round(float(val), 2)
             date_total += val
-        row["_total"] = round(date_total, 2)
+        row["_total"] = float(date_total.quantize(Decimal("0.01")))
         trend.append(row)
 
     # The header total matches the last row's _total — both use the same
@@ -1003,7 +1115,8 @@ async def get_asset_values_at(
 
         if primary_currency is not None:
             converted, _ = await convert(
-                session, Decimal(str(amount)), asset.currency, primary_currency, as_of_date
+                session, Decimal(str(amount)), asset.currency, primary_currency, as_of_date,
+                decimals=ASSET_PRICE_DECIMALS,
             )
             primary_total += float(converted)
 
@@ -1031,7 +1144,7 @@ async def _apply_price_to_asset(
     if not asset.units or asset.units <= 0:
         return
 
-    today = value_date or date.today()
+    today = value_date or app_today()
     new_amount = new_price * Decimal(str(asset.units))
     existing = await session.execute(
         select(AssetValue)

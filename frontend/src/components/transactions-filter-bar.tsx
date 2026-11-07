@@ -42,6 +42,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { localDateString } from '@/lib/date-utils'
+import { formatDateRange } from '@/lib/date-range-format'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { CategoryFilterContent } from '@/components/category-filter-content'
 import {
@@ -220,7 +221,9 @@ export function TransactionsFilterBar({
       ? t('transactions.income')
       : filterType === 'debit'
         ? t('transactions.expense')
-        : ''
+        : filterType === 'transfer'
+          ? t('transactions.transfer')
+          : ''
 
   const statusLabel =
     filterStatus === 'pending'
@@ -231,14 +234,7 @@ export function TransactionsFilterBar({
 
   const dateLabel = useMemo(() => {
     if (!filterFrom && !filterTo) return null
-    const fmt = (iso: string) =>
-      new Date(iso + 'T00:00:00').toLocaleDateString(dateLocale, {
-        day: '2-digit',
-        month: 'short',
-      })
-    if (filterFrom && filterTo) return `${fmt(filterFrom)} — ${fmt(filterTo)}`
-    if (filterFrom) return `≥ ${fmt(filterFrom)}`
-    return `≤ ${fmt(filterTo)}`
+    return formatDateRange(filterFrom, filterTo, dateLocale, { compact: true })
   }, [filterFrom, filterTo, dateLocale])
 
   const amountLabel = useMemo(() => {
@@ -727,7 +723,7 @@ export function TransactionsFilterBar({
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
 
-                {/* Type submenu (single — income vs expense) */}
+                {/* Type submenu (single: income, expense or transfer) */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 text-[13px]">
                     <ArrowUpDown size={14} className="text-muted-foreground" />
@@ -747,6 +743,7 @@ export function TransactionsFilterBar({
                         { value: '', label: t('transactions.all') },
                         { value: 'credit', label: t('transactions.income') },
                         { value: 'debit', label: t('transactions.expense') },
+                        { value: 'transfer', label: t('transactions.transfer') },
                       ].map((opt) => (
                         <DropdownMenuItem
                           key={opt.value || 'all'}
@@ -1130,7 +1127,7 @@ export function TransactionsFilterBar({
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground/70">
               {draftFrom || draftTo
-                ? formatRange(draftFrom, draftTo, dateLocale)
+                ? formatDateRange(draftFrom, draftTo, dateLocale)
                 : t('transactions.filtersBar.pickRange')}
             </p>
           </div>
@@ -1210,18 +1207,6 @@ export function TransactionsFilterBar({
       </Popover>
     </div>
   )
-}
-
-function formatRange(from: string, to: string, locale: string): string {
-  const fmt = (iso: string) =>
-    new Date(iso + 'T00:00:00').toLocaleDateString(locale, {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    })
-  if (from && to) return `${fmt(from)} — ${fmt(to)}`
-  if (from) return `≥ ${fmt(from)}`
-  return `≤ ${fmt(to)}`
 }
 
 interface FilterChipProps {

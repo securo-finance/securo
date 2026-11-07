@@ -1010,7 +1010,7 @@ export default function PayeesPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={t('common.remove', 'Remove')}
+                        aria-label={t('common.remove')}
                         onClick={() => setTaxIdRows((prev) => prev.filter((_, i) => i !== index))}
                       >
                         <X size={14} className="text-muted-foreground" />

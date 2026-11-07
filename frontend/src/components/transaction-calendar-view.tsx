@@ -6,10 +6,12 @@ import type { Account, TransactionCalendarDay, TransactionCalendarItem, Transact
 import { Skeleton } from '@/components/ui/skeleton'
 import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
+import { SplitCategoryIcon } from '@/components/category-lines-display'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { getAccountName } from '@/lib/account-utils'
 import { activityChartData, dayActivity, isCalendarItemInteractive } from '@/lib/calendar-activity'
-import { weekdayShortLabels } from '@/lib/date-utils'
+import { todayInTimezone, weekdayShortLabels } from '@/lib/date-utils'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
@@ -33,10 +35,6 @@ function signedAmount(item: TransactionCalendarItem) {
 
 function displayDayNumber(date: string) {
   return parseLocalDate(date).getDate()
-}
-
-function todayIso() {
-  return new Date().toISOString().split('T')[0]
 }
 
 // A busy day can hold dozens of rows, and only three fit. Showing the biggest movers
@@ -90,6 +88,10 @@ export function TransactionCalendarView({
 }) {
   const [density, setDensity] = useState<CalendarDensity>(readCalendarDensity)
   const [metric, setMetric] = useState<CalendarMetric>(readCalendarMetric)
+  // The server decides which rows are actual and which are projected by its
+  // own idea of today, so the highlighted day has to be the same one.
+  const timeZone = useEffectiveTimezone()
+  const today = todayInTimezone(timeZone)
 
   const accountById = useMemo(() => {
     const map = new Map<string, Account>()
@@ -108,11 +110,10 @@ export function TransactionCalendarView({
   useEffect(() => {
     if (!calendar?.days.length) return
     if (selectedDate && calendar.days.some((day) => day.date === selectedDate)) return
-    const today = todayIso()
     const inCalendarToday = calendar.days.find((day) => day.date === today)
     const firstInMonth = calendar.days.find((day) => day.in_month)
     onSelectedDateChange((inCalendarToday ?? firstInMonth ?? calendar.days[0]).date)
-  }, [calendar, onSelectedDateChange, selectedDate])
+  }, [calendar, onSelectedDateChange, selectedDate, today])
 
   const selectedDay = calendar?.days.find((day) => day.date === selectedDate)
   const weekDays = useMemo(() => weekdayShortLabels(dateLocale), [dateLocale])
@@ -183,7 +184,7 @@ export function TransactionCalendarView({
               key={day.date}
               day={day}
               selected={day.date === selectedDate}
-              today={day.date === todayIso()}
+              today={day.date === today}
               currency={calendar.currency}
               locale={locale}
               mask={mask}
@@ -816,7 +817,9 @@ function DayPreviewRow({
           : 'bg-background/45 dark:bg-background/25',
       )}
     >
-      <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="xs" />
+      {item.has_category_lines
+        ? <SplitCategoryIcon size="xs" />
+        : <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="xs" />}
       {showDescription && (
         <span className="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground">
           {previewDescription(item.description)}
@@ -1232,11 +1235,18 @@ function CalendarItemRow({
       )}
     >
       <div className="shrink-0">
-        <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />
+        {item.has_category_lines
+          ? <SplitCategoryIcon size="md" />
+          : <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-semibold text-foreground truncate leading-tight">{item.description}</p>
+          {item.has_category_lines && (
+            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
+              {t('categoryLines.badgeShort')}
+            </span>
+          )}
           {item.kind === 'projected' && item.source === 'recurring' && item.status !== 'pending' && (
             <ProjectedTransactionBadge />
           )}

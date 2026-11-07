@@ -1,0 +1,982 @@
+"""The catalog and the one rule it lives by: a line owns its values.
+
+Products fill lines; they never own them. So the tests below care most
+about what happens at the edges: a product renamed, archived or deleted
+after an invoice named it, a term written before a product went away,
+and an id that belongs to somebody else's workspace.
+"""
+import uuid
+from datetime import date
+from decimal import Decimal
+
+import pytest
+import pytest_asyncio
+from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.invoice import Invoice
+from app.models.invoice_schedule import InvoiceScheduleTerm
+from app.models.product import Product
+from app.models.workspace import WorkspaceMember
+from app.services import invoice_schedule_service as schedules
+from app.services import invoice_service
+from app.services import product_service as svc
+from app.services.invoice_service import InvoiceError
+
+TODAY = date(2026, 9, 23)
+
+
+@pytest_asyncio.fixture
+async def business_ws(client: AsyncClient, auth_headers) -> dict:
+    resp = await client.post(
+        "/api/workspaces",
+        headers=auth_headers,
+        json={"name": "Estudio", "kind": "business", "self_membership": True},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+@pytest_asyncio.fixture
+async def ws_id(business_ws) -> uuid.UUID:
+    return uuid.UUID(business_ws["id"])
+
+
+@pytest_asyncio.fixture
+async def biz_headers(auth_headers, business_ws) -> dict:
+    return {**auth_headers, "X-Workspace-Id": business_ws["id"]}
+
+
+async def make_product(session, ws_id, user_id, **overrides) -> Product:
+    data = {
+        "name": "Consulting hour",
+        "unit": "h",
+        "prices": [{"currency": "USD", "unit_price": "200.00"}],
+    }
+    data.update(overrides)
+    product = await svc.create_product(session, ws_id, user_id, data)
+    await session.commit()
+    return product
+
+
+# ---------------------------------------------------------------------------
+# The catalog itself
+# ---------------------------------------------------------------------------
+class TestCatalog:
+    @pytest.mark.asyncio
+    async def test_a_product_is_created_with_its_prices(self, session, ws_id, test_user):
+        p = await make_product(
+            session, ws_id, test_user.id,
+            prices=[
+                {"currency": "USD", "unit_price": "200.00", "tax_rate": "10"},
+                {"currency": "eur", "unit_price": "180.00", "billing": "recurring", "interval": "monthly", "nickname": "Monthly"},
+            ],
+        )
+        assert p.kind == "service" and p.active
+        assert [(x.currency, x.unit_price, x.billing, x.interval) for x in p.prices] == [
+            ("USD", Decimal("200.00"), "one_time", None),
+            ("EUR", Decimal("180.00"), "recurring", "monthly"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_recurring_price_needs_a_cadence_and_a_one_time_price_drops_it(self, session, ws_id, test_user):
+        with pytest.raises(InvoiceError) as exc:
+            await make_product(session, ws_id, test_user.id, prices=[{"currency": "USD", "unit_price": "1", "billing": "recurring"}])
+        assert exc.value.code == "interval_required"
+        p = await make_product(session, ws_id, test_user.id, prices=[{"currency": "USD", "unit_price": "1", "billing": "one_time", "interval": "monthly"}])
+        assert p.prices[0].interval is None
+
+    @pytest.mark.asyncio
+    async def test_prices_are_validated(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id)
+        for bad, code in (
+            ({"unit_price": "1"}, "currency_required"),
+            ({"currency": "USD"}, "unit_price_required"),
+            ({"currency": "USD", "unit_price": "-1"}, "negative_price"),
+            ({"currency": "USD", "unit_price": "1", "billing": "weird"}, "invalid_billing"),
+        ):
+            with pytest.raises(InvoiceError) as exc:
+                await svc.add_price(session, p, bad)
+            assert exc.value.code == code
+
+    @pytest.mark.asyncio
+    async def test_imported_rows_converge_on_their_external_id(self, session, ws_id, test_user):
+        with pytest.raises(InvoiceError) as exc:
+            await make_product(session, ws_id, test_user.id, origin="imported")
+        assert exc.value.code == "external_source_required"
+        p = await make_product(
+            session, ws_id, test_user.id, origin="imported", external_source="gateway", external_id="prod_1",
+            prices=[{"currency": "USD", "unit_price": "10", "external_source": "gateway", "external_id": "price_1"}],
+        )
+        found = await svc.find_by_external_id(session, ws_id, "gateway", "prod_1")
+        assert found is not None and found.id == p.id
+        with pytest.raises(InvoiceError) as exc:
+            await make_product(session, ws_id, test_user.id, origin="imported", external_source="gateway", external_id="prod_1", prices=[])
+        assert exc.value.code == "already_imported" and exc.value.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_list_defaults_to_live_products_and_searches_by_name(self, session, ws_id, test_user):
+        a = await make_product(session, ws_id, test_user.id, name="Zeta hosting", description="servers")
+        b = await make_product(session, ws_id, test_user.id, name="Alpha design")
+        await svc.update_product(session, b, {"active": False})
+        await session.commit()
+        assert [p.id for p in await svc.list_products(session, ws_id)] == [a.id]
+        assert {p.id for p in await svc.list_products(session, ws_id, active=None)} == {a.id, b.id}
+        assert [p.id for p in await svc.list_products(session, ws_id, active=None, q="alpha")] == [b.id]
+        assert [p.id for p in await svc.list_products(session, ws_id, q="SERVERS")] == [a.id]
+
+    @pytest.mark.asyncio
+    async def test_price_for_prefers_a_live_one_time_price_in_the_currency(self, session, ws_id, test_user):
+        p = await make_product(
+            session, ws_id, test_user.id,
+            prices=[
+                {"currency": "USD", "unit_price": "1", "billing": "recurring", "interval": "monthly"},
+                {"currency": "USD", "unit_price": "2"},
+                {"currency": "EUR", "unit_price": "3"},
+            ],
+        )
+        def amount(currency: str) -> Decimal | None:
+            price = svc.price_for(p, currency)
+            return price.unit_price if price else None
+
+        assert amount("usd") == Decimal("2.00")
+        assert amount("EUR") == Decimal("3.00")
+        assert amount("BRL") is None
+        await svc.update_price(session, p, p.prices[1], {"active": False})
+        assert amount("USD") == Decimal("1.00")
+
+
+# ---------------------------------------------------------------------------
+# The bridge to invoice lines
+# ---------------------------------------------------------------------------
+async def an_invoice(session, ws_id, user_id, lines) -> Invoice:
+    invoice = await invoice_service.create_invoice(
+        session, ws_id, user_id,
+        {"issue_date": TODAY, "due_date": date(2026, 10, 8), "currency": "USD", "lines": lines},
+    )
+    await session.commit()
+    return invoice
+
+
+class TestLines:
+    @pytest.mark.asyncio
+    async def test_a_line_remembers_its_product_and_keeps_its_own_values(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id)
+        price = p.prices[0]
+        inv = await an_invoice(session, ws_id, test_user.id, [
+            {"description": "Consulting hour", "quantity": 3, "unit": "h", "unit_price": "180.00",
+             "product_id": p.id, "price_id": price.id},
+            {"description": "Travel", "unit_price": "50.00"},
+        ])
+        catalog, free = inv.lines
+        assert catalog.product_id == p.id and catalog.price_id == price.id
+        assert catalog.unit_price == Decimal("180.00")  # the typed value, not the catalog's 200
+        assert free.product_id is None and free.price_id is None
+        assert inv.total == Decimal("590.00")
+
+        # Renaming and archiving the product changes nothing on the line.
+        await svc.update_product(session, p, {"name": "Senior hour", "active": False})
+        await session.commit()
+        await session.refresh(catalog)
+        assert catalog.description == "Consulting hour" and catalog.product_id == p.id
+
+    @pytest.mark.asyncio
+    async def test_a_price_alone_names_its_product(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id)
+        inv = await an_invoice(session, ws_id, test_user.id, [
+            {"description": "x", "unit_price": "1", "price_id": p.prices[0].id},
+        ])
+        assert inv.lines[0].product_id == p.id
+
+    @pytest.mark.asyncio
+    async def test_ids_from_another_workspace_or_another_product_are_refused(self, session, ws_id, test_user, client, auth_headers):
+        resp = await client.post(
+            "/api/workspaces", headers=auth_headers,
+            json={"name": "Outra", "kind": "business", "self_membership": True},
+        )
+        other_ws = uuid.UUID(resp.json()["id"])
+        foreign = await make_product(session, other_ws, test_user.id)
+        mine = await make_product(session, ws_id, test_user.id)
+
+        with pytest.raises(InvoiceError) as exc:
+            await an_invoice(session, ws_id, test_user.id, [{"description": "x", "unit_price": "1", "product_id": foreign.id}])
+        assert exc.value.code == "product_not_found"
+        with pytest.raises(InvoiceError) as exc:
+            await an_invoice(session, ws_id, test_user.id, [{"description": "x", "unit_price": "1", "product_id": mine.id, "price_id": foreign.prices[0].id}])
+        assert exc.value.code == "price_not_found"
+        with pytest.raises(InvoiceError) as exc:
+            await an_invoice(session, ws_id, test_user.id, [{"description": "x", "unit_price": "1", "product_id": uuid.uuid4()}])
+        assert exc.value.code == "product_not_found"
+
+    @pytest.mark.asyncio
+    async def test_a_named_product_is_archived_not_deleted(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id)
+        price = p.prices[0]
+        await an_invoice(session, ws_id, test_user.id, [{"description": "x", "unit_price": "1", "product_id": p.id, "price_id": price.id}])
+        with pytest.raises(InvoiceError) as exc:
+            await svc.delete_product(session, p)
+        assert exc.value.code == "product_in_use"
+        with pytest.raises(InvoiceError) as exc:
+            await svc.delete_price(session, p, price)
+        assert exc.value.code == "price_in_use"
+        assert (await svc.usage_counts(session, ws_id, [p.id]))[p.id] == 1
+
+        unused = await make_product(session, ws_id, test_user.id, name="Unused")
+        await svc.delete_price(session, unused, unused.prices[0])
+        await svc.delete_product(session, unused)
+        assert await svc.get_product(session, unused.id, ws_id) is None
+
+
+class TestFiscalRefs:
+    @pytest.mark.asyncio
+    async def test_refs_are_cleaned_and_any_key_is_accepted(self, session, ws_id, test_user):
+        p = await make_product(
+            session, ws_id, test_user.id,
+            fiscal_refs={"NCM": " 8471.30.12 ", "service_code": "", "my_own_key": "x", "gtin": None},
+        )
+        assert p.fiscal_refs == {"ncm": "8471.30.12", "my_own_key": "x"}
+        await svc.update_product(session, p, {"fiscal_refs": {}})
+        assert p.fiscal_refs is None
+
+    @pytest.mark.asyncio
+    async def test_a_key_that_is_not_a_key_is_refused(self, session, ws_id, test_user):
+        for bad in ({"has space": "1"}, {"": "1"}, {"a" * 41: "1"}, ["ncm"], {"ncm": "x" * 101}):
+            with pytest.raises(InvoiceError) as exc:
+                await make_product(session, ws_id, test_user.id, fiscal_refs=bad)
+            assert exc.value.code == "invalid_fiscal_refs"
+
+    @pytest.mark.asyncio
+    async def test_the_line_takes_a_copy_and_keeps_its_own(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id, fiscal_refs={"service_code": "1.05", "nbs": "1.1401"})
+        inv = await an_invoice(session, ws_id, test_user.id, [
+            {"description": "Hour", "unit_price": "200", "product_id": p.id},
+            {"description": "Hour, own refs", "unit_price": "200", "price_id": p.prices[0].id, "fiscal_refs": {"service_code": "1.07"}},
+            {"description": "Typed", "unit_price": "1"},
+        ])
+        copied, own, typed = inv.lines
+        assert copied.fiscal_refs == {"service_code": "1.05", "nbs": "1.1401"}
+        assert own.fiscal_refs == {"service_code": "1.07"} and own.product_id == p.id
+        assert typed.fiscal_refs is None
+        # Changing the product later changes nothing on the line.
+        await svc.update_product(session, p, {"fiscal_refs": {"service_code": "9.99"}})
+        await session.commit()
+        await session.refresh(copied)
+        assert copied.fiscal_refs == {"service_code": "1.05", "nbs": "1.1401"}
+
+    @pytest.mark.asyncio
+    async def test_the_pack_suggests_by_kind_and_never_restricts(self, client, biz_headers, auth_headers, business_ws):
+        resp = await client.patch(f"/api/workspaces/{business_ws['id']}", headers=biz_headers, json={"tax_jurisdiction": "BR"})
+        assert resp.status_code == 200, resp.text
+        fields = (await client.get("/api/fiscal/product-fields", headers=biz_headers)).json()
+        assert fields["jurisdiction"] == "BR"
+        by_key = {f["key"]: f for f in fields["fields"]}
+        assert by_key["ncm"]["kinds"] == ["product"] and by_key["service_code"]["kinds"] == ["service"]
+        assert by_key["ncm"]["label_key"] == "fiscal.productField.ncm"
+        # A key the pack never mentions is stored all the same.
+        resp = await client.post("/api/products", headers=biz_headers, json={"name": "x", "fiscal_refs": {"hs_code": "8471"}})
+        assert resp.status_code == 201 and resp.json()["fiscal_refs"] == {"hs_code": "8471"}
+        # No jurisdiction: no opinion, not an error.
+        await client.patch(f"/api/workspaces/{business_ws['id']}", headers=biz_headers, json={"tax_jurisdiction": None})
+        fields = (await client.get("/api/fiscal/product-fields", headers=biz_headers)).json()
+        assert fields == {"jurisdiction": None, "fields": []}
+
+
+class TestLookupKeys:
+    @pytest.mark.asyncio
+    async def test_a_lookup_key_finds_a_price_and_is_unique_per_workspace(self, session, ws_id, test_user, client, auth_headers):
+        # Read before the refused add below rolls the session back and
+        # expires every loaded row.
+        uid = test_user.id
+        p = await make_product(session, ws_id, uid, prices=[{"currency": "USD", "unit_price": "10", "lookup_key": "pro_monthly"}])
+        found = await svc.find_price_by_lookup_key(session, ws_id, "pro_monthly")
+        assert found is not None and found.id == p.prices[0].id
+        with pytest.raises(InvoiceError) as exc:
+            await svc.add_price(session, p, {"currency": "EUR", "unit_price": "9", "lookup_key": "pro_monthly"})
+        assert exc.value.code == "price_key_taken" and exc.value.status_code == 409
+        # Another workspace may use the same key.
+        resp = await client.post("/api/workspaces", headers=auth_headers, json={"name": "Outra", "kind": "business", "self_membership": True})
+        other = await make_product(session, uuid.UUID(resp.json()["id"]), uid, prices=[{"currency": "USD", "unit_price": "1", "lookup_key": "pro_monthly"}])
+        assert other.prices[0].lookup_key == "pro_monthly"
+
+    @pytest.mark.asyncio
+    async def test_a_cleared_lookup_key_is_null_not_empty(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id, prices=[{"currency": "USD", "unit_price": "10", "lookup_key": "k"}])
+        await svc.update_price(session, p, p.prices[0], {"lookup_key": "  "})
+        assert p.prices[0].lookup_key is None
+        q = await make_product(session, ws_id, test_user.id, prices=[{"currency": "USD", "unit_price": "10", "lookup_key": ""}])
+        assert q.prices[0].lookup_key is None
+
+
+# ---------------------------------------------------------------------------
+# Recurring agreements
+# ---------------------------------------------------------------------------
+class TestSchedules:
+    @pytest.mark.asyncio
+    async def test_a_term_carries_the_product_into_every_period(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id)
+        s = await schedules.create_schedule(
+            session, ws_id, test_user.id,
+            {"name": "Retainer", "frequency": "monthly", "start_date": date(2026, 10, 5), "currency": "USD",
+             "lines": [{"description": "Consulting hour", "quantity": 10, "unit_price": "200", "product_id": p.id, "price_id": p.prices[0].id}]},
+            today=TODAY,
+        )
+        await session.commit()
+        assert s.terms[0].lines[0]["product_id"] == str(p.id)
+        [inv] = await schedules.generate_due(session, s, today=date(2026, 10, 5))
+        assert inv.lines[0].product_id == p.id and inv.lines[0].price_id == p.prices[0].id
+
+    @pytest.mark.asyncio
+    async def test_a_product_deleted_after_the_term_does_not_stop_the_agreement(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id)
+        s = await schedules.create_schedule(
+            session, ws_id, test_user.id,
+            {"name": "Retainer", "frequency": "monthly", "start_date": date(2026, 10, 5), "currency": "USD",
+             "lines": [{"description": "Hour", "unit_price": "200", "product_id": p.id}]},
+            today=TODAY,
+        )
+        await session.commit()
+        await session.delete(p)
+        await session.commit()
+        [inv] = await schedules.generate_due(session, s, today=date(2026, 10, 5))
+        assert inv.lines[0].product_id is None and inv.total == Decimal("200.00")
+
+    @pytest.mark.asyncio
+    async def test_a_term_refuses_bad_fiscal_refs_when_written_not_when_emitted(self, session, ws_id, test_user):
+        """A bad key on a term would fail every period until the job paused
+        the agreement. It is refused at the door, and a good one is stored
+        clean."""
+        with pytest.raises(InvoiceError) as exc:
+            await schedules.create_schedule(
+                session, ws_id, test_user.id,
+                {"name": "R", "frequency": "monthly", "start_date": date(2026, 10, 5), "currency": "USD",
+                 "lines": [{"description": "Hour", "unit_price": "200", "fiscal_refs": {"bad key": "1"}}]},
+                today=TODAY,
+            )
+        assert exc.value.code == "invalid_fiscal_refs"
+        s = await schedules.create_schedule(
+            session, ws_id, test_user.id,
+            {"name": "R", "frequency": "monthly", "start_date": date(2026, 10, 5), "currency": "USD",
+             "lines": [{"description": "Hour", "unit_price": "200", "fiscal_refs": {"Service_Code": " 1.05 ", "empty": ""}}]},
+            today=TODAY,
+        )
+        await session.commit()
+        assert s.terms[0].lines[0]["fiscal_refs"] == {"service_code": "1.05"}
+        [inv] = await schedules.generate_due(session, s, today=date(2026, 10, 5))
+        assert inv.lines[0].fiscal_refs == {"service_code": "1.05"}
+
+    @pytest.mark.asyncio
+    async def test_make_recurring_keeps_the_provenance(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id)
+        inv = await an_invoice(session, ws_id, test_user.id, [{"description": "Hour", "unit_price": "200", "product_id": p.id}])
+        s = await schedules.make_recurring(session, inv, test_user.id, {"frequency": "monthly", "name": "R"}, today=TODAY)
+        assert s.terms[0].lines[0]["product_id"] == str(p.id)
+
+    @pytest.mark.asyncio
+    async def test_make_recurring_inherits_refs_the_product_gains_later(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id)
+        inv = await an_invoice(session, ws_id, test_user.id, [{"description": "Hour", "unit_price": "200", "product_id": p.id}])
+        assert inv.lines[0].fiscal_refs is None
+        s = await schedules.make_recurring(session, inv, test_user.id, {"frequency": "monthly", "name": "R"}, today=TODAY)
+        await session.commit()
+        assert "fiscal_refs" not in s.terms[0].lines[0]
+        await svc.update_product(session, p, {"fiscal_refs": {"service_code": "1.05"}})
+        await session.commit()
+        [later] = await schedules.generate_due(session, s, today=date(2026, 10, 23))
+        assert later.lines[0].fiscal_refs == {"service_code": "1.05"}
+
+
+# ---------------------------------------------------------------------------
+# Over HTTP
+# ---------------------------------------------------------------------------
+@pytest_asyncio.fixture
+async def personal_headers(session: AsyncSession, auth_headers, test_user) -> dict:
+    from app.models.workspace import Workspace
+
+    result = await session.execute(
+        select(Workspace)
+        .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+        .where(WorkspaceMember.user_id == test_user.id, Workspace.kind == "personal")
+        .limit(1)
+    )
+    return {**auth_headers, "X-Workspace-Id": str(result.scalar_one().id)}
+
+
+@pytest_asyncio.fixture
+async def viewer_headers(session: AsyncSession, client: AsyncClient, business_ws) -> dict:
+    import bcrypt
+
+    from app.models.user import User
+
+    user = User(
+        id=uuid.uuid4(),
+        email="viewer-products@example.com",
+        hashed_password=bcrypt.hashpw(b"viewerpass123", bcrypt.gensalt()).decode(),
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(user)
+    await session.flush()
+    session.add(WorkspaceMember(id=uuid.uuid4(), workspace_id=uuid.UUID(business_ws["id"]), user_id=user.id, role="viewer"))
+    await session.commit()
+    resp = await client.post(
+        "/api/auth/login",
+        data={"username": "viewer-products@example.com", "password": "viewerpass123"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}", "X-Workspace-Id": business_ws["id"]}
+
+
+PAYLOAD = {"name": "Consulting hour", "unit": "h", "prices": [{"currency": "USD", "unit_price": "200.00"}]}
+
+
+@pytest.mark.asyncio
+async def test_personal_workspace_cannot_reach_the_catalog(client: AsyncClient, personal_headers):
+    fake = str(uuid.uuid4())
+    routes = [
+        ("get", "/api/products", None),
+        ("post", "/api/products", PAYLOAD),
+        ("get", f"/api/products/{fake}", None),
+        ("patch", f"/api/products/{fake}", {"name": "x"}),
+        ("delete", f"/api/products/{fake}", None),
+        ("post", f"/api/products/{fake}/prices", {"currency": "USD", "unit_price": "1"}),
+        ("patch", f"/api/products/{fake}/prices/{fake}", {"active": False}),
+        ("delete", f"/api/products/{fake}/prices/{fake}", None),
+    ]
+    for method, url, body in routes:
+        resp = await getattr(client, method)(url, headers=personal_headers, **({"json": body} if body else {}))
+        assert resp.status_code == 404, f"{method.upper()} {url} -> {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_viewer_reads_and_never_writes(client: AsyncClient, biz_headers, viewer_headers):
+    created = (await client.post("/api/products", headers=biz_headers, json=PAYLOAD)).json()
+    pid, price_id = created["id"], created["prices"][0]["id"]
+    assert (await client.get("/api/products", headers=viewer_headers)).status_code == 200
+    assert (await client.get(f"/api/products/{pid}", headers=viewer_headers)).status_code == 200
+    writes = [
+        ("post", "/api/products", PAYLOAD),
+        ("patch", f"/api/products/{pid}", {"name": "x"}),
+        ("delete", f"/api/products/{pid}", None),
+        ("post", f"/api/products/{pid}/prices", {"currency": "EUR", "unit_price": "1"}),
+        ("patch", f"/api/products/{pid}/prices/{price_id}", {"active": False}),
+        ("delete", f"/api/products/{pid}/prices/{price_id}", None),
+    ]
+    for method, url, body in writes:
+        resp = await getattr(client, method)(url, headers=viewer_headers, **({"json": body} if body else {}))
+        assert resp.status_code == 403, f"{method.upper()} {url} -> {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_catalog_journey_over_http(client: AsyncClient, biz_headers, auth_headers):
+    resp = await client.post("/api/products", headers=biz_headers, json=PAYLOAD)
+    assert resp.status_code == 201, resp.text
+    product = resp.json()
+    assert product["kind"] == "service" and product["active"] and product["invoice_count"] == 0
+    assert product["prices"][0]["unit_price"] == "200.00"
+    pid = product["id"]
+
+    # A second price, then a bad one.
+    resp = await client.post(f"/api/products/{pid}/prices", headers=biz_headers, json={"currency": "EUR", "unit_price": "180", "billing": "recurring", "interval": "monthly"})
+    assert resp.status_code == 201 and len(resp.json()["prices"]) == 2
+    resp = await client.post(f"/api/products/{pid}/prices", headers=biz_headers, json={"currency": "EUR", "unit_price": "1", "billing": "recurring"})
+    assert resp.status_code == 400 and resp.json()["detail"]["code"] == "interval_required"
+
+    # An invoice from the catalog counts on the product and refuses deletion.
+    resp = await client.post(
+        "/api/invoices", headers=biz_headers,
+        json={"currency": "USD", "lines": [{"description": "Consulting hour", "quantity": 2, "unit_price": "200.00", "product_id": pid, "price_id": product["prices"][0]["id"]}]},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["lines"][0]["product_id"] == pid
+    assert (await client.get(f"/api/products/{pid}", headers=biz_headers)).json()["invoice_count"] == 1
+    resp = await client.delete(f"/api/products/{pid}", headers=biz_headers)
+    assert resp.status_code == 400 and resp.json()["detail"]["code"] == "product_in_use"
+
+    # Archived: gone from the default list, back with active=false.
+    resp = await client.patch(f"/api/products/{pid}", headers=biz_headers, json={"active": False})
+    assert resp.status_code == 200 and resp.json()["active"] is False
+    assert (await client.get("/api/products", headers=biz_headers)).json() == []
+    assert [p["id"] for p in (await client.get("/api/products", headers=biz_headers, params={"active": "false"})).json()] == [pid]
+
+    # Another workspace never sees it.
+    other = await client.post("/api/workspaces", headers=auth_headers, json={"name": "Outra", "kind": "business", "self_membership": True})
+    other_headers = {**auth_headers, "X-Workspace-Id": other.json()["id"]}
+    assert (await client.get(f"/api/products/{pid}", headers=other_headers)).status_code == 404
+    resp = await client.post("/api/invoices", headers=other_headers, json={"currency": "USD", "lines": [{"description": "x", "unit_price": "1", "product_id": pid}]})
+    assert resp.status_code == 404 and resp.json()["detail"]["code"] == "product_not_found"
+
+    # Unused products simply go.
+    resp = await client.post("/api/products", headers=biz_headers, json={"name": "Nothing yet"})
+    assert (await client.delete(f"/api/products/{resp.json()['id']}", headers=biz_headers)).status_code == 204
+
+
+# ---------------------------------------------------------------------------
+# More edges: the paths a real catalog walks every week
+# ---------------------------------------------------------------------------
+class TestMoreEdges:
+    @pytest.mark.asyncio
+    async def test_editing_a_draft_re_resolves_its_lines(self, session, ws_id, test_user):
+        """A draft's lines are replaced on edit, so the catalog check and
+        the fiscal copy run again, against the workspace, every time."""
+        p = await make_product(session, ws_id, test_user.id, fiscal_refs={"ncm": "1"})
+        inv = await invoice_service.create_invoice(
+            session, ws_id, test_user.id,
+            {"issue_date": TODAY, "due_date": date(2026, 10, 8), "currency": "USD", "as_draft": True,
+             "lines": [{"description": "Typed", "unit_price": "1"}]},
+        )
+        await session.commit()
+        assert inv.status == "draft" and inv.lines[0].product_id is None
+        await invoice_service.update_invoice(session, inv, {"lines": [{"description": "Hour", "unit_price": "200", "product_id": p.id}]})
+        await session.commit()
+        assert inv.lines[0].product_id == p.id and inv.lines[0].fiscal_refs == {"ncm": "1"}
+        with pytest.raises(InvoiceError) as exc:
+            await invoice_service.update_invoice(session, inv, {"lines": [{"description": "x", "unit_price": "1", "product_id": uuid.uuid4()}]})
+        assert exc.value.code == "product_not_found"
+
+    @pytest.mark.asyncio
+    async def test_a_price_from_another_workspace_is_dropped_when_not_strict(self, session, ws_id, test_user, client, auth_headers):
+        uid = test_user.id
+        resp = await client.post("/api/workspaces", headers=auth_headers, json={"name": "Outra", "kind": "business", "self_membership": True})
+        foreign = await make_product(session, uuid.UUID(resp.json()["id"]), uid)
+        mine = await make_product(session, ws_id, uid)
+        lines = await svc.resolve_lines(
+            session, ws_id,
+            [{"description": "a", "product_id": foreign.id, "price_id": foreign.prices[0].id},
+             {"description": "b", "product_id": mine.id, "price_id": foreign.prices[0].id},
+             {"description": "c", "price_id": mine.prices[0].id}],
+            strict=False,
+        )
+        assert (lines[0]["product_id"], lines[0]["price_id"]) == (None, None)
+        assert (lines[1]["product_id"], lines[1]["price_id"]) == (mine.id, None)
+        assert (lines[2]["product_id"], lines[2]["price_id"]) == (mine.id, mine.prices[0].id)
+
+    @pytest.mark.asyncio
+    async def test_usage_counts_one_invoice_once_and_include_voided_ones(self, session, ws_id, test_user):
+        """Two lines of one invoice are one invoice; a voided invoice still
+        named the product, so the product still cannot be deleted."""
+        p = await make_product(session, ws_id, test_user.id)
+        inv = await an_invoice(session, ws_id, test_user.id, [
+            {"description": "a", "unit_price": "1", "product_id": p.id},
+            {"description": "b", "unit_price": "1", "product_id": p.id},
+        ])
+        assert (await svc.usage_counts(session, ws_id, [p.id]))[p.id] == 1
+        await invoice_service.void_invoice(session, inv)
+        await session.commit()
+        assert (await svc.usage_counts(session, ws_id, [p.id]))[p.id] == 1
+        with pytest.raises(InvoiceError):
+            await svc.delete_product(session, p)
+
+    @pytest.mark.asyncio
+    async def test_kind_filter_and_archived_prices_stay_out_of_the_picker(self, session, ws_id, test_user):
+        goods = await make_product(session, ws_id, test_user.id, name="Cable", kind="product")
+        await make_product(session, ws_id, test_user.id, name="Support")
+        assert [p.id for p in await svc.list_products(session, ws_id, kind="product")] == [goods.id]
+        with pytest.raises(InvoiceError) as exc:
+            await make_product(session, ws_id, test_user.id, kind="subscription")
+        assert exc.value.code == "invalid_kind"
+        await svc.update_price(session, goods, goods.prices[0], {"active": False})
+        assert svc.price_for(goods, "USD") is None
+        # An archived price can still be named by a line, on purpose: the
+        # invoice was billed at it, and that is what the line records.
+        inv = await an_invoice(session, ws_id, test_user.id, [{"description": "c", "unit_price": "1", "price_id": goods.prices[0].id}])
+        assert inv.lines[0].price_id == goods.prices[0].id
+
+    @pytest.mark.asyncio
+    async def test_a_recurring_price_seeds_nothing_by_itself(self, session, ws_id, test_user):
+        """A cadence on a price is a hint. No agreement, no invoice and no
+        job appears because a price says monthly."""
+        p = await make_product(session, ws_id, test_user.id, prices=[{"currency": "USD", "unit_price": "99", "billing": "recurring", "interval": "monthly"}])
+        assert await schedules.list_schedules(session, ws_id) == []
+        assert svc.price_for(p, "USD") is not None
+
+    @pytest.mark.asyncio
+    async def test_update_product_validates_and_trims(self, session, ws_id, test_user):
+        p = await make_product(session, ws_id, test_user.id)
+        with pytest.raises(InvoiceError) as exc:
+            await svc.update_product(session, p, {"name": "   "})
+        assert exc.value.code == "name_required"
+        with pytest.raises(InvoiceError) as exc:
+            await svc.update_product(session, p, {"kind": "thing"})
+        assert exc.value.code == "invalid_kind"
+        await svc.update_product(session, p, {"name": "  Senior hour ", "unit": "", "description": ""})
+        assert (p.name, p.unit, p.description) == ("Senior hour", None, None)
+
+
+@pytest.mark.asyncio
+async def test_prices_over_http(client: AsyncClient, biz_headers):
+    created = (await client.post("/api/products", headers=biz_headers, json={**PAYLOAD, "prices": [{"currency": "USD", "unit_price": "200.00", "lookup_key": "hour_usd"}]})).json()
+    pid, price_id = created["id"], created["prices"][0]["id"]
+    assert created["prices"][0]["lookup_key"] == "hour_usd"
+
+    # The same lookup key twice is a 409 the client can branch on.
+    resp = await client.post(f"/api/products/{pid}/prices", headers=biz_headers, json={"currency": "EUR", "unit_price": "180", "lookup_key": "hour_usd"})
+    assert resp.status_code == 409 and resp.json()["detail"]["code"] == "price_key_taken"
+
+    # Update, archive, and a bad update.
+    resp = await client.patch(f"/api/products/{pid}/prices/{price_id}", headers=biz_headers, json={"unit_price": "210", "nickname": "  Standard "})
+    assert resp.status_code == 200
+    assert resp.json()["prices"][0]["unit_price"] == "210.00" and resp.json()["prices"][0]["nickname"] == "Standard"
+    resp = await client.patch(f"/api/products/{pid}/prices/{price_id}", headers=biz_headers, json={"billing": "recurring"})
+    assert resp.status_code == 400 and resp.json()["detail"]["code"] == "interval_required"
+    resp = await client.patch(f"/api/products/{pid}/prices/{price_id}", headers=biz_headers, json={"active": False})
+    assert resp.json()["prices"][0]["active"] is False
+
+    # An unknown price on a known product is a 404, not a 500.
+    assert (await client.patch(f"/api/products/{pid}/prices/{uuid.uuid4()}", headers=biz_headers, json={"active": True})).status_code == 404
+    assert (await client.delete(f"/api/products/{pid}/prices/{uuid.uuid4()}", headers=biz_headers)).status_code == 404
+
+    # Deleting an unused price works; a used one is refused.
+    resp = await client.delete(f"/api/products/{pid}/prices/{price_id}", headers=biz_headers)
+    assert resp.status_code == 200 and resp.json()["prices"] == []
+
+
+@pytest.mark.asyncio
+async def test_fiscal_refs_over_http(client: AsyncClient, biz_headers):
+    resp = await client.post("/api/products", headers=biz_headers, json={"name": "Design", "fiscal_refs": {"Service_Code": " 1.05 ", "empty": ""}})
+    assert resp.status_code == 201 and resp.json()["fiscal_refs"] == {"service_code": "1.05"}
+    pid = resp.json()["id"]
+    resp = await client.post("/api/products", headers=biz_headers, json={"name": "Bad", "fiscal_refs": {"bad key": "1"}})
+    assert resp.status_code == 400 and resp.json()["detail"]["code"] == "invalid_fiscal_refs"
+    resp = await client.post("/api/invoices", headers=biz_headers, json={"currency": "USD", "lines": [{"description": "Design", "unit_price": "10", "product_id": pid}]})
+    assert resp.status_code == 201 and resp.json()["lines"][0]["fiscal_refs"] == {"service_code": "1.05"}
+    resp = await client.patch(f"/api/products/{pid}", headers=biz_headers, json={"fiscal_refs": None})
+    assert resp.status_code == 200 and resp.json()["fiscal_refs"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("catalog_refs", [None, {"service_code": "catalog-code"}])
+async def test_invoice_fiscal_refs_preserve_omission_and_explicit_values_over_http(
+    client: AsyncClient, biz_headers, catalog_refs,
+):
+    response = await client.post(
+        "/api/products", headers=biz_headers,
+        json={"name": "Design", "fiscal_refs": catalog_refs},
+    )
+    assert response.status_code == 201, response.text
+    product_id = response.json()["id"]
+    line = {
+        "description": "Design", "quantity": "2", "unit": "h", "unit_price": "100",
+        "tax_rate": "10", "product_id": product_id,
+    }
+    response = await client.post(
+        "/api/invoices", headers=biz_headers,
+        json={
+            "as_draft": True, "currency": "USD",
+            "lines": [
+                line,
+                {**line, "fiscal_refs": None},
+                {**line, "fiscal_refs": {}},
+                {**line, "fiscal_refs": {"service_code": "line-code"}},
+            ],
+        },
+    )
+    assert response.status_code == 201, response.text
+    invoice = response.json()
+    expected_refs = [catalog_refs, None, None, {"service_code": "line-code"}]
+    assert [row["fiscal_refs"] for row in invoice["lines"]] == expected_refs
+
+    response = await client.patch(
+        f"/api/products/{product_id}", headers=biz_headers,
+        json={"fiscal_refs": {"service_code": "updated-catalog-code"}},
+    )
+    assert response.status_code == 200, response.text
+    # EditDraftDialog resends all line metadata even for a notes-only change.
+    fields = (
+        "description", "quantity", "unit", "unit_price", "tax_rate",
+        "product_id", "price_id", "fiscal_refs",
+    )
+    lines = [{key: row[key] for key in fields} for row in invoice["lines"]]
+    response = await client.patch(
+        f"/api/invoices/{invoice['id']}", headers=biz_headers,
+        json={"notes": "Updated notes", "lines": lines},
+    )
+    assert response.status_code == 200, response.text
+    updated = response.json()
+    assert updated["notes"] == "Updated notes"
+    assert [{key: row[key] for key in fields} for row in updated["lines"]] == lines
+
+
+@pytest.mark.asyncio
+async def test_schedule_fiscal_ref_inheritance_survives_term_writes_over_http(
+    client: AsyncClient, biz_headers,
+):
+    catalog_refs = {"service_code": "catalog-code"}
+    response = await client.post(
+        "/api/products", headers=biz_headers,
+        json={"name": "Design", "fiscal_refs": catalog_refs},
+    )
+    assert response.status_code == 201, response.text
+    line = {
+        "description": "Design", "unit_price": "100", "product_id": response.json()["id"],
+    }
+    lines = [
+        line,
+        {**line, "fiscal_refs": None},
+        {**line, "fiscal_refs": {}},
+        {**line, "fiscal_refs": {"service_code": "line-code"}},
+    ]
+    start = date(date.today().year + 1, 1, 1)
+    response = await client.post(
+        "/api/invoice-schedules", headers=biz_headers,
+        json={
+            "name": "Design retainer", "frequency": "monthly", "currency": "USD",
+            "start_date": start.isoformat(), "lines": lines,
+        },
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    response = await client.post(
+        f"/api/invoice-schedules/{schedule_id}/terms", headers=biz_headers,
+        json={"effective_from": start.replace(month=2).isoformat(), "lines": lines},
+    )
+    assert response.status_code == 201, response.text
+    terms = response.json()["terms"]
+    for term in terms:
+        assert "fiscal_refs" not in term["lines"][0]
+        assert [row["fiscal_refs"] for row in term["lines"][1:]] == [
+            {}, {}, {"service_code": "line-code"},
+        ]
+    response = await client.patch(
+        f"/api/invoice-schedules/{schedule_id}/terms/{terms[-1]['id']}", headers=biz_headers,
+        json={"lines": lines},
+    )
+    assert response.status_code == 200, response.text
+    assert "fiscal_refs" not in response.json()["terms"][-1]["lines"][0]
+
+    # Force the first two future periods: create, add and update all preserve
+    # omission until emission, while explicit emptiness never inherits.
+    for _ in range(2):
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/generate", headers=biz_headers,
+        )
+        assert response.status_code == 201, response.text
+        [invoice] = response.json()
+        assert [row["fiscal_refs"] for row in invoice["lines"]] == [
+            catalog_refs, None, None, {"service_code": "line-code"},
+        ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("save_path", ["create", "add", "update", "make_recurring"])
+@pytest.mark.parametrize("clear", [None, {}], ids=["null", "empty-object"])
+async def test_fiscal_ref_clears_on_term_writes_and_invoice_conversion(
+    client: AsyncClient, biz_headers, save_path, clear,
+):
+    """Term writes retain a clear; conversion cannot recover it from an invoice.
+
+    Cover all three term save endpoints as well as the deliberately lossy
+    make-recurring boundary, where invoice null has no provenance.
+    """
+    response = await client.post(
+        "/api/products", headers=biz_headers,
+        json={"name": "Design", "fiscal_refs": {"service_code": "catalog-code"}},
+    )
+    assert response.status_code == 201, response.text
+    product_id = response.json()["id"]
+    line = {"description": "Design", "unit_price": "100", "product_id": product_id}
+    cleared_line = {**line, "fiscal_refs": clear}
+    start = date(date.today().year + 1, 1, 1)
+
+    if save_path == "make_recurring":
+        response = await client.post(
+            "/api/invoices", headers=biz_headers,
+            json={"as_draft": True, "currency": "USD", "issue_date": start.isoformat(),
+                  "lines": [line]},
+        )
+        assert response.status_code == 201, response.text
+        invoice_id = response.json()["id"]
+        response = await client.patch(
+            f"/api/invoices/{invoice_id}", headers=biz_headers,
+            json={"lines": [cleared_line]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["lines"][0]["fiscal_refs"] is None
+        response = await client.post(f"/api/invoices/{invoice_id}/issue", headers=biz_headers)
+        assert response.status_code == 200, response.text
+        response = await client.post(
+            f"/api/invoices/{invoice_id}/make-recurring", headers=biz_headers,
+            json={"frequency": "monthly", "name": "Design retainer"},
+        )
+    else:
+        response = await client.post(
+            "/api/invoice-schedules", headers=biz_headers,
+            json={"name": "Design retainer", "frequency": "monthly", "currency": "USD",
+                  "start_date": start.isoformat(),
+                  "lines": [cleared_line if save_path == "create" else line]},
+        )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    if save_path == "add":
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/terms", headers=biz_headers,
+            json={"effective_from": start.replace(month=2).isoformat(), "lines": [cleared_line]},
+        )
+        assert response.status_code == 201, response.text
+    elif save_path == "update":
+        term_id = response.json()["terms"][0]["id"]
+        response = await client.patch(
+            f"/api/invoice-schedules/{schedule_id}/terms/{term_id}", headers=biz_headers,
+            json={"lines": [cleared_line]},
+        )
+        assert response.status_code == 200, response.text
+    stored_line = response.json()["terms"][-1]["lines"][0]
+    if save_path == "make_recurring":
+        assert "fiscal_refs" not in stored_line
+    else:
+        assert stored_line["fiscal_refs"] == {}
+
+    later_refs = {"service_code": "changed-after-save"}
+    response = await client.patch(
+        f"/api/products/{product_id}", headers=biz_headers, json={"fiscal_refs": later_refs},
+    )
+    assert response.status_code == 200, response.text
+    for _ in range(2 if save_path == "add" else 1):
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/generate", headers=biz_headers,
+        )
+        assert response.status_code == 201, response.text
+        [invoice] = response.json()
+    assert invoice["lines"][0]["fiscal_refs"] == (
+        later_refs if save_path == "make_recurring" else None
+    )
+
+
+@pytest.mark.asyncio
+async def test_new_term_inherits_refs_the_product_gains_later_over_http(
+    client: AsyncClient, biz_headers,
+):
+    response = await client.post("/api/products", headers=biz_headers, json={"name": "Design"})
+    assert response.status_code == 201, response.text
+    product_id = response.json()["id"]
+    # The shape InvoiceLineEditor sends after a product with no refs is picked.
+    line = {"description": "Design", "quantity": "1", "unit_price": "100", "product_id": product_id, "price_id": None}
+    start = date(date.today().year + 1, 1, 1)
+    response = await client.post(
+        "/api/invoice-schedules", headers=biz_headers,
+        json={
+            "name": "Design retainer", "frequency": "monthly", "currency": "USD",
+            "start_date": start.isoformat(), "lines": [line],
+        },
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    response = await client.post(
+        f"/api/invoice-schedules/{schedule_id}/terms", headers=biz_headers,
+        json={"effective_from": start.replace(month=2).isoformat(), "lines": [line]},
+    )
+    assert response.status_code == 201, response.text
+
+    refs = {"service_code": "added-later"}
+    response = await client.patch(
+        f"/api/products/{product_id}", headers=biz_headers, json={"fiscal_refs": refs},
+    )
+    assert response.status_code == 200, response.text
+    for _ in range(2):
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/generate", headers=biz_headers,
+        )
+        assert response.status_code == 201, response.text
+        [invoice] = response.json()
+        assert invoice["lines"][0]["fiscal_refs"] == refs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("edit", [None, "read_resave", "discount", "effective_from"])
+async def test_legacy_schedule_fiscal_refs_survive_emission_and_edits(
+    client: AsyncClient, biz_headers, session, monkeypatch, edit,
+):
+    monkeypatch.setattr(schedules, "_today", lambda: TODAY)
+    refs = {"service_code": "catalog-code"}
+    response = await client.post(
+        "/api/products", headers=biz_headers,
+        json={"name": "Design", "fiscal_refs": refs},
+    )
+    assert response.status_code == 201, response.text
+    line = {"description": "Design", "unit_price": "100", "product_id": response.json()["id"]}
+    response = await client.post(
+        "/api/invoice-schedules", headers=biz_headers,
+        json={"name": "Legacy agreement", "frequency": "monthly", "currency": "USD", "lines": [line]},
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    response = await client.post(
+        f"/api/invoice-schedules/{schedule_id}/terms", headers=biz_headers,
+        json={"effective_from": TODAY.replace(month=10).isoformat(), "lines": [line]},
+    )
+    assert response.status_code == 201, response.text
+    terms = (await session.scalars(
+        select(InvoiceScheduleTerm)
+        .where(InvoiceScheduleTerm.schedule_id == uuid.UUID(schedule_id))
+        .order_by(InvoiceScheduleTerm.effective_from)
+    )).all()
+    # Before this fix, omitted references were persisted as null and inherited
+    # from the catalog. Keep that exact stored shape across the upgrade.
+    for term in terms:
+        term.lines = [{**row, "fiscal_refs": None} for row in term.lines]
+    await session.commit()
+
+    response = await client.get(f"/api/invoice-schedules/{schedule_id}", headers=biz_headers)
+    assert response.status_code == 200, response.text
+    if edit is not None:
+        changes = {
+            "read_resave": {"lines": response.json()["terms"][-1]["lines"]},
+            "discount": {"discount": "1"},
+            "effective_from": {"effective_from": TODAY.replace(month=11).isoformat()},
+        }[edit]
+        response = await client.patch(
+            f"/api/invoice-schedules/{schedule_id}/terms/{terms[-1].id}",
+            headers=biz_headers, json=changes,
+        )
+        assert response.status_code == 200, response.text
+
+    for _ in range(3 if edit == "effective_from" else 2):
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/generate", headers=biz_headers,
+        )
+        assert response.status_code == 201, response.text
+        [invoice] = response.json()
+        assert invoice["lines"][0]["fiscal_refs"] == refs
+    await session.refresh(terms[0])
+    assert terms[0].lines[0]["fiscal_refs"] is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_schedule_reads_preserve_inheritance_without_mutating_terms(
+    client: AsyncClient, biz_headers, session, monkeypatch,
+):
+    monkeypatch.setattr(schedules, "_today", lambda: TODAY)
+    response = await client.post(
+        "/api/invoice-schedules", headers=biz_headers,
+        json={
+            "name": "Legacy agreement", "frequency": "monthly", "currency": "USD",
+            "lines": [{"description": "Design", "unit_price": "100"}],
+        },
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    term = await session.scalar(select(InvoiceScheduleTerm).where(
+        InvoiceScheduleTerm.schedule_id == uuid.UUID(schedule_id),
+    ))
+    line = term.lines[0]
+    term.lines = [
+        {**line, "fiscal_refs": None},
+        {**line, "fiscal_refs": {}},
+        {**line, "fiscal_refs": {"service_code": "fixed-code"}},
+    ]
+    await session.commit()
+    response = await client.get(f"/api/invoice-schedules/{schedule_id}", headers=biz_headers)
+    assert response.status_code == 200, response.text
+    agreement = response.json()
+    for read in [*agreement["terms"], agreement["current_term"], agreement["next_term"]]:
+        assert "fiscal_refs" not in read["lines"][0]
+        assert read["lines"][1]["fiscal_refs"] == {}
+        assert read["lines"][2]["fiscal_refs"] == {"service_code": "fixed-code"}
+    # Serialization is a read: neither the identity-map object nor its stored
+    # JSON should be changed as a side effect of building the response.
+    assert term.lines[0]["fiscal_refs"] is None
+    assert term not in session.dirty
+    await session.refresh(term)
+    assert term.lines[0]["fiscal_refs"] is None

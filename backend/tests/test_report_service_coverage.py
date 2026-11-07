@@ -272,11 +272,14 @@ async def test_income_expenses_yearly_interval(session, test_user, test_workspac
     assert bd["income"] == pytest.approx(2000.0)
 
 
-async def test_income_expenses_excludes_opening_and_closed(session, test_user, test_workspace):
-    """opening_balance source and closed accounts contribute nothing."""
+async def test_income_expenses_excludes_opening_but_keeps_closed_history(
+    session, test_user, test_workspace
+):
+    """opening_balance rows contribute nothing; a closed account's history still counts."""
     closed = await _make_account(session, test_user.id, "IE Closed", is_closed=True)
     today = date.today()
     await _add_txn(session, test_user.id, closed.id, 1000, "credit", today)
+    await _add_txn(session, test_user.id, closed.id, 300, "debit", today)
 
     open_acct = await _make_account(session, test_user.id, "IE Open")
     await _add_txn(session, test_user.id, open_acct.id, 7000, "credit", today, source="opening_balance")
@@ -285,8 +288,8 @@ async def test_income_expenses_excludes_opening_and_closed(session, test_user, t
         session, test_workspace.id, test_user.id, months=2, interval="monthly"
     )
     bd = {b.key: b.value for b in report.summary.breakdowns}
-    assert bd["income"] == 0.0
-    assert bd["expenses"] == 0.0
+    assert bd["income"] == 1000.0
+    assert bd["expenses"] == 300.0
 
 
 async def test_income_expenses_with_recurring_projection(session, test_user, test_workspace):
@@ -338,6 +341,59 @@ async def test_income_expenses_pending_is_projected_not_actual(
     bd = {b.key: b.value for b in report.summary.breakdowns}
     assert bd["expenses"] == pytest.approx(100.0)
     assert bd["projectedExpenses"] == pytest.approx(50.0)
+
+
+async def test_income_expenses_split_pending_projects_owner_share(
+    session, test_user, test_workspace
+):
+    """A pending row split half with a friend projects only the owner's half,
+    in the totals and in the category composition and trend alike."""
+    from app.schemas.group import GroupCreate, GroupMemberCreate
+    from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
+    from app.services import group_service, split_service
+
+    acct = await _make_account(session, test_user.id, "IE Split Pending")
+    cat = await _make_category(session, test_user.id, "Shared")
+    today = date.today()
+    tx = await _add_txn(
+        session, test_user.id, acct.id, 80, "debit", today,
+        category_id=cat.id, status="pending",
+    )
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id,
+        GroupCreate(name="IE Split", default_currency="BRL"),
+    )
+    members = []
+    for name in ("Me", "Friend"):
+        member = await group_service.create_member(
+            session, group.id, test_workspace.id,
+            GroupMemberCreate(name=name, is_self=(name == "Me")),
+        )
+        assert member is not None
+        members.append(member)
+    await split_service.replace_splits(
+        session,
+        tx,
+        TransactionSplitsInput(
+            share_type="exact",
+            splits=[
+                TransactionSplitInput(group_member_id=m.id, share_amount=Decimal("40"))
+                for m in members
+            ],
+        ),
+        test_user.id,
+    )
+    await session.commit()
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1, interval="monthly"
+    )
+    bd = {b.key: b.value for b in report.summary.breakdowns}
+    assert bd["projectedExpenses"] == pytest.approx(40.0)
+    shared = next(c for c in report.composition if c.label == "Shared")
+    assert shared.value == pytest.approx(40.0)
+    shared_trend = next(ct for ct in report.category_trend if ct.label == "Shared")
+    assert shared_trend.total == pytest.approx(40.0)
 
 
 async def test_income_expenses_many_categories_triggers_other_bucket(session, test_user, test_workspace):
@@ -612,6 +668,67 @@ async def test_income_expenses_owner_split_offset(session, test_user, test_works
     assert dinner.value == pytest.approx(600.0)
 
 
+async def test_income_expenses_composition_ignores_splits_in_other_workspaces(
+    session, test_user, test_workspace
+):
+    """A split the user owns in another workspace must not shrink this
+    workspace's composition. Uncategorized is the bucket both workspaces
+    share, since every category belongs to one workspace."""
+    from app.models.group import Group, GroupMember
+    from app.models.transaction_split import TransactionSplit
+    from app.models.workspace import Workspace, WorkspaceMember
+
+    other_ws = Workspace(
+        id=uuid.uuid4(), name="Other", kind="personal",
+        created_by_user_id=test_user.id, default_currency="BRL",
+    )
+    session.add(other_ws)
+    await session.flush()
+    session.add(WorkspaceMember(
+        id=uuid.uuid4(), workspace_id=other_ws.id, user_id=test_user.id, role="owner",
+    ))
+    other_acct = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other_ws.id,
+        name="Other Acct", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    group = Group(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other_ws.id,
+        name="Trip", kind="shared", default_currency="BRL",
+    )
+    session.add_all([other_acct, group])
+    await session.flush()
+    friend = GroupMember(
+        id=uuid.uuid4(), group_id=group.id, workspace_id=other_ws.id,
+        name="Friend", is_self=False,
+    )
+    session.add(friend)
+    await session.commit()
+
+    today = date.today()
+    acct = await _make_account(session, test_user.id, "Main Acct")
+    await _add_txn(session, test_user.id, acct.id, 500, "debit", today)
+    other_txn = await _add_txn(
+        session, test_user.id, other_acct.id, 1000, "debit", today,
+        workspace_id=other_ws.id,
+    )
+    session.add(TransactionSplit(
+        id=uuid.uuid4(), transaction_id=other_txn.id, workspace_id=other_ws.id,
+        group_member_id=friend.id, share_amount=Decimal("200"), share_type="amount",
+    ))
+    await session.commit()
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=2, interval="monthly"
+    )
+
+    uncategorized = next(
+        (c for c in report.composition if c.key == "uncategorized" and c.group == "expenses"),
+        None,
+    )
+    assert uncategorized is not None
+    assert uncategorized.value == pytest.approx(500.0)
+
+
 async def test_income_expenses_trend_points_have_per_period_composition(session, test_user, test_workspace):
     """Each income/expenses trend DataPoint carries per-period composition items."""
     cat_wages = await _make_category(session, test_user.id, "Wages", color="#0E0")
@@ -781,3 +898,66 @@ async def test_cash_flow_accrual_mode_pending_cc(session, test_user, test_worksp
     )
     assert report.meta.type == "cash_flow"
     assert len(report.trend) > 0
+
+
+@pytest.mark.parametrize('interval', ['daily', 'monthly', 'yearly'])
+@pytest.mark.parametrize('end', [date(2022, 3, 20), date(2026, 9, 12)])
+async def test_custom_income_expenses_only_include_in_range_actuals(
+    session, test_user, test_workspace, monkeypatch, interval, end,
+):
+    from app.models.invoice import Invoice
+    from app.services import report_service
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 9, 12)
+
+    monkeypatch.setattr(report_service, 'date', FixedDate)
+    start = end.replace(day=10)
+    currency = test_user.primary_currency
+    account = await _make_account(session, test_user.id, 'Custom actuals', currency=currency)
+    category = await _make_category(session, test_user.id, 'Actual category')
+    for amount, kind, day, status in [
+        (100, 'credit', start, 'posted'),
+        (-30, 'debit', end, 'posted'),
+        (500, 'credit', start - timedelta(days=1), 'posted'),
+        (-700, 'debit', end + timedelta(days=1), 'posted'),
+        (900, 'credit', start, 'pending'),
+        (-800, 'debit', end, 'pending'),
+    ]:
+        await _add_txn(session, test_user.id, account.id, amount, kind, day,
+                       status=status, category_id=category.id, currency=currency)
+    recurring = await _make_recurring(
+        session, test_user.id, account.id, 600, 'credit',
+        next_occurrence=start, category_id=category.id, currency=currency,
+    )
+    recurring.start_date = start
+    session.add(Invoice(
+        workspace_id=test_workspace.id, user_id=test_user.id, status='open',
+        issue_date=start, due_date=start, currency=currency, total=Decimal('1100'),
+        direction='receivable', number=1, series='TEST',
+    ))
+    await session.commit()
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, interval=interval,
+        start_date=start, end_date=end,
+    )
+    totals = {item.key: item.value for item in report.summary.breakdowns}
+    assert totals['income'] == 100
+    assert totals['expenses'] == 30
+    assert totals['projectedIncome'] == totals['projectedExpenses'] == 0
+    assert report.summary.primary_value == 70
+    assert sum(point.breakdowns['income'] for point in report.trend) == 100
+    assert sum(point.breakdowns['expenses'] for point in report.trend) == 30
+    assert all(point.breakdowns['projectedIncome'] == 0 and
+               point.breakdowns['projectedExpenses'] == 0 for point in report.trend)
+    assert {item.group: item.value for item in report.composition} == {
+        'income': 100, 'expenses': 30,
+    }
+    assert {item.group: item.total for item in report.category_trend} == {
+        'income': 100, 'expenses': 30,
+    }
+    for item in report.category_trend:
+        assert sum(point.value for point in item.series) == item.total

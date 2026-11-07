@@ -46,6 +46,7 @@ from app.schemas.asset_import import (
     AssetOrderImport,
 )
 from app.services import asset_transaction_service
+from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.import_service import (
     DATE_FORMAT_MAP,
     _sniff_csv_dialect,
@@ -205,7 +206,7 @@ def _normalize_header(value: str) -> str:
     Accents come off because a Brazilian export writes `Preço` and `Operação`,
     and a header that only differs by a diacritic is the same header.
     """
-    folded = _strip_accents(value.strip().lower().replace('_', ' '))
+    folded = _strip_accents(value.strip().lower().replace('_', ' ').replace('*', '').replace('#', ''))
     return ' '.join(folded.split())
 
 
@@ -225,15 +226,26 @@ def _parse_date(raw: str, date_format: Optional[str]) -> Optional[date_type]:
     raw = raw.strip()
     if not raw:
         return None
-    formats = []
-    if date_format and date_format in DATE_FORMAT_MAP:
-        formats.append(DATE_FORMAT_MAP[date_format])
-    formats.extend(['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%Y/%m/%d', '%d.%m.%Y'])
-    for fmt in formats:
+
+    def parse(fmt: str) -> Optional[date_type]:
+        # Broker exports sometimes append a time to the date, in which case the
+        # first 10 characters are the date itself.
+        value = raw[:10] if len(raw) > 10 and fmt == '%Y-%m-%d' else raw
         try:
-            return datetime.strptime(raw[:10] if len(raw) > 10 and fmt == '%Y-%m-%d' else raw, fmt).date()
+            return datetime.strptime(value, fmt).date()
         except ValueError:
-            continue
+            return None
+
+    if date_format and date_format in DATE_FORMAT_MAP:
+        # The user chose a format, so the file is parsed with it strictly,
+        # like parse_csv does: "13/02/2026" must not become February 13
+        # under MM/DD/YYYY.
+        return parse(DATE_FORMAT_MAP[date_format])
+
+    for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%Y/%m/%d', '%d.%m.%Y']:
+        parsed = parse(fmt)
+        if parsed is not None:
+            return parsed
     return None
 
 
@@ -319,6 +331,16 @@ def parse_orders_csv(
         else:
             kind = 'sell' if quantity < 0 else 'buy'
 
+        # Fees are costs: a negative one would push the cost basis down, and
+        # a malformed fee is reported like the other bad cells instead of
+        # being read as zero.
+        fee_raw = cell(row, 'fee')
+        fee = _parse_decimal(fee_raw)
+        if fee_raw and (fee is None or fee < 0):
+            errors.append(AssetImportRowError(row=index, reason='invalid_fee', ticker=ticker))
+            continue
+        fee = fee or Decimal('0')
+
         orders.append(AssetOrderImport(
             row=index,
             ticker=ticker,
@@ -326,7 +348,7 @@ def parse_orders_csv(
             kind=kind,
             quantity=abs(quantity),
             price=price,
-            fee=_parse_decimal(cell(row, 'fee')) or Decimal('0'),
+            fee=fee,
             currency=(cell(row, 'currency') or None),
             name=(cell(row, 'name') or None),
             notes=(cell(row, 'notes') or None),
@@ -470,6 +492,7 @@ async def import_orders(
     without writing anything, so the preview can promise what the import will
     do instead of guessing.
     """
+    await ensure_group_in_workspace(session, group_id, workspace_id)
     ordered = sorted(orders, key=lambda o: (o.date, o.row))
     tickers = [o.ticker for o in ordered]
 

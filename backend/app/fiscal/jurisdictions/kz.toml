@@ -1,0 +1,5 @@
+# Kazakhstan. The electronic invoice (ЭСФ / ESF) is issued by VAT-registered
+# businesses. BIN identifies legal entities and IIN identifies individuals;
+# both are twelve digits and share one checksum scheme.
+code = "KZ"
+kinds = ['kz_biniin']
