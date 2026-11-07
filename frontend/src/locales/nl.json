@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Een uitgegeven factuur wordt nooit verwijderd — annuleer hem.",
       "issued_invoice_immutable": "Een uitgegeven factuur kan niet veranderen. Annuleer hem en geef een nieuwe uit.",
       "over_allocation": "Dat is meer dan deze factuur nog openstaat.",
+      "transaction_over_allocation": "Dat is meer dan er van deze transactie nog te koppelen is.",
       "already_allocated": "Deze transactie is al aan deze factuur gekoppeld.",
       "already_settled": "Deze factuur is al volledig voldaan.",
       "currency_mismatch": "De transactie is in een andere valuta.",

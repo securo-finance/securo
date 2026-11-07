@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Une facture émise ne se supprime jamais — annulez-la.",
       "issued_invoice_immutable": "Une facture émise ne peut pas changer. Annulez-la et émettez-en une autre.",
       "over_allocation": "C'est plus que ce que cette facture doit encore.",
+      "transaction_over_allocation": "C'est plus que ce qu'il reste à lier sur cette transaction.",
       "already_allocated": "Cette transaction est déjà liée à cette facture.",
       "already_settled": "Cette facture est déjà entièrement réglée.",
       "currency_mismatch": "La transaction est dans une autre devise.",

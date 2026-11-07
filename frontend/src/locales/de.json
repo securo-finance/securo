@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Eine ausgestellte Rechnung wird nie gelöscht — stornieren Sie sie.",
       "issued_invoice_immutable": "Eine ausgestellte Rechnung kann sich nicht ändern. Stornieren und neu ausstellen.",
       "over_allocation": "Das ist mehr, als diese Rechnung noch offen hat.",
+      "transaction_over_allocation": "Das ist mehr, als von dieser Transaktion noch zuzuordnen ist.",
       "already_allocated": "Diese Transaktion ist dieser Rechnung bereits zugeordnet.",
       "already_settled": "Diese Rechnung ist bereits vollständig beglichen.",
       "currency_mismatch": "Die Transaktion lautet auf eine andere Währung.",

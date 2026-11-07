@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Wystawionej faktury nigdy się nie usuwa — anuluj ją.",
       "issued_invoice_immutable": "Wystawiona faktura nie może się zmienić. Anuluj ją i wystaw nową.",
       "over_allocation": "To więcej, niż ta faktura jeszcze wynosi.",
+      "transaction_over_allocation": "To więcej, niż z tej transakcji zostało do przypisania.",
       "already_allocated": "Ta transakcja jest już powiązana z tą fakturą.",
       "already_settled": "Ta faktura jest już w pełni rozliczona.",
       "currency_mismatch": "Transakcja jest w innej walucie.",

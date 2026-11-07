@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Vystavená faktúra sa nikdy nemaže — stornujte ju.",
       "issued_invoice_immutable": "Vystavenú faktúru nemožno meniť. Stornujte ju a vystavte novú.",
       "over_allocation": "To je viac, než táto faktúra ešte dlží.",
+      "transaction_over_allocation": "To je viac, než z tejto transakcie ešte zostáva priradiť.",
       "already_allocated": "Táto transakcia je už k tejto faktúre priradená.",
       "already_settled": "Táto faktúra je už úplne vyrovnaná.",
       "currency_mismatch": "Transakcia je v inej mene.",
