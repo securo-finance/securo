@@ -58,29 +58,35 @@ export function planBudgetChange({
   amount,
   recurring,
   current,
+  series = current ? [current] : [],
   month,
 }: {
   categoryId: string
   amount: number
   recurring: boolean
   current: Budget | undefined
+  series?: Budget[]
   month: string
 }): BudgetOperation[] {
   // The API sends decimals as strings.
   const currentAmount = Number(current?.amount ?? 0)
-  const startsThisMonth = current?.month === month
   if (amount > 0 && currentAmount === amount && current?.is_recurring === recurring) return []
 
   if (amount === 0) {
-    if (!current) return []
-    if (currentAmount === 0 || !current.is_recurring || startsThisMonth) {
-      return [{ type: 'delete', id: current.id }]
+    // Clearing means no budget from the selected month onward. Keep a zero
+    // row at the boundary to mask older recurring segments, and remove later
+    // segments/overrides so they cannot revive the series.
+    const operations: BudgetOperation[] = series
+      .filter((budget) => budget.month > month && budget.id !== current?.id)
+      .map((budget) => ({ type: 'delete', id: budget.id }))
+    if (!current) return operations
+    if (current.is_recurring) {
+      operations.unshift({ type: 'update', id: current.id, data: { amount: 0, effective_month: month } })
+    } else {
+      // Deleting this override would reveal the older recurring amount.
+      operations.unshift({ type: 'update', id: current.id, data: { amount: 0 } })
     }
-    if (recurring) return [{ type: 'update', id: current.id, data: { amount: 0, effective_month: month } }]
-    return [
-      { type: 'create', data: { category_id: categoryId, amount: 0, month, is_recurring: false } },
-      { type: 'update', id: current.id, data: { amount: 0, effective_month: nextMonth(month) } },
-    ]
+    return operations
   }
 
   if (recurring) {

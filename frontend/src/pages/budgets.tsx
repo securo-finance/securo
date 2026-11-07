@@ -30,7 +30,7 @@ import { todayInTimezone } from '@/lib/date-utils'
 import { formatAmountInput, formatCurrency } from '@/lib/format'
 import type { BudgetSuggestion, Category } from '@/types'
 
-/** Months of history shown per category; the suggestion is the median of the latest three. */
+/** Months of history shown per category; suggestion amounts come from the backend average. */
 const HISTORY_MONTHS = 6
 
 const STEP_BUTTON = 'h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base'
@@ -118,6 +118,10 @@ export default function BudgetsPage() {
     queryKey: ['budgets', selectedMonth],
     queryFn: () => budgetsApi.list(monthParam),
   })
+  const { data: budgetSeries } = useQuery({
+    queryKey: ['budgets', 'series'],
+    queryFn: () => budgetsApi.list(),
+  })
   const { data: categoriesList, isLoading: categoriesLoading, isError: categoriesError, error: categoriesLoadError, refetch: refetchCategories } = useQuery({
     queryKey: ['categories'],
     queryFn: categoriesApi.listIncludingHidden,
@@ -157,6 +161,7 @@ export default function BudgetsPage() {
       amount,
       recurring: recurringFor(categoryId),
       current: budgetByCategory.get(categoryId),
+      series: (budgetSeries ?? []).filter((budget) => budget.category_id === categoryId),
       month: monthParam,
     })
   }
@@ -173,8 +178,11 @@ export default function BudgetsPage() {
   }, [groupsList, categoriesList, t])
   const allCategories = sections.flatMap((section) => section.categories)
 
-  const operations = allCategories.flatMap((category) => planFor(category.id))
-  const changedCategories = new Set(allCategories.filter((category) => planFor(category.id).length > 0).map((category) => category.id))
+  // Only plan categories the user edited in this month. Merely opening a
+  // month must never turn stored zero tombstones into delete operations.
+  const dirtyCategoryIds = new Set([...Object.keys(drafts), ...Object.keys(current.recurring)])
+  const operations = allCategories.flatMap((category) => dirtyCategoryIds.has(category.id) ? planFor(category.id) : [])
+  const changedCategories = new Set(allCategories.filter((category) => dirtyCategoryIds.has(category.id) && planFor(category.id).length > 0).map((category) => category.id))
   const invalidCategories = new Set(allCategories.filter((category) => parsedDraftFor(category.id) === null).map((category) => category.id))
   const totalBudget = allCategories.reduce((sum, category) => sum + (parsedDraftFor(category.id) ?? 0), 0)
   const rowFor = (suggestion: BudgetSuggestion) =>
@@ -411,7 +419,7 @@ export default function BudgetsPage() {
 
       {/* Save bar: same fixed placement as the transactions bulk-action bar, so it
           stays in reach while editing a long list. */}
-      {canWrite && allCategories.length > 0 && !budgetsLoading && !categoriesLoading && !groupsLoading && !budgetsError && !categoriesError && !groupsError && budgetsList && categoriesList && groupsList && (
+      {canWrite && allCategories.length > 0 && !budgetsLoading && !categoriesLoading && !groupsLoading && !budgetsError && !categoriesError && !groupsError && budgetsList && budgetSeries && categoriesList && groupsList && (
         <div className={cn(
           'fixed bottom-0 left-0 right-0 z-40',
           'transition-[left] duration-300 ease-in-out motion-reduce:transition-none',

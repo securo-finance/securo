@@ -76,18 +76,48 @@ describe('planBudgetChange', () => {
     ])
   })
 
-  it('deletes cleared one-off and zero-amount overrides', () => {
-    expect(plan(0, true, budget({ id: 'o1', month, is_recurring: false }))).toEqual([{ type: 'delete', id: 'o1' }])
-    expect(plan(0, true, budget({ id: 'z1', amount: 0, is_recurring: false }))).toEqual([{ type: 'delete', id: 'z1' }])
-    expect(plan(0, true, budget({ month }))).toEqual([{ type: 'delete', id: 'b1' }])
-    expect(plan(0, true, budget({ id: 'zr', amount: 0, month }))).toEqual([{ type: 'delete', id: 'zr' }])
+  it('keeps zero tombstones when clearing one-off and recurring budgets', () => {
+    expect(plan(0, true, budget({ id: 'o1', month, is_recurring: false }))).toEqual([{ type: 'update', id: 'o1', data: { amount: 0 } }])
+    expect(plan(0, true, budget({ id: 'z1', amount: 0, is_recurring: false }))).toEqual([{ type: 'update', id: 'z1', data: { amount: 0 } }])
+    expect(plan(0, true, budget({ month }))).toEqual([{ type: 'update', id: 'b1', data: { amount: 0, effective_month: month } }])
+    expect(plan(0, true, budget({ id: 'zr', amount: 0, month }))).toEqual([{ type: 'update', id: 'zr', data: { amount: 0, effective_month: month } }])
+  })
+
+  it('keeps a cleared month-only override as a zero tombstone and removes future segments', () => {
+    expect(planBudgetChange({
+      categoryId: 'food', amount: 0, recurring: false,
+      current: budget({ id: 'oct-oneoff', month, is_recurring: false }),
+      series: [
+        budget({ id: 'aug-series', month: '2026-08-01' }),
+        budget({ id: 'oct-oneoff', month, is_recurring: false }),
+        budget({ id: 'dec-edit', month: '2026-12-01', amount: 250 }),
+      ],
+      month,
+    })).toEqual([
+      { type: 'update', id: 'oct-oneoff', data: { amount: 0 } },
+      { type: 'delete', id: 'dec-edit' },
+    ])
+  })
+
+  it('clearing the start of a series removes later recurring edits', () => {
+    expect(planBudgetChange({
+      categoryId: 'food', amount: 0, recurring: true,
+      current: budget({ id: 'aug-series', month: '2026-08-01' }),
+      series: [
+        budget({ id: 'aug-series', month: '2026-08-01' }),
+        budget({ id: 'dec-edit', month: '2026-12-01', amount: 250 }),
+      ],
+      month: '2026-08-01',
+    })).toEqual([
+      { type: 'update', id: 'aug-series', data: { amount: 0, effective_month: '2026-08-01' } },
+      { type: 'delete', id: 'dec-edit' },
+    ])
   })
 
   it('keeps earlier months of a recurring budget when clearing this month', () => {
     expect(plan(0, true, budget({}))).toEqual([{ type: 'update', id: 'b1', data: { amount: 0, effective_month: month } }])
     expect(plan(0, false, budget({}))).toEqual([
-      { type: 'create', data: { category_id: 'food', amount: 0, month, is_recurring: false } },
-      { type: 'update', id: 'b1', data: { amount: 0, effective_month: '2026-11-01' } },
+      { type: 'update', id: 'b1', data: { amount: 0, effective_month: month } },
     ])
   })
 })

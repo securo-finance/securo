@@ -34,12 +34,13 @@ function comparisonRow(categoryId: string, actual: number): BudgetVsActual {
 
 const rent: Budget = { id: 'b-rent', user_id: 'u', category_id: 'rent', amount: 900, month: '2026-08-01', is_recurring: true }
 const hiddenBudget: Budget = { id: 'b-hidden', user_id: 'u', category_id: 'hidden', amount: 120, month: '2026-08-01', is_recurring: true }
+const foodTombstone: Budget = { id: 'b-food-zero', user_id: 'u', category_id: 'food', amount: 0, month: '2026-09-01', is_recurring: true }
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(Date.UTC(2026, 9, 10, 12)))
   vi.clearAllMocks()
-  api.budgets.list.mockResolvedValue([rent, hiddenBudget])
+  api.budgets.list.mockResolvedValue([rent, hiddenBudget, foodTombstone])
   api.categories.listIncludingHidden.mockResolvedValue([])
   api.categoryGroups.listIncludingHidden.mockResolvedValue([{
     id: 'g', user_id: 'u', name: 'Housing', icon: 'home', color: '#000', position: 0, is_system: false, is_hidden: false,
@@ -97,5 +98,6 @@ describe('Budget settings page', () => {
       expect(api.budgets.update).toHaveBeenCalledWith('b-hidden', { amount: 0, effective_month: '2026-11-01' })
     })
     expect(api.budgets.update).toHaveBeenCalledWith('b-rent', { amount: 950, effective_month: '2026-10-01' })
+    expect(api.budgets.delete).not.toHaveBeenCalledWith('b-food-zero')
   })
 })
