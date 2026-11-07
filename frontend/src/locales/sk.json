@@ -1637,7 +1637,18 @@
     "autoGenerate": "Generovať transakcie automaticky",
     "autoGenerateHelp": "Vytvorí transakciu vždy, keď je táto platba splatná. Vypni, ak chceš počkať na skutočnú platbu (napr. zo synchronizácie banky) a dovtedy ju zobrazovať len ako nadchádzajúcu.",
     "fxEstimate": "Odhad podľa posledného výmenného kurzu ({{rate}}). Konečná suma sa môže zmeniť.",
-    "confirmDeleteDescription": "Opakovaná definícia „{{description}}“ bude natrvalo vymazaná. Existujúce transakcie zostanú, ale stratia prepojenie na opakovanie. Túto akciu nie je možné vrátiť späť."
+    "confirmDeleteDescription": "Opakovaná definícia „{{description}}“ bude natrvalo vymazaná. Existujúce transakcie zostanú, ale stratia prepojenie na opakovanie. Túto akciu nie je možné vrátiť späť.",
+    "priceHistory": "História cien",
+    "viewPriceHistory": "Zobraziť históriu cien",
+    "priceChangesTitle": "Nedávne zmeny cien (posledných 30 dní)",
+    "priceChangesEmpty": "Neboli zistené stabilné zmeny cien",
+    "priceChangeBadge": "Cena sa zmenila",
+    "priceChangeIncrease": "Cena vzrástla",
+    "priceChangeDecrease": "Cena klesla",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Po prestávke {{days}} dní",
+    "priceChangeInsufficient": "Predtým, ako Securo oznámi stabilnú zmenu ceny, sú potrebné aspoň 3 prepojené zaúčtované poplatky."
   },
   "rules": {
     "searchPlaceholder": "Hľadať pravidlá...",

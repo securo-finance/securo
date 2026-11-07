@@ -6,7 +6,7 @@ import type { QueryClient } from '@tanstack/react-query'
 // open drill-down overlay. Call this from every mutation that creates/
 // updates/deletes a transaction, transfer, or anything that shifts account
 // balances. Pages that also need to refresh entity-specific lists
-// (recurring, payees, connections, etc.) should invalidate those keys
+// (payees, connections, etc.) should invalidate those keys
 // on top of this call.
 export function invalidateCategoryQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['categories'] })
@@ -23,4 +23,5 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['budgets'] })
   queryClient.invalidateQueries({ queryKey: ['reports'] })
   queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+  queryClient.invalidateQueries({ queryKey: ['recurring'] })
 }

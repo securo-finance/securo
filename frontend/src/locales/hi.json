@@ -1557,7 +1557,18 @@
     "autoGenerate": "लेन-देन अपने आप बनाएँ",
     "autoGenerateHelp": "हर बार यह बिल देय होने पर एक लेन-देन बनाएँ। असल शुल्क का इंतज़ार करने के लिए इसे बंद करें (जैसे, बैंक सिंक से) और तब तक इसे केवल आने वाले के रूप में दिखाएँ।",
     "fxEstimate": "नवीनतम विनिमय दर ({{rate}}) के आधार पर अनुमान। अंतिम राशि बदल सकती है।",
-    "confirmDeleteDescription": "आवर्ती परिभाषा \"{{description}}\" स्थायी रूप से हट जाएगी। मौजूदा लेन-देन बने रहेंगे लेकिन उनका आवर्ती लिंक खो जाएगा। यह कार्रवाई पूर्ववत नहीं की जा सकती।"
+    "confirmDeleteDescription": "आवर्ती परिभाषा \"{{description}}\" स्थायी रूप से हट जाएगी। मौजूदा लेन-देन बने रहेंगे लेकिन उनका आवर्ती लिंक खो जाएगा। यह कार्रवाई पूर्ववत नहीं की जा सकती।",
+    "priceHistory": "मूल्य इतिहास",
+    "viewPriceHistory": "मूल्य इतिहास देखें",
+    "priceChangesTitle": "हाल की कीमतों में बदलाव (पिछले 30 दिन)",
+    "priceChangesEmpty": "कोई स्थिर कीमत परिवर्तन नहीं मिला",
+    "priceChangeBadge": "कीमत बदली",
+    "priceChangeIncrease": "कीमत बढ़ी",
+    "priceChangeDecrease": "कीमत घटी",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "{{days}} दिनों के अंतराल के बाद",
+    "priceChangeInsufficient": "Securo द्वारा स्थिर कीमत परिवर्तन रिपोर्ट करने से पहले कम से कम 3 लिंक किए गए पोस्ट किए गए चार्ज आवश्यक हैं।"
   },
   "rules": {
     "searchPlaceholder": "नियम खोजें...",

@@ -52,6 +52,8 @@ import type {
   InvoiceSettings,
   InvoiceSummary,
   RecurringTransaction,
+  RecurringPriceChange,
+  RecurringPriceChangeHistory,
   ProjectedTransaction,
   TransactionCalendarResponse,
   Budget,
@@ -1324,6 +1326,18 @@ export const recurring = {
   },
   generate: async (): Promise<{ generated: number }> => {
     const { data } = await api.post('/recurring-transactions/generate')
+    return data
+  },
+  // Read-only price-change projections. Explicit methods keep the
+  // wire paths visible; both are plain GETs with no optimistic mutation.
+  recentPriceChanges: async (limit = 20): Promise<RecurringPriceChange[]> => {
+    const { data } = await api.get('/recurring-transactions/price-changes/recent', {
+      params: { limit },
+    })
+    return data
+  },
+  priceHistory: async (id: string): Promise<RecurringPriceChangeHistory> => {
+    const { data } = await api.get(`/recurring-transactions/${id}/price-changes`)
     return data
   },
 }

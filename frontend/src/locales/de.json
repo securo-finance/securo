@@ -1558,7 +1558,18 @@
     "autoGenerate": "Transaktionen automatisch erstellen",
     "autoGenerateHelp": "Erstellt bei jeder Fälligkeit dieser Rechnung eine Transaktion. Deaktivieren, um auf die tatsächliche Belastung (z. B. aus der Banksynchronisierung) zu warten und sie bis dahin nur als anstehend anzuzeigen.",
     "fxEstimate": "Schätzung basierend auf dem aktuellsten Wechselkurs ({{rate}}). Der endgültige Betrag kann abweichen.",
-    "confirmDeleteDescription": "Die wiederkehrende Transaktion \"{{description}}\" wird dauerhaft gelöscht. Vorhandene Transaktionen bleiben bestehen, verlieren jedoch ihre Verknüpfung zur wiederkehrenden Transaktion. Diese Aktion kann nicht rückgängig gemacht werden."
+    "confirmDeleteDescription": "Die wiederkehrende Transaktion \"{{description}}\" wird dauerhaft gelöscht. Vorhandene Transaktionen bleiben bestehen, verlieren jedoch ihre Verknüpfung zur wiederkehrenden Transaktion. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "priceHistory": "Preisverlauf",
+    "viewPriceHistory": "Preisverlauf anzeigen",
+    "priceChangesTitle": "Letzte Preisänderungen (letzte 30 Tage)",
+    "priceChangesEmpty": "Keine stabilen Preisänderungen erkannt",
+    "priceChangeBadge": "Preis geändert",
+    "priceChangeIncrease": "Preis gestiegen",
+    "priceChangeDecrease": "Preis gesunken",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Nach einer Pause von {{days}} Tagen",
+    "priceChangeInsufficient": "Es werden mindestens 3 zugeordnete gebuchte Abbuchungen benötigt, bevor Securo eine stabile Preisänderung meldet."
   },
   "rules": {
     "searchPlaceholder": "Regeln suchen...",

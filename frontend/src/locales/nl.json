@@ -1559,7 +1559,18 @@
     "autoGenerateHelp": "Maak een transactie aan elke keer dat deze rekening moet worden betaald. Schakel uit om te wachten op de werkelijke afschrijving (bijvoorbeeld via banksynchronisatie) en toon deze tot die tijd alleen als aankomend.",
     "fxEstimate": "Schatting gebaseerd op de laatste wisselkoers ({{rate}}). Het eindbedrag kan veranderen.",
     "confirmDeleteTitle": "Terugkerende transactie verwijderen?",
-    "confirmDeleteDescription": "De terugkerende definitie \"{{description}}\" wordt permanent verwijderd. Bestaande transacties blijven bestaan, maar verliezen hun koppeling met de terugkerende transactie. Deze actie kan niet ongedaan worden gemaakt."
+    "confirmDeleteDescription": "De terugkerende definitie \"{{description}}\" wordt permanent verwijderd. Bestaande transacties blijven bestaan, maar verliezen hun koppeling met de terugkerende transactie. Deze actie kan niet ongedaan worden gemaakt.",
+    "priceHistory": "Prijshistorie",
+    "viewPriceHistory": "Prijshistorie bekijken",
+    "priceChangesTitle": "Recente prijswijzigingen (afgelopen 30 dagen)",
+    "priceChangesEmpty": "Geen stabiele prijswijzigingen gedetecteerd",
+    "priceChangeBadge": "Prijs gewijzigd",
+    "priceChangeIncrease": "Prijs is gestegen",
+    "priceChangeDecrease": "Prijs is gedaald",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Na een onderbreking van {{days}} dagen",
+    "priceChangeInsufficient": "Er zijn minstens 3 gekoppelde geboekte afschrijvingen nodig voordat Securo een stabiele prijswijziging meldt."
   },
   "rules": {
     "searchPlaceholder": "Regels zoeken...",

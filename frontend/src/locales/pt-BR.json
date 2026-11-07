@@ -1561,7 +1561,18 @@
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desative para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
     "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar.",
-    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será excluída permanentemente. As transações existentes permanecerão, mas perderão o vínculo recorrente. Esta ação não pode ser desfeita."
+    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será excluída permanentemente. As transações existentes permanecerão, mas perderão o vínculo recorrente. Esta ação não pode ser desfeita.",
+    "priceHistory": "Histórico de preços",
+    "viewPriceHistory": "Ver histórico de preços",
+    "priceChangesTitle": "Alterações recentes de preço (últimos 30 dias)",
+    "priceChangesEmpty": "Nenhuma alteração de preço estável detectada",
+    "priceChangeBadge": "Preço alterado",
+    "priceChangeIncrease": "Preço aumentou",
+    "priceChangeDecrease": "Preço diminuiu",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Após uma lacuna de {{days}} dias",
+    "priceChangeInsufficient": "São necessárias pelo menos 3 cobranças publicadas e vinculadas para relatar uma alteração de preço estável."
   },
   "rules": {
     "searchPlaceholder": "Buscar regras...",

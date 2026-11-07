@@ -1653,7 +1653,18 @@
     "autoGenerate": "Generovat transakce automaticky",
     "autoGenerateHelp": "Vytvoří transakci vždy, když je tato platba splatná. Vypněte, pokud chcete počkat na skutečnou platbu (např. ze synchronizace banky) a do té doby ji zobrazovat jen jako nadcházející.",
     "fxEstimate": "Odhad podle posledního směnného kurzu ({{rate}}). Konečná částka se může změnit.",
-    "confirmDeleteDescription": "Opakovaná definice „{{description}}“ bude trvale smazána. Stávající transakce zůstanou, ale ztratí propojení s opakováním. Tuto akci nelze vrátit."
+    "confirmDeleteDescription": "Opakovaná definice „{{description}}“ bude trvale smazána. Stávající transakce zůstanou, ale ztratí propojení s opakováním. Tuto akci nelze vrátit.",
+    "priceHistory": "Price history",
+    "viewPriceHistory": "View price history",
+    "priceChangesTitle": "Recent price changes (posledních 30 dní)",
+    "priceChangesEmpty": "No stable price changes detected",
+    "priceChangeBadge": "Price changed",
+    "priceChangeIncrease": "Price increased",
+    "priceChangeDecrease": "Price decreased",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "After a {{days}}-day gap",
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
   },
   "rules": {
     "searchPlaceholder": "Hledat pravidla...",
