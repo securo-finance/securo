@@ -168,6 +168,15 @@ class Settings(BaseSettings):
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
 
+    # Data plugins (categories and rules) from the plugin catalog. Gated by
+    # PLUGINS_ENABLED, off by default: while off nothing is fetched and no
+    # plugin can be installed. The built-in rule packs don't depend on it.
+    # The catalog is fetched only when someone opens it, never in the
+    # background, and each plugin's manifest is read at the commit the
+    # catalog pins.
+    plugins_index_url: str = "https://raw.githubusercontent.com/securo-finance/plugins/main/index.json"
+    plugins_raw_base_url: str = "https://raw.githubusercontent.com"
+
     @property
     def oidc_login_available(self) -> bool:
         return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)

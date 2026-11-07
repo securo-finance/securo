@@ -3186,5 +3186,66 @@
       "categoryInUse": "Cette catégorie contient des parts de transactions réparties. Modifiez d'abord ces répartitions.",
       "destinationInvalid": "Les parts de transactions réparties ne peuvent pas aller dans une catégorie ignorée ou masquée."
     }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "hint": "Des catégories et des règles créées par la communauté. Vous vérifiez chaque modification avant qu'elle soit appliquée, et rien ne quitte votre serveur.",
+    "browse": "Parcourir le catalogue",
+    "noneInstalled": "Aucun plugin installé dans cet espace de travail.",
+    "remove": "Retirer le plugin",
+    "removeAria": "Retirer {{name}}",
+    "catalogTitle": "Catalogue de plugins",
+    "catalogHint": "Chaque plugin est figé sur une version précise de son code source.",
+    "catalogFailed": "Impossible de charger le catalogue.",
+    "catalogEmpty": "Le catalogue n'a pas encore de plugins.",
+    "viewSource": "Voir le code source",
+    "revoked": "Révoqué",
+    "unavailable": "Indisponible",
+    "needsVersion": "Nécessite Securo {{version}}",
+    "updateAvailable": "Mise à jour disponible",
+    "installed": "Installé",
+    "install": "Installer",
+    "update": "Mettre à jour",
+    "andMore": "et {{count}} de plus",
+    "planTitle": {
+      "install": "Installer {{name}} ?",
+      "update": "Mettre à jour {{name}} ?",
+      "remove": "Retirer {{name}} ?"
+    },
+    "planIntro": "Voici ce qui change dans cet espace de travail :",
+    "planNothing": "Rien ne change dans cet espace de travail.",
+    "planFailed": "Impossible de charger ce que cela changerait.",
+    "planChanged": "Quelque chose a changé depuis cet aperçu. Vérifiez-le à nouveau.",
+    "privacy": "Ce plugin ajoute uniquement des données à cet espace de travail. Rien n'est envoyé ailleurs.",
+    "history": "Les transactions gardent les catégories qu'elles ont déjà.",
+    "confirm": {
+      "install": "Installer",
+      "update": "Mettre à jour",
+      "remove": "Retirer"
+    },
+    "done": {
+      "install": "{{name}} installé",
+      "update": "{{name}} mis à jour",
+      "remove": "{{name}} retiré"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} groupe",
+      "category_groups_other": "{{count}} groupes",
+      "categories_one": "{{count}} catégorie",
+      "categories_other": "{{count}} catégories",
+      "rules_one": "{{count}} règle",
+      "rules_other": "{{count}} règles"
+    },
+    "plan": {
+      "create": "Ajoute {{items}}",
+      "update": "Met à jour {{items}}",
+      "delete": "Supprime {{items}}",
+      "keep": "Laisse tels quels {{items}} que vous avez modifiés :",
+      "release": "Vous confie {{items}}, modifiés ou encore utilisés :",
+      "existing": "Ignore {{items}} que vous avez déjà :",
+      "unresolved": "Ignore {{items}} dont la catégorie n'existe pas :",
+      "defaults_one": "Crée aussi {{count}} catégorie par défaut utilisée par ses règles",
+      "defaults_other": "Crée aussi {{count}} catégories par défaut utilisées par ses règles"
+    }
   }
 }

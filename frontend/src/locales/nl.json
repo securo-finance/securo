@@ -3184,5 +3184,66 @@
       "categoryInUse": "Deze categorie bevat delen van verdeelde transacties. Pas die verdelingen eerst aan.",
       "destinationInvalid": "Delen van verdeelde transacties kunnen niet naar een genegeerde of verborgen categorie."
     }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "hint": "Categorieën en regels gemaakt door de community. Je bekijkt elke wijziging voordat die wordt toegepast, en niets verlaat je server.",
+    "browse": "Catalogus bekijken",
+    "noneInstalled": "Geen plugins geïnstalleerd in deze werkruimte.",
+    "remove": "Plugin verwijderen",
+    "removeAria": "{{name}} verwijderen",
+    "catalogTitle": "Plugincatalogus",
+    "catalogHint": "Elke plugin is vastgezet op een specifieke versie van de broncode.",
+    "catalogFailed": "Kon de catalogus niet laden.",
+    "catalogEmpty": "De catalogus heeft nog geen plugins.",
+    "viewSource": "Broncode bekijken",
+    "revoked": "Ingetrokken",
+    "unavailable": "Niet beschikbaar",
+    "needsVersion": "Vereist Securo {{version}}",
+    "updateAvailable": "Update beschikbaar",
+    "installed": "Geïnstalleerd",
+    "install": "Installeren",
+    "update": "Bijwerken",
+    "andMore": "en nog {{count}}",
+    "planTitle": {
+      "install": "{{name}} installeren?",
+      "update": "{{name}} bijwerken?",
+      "remove": "{{name}} verwijderen?"
+    },
+    "planIntro": "Dit verandert er in deze werkruimte:",
+    "planNothing": "Er verandert niets in deze werkruimte.",
+    "planFailed": "Kon niet laden wat dit zou veranderen.",
+    "planChanged": "Er is iets veranderd sinds dit voorbeeld. Bekijk het opnieuw.",
+    "privacy": "Deze plugin voegt alleen gegevens toe aan deze werkruimte. Er wordt niets verstuurd.",
+    "history": "Transacties houden de categorieën die ze al hebben.",
+    "confirm": {
+      "install": "Installeren",
+      "update": "Bijwerken",
+      "remove": "Verwijderen"
+    },
+    "done": {
+      "install": "{{name}} geïnstalleerd",
+      "update": "{{name}} bijgewerkt",
+      "remove": "{{name}} verwijderd"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} groep",
+      "category_groups_other": "{{count}} groepen",
+      "categories_one": "{{count}} categorie",
+      "categories_other": "{{count}} categorieën",
+      "rules_one": "{{count}} regel",
+      "rules_other": "{{count}} regels"
+    },
+    "plan": {
+      "create": "Voegt {{items}} toe",
+      "update": "Werkt {{items}} bij",
+      "delete": "Verwijdert {{items}}",
+      "keep": "Laat {{items}} die je hebt bewerkt zoals ze zijn:",
+      "release": "Draagt {{items}} aan je over, bewerkt of nog in gebruik:",
+      "existing": "Slaat {{items}} over die je al hebt:",
+      "unresolved": "Slaat {{items}} over waarvan de categorie ontbreekt:",
+      "defaults_one": "Maakt ook {{count}} standaardcategorie die de regels nodig hebben",
+      "defaults_other": "Maakt ook {{count}} standaardcategorieën die de regels nodig hebben"
+    }
   }
 }

@@ -3182,5 +3182,66 @@
       "categoryInUse": "Ez a kategória felosztott tranzakciók részeit tartalmazza. Előbb módosítsd ezeket a felosztásokat.",
       "destinationInvalid": "Felosztott tranzakciók részei nem kerülhetnek figyelmen kívül hagyott vagy rejtett kategóriába."
     }
+  },
+  "plugins": {
+    "title": "Bővítmények",
+    "hint": "A közösség által készített kategóriák és szabályok. Minden változást átnézel, mielőtt érvénybe lép, és semmi sem hagyja el a szerveredet.",
+    "browse": "Katalógus böngészése",
+    "noneInstalled": "Ebben a munkaterületben nincs telepített bővítmény.",
+    "remove": "Bővítmény eltávolítása",
+    "removeAria": "{{name}} eltávolítása",
+    "catalogTitle": "Bővítménykatalógus",
+    "catalogHint": "Minden bővítmény a forráskódja egy adott verziójához van rögzítve.",
+    "catalogFailed": "A katalógust nem sikerült betölteni.",
+    "catalogEmpty": "A katalógusban még nincs bővítmény.",
+    "viewSource": "Forráskód megtekintése",
+    "revoked": "Visszavonva",
+    "unavailable": "Nem érhető el",
+    "needsVersion": "Securo {{version}} szükséges",
+    "updateAvailable": "Frissítés érhető el",
+    "installed": "Telepítve",
+    "install": "Telepítés",
+    "update": "Frissítés",
+    "andMore": "és még {{count}}",
+    "planTitle": {
+      "install": "Telepíted: {{name}}?",
+      "update": "Frissíted: {{name}}?",
+      "remove": "Eltávolítod: {{name}}?"
+    },
+    "planIntro": "Ez változik ebben a munkaterületben:",
+    "planNothing": "Ebben a munkaterületben semmi sem változik.",
+    "planFailed": "Nem sikerült betölteni, mi változna.",
+    "planChanged": "Az előnézet óta valami megváltozott. Nézd át újra.",
+    "privacy": "Ez a bővítmény csak adatokat ad ehhez a munkaterülethez. Semmi sem kerül elküldésre.",
+    "history": "A tranzakciók megtartják a jelenlegi kategóriáikat.",
+    "confirm": {
+      "install": "Telepítés",
+      "update": "Frissítés",
+      "remove": "Eltávolítás"
+    },
+    "done": {
+      "install": "{{name}} telepítve",
+      "update": "{{name}} frissítve",
+      "remove": "{{name}} eltávolítva"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} csoport",
+      "category_groups_other": "{{count}} csoport",
+      "categories_one": "{{count}} kategória",
+      "categories_other": "{{count}} kategória",
+      "rules_one": "{{count}} szabály",
+      "rules_other": "{{count}} szabály"
+    },
+    "plan": {
+      "create": "Hozzáad: {{items}}",
+      "update": "Frissít: {{items}}",
+      "delete": "Töröl: {{items}}",
+      "keep": "Változatlanul hagyja, amit szerkesztettél: {{items}}:",
+      "release": "Átadja neked (szerkesztett vagy még használt): {{items}}:",
+      "existing": "Kihagyja, ami már megvan: {{items}}:",
+      "unresolved": "Kihagyja a kategória nélküli szabályokat: {{items}}:",
+      "defaults_one": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz",
+      "defaults_other": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz"
+    }
   }
 }

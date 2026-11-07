@@ -3186,5 +3186,66 @@
       "categoryInUse": "Esta categoria tem partes de transações divididas. Altere essas divisões primeiro.",
       "destinationInvalid": "Partes de transações divididas não podem passar para uma categoria ignorada ou oculta."
     }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "hint": "Categorias e regras feitas pela comunidade. Revê cada alteração antes de ser aplicada, e nada sai do seu servidor.",
+    "browse": "Ver catálogo",
+    "noneInstalled": "Nenhum plugin instalado neste espaço de trabalho.",
+    "remove": "Remover plugin",
+    "removeAria": "Remover {{name}}",
+    "catalogTitle": "Catálogo de plugins",
+    "catalogHint": "Cada plugin fica fixado numa versão específica do seu código-fonte.",
+    "catalogFailed": "Não foi possível carregar o catálogo.",
+    "catalogEmpty": "O catálogo ainda não tem plugins.",
+    "viewSource": "Ver código-fonte",
+    "revoked": "Revogado",
+    "unavailable": "Indisponível",
+    "needsVersion": "Requer Securo {{version}}",
+    "updateAvailable": "Atualização disponível",
+    "installed": "Instalado",
+    "install": "Instalar",
+    "update": "Atualizar",
+    "andMore": "e mais {{count}}",
+    "planTitle": {
+      "install": "Instalar {{name}}?",
+      "update": "Atualizar {{name}}?",
+      "remove": "Remover {{name}}?"
+    },
+    "planIntro": "Isto é o que muda neste espaço de trabalho:",
+    "planNothing": "Nada muda neste espaço de trabalho.",
+    "planFailed": "Não foi possível carregar o que isto mudaria.",
+    "planChanged": "Algo mudou desde esta pré-visualização. Reveja-a de novo.",
+    "privacy": "Este plugin só adiciona dados a este espaço de trabalho. Nada é enviado para fora.",
+    "history": "As transações mantêm as categorias que já têm.",
+    "confirm": {
+      "install": "Instalar",
+      "update": "Atualizar",
+      "remove": "Remover"
+    },
+    "done": {
+      "install": "{{name}} instalado",
+      "update": "{{name}} atualizado",
+      "remove": "{{name}} removido"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} grupo",
+      "category_groups_other": "{{count}} grupos",
+      "categories_one": "{{count}} categoria",
+      "categories_other": "{{count}} categorias",
+      "rules_one": "{{count}} regra",
+      "rules_other": "{{count}} regras"
+    },
+    "plan": {
+      "create": "Adiciona {{items}}",
+      "update": "Atualiza {{items}}",
+      "delete": "Apaga {{items}}",
+      "keep": "Mantém como estão {{items}} que editou:",
+      "release": "Passa para si {{items}}, editados ou ainda em uso:",
+      "existing": "Ignora {{items}} que já tem:",
+      "unresolved": "Ignora {{items}} cuja categoria não existe:",
+      "defaults_one": "Também cria {{count}} categoria predefinida que as regras usam",
+      "defaults_other": "Também cria {{count}} categorias predefinidas que as regras usam"
+    }
   }
 }

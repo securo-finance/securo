@@ -3182,5 +3182,66 @@
       "categoryInUse": "This category holds parts of split transactions. Change those splits first.",
       "destinationInvalid": "Parts of split transactions cannot move into an ignored or hidden category."
     }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "hint": "Categories and rules made by the community. You review every change before it's applied, and nothing leaves your server.",
+    "browse": "Browse catalog",
+    "noneInstalled": "No plugins installed in this workspace.",
+    "remove": "Remove plugin",
+    "removeAria": "Remove {{name}}",
+    "catalogTitle": "Plugin catalog",
+    "catalogHint": "Each plugin is pinned to a specific version of its source.",
+    "catalogFailed": "Couldn't load the catalog.",
+    "catalogEmpty": "The catalog has no plugins yet.",
+    "viewSource": "View source",
+    "revoked": "Revoked",
+    "unavailable": "Unavailable",
+    "needsVersion": "Needs Securo {{version}}",
+    "updateAvailable": "Update available",
+    "installed": "Installed",
+    "install": "Install",
+    "update": "Update",
+    "andMore": "and {{count}} more",
+    "planTitle": {
+      "install": "Install {{name}}?",
+      "update": "Update {{name}}?",
+      "remove": "Remove {{name}}?"
+    },
+    "planIntro": "This is what changes in this workspace:",
+    "planNothing": "Nothing changes in this workspace.",
+    "planFailed": "Couldn't load what this would change.",
+    "planChanged": "Something changed since this preview. Review it again.",
+    "privacy": "This plugin only adds data to this workspace. Nothing is sent anywhere.",
+    "history": "Transactions keep the categories they already have.",
+    "confirm": {
+      "install": "Install",
+      "update": "Update",
+      "remove": "Remove"
+    },
+    "done": {
+      "install": "{{name}} installed",
+      "update": "{{name}} updated",
+      "remove": "{{name}} removed"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} group",
+      "category_groups_other": "{{count}} groups",
+      "categories_one": "{{count}} category",
+      "categories_other": "{{count}} categories",
+      "rules_one": "{{count}} rule",
+      "rules_other": "{{count}} rules"
+    },
+    "plan": {
+      "create": "Adds {{items}}",
+      "update": "Updates {{items}}",
+      "delete": "Deletes {{items}}",
+      "keep": "Leaves {{items}} you edited as they are:",
+      "release": "Hands {{items}} over to you, edited or still in use:",
+      "existing": "Skips {{items}} you already have:",
+      "unresolved": "Skips {{items}} whose category is missing:",
+      "defaults_one": "Also creates {{count}} default category its rules need",
+      "defaults_other": "Also creates {{count}} default categories its rules need"
+    }
   }
 }

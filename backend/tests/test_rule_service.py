@@ -28,16 +28,14 @@ from app.services.rule_service import (
     create_rule,
     delete_rule,
     export_rules,
-    list_rule_packs,
     get_rule,
     get_rules,
     import_rules,
-    install_rule_pack,
     update_rule,
 )
 from app.services.transaction_service import update_transaction
 from app.services.category_service import create_default_categories
-from app.services.rule_packs import built_in_packs
+from app.services.rule_packs import built_in_packs, install_rule_pack, list_rule_packs
 
 
 # ---------------------------------------------------------------------------

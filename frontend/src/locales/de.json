@@ -3183,5 +3183,66 @@
       "categoryInUse": "Diese Kategorie enthält Anteile aufgeteilter Buchungen. Ändere zuerst diese Aufteilungen.",
       "destinationInvalid": "Anteile aufgeteilter Buchungen können nicht in eine ignorierte oder ausgeblendete Kategorie wechseln."
     }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "hint": "Kategorien und Regeln aus der Community. Du prüfst jede Änderung, bevor sie angewendet wird, und nichts verlässt deinen Server.",
+    "browse": "Katalog durchsuchen",
+    "noneInstalled": "In diesem Arbeitsbereich sind keine Plugins installiert.",
+    "remove": "Plugin entfernen",
+    "removeAria": "{{name}} entfernen",
+    "catalogTitle": "Plugin-Katalog",
+    "catalogHint": "Jedes Plugin ist auf eine bestimmte Version seines Quellcodes festgelegt.",
+    "catalogFailed": "Der Katalog konnte nicht geladen werden.",
+    "catalogEmpty": "Der Katalog enthält noch keine Plugins.",
+    "viewSource": "Quellcode ansehen",
+    "revoked": "Widerrufen",
+    "unavailable": "Nicht verfügbar",
+    "needsVersion": "Benötigt Securo {{version}}",
+    "updateAvailable": "Update verfügbar",
+    "installed": "Installiert",
+    "install": "Installieren",
+    "update": "Aktualisieren",
+    "andMore": "und {{count}} weitere",
+    "planTitle": {
+      "install": "{{name}} installieren?",
+      "update": "{{name}} aktualisieren?",
+      "remove": "{{name}} entfernen?"
+    },
+    "planIntro": "Das ändert sich in diesem Arbeitsbereich:",
+    "planNothing": "In diesem Arbeitsbereich ändert sich nichts.",
+    "planFailed": "Konnte nicht laden, was sich ändern würde.",
+    "planChanged": "Seit dieser Vorschau hat sich etwas geändert. Prüfe sie erneut.",
+    "privacy": "Dieses Plugin fügt diesem Arbeitsbereich nur Daten hinzu. Es wird nichts irgendwohin gesendet.",
+    "history": "Transaktionen behalten ihre bisherigen Kategorien.",
+    "confirm": {
+      "install": "Installieren",
+      "update": "Aktualisieren",
+      "remove": "Entfernen"
+    },
+    "done": {
+      "install": "{{name}} installiert",
+      "update": "{{name}} aktualisiert",
+      "remove": "{{name}} entfernt"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} Gruppe",
+      "category_groups_other": "{{count}} Gruppen",
+      "categories_one": "{{count}} Kategorie",
+      "categories_other": "{{count}} Kategorien",
+      "rules_one": "{{count}} Regel",
+      "rules_other": "{{count}} Regeln"
+    },
+    "plan": {
+      "create": "Fügt {{items}} hinzu",
+      "update": "Aktualisiert {{items}}",
+      "delete": "Löscht {{items}}",
+      "keep": "Lässt {{items}}, die du bearbeitet hast, unverändert:",
+      "release": "Übergibt dir {{items}}, bearbeitet oder noch in Verwendung:",
+      "existing": "Überspringt {{items}}, die du schon hast:",
+      "unresolved": "Überspringt {{items}}, deren Kategorie fehlt:",
+      "defaults_one": "Erstellt außerdem {{count}} Standardkategorie, die seine Regeln brauchen",
+      "defaults_other": "Erstellt außerdem {{count}} Standardkategorien, die seine Regeln brauchen"
+    }
   }
 }
