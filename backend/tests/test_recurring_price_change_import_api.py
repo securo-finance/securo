@@ -10,6 +10,12 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 
 
+@pytest.fixture(autouse=True)
+def frozen_recent_calendar(monkeypatch):
+    monkeypatch.setattr("app.services.recurring_price_change_service.app_today",
+                        lambda: date(2026, 3, 15))
+
+
 @pytest.mark.parametrize("amounts", [("39.90", "39.90", "42.90"), ("17.00", "17.00", "15.00")])
 async def test_csv_imported_linked_charges_feed_both_price_change_routes(
     client, auth_headers, session, test_user, test_workspace, test_account, amounts,

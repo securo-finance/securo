@@ -11,6 +11,12 @@ from app.models.transaction import Transaction
 from app.models.workspace import Workspace
 
 
+@pytest.fixture(autouse=True)
+def frozen_recent_calendar(monkeypatch):
+    monkeypatch.setattr("app.services.recurring_price_change_service.app_today",
+                        lambda: date(2026, 7, 15))
+
+
 @pytest.mark.asyncio
 async def test_create_recurring_transaction(client, auth_headers, test_categories, test_account):
     """Creating a recurring transaction sets next_occurrence to start_date."""
@@ -518,7 +524,7 @@ async def test_weekend_adjustment_update_rejects_null_but_allows_omission(
 
 
 # ---------------------------------------------------------------------------
-# PR-9: read-only price-change routes (packet §6.2)
+# Read-only price-change routes
 # ---------------------------------------------------------------------------
 
 
@@ -567,7 +573,10 @@ async def _seed_price_series(
                 description=description,
                 amount=Decimal(amount),
                 currency="BRL",
-                date=_add_months(start, index),
+                # Keep query fixtures in the frozen Recent window, retaining order.
+                date=date(2026, 7, 1) + timedelta(
+                    days=(start - date(2026, 1, 1)).days // 30 + index
+                ),
                 type="debit",
                 source="csv",
                 status="posted",
@@ -891,7 +900,7 @@ async def test_price_history_route_is_readable_by_read_workspace(
     assert len(recent.json()) == 1
 
     # The projection is read-only for a read role: no write route opens up,
-    # and the UI hides its mutation controls for the same viewer (§6.3).
+    # and the UI hides its mutation controls for the same viewer.
     create = await client.post(
         "/api/recurring-transactions",
         json={
@@ -962,7 +971,7 @@ async def test_price_history_reuses_real_source_allowlist(
         amounts=("10.00", "10.00", "10.00"),
     )
     # Synthetic rows at a new amount would complete a price change if the
-    # real-source allowlist leaked. (§5.5, §5.6)
+    # real-source allowlist leaked.
     for offset, source in ((3, "opening_balance"), (4, "recurring")):
         session.add(
             Transaction(

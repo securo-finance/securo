@@ -1,19 +1,19 @@
-"""Pure detection vectors for recurring price-change detection (PR-9 §6.1).
+"""Pure detection vectors for recurring price-change detection.
 
 Database-light by design: the helper builds a series-like ORM object and
 ordered ``Transaction`` rows in memory, so every vector here is deterministic
 and exercises the exact eligibility/normalization/stability contract without
-a session. Named cases are the packet's §6.1 table, as amended by §12
-(three clean observations is the minimum that fires; two is insufficient).
+a session. Three clean observations is the minimum that fires; two is insufficient.
 """
-import asyncio
 import calendar
 import random
 import threading
 import time
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+
+import pytest
 
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
@@ -28,6 +28,12 @@ from app.services.recurring_price_change_service import (
 )
 
 _START = date(2026, 1, 15)
+
+
+@pytest.fixture(autouse=True)
+def frozen_recent_calendar(monkeypatch):
+    monkeypatch.setattr("app.services.recurring_price_change_service.app_today",
+                        lambda: date(2026, 7, 15))
 
 
 def _series(**overrides) -> RecurringTransaction:
@@ -79,15 +85,24 @@ def _monthly_rows(
     return [_tx(series, amount, _add_months(start, i)) for i, amount in enumerate(amounts)]
 
 
-async def _persist(session, series: RecurringTransaction, rows: list[Transaction]) -> None:
+async def _persist(
+    session, series: RecurringTransaction, rows: list[Transaction], *, compact_calendar=True
+) -> None:
     """Put a series and its linked rows in the session without committing."""
+    # Query tests retain relative date order in a compact frozen calendar.
+    # Pure monthly/gap vectors still use their original observation dates.
+    if compact_calendar:
+        for row in rows:
+            row.date = date(2026, 7, 15) + timedelta(
+                days=(row.date.year - 2026) * 12 + row.date.month - 7
+            )
     session.add(series)
     session.add_all(rows)
     await session.flush()
 
 
 # ---------------------------------------------------------------------------
-# §6.1 named vectors
+# Named detection vectors
 # ---------------------------------------------------------------------------
 
 
@@ -127,8 +142,7 @@ def test_price_change_stable_monthly_17_to_15():
 
 
 def test_price_change_requires_three_clean_observations():
-    """Exactly three clean observations is the documented minimum that fires
-    (§3.1, §3.4 rule 1, §7 Q1; minimum-sample contract)."""
+    """Exactly three clean observations is the minimum that fires."""
     series = _series()
     rows = _monthly_rows(series, ["10.00", "10.00", "11.00"])
 
@@ -145,7 +159,7 @@ def test_price_change_requires_three_clean_observations():
 
 
 def test_price_change_two_observations_are_insufficient():
-    """Two linked occurrences = insufficient history (§3.4; minimum-sample contract)."""
+    """Two linked occurrences give insufficient history."""
     series = _series()
     rows = _monthly_rows(series, ["10.00", "11.00"])
 
@@ -339,7 +353,7 @@ def test_split_parent_uses_gross_amount():
     series = _series()
     rows = _monthly_rows(series, ["60.00", "60.00", "60.00", "66.00"])
     # A shared-expense settlement exists on the price-changed parent; the
-    # detector must read the merchant gross, never viewer-share math (§5.2).
+    # detector must read the merchant gross, never viewer-share math.
     TransactionSplit(
         transaction=rows[3],
         transaction_id=rows[3].id,
@@ -434,7 +448,7 @@ def test_decimal_serialization_preserves_two_places():
 
 
 # ---------------------------------------------------------------------------
-# Property-style vectors (§6.1 tail)
+# Property-style vectors
 # ---------------------------------------------------------------------------
 
 _VECTORS = [
@@ -558,7 +572,7 @@ async def test_price_history_query_reflects_unlink(session, test_workspace, test
     assert len(await get_recent_price_changes(session, test_workspace.id)) == 1
 
     # The unlink escape hatch clears only the FK; the derived signal must
-    # recompute without a stale event (§5.10).
+    # recompute without a stale event.
     for tx in rows:
         tx.recurring_transaction_id = None
     await session.flush()
@@ -670,7 +684,7 @@ async def test_price_history_handles_large_history(session, test_workspace, test
         _tx(series, "11.00", date.fromordinal(start_ordinal + row_count - 3 + i))
         for i in range(3)
     ]
-    await _persist(session, series, rows)
+    await _persist(session, series, rows, compact_calendar=False)
 
     began = time.perf_counter()
     history = await get_price_history(session, series.id, test_workspace.id)
@@ -746,7 +760,7 @@ async def test_recent_projection_matches_full_history_without_loading_entities(
         event.remove(connection.sync_connection, "before_cursor_execute", record_sql)
 
 
-async def test_recent_analysis_is_detached_and_does_not_block_event_loop(
+async def test_recent_analysis_is_direct_and_uses_detached_evidence(
     session, test_workspace, test_user, monkeypatch
 ):
     from app.services import recurring_price_change_service as service
@@ -756,31 +770,19 @@ async def test_recent_analysis_is_detached_and_does_not_block_event_loop(
     await _persist(session, series, rows)
     expected = detect_price_changes(series, rows)
     owner_thread = threading.get_ident()
-    entered = threading.Event()
-    release = threading.Event()
     analyze = service.analyze_price_changes
+    calls = []
 
-    def slow_analysis(evidence, occurrences):
-        assert threading.get_ident() != owner_thread
+    def direct_analysis(evidence, occurrences):
+        assert threading.get_ident() == owner_thread
         assert not isinstance(evidence, RecurringTransaction)
         assert all(not isinstance(item, Transaction) for item in occurrences)
         assert all(not hasattr(item, "_sa_instance_state") for item in [evidence, *occurrences])
-        entered.set()
-        assert release.wait(timeout=2), "event loop could not release pure analysis"
+        calls.append(evidence.id)
         return analyze(evidence, occurrences)
 
-    async def heartbeat():
-        while not entered.is_set():
-            await asyncio.sleep(0.001)
-        release.set()
-
-    monkeypatch.setattr(service, "analyze_price_changes", slow_analysis)
-    beat = asyncio.create_task(heartbeat())
-    try:
-        assert await get_recent_price_changes(session, series.workspace_id) == expected
-        await asyncio.wait_for(beat, timeout=2)
-        assert release.is_set()
-    finally:
-        release.set()
-        beat.cancel()
-        await asyncio.gather(beat, return_exceptions=True)
+    monkeypatch.setattr(service, "analyze_price_changes", direct_analysis)
+    assert await get_recent_price_changes(session, series.workspace_id) == expected
+    assert calls == [series.id]
+    assert expected[0].current_amount == Decimal("11.00")
+    assert expected[0].absolute_delta == Decimal("1.00")

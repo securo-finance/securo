@@ -1,9 +1,9 @@
-"""Read-only price-change projections for recurring series (PR-9).
+"""Read-only price-change projections for recurring series.
 
 Deliberately separate from the CRUD schemas in ``recurring_transaction.py``:
 these are derived read models, recomputed from linked transaction history on
 each request. Nothing here is persisted, and no route built on them writes to
-the ledger (packet §3.6–§3.7).
+the ledger.
 """
 import uuid
 from datetime import date as _Date
@@ -19,7 +19,7 @@ RecurringPriceChangeEligibility = Literal[
 
 
 class RecurringPriceChangeRead(BaseModel):
-    """One detected transition between two clean observations (§3.1)."""
+    """One detected transition between two clean observations."""
 
     recurring_id: uuid.UUID
     previous_transaction_id: uuid.UUID
@@ -42,6 +42,5 @@ class RecurringPriceChangeHistoryRead(BaseModel):
     recurring_id: uuid.UUID
     eligible_occurrence_count: int
     eligibility: RecurringPriceChangeEligibility
-    # Chronological (oldest first) as returned by the detector; the API layer
-    # reverses to newest-first per §3.7.
+    # The history service reverses detector output to newest-first.
     changes: list[RecurringPriceChangeRead]

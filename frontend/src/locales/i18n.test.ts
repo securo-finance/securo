@@ -247,7 +247,7 @@ describe('i18n locale files', () => {
     }
   })
 
-  // PR-9: the price-history surface keys are contractually exact (§4.3), so
+  // The price-history surface keys are required by both row consumers, so
   // assert them explicitly in addition to the en-driven parity checks above.
   it('contains price-history labels in every locale', () => {
     const required = [

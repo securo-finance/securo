@@ -1,9 +1,9 @@
 /**
- * PR-9: read-only price-history surface on the Recurring page (packet §6.3).
+ * Read-only price-history surface on the Recurring page.
  *
  * Only the recurring GET methods are mocked; copy is asserted through the
  * real English/pt-BR bundles so a deleted or drifted key fails here, not in
- * production. Decimal amounts cross the wire as JSON strings — the fixtures
+ * production. Decimal amounts cross the wire as JSON strings; the fixtures
  * keep that shape (see `increaseEvent`) and the UI must coerce before formatting.
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,6 +13,7 @@ import RecurringPage from '@/pages/recurring'
 import { formatCurrency } from '@/lib/format'
 import { i18n, renderWithProviders, t } from '@/test/utils'
 import type { RecurringPriceChange, RecurringPriceChangeHistory, RecurringTransaction } from '@/types'
+import gapWitness from '@/test/fixtures/recurring-price-change-31-days.json'
 
 const api = vi.hoisted(() => ({
   categories: { list: vi.fn(), listIncludingHidden: vi.fn() },
@@ -103,7 +104,7 @@ const increaseEvent: RecurringPriceChange = {
   direction: 'increase',
   absolute_delta: '6.00',
   percent_delta: '15.04',
-  gap_days: 0,
+  gap_days: 31,
   baseline_occurrence_count: 2,
 }
 
@@ -119,7 +120,7 @@ const decreaseEvent: RecurringPriceChange = {
   direction: 'decrease',
   absolute_delta: '2.00',
   percent_delta: '-9.13',
-  gap_days: 0,
+  gap_days: 31,
   baseline_occurrence_count: 2,
 }
 
@@ -332,10 +333,12 @@ describe('Recurring price history', () => {
     expect(within(dialog).getByText('Price decreased')).toBeInTheDocument()
   })
 
-  it('shows no stable change empty state', async () => {
+  it('hides Recent when no stable change is returned', async () => {
     renderWithProviders(<RecurringPage />, { route: '/recurring' })
 
-    expect(await screen.findByText(t('recurring.priceChangesEmpty'))).toBeInTheDocument()
+    await screen.findByText('Netflix')
+    await waitFor(() => expect(screen.queryByText(t('common.loading'))).not.toBeInTheDocument())
+    expect(screen.queryByText(t('recurring.priceChangesEmpty'))).not.toBeInTheDocument()
     expect(screen.queryByText(t('recurring.priceChangeBadge'))).not.toBeInTheDocument()
   })
 
@@ -366,7 +369,7 @@ describe('Recurring price history', () => {
 
   it('shows gap note', async () => {
     api.recurring.recentPriceChanges.mockResolvedValue([
-      { ...increaseEvent, gap_days: 61 },
+      { ...increaseEvent, previous_date: '2026-10-01', current_date: '2026-12-01', gap_days: 61 },
     ])
 
     renderWithProviders(<RecurringPage />, { route: '/recurring' })
@@ -380,7 +383,9 @@ describe('Recurring price history', () => {
 
     renderWithProviders(<RecurringPage />, { route: '/recurring' })
 
-    expect(await screen.findByText(t('recurring.priceChangesEmpty'))).toBeInTheDocument()
+    await screen.findByText('Netflix')
+    await waitFor(() => expect(screen.queryByText(t('common.loading'))).not.toBeInTheDocument())
+    expect(screen.queryByText(t('recurring.priceChangesEmpty'))).not.toBeInTheDocument()
     expect(screen.queryByText(t('recurring.priceChangeBadge'))).not.toBeInTheDocument()
     expect(screen.queryByText('Price increased')).not.toBeInTheDocument()
     expect(screen.queryByTestId('price-change-row')).not.toBeInTheDocument()
@@ -465,12 +470,123 @@ describe('Recurring price history', () => {
 
     renderWithProviders(<RecurringPage />, { route: '/recurring' })
 
-    // The heading renders before the queries settle — wait on list content.
+    // Wait for query content before asserting the populated card heading.
     expect(await screen.findByText('Preço aumentou')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Alterações recentes de preço' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: t('recurring.priceChangesTitle') })).toBeInTheDocument()
     const buttons = await screen.findAllByRole('button', { name: 'Ver histórico de preços' })
     expect(buttons).toHaveLength(2)
     // No raw key ever reaches the screen.
     expect(screen.queryByText(/recurring\./)).not.toBeInTheDocument()
+  })
+})
+
+describe('Recurring maintainer correction regressions', () => {
+  it('hides the entire Recent card after a successful empty response', async () => {
+    const { container, queryClient } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    await screen.findByText('Netflix')
+    await waitFor(() => expect(queryClient.getQueryState(
+      ['recurring', 'recent-price-changes', 20]
+    )?.status).toBe('success'))
+    expect(screen.queryByRole('heading', { name: t('recurring.priceChangesTitle') })).not.toBeInTheDocument()
+    expect(screen.queryByText(t('recurring.priceChangesEmpty'))).not.toBeInTheDocument()
+    // The recurring table remains; no empty card shell is left behind.
+    expect(container.querySelectorAll('.bg-card')).toHaveLength(1)
+    expect(historyButton('Netflix')).toBeInTheDocument()
+  })
+
+  it('removes a populated Recent card when refetch succeeds empty', async () => {
+    api.recurring.recentPriceChanges.mockResolvedValue([increaseEvent])
+    const { queryClient } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    await screen.findByTestId('price-change-row')
+    const heading = screen.getByRole('heading', { name: t('recurring.priceChangesTitle') })
+    const card = heading.closest('.bg-card')
+    expect(card).not.toBeNull()
+    api.recurring.recentPriceChanges.mockResolvedValue([])
+    await queryClient.refetchQueries({ queryKey: ['recurring', 'recent-price-changes'] })
+    await waitFor(() => expect(screen.queryByTestId('price-change-row')).not.toBeInTheDocument())
+    expect(heading).not.toBeInTheDocument()
+    expect(card).not.toBeInTheDocument()
+    expect(screen.queryByText(t('recurring.priceChangesEmpty'))).not.toBeInTheDocument()
+  })
+
+  const effects = [
+    ['debit', 'increase', increaseEvent, 'text-rose-500'],
+    ['debit', 'decrease', decreaseEvent, 'text-emerald-600'],
+    ['credit', 'increase', increaseEvent, 'text-emerald-600'],
+    ['credit', 'decrease', decreaseEvent, 'text-rose-500'],
+  ] as const
+
+  for (const surface of ['Recent', 'history'] as const) {
+    it.each(effects)(`${surface} colors %s %s by economic effect`, async (type, direction, source, color) => {
+      expect(source.direction).toBe(direction)
+      const event = { ...source, recurring_id: netflix.id }
+      api.recurring.list.mockResolvedValue([{ ...netflix, type, amount: Number(event.current_amount) }])
+      api.recurring.recentPriceChanges.mockResolvedValue(surface === 'Recent' ? [event] : [])
+      api.recurring.priceHistory.mockResolvedValue({
+        recurring_id: netflix.id, eligible_occurrence_count: 3,
+        eligibility: 'changes_detected', changes: [event],
+      } satisfies RecurringPriceChangeHistory)
+      const { user } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+      await within(await screen.findByRole('table')).findByText('Netflix')
+      if (surface === 'history') await user.click(historyButton('Netflix'))
+      const scope = surface === 'history' ? within(await screen.findByRole('dialog')) : screen
+      const row = await scope.findByTestId('price-change-row')
+      const directionKey = event.direction === 'increase' ? 'priceChangeIncrease' : 'priceChangeDecrease'
+      const indicator = within(row).getByText(t(`recurring.${directionKey}`))
+      expect(indicator).toHaveClass(color)
+      expect(indicator).not.toHaveClass(color === 'text-rose-500' ? 'text-emerald-600' : 'text-rose-500')
+      expect(indicator.querySelector('svg')).toHaveClass(
+        event.direction === 'increase' ? 'lucide-trending-up' : 'lucide-trending-down'
+      )
+      expect(row).toHaveTextContent(`${money(Number(event.previous_amount))} → ${money(Number(event.current_amount))}`)
+      expect(api.recurring.create).not.toHaveBeenCalled()
+      expect(api.recurring.update).not.toHaveBeenCalled()
+      expect(api.recurring.delete).not.toHaveBeenCalled()
+      expect(api.recurring.generate).not.toHaveBeenCalled()
+    })
+
+    it(`${surface} renders the API-verified adjacent-observation 31-day witness`, async () => {
+      const event = gapWitness as RecurringPriceChange
+      expect((Date.parse(event.current_date) - Date.parse(event.previous_date)) / 86_400_000).toBe(31)
+      api.recurring.list.mockResolvedValue([{ ...netflix, id: event.recurring_id }])
+      api.recurring.recentPriceChanges.mockResolvedValue(surface === 'Recent' ? [event] : [])
+      api.recurring.priceHistory.mockResolvedValue({
+        recurring_id: event.recurring_id, eligible_occurrence_count: 3,
+        eligibility: 'changes_detected', changes: [event],
+      } satisfies RecurringPriceChangeHistory)
+      const { user } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+      await within(await screen.findByRole('table')).findByText('Netflix')
+      if (surface === 'history') await user.click(historyButton('Netflix'))
+      const scope = surface === 'history' ? within(await screen.findByRole('dialog')) : screen
+      const row = await scope.findByTestId('price-change-row')
+      expect(within(row).getByText('After a 31-day gap')).toBeVisible()
+      expect(within(row).queryByText(/21-day/)).not.toBeInTheDocument()
+      expect(row).toHaveTextContent(`${money(10)} → ${money(12)}`)
+      expect(row).toHaveTextContent(`${money(2)} (+20.00%)`)
+    })
+  }
+
+  it('uses neutral color when Recent cannot resolve the series type', async () => {
+    api.recurring.list.mockResolvedValue([])
+    api.recurring.recentPriceChanges.mockResolvedValue([increaseEvent])
+    renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    const row = await screen.findByTestId('price-change-row')
+    const indicator = within(row).getByText(t('recurring.priceChangeIncrease'))
+    expect(indicator).toHaveClass('text-muted-foreground')
+    expect(indicator).not.toHaveClass('text-rose-500', 'text-emerald-600')
+  })
+
+  it('keeps the generic history badge economically neutral', async () => {
+    api.recurring.priceHistory.mockResolvedValue({
+      recurring_id: netflix.id, eligible_occurrence_count: 3,
+      eligibility: 'changes_detected', changes: [increaseEvent],
+    } satisfies RecurringPriceChangeHistory)
+    const { user } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    await screen.findByText('Netflix')
+    await user.click(historyButton('Netflix'))
+    const dialog = await screen.findByRole('dialog')
+    const badge = await within(dialog).findByText(t('recurring.priceChangeBadge'))
+    expect(badge).toHaveClass('text-muted-foreground')
+    expect(badge).not.toHaveClass('text-rose-500', 'text-emerald-600')
   })
 })

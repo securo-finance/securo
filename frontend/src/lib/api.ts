@@ -696,7 +696,7 @@ export const transactions = {
     const { data } = await api.post('/transactions/transfer', transfer)
     return data
   },
-  bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number }> => {
+  bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number; skipped_split?: number }> => {
     const { data } = await api.patch('/transactions/bulk-categorize', {
       transaction_ids: transactionIds,
       category_id: categoryId,
@@ -1328,7 +1328,7 @@ export const recurring = {
     const { data } = await api.post('/recurring-transactions/generate')
     return data
   },
-  // Read-only price-change projections (PR-9). Explicit methods keep the
+  // Read-only price-change projections. Explicit methods keep the
   // wire paths visible; both are plain GETs with no optimistic mutation.
   recentPriceChanges: async (limit = 20): Promise<RecurringPriceChange[]> => {
     const { data } = await api.get('/recurring-transactions/price-changes/recent', {

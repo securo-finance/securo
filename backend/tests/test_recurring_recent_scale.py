@@ -27,14 +27,16 @@ async def test_recent_price_changes_many_series_exact_latest(
     is authored from these fixture positions, never from a detector call.
     """
     setup_started = perf_counter()
+    today = date(2026, 11, 7)
+    monkeypatch.setattr(service, "app_today", lambda: today)
     workspace_id = test_workspace.id
     expected = []
     series_rows = []
     transaction_rows = []
     for index in range(series_count):
         series_id = UUID(int=index + 1)
-        start = date(2023, 1, 1) + timedelta(days=index // 2)
         latest_index = 12 if index % 5 == 0 else 19
+        start = today - timedelta(days=30 * latest_index + (series_count - 1 - index) // 2)
         no_event = index == series_count - 1
         base = Decimal(10 + index % 80)
         series_rows.append(RecurringTransaction(
@@ -61,7 +63,8 @@ async def test_recent_price_changes_many_series_exact_latest(
                 amount=amount, currency="BRL", type="debit", source="csv",
                 status="posted", is_ignored=False, date=when, effective_date=when,
             ))
-        if not no_event:
+        event_date = start + timedelta(days=30 * latest_index)
+        if not no_event and today - timedelta(days=30) <= event_date <= today:
             expected.append((
                 start + timedelta(days=30 * latest_index), series_id,
                 UUID(int=100_000 + index * 20 + latest_index - 1),

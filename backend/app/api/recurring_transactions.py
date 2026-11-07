@@ -31,9 +31,9 @@ async def list_recurring_transactions(
     return await recurring_transaction_service.get_recurring_transactions(session, ctx.workspace.id)
 
 
-# Read-only price-change projections (PR-9). Both routes are registered before
+# Read-only price-change projections. Both routes are registered before
 # the "/{recurring_id}" CRUD paths, and the static "/price-changes/recent"
-# comes first so its literal path can never be parsed as a UUID (§3.7).
+# comes first so its literal path can never be parsed as a UUID.
 @router.get("/price-changes/recent", response_model=list[RecurringPriceChangeRead])
 async def recent_price_changes(
     limit: int = Query(20, ge=1, le=50, description="Max events, newest first (1-50)"),

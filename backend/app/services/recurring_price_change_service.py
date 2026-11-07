@@ -1,40 +1,37 @@
-"""Derived, read-only price-change detection for linked recurring occurrences (PR-9).
+"""Derived, read-only price-change detection for linked recurring occurrences.
 
 Given one existing ``RecurringTransaction`` and its already-linked
 ``Transaction`` rows, detect a transition from a stable prior amount to a
-materially different amount (packet §3). Pure and deterministic: the database
-query (added separately) supplies candidates; nothing here writes, and the
-signal is recomputed on every read (§3.6).
+materially different amount. The database query supplies candidates; nothing
+here writes, and the signal is recomputed on every read.
 
-Contract summary, all from the packet:
+Detection rules:
 
-- Eligibility (§3.2): workspace + series link, real-source allowlist
+- Eligibility: workspace + series link, real-source allowlist
   (``sync``/``import``/``ofx``/``csv``/``manual``), ``posted``, not ignored, not a
   transfer leg, same direction and currency as the series, strictly positive
   amount. A generated ``source="recurring"`` placeholder is a schedule
   projection, not proof a merchant charged that amount.
-- Normalization (§3.3): sort by ``(date, id)``; same-date rows with one
+- Normalization: sort by ``(date, id)``; same-date rows with one
   amount collapse to one observation, same-date rows with different amounts
   mark the date ambiguous (omitted, chain resets at the next clean
   observation). Missing occurrences are never interpolated.
-- Stability (§3.4): for a candidate ``current``, the baseline is
+- Stability: for a candidate ``current``, the baseline is
   ``[previous, prior_previous]``; it must be stable
   (``max - min <= 0.01``) and the candidate must differ from ``previous`` by
   more than ``0.01``. Exactly three clean observations is the minimum that
   fires (two alone = insufficient history; minimum-sample contract).
-- Decimal discipline (§3.2): amounts are quantized to the model's two-decimal
+- Decimal discipline: amounts are quantized to the model's two-decimal
   scale with ``ROUND_HALF_UP`` and never round-tripped through binary floats.
   The v1 noise unit is one persisted minor unit, ``Decimal("0.01")``.
 
 The detector never uses the series' current ``amount`` as ``previous``: the
-signal describes observed transaction history, not the current schedule
-(§3.4, §5.9).
+signal describes observed transaction history, not the current schedule.
 """
-import asyncio
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
@@ -42,6 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.recurring_price_change import (
@@ -50,21 +48,21 @@ from app.schemas.recurring_price_change import (
     RecurringPriceChangeRead,
 )
 
-# Real-transaction sources a recurring charge can arrive under — the same
+# Real-transaction sources a recurring charge can arrive under, the same
 # allowlist the recurring matcher uses (recurring_match_service._REAL_SOURCES).
 # Excludes "recurring" itself: a generated placeholder is not an observed
-# charge (§3.2 rule 3, §5.5).
+# charge.
 _REAL_SOURCES = ("sync", "import", "ofx", "csv", "manual")
 
 #: One persisted minor unit under Numeric(15, 2): the v1 noise band and the
-#: quantization scale (§3.2). A currency-minor-unit resolver must replace this
+#: quantization scale. A currency-minor-unit resolver must replace this
 #: constant before any database scale other than two decimals is supported.
 _NOISE_UNIT = Decimal("0.01")
 
-#: Baseline window size kept in the event contract for auditability (§3.1).
+#: Baseline window size kept in the event contract for auditability.
 BASELINE_OCCURRENCE_COUNT = 2
 
-#: Two stable baseline observations plus the candidate (§3.4 rule 1, §7 Q1).
+#: Two stable baseline observations plus the candidate.
 MINIMUM_CLEAN_OBSERVATIONS = BASELINE_OCCURRENCE_COUNT + 1
 
 
@@ -115,7 +113,7 @@ def _as_decimal(value: Decimal | float | str | int | None) -> Optional[Decimal]:
 
 
 def is_eligible_occurrence(series: _Series, tx: _Occurrence) -> bool:
-    """Return True when ``tx`` is price-change evidence for ``series`` (§3.2)."""
+    """Return True when ``tx`` is price-change evidence for ``series``."""
     if tx.workspace_id != series.workspace_id:
         return False
     if tx.recurring_transaction_id != series.id:
@@ -134,7 +132,7 @@ def is_eligible_occurrence(series: _Series, tx: _Occurrence) -> bool:
         return False
     amount = _as_decimal(tx.amount)
     # Zero or non-positive amounts are excluded: no percentage can be
-    # computed from zero (§3.2 rule 9, §5.6).
+    # computed from zero.
     return amount is not None and amount > 0
 
 
@@ -150,7 +148,7 @@ class _Observation:
 def _normalize(
     series: _Series, rows: Sequence[_Occurrence]
 ) -> list[Optional[_Observation]]:
-    """Apply eligibility, ordering, and same-date rules (§3.3).
+    """Apply eligibility, ordering, and same-date rules.
 
     Returns clean observations in chronological order; ``None`` marks an
     ambiguous date (same-date rows with different amounts), which splits the
@@ -176,7 +174,7 @@ def _normalize(
                 _Observation(when=first.date, amount=amounts.pop(), transaction_id=first.id)
             )
         else:
-            # Different amounts on one date: ambiguous, never guessed (§3.3).
+            # Different amounts on one date: ambiguous, never guessed.
             observations.append(None)
         index = group_end
     return observations
@@ -254,16 +252,16 @@ def detect_price_changes(
     For each candidate ``current`` at clean index ``i >= 2``: the baseline
     ``[i-2, i-1]`` must be stable and ``current`` must differ from ``previous``
     by more than the noise unit; otherwise no event is emitted and no baseline
-    is manufactured from the candidate (§3.4). The series' current ``amount``
+    is manufactured from the candidate. The series' current ``amount``
     is never consulted.
     """
     return _detect_events(series, _normalize(series, rows))
 
 
 def count_clean_observations(series: _Series, rows: Sequence[_Occurrence]) -> int:
-    """Number of clean observations available to the signal chain (§3.3).
+    """Number of clean observations available to the signal chain.
 
-    Collapsed same-date duplicates count once; ambiguous dates count zero —
+    Collapsed same-date duplicates count once; ambiguous dates count zero;
     they are eligible rows but never chain candidates.
     """
     return sum(1 for observation in _normalize(series, rows) if observation is not None)
@@ -272,7 +270,7 @@ def count_clean_observations(series: _Series, rows: Sequence[_Occurrence]) -> in
 def classify_eligibility(
     eligible_occurrence_count: int, events: list[RecurringPriceChangeRead]
 ) -> RecurringPriceChangeEligibility:
-    """Map observation count + events to the §3.7 eligibility union."""
+    """Map observation count and events to the eligibility state."""
     if eligible_occurrence_count < MINIMUM_CLEAN_OBSERVATIONS:
         return "insufficient_history"
     if events:
@@ -304,7 +302,7 @@ def analyze_price_changes(
 
 
 # ---------------------------------------------------------------------------
-# Workspace-scoped queries (T2). The SQL predicates mirror §3.2 to cut rows
+# Workspace-scoped queries. SQL eligibility predicates cut rows
 # early; the detector re-checks every condition in Python, so the pure
 # predicate stays the single authority. Read-only: no writes, no lazy loads.
 # ---------------------------------------------------------------------------
@@ -315,7 +313,7 @@ async def get_price_history(
 ) -> Optional[RecurringPriceChangeHistoryRead]:
     """Full price history for one series, or None when unknown/out-of-workspace.
 
-    Returns the response with ``changes`` newest-first per §3.7.
+    Returns the response with ``changes`` newest-first.
     """
     series_result = await session.execute(
         select(RecurringTransaction).where(
@@ -355,12 +353,14 @@ async def get_price_history(
 async def get_recent_price_changes(
     session: AsyncSession, workspace_id: uuid.UUID, limit: int = 20
 ) -> list[RecurringPriceChangeRead]:
-    """Latest qualifying event per series in the workspace, newest first (§3.7).
+    """Latest in-window event per series, newest first.
 
     One join query scoped by the series workspace: a linked row from another
     workspace cannot leak. ``limit`` is applied after latest-per-series
-    selection (callers bound it to 1–50 at the route).
+    selection (callers bound it to 1-50 at the route). Older observations
+    remain baseline evidence; only the emitted events are windowed.
     """
+    today = app_today()
     result = await session.execute(
         # Keep this scalar projection in the evidence dataclasses' field order.
         # In particular, do not materialize raw_data or any ORM relationships.
@@ -399,12 +399,13 @@ async def get_recent_price_changes(
         .order_by(RecurringTransaction.id, Transaction.date, Transaction.id)
     )
 
-    # Only detached scalar rows cross the thread boundary, never the session
-    # or an ORM entity. Grouping, normalization and event selection are pure.
-    return await asyncio.to_thread(_recent_from_evidence, result.all(), limit)
+    return _recent_from_evidence(result.all(), limit, today)
 
 
-def _recent_from_evidence(rows: Sequence[Row], limit: int) -> list[RecurringPriceChangeRead]:
+def _recent_from_evidence(
+    rows: Sequence[Row], limit: int, today: date
+) -> list[RecurringPriceChangeRead]:
+    since = today - timedelta(days=30)
     grouped: dict[uuid.UUID, tuple[_SeriesEvidence, list[_OccurrenceEvidence]]] = {}
     for row in rows:
         series_id = row[0]
@@ -415,10 +416,13 @@ def _recent_from_evidence(rows: Sequence[Row], limit: int) -> list[RecurringPric
     latest: list[RecurringPriceChangeRead] = []
     for series, occurrences in grouped.values():
         analysis = analyze_price_changes(series, occurrences)
-        if not analysis.events:
+        eligible_events = [
+            event for event in analysis.events if since <= event.current_date <= today
+        ]
+        if not eligible_events:
             continue
         newest = max(
-            analysis.events,
+            eligible_events,
             key=lambda event: (event.current_date, event.current_transaction_id),
         )
         latest.append(newest)

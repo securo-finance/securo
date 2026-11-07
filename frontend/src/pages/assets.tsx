@@ -480,11 +480,14 @@ export default function AssetsPage() {
 
     let iterations = 0
     while (iterations < 10000) {
-      const next = new Date(d)
-      if (formGrowthFrequency === 'daily') next.setDate(next.getDate() + 1)
-      else if (formGrowthFrequency === 'weekly') next.setDate(next.getDate() + 7)
-      else if (formGrowthFrequency === 'monthly') next.setMonth(next.getMonth() + 1)
-      else if (formGrowthFrequency === 'yearly') next.setFullYear(next.getFullYear() + 1)
+      // Same steps as the backend's _next_due_date: monthly clamps the day to
+      // 28 and yearly clamps Feb 29 to Feb 28, so the preview matches what
+      // gets saved.
+      let next: Date
+      if (formGrowthFrequency === 'daily') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+      else if (formGrowthFrequency === 'weekly') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)
+      else if (formGrowthFrequency === 'monthly') next = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), 28))
+      else if (formGrowthFrequency === 'yearly') next = new Date(d.getFullYear() + 1, d.getMonth(), d.getMonth() === 1 ? Math.min(d.getDate(), 28) : d.getDate())
       else break
       if (next > today) break
       if (formGrowthType === 'percentage') {
