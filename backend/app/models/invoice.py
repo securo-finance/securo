@@ -185,7 +185,7 @@ class Invoice(Base):
     # Who created the row. Not an owner: an invoice belongs to the
     # workspace, and a member leaving does not take it with them.
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     # The client. Nullable because an imported document may name a
     # counterparty this workspace has never seen, and refusing the import

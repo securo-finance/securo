@@ -816,6 +816,10 @@ class TestConditionValidation:
     def test_something_that_is_not_an_account_is_refused(self):
         assert self.refused({"accounts": {"in": ["the checking one"]}}) == "bad_accounts"
 
+    # -- account types ------------------------------------------------------
+    def test_loan_is_an_account_type(self):
+        assert self.check({"account_types": ["loan"]}) == {"account_types": ["loan"]}
+
     def test_an_empty_account_list_is_refused_rather_than_ignored(self):
         """An empty list reads as "no accounts", which would silently
         disable the rule. Leaving the condition out is how you say "any"."""

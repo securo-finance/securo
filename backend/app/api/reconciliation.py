@@ -480,6 +480,9 @@ async def accept_suggestion(
 def _transfer_still_holds(moved: Transaction, counterpart: Transaction, row) -> bool:
     if moved.account_id == counterpart.account_id:
         return False
+    if moved.has_category_lines or counterpart.has_category_lines:
+        # Split across categories since we asked.
+        return False
     if moved.type == counterpart.type:
         return False
     if moved.currency != counterpart.currency:
