@@ -152,6 +152,8 @@ class Settings(BaseSettings):
     # number of trusted reverse proxies in front of the backend (usually 1) to
     # derive the client IP from X-Forwarded-For instead, trusting only that
     # many hops from the right; a chain shorter than expected is not trusted.
+    # The same IP is the Psu-Ip-Address of user-triggered Enable Banking syncs
+    # (app.providers.psu), which only sends it when it is a public address.
     trusted_proxy_hops: int = 0
 
     # Logo size for market-priced asset icons. The logo URL is built from
