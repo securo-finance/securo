@@ -15,10 +15,11 @@ Values are only ever copied from the user's request, never invented.
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Iterator, Optional
+from typing import Optional
 
 from fastapi import Request
 
@@ -40,7 +41,7 @@ _current: ContextVar[Optional[PsuContext]] = ContextVar("psu_context", default=N
 
 
 @contextmanager
-def psu_present(context: Optional[PsuContext]) -> Iterator[None]:
+def psu_present(context: Optional[PsuContext]) -> Generator[None]:
     """Mark the provider calls made inside the block as made with the user present."""
     token = _current.set(context)
     try:
