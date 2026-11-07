@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
-import type { RulePack } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -18,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload } from '@/types'
+import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload, RulePack } from '@/types'
 import { isConditionGroup } from '@/lib/rule-conditions'
 import { normalizeRuleMatchValue, ruleSearchText } from '@/lib/rule-match-utils'
 import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Search, Power } from 'lucide-react'
@@ -786,7 +785,7 @@ export default function RulesPage() {
 
 /** The pack's name in the UI language, falling back to English. */
 function packName(pack: RulePack, lang: string): string {
-  return pack.names?.[lang] ?? pack.names?.[lang.split('-')[0]] ?? pack.name
+  return pack.names[lang] ?? pack.names[lang.split('-')[0]] ?? pack.name
 }
 
 function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -896,53 +895,50 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
           ))}
         </div>
       </DialogContent>
-      <RemovePackDialog pack={removing} onClose={() => setRemoving(null)} />
+      {removing && <RemovePackDialog pack={removing} onClose={() => setRemoving(null)} />}
     </Dialog>
   )
 }
 
-/** Shown names before "and N more". */
-const REMOVAL_NAMES_SHOWN = 5
+/** Edited rules listed by name before the rest are summed up as "and N more". */
+const KEPT_NAMES_SHOWN = 5
 
-function RemovePackDialog({ pack, onClose }: { pack: RulePack | null; onClose: () => void }) {
+function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => void }) {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
 
-  const { data: plan, isLoading } = useQuery({
-    queryKey: ['rule-pack-removal', pack?.code],
-    queryFn: () => rulesApi.packRemoval(pack!.code),
-    enabled: pack !== null,
-    staleTime: 0,
+  const { data: plan } = useQuery({
+    queryKey: ['rule-pack-removal', pack.code],
+    queryFn: () => rulesApi.packRemoval(pack.code),
   })
 
   const removeMutation = useMutation({
-    mutationFn: (code: string) => rulesApi.removePack(code),
+    mutationFn: () => rulesApi.removePack(pack.code),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
-      const removed = t('rules.packRemoved', { count: result.remove.length })
-      toast.success(
-        result.keep.length > 0
-          ? `${removed}. ${t('rules.packKeptEdited', { count: result.keep.length })}`
-          : removed,
-      )
+      toast.success(t('rules.packRemoved', { count: result.remove.length }), {
+        description: result.keep.length > 0
+          ? t('rules.packKeptEdited', { count: result.keep.length })
+          : undefined,
+      })
       onClose()
     },
     onError: () => toast.error(t('common.error')),
   })
 
-  const kept = plan?.keep ?? []
   const pending = removeMutation.isPending
+  const kept = plan?.keep ?? []
 
   return (
-    <Dialog open={pack !== null} onOpenChange={(next) => { if (!next && !pending) onClose() }}>
+    <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose() }}>
       <DialogContent className="sm:max-w-md" showCloseButton={!pending}>
         <DialogHeader>
-          <DialogTitle>{t('rules.removePackTitle', { name: pack ? packName(pack, i18n.language) : '' })}</DialogTitle>
+          <DialogTitle>{t('rules.removePackTitle', { name: packName(pack, i18n.language) })}</DialogTitle>
           <DialogDescription>
-            {isLoading || !plan
-              ? t('common.loading')
-              : t('rules.removePackSummary', { count: plan.remove.length })}
+            {plan
+              ? t('rules.removePackSummary', { count: plan.remove.length })
+              : t('common.loading')}
           </DialogDescription>
         </DialogHeader>
         {kept.length > 0 && (
@@ -951,11 +947,11 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack | null; onClose: (
               {t('rules.removePackKeeps', { count: kept.length })}
             </p>
             <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
-              {kept.slice(0, REMOVAL_NAMES_SHOWN).map((rule) => (
+              {kept.slice(0, KEPT_NAMES_SHOWN).map((rule) => (
                 <li key={rule.id} className="truncate">{rule.name}</li>
               ))}
-              {kept.length > REMOVAL_NAMES_SHOWN && (
-                <li>{t('rules.removePackMore', { count: kept.length - REMOVAL_NAMES_SHOWN })}</li>
+              {kept.length > KEPT_NAMES_SHOWN && (
+                <li>{t('rules.removePackMore', { count: kept.length - KEPT_NAMES_SHOWN })}</li>
               )}
             </ul>
           </div>
@@ -966,8 +962,8 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack | null; onClose: (
           </Button>
           <Button
             variant="destructive"
-            onClick={() => pack && removeMutation.mutate(pack.code)}
-            disabled={pending || isLoading || !plan || plan.remove.length === 0}
+            onClick={() => removeMutation.mutate()}
+            disabled={pending || !plan || plan.remove.length === 0}
           >
             <Trash2 size={14} className="mr-1" />
             {t('rules.removePackConfirm')}

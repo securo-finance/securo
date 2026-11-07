@@ -8,7 +8,9 @@ Anything the user edited stays unmarked and is treated as their own, so a
 later "remove pack" never takes it. Marking only adds these three values;
 no rule's content changes.
 
-Idempotent: rules that already have a source are skipped.
+Idempotent: rules that already have a source are skipped. It reads the
+packs as they ship today; a later change to a pack only makes fewer old
+rules match, never a wrong one.
 
 Revision ID: 107
 Revises: 106
@@ -20,7 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy import text
 
 from alembic import op
-from app.services.rule_packs import match_installed_rule, rule_content_hash
+from app.services.rule_packs import find_pack_rule, rule_content_hash
 
 revision = "107"
 down_revision = "106"
@@ -41,7 +43,7 @@ def upgrade() -> None:
         op.add_column("rules", sa.Column("source_hash", sa.String(64), nullable=True))
         op.create_index("ix_rules_workspace_source", "rules", ["workspace_id", "source"])
 
-    category_name = {
+    category_names = {
         str(row.id): row.name
         for row in bind.execute(text("SELECT id, name FROM categories"))
     }
@@ -52,25 +54,23 @@ def upgrade() -> None:
         )
     ).fetchall()
     for row in rows:
-        conditions, actions = _json(row.conditions), _json(row.actions)
-        priority = row.priority or 0
-        match = match_installed_rule(
-            row.name, row.conditions_op, conditions, actions, priority, category_name
-        )
+        content = {
+            "name": row.name,
+            "conditions_op": row.conditions_op,
+            "conditions": _json(row.conditions),
+            "actions": _json(row.actions),
+            "priority": row.priority or 0,
+        }
+        match = find_pack_rule(**content, category_names=category_names)
         if match is None:
             continue
-        source, key = match
+        pack, rule = match
         bind.execute(
             text(
                 "UPDATE rules SET source = :source, source_key = :key, source_hash = :hash "
                 "WHERE id = :id AND source IS NULL"
             ),
-            {
-                "source": source,
-                "key": key,
-                "hash": rule_content_hash(row.name, row.conditions_op, conditions, actions, priority),
-                "id": row.id,
-            },
+            {"source": pack.source, "key": rule.key, "hash": rule_content_hash(**content), "id": row.id},
         )
 
 

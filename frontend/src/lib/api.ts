@@ -61,6 +61,8 @@ import type {
   RuleAction,
   RuleConditionNode,
   RuleExportPayload,
+  RulePack,
+  RulePackRemoval,
   RuleImportResponse,
   RulePreviewResponse,
   ImportLog,
@@ -1127,24 +1129,6 @@ export const users = {
 
 
 // Categorization Rules
-export type RulePack = {
-  code: string
-  name: string
-  /** The pack's name per locale; `name` is the English one. */
-  names: Record<string, string>
-  flag: string
-  rule_count: number
-  installed: boolean
-  /** Rules in this workspace that still come from the pack. */
-  rules_from_pack: number
-}
-
-/** What removing a pack does: rules it deletes, and edited ones it keeps. */
-export type RulePackRemoval = {
-  remove: { id: string; name: string }[]
-  keep: { id: string; name: string }[]
-}
-
 export const rules = {
   list: async (): Promise<Rule[]> => {
     const { data } = await api.get('/rules')

@@ -621,6 +621,24 @@ export interface RuleExportItem {
   is_active: boolean
 }
 
+export interface RulePack {
+  code: string
+  /** English name; `names` has it per locale. */
+  name: string
+  names: Record<string, string>
+  flag: string
+  rule_count: number
+  installed: boolean
+  /** Rules in this workspace that still come from the pack. */
+  rules_from_pack: number
+}
+
+/** Removing a pack deletes `remove` and keeps `keep`, the rules the user edited. */
+export interface RulePackRemoval {
+  remove: { id: string; name: string }[]
+  keep: { id: string; name: string }[]
+}
+
 export interface RuleExportPayload {
   format: 'securo-categorization-rules'
   version: number

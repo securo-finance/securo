@@ -1,8 +1,10 @@
 # backend/app/services/rule_service.py
 import uuid
-from typing import Any, Optional, cast
+from collections import Counter, defaultdict
+from dataclasses import dataclass
+from typing import Optional
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
@@ -27,7 +29,7 @@ from app.services.category_defaults import (
     name_variants,
 )
 from app.services.category_service import get_assignable_category_ids
-from app.services.rule_packs import built_in_packs, rule_content_hash
+from app.services.rule_packs import RulePack, built_in_packs, get_pack, rule_content_hash
 from app.services.rule_engine import (
     apply_rule_actions,
     compile_rule_regex,
@@ -175,13 +177,7 @@ UNIVERSAL_RULES = [
     ], "actions": [{"op": "set_category", "value": "investments"}], "priority": 20},
 ]
 
-# ─── Country-specific rule packs (optional, not auto-applied) ───
-# The packs live in app/data/rule_packs/*.json (see app.services.rule_packs).
-# This view keeps the shape callers have always used: code -> name, flag, rules.
-RULE_PACKS: dict[str, dict[str, Any]] = {
-    code: {"name": pack.name, "flag": pack.flag, "rules": [dict(r) for r in pack.rules]}
-    for code, pack in built_in_packs().items()
-}
+# ─── Country-specific rule packs: see app.services.rule_packs ───
 
 # Map currency code -> default rule pack country
 CURRENCY_TO_PACK = {
@@ -249,14 +245,6 @@ def _build_rules_from_templates(
     return resolved, unresolved
 
 
-async def _get_existing_rule_names(session: AsyncSession, user_id: uuid.UUID) -> set[str]:
-    """Get the set of existing rule names for a user."""
-    result = await session.execute(
-        select(Rule.name).where(Rule.user_id == user_id)
-    )
-    return {row[0] for row in result.all()}
-
-
 async def create_default_rules(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -316,16 +304,6 @@ class RulePackInstallResult:
         self.rules = rules
         self.unresolved = unresolved
         self.categories_created = categories_created
-
-
-def _required_internal_keys(pack: dict) -> set[str]:
-    """Return the set of category internal keys referenced by a pack's rules."""
-    keys: set[str] = set()
-    for rule in pack["rules"]:
-        for action in rule["actions"]:
-            if action["op"] == "set_category":
-                keys.add(action["value"])
-    return keys
 
 
 async def _ensure_categories_for_keys(
@@ -424,60 +402,42 @@ async def _ensure_categories_for_keys(
 
 async def install_rule_pack(
     session: AsyncSession,
-    workspace_id_or_user_id: uuid.UUID,
-    user_id_or_pack_code: uuid.UUID | str,
-    pack_code: Optional[str] = None,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    pack_code: str,
     lang: str = "pt-BR",
     create_missing_categories: bool = False,
 ) -> RulePackInstallResult:
-    """Install a country-specific rule pack for a user. Skips rules whose name already exists.
+    """Install a built-in rule pack into a workspace.
+
+    Skips pack rules the workspace already has, by key or by name. Each new
+    rule records the pack it came from and a hash of its content, so it can
+    later be told apart from a rule the user edited.
 
     When `create_missing_categories=True`, creates any default categories
-    referenced by the pack that the user is missing — so users in a
-    degenerate state (or who never had defaults seeded) can opt into
-    "install pack, fill in what's needed". `lang` controls the names of
-    any newly-created categories.
+    referenced by the pack that the workspace is missing, so a workspace in
+    a degenerate state (or never seeded) can opt into "install pack, fill in
+    what's needed". `lang` controls the names of newly-created categories.
     """
-    if pack_code is None:
-        workspace_id = None
-        user_id = workspace_id_or_user_id
-        pack_code = str(user_id_or_pack_code)
-    else:
-        workspace_id = workspace_id_or_user_id
-        # Narrowed by the branch: `pack_code` being set means the caller used
-        # the workspace-scoped signature, so this argument is the user id.
-        user_id = cast(uuid.UUID, user_id_or_pack_code)
-
-    pack = RULE_PACKS.get(pack_code)
-    if not pack:
+    pack = get_pack(pack_code)
+    if pack is None:
         return RulePackInstallResult([], 0)
 
     categories_created = 0
     if create_missing_categories:
         categories_created = await _ensure_categories_for_keys(
-            session, workspace_id, user_id, _required_internal_keys(pack), lang
+            session, workspace_id, user_id, pack.category_keys(), lang
         )
 
-    result = await session.execute(
-        select(Category).where(
-            Category.workspace_id == workspace_id
-            if workspace_id is not None
-            else Category.user_id == user_id
-        )
-    )
+    result = await session.execute(select(Category).where(Category.workspace_id == workspace_id))
     categories = {cat.name: str(cat.id) for cat in result.scalars().all()}
     key_to_id = _resolve_categories_by_internal_key(categories)
-
-    resolved, unresolved = _build_rules_from_templates(pack["rules"], key_to_id)
-
-    existing_names = (
-        await _get_existing_rule_names_for_workspace(session, workspace_id)
-        if workspace_id is not None
-        else await _get_existing_rule_names(session, user_id)
+    resolved, unresolved = _build_rules_from_templates(
+        [rule.template() for rule in pack.rules], key_to_id
     )
 
-    source = built_in_packs()[pack_code].source
-    existing_keys = await _existing_source_keys(session, source, workspace_id, user_id)
+    existing_names = await _get_existing_rule_names_for_workspace(session, workspace_id)
+    existing_keys = await _installed_keys(session, workspace_id, pack.source)
 
     rules: list[Rule] = []
     for rule_data in resolved:
@@ -492,10 +452,10 @@ async def install_rule_pack(
             actions=rule_data["actions"],
             priority=rule_data["priority"],
             is_active=True,
-            source=source,
+            source=pack.source,
             source_key=rule_data["key"],
-            source_hash=_hash_of(rule_data),
         )
+        rule.source_hash = _content_hash(rule)
         session.add(rule)
         rules.append(rule)
 
@@ -503,90 +463,124 @@ async def install_rule_pack(
     return RulePackInstallResult(rules, unresolved, categories_created)
 
 
-async def get_installed_packs(
-    session: AsyncSession, workspace_id: uuid.UUID, user_id: Optional[uuid.UUID] = None
-) -> dict[str, bool]:
-    """Check which rule packs are fully installed.
+@dataclass(frozen=True)
+class RulePackStatus:
+    pack: RulePack
+    installed: bool
+    """Every rule of the pack is in the workspace, by key or by name."""
+    rules_from_pack: int
+    """Rules in the workspace that still come from the pack."""
 
-    A pack rule counts as present when a rule carries its key, or, for rules
-    installed before packs recorded their origin, a rule has its name.
+
+async def list_rule_packs(session: AsyncSession, workspace_id: uuid.UUID) -> list[RulePackStatus]:
+    """The built-in packs and where the workspace stands with each.
+
+    Rules installed before packs recorded their origin carry no key, so a
+    pack rule also counts as present when a rule has its name, as it always
+    did.
     """
-    if user_id is not None:
-        existing_names = await _get_existing_rule_names_for_workspace(session, workspace_id)
-        scope = Rule.workspace_id == workspace_id
-    else:
-        existing_names = await _get_existing_rule_names(session, workspace_id)
-        scope = Rule.user_id == workspace_id
+    names = await _get_existing_rule_names_for_workspace(session, workspace_id)
     rows = (
         await session.execute(
-            select(Rule.source, Rule.source_key).where(scope, Rule.source.isnot(None))
+            select(Rule.source, Rule.source_key).where(
+                Rule.workspace_id == workspace_id, Rule.source.isnot(None)
+            )
         )
     ).all()
-    keys = {(row.source, row.source_key) for row in rows}
-    result = {}
-    for code, pack in built_in_packs().items():
-        result[code] = all(
-            (pack.source, r["key"]) in keys or r["name"] in existing_names for r in pack.rules
+    keys_by_source: dict[str, set[str]] = defaultdict(set)
+    for source, key in rows:
+        keys_by_source[source].add(key)
+    count_by_source = Counter(source for source, _ in rows)
+
+    statuses = []
+    for pack in built_in_packs().values():
+        keys = keys_by_source[pack.source]
+        statuses.append(
+            RulePackStatus(
+                pack=pack,
+                installed=all(r.key in keys or r.name in names for r in pack.rules),
+                rules_from_pack=count_by_source[pack.source],
+            )
         )
-    return result
+    return statuses
 
 
-async def count_rules_by_source(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, int]:
-    """How many rules in the workspace still come from each pack."""
-    rows = await session.execute(
-        select(Rule.source, func.count())
-        .where(Rule.workspace_id == workspace_id, Rule.source.isnot(None))
-        .group_by(Rule.source)
-    )
-    return {row[0]: row[1] for row in rows.all()}
+@dataclass(frozen=True)
+class RuleRef:
+    id: uuid.UUID
+    name: str
 
 
+@dataclass(frozen=True)
 class RulePackRemoval:
-    """What removing a pack does: the rules it deletes and the ones it keeps."""
-
-    __slots__ = ("removed", "kept")
-
-    def __init__(self, removed: list[Rule], kept: list[Rule]) -> None:
-        self.removed = removed
-        self.kept = kept
-        """Rules the user edited after installing. They stay, as the user's own."""
-
-
-def _hash_of(rule: Rule | dict[str, Any]) -> str:
-    if isinstance(rule, Rule):
-        return rule_content_hash(
-            rule.name, rule.conditions_op, rule.conditions, rule.actions, rule.priority or 0
-        )
-    template: dict[str, Any] = rule
-    return rule_content_hash(
-        str(template["name"]),
-        str(template["conditions_op"]),
-        template["conditions"],
-        template["actions"],
-        int(template.get("priority") or 0),
-    )
-
-
-async def _existing_source_keys(
-    session: AsyncSession, source: str, workspace_id: Optional[uuid.UUID], user_id: uuid.UUID
-) -> set[str]:
-    scope = Rule.workspace_id == workspace_id if workspace_id is not None else Rule.user_id == user_id
-    rows = await session.execute(select(Rule.source_key).where(scope, Rule.source == source))
-    return {row[0] for row in rows.all() if row[0]}
+    remove: list[RuleRef]
+    """Pack rules still exactly as installed: removing the pack deletes them."""
+    keep: list[RuleRef]
+    """Pack rules the user edited: they stay, as the user's own."""
 
 
 async def plan_rule_pack_removal(
     session: AsyncSession, workspace_id: uuid.UUID, pack_code: str
 ) -> RulePackRemoval | None:
-    """Which of a pack's rules removing it would delete and which it keeps.
+    """What removing a pack would delete and what it would keep.
 
-    Only rules that remember coming from the pack are considered. Of those,
-    the ones still exactly as installed are removed; the ones the user
-    changed are kept. Rules with no recorded origin are never touched.
+    Only rules that record coming from the pack are considered; a rule with
+    no recorded origin is never touched.
     """
-    pack = built_in_packs().get(pack_code)
+    pack = get_pack(pack_code)
     if pack is None:
         return None
+    untouched, edited = await _pack_rules_by_state(session, workspace_id, pack)
+    return RulePackRemoval(remove=_refs(untouched), keep=_refs(edited))
+
+
+async def remove_rule_pack(
+    session: AsyncSession, workspace_id: uuid.UUID, pack_code: str
+) -> RulePackRemoval | None:
+    """Remove a pack: delete its untouched rules and hand the edited ones over.
+
+    Transactions keep the categories the rules already gave them; only the
+    rules go. Edited rules lose their origin, so from now on they are the
+    user's own and a reinstall doesn't count them as the pack's.
+    """
+    pack = get_pack(pack_code)
+    if pack is None:
+        return None
+    untouched, edited = await _pack_rules_by_state(session, workspace_id, pack)
+    removal = RulePackRemoval(remove=_refs(untouched), keep=_refs(edited))
+    for rule in untouched:
+        await session.delete(rule)
+    for rule in edited:
+        rule.source = rule.source_key = rule.source_hash = None
+    await session.commit()
+    return removal
+
+
+def _content_hash(rule: Rule) -> str:
+    return rule_content_hash(
+        name=rule.name,
+        conditions_op=rule.conditions_op,
+        conditions=rule.conditions,
+        actions=rule.actions,
+        priority=rule.priority or 0,
+    )
+
+
+def _refs(rules: list[Rule]) -> list[RuleRef]:
+    return [RuleRef(id=rule.id, name=rule.name) for rule in rules]
+
+
+async def _installed_keys(session: AsyncSession, workspace_id: uuid.UUID, source: str) -> set[str]:
+    rows = await session.execute(
+        select(Rule.source_key).where(Rule.workspace_id == workspace_id, Rule.source == source)
+    )
+    return {key for (key,) in rows.all() if key}
+
+
+async def _pack_rules_by_state(
+    session: AsyncSession, workspace_id: uuid.UUID, pack: RulePack
+) -> tuple[list[Rule], list[Rule]]:
+    """The workspace's rules from `pack`, split into (untouched, edited)."""
     rules = (
         await session.execute(
             select(Rule)
@@ -594,31 +588,11 @@ async def plan_rule_pack_removal(
             .order_by(Rule.priority, Rule.name)
         )
     ).scalars().all()
-    removed = [r for r in rules if r.source_hash == _hash_of(r)]
-    kept = [r for r in rules if r.source_hash != _hash_of(r)]
-    return RulePackRemoval(removed, kept)
-
-
-async def remove_rule_pack(
-    session: AsyncSession, workspace_id: uuid.UUID, pack_code: str
-) -> RulePackRemoval | None:
-    """Remove a pack: delete its untouched rules, hand the edited ones over.
-
-    Transactions the rules already categorized keep their categories; only
-    the rules go. Edited rules lose their origin, so they read as the
-    user's own from now on and a later reinstall doesn't count them.
-    """
-    plan = await plan_rule_pack_removal(session, workspace_id, pack_code)
-    if plan is None:
-        return None
-    for rule in plan.removed:
-        await session.delete(rule)
-    for rule in plan.kept:
-        rule.source = None
-        rule.source_key = None
-        rule.source_hash = None
-    await session.commit()
-    return plan
+    untouched: list[Rule] = []
+    edited: list[Rule] = []
+    for rule in rules:
+        (untouched if rule.source_hash == _content_hash(rule) else edited).append(rule)
+    return untouched, edited
 
 
 async def get_rules(session: AsyncSession, workspace_id: uuid.UUID) -> list[Rule]:
