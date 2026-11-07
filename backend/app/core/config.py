@@ -3,6 +3,8 @@ from functools import lru_cache
 from math import isfinite
 from os import getenv
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -78,7 +80,7 @@ class Settings(BaseSettings):
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage
-    storage_provider: str = "local"  # "local" or "s3"
+    storage_provider: Literal["local", "s3"] = "local"
     storage_local_path: str = "./data/attachments"
     storage_max_file_size_mb: int = 10
     storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf"
@@ -88,12 +90,15 @@ class Settings(BaseSettings):
     # of any of them.
     storage_max_attachments_per_invoice: int = 20
 
-    # S3 Storage (for future use)
+    # S3 storage: blank credentials use the SDK's default credential chain.
     storage_s3_bucket: str = ""
     storage_s3_region: str = ""
     storage_s3_access_key: SecretStr = SecretStr("")
     storage_s3_secret_key: SecretStr = SecretStr("")
+    storage_s3_session_token: SecretStr = SecretStr("")
     storage_s3_endpoint_url: str = ""  # for S3-compatible services (MinIO, DigitalOcean Spaces)
+    storage_s3_allow_insecure_http: bool = False  # development only: permits http:// endpoints
+    storage_s3_addressing_style: str = "auto"  # auto|path|virtual; checked only when S3 is selected
 
     # Registration
     registration_enabled: bool = True
@@ -171,6 +176,37 @@ class Settings(BaseSettings):
     @property
     def oidc_login_available(self) -> bool:
         return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)
+
+    @model_validator(mode="after")
+    def validate_storage_settings(self) -> "Settings":
+        if self.storage_provider != "s3":
+            return self
+        if not self.storage_s3_bucket.strip():
+            raise ValueError("STORAGE_S3_BUCKET is required when STORAGE_PROVIDER=s3")
+        if self.storage_s3_addressing_style not in {"auto", "path", "virtual"}:
+            raise ValueError("STORAGE_S3_ADDRESSING_STYLE must be one of: auto, path, virtual")
+        has_access_key = bool(self.storage_s3_access_key.get_secret_value())
+        has_secret_key = bool(self.storage_s3_secret_key.get_secret_value())
+        if has_access_key != has_secret_key:
+            raise ValueError("Set both STORAGE_S3_ACCESS_KEY and STORAGE_S3_SECRET_KEY, or neither")
+        if self.storage_s3_session_token.get_secret_value() and not has_access_key:
+            raise ValueError("STORAGE_S3_SESSION_TOKEN requires explicit S3 access and secret keys")
+        if self.storage_s3_endpoint_url:
+            endpoint = urlsplit(self.storage_s3_endpoint_url)
+            allowed_schemes = {"https", "http"} if self.storage_s3_allow_insecure_http else {"https"}
+            if (
+                endpoint.scheme not in allowed_schemes
+                or not endpoint.hostname
+                or endpoint.username is not None
+                or endpoint.password is not None
+                or endpoint.query
+                or endpoint.fragment
+            ):
+                raise ValueError(
+                    "STORAGE_S3_ENDPOINT_URL must be an HTTPS URL without credentials, query or fragment "
+                    "(http:// requires STORAGE_S3_ALLOW_INSECURE_HTTP=true, development only)"
+                )
+        return self
 
     @model_validator(mode="after")
     def default_frontend_url(self) -> "Settings":
