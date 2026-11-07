@@ -75,7 +75,7 @@ include = ["app*"]
 [tool.setuptools.package-data]
 # Ship the category taxonomy in wheels/non-editable installs; without this it
 # only exists in editable (-e) installs and the backend crashes at import.
-app = ["data/*.json"]
+app = ["data/*.json", "data/rule_packs/*.json"]
 
 [tool.pytest.ini_options]
 # Fail on configuration/marker typos, duplicate parameter IDs and unexpected
