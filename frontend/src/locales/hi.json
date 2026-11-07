@@ -1596,6 +1596,8 @@
     "removePackKeeps_other": "आपके द्वारा संपादित {{count}} नियम आपके ही रहेंगे:",
     "removePackMore": "और {{count}}",
     "removePackConfirm": "पैक हटाएं",
+    "removePackChanged": "इस पूर्वावलोकन के बाद पैक के नियम बदल गए। हटाने से पहले इसे फिर से देखें।",
+    "removePackPreviewFailed": "यह पैक हटाने पर क्या होगा, यह लोड नहीं हो सका।",
     "packRemoved_one": "{{count}} नियम हटाया गया",
     "packRemoved_other": "{{count}} नियम हटाए गए",
     "packKeptEdited_one": "{{count}} संपादित नियम रखा गया",

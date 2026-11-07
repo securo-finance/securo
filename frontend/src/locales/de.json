@@ -1597,6 +1597,8 @@
     "removePackKeeps_other": "{{count}} von dir bearbeitete Regeln bleiben erhalten:",
     "removePackMore": "und {{count}} weitere",
     "removePackConfirm": "Paket entfernen",
+    "removePackChanged": "Die Regeln des Pakets haben sich seit dieser Vorschau geändert. Prüfe sie erneut, bevor du entfernst.",
+    "removePackPreviewFailed": "Konnte nicht laden, was das Entfernen dieses Pakets bewirken würde.",
     "packRemoved_one": "{{count}} Regel entfernt",
     "packRemoved_other": "{{count}} Regeln entfernt",
     "packKeptEdited_one": "{{count}} bearbeitete Regel behalten",

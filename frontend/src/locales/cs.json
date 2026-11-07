@@ -1704,6 +1704,8 @@
     "removePackKeeps_other": "{{count}} pravidel, která jste upravili, zůstává vašich:",
     "removePackMore": "a dalších {{count}}",
     "removePackConfirm": "Odebrat balíček",
+    "removePackChanged": "Pravidla balíčku se od tohoto náhledu změnila. Před odebráním ho zkontrolujte znovu.",
+    "removePackPreviewFailed": "Nepodařilo se načíst, co by odebrání tohoto balíčku udělalo.",
     "packRemoved_one": "Odebráno {{count}} pravidlo",
     "packRemoved_few": "Odebrána {{count}} pravidla",
     "packRemoved_many": "Odebráno {{count}} pravidel",

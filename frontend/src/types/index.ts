@@ -637,6 +637,8 @@ export interface RulePack {
 export interface RulePackRemoval {
   remove: { id: string; name: string }[]
   keep: { id: string; name: string }[]
+  /** Identifies this plan; removal is refused if the plan changed since. */
+  token: string
 }
 
 export interface RuleExportPayload {

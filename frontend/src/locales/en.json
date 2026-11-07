@@ -1596,6 +1596,8 @@
     "removePackKeeps_other": "{{count}} rules you edited stay as your own:",
     "removePackMore": "and {{count}} more",
     "removePackConfirm": "Remove pack",
+    "removePackChanged": "The pack's rules changed since this preview. Review it again before removing.",
+    "removePackPreviewFailed": "Couldn't load what removing this pack would do.",
     "packRemoved_one": "{{count}} rule removed",
     "packRemoved_other": "{{count}} rules removed",
     "packKeptEdited_one": "{{count}} edited rule kept",

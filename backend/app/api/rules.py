@@ -294,12 +294,23 @@ async def preview_rule_pack_removal(
 @router.delete("/packs/{pack_code}", response_model=RulePackRemovalRead)
 async def remove_rule_pack(
     pack_code: str,
+    token: str,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     """Remove a pack's untouched rules. Edited rules stay as the user's own,
-    and transactions keep the categories the rules already gave them."""
-    removal = await rule_service.remove_rule_pack(session, ctx.workspace.id, pack_code)
+    and transactions keep the categories the rules already gave them.
+
+    `token` comes from the removal preview; if the plan changed since, the
+    answer is 409 and nothing is removed.
+    """
+    try:
+        removal = await rule_service.remove_rule_pack(session, ctx.workspace.id, pack_code, token)
+    except rule_service.RulePackRemovalChanged:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The pack's rules changed since the preview. Review the removal again.",
+        )
     if removal is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule pack not found")
     return removal

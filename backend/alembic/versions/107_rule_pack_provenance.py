@@ -17,9 +17,10 @@ Revises: 106
 """
 
 import json
+import uuid
 
 import sqlalchemy as sa
-from sqlalchemy import text
+from sqlalchemy import Connection, text
 
 from alembic import op
 from app.services.rule_packs import find_pack_rule, rule_content_hash
@@ -38,13 +39,22 @@ def upgrade() -> None:
     bind = op.get_bind()
     columns = {c["name"] for c in sa.inspect(bind).get_columns("rules")}
     if "source" not in columns:
-        op.add_column("rules", sa.Column("source", sa.String(100), nullable=True))
+        op.add_column("rules", sa.Column("source", sa.String(120), nullable=True))
         op.add_column("rules", sa.Column("source_key", sa.String(64), nullable=True))
         op.add_column("rules", sa.Column("source_hash", sa.String(64), nullable=True))
         op.create_index("ix_rules_workspace_source", "rules", ["workspace_id", "source"])
 
+    mark_rules_from_packs(bind)
+
+
+def mark_rules_from_packs(bind: Connection) -> int:
+    """Record the origin of rules that are untouched copies of a pack rule.
+
+    Returns how many rules were marked.
+    """
+    # Keyed the way rule actions store a category id, whatever the driver returns.
     category_names = {
-        str(row.id): row.name
+        str(uuid.UUID(str(row.id))): row.name
         for row in bind.execute(text("SELECT id, name FROM categories"))
     }
     rows = bind.execute(
@@ -53,6 +63,7 @@ def upgrade() -> None:
             "FROM rules WHERE source IS NULL"
         )
     ).fetchall()
+    marked = 0
     for row in rows:
         content = {
             "name": row.name,
@@ -72,6 +83,8 @@ def upgrade() -> None:
             ),
             {"source": pack.source, "key": rule.key, "hash": rule_content_hash(**content), "id": row.id},
         )
+        marked += 1
+    return marked
 
 
 def downgrade() -> None:

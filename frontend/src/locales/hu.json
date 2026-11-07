@@ -1596,6 +1596,8 @@
     "removePackKeeps_other": "{{count}} általad szerkesztett szabály megmarad:",
     "removePackMore": "és még {{count}}",
     "removePackConfirm": "Csomag eltávolítása",
+    "removePackChanged": "A csomag szabályai megváltoztak az előnézet óta. Eltávolítás előtt nézd át újra.",
+    "removePackPreviewFailed": "Nem sikerült betölteni, mit tenne a csomag eltávolítása.",
     "packRemoved_one": "{{count}} szabály eltávolítva",
     "packRemoved_other": "{{count}} szabály eltávolítva",
     "packKeptEdited_one": "{{count}} szerkesztett szabály megtartva",

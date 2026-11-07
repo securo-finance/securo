@@ -1598,6 +1598,8 @@
     "removePackKeeps_other": "{{count}} regels die je hebt bewerkt blijven van jou:",
     "removePackMore": "en nog {{count}}",
     "removePackConfirm": "Pakket verwijderen",
+    "removePackChanged": "De regels van het pakket zijn gewijzigd sinds dit voorbeeld. Bekijk het opnieuw voordat je verwijdert.",
+    "removePackPreviewFailed": "Kon niet laden wat het verwijderen van dit pakket zou doen.",
     "packRemoved_one": "{{count}} regel verwijderd",
     "packRemoved_other": "{{count}} regels verwijderd",
     "packKeptEdited_one": "{{count}} bewerkte regel behouden",

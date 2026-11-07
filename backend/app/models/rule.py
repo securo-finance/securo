@@ -29,7 +29,7 @@ class Rule(Base):
     # Set when the rule came from a pack: the pack's id, the rule's key in
     # it, and a hash of the rule as installed. A rule whose content no
     # longer matches the hash was edited and belongs to the user.
-    source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     source_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     source_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 

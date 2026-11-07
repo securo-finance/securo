@@ -1688,6 +1688,8 @@
     "removePackKeeps_other": "{{count}} pravidiel, ktoré ste upravili, zostáva vašich:",
     "removePackMore": "a ďalších {{count}}",
     "removePackConfirm": "Odstrániť balík",
+    "removePackChanged": "Pravidlá balíka sa od tohto náhľadu zmenili. Pred odstránením ho skontrolujte znova.",
+    "removePackPreviewFailed": "Nepodarilo sa načítať, čo by odstránenie tohto balíka urobilo.",
     "packRemoved_one": "Odstránené {{count}} pravidlo",
     "packRemoved_few": "Odstránené {{count}} pravidlá",
     "packRemoved_many": "Odstránených {{count}} pravidiel",

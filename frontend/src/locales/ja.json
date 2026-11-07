@@ -1596,6 +1596,8 @@
     "removePackKeeps_other": "編集したルール {{count}} 件はあなたのルールとして残ります:",
     "removePackMore": "ほか {{count}} 件",
     "removePackConfirm": "パックを削除",
+    "removePackChanged": "このプレビューの後にパックのルールが変更されました。削除する前にもう一度確認してください。",
+    "removePackPreviewFailed": "このパックを削除した場合の内容を読み込めませんでした。",
     "packRemoved_one": "ルール {{count}} 件を削除しました",
     "packRemoved_other": "ルール {{count}} 件を削除しました",
     "packKeptEdited_one": "編集済みのルール {{count}} 件を残しました",

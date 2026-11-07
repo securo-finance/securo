@@ -218,3 +218,4 @@ class RulePackRemovalRead(BaseModel):
 
     remove: list[RuleRefRead]
     keep: list[RuleRefRead]
+    token: str = Field(description="Pass it back to remove the pack; refused if the plan changed since.")

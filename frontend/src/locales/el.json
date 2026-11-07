@@ -1596,6 +1596,8 @@
     "removePackKeeps_other": "{{count}} κανόνες που επεξεργαστήκατε παραμένουν δικοί σας:",
     "removePackMore": "και {{count}} ακόμη",
     "removePackConfirm": "Αφαίρεση πακέτου",
+    "removePackChanged": "Οι κανόνες του πακέτου άλλαξαν από αυτή την προεπισκόπηση. Ελέγξτε την ξανά πριν την αφαίρεση.",
+    "removePackPreviewFailed": "Δεν ήταν δυνατή η φόρτωση του τι θα έκανε η αφαίρεση αυτού του πακέτου.",
     "packRemoved_one": "Αφαιρέθηκε {{count}} κανόνας",
     "packRemoved_other": "Αφαιρέθηκαν {{count}} κανόνες",
     "packKeptEdited_one": "Κρατήθηκε {{count}} επεξεργασμένος κανόνας",

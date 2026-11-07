@@ -1,8 +1,10 @@
 """Rule packs as data files, the origin they leave on rules, and removing them."""
+import importlib.util
 import json
 import uuid
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
@@ -25,6 +27,7 @@ from app.services.rule_packs import (
     rule_content_hash,
 )
 from app.services.rule_service import (
+    RulePackRemovalChanged,
     _validate_rule_definition,
     install_rule_pack,
     list_rule_packs,
@@ -46,6 +49,12 @@ async def _rules(session: AsyncSession, workspace_id: uuid.UUID) -> list[Rule]:
 
 async def _status(session: AsyncSession, workspace_id: uuid.UUID, code: str):
     return next(s for s in await list_rule_packs(session, workspace_id) if s.pack.code == code)
+
+
+async def _remove(session: AsyncSession, workspace_id: uuid.UUID, code: str):
+    plan = await plan_rule_pack_removal(session, workspace_id, code)
+    assert plan is not None
+    return await remove_rule_pack(session, workspace_id, code, plan.token)
 
 
 def _content(rule: Rule) -> dict:
@@ -162,7 +171,7 @@ async def test_removing_a_pack_keeps_what_the_user_edited(session: AsyncSession,
     assert len(plan.remove) == len(installed) - 1
     assert switched_off_id in {r.id for r in plan.remove}, "switching a rule off doesn't make it the user's"
 
-    removal = await remove_rule_pack(session, workspace_id, "BR")
+    removal = await remove_rule_pack(session, workspace_id, "BR", plan.token)
     assert removal == plan
     left = {r.id: r for r in await _rules(session, workspace_id)}
     assert set(left) == {edited_id, mine_id}
@@ -193,7 +202,7 @@ async def test_removing_a_pack_leaves_categorized_transactions_alone(session: As
     txn_id = txn.id
     await session.commit()
 
-    await remove_rule_pack(session, workspace_id, "BR")
+    await _remove(session, workspace_id, "BR")
     reloaded = await session.get(Transaction, txn_id, populate_existing=True)
     assert reloaded is not None and reloaded.category_id == category_id
 
@@ -209,16 +218,32 @@ async def test_removal_only_touches_its_own_workspace(session: AsyncSession, ids
     await install_rule_pack(session, workspace_id, user_id, "BR", create_missing_categories=True)
     await install_rule_pack(session, other_id, user_id, "BR", create_missing_categories=True)
 
-    await remove_rule_pack(session, workspace_id, "BR")
+    await _remove(session, workspace_id, "BR")
     assert await _rules(session, workspace_id) == []
     assert len(await _rules(session, other_id)) == len(built_in_packs()["BR"].rules)
+
+
+@pytest.mark.asyncio
+async def test_removal_refuses_a_plan_that_changed(session: AsyncSession, ids):
+    """An edit saved after the preview changes the plan: nothing is removed."""
+    workspace_id, user_id = ids
+    await create_default_categories(session, user_id, lang="pt-BR")
+    rules = (await install_rule_pack(session, workspace_id, user_id, "BR")).rules
+    plan = await plan_rule_pack_removal(session, workspace_id, "BR")
+    assert plan is not None
+    rules[0].priority += 1
+    await session.commit()
+
+    with pytest.raises(RulePackRemovalChanged):
+        await remove_rule_pack(session, workspace_id, "BR", plan.token)
+    assert len(await _rules(session, workspace_id)) == len(built_in_packs()["BR"].rules)
 
 
 @pytest.mark.asyncio
 async def test_unknown_pack(session: AsyncSession, ids):
     workspace_id, _ = ids
     assert await plan_rule_pack_removal(session, workspace_id, "ZZ") is None
-    assert await remove_rule_pack(session, workspace_id, "ZZ") is None
+    assert await remove_rule_pack(session, workspace_id, "ZZ", "any") is None
 
 
 # --- Rules installed before packs recorded their origin ------------------------------------
@@ -255,6 +280,53 @@ async def test_untouched_old_rules_are_recognized_and_edited_ones_are_not(sessio
 
     # Without a recorded origin the pack still reads as installed, by name.
     assert (await _status(session, workspace_id, "BR")).installed
+
+
+def _migration_107():
+    path = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "107_rule_pack_provenance.py"
+    spec = importlib.util.spec_from_file_location("migration_107", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.asyncio
+async def test_migration_marks_untouched_old_rules_and_changes_no_content(session: AsyncSession, ids):
+    workspace_id, user_id = ids
+    await create_default_categories(session, user_id, lang="en")
+    rules = (await install_rule_pack(session, workspace_id, user_id, "BR")).rules
+    for rule in rules:  # as installed before origins were recorded
+        rule.source = rule.source_key = rule.source_hash = None
+    rules[0].priority += 1  # edited by the user
+    mine = Rule(
+        user_id=user_id, workspace_id=workspace_id, name="Mine", conditions_op="and",
+        conditions=[{"field": "description", "op": "contains", "value": "X"}],
+        actions=[{"op": "append_notes", "value": "x"}], priority=1,
+    )
+    session.add(mine)
+    await session.flush()
+    edited_id, mine_id = rules[0].id, mine.id
+    await session.commit()
+    before = {r.id: _content(r) for r in await _rules(session, workspace_id)}
+
+    mark = _migration_107().mark_rules_from_packs
+    marked = await session.run_sync(lambda sync: mark(sync.connection()))
+    await session.commit()
+
+    after = {r.id: r for r in await _rules(session, workspace_id)}
+    assert marked == len(rules) - 1
+    assert {i: _content(r) for i, r in after.items()} == before, "no rule's content changes"
+    assert after[edited_id].source is None
+    assert after[mine_id].source is None
+    pack = built_in_packs()["BR"]
+    for rule_id, rule in after.items():
+        if rule_id in (edited_id, mine_id):
+            continue
+        assert (rule.source, rule.source_hash) == (pack.source, rule_content_hash(**_content(rule)))
+
+    # Running it again marks nothing new.
+    assert await session.run_sync(lambda sync: mark(sync.connection())) == 0
 
 
 def test_two_packs_sharing_a_rule_name_are_told_apart_by_content():
@@ -294,7 +366,7 @@ async def test_api_lists_previews_and_removes_a_pack(client: AsyncClient, auth_h
     assert preview["keep"] == [{"id": edited["id"], "name": "iFood / Rappi"}]
     assert len(preview["remove"]) == total - 1
 
-    resp = await client.delete("/api/rules/packs/BR", headers=auth_headers)
+    resp = await client.delete("/api/rules/packs/BR", headers=auth_headers, params={"token": preview["token"]})
     assert resp.status_code == 200
     assert resp.json() == preview
     names = [r["name"] for r in (await client.get("/api/rules", headers=auth_headers)).json()]
@@ -309,10 +381,44 @@ async def test_api_viewer_can_preview_but_not_remove(
 ):
     await client.post("/api/rules/packs/BR/install", headers=auth_headers, params={"create_missing_categories": True})
     assert (await client.get("/api/rules/packs/BR/removal", headers=viewer_auth_headers)).status_code == 200
-    assert (await client.delete("/api/rules/packs/BR", headers=viewer_auth_headers)).status_code == 403
+    token = (await client.get("/api/rules/packs/BR/removal", headers=viewer_auth_headers)).json()["token"]
+    resp = await client.delete("/api/rules/packs/BR", headers=viewer_auth_headers, params={"token": token})
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_api_unknown_pack_is_404(client: AsyncClient, auth_headers: dict):
     assert (await client.get("/api/rules/packs/ZZ/removal", headers=auth_headers)).status_code == 404
-    assert (await client.delete("/api/rules/packs/ZZ", headers=auth_headers)).status_code == 404
+    resp = await client.delete("/api/rules/packs/ZZ", headers=auth_headers, params={"token": "x"})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_api_refuses_a_stale_or_foreign_preview(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user
+):
+    """A preview from before an edit, or from another workspace, removes nothing."""
+    install = {"create_missing_categories": True}
+    await client.post("/api/rules/packs/BR/install", headers=auth_headers, params=install)
+    stale = (await client.get("/api/rules/packs/BR/removal", headers=auth_headers)).json()["token"]
+    rule = next(r for r in (await client.get("/api/rules", headers=auth_headers)).json() if r["name"] == "Aluguel")
+    await client.patch(f"/api/rules/{rule['id']}", headers=auth_headers, json={"priority": 77})
+
+    resp = await client.delete("/api/rules/packs/BR", headers=auth_headers, params={"token": stale})
+    assert resp.status_code == 409
+
+    other_id = uuid.uuid4()
+    session.add(Workspace(id=other_id, name="Other", kind="personal", default_currency="BRL", locale="pt-BR"))
+    await session.flush()
+    session.add(WorkspaceMember(id=uuid.uuid4(), workspace_id=other_id, user_id=test_user.id, role="owner"))
+    await session.commit()
+    other = {**auth_headers, "X-Workspace-Id": str(other_id)}
+    await client.post("/api/rules/packs/BR/install", headers=other, params=install)
+    fresh_here = (await client.get("/api/rules/packs/BR/removal", headers=auth_headers)).json()["token"]
+
+    resp = await client.delete("/api/rules/packs/BR", headers=other, params={"token": fresh_here})
+    assert resp.status_code == 409
+    total = len(built_in_packs()["BR"].rules)
+    for headers in (auth_headers, other):
+        packs = {p["code"]: p for p in (await client.get("/api/rules/packs", headers=headers)).json()}
+        assert packs["BR"]["rules_from_pack"] == total

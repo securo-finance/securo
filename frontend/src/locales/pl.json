@@ -1668,6 +1668,8 @@
     "removePackKeeps_other": "{{count}} edytowanych reguł zostaje Twoich:",
     "removePackMore": "i {{count}} więcej",
     "removePackConfirm": "Usuń pakiet",
+    "removePackChanged": "Reguły pakietu zmieniły się od tego podglądu. Sprawdź go ponownie przed usunięciem.",
+    "removePackPreviewFailed": "Nie udało się wczytać skutków usunięcia tego pakietu.",
     "packRemoved_one": "Usunięto {{count}} regułę",
     "packRemoved_few": "Usunięto {{count}} reguły",
     "packRemoved_many": "Usunięto {{count}} reguł",

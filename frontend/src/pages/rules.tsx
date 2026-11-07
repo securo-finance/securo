@@ -907,13 +907,17 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
 
-  const { data: plan } = useQuery({
+  const { data: plan, isFetching, isError, refetch } = useQuery({
     queryKey: ['rule-pack-removal', pack.code],
     queryFn: () => rulesApi.packRemoval(pack.code),
+    // Every opening starts from a fresh preview, never a cached one.
+    gcTime: 0,
+    // Fail fast to the retry button rather than sit on "Loading" for seconds.
+    retry: 1,
   })
 
   const removeMutation = useMutation({
-    mutationFn: () => rulesApi.removePack(pack.code),
+    mutationFn: (token: string) => rulesApi.removePack(pack.code, token),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
@@ -924,11 +928,23 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
       })
       onClose()
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (error: unknown) => {
+      const err = error as { response?: { status?: number } }
+      if (err?.response?.status === 409) {
+        // The rules changed since this preview: show the current plan instead.
+        toast.error(t('rules.removePackChanged'))
+        void refetch()
+      } else {
+        toast.error(t('common.error'))
+      }
+    },
   })
 
   const pending = removeMutation.isPending
   const kept = plan?.keep ?? []
+  const failed = isError && !plan
+  // Only a plan that is loaded and not being refreshed can be confirmed.
+  const confirmable = plan !== undefined && !isFetching && plan.remove.length > 0
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose() }}>
@@ -936,9 +952,11 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
         <DialogHeader>
           <DialogTitle>{t('rules.removePackTitle', { name: packName(pack, i18n.language) })}</DialogTitle>
           <DialogDescription>
-            {plan
-              ? t('rules.removePackSummary', { count: plan.remove.length })
-              : t('common.loading')}
+            {failed
+              ? t('rules.removePackPreviewFailed')
+              : plan
+                ? t('rules.removePackSummary', { count: plan.remove.length })
+                : t('common.loading')}
           </DialogDescription>
         </DialogHeader>
         {kept.length > 0 && (
@@ -960,14 +978,21 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
           <Button variant="outline" onClick={onClose} disabled={pending}>
             {t('common.cancel')}
           </Button>
-          <Button
-            variant="destructive"
-            onClick={() => removeMutation.mutate()}
-            disabled={pending || !plan || plan.remove.length === 0}
-          >
-            <Trash2 size={14} className="mr-1" />
-            {t('rules.removePackConfirm')}
-          </Button>
+          {failed ? (
+            <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
+              <RefreshCw size={14} className="mr-1" />
+              {t('common.retry')}
+            </Button>
+          ) : (
+            <Button
+              variant="destructive"
+              onClick={() => plan && removeMutation.mutate(plan.token)}
+              disabled={pending || !confirmable}
+            >
+              <Trash2 size={14} className="mr-1" />
+              {t('rules.removePackConfirm')}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

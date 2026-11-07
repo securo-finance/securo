@@ -1188,8 +1188,9 @@ export const rules = {
     const { data } = await api.get(`/rules/packs/${packCode}/removal`)
     return data
   },
-  removePack: async (packCode: string): Promise<RulePackRemoval> => {
-    const { data } = await api.delete(`/rules/packs/${packCode}`)
+  /** `token` is the preview's; the server answers 409 if the plan changed since. */
+  removePack: async (packCode: string, token: string): Promise<RulePackRemoval> => {
+    const { data } = await api.delete(`/rules/packs/${packCode}`, { params: { token } })
     return data
   },
   installPack: async (

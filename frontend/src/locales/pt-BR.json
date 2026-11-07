@@ -1600,6 +1600,8 @@
     "removePackKeeps_other": "{{count}} regras que você editou continuam suas:",
     "removePackMore": "e mais {{count}}",
     "removePackConfirm": "Remover pacote",
+    "removePackChanged": "As regras do pacote mudaram desde esta prévia. Revise de novo antes de remover.",
+    "removePackPreviewFailed": "Não foi possível carregar o que a remoção deste pacote faria.",
     "packRemoved_one": "{{count}} regra removida",
     "packRemoved_other": "{{count}} regras removidas",
     "packKeptEdited_one": "{{count}} regra editada mantida",

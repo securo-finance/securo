@@ -1,4 +1,6 @@
 # backend/app/services/rule_service.py
+import hashlib
+import json
 import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -518,6 +520,20 @@ class RulePackRemoval:
     keep: list[RuleRef]
     """Pack rules the user edited: they stay, as the user's own."""
 
+    @property
+    def token(self) -> str:
+        """Identifies this exact plan. Removal goes ahead only when the plan
+        at that moment carries the token the user confirmed."""
+        payload = json.dumps(
+            {"remove": sorted(str(r.id) for r in self.remove), "keep": sorted(str(r.id) for r in self.keep)},
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+
+class RulePackRemovalChanged(Exception):
+    """The plan differs from the one the user confirmed."""
+
 
 async def plan_rule_pack_removal(
     session: AsyncSession, workspace_id: uuid.UUID, pack_code: str
@@ -535,9 +551,14 @@ async def plan_rule_pack_removal(
 
 
 async def remove_rule_pack(
-    session: AsyncSession, workspace_id: uuid.UUID, pack_code: str
+    session: AsyncSession, workspace_id: uuid.UUID, pack_code: str, token: str
 ) -> RulePackRemoval | None:
     """Remove a pack: delete its untouched rules and hand the edited ones over.
+
+    `token` is the one from the plan the user confirmed. The rules are locked
+    and classified again, and if anything changed since (a rule was edited,
+    the request reached another workspace) nothing is removed and
+    `RulePackRemovalChanged` is raised.
 
     Transactions keep the categories the rules already gave them; only the
     rules go. Edited rules lose their origin, so from now on they are the
@@ -546,8 +567,11 @@ async def remove_rule_pack(
     pack = get_pack(pack_code)
     if pack is None:
         return None
-    untouched, edited = await _pack_rules_by_state(session, workspace_id, pack)
+    untouched, edited = await _pack_rules_by_state(session, workspace_id, pack, lock=True)
     removal = RulePackRemoval(remove=_refs(untouched), keep=_refs(edited))
+    if removal.token != token:
+        await session.rollback()
+        raise RulePackRemovalChanged
     for rule in untouched:
         await session.delete(rule)
     for rule in edited:
@@ -578,16 +602,21 @@ async def _installed_keys(session: AsyncSession, workspace_id: uuid.UUID, source
 
 
 async def _pack_rules_by_state(
-    session: AsyncSession, workspace_id: uuid.UUID, pack: RulePack
+    session: AsyncSession, workspace_id: uuid.UUID, pack: RulePack, *, lock: bool = False
 ) -> tuple[list[Rule], list[Rule]]:
-    """The workspace's rules from `pack`, split into (untouched, edited)."""
-    rules = (
-        await session.execute(
-            select(Rule)
-            .where(Rule.workspace_id == workspace_id, Rule.source == pack.source)
-            .order_by(Rule.priority, Rule.name)
-        )
-    ).scalars().all()
+    """The workspace's rules from `pack`, split into (untouched, edited).
+
+    With `lock`, the rows stay locked until the transaction ends, so an edit
+    saved meanwhile waits instead of slipping between check and delete.
+    """
+    query = (
+        select(Rule)
+        .where(Rule.workspace_id == workspace_id, Rule.source == pack.source)
+        .order_by(Rule.priority, Rule.name)
+    )
+    if lock:
+        query = query.with_for_update()
+    rules = (await session.execute(query)).scalars().all()
     untouched: list[Rule] = []
     edited: list[Rule] = []
     for rule in rules:

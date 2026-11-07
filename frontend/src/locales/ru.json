@@ -1617,6 +1617,8 @@
     "removePackKeeps_other": "{{count}} изменённых вами правил останутся вашими:",
     "removePackMore": "и ещё {{count}}",
     "removePackConfirm": "Удалить пакет",
+    "removePackChanged": "Правила пакета изменились после этого предпросмотра. Проверьте его ещё раз перед удалением.",
+    "removePackPreviewFailed": "Не удалось загрузить, что сделает удаление этого пакета.",
     "packRemoved_one": "Удалено {{count}} правило",
     "packRemoved_few": "Удалено {{count}} правила",
     "packRemoved_many": "Удалено {{count}} правил",
