@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
+import type { RulePack } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -12,6 +13,8 @@ import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -781,10 +784,16 @@ export default function RulesPage() {
   )
 }
 
+/** The pack's name in the UI language, falling back to English. */
+function packName(pack: RulePack, lang: string): string {
+  return pack.names?.[lang] ?? pack.names?.[lang.split('-')[0]] ?? pack.name
+}
+
 function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const [createMissingCategories, setCreateMissingCategories] = useState(true)
+  const [removing, setRemoving] = useState<RulePack | null>(null)
 
   const { data: rulePacks } = useQuery({
     queryKey: ['rule-packs'],
@@ -849,7 +858,7 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
             >
               <span className="text-2xl">{pack.flag}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">{pack.name}</p>
+                <p className="text-sm font-semibold text-foreground">{packName(pack, i18n.language)}</p>
                 <p className="text-xs text-muted-foreground">
                   {t('rules.packRuleCount', { count: pack.rule_count })}
                 </p>
@@ -871,9 +880,99 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
                   {t('rules.installPack')}
                 </Button>
               )}
+              {pack.rules_from_pack > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => setRemoving(pack)}
+                  aria-label={t('rules.removePackAria', { name: packName(pack, i18n.language) })}
+                  title={t('rules.removePack')}
+                >
+                  <Trash2 size={13} />
+                </Button>
+              )}
             </div>
           ))}
         </div>
+      </DialogContent>
+      <RemovePackDialog pack={removing} onClose={() => setRemoving(null)} />
+    </Dialog>
+  )
+}
+
+/** Shown names before "and N more". */
+const REMOVAL_NAMES_SHOWN = 5
+
+function RemovePackDialog({ pack, onClose }: { pack: RulePack | null; onClose: () => void }) {
+  const { t, i18n } = useTranslation()
+  const queryClient = useQueryClient()
+
+  const { data: plan, isLoading } = useQuery({
+    queryKey: ['rule-pack-removal', pack?.code],
+    queryFn: () => rulesApi.packRemoval(pack!.code),
+    enabled: pack !== null,
+    staleTime: 0,
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: (code: string) => rulesApi.removePack(code),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] })
+      queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
+      const removed = t('rules.packRemoved', { count: result.remove.length })
+      toast.success(
+        result.keep.length > 0
+          ? `${removed}. ${t('rules.packKeptEdited', { count: result.keep.length })}`
+          : removed,
+      )
+      onClose()
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const kept = plan?.keep ?? []
+  const pending = removeMutation.isPending
+
+  return (
+    <Dialog open={pack !== null} onOpenChange={(next) => { if (!next && !pending) onClose() }}>
+      <DialogContent className="sm:max-w-md" showCloseButton={!pending}>
+        <DialogHeader>
+          <DialogTitle>{t('rules.removePackTitle', { name: pack ? packName(pack, i18n.language) : '' })}</DialogTitle>
+          <DialogDescription>
+            {isLoading || !plan
+              ? t('common.loading')
+              : t('rules.removePackSummary', { count: plan.remove.length })}
+          </DialogDescription>
+        </DialogHeader>
+        {kept.length > 0 && (
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
+            <p className="font-medium text-foreground">
+              {t('rules.removePackKeeps', { count: kept.length })}
+            </p>
+            <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
+              {kept.slice(0, REMOVAL_NAMES_SHOWN).map((rule) => (
+                <li key={rule.id} className="truncate">{rule.name}</li>
+              ))}
+              {kept.length > REMOVAL_NAMES_SHOWN && (
+                <li>{t('rules.removePackMore', { count: kept.length - REMOVAL_NAMES_SHOWN })}</li>
+              )}
+            </ul>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={pending}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => pack && removeMutation.mutate(pack.code)}
+            disabled={pending || isLoading || !plan || plan.remove.length === 0}
+          >
+            <Trash2 size={14} className="mr-1" />
+            {t('rules.removePackConfirm')}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

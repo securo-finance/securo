@@ -2,7 +2,7 @@
 import uuid
 from typing import Any, Optional, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
@@ -27,6 +27,7 @@ from app.services.category_defaults import (
     name_variants,
 )
 from app.services.category_service import get_assignable_category_ids
+from app.services.rule_packs import built_in_packs, rule_content_hash
 from app.services.rule_engine import (
     apply_rule_actions,
     compile_rule_regex,
@@ -175,390 +176,11 @@ UNIVERSAL_RULES = [
 ]
 
 # ─── Country-specific rule packs (optional, not auto-applied) ───
+# The packs live in app/data/rule_packs/*.json (see app.services.rule_packs).
+# This view keeps the shape callers have always used: code -> name, flag, rules.
 RULE_PACKS: dict[str, dict[str, Any]] = {
-    "BR": {
-        "name": "Brazil",
-        "flag": "\U0001F1E7\U0001F1F7",
-        "rules": [
-            {"name": "99 (Ride-hailing)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "99"},
-                {"field": "description", "op": "starts_with", "value": "99POP"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "iFood / Rappi", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "IFOOD"},
-                {"field": "description", "op": "starts_with", "value": "RAPPI"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Mercado Livre", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "MERCADOLIVRE"},
-                {"field": "description", "op": "starts_with", "value": "MERCADO LIVRE"},
-            ], "actions": [{"op": "set_category", "value": "shopping"}], "priority": 10},
-
-            {"name": "Pix Recebido", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "PIX.*RECEBIDO"},
-            ], "actions": [{"op": "set_category", "value": "transfers"}], "priority": 50},
-
-            {"name": "Transferência", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "contains", "value": "TRANSFERENCIA"},
-            ], "actions": [{"op": "set_category", "value": "transfers"}], "priority": 90},
-
-            {"name": "Shopee / Magazine Luiza", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "SHOPEE"},
-                {"field": "description", "op": "starts_with", "value": "MAGALU"},
-                {"field": "description", "op": "starts_with", "value": "MAGAZINE LUIZA"},
-            ], "actions": [{"op": "set_category", "value": "shopping"}], "priority": 10},
-
-            {"name": "Drogaria / Farmácia", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "DROGARIA"},
-                {"field": "description", "op": "contains", "value": "FARMACIA"},
-                {"field": "description", "op": "contains", "value": "DROGA RAIA"},
-                {"field": "description", "op": "contains", "value": "DROGASIL"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "Uber Eats", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "UBER EATS"},
-                {"field": "description", "op": "starts_with", "value": "UBEREATS"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 5},
-
-            {"name": "Claro / Vivo / Tim", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "CLARO"},
-                {"field": "description", "op": "starts_with", "value": "VIVO"},
-                {"field": "description", "op": "starts_with", "value": "TIM"},
-            ], "actions": [{"op": "set_category", "value": "subscriptions"}], "priority": 10},
-
-            {"name": "Posto / Shell (Combustível)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "POSTO"},
-                {"field": "description", "op": "starts_with", "value": "SHELL"},
-                {"field": "description", "op": "contains", "value": "COMBUSTIVEL"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Supermercado / Carrefour / Assaí", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "SUPERMERCADO"},
-                {"field": "description", "op": "starts_with", "value": "CARREFOUR"},
-                {"field": "description", "op": "starts_with", "value": "ASSAI"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "Smart Fit / Academia", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "SMART FIT"},
-                {"field": "description", "op": "contains", "value": "ACADEMIA"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "Aluguel", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "ALUGUEL"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-
-            {"name": "Salário / Folha", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "SALARIO|FOLHA|PGTO.*SALARIO"},
-            ], "actions": [{"op": "set_category", "value": "salary"}], "priority": 10},
-
-            {"name": "Dízimo / Doação", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "DIZIMO"},
-                {"field": "description", "op": "contains", "value": "DOACAO"},
-                {"field": "description", "op": "contains", "value": "CARIDADE"},
-            ], "actions": [{"op": "set_category", "value": "donations"}], "priority": 10},
-
-            {"name": "Pix Enviado", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "PIX.*ENVIADO|PIX.*TRANSF"},
-            ], "actions": [{"op": "set_category", "value": "transfers"}], "priority": 50},
-
-            {"name": "Estacionamento / Pedágio", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "ESTACIONAMENTO"},
-                {"field": "description", "op": "contains", "value": "PEDAGIO"},
-                {"field": "description", "op": "contains", "value": "SEM PARAR"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Barbearia / Salão", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "BARBEARIA"},
-                {"field": "description", "op": "contains", "value": "SALAO"},
-                {"field": "description", "op": "contains", "value": "CABELEIREIRO"},
-            ], "actions": [{"op": "set_category", "value": "personal_care"}], "priority": 10},
-
-            {"name": "IPTU / IPVA / Imposto", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "IPTU"},
-                {"field": "description", "op": "contains", "value": "IPVA"},
-                {"field": "description", "op": "contains", "value": "IMPOSTO"},
-                {"field": "description", "op": "contains", "value": "DARF"},
-            ], "actions": [{"op": "set_category", "value": "taxes"}], "priority": 10},
-
-            {"name": "Condomínio", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "CONDOMINIO"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-
-            {"name": "Curso / Escola / Faculdade", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "ESCOLA"},
-                {"field": "description", "op": "contains", "value": "FACULDADE"},
-                {"field": "description", "op": "contains", "value": "UNIVERSIDADE"},
-                {"field": "description", "op": "contains", "value": "UDEMY"},
-                {"field": "description", "op": "contains", "value": "ALURA"},
-            ], "actions": [{"op": "set_category", "value": "education"}], "priority": 10},
-        ],
-    },
-    "US": {
-        "name": "United States",
-        "flag": "\U0001F1FA\U0001F1F8",
-        "rules": [
-            {"name": "Lyft", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "LYFT"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "DoorDash / Grubhub", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "DOORDASH"},
-                {"field": "description", "op": "starts_with", "value": "GRUBHUB"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Walmart / Target / Costco", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "WALMART"},
-                {"field": "description", "op": "starts_with", "value": "TARGET"},
-                {"field": "description", "op": "starts_with", "value": "COSTCO"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "Venmo / Zelle / CashApp", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "VENMO"},
-                {"field": "description", "op": "contains", "value": "ZELLE"},
-                {"field": "description", "op": "contains", "value": "CASH APP"},
-            ], "actions": [{"op": "set_category", "value": "transfers"}], "priority": 50},
-
-            {"name": "Starbucks / Dunkin", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "STARBUCKS"},
-                {"field": "description", "op": "starts_with", "value": "DUNKIN"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Chevron / Shell / Exxon (Fuel)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "CHEVRON"},
-                {"field": "description", "op": "starts_with", "value": "SHELL"},
-                {"field": "description", "op": "starts_with", "value": "EXXON"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Whole Foods / Trader Joe's / Kroger", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "WHOLE FOODS"},
-                {"field": "description", "op": "starts_with", "value": "TRADER JOE"},
-                {"field": "description", "op": "starts_with", "value": "KROGER"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "CVS / Walgreens", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "CVS"},
-                {"field": "description", "op": "starts_with", "value": "WALGREENS"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "T-Mobile / AT&T / Verizon", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "T-MOBILE"},
-                {"field": "description", "op": "starts_with", "value": "ATT"},
-                {"field": "description", "op": "starts_with", "value": "AT&T"},
-                {"field": "description", "op": "starts_with", "value": "VERIZON"},
-            ], "actions": [{"op": "set_category", "value": "subscriptions"}], "priority": 10},
-
-            {"name": "Comcast / Xfinity", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "COMCAST"},
-                {"field": "description", "op": "starts_with", "value": "XFINITY"},
-            ], "actions": [{"op": "set_category", "value": "subscriptions"}], "priority": 10},
-
-            {"name": "Home Depot / Lowe's", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "HOME DEPOT"},
-                {"field": "description", "op": "starts_with", "value": "LOWES"},
-                {"field": "description", "op": "starts_with", "value": "LOWE'S"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-
-            {"name": "Planet Fitness / YMCA", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "PLANET FITNESS"},
-                {"field": "description", "op": "starts_with", "value": "YMCA"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "Chipotle / McDonald's / Subway", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "CHIPOTLE"},
-                {"field": "description", "op": "starts_with", "value": "MCDONALD"},
-                {"field": "description", "op": "starts_with", "value": "SUBWAY"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Paycheck / Direct Deposit", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "PAYROLL|DIRECT DEP|ADP|GUSTO"},
-            ], "actions": [{"op": "set_category", "value": "salary"}], "priority": 10},
-
-            {"name": "Donations / Charity", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "DONATION"},
-                {"field": "description", "op": "contains", "value": "CHARITY"},
-                {"field": "description", "op": "contains", "value": "TITHE"},
-                {"field": "description", "op": "contains", "value": "RED CROSS"},
-            ], "actions": [{"op": "set_category", "value": "donations"}], "priority": 10},
-
-            {"name": "Taxes / IRS", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "IRS"},
-                {"field": "description", "op": "contains", "value": "TAX PAYMENT"},
-                {"field": "description", "op": "contains", "value": "PROPERTY TAX"},
-            ], "actions": [{"op": "set_category", "value": "taxes"}], "priority": 10},
-
-            {"name": "Rent / Mortgage", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "RENT PAYMENT"},
-                {"field": "description", "op": "contains", "value": "MORTGAGE"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-        ],
-    },
-    "EU": {
-        "name": "Europe",
-        "flag": "\U0001F1EA\U0001F1FA",
-        "rules": [
-            {"name": "Bolt / FreeNow", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "BOLT"},
-                {"field": "description", "op": "starts_with", "value": "FREENOW"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Deliveroo / Just Eat / Glovo", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "DELIVEROO"},
-                {"field": "description", "op": "starts_with", "value": "JUST EAT"},
-                {"field": "description", "op": "starts_with", "value": "GLOVO"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Lidl / Aldi / Carrefour", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "LIDL"},
-                {"field": "description", "op": "starts_with", "value": "ALDI"},
-                {"field": "description", "op": "starts_with", "value": "CARREFOUR"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "SEPA Transfer", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "SEPA"},
-                {"field": "description", "op": "contains", "value": "WIRE TRANSFER"},
-            ], "actions": [{"op": "set_category", "value": "transfers"}], "priority": 50},
-
-            {"name": "Wolt", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "WOLT"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Flixbus / BlaBlaCar", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "FLIXBUS"},
-                {"field": "description", "op": "starts_with", "value": "BLABLACAR"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Rossmann / DM", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "ROSSMANN"},
-                {"field": "description", "op": "starts_with", "value": "DM "},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "IKEA", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "IKEA"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-
-            {"name": "Deutsche Bahn / SNCF / Renfe", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "DEUTSCHE BAHN"},
-                {"field": "description", "op": "starts_with", "value": "DB "},
-                {"field": "description", "op": "starts_with", "value": "SNCF"},
-                {"field": "description", "op": "starts_with", "value": "RENFE"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Albert Heijn / Rewe / Mercadona / Edeka", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "ALBERT HEIJN"},
-                {"field": "description", "op": "starts_with", "value": "REWE"},
-                {"field": "description", "op": "starts_with", "value": "MERCADONA"},
-                {"field": "description", "op": "starts_with", "value": "EDEKA"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "Miete / Loyer (Rent)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "MIETE"},
-                {"field": "description", "op": "contains", "value": "LOYER"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-
-            {"name": "Gehalt / Salaire (Salary)", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "GEHALT|SALAIRE|LOHN|SALARY|STIPENDIO"},
-            ], "actions": [{"op": "set_category", "value": "salary"}], "priority": 10},
-
-            {"name": "Spende / Don (Donation)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "SPENDE"},
-                {"field": "description", "op": "contains", "value": "DONATION"},
-                {"field": "description", "op": "contains", "value": "DON "},
-            ], "actions": [{"op": "set_category", "value": "donations"}], "priority": 10},
-
-            {"name": "Steuer / Impôt (Tax)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "STEUER"},
-                {"field": "description", "op": "contains", "value": "IMPOT"},
-                {"field": "description", "op": "contains", "value": "FINANZAMT"},
-            ], "actions": [{"op": "set_category", "value": "taxes"}], "priority": 10},
-        ],
-    },
-    "GB": {
-        "name": "United Kingdom",
-        "flag": "\U0001F1EC\U0001F1E7",
-        "rules": [
-            {"name": "Tesco / Sainsbury's / Asda", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "TESCO"},
-                {"field": "description", "op": "starts_with", "value": "SAINSBURY"},
-                {"field": "description", "op": "starts_with", "value": "ASDA"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "Deliveroo / Just Eat", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "DELIVEROO"},
-                {"field": "description", "op": "starts_with", "value": "JUST EAT"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "TfL / Trainline", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "TFL"},
-                {"field": "description", "op": "starts_with", "value": "TRAINLINE"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Greggs / Costa / Pret", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "GREGGS"},
-                {"field": "description", "op": "starts_with", "value": "COSTA"},
-                {"field": "description", "op": "starts_with", "value": "PRET"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Shell / BP / Esso (Fuel)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "SHELL"},
-                {"field": "description", "op": "starts_with", "value": "BP "},
-                {"field": "description", "op": "starts_with", "value": "ESSO"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Boots / Superdrug", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "BOOTS"},
-                {"field": "description", "op": "starts_with", "value": "SUPERDRUG"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "Sky / BT / Virgin Media", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "SKY"},
-                {"field": "description", "op": "starts_with", "value": "BT "},
-                {"field": "description", "op": "starts_with", "value": "VIRGIN MEDIA"},
-            ], "actions": [{"op": "set_category", "value": "subscriptions"}], "priority": 10},
-
-            {"name": "Argos", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "ARGOS"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "M&S", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "M&S"},
-                {"field": "description", "op": "starts_with", "value": "MARKS"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "Aldi / Lidl / Morrisons / Waitrose", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "ALDI"},
-                {"field": "description", "op": "starts_with", "value": "LIDL"},
-                {"field": "description", "op": "starts_with", "value": "MORRISONS"},
-                {"field": "description", "op": "starts_with", "value": "WAITROSE"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "HMRC / Council Tax", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "COUNCIL TAX"},
-                {"field": "description", "op": "contains", "value": "HMRC"},
-            ], "actions": [{"op": "set_category", "value": "taxes"}], "priority": 10},
-
-            {"name": "NHS / Bupa", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "NHS"},
-                {"field": "description", "op": "starts_with", "value": "BUPA"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "Salary / Wages", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "SALARY|WAGES|PAYROLL"},
-            ], "actions": [{"op": "set_category", "value": "salary"}], "priority": 10},
-
-            {"name": "Charity / Donation", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "CHARITY"},
-                {"field": "description", "op": "contains", "value": "DONATION"},
-                {"field": "description", "op": "contains", "value": "JUST GIVING"},
-            ], "actions": [{"op": "set_category", "value": "donations"}], "priority": 10},
-
-            {"name": "Rent / Mortgage", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "RENT"},
-                {"field": "description", "op": "contains", "value": "MORTGAGE"},
-                {"field": "description", "op": "contains", "value": "OPENRENT"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-        ],
-    },
+    code: {"name": pack.name, "flag": pack.flag, "rules": [dict(r) for r in pack.rules]}
+    for code, pack in built_in_packs().items()
 }
 
 # Map currency code -> default rule pack country
@@ -854,9 +476,12 @@ async def install_rule_pack(
         else await _get_existing_rule_names(session, user_id)
     )
 
+    source = built_in_packs()[pack_code].source
+    existing_keys = await _existing_source_keys(session, source, workspace_id, user_id)
+
     rules: list[Rule] = []
     for rule_data in resolved:
-        if rule_data["name"] in existing_names:
+        if rule_data["name"] in existing_names or rule_data["key"] in existing_keys:
             continue
         rule = Rule(
             user_id=user_id,
@@ -867,6 +492,9 @@ async def install_rule_pack(
             actions=rule_data["actions"],
             priority=rule_data["priority"],
             is_active=True,
+            source=source,
+            source_key=rule_data["key"],
+            source_hash=_hash_of(rule_data),
         )
         session.add(rule)
         rules.append(rule)
@@ -878,17 +506,119 @@ async def install_rule_pack(
 async def get_installed_packs(
     session: AsyncSession, workspace_id: uuid.UUID, user_id: Optional[uuid.UUID] = None
 ) -> dict[str, bool]:
-    """Check which rule packs are fully installed for a user."""
-    existing_names = (
-        await _get_existing_rule_names_for_workspace(session, workspace_id)
-        if user_id is not None
-        else await _get_existing_rule_names(session, workspace_id)
-    )
+    """Check which rule packs are fully installed.
+
+    A pack rule counts as present when a rule carries its key, or, for rules
+    installed before packs recorded their origin, a rule has its name.
+    """
+    if user_id is not None:
+        existing_names = await _get_existing_rule_names_for_workspace(session, workspace_id)
+        scope = Rule.workspace_id == workspace_id
+    else:
+        existing_names = await _get_existing_rule_names(session, workspace_id)
+        scope = Rule.user_id == workspace_id
+    rows = (
+        await session.execute(
+            select(Rule.source, Rule.source_key).where(scope, Rule.source.isnot(None))
+        )
+    ).all()
+    keys = {(row.source, row.source_key) for row in rows}
     result = {}
-    for code, pack in RULE_PACKS.items():
-        pack_names = {r["name"] for r in pack["rules"]}
-        result[code] = pack_names.issubset(existing_names)
+    for code, pack in built_in_packs().items():
+        result[code] = all(
+            (pack.source, r["key"]) in keys or r["name"] in existing_names for r in pack.rules
+        )
     return result
+
+
+async def count_rules_by_source(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, int]:
+    """How many rules in the workspace still come from each pack."""
+    rows = await session.execute(
+        select(Rule.source, func.count())
+        .where(Rule.workspace_id == workspace_id, Rule.source.isnot(None))
+        .group_by(Rule.source)
+    )
+    return {row[0]: row[1] for row in rows.all()}
+
+
+class RulePackRemoval:
+    """What removing a pack does: the rules it deletes and the ones it keeps."""
+
+    __slots__ = ("removed", "kept")
+
+    def __init__(self, removed: list[Rule], kept: list[Rule]) -> None:
+        self.removed = removed
+        self.kept = kept
+        """Rules the user edited after installing. They stay, as the user's own."""
+
+
+def _hash_of(rule: Rule | dict[str, Any]) -> str:
+    if isinstance(rule, Rule):
+        return rule_content_hash(
+            rule.name, rule.conditions_op, rule.conditions, rule.actions, rule.priority or 0
+        )
+    template: dict[str, Any] = rule
+    return rule_content_hash(
+        str(template["name"]),
+        str(template["conditions_op"]),
+        template["conditions"],
+        template["actions"],
+        int(template.get("priority") or 0),
+    )
+
+
+async def _existing_source_keys(
+    session: AsyncSession, source: str, workspace_id: Optional[uuid.UUID], user_id: uuid.UUID
+) -> set[str]:
+    scope = Rule.workspace_id == workspace_id if workspace_id is not None else Rule.user_id == user_id
+    rows = await session.execute(select(Rule.source_key).where(scope, Rule.source == source))
+    return {row[0] for row in rows.all() if row[0]}
+
+
+async def plan_rule_pack_removal(
+    session: AsyncSession, workspace_id: uuid.UUID, pack_code: str
+) -> RulePackRemoval | None:
+    """Which of a pack's rules removing it would delete and which it keeps.
+
+    Only rules that remember coming from the pack are considered. Of those,
+    the ones still exactly as installed are removed; the ones the user
+    changed are kept. Rules with no recorded origin are never touched.
+    """
+    pack = built_in_packs().get(pack_code)
+    if pack is None:
+        return None
+    rules = (
+        await session.execute(
+            select(Rule)
+            .where(Rule.workspace_id == workspace_id, Rule.source == pack.source)
+            .order_by(Rule.priority, Rule.name)
+        )
+    ).scalars().all()
+    removed = [r for r in rules if r.source_hash == _hash_of(r)]
+    kept = [r for r in rules if r.source_hash != _hash_of(r)]
+    return RulePackRemoval(removed, kept)
+
+
+async def remove_rule_pack(
+    session: AsyncSession, workspace_id: uuid.UUID, pack_code: str
+) -> RulePackRemoval | None:
+    """Remove a pack: delete its untouched rules, hand the edited ones over.
+
+    Transactions the rules already categorized keep their categories; only
+    the rules go. Edited rules lose their origin, so they read as the
+    user's own from now on and a later reinstall doesn't count them.
+    """
+    plan = await plan_rule_pack_removal(session, workspace_id, pack_code)
+    if plan is None:
+        return None
+    for rule in plan.removed:
+        await session.delete(rule)
+    for rule in plan.kept:
+        rule.source = None
+        rule.source_key = None
+        rule.source_hash = None
+    await session.commit()
+    return plan
 
 
 async def get_rules(session: AsyncSession, workspace_id: uuid.UUID) -> list[Rule]:

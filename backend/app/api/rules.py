@@ -22,6 +22,7 @@ from app.schemas.rule import (
     RuleUpdate,
 )
 from app.services import rule_service
+from app.services.rule_packs import built_in_packs
 from app.services.rule_service import DuplicateRuleError
 
 router = APIRouter(prefix="/api/rules", tags=["rules"])
@@ -233,14 +234,19 @@ async def list_rule_packs(
     installed_map = await rule_service.get_installed_packs(
         session, ctx.workspace.id, ctx.user_id
     )
+    from_pack = await rule_service.count_rules_by_source(session, ctx.workspace.id)
     packs = []
-    for code, pack in rule_service.RULE_PACKS.items():
+    for code, pack in built_in_packs().items():
         packs.append({
             "code": code,
-            "name": pack["name"],
-            "flag": pack["flag"],
-            "rule_count": len(pack["rules"]),
+            "name": pack.name,
+            "names": pack.names,
+            "flag": pack.flag,
+            "rule_count": len(pack.rules),
             "installed": installed_map.get(code, False),
+            # Rules in this workspace that still come from the pack; removing
+            # the pack is only offered when there are some.
+            "rules_from_pack": from_pack.get(pack.source, 0),
         })
     return packs
 
@@ -257,7 +263,7 @@ async def install_rule_pack(
     `create_missing_categories=true` opts into seeding any default
     categories the pack needs that the user doesn't already have.
     """
-    if pack_code not in rule_service.RULE_PACKS:
+    if pack_code not in built_in_packs():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule pack not found")
     lang = (ctx.user.preferences or {}).get("language", "pt-BR")
     result = await rule_service.install_rule_pack(
@@ -273,6 +279,40 @@ async def install_rule_pack(
         "unresolved": result.unresolved,
         "categories_created": result.categories_created,
     }
+
+
+def _removal_body(plan: rule_service.RulePackRemoval) -> dict:
+    return {
+        "remove": [{"id": str(r.id), "name": r.name} for r in plan.removed],
+        "keep": [{"id": str(r.id), "name": r.name} for r in plan.kept],
+    }
+
+
+@router.get("/packs/{pack_code}/removal", response_model=dict)
+async def preview_rule_pack_removal(
+    pack_code: str,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """What removing the pack would do: rules deleted, and edited ones kept."""
+    plan = await rule_service.plan_rule_pack_removal(session, ctx.workspace.id, pack_code)
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule pack not found")
+    return _removal_body(plan)
+
+
+@router.delete("/packs/{pack_code}", response_model=dict)
+async def remove_rule_pack(
+    pack_code: str,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Remove a pack's untouched rules. Edited rules stay as the user's own,
+    and transactions keep the categories the rules already gave them."""
+    plan = await rule_service.remove_rule_pack(session, ctx.workspace.id, pack_code)
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule pack not found")
+    return _removal_body(plan)
 
 
 @router.post("/apply-all", response_model=dict)

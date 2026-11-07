@@ -1,0 +1,456 @@
+{
+  "manifest_version": 1,
+  "id": "securo/rules-gb",
+  "version": "1.0.0",
+  "default_locale": "en",
+  "name": {
+    "en": "United Kingdom",
+    "pt-BR": "Reino Unido"
+  },
+  "description": {
+    "en": "Common merchants and transfer patterns, mapped to the default categories.",
+    "pt-BR": "Estabelecimentos e padrões de transferência comuns, mapeados para as categorias padrão."
+  },
+  "author": {
+    "name": "Securo",
+    "github": "securo-finance"
+  },
+  "repository": "https://github.com/securo-finance/securo",
+  "license": "AGPL-3.0-only",
+  "securo": ">=0.19.0",
+  "applies_to": {
+    "currencies": [
+      "GBP"
+    ],
+    "countries": [
+      "GB"
+    ]
+  },
+  "privacy": {
+    "data_leaves_instance": false
+  },
+  "contributes": {
+    "rules": [
+      {
+        "key": "tesco-sainsbury-s-asda",
+        "name": {
+          "en": "Tesco / Sainsbury's / Asda"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "TESCO"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "SAINSBURY"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "ASDA"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "groceries"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "deliveroo-just-eat",
+        "name": {
+          "en": "Deliveroo / Just Eat"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "DELIVEROO"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "JUST EAT"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "food"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "tfl-trainline",
+        "name": {
+          "en": "TfL / Trainline"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "TFL"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "TRAINLINE"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "greggs-costa-pret",
+        "name": {
+          "en": "Greggs / Costa / Pret"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "GREGGS"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "COSTA"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "PRET"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "food"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "shell-bp-esso-fuel",
+        "name": {
+          "en": "Shell / BP / Esso (Fuel)"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "SHELL"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "BP "
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "ESSO"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "boots-superdrug",
+        "name": {
+          "en": "Boots / Superdrug"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "BOOTS"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "SUPERDRUG"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "health"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "sky-bt-virgin-media",
+        "name": {
+          "en": "Sky / BT / Virgin Media"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "SKY"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "BT "
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "VIRGIN MEDIA"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "subscriptions"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "argos",
+        "name": {
+          "en": "Argos"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "ARGOS"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "groceries"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "m-s",
+        "name": {
+          "en": "M&S"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "M&S"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "MARKS"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "groceries"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "aldi-lidl-morrisons-waitrose",
+        "name": {
+          "en": "Aldi / Lidl / Morrisons / Waitrose"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "ALDI"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "LIDL"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "MORRISONS"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "WAITROSE"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "groceries"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "hmrc-council-tax",
+        "name": {
+          "en": "HMRC / Council Tax"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "COUNCIL TAX"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "HMRC"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "taxes"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "nhs-bupa",
+        "name": {
+          "en": "NHS / Bupa"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "NHS"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "BUPA"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "health"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "salary-wages",
+        "name": {
+          "en": "Salary / Wages"
+        },
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "SALARY|WAGES|PAYROLL"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "salary"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "charity-donation",
+        "name": {
+          "en": "Charity / Donation"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "CHARITY"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "DONATION"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "JUST GIVING"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "donations"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "rent-mortgage",
+        "name": {
+          "en": "Rent / Mortgage"
+        },
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "RENT"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "MORTGAGE"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "OPENRENT"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "housing"
+          }
+        ],
+        "priority": 10
+      }
+    ]
+  }
+}
