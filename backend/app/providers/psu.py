@@ -73,8 +73,17 @@ def _public_ip(value: Optional[str]) -> Optional[str]:
 
 
 def _header(request: Request, name: str) -> Optional[str]:
+    """The request header `name`, or None when it cannot be forwarded as is.
+
+    Starlette decodes header bytes as latin-1 and httpx encodes str header
+    values as ASCII, so a value outside printable ASCII would make the bank
+    request fail. Such a value is left out rather than rewritten: the PSU
+    headers describe the user's request, and an altered one would not.
+    """
     value = (request.headers.get(name) or "").strip()
     if not value or len(value) > _MAX_HEADER_LENGTH:
+        return None
+    if not (value.isascii() and value.isprintable()):
         return None
     return value
 

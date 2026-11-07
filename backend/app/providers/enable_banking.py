@@ -321,24 +321,38 @@ def _error_body(resp: httpx.Response) -> dict:
     return body if isinstance(body, dict) else {}
 
 
-def _needs_present_user(resp: httpx.Response) -> bool:
+def _error_detail(body: dict) -> str:
+    """The bank's own reason, when EB relays one in `detail`."""
+    detail = body.get("detail")
+    if isinstance(detail, dict):
+        detail = detail.get("message")
+    return detail.strip() if isinstance(detail, str) else ""
+
+
+def _needs_present_user(resp: httpx.Response, requires_psu_headers: bool) -> bool:
     """True when a header-less data request failed the way a bank that wants
     the user present refuses one.
 
-    Only consulted for ASPSPs that declare `required_psu_headers`. Such banks
-    answer a background call they do not allow (an endpoint outside their
-    background allowance, or one past its daily quota) with an error EB
-    reports as ASPSP_ERROR, or with a 429 that names the missing header.
+    Banks answer a background call they do not allow (an endpoint outside
+    their background allowance, or one past its daily quota) with an error
+    that names the missing PSU header, which counts whatever /aspsps said.
+    They can also answer with EB's generic ASPSP_ERROR; that only counts for
+    an ASPSP that declares `required_psu_headers`, and not when EB relays the
+    bank's reason and it is something else.
     """
+    if resp.status_code >= 500:
+        return False
     body = _error_body(resp)
     error = body.get("error")
     if error == "PSU_HEADER_NOT_PROVIDED":
         return True
-    if resp.status_code == 400 and error == "ASPSP_ERROR":
+    message = body.get("message") if isinstance(body.get("message"), str) else ""
+    detail = _error_detail(body)
+    text = f"{message} {detail}".lower()
+    if "psu" in text and "header" in text:
         return True
-    if resp.status_code == 429:
-        text = f"{body.get('message') or ''} {body.get('detail') or ''}".lower()
-        return "psu" in text and "header" in text
+    if resp.status_code == 400 and error == "ASPSP_ERROR":
+        return requires_psu_headers and not detail
     return False
 
 
@@ -487,8 +501,7 @@ class EnableBankingProvider(BankProvider):
             resp.status_code >= 400
             and _is_data_request(path)
             and not psu_headers
-            and self._required_psu_headers
-            and _needs_present_user(resp)
+            and _needs_present_user(resp, bool(self._required_psu_headers))
         ):
             # Never answered by inventing headers: the bank wants the user,
             # so the user is asked to sync while present, which sends theirs.
@@ -573,9 +586,19 @@ class EnableBankingProvider(BankProvider):
         except Exception as exc:
             logger.warning("Could not look up PSU headers required by %s: %s", name, exc)
             return None
-        for item in data.get("aspsps") or []:
+        aspsps = data.get("aspsps")
+        for item in aspsps if isinstance(aspsps, list) else []:
             if isinstance(item, dict) and item.get("name") == name:
-                required = item.get("required_psu_headers") or []
+                required = item.get("required_psu_headers")
+                if required is None:
+                    return []
+                if not isinstance(required, list):
+                    # Not the documented list of header names; guessing what
+                    # it means could suppress headers the bank needs.
+                    logger.warning(
+                        "Ignoring malformed required_psu_headers for %s: %r", name, required
+                    )
+                    return None
                 return [h for h in required if isinstance(h, str)]
         return None
 
@@ -686,7 +709,13 @@ class EnableBankingProvider(BankProvider):
         for raw_acc in accounts_raw:
             if isinstance(raw_acc, str):
                 continue  # restricted clients can return account IDs as strings
-            accounts.append(await self._build_account(raw_acc))
+            # A balance refused for want of the user's headers (no public IP
+            # behind a misconfigured proxy) must not cost the new session: the
+            # authorization code is single-use, so failing here would make a
+            # reconnect start over at the bank. The next sync reads the balance.
+            accounts.append(
+                await self._build_account(raw_acc, tolerate_presence_refusal=True)
+            )
 
         encrypted_session = encrypt(session_id) or session_id
         credentials: dict[str, Any] = {
@@ -717,7 +746,11 @@ class EnableBankingProvider(BankProvider):
         return None
 
     async def _build_account(
-        self, raw: dict, stable_external_id: Optional[str] = None
+        self,
+        raw: dict,
+        stable_external_id: Optional[str] = None,
+        *,
+        tolerate_presence_refusal: bool = False,
     ) -> AccountData:
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
@@ -731,6 +764,12 @@ class EnableBankingProvider(BankProvider):
         except (httpx.HTTPError, SessionExpiredError) as exc:
             logger.warning(
                 "Failed to fetch balances for account %s: %s", uid, exc
+            )
+        except ProviderUserActionRequired as exc:
+            if not tolerate_presence_refusal or exc.code != "psu_present_required":
+                raise
+            logger.warning(
+                "Balances of account %s need the user's PSU headers: %s", uid, exc
             )
         name = (
             raw.get("display_name")

@@ -107,6 +107,26 @@ def test_request_context_copies_the_users_headers():
     }
 
 
+def test_request_context_drops_headers_httpx_cannot_send():
+    """Starlette reads header bytes as latin-1; httpx only sends ASCII strings."""
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/connections/x/sync",
+        "headers": [
+            (b"user-agent", "Navigateur/1.0 (é)".encode("latin-1")),
+            (b"accept-language", b"nb-NO"),
+        ],
+        "client": ("1.1.1.1", 51000),
+    })
+    settings = Settings(trusted_proxy_hops=0, _env_file=None, _secrets_dir=None)
+    with patch("app.providers.psu.get_settings", return_value=settings):
+        headers = psu_context_from_request(request).headers
+    assert headers == {"Psu-Ip-Address": "1.1.1.1", "Psu-Accept-Language": "nb-NO"}
+    # What is left is something httpx can put on the wire.
+    httpx.Request("GET", "https://example.test", headers=headers)
+
+
 @pytest.mark.parametrize("host", ["172.18.0.5", "10.0.0.2", "127.0.0.1", "::1", "testclient"])
 def test_request_context_drops_a_non_public_peer_address(host):
     """Behind the bundled nginx the peer is the proxy, not the user."""
@@ -159,6 +179,30 @@ async def test_user_present_data_requests_carry_psu_headers(eb_keys):
     assert seen["/accounts/acc-1/balances"] == expected
     # The session lookup is answered by Enable Banking, not the bank.
     assert seen["/sessions/sess-1"] == {}
+
+
+@pytest.mark.asyncio
+async def test_user_present_transaction_requests_carry_psu_headers(eb_keys):
+    provider = EnableBankingProvider()
+    seen: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/accounts/acc-1/transactions"
+        seen.append(_psu_headers(request))
+        return httpx.Response(200, json={"transactions": {"booked": [], "pending": []}})
+
+    credentials = {
+        "session_id": "sess-1",
+        "aspsp": {"name": "Bank", "required_psu_headers": ["Psu-Accept-Language"]},
+    }
+    with _patch_client(provider, handler), psu_present(USER):
+        await provider.get_transactions(credentials, "acc-1")
+
+    assert seen == [{
+        "psu-ip-address": "1.1.1.1",
+        "psu-user-agent": BROWSER_UA,
+        "psu-accept-language": "nb-NO,nb;q=0.9",
+    }]
 
 
 @pytest.mark.asyncio
@@ -232,6 +276,35 @@ async def test_a_real_rate_limit_stays_a_rate_limit(eb_keys):
         await _fetch_balance(["Psu-Ip-Address"], 429, PLAIN_429)
 
 
+MISSING_HEADER_400 = {
+    **ASPSP_ERROR,
+    "detail": {"message": "FORMAT_ERROR: Missing PSU-IP-Address header"},
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("status", "body"), [(429, MISSING_HEADER_429), (400, MISSING_HEADER_400)])
+async def test_a_refusal_naming_the_header_counts_without_aspsp_metadata(eb_keys, status, body):
+    """/aspsps can fail or omit the field; the bank's own words still count."""
+    with pytest.raises(ProviderUserActionRequired) as exc:
+        await _fetch_balance(None, status, body)
+    assert exc.value.code == "psu_present_required"
+
+
+@pytest.mark.asyncio
+async def test_a_generic_aspsp_error_without_metadata_is_a_plain_error(eb_keys):
+    with pytest.raises(httpx.HTTPStatusError):
+        await _fetch_balance(None, 400, ASPSP_ERROR)
+
+
+@pytest.mark.asyncio
+async def test_an_aspsp_error_with_another_reason_is_a_plain_error(eb_keys):
+    """A bank that wants headers can still fail for something else."""
+    body = {**ASPSP_ERROR, "detail": {"message": "Service temporarily unavailable"}}
+    with pytest.raises(httpx.HTTPStatusError):
+        await _fetch_balance(["Psu-Ip-Address"], 400, body)
+
+
 # ----- where the required headers come from -----
 
 
@@ -263,6 +336,18 @@ async def test_refresh_credentials_backfills_required_headers(eb_keys, listed, s
     assert out["session_id_enc"] == "enc"
     assert again is out
     assert calls == ["/aspsps"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("malformed", [123, "Psu-Ip-Address", {"Psu-Ip-Address": True}])
+async def test_malformed_required_headers_are_unknown(eb_keys, malformed):
+    provider = EnableBankingProvider()
+    calls: list[str] = []
+    creds = {"session_id_enc": "enc", "aspsp": {"name": "Bank", "country": "NO"}}
+    with _patch_client(provider, _aspsps_handler(calls, malformed)):
+        assert await provider._lookup_required_psu_headers("Bank", "NO") is None
+        # Unknown is not stored, so a later sync asks again.
+        assert await provider.refresh_credentials(creds) is creds
 
 
 @pytest.mark.asyncio
@@ -298,6 +383,54 @@ async def test_oauth_callback_stores_required_headers_and_sends_the_users(eb_key
 
     assert conn.credentials["aspsp"]["required_psu_headers"] == ["psu-ip-address"]
     assert balance_headers == {"psu-ip-address": "1.1.1.1", "psu-user-agent": BROWSER_UA}
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_keeps_the_session_when_balances_need_a_missing_ip(eb_keys):
+    """The authorization code is single-use: a refused balance must not lose it."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions":
+            return httpx.Response(200, json={
+                "session_id": "sess-2",
+                "accounts": [{"uid": "acc-1", "currency": "NOK", "display_name": "Main"}],
+                "aspsp": {"name": "Bank", "country": "NO"},
+                "access": {"valid_until": "2027-01-01T00:00:00Z"},
+            })
+        if request.url.path == "/aspsps":
+            return httpx.Response(200, json={"aspsps": [
+                {"name": "Bank", "country": "NO", "required_psu_headers": ["Psu-Ip-Address"]},
+            ]})
+        return httpx.Response(400, json=ASPSP_ERROR)
+
+    no_ip = PsuContext(headers={"Psu-User-Agent": BROWSER_UA})
+    with _patch_client(provider, handler), psu_present(no_ip):
+        conn = await provider.handle_oauth_callback("code")
+
+    assert conn.external_id == "sess-2"
+    assert conn.credentials["session_id_enc"]
+    assert [a.external_id for a in conn.accounts] == ["acc-1"]
+
+
+@pytest.mark.asyncio
+async def test_sync_still_reports_a_balance_that_needs_the_user(eb_keys):
+    """Outside the callback the refusal stays visible, not a zero balance."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-1":
+            return httpx.Response(200, json={"accounts_data": [{"uid": "acc-1"}]})
+        if request.url.path == "/accounts/acc-1/details":
+            return httpx.Response(200, json={"uid": "acc-1", "currency": "NOK"})
+        return httpx.Response(400, json=ASPSP_ERROR)
+
+    credentials = {
+        "session_id": "sess-1",
+        "aspsp": {"name": "Bank", "required_psu_headers": ["Psu-Ip-Address"]},
+    }
+    with _patch_client(provider, handler), pytest.raises(ProviderUserActionRequired):
+        await provider.get_accounts(credentials)
 
 
 # ----- the API opens the context, the scheduler does not -----
