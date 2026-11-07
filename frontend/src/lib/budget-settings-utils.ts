@@ -81,10 +81,18 @@ export function planBudgetChange({
       .map((budget) => ({ type: 'delete', id: budget.id }))
     if (!current) return operations
     if (current.is_recurring) {
-      operations.unshift({ type: 'update', id: current.id, data: { amount: 0, effective_month: month } })
+      operations.push({ type: 'update', id: current.id, data: { amount: 0, effective_month: month } })
     } else {
       // Deleting this override would reveal the older recurring amount.
-      operations.unshift({ type: 'update', id: current.id, data: { amount: 0 } })
+      operations.push({ type: 'update', id: current.id, data: { amount: 0 } })
+      const priorRecurring = series
+        .filter((budget) => budget.is_recurring && budget.month <= month)
+        .sort((left, right) => right.month.localeCompare(left.month))[0]
+      if (priorRecurring) {
+        // Stop the underlying series after this month as well; otherwise it
+        // would reappear once the month-only zero override ends.
+        operations.push({ type: 'update', id: priorRecurring.id, data: { amount: 0, effective_month: nextMonth(month) } })
+      }
     }
     return operations
   }

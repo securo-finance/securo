@@ -94,8 +94,9 @@ describe('planBudgetChange', () => {
       ],
       month,
     })).toEqual([
-      { type: 'update', id: 'oct-oneoff', data: { amount: 0 } },
       { type: 'delete', id: 'dec-edit' },
+      { type: 'update', id: 'oct-oneoff', data: { amount: 0 } },
+      { type: 'update', id: 'aug-series', data: { amount: 0, effective_month: '2026-11-01' } },
     ])
   })
 
@@ -109,8 +110,8 @@ describe('planBudgetChange', () => {
       ],
       month: '2026-08-01',
     })).toEqual([
-      { type: 'update', id: 'aug-series', data: { amount: 0, effective_month: '2026-08-01' } },
       { type: 'delete', id: 'dec-edit' },
+      { type: 'update', id: 'aug-series', data: { amount: 0, effective_month: '2026-08-01' } },
     ])
   })
 
