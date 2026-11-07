@@ -53,6 +53,9 @@ export function ImportHistory({ entity }: ImportHistoryProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['import-logs'] })
       queryClient.invalidateQueries({ queryKey: ['assets'] })
+      if (entity === 'asset_orders') {
+        queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
+      }
       invalidateFinancialQueries(queryClient)
       setDeleteTarget(null)
       toast.success(t('import.undone'))

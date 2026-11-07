@@ -1,9 +1,9 @@
 import uuid
 from datetime import date as _date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AssetCreate(BaseModel):
@@ -190,6 +190,77 @@ class MarketSymbolMatch(BaseModel):
     name: Optional[str] = None
     exchange: Optional[str] = None
     quote_type: Optional[str] = None
+
+
+class HoldingTradeImportRead(BaseModel):
+    """Whether bank sync imports the trades behind connected holdings."""
+
+    available: bool
+    enabled: bool
+
+
+class BenchmarkMatch(BaseModel):
+    """A searchable comparison index exposed by a benchmark provider."""
+
+    symbol: str
+    name: str
+    exchange: Optional[str] = None
+    provider: str
+
+
+BenchmarkSourceError = Literal["unavailable", "rate_limited", "no_data", "no_fx_rate"]
+
+
+class BenchmarkPerformanceRead(BaseModel):
+    """Final metrics for one of the requested comparison indices."""
+
+    key: str
+    symbol: str
+    provider: str
+    benchmark_return: Optional[float] = None
+    excess_return: Optional[float] = None
+    source_error: Optional[BenchmarkSourceError] = None
+
+
+class PortfolioPerformancePoint(BaseModel):
+    date: _date
+    portfolio: float
+    benchmark: float
+    benchmarks: dict[str, float] = Field(default_factory=dict)
+
+
+PerformanceMethod = Literal["twr", "mwr"]
+
+
+class MoneyWeightedSeriesRead(BaseModel):
+    """What a money-weighted return between any two points is solved from.
+
+    Each list is aligned with ``PortfolioPerformanceRead.points``: the value
+    held at that point and the net money put in on that date (negative when
+    taken out). Benchmarks are keyed like ``points[].benchmarks`` and hold
+    the shadow portfolio that received the same money.
+    """
+
+    values: list[float] = Field(default_factory=list)
+    flows: list[float] = Field(default_factory=list)
+    benchmark_values: dict[str, list[float]] = Field(default_factory=dict)
+    benchmark_flows: dict[str, list[float]] = Field(default_factory=dict)
+
+
+class PortfolioPerformanceRead(BaseModel):
+    benchmark_symbol: Optional[str] = None
+    benchmark_provider: Optional[str] = None
+    method: PerformanceMethod = "twr"
+    period: str
+    start_date: _date
+    end_date: _date
+    portfolio_return: Optional[float] = None
+    benchmark_return: Optional[float] = None
+    excess_return: Optional[float] = None
+    benchmarks: list[BenchmarkPerformanceRead] = Field(default_factory=list)
+    points: list[PortfolioPerformancePoint] = Field(default_factory=list)
+    # Only for the money-weighted method, so the client can measure a range.
+    money_weighted: Optional[MoneyWeightedSeriesRead] = None
 
 
 class AssetValueCreate(BaseModel):
