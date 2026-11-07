@@ -75,13 +75,29 @@ async def _record_sync_failure(
     connection_id: uuid.UUID,
     *,
     rate_limited: bool,
+    attempt_started_at: datetime,
     now: datetime,
 ) -> None:
-    """Count one more consecutive failed scheduled sync for the connection."""
+    """Count one more consecutive failed scheduled sync for the connection.
+
+    The row is locked like sync_connection locks it, so a manual sync running
+    meanwhile commits first and its settings are the ones updated here. A sync
+    that succeeded after this attempt started supersedes the failure, which is
+    then not recorded.
+    """
     async with session_maker() as session:
-        conn = await session.get(BankConnection, connection_id, populate_existing=True)
+        conn = await session.get(
+            BankConnection, connection_id, populate_existing=True, with_for_update=True
+        )
         if conn is None:
             return
+        last_sync_at = conn.last_sync_at
+        if last_sync_at is not None:
+            if last_sync_at.tzinfo is None:
+                last_sync_at = last_sync_at.replace(tzinfo=timezone.utc)
+            if last_sync_at >= attempt_started_at:
+                await session.rollback()
+                return
         current = dict(conn.settings or {})
         previous = current.get(SYNC_BACKOFF_KEY)
         failures = previous.get("failures") if isinstance(previous, dict) else 0
@@ -97,7 +113,11 @@ async def _record_sync_failure(
 
 
 async def _record_sync_failure_safely(
-    session_maker, connection_id: uuid.UUID, *, rate_limited: bool
+    session_maker,
+    connection_id: uuid.UUID,
+    *,
+    rate_limited: bool,
+    attempt_started_at: datetime,
 ) -> None:
     # Bookkeeping must never stop the loop from reaching the next connection.
     try:
@@ -105,6 +125,7 @@ async def _record_sync_failure_safely(
             session_maker,
             connection_id,
             rate_limited=rate_limited,
+            attempt_started_at=attempt_started_at,
             now=datetime.now(timezone.utc),
         )
     except Exception:
@@ -176,6 +197,7 @@ async def _sync_all() -> int:
 
         with use_resolved_timezone(operation_timezone):
             for conn_id, user_id, last_sync, settings in connections:
+                attempt_started_at = datetime.now(timezone.utc)
                 try:
                     logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
                     outcome = await _sync_one(
@@ -194,11 +216,21 @@ async def _sync_all() -> int:
                     continue
                 except Exception:
                     logger.exception("Background sync failed for connection %s", conn_id)
-                    await _record_sync_failure_safely(session_maker, conn_id, rate_limited=False)
+                    await _record_sync_failure_safely(
+                        session_maker,
+                        conn_id,
+                        rate_limited=False,
+                        attempt_started_at=attempt_started_at,
+                    )
                     continue
                 if outcome == "rate_limited":
                     logger.warning("Background sync for connection %s was rate-limited", conn_id)
-                    await _record_sync_failure_safely(session_maker, conn_id, rate_limited=True)
+                    await _record_sync_failure_safely(
+                        session_maker,
+                        conn_id,
+                        rate_limited=True,
+                        attempt_started_at=attempt_started_at,
+                    )
                     continue
                 synced += 1
 

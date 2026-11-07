@@ -10,10 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.models.bank_connection import BankConnection
-from app.providers.base import ProviderNotConfiguredError, ProviderRateLimited
-from app.services.connection_service import sync_connection
+from app.providers.base import ConnectionData, ProviderNotConfiguredError, ProviderRateLimited
+from app.services.connection_service import handle_oauth_callback, sync_connection
 from app.tasks.sync_tasks import (
     SYNC_BACKOFF_KEY,
+    _record_sync_failure,
     _sync_all,
     _sync_backoff_delay,
     _sync_backoff_until,
@@ -295,3 +296,75 @@ async def test_manual_sync_bypasses_backoff(
     assert body["status"] == "active"
     assert SYNC_BACKOFF_KEY not in (body["settings"] or {})
     provider.get_accounts.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_failure_superseded_by_a_later_success_is_not_recorded(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A manual sync that succeeded while the scheduled one was failing wins:
+    the stale failure must neither restore backoff nor drop its settings."""
+    attempt_started_at = datetime.now(timezone.utc)
+    conn = _connection(test_user.id, test_workspace.id, status="active", last_sync_age=0 * H)
+    conn.last_sync_at = attempt_started_at + timedelta(seconds=5)
+    conn.settings = {"payee_source": "auto", "last_provider_refresh_at": "2026-11-07T10:00:00+00:00"}
+    session.add(conn)
+    await session.commit()
+    conn_id = conn.id
+
+    await _record_sync_failure(
+        lambda: session, conn_id, rate_limited=False,
+        attempt_started_at=attempt_started_at, now=datetime.now(timezone.utc),
+    )
+
+    conn = await _reload(session, conn_id)
+    assert conn.settings == {
+        "payee_source": "auto", "last_provider_refresh_at": "2026-11-07T10:00:00+00:00",
+    }
+
+
+@pytest.mark.asyncio
+async def test_failure_after_an_older_success_is_recorded(
+    session: AsyncSession, test_user, test_workspace,
+):
+    conn = _connection(test_user.id, test_workspace.id, last_sync_age=10 * H)
+    session.add(conn)
+    await session.commit()
+
+    await _record_sync_failure(
+        lambda: session, conn.id, rate_limited=False,
+        attempt_started_at=datetime.now(timezone.utc), now=datetime.now(timezone.utc),
+    )
+
+    conn = await _reload(session, conn.id)
+    assert conn.settings[SYNC_BACKOFF_KEY]["failures"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("rate_limited", "kept"), [(False, False), (True, True)])
+async def test_reconnect_ends_a_credential_backoff_only(
+    session: AsyncSession, test_user, test_workspace, rate_limited, kept,
+):
+    """New credentials make the connection eligible on the next cycle; the
+    bank's request quota does not reset with them."""
+    backoff = _backoff(3, 1 * H, rate_limited=rate_limited)
+    conn = _connection(test_user.id, test_workspace.id, backoff=backoff)
+    session.add(conn)
+    await session.commit()
+
+    provider = AsyncMock()
+    provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="new-session", institution_name="Test bank",
+        credentials={"fresh": True}, accounts=[],
+    ))
+    with patch("app.services.connection_service.get_provider", return_value=provider):
+        result = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code",
+            provider_name="test", reconnect_connection_id=conn.id,
+        )
+
+    assert result.settings is not None
+    assert result.settings["payee_source"] == "auto"
+    assert (SYNC_BACKOFF_KEY in result.settings) is kept
+    retry_at = _sync_backoff_until(result.settings, 4 * H)
+    assert (retry_at is not None and retry_at > datetime.now(timezone.utc)) is kept

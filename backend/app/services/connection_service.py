@@ -1340,6 +1340,19 @@ async def handle_oauth_callback(
         existing_reconnect.status = "active"
         # Re-sync from current data on next sync cycle.
         existing_reconnect.last_sync_at = None
+        # New credentials end a backoff earned by failing ones, so the next
+        # cycle syncs it. A rate-limit backoff stays: the bank's quota is the
+        # same whatever the credentials.
+        reconnect_settings = existing_reconnect.settings or {}
+        backoff = reconnect_settings.get(SYNC_BACKOFF_KEY)
+        if backoff is not None and not (
+            isinstance(backoff, dict) and backoff.get("rate_limited") is True
+        ):
+            existing_reconnect.settings = {
+                key: value
+                for key, value in reconnect_settings.items()
+                if key != SYNC_BACKOFF_KEY
+            }
         await session.commit()
         await session.refresh(existing_reconnect)
         return existing_reconnect
