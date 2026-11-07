@@ -871,6 +871,7 @@
     "drillDownSettledTotal": "Kiegyenlítve · kártya összesen",
     "drillDownPendingTotal": "Kiegyenlítésre vár",
     "drillDownShownTotal": "Megjelenített összeg",
+    "drillDownError": "A tranzakciók betöltése sikertelen. Próbálja újra.",
     "drillDownEmpty": "Nincs találat",
     "drillDownClose": "Bezárás",
     "accrualNote": "A hitelkártyás tranzakciók a kártyaszámla esedékessége szerint vannak csoportosítva (teljesítési szemlélet).",
@@ -1432,6 +1433,9 @@
     "darkMode": "Sötét mód"
   },
   "budgets": {
+    "spending": "Kiadások",
+    "spendingDescription": "Megegyezik az áttekintés kategóriánkénti kiadásaival a kiválasztott hónapra és számlaszűrőre, beleértve a függőben lévő és előrejelzett kiadásokat.",
+    "spendingError": "A kiadások betöltése sikertelen.",
     "title": "Költségkeretek",
     "add": "Költségkeret hozzáadása",
     "edit": "Költségkeret szerkesztése",

@@ -1,9 +1,9 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
-import { monthLabel } from '@/lib/month-utils'
+import { monthLabel, monthRange } from '@/lib/month-utils'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { categories as categoriesApi, categoryGroups as groupsApi, budgets as budgetsApi } from '@/lib/api'
+import { categories as categoriesApi, categoryGroups as groupsApi, budgets as budgetsApi, dashboard } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -23,9 +23,12 @@ import { format } from 'date-fns'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { MonthPicker } from '@/components/ui/monthpicker'
 import { PageHeader } from '@/components/page-header'
+import { TransactionDrillDown } from '@/components/transaction-drill-down'
+import { BudgetSpendingProgress } from '@/components/budget-spending-progress'
 import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { findCategoryReference } from '@/lib/category-reference-utils'
@@ -59,11 +62,14 @@ export default function BudgetsPage() {
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
+  const { activeAccountIds } = useCollectionFilter()
+  const noAccounts = activeAccountIds !== null && activeAccountIds.length === 0
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const queryClient = useQueryClient()
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   const [monthCalOpen, setMonthCalOpen] = useState(false)
+  const [drillDownCategoryId, setDrillDownCategoryId] = useState<string | null>(null)
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const monthParam = `${selectedMonth}-01`
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -78,6 +84,15 @@ export default function BudgetsPage() {
     queryKey: ['budgets', selectedMonth],
     queryFn: () => budgetsApi.list(monthParam),
   })
+
+  const { data: spending, isPending: spendingPending, isError: spendingError } = useQuery({
+    queryKey: ['dashboard', 'spending', selectedMonth, activeAccountIds],
+    queryFn: () => dashboard.spendingByCategory(monthParam, activeAccountIds ?? undefined),
+    enabled: !noAccounts,
+  })
+  const spendingByCategory = new Map(
+    (noAccounts ? [] : spending ?? []).map(item => [item.category_id, item.projected_total]),
+  )
 
   const { data: categoriesList } = useQuery({
     queryKey: ['categories'],
@@ -249,56 +264,88 @@ export default function BudgetsPage() {
             ) : undefined
           }
         />
+        <p className="px-4 sm:px-5 py-3 text-xs text-muted-foreground">{t('budgets.spendingDescription')}</p>
+        {spendingError && !noAccounts && <p role="alert" className="px-4 sm:px-5 pb-3 text-sm text-destructive">{t('budgets.spendingError')}</p>}
         {budgetsList && budgetsList.length > 0 ? (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('budgets.category')}</th>
-                <th className={`${TH} text-left w-36`}>{t('budgets.amount')}</th>
-                {canWrite && <th className={`${TH} pr-4 sm:pr-5 text-right w-24`}>{t('budgets.actions')}</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {budgetsList.map((budget) => (
-                <tr key={budget.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors">
-                  <td className="py-3 pl-4 sm:pl-5 text-sm font-medium text-foreground">
-                    <span className="flex items-center gap-1.5">
-                      {getCategoryDisplay(budget.category_id)}
-                      {budget.is_recurring && (
-                        <span title={t('budgets.recurringLabel')} className="text-muted-foreground">
-                          <Repeat size={12} />
-                        </span>
-                      )}
-                    </span>
-                  </td>
-                  <td className="py-3 text-sm font-semibold tabular-nums text-foreground">{mask(formatCurrency(budget.amount, userCurrency, locale))}</td>
-                  {canWrite && (
-                    <td className="py-3 pr-4 sm:pr-5">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
-                          onClick={() => { setEditing(budget); setDialogOpen(true) }}
-                          aria-label={t('common.edit')}
-                          title={t('common.edit')}
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                          onClick={() => setDeletingBudget(budget)}
-                          disabled={deleteMutation.isPending}
-                          aria-label={t('common.delete')}
-                          title={t('common.delete')}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  )}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] table-fixed">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className={`${TH} pl-4 sm:pl-5 text-left w-[28%]`}>{t('budgets.category')}</th>
+                  <th className={`${TH} pr-4 sm:pr-5 text-right`}>{t('budgets.spending')}</th>
+                  <th className={`${TH} text-left w-32`}>{t('budgets.amount')}</th>
+                  {canWrite && <th className={`${TH} pr-4 sm:pr-5 text-right w-24`}>{t('budgets.actions')}</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {budgetsList.map((budget) => {
+                  const amount = spendingByCategory.get(budget.category_id) ?? 0
+                  const spendingAvailable = noAccounts || (!spendingPending && !spendingError)
+                  const limit = Number(budget.amount)
+                  // Match Overview: forecast-inclusive spending, rounded to one
+                  // decimal, green below 80%, amber through 100%, red above it.
+                  const pct = limit > 0 ? Math.round(amount / limit * 1000) / 10 : 0
+                  return (
+                    <tr key={budget.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors cursor-pointer"
+                      onClick={(event) => {
+                        event.currentTarget.querySelector('button')?.focus()
+                        setDrillDownCategoryId(budget.category_id)
+                      }}
+                    >
+                      <td className="py-3 pl-4 sm:pl-5 pr-4 text-sm font-medium text-foreground break-words">
+                        <button
+                          type="button"
+                          className="flex items-center gap-1.5 text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          aria-label={t('dashboard.drillDownCategory', { category: findCategoryReference(displayCategories, budget.category_id)?.name ?? budget.category_id, month: monthLabel(selectedMonth, uiLocale) })}
+                        >
+                          {getCategoryDisplay(budget.category_id)}
+                          {budget.is_recurring && (
+                            <span title={t('budgets.recurringLabel')} className="text-muted-foreground">
+                              <Repeat size={12} />
+                            </span>
+                          )}
+                        </button>
+                      </td>
+                      <td className="py-3 pr-4 sm:pr-5 text-right text-sm font-semibold tabular-nums text-foreground">
+                        {spendingAvailable ? (
+                          <>
+                            <div className="mb-1">{mask(formatCurrency(amount, userCurrency, locale))}</div>
+                            {limit > 0 && (
+                              <BudgetSpendingProgress percentage={pct} budgetAmount={limit} currency={userCurrency} />
+                            )}
+                          </>
+                        ) : '—'}
+                      </td>
+                      <td className="py-3 text-sm font-semibold tabular-nums text-foreground">{mask(formatCurrency(budget.amount, userCurrency, locale))}</td>
+                      {canWrite && (
+                        <td className="py-3 pr-4 sm:pr-5">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                              onClick={(event) => { event.stopPropagation(); setEditing(budget); setDialogOpen(true) }}
+                              aria-label={t('common.edit')}
+                              title={t('common.edit')}
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                              onClick={(event) => { event.stopPropagation(); setDeletingBudget(budget) }}
+                              disabled={deleteMutation.isPending}
+                              aria-label={t('common.delete')}
+                              title={t('common.delete')}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground text-center py-10">{t('budgets.empty')}</p>
         )}
@@ -475,6 +522,23 @@ export default function BudgetsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {drillDownCategoryId !== null && (
+        <TransactionDrillDown
+          useViewerShare={activeAccountIds === null}
+          filter={{
+            title: t('dashboard.drillDownCategory', {
+              category: findCategoryReference(displayCategories, drillDownCategoryId)?.name ?? drillDownCategoryId,
+              month: monthLabel(selectedMonth, uiLocale),
+            }),
+            category_id: drillDownCategoryId,
+            type: 'debit',
+            ...monthRange(selectedMonth),
+            account_ids: activeAccountIds ?? undefined,
+          }}
+          onClose={() => setDrillDownCategoryId(null)}
+        />
+      )}
 
       <DeleteConfirmationDialog
         open={!!deletingBudget}

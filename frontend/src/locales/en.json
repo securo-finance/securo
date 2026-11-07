@@ -871,6 +871,7 @@
     "drillDownSettledTotal": "Settled · card total",
     "drillDownPendingTotal": "Pending settlement",
     "drillDownShownTotal": "Total shown",
+    "drillDownError": "Transactions could not be loaded. Please try again.",
     "drillDownEmpty": "No transactions found",
     "drillDownClose": "Close",
     "accrualNote": "Credit-card transactions are grouped by bill due date (accrual mode).",
@@ -1432,6 +1433,9 @@
     "darkMode": "Dark mode"
   },
   "budgets": {
+    "spending": "Spending",
+    "spendingDescription": "Matches Overview’s Spending by Category for the selected month and account filter, including pending and projected spending.",
+    "spendingError": "Spending could not be loaded.",
     "title": "Budgets",
     "add": "Add Budget",
     "edit": "Edit Budget",

@@ -882,6 +882,7 @@
     "drillDownSettledTotal": "Zaksięgowane · suma podsumowania",
     "drillDownPendingTotal": "Oczekujące rozliczenie",
     "drillDownShownTotal": "Wyświetlana suma",
+    "drillDownError": "Nie udało się wczytać transakcji. Spróbuj ponownie.",
     "drillDownEmpty": "Nie znaleziono transakcji",
     "drillDownClose": "Zamknij",
     "accrualNote": "Transakcje kartą kredytową są grupowane wg terminu płatności rachunku (tryb memoriałowy).",
@@ -1485,6 +1486,9 @@
     "darkMode": "Tryb ciemny"
   },
   "budgets": {
+    "spending": "Wydatki",
+    "spendingDescription": "Odpowiada wydatkom według kategorii w przeglądzie dla wybranego miesiąca i filtra kont, w tym wydatkom oczekującym i prognozowanym.",
+    "spendingError": "Nie udało się wczytać wydatków.",
     "title": "Budżety",
     "add": "Dodaj budżet",
     "edit": "Edytuj budżet",

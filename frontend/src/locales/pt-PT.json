@@ -873,6 +873,7 @@
     "drillDownSettledTotal": "Liquidado · valor resumido",
     "drillDownPendingTotal": "Pendente de liquidação",
     "drillDownShownTotal": "Total apresentado",
+    "drillDownError": "Não foi possível carregar as transações. Tente novamente.",
     "drillDownEmpty": "Nenhuma transação encontrada",
     "drillDownClose": "Fechar",
     "accrualNote": "Transações de cartão de crédito são agrupadas pela data de vencimento da fatura (modo competência).",
@@ -1436,6 +1437,9 @@
     "darkMode": "Modo escuro"
   },
   "budgets": {
+    "spending": "Gastos",
+    "spendingDescription": "Corresponde aos Gastos por Categoria da Visão Geral para o mês e filtro de contas selecionados, incluindo gastos pendentes e projetados.",
+    "spendingError": "Não foi possível carregar os gastos.",
     "title": "Orçamentos",
     "add": "Adicionar Orçamento",
     "edit": "Editar Orçamento",

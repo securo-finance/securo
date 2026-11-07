@@ -873,6 +873,7 @@
     "drillDownSettledTotal": "Liquidado · total resumido",
     "drillDownPendingTotal": "Pendiente de liquidación",
     "drillDownShownTotal": "Total mostrado",
+    "drillDownError": "No se pudieron cargar las transacciones. Inténtalo de nuevo.",
     "drillDownEmpty": "No se encontraron transacciones",
     "drillDownClose": "Cerrar",
     "accrualNote": "Las transacciones con tarjeta de crédito se agrupan por la fecha de vencimiento de la factura (modo acumulado).",
@@ -1436,6 +1437,9 @@
     "darkMode": "Modo oscuro"
   },
   "budgets": {
+    "spending": "Gastos",
+    "spendingDescription": "Coincide con los gastos por categoría del resumen para el mes y filtro de cuentas seleccionados, incluidos los gastos pendientes y previstos.",
+    "spendingError": "No se pudieron cargar los gastos.",
     "title": "Presupuestos",
     "add": "Agregar presupuesto",
     "edit": "Editar presupuesto",
