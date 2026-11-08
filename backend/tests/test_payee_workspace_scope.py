@@ -198,7 +198,7 @@ async def test_connecting_a_bank_succeeds_with_the_name_already_used_elsewhere(
          patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
          patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
          patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
-        result_conn, _ = await sync_connection(
+        result_conn, _, _ = await sync_connection(
             session, conn.id, other.id, test_user.id
         )
 

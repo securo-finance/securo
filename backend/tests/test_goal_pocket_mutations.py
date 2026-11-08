@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.core.app_clock import use_resolved_timezone
 from app.models.account import Account
 from app.models.category import Category
+from app.models.mortgage_payment_allocation import MORTGAGE_PRINCIPAL_SOURCE
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.schemas.goal import GoalAdjustmentCreate, GoalAllocationInput, GoalCreate
@@ -62,6 +63,32 @@ async def test_opening_balance_edit_keeps_assignments_valid(client, auth_headers
     assert Decimal(response.json()["amount"]) == 500
     assert response.json()["type"] == "credit"
     assert Decimal(response.json()["goal_allocations"][0]["amount"]) == 400
+
+
+async def test_mortgage_principal_entries_cannot_be_assigned_to_pockets(
+    client,
+    auth_headers,
+    test_account,
+    session,
+):
+    pocket = await create_pocket(client, auth_headers, test_account)
+    response = await post_transaction(
+        client, auth_headers, test_account, "Principal", "50.00", "debit"
+    )
+    assert response.status_code == 201
+    entry = await session.get(Transaction, uuid.UUID(response.json()["id"]))
+    assert entry is not None
+    entry.source = MORTGAGE_PRINCIPAL_SOURCE
+    await session.commit()
+
+    response = await client.patch(
+        f"/api/transactions/{entry.id}",
+        headers=auth_headers,
+        json={"goal_allocations": [{"goal_id": pocket["id"], "amount": "10.00"}]},
+    )
+
+    assert response.status_code == 400
+    assert "principal" in response.json()["detail"]
 
 
 async def test_ignored_category_change_requires_clearing_assignments(

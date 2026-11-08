@@ -155,6 +155,16 @@ export interface ConnectionSettings {
   sync_assets?: boolean
 }
 
+// Response of POST /connections/{id}/sync: the connection plus what the run
+// actually did. "rate_limited" means the provider throttled the request
+// (429): nothing was pulled and last_sync_at was left untouched (issue #736).
+export interface SyncResult extends BankConnection {
+  merged_count: number
+  sync_outcome: 'refreshed' | 'rate_limited'
+}
+
+export type AccountType = 'checking' | 'savings' | 'credit_card' | 'loan' | 'investment' | 'wallet'
+
 export interface Account {
   id: string
   user_id: string
@@ -170,10 +180,23 @@ export interface Account {
   institution_name: string | null
   institution_logo_url: string | null
   type: string
+  secured_asset_id?: string | null
+  // Loan accounts only: contract terms the payment schedule is computed from.
+  loan_kind?: LoanKind | null
+  loan_original_amount?: number | null
+  loan_interest_rate?: number | null
+  loan_rate_period?: LoanRatePeriod | null
+  loan_term_months?: number | null
+  loan_first_payment_date?: string | null
+  loan_amortization?: LoanAmortization | null
   balance: number
   current_balance: number
   previous_balance: number | null
+  // Date of the opening-balance transaction; null when there is none.
+  balance_date?: string | null
   balance_primary: number | null
+  // No real FX rate: balance_primary is unset and totals use the native amount.
+  fx_fallback?: boolean
   currency: string
   credit_limit: number | null
   available_credit: number | null
@@ -185,6 +208,12 @@ export interface Account {
   card_brand: string | null
   card_level: string | null
   shared_balance_group: string | null
+  // Open bill (due today or later) of a card on a shared credit line, in the
+  // account's currency. Null when the card has no such bill; the row then
+  // keeps showing the balance.
+  open_bill_total?: number | null
+  // Same bill in the user's primary currency; null when not converted.
+  open_bill_total_primary?: number | null
   is_closed: boolean
   closed_at: string | null
 }
@@ -226,6 +255,7 @@ export interface AccountSummary {
   projected_expenses?: number
   projected_income_primary?: number | null
   projected_expenses_primary?: number | null
+  fx_fallback?: boolean
 }
 
 /** Set when this transaction settles an invoice. Absent in workspaces
@@ -238,6 +268,13 @@ export interface TransactionInvoiceLink {
    *  ours, so the badge reads this instead. */
   external_number: string | null
   amount: string
+}
+
+/** A description used before, with the category and payee of its latest use. */
+export interface DescriptionSuggestion {
+  description: string
+  category_id: string | null
+  payee_id: string | null
 }
 
 export interface Transaction {
@@ -263,6 +300,12 @@ export interface Transaction {
   payee_name: string | null
   notes: string | null
   transfer_pair_id: string | null
+  /**
+   * The other leg of the transfer this row belongs to, when it is one.
+   * The paginated list fills it so the badge can name the account the
+   * transfer is linked to (issue #810); other endpoints leave it null.
+   */
+  transfer_counterpart?: { account_id: string; account_name: string } | null
   amount_primary: number | null
   fx_rate_used: number | null
   fx_fallback: boolean
@@ -282,6 +325,14 @@ export interface Transaction {
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
   goal_allocations?: GoalAllocation[]
+  // Split across several categories (#425): `category_id` is then null and
+  // each part lives in `category_lines`, adding up to `amount`.
+  has_category_lines?: boolean
+  category_lines?: TransactionCategoryLine[]
+  // Set by a list filtered by category: the part of a split row that falls
+  // in the filter, so totals built from rows match the report they came from.
+  matched_amount?: number | null
+  matched_amount_primary?: number | null
   // Shared-transaction view fields. Set per-request when the viewer
   // is a linked split member but not the owner. Render `viewer_share`
   // as the amount and treat the row as read-only — editing belongs
@@ -296,6 +347,12 @@ export interface Transaction {
   is_ignored: boolean
   // Keeps the transaction in the ledger/balance while excluding it from P&L.
   exclude_from_pnl?: boolean
+  // Balance right after this row, filled by the server only when the list
+  // was asked for it on a single non-credit-card account (#1202).
+  // `running_balance_primary` is null when the account is in the primary
+  // currency.
+  running_balance?: number | null
+  running_balance_primary?: number | null
   virtual?: boolean
 }
 
@@ -324,6 +381,7 @@ export interface InstallmentSeriesInput {
     fx_rate_used?: number | null
     effective_bill_date?: string | null
     splits?: TransactionSplitsInput | null
+    category_lines?: TransactionCategoryLinesInput | null
   }
   installments: number
   first_installment_status?: 'posted' | 'pending'
@@ -331,6 +389,33 @@ export interface InstallmentSeriesInput {
 }
 
 export type ShareType = 'equal' | 'exact' | 'percent'
+
+export type CategoryLineShareType = 'exact' | 'percent'
+
+export interface TransactionCategoryLine {
+  id: string
+  category_id: string
+  amount: number
+  share_type: CategoryLineShareType
+  share_pct: number | null
+  position: number
+  notes: string | null
+  category?: Category | null
+}
+
+export interface TransactionCategoryLineInput {
+  category_id: string
+  amount?: number | null
+  share_pct?: number | null
+  notes?: string | null
+}
+
+// Same semantics as `splits`: leave it out to keep the current parts, send
+// two or more lines to split, send an empty list to undo the split.
+export interface TransactionCategoryLinesInput {
+  share_type: CategoryLineShareType
+  lines: TransactionCategoryLineInput[]
+}
 
 export interface TransactionSplit {
   id: string
@@ -359,9 +444,10 @@ export interface TransactionSplitsInput {
 // TransactionSplitsInput the split section produces, not the
 // TransactionSplit[] rows the API returns, so the edit payload type reflects
 // the form's actual shape.
-export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits' | 'goal_allocations'> & {
+export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits' | 'goal_allocations' | 'category_lines'> & {
   splits?: TransactionSplitsInput | null
   goal_allocations?: GoalAllocationInput[]
+  category_lines?: TransactionCategoryLinesInput
 }
 
 export type GroupKind = 'social' | 'cost_center' | 'project' | 'client' | 'other'
@@ -409,7 +495,8 @@ export interface GroupSettlement {
 export interface GroupBalanceLine {
   member_id: string
   currency: string
-  // Positive = member owes the owner. Negative = owner owes member.
+  // Relative to the viewer: positive = member owes the viewer,
+  // negative = the viewer owes the member.
   amount: number
   // FX-converted to the group's default currency for cross-currency rollups.
   amount_in_default_currency: number
@@ -422,6 +509,28 @@ export interface GroupBalances {
   lines: GroupBalanceLine[]
 }
 
+export interface GroupSummaryMonth {
+  /** "YYYY-MM" — the client formats it for display. */
+  month: string
+  total: number
+}
+
+export interface GroupSummaryCategory {
+  /** Null for transactions with no category. */
+  category_id: string | null
+  name: string | null
+  color: string | null
+  total: number
+}
+
+export interface GroupSummary {
+  group_id: string
+  default_currency: string
+  total_moved: number
+  months: GroupSummaryMonth[]
+  categories: GroupSummaryCategory[]
+}
+
 /** A fiscal document belonging to a payee. `kind` mirrors the backend's
  *  closed TaxIdKind; the value arrives normalised. */
 export interface PayeeTaxId {
@@ -431,7 +540,7 @@ export interface PayeeTaxId {
 
 export interface Payee {
   id: string
-  user_id: string
+  user_id: string | null
   name: string
   /** Legal nature, or null when unknown — the normal state for a row sync created. */
   type: 'person' | 'company' | null
@@ -514,6 +623,26 @@ export interface RuleExportItem {
   is_active: boolean
 }
 
+export interface RulePack {
+  code: string
+  /** English name; `names` has it per locale. */
+  name: string
+  names: Record<string, string>
+  flag: string
+  rule_count: number
+  installed: boolean
+  /** Rules in this workspace that still come from the pack. */
+  rules_from_pack: number
+}
+
+/** Removing a pack deletes `remove` and keeps `keep`, the rules the user edited. */
+export interface RulePackRemoval {
+  remove: { id: string; name: string }[]
+  keep: { id: string; name: string }[]
+  /** Identifies this plan; removal is refused if the plan changed since. */
+  token: string
+}
+
 export interface RuleExportPayload {
   format: 'securo-categorization-rules'
   version: number
@@ -538,6 +667,7 @@ export interface RulePreviewItem {
   type: 'debit' | 'credit'
   current_category_id: string | null
   current_category_name: string | null
+  current_has_category_lines?: boolean
   new_category_id: string | null
   new_category_name: string | null
   will_change: boolean
@@ -588,6 +718,8 @@ export interface ImportPreviewTransaction {
   category_id?: string | null
   force_uncategorized?: boolean
   notes?: string | null
+  /** A split across categories read back from a CSV export. */
+  category_lines?: { category_name: string; amount: number }[] | null
 }
 
 export interface ImportReviewTransaction extends ImportPreviewTransaction {
@@ -622,6 +754,9 @@ export interface RecurringTransaction {
   next_occurrence: string
   amount_primary: number | null
   fx_rate_used: number | null
+  /** Split across categories: every occurrence starts with these parts. */
+  has_category_lines?: boolean
+  category_lines?: TransactionCategoryLine[]
 }
 
 export interface ProjectedTransaction {
@@ -637,6 +772,17 @@ export interface ProjectedTransaction {
   category_name: string | null
   category_icon: string | null
   category_color: string | null
+  category_treat_as_transfer: boolean
+  /** Split recurring template: the parts, in the occurrence's currency. */
+  has_category_lines?: boolean
+  category_lines?: {
+    category_id: string
+    category_name: string | null
+    category_icon: string | null
+    category_color: string | null
+    amount: number
+    treat_as_transfer: boolean
+  }[]
 }
 
 export interface TransactionCalendarItem {
@@ -661,6 +807,7 @@ export interface TransactionCalendarItem {
   is_transfer: boolean
   is_ignored: boolean
   exclude_from_pnl: boolean
+  has_category_lines?: boolean
 }
 
 export interface TransactionCalendarDay {
@@ -712,6 +859,9 @@ export interface DashboardSummary {
   assets_value: Record<string, number>
   assets_value_primary: number
   primary_currency: string
+  // At least one currency bucket had no real FX rate, so the *_primary
+  // totals sum it at 1:1 and are an estimate, not a conversion (issue #1165).
+  fx_fallback?: boolean
   // Net pending balance from group splits in primary currency.
   // Negative = net liability, positive = net receivable. Already
   // accounts for partial settlements.
@@ -739,9 +889,27 @@ export interface DailyBalance {
   balance: number | null
 }
 
+export interface DailyBaseline {
+  day: number
+  median: number | null
+  lower_quartile: number | null
+  upper_quartile: number | null
+}
+
+/** End-of-day balance of one account, one point per day (#1202). */
+export interface AccountRunningBalancePoint {
+  date: string
+  balance: number
+  balance_primary: number | null
+}
+
 export interface BalanceHistory {
   current: DailyBalance[]
-  previous: DailyBalance[]
+  opening_balance: number
+  baseline: DailyBaseline[]
+  comparison: DailyBalance[] | null
+  comparison_month: string | null
+  comparison_opening_balance: number | null
 }
 
 export interface Budget {
@@ -767,6 +935,26 @@ export interface BudgetVsActual {
   projected_prev_month_amount: number
   percentage_used: number | null
   is_recurring: boolean
+}
+
+export interface BudgetSuggestion {
+  category_id: string
+  category_name: string
+  category_icon: string
+  category_color: string
+  group_id: string | null
+  group_name: string | null
+  suggested_amount: string
+  total_spent: string
+  months_with_data: number
+  existing_budget: boolean
+}
+
+export interface BudgetSuggestionResponse {
+  month: string
+  months_requested: number
+  months_analyzed: number
+  suggestions: BudgetSuggestion[]
 }
 
 export interface Asset {
@@ -1032,6 +1220,9 @@ export interface ReportMeta {
   forecast_start_date?: string | null
   baseline_active?: boolean
   baseline_lookback_days?: number | null
+  runway_date?: string | null
+  lowest_balance?: number | null
+  lowest_balance_date?: string | null
 }
 
 export interface ReportCompositionItem {
@@ -1636,7 +1827,7 @@ export interface ReconciliationConditions {
   /** Only pairs where one of the two legs sits on an account of this
    *  kind. Either leg is enough: a rule that exists to be careful about
    *  credit cards has to fire whichever end the card is on. */
-  account_types?: ('checking' | 'savings' | 'credit_card' | 'investment' | 'wallet')[]
+  account_types?: AccountType[]
   /** One side's statement text has to name the other side's account. The
    *  signal that tells two same-day transfers of the same amount apart,
    *  when one line reads "To FORTUNEO ACCOUNT" and the other does not. */
@@ -1789,4 +1980,53 @@ export interface ReconciliationHistoryEvent {
   user_id?: string | null
   transaction_id?: string | null
   transaction_description?: string | null
+}
+
+export type LoanKind = 'mortgage' | 'auto' | 'personal' | 'student' | 'other'
+export type LoanRatePeriod = 'monthly' | 'yearly_effective' | 'yearly_nominal'
+export type LoanAmortization = 'price' | 'sac'
+
+export interface LoanInstallment {
+  number: number
+  due_date: string
+  payment: number
+  interest: number
+  principal: number
+  balance: number
+}
+
+/** The lender's balance on a date, sent to bring a loan's ledger in line. */
+export interface LoanBalanceUpdate {
+  balance: number
+  date: string
+  description: string
+  category_id?: string | null
+}
+
+/** What the backend recorded: positive when the debt grew, 0 when it already matched. */
+export interface LoanBalanceAdjustment {
+  adjustment: number
+  current_debt: number
+  transaction_id: string | null
+}
+
+/** A loan's payment schedule, computed by the backend from its contract terms. */
+export interface LoanSchedule {
+  account_id: string
+  currency: string
+  current_debt: number
+  configured: boolean
+  missing: string[]
+  monthly_payment: number | null
+  payments_due: number | null
+  remaining_payments: number | null
+  next_payment: LoanInstallment | null
+  scheduled_balance: number | null
+  ahead_by: number | null
+  total_interest: number | null
+  total_paid: number | null
+  payoff_date: string | null
+  projected_payoff_date: string | null
+  paid_off: boolean
+  installments: LoanInstallment[]
 }

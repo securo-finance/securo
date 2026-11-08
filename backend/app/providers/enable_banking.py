@@ -54,6 +54,10 @@ DEFAULT_HISTORY_DAYS = 90
 # Shorter window retried when a bank rejects the default one as out of bounds.
 FALLBACK_HISTORY_DAYS = 30
 TRANSACTION_PAGE_LIMIT = 50  # safety cap
+# Session states after which no data can be read until the user re-authorizes.
+TERMINAL_SESSION_STATUSES = frozenset(
+    {"EXPIRED", "REVOKED", "CLOSED", "CANCELLED", "INVALID"}
+)
 
 
 def _map_cash_account_type(eb_type: Optional[str]) -> str:
@@ -145,6 +149,17 @@ def _counterparty_name(raw: dict, party: str) -> str:
     return name.strip() if isinstance(name, str) else ""
 
 
+def _counterparty_identity(raw: dict, party: str) -> str:
+    """IBAN of the counterparty account, falling back to its name."""
+    account = raw.get(f"{party}_account")
+    iban = (
+        account.get("iban")
+        if isinstance(account, dict) and isinstance(account.get("iban"), str)
+        else ""
+    )
+    return iban.strip() or _counterparty_name(raw, party)
+
+
 def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     """Stable id for a booked transaction.
 
@@ -154,20 +169,8 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     sync layer's pending↔posted twin matcher handles that.
     """
     amount = raw.get("transaction_amount") or {}
-    creditor_acc = raw.get("creditor_account")
-    debtor_acc = raw.get("debtor_account")
-    creditor_iban = (
-        creditor_acc.get("iban")
-        if isinstance(creditor_acc, dict) and isinstance(creditor_acc.get("iban"), str)
-        else ""
-    )
-    debtor_iban = (
-        debtor_acc.get("iban")
-        if isinstance(debtor_acc, dict) and isinstance(debtor_acc.get("iban"), str)
-        else ""
-    )
-    creditor_identity = creditor_iban.strip() or _counterparty_name(raw, "creditor")
-    debtor_identity = debtor_iban.strip() or _counterparty_name(raw, "debtor")
+    creditor_identity = _counterparty_identity(raw, "creditor")
+    debtor_identity = _counterparty_identity(raw, "debtor")
     parts = [
         str(account_uid),
         str(raw.get("booking_date") or ""),
@@ -182,6 +185,75 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     ]
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
     return digest[:32]
+
+
+def _canonical_amount(amount_obj: Any) -> str:
+    """Canonical string for an EB amount.
+
+    "12", "12.0" and "12.00" are the same amount, so parse it as a Decimal
+    to give every spelling the same external id.
+    """
+    if not isinstance(amount_obj, dict):
+        return ""
+    raw = amount_obj.get("amount")
+    if raw is None or raw == "":
+        return ""
+    try:
+        return format(Decimal(str(raw)).normalize(), "f")
+    except InvalidOperation:
+        return str(raw)
+
+
+def _entry_reference_external_id(entry_ref: str, amount_obj: dict, raw: dict) -> str:
+    """Disambiguate a non-empty ``entry_reference`` with transaction details.
+
+    EB's `entry_reference` is not guaranteed unique per transaction: some
+    institutions reuse it across a batch/settlement (multiple ledger lines
+    clearing under one shared reference) or across follow-on charges against
+    the same card authorization (see #753). Folding in the amount, the
+    available date fields, the direction, the remittance text and the
+    counterparties keeps a truly-unique reference stable across re-fetches
+    while separating genuinely distinct transactions that happen to share
+    one (e.g. a charge and its refund, or settlement lines for different
+    counterparties with equal amounts).
+    """
+    parts = [
+        entry_ref,
+        _canonical_amount(amount_obj),
+        str(amount_obj.get("currency") or "") if isinstance(amount_obj, dict) else "",
+        str(raw.get("booking_date") or ""),
+        str(raw.get("value_date") or ""),
+        str(raw.get("transaction_date") or ""),
+        str(raw.get("credit_debit_indicator") or "").upper(),
+        _join_remittance(raw.get("remittance_information"))[:80],
+        _counterparty_identity(raw, "creditor"),
+        _counterparty_identity(raw, "debtor"),
+    ]
+    digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    return digest[:32]
+
+
+def _settlement_key(raw: dict) -> Optional[tuple[str, str, str, str]]:
+    """Identity of one operation across its pending and booked spellings.
+
+    A pending entry and the booked entry it settles into keep the reference,
+    the amount, the currency and the direction; the booking date is what the
+    settlement adds. Returns None when the reference is absent or is the "0"
+    placeholder, which carries no identity of its own.
+    """
+    entry_ref = raw.get("entry_reference")
+    entry_ref = entry_ref.strip() if isinstance(entry_ref, str) else ""
+    if not entry_ref or entry_ref == "0":
+        return None
+    amount_obj = raw.get("transaction_amount")
+    if not isinstance(amount_obj, dict):
+        return None
+    return (
+        entry_ref,
+        _canonical_amount(amount_obj),
+        str(amount_obj.get("currency") or ""),
+        str(raw.get("credit_debit_indicator") or "").upper(),
+    )
 
 
 def _extract_payee(raw: dict, indicator: str, source: str) -> Optional[str]:
@@ -497,7 +569,9 @@ class EnableBankingProvider(BankProvider):
                 return inst.logo
         return None
 
-    async def _build_account(self, raw: dict) -> AccountData:
+    async def _build_account(
+        self, raw: dict, stable_external_id: Optional[str] = None
+    ) -> AccountData:
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
         # EB doesn't include balances in the session payload; fetch separately.
@@ -524,6 +598,9 @@ class EnableBankingProvider(BankProvider):
             balance=balance,
             currency=currency,
             masked_number=mask_last4(_account_identifier(raw)),
+            # From the session payload: `uid` is scoped to one session, this
+            # hash is what lets a later session find the same account again.
+            stable_external_id=stable_external_id,
         )
 
     # ----- account / transaction fetches -----
@@ -563,19 +640,61 @@ class EnableBankingProvider(BankProvider):
         if not session_id:
             raise SessionExpiredError("Enable Banking session_id missing")
         data = await self._request("GET", f"/sessions/{session_id}")
+        # The bank can end consent well before `valid_until`; EB still answers
+        # 200 here but flags the session, and every account call then fails.
+        # Raise so the connection is marked expired instead of "syncing" zero
+        # accounts forever.
+        status = (data.get("status") or "").upper()
+        if status in TERMINAL_SESSION_STATUSES:
+            raise SessionExpiredError(f"Enable Banking session is {status}")
+        uids = self._account_uids(data)
+        # EB keys each account by a uid scoped to this session; the
+        # identification_hash is the id that survives a reauthorisation. It comes
+        # in the same payload we just fetched, so carry it through; otherwise a
+        # reconnect re-keys every account and the sync duplicates them all.
+        stable_external_ids = {
+            entry.get("uid"): entry.get("identification_hash")
+            for entry in (data.get("accounts_data") or [])
+            if isinstance(entry, dict) and entry.get("uid")
+        }
         result: list[AccountData] = []
-        for uid in self._account_uids(data):
+        transient_error: Optional[httpx.HTTPError] = None
+        for uid in uids:
             try:
                 details = await self._request("GET", f"/accounts/{uid}/details")
-            except (httpx.HTTPError, SessionExpiredError) as exc:
-                # Without details we can't safely name/type the account, and a
-                # bare-uid AccountData would overwrite the stored name with a
-                # placeholder. Skip this account for this run (non-destructive:
-                # the existing row and its transactions are left intact and the
-                # next sync retries) rather than corrupt it.
+            except httpx.HTTPError as exc:
+                # A *transient* per-account failure. Without details we can't
+                # safely name/type the account, and a bare-uid AccountData would
+                # overwrite the stored name with a placeholder. Skip this account
+                # for this run (non-destructive: the existing row and its
+                # transactions are left intact and the next sync retries) rather
+                # than corrupt it. SessionExpiredError is deliberately NOT caught
+                # here: a dead consent is global, never per-account.
                 logger.warning("Failed to fetch details for account %s: %s", uid, exc)
+                is_refusal = (
+                    isinstance(exc, httpx.HTTPStatusError)
+                    and exc.response.status_code < 500
+                    and exc.response.status_code != 408
+                )
+                if not is_refusal:
+                    transient_error = exc
                 continue
-            result.append(await self._build_account(details))
+            result.append(await self._build_account(details, stable_external_ids.get(uid)))
+        # Skipping is only safe while something still syncs. When the bank refuses
+        # every account, an empty list would pass for a successful sync: the
+        # connection stays "active", last_sync_at keeps moving and the balances
+        # silently go stale. The next sync that reaches an account clears this.
+        if uids and not result:
+            # A 5xx, timeout or network failure says nothing about the accounts,
+            # so it surfaces as the original error, like any other provider
+            # failure, rather than as accounts_unavailable.
+            if transient_error is not None:
+                raise transient_error
+            raise ProviderUserActionRequired(
+                f"The bank refused all {len(uids)} account(s) on this connection. "
+                "Retry later, or reconnect if it keeps failing.",
+                code="accounts_unavailable",
+            )
         return result
 
     async def get_transactions(
@@ -628,7 +747,9 @@ class EnableBankingProvider(BankProvider):
     ) -> list[TransactionData]:
         date_from = start.isoformat()
         date_to = end.isoformat()
-        transactions: list[TransactionData] = []
+        collected: list[tuple[TransactionData, Optional[tuple[str, str, str, str]]]] = []
+        booked_keys: dict[tuple[str, str, str, str], int] = {}
+        pending_keys: dict[tuple[str, str, str, str], int] = {}
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
         seen_transaction_ids: set[str] = set()
@@ -648,9 +769,14 @@ class EnableBankingProvider(BankProvider):
                 # A broken pagination cursor can make Enable Banking return a
                 # page we have already consumed. Keep the result idempotent
                 # even before the repeated cursor is detected below.
-                if parsed and parsed.external_id not in seen_transaction_ids:
-                    transactions.append(parsed)
-                    seen_transaction_ids.add(parsed.external_id)
+                if not parsed or parsed.external_id in seen_transaction_ids:
+                    continue
+                key = _settlement_key(raw_txn)
+                if key is not None:
+                    counts = pending_keys if parsed.status == "pending" else booked_keys
+                    counts[key] = counts.get(key, 0) + 1
+                collected.append((parsed, key))
+                seen_transaction_ids.add(parsed.external_id)
 
             next_continuation_key = page.get("continuation_key") or None
             if not next_continuation_key:
@@ -664,7 +790,23 @@ class EnableBankingProvider(BankProvider):
                 break
             seen_continuation_keys.add(next_continuation_key)
             continuation_key = next_continuation_key
-        return transactions
+        # While an operation settles, an institution can list it as booked and
+        # still as pending in the same response. The two spellings differ (the
+        # booked one carries the booking date), so they hash to different ids:
+        # both would land, and the pending row would never clear, because the
+        # id it already holds is in this batch and the re-key skips a sibling
+        # that is still returned. Booked is the truth, so its pending twin is
+        # dropped here and the sync re-keys the row it already holds. Only an
+        # unambiguous pair counts: a reference shared by several entries on
+        # either side is #753's case, where each entry is its own transaction.
+        return [
+            parsed
+            for parsed, key in collected
+            if key is None
+            or parsed.status != "pending"
+            or booked_keys.get(key) != 1
+            or pending_keys.get(key) != 1
+        ]
 
     @staticmethod
     def _iter_transactions(page: dict):
@@ -716,7 +858,9 @@ class EnableBankingProvider(BankProvider):
         description = description.strip()[:500] or "Transaction"
         entry_ref = (raw.get("entry_reference") or "").strip()
         external_id = (
-            entry_ref if entry_ref and entry_ref != "0" else _txn_fingerprint(account_uid, raw)
+            _entry_reference_external_id(entry_ref, amount_obj, raw)
+            if entry_ref and entry_ref != "0"
+            else _txn_fingerprint(account_uid, raw)
         )
         return TransactionData(
             external_id=external_id,

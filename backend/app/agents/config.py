@@ -23,6 +23,10 @@ class AgentSettings(BaseSettings):
 
     # Comma-separated extra MCP servers users can plug in (URL[|name]).
     # Example: "http://my-tools:9000/mcp|my-tools,http://other:9001/mcp"
+    # Each one gets tokens with its own audience, `securo-mcp-extra:<name>`,
+    # never `securo-mcp`: a token the built-in server accepts never leaves
+    # it. A server that checks the audience should expect that value. The
+    # name "securo" is reserved for the built-in server.
     extra_mcp_servers: str = ""
 
     # Shared secret used to mint short-lived JWTs for MCP calls. Distinct
@@ -35,6 +39,14 @@ class AgentSettings(BaseSettings):
     # `enabled` — if agents are on, the mint endpoint is mounted and the
     # mcp-server container publishes port 8765.
     mcp_external_ttl_days: int = 90
+
+    # Browser origins allowed to call the MCP server, comma-separated. The
+    # MCP spec requires servers to validate `Origin` (a DNS-rebinding guard)
+    # and refuse an invalid one with 403. Legitimate callers — the agent
+    # runtime, MCP gateways, desktop clients — send no `Origin` at all, so
+    # the default admits no browser page. Set only for a browser-based MCP
+    # client you deliberately want to allow, e.g. "https://app.example.com".
+    mcp_allowed_origins: str = ""
 
     # Embedding dimension for the knowledge_chunks vector column. Locked at
     # migration time. 1536 covers OpenAI text-embedding-3-small (default) and

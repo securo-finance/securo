@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import AsyncIterator, Optional
 from urllib.parse import urlparse
 
@@ -95,6 +96,22 @@ def _raise_for_status(status: int, body: str) -> None:
         raise LLMUnavailableError(f"OpenAI {status}: {body}", status=status)
 
 
+def _app_user_agent() -> str:
+    """Client identity for model backends.
+
+    Backends see the HTTP library name by default (e.g. `python-httpx/0.x`);
+    a few of them ask for the real client instead. Identifying as
+    `securo/<version>` keeps the logs on their side meaningful.
+    """
+    try:
+        return f"securo/{_pkg_version('securo-backend')}"
+    except PackageNotFoundError:
+        return "securo"
+
+
+_APP_USER_AGENT = _app_user_agent()
+
+
 class OpenAIProvider(LLMProvider):
     name = "openai"
 
@@ -110,6 +127,11 @@ class OpenAIProvider(LLMProvider):
         h = {"Content-Type": "application/json"}
         if self.api_key:
             h["Authorization"] = f"Bearer {self.api_key}"
+        # Identify the client to model backends; a few OpenAI-compatible
+        # endpoints also route on a per-conversation session id.
+        h["User-Agent"] = _APP_USER_AGENT
+        if self.session_id:
+            h["x-opencode-session"] = self.session_id
         return h
 
     async def chat_stream(

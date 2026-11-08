@@ -5,6 +5,11 @@ from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.transaction_category_line import (
+    TransactionCategoryLineRead,
+    TransactionCategoryLinesInput,
+)
+
 WeekendAdjustment = Literal["none", "previous_friday", "next_monday"]
 RecurringFrequency = Literal["weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly"]
 DayOfMonth = Annotated[int, Field(ge=1, le=31)]
@@ -24,6 +29,8 @@ class RecurringTransactionCreate(BaseModel):
     category_id: Optional[uuid.UUID] = None
     skip_first: bool = False  # Set true when first occurrence already created as a transaction
     auto_generate: bool = True  # Materialize occurrences; when false, wait for the real charge
+    # Split across categories; every occurrence starts with these parts.
+    category_lines: Optional[TransactionCategoryLinesInput] = None
 
 
 class RecurringTransactionUpdate(BaseModel):
@@ -40,6 +47,7 @@ class RecurringTransactionUpdate(BaseModel):
     category_id: Optional[uuid.UUID] = None
     is_active: Optional[bool] = None
     auto_generate: Optional[bool] = None
+    category_lines: Optional[TransactionCategoryLinesInput] = None
 
 
 class RecurringTransactionRead(BaseModel):
@@ -61,5 +69,7 @@ class RecurringTransactionRead(BaseModel):
     next_occurrence: _Date
     amount_primary: Optional[float] = None
     fx_rate_used: Optional[float] = None
+    has_category_lines: bool = False
+    category_lines: list[TransactionCategoryLineRead] = []
 
     model_config = ConfigDict(from_attributes=True)

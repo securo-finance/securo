@@ -57,6 +57,7 @@ import type {
   InvoiceLineInput,
   InvoiceScheduleEndType,
   InvoiceScheduleFrequency,
+  Transaction,
 } from '@/types'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
@@ -1040,6 +1041,12 @@ function RecordDeductionDialog({
   )
 }
 
+/** What a payment has not already given to invoices: the most it can still settle. */
+function unspentOf(tx: Transaction): number {
+  const used = (tx.invoice_links ?? []).reduce((sum, link) => sum + Number(link.amount), 0)
+  return Math.abs(Number(tx.amount)) - used
+}
+
 export function LinkPaymentDialog({
   open,
   onOpenChange,
@@ -1093,17 +1100,19 @@ export function LinkPaymentDialog({
     () =>
       (data?.items ?? []).filter((tx) => {
         if ((tx.currency ?? currency) !== currency) return false
-        const links = tx.invoice_links ?? []
-        if (links.some((link) => link.invoice_id === invoiceId)) return false
-        const used = links.reduce((sum, link) => sum + Number(link.amount), 0)
-        return Math.abs(Number(tx.amount)) - used > 0.005
+        if ((tx.invoice_links ?? []).some((link) => link.invoice_id === invoiceId)) return false
+        return unspentOf(tx) > 0.005
       }),
     [data, currency, invoiceId],
   )
 
   const selectedTx = candidates.find((tx) => tx.id === selected)
   const target = Number(settleTarget ?? balance)
-  const applied = amount ? Number(amount) : Math.min(Number(balance), Math.abs(Number(selectedTx?.amount ?? 0)))
+  // What the server links when no amount is typed: the smaller of the
+  // balance and what this payment has not already given to other invoices.
+  const applied = amount
+    ? Number(amount)
+    : Math.min(Number(balance), selectedTx ? unspentOf(selectedTx) : 0)
   const difference = selectedTx ? Math.round((target - applied) * 100) / 100 : 0
 
   // Linking and deducting are two requests. Once the first has landed
@@ -1243,7 +1252,7 @@ export function LinkPaymentDialog({
  * Notes stay editable after issuance through the detail view, since they
  * are the seller's own record and never left the building.
  */
-function EditDraftDialog({
+export function EditDraftDialog({
   open,
   onOpenChange,
   invoice,
@@ -1280,8 +1289,13 @@ function EditDraftDialog({
     invoice.lines.map((line) => ({
       description: line.description,
       quantity: String(Number(line.quantity)),
+      unit: line.unit,
       unit_price: line.unit_price,
       tax_rate: line.tax_rate,
+      // Every save resends the lines, including when only notes changed.
+      product_id: line.product_id,
+      price_id: line.price_id,
+      fiscal_refs: line.fiscal_refs,
     })),
   )
 

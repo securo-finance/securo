@@ -170,7 +170,7 @@ async def sync_connection(
         # Manual sync is user-initiated, so ask the provider to pull fresh
         # data from the bank before we read. Scheduled syncs (Celery) keep
         # the default behaviour: read whatever the provider already has.
-        connection, merged_count = await connection_service.sync_connection(
+        connection, merged_count, sync_outcome = await connection_service.sync_connection(
             session,
             connection_id,
             ctx.workspace.id,
@@ -178,7 +178,11 @@ async def sync_connection(
             trigger_provider_refresh=True,
         )
         result = BankConnectionRead.model_validate(connection)
-        return {**result.model_dump(mode="json"), "merged_count": merged_count}
+        return {
+            **result.model_dump(mode="json"),
+            "merged_count": merged_count,
+            "sync_outcome": sync_outcome,
+        }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ProviderUserActionRequired as e:

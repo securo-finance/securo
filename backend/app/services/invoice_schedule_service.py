@@ -14,9 +14,8 @@ the frequency, day of month clamped in shorter months and recovered
 afterwards, and ends the day before period `n + 1` starts. That is all
 the calendar there is: no separate "next run" date to drift, no
 timezone column to disagree with the anchor. The job compares period
-starts against the UTC date; a retainer due on the 1st is emitted on
-the 1st UTC, which is the same day everywhere that matters for a
-document dated by the day.
+starts against the workspace's calendar, using the same timezone as
+invoice dates and the rest of its books.
 
 ## Terms
 
@@ -49,6 +48,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.invoice import (
     Invoice,
     InvoiceAllocation,
@@ -64,6 +64,7 @@ from app.models.invoice_schedule import (
     SCHEDULE_FREQUENCIES,
     InvoiceSchedule,
     InvoiceScheduleTerm,
+    read_term_lines,
 )
 from app.models.workspace import Workspace
 from app.services import invoice_archive, invoice_service, reconciliation_service
@@ -87,7 +88,7 @@ _MAX_WALK = 1000
 
 
 def _today() -> _date:
-    return datetime.now(timezone.utc).date()
+    return app_today()
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +239,11 @@ def _normalise_lines(lines: Any) -> list[dict[str, Any]]:
                 # deleted later must not stop the agreement from billing.
                 "product_id": str(line["product_id"]) if line.get("product_id") else None,
                 "price_id": str(line["price_id"]) if line.get("price_id") else None,
-                "fiscal_refs": clean_fiscal_refs(line.get("fiscal_refs")),
+                **(
+                    # Empty is explicit; legacy null meant inheritance.
+                    {"fiscal_refs": clean_fiscal_refs(line["fiscal_refs"]) or {}}
+                    if "fiscal_refs" in line else {}
+                ),
             }
         )
     return out
@@ -344,7 +349,7 @@ async def update_term(
         term.effective_from = effective_from
     _fill_term(
         term,
-        lines if lines is not None else term.lines,
+        lines if lines is not None else read_term_lines(term.lines),
         discount if discount is not None else term.discount,
     )
     await session.flush()
@@ -950,7 +955,10 @@ def _lines_from_invoice(invoice: Invoice, fallback_description: str) -> list[dic
                 "tax_rate": line.tax_rate,
                 "product_id": line.product_id,
                 "price_id": line.price_id,
-                "fiscal_refs": line.fiscal_refs,
+                # Invoices store both absent and explicitly cleared refs as
+                # null. Conversion cannot recover that distinction: either
+                # becomes product inheritance on the new agreement term.
+                **({"fiscal_refs": line.fiscal_refs} if line.fiscal_refs else {}),
             }
             for line in invoice.lines
         ]
@@ -1059,13 +1067,10 @@ async def _emit(
     from app.services import product_service
 
     lines = await product_service.resolve_lines(
-        session, schedule.workspace_id, [dict(line) for line in term.lines], strict=False
+        session, schedule.workspace_id, read_term_lines(term.lines), strict=False
     )
-    if schedule.user_id is None:
-        # The ledger stamps who created each invoice. An agreement whose
-        # author left the workspace keeps emitting, and the invoice is
-        # then authored by nobody in particular rather than not at all.
-        raise InvoiceError("no_author", "This agreement has no author to issue invoices as")
+    # The agreement belongs to the workspace. If its author was deleted,
+    # its invoices keep billing with the same nullable attribution.
     invoice = await invoice_service.create_invoice(
         session,
         schedule.workspace_id,
@@ -1136,7 +1141,7 @@ async def generate_due(
         schedule,
         attribute_names=[
             "status", "frequency", "start_date", "end_type", "end_date",
-            "end_count", "next_sequence", "payee_id", "currency",
+            "end_count", "next_sequence", "payee_id", "currency", "user_id",
             "payment_terms_days", "notes", "custom_fields", "terms",
         ],
     )

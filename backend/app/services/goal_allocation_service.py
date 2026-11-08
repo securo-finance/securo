@@ -14,6 +14,7 @@ from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.goal import Goal, GoalAllocation
+from app.models.mortgage_payment_allocation import MORTGAGE_PRINCIPAL_SOURCE
 from app.models.transaction import Transaction
 from app.schemas.goal import GoalAllocationInput
 from app.services.dashboard_service import _account_balance_at
@@ -103,6 +104,8 @@ async def _ensure_assignable(
 ) -> None:
     if transaction.status != "posted":
         raise ValueError("Only posted transactions can be assigned to pockets")
+    if transaction.source == MORTGAGE_PRINCIPAL_SOURCE:
+        raise ValueError("Mortgage principal entries cannot be assigned to pockets")
     category = None
     if transaction.category_id:
         category = await session.scalar(

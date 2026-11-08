@@ -5,6 +5,7 @@ import re
 import uuid
 import warnings
 import xml.etree.ElementTree as ET
+from xml.parsers import expat
 from datetime import datetime
 from decimal import Decimal
 
@@ -19,8 +20,14 @@ from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
-from app.schemas.transaction import TransactionImport, FailedRow
-from app.services import reconciliation_service, recurring_match_service
+from pydantic import ValidationError
+
+from app.schemas.transaction import FailedRow, ImportCategoryLine, TransactionImport
+from app.schemas.transaction_category_line import (
+    TransactionCategoryLineInput,
+    TransactionCategoryLinesInput,
+)
+from app.services import category_line_service, reconciliation_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
@@ -303,11 +310,66 @@ def _qif_date_formats(date_format: str | None, raw_dates: list[str]) -> list[str
     return list(_QIF_FALLBACK_DATE_FORMATS)
 
 
-def parse_qif(content: bytes, date_format: str | None = None) -> list[TransactionImport]:
+# QIF sections whose blocks describe something other than a transaction:
+# account headers, category and class lists, memorized entries, securities
+# and prices. Their fields reuse transaction tags ("TBank" is an account
+# type, not an amount), so reading them as records would report errors for
+# rows that were never meant to be imported.
+_QIF_NON_TRANSACTION_HEADERS = (
+    '!account', '!type:cat', '!type:class', '!type:memorized',
+    '!type:security', '!type:prices', '!type:template',
+)
+
+
+def _qif_records(text: str) -> list[tuple[int, list[str]]]:
+    """Split QIF text into transaction records, line by line.
+
+    Each record is (1-based line of its first field, its stripped field
+    lines). A record ends at a line that starts with "^"; a "^" inside a
+    payee or memo is part of that field, not a separator. Header lines
+    ("!Type:Bank", "!Option:AutoSwitch") are not fields, and blocks under a
+    non-transaction header are left out.
+    """
+    records: list[tuple[int, list[str]]] = []
+    current: list[str] = []
+    start = 0
+    skip = False
+
+    def close() -> None:
+        if current and not skip:
+            records.append((start, list(current)))
+        current.clear()
+
+    for number, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith('^'):
+            close()
+            continue
+        if line.startswith('!'):
+            lower = line.lower()
+            if lower.startswith(('!option', '!clear')):
+                continue
+            close()
+            skip = lower.startswith(_QIF_NON_TRANSACTION_HEADERS)
+            continue
+        if not current:
+            start = number
+        current.append(line)
+    close()
+    return records
+
+
+def parse_qif(content: bytes, date_format: str | None = None) -> tuple[list[TransactionImport], list[FailedRow]]:
     """Parse QIF file content and return transactions.
 
     date_format: optional explicit format (see DATE_FORMAT_MAP keys); when
     omitted, the day/month order is inferred from the whole file.
+
+    Malformed records (missing/unreadable date or amount, or amount fields
+    that disagree) are not guessed at: they come back in the second element
+    so the preview can show them per line, like the CSV path does.
     """
     # Try UTF-8 first, fall back to Latin-1 for legacy software (e.g. Microsoft Money)
     try:
@@ -315,34 +377,29 @@ def parse_qif(content: bytes, date_format: str | None = None) -> list[Transactio
     except UnicodeDecodeError:
         text = content.decode('latin-1')
     transactions = []
+    failed_rows = []
 
-    # Split into transaction blocks by "^"
-    blocks = text.split('^')
-
+    records = _qif_records(text)
     raw_dates = [
-        stripped[1:].strip()
-        for block in blocks
-        for stripped in (line.strip() for line in block.strip().splitlines())
-        if stripped.startswith('D')
+        line[1:].strip()
+        for _, lines in records
+        for line in lines
+        if line.startswith('D')
     ]
     date_formats = _qif_date_formats(date_format, raw_dates)
 
-    for block in blocks:
-        lines = block.strip().splitlines()
-        if not lines:
-            continue
-
+    for record_line, lines in records:
         txn_date = None
-        amount = None
+        date_raw = None
+        amount_raws: list[str] = []
+        amounts: list[Decimal] = []
         payee = None
         memo = None
 
         for line in lines:
-            line = line.strip()
-            if not line:
-                continue
             tag, value = line[0], line[1:]
             if tag == 'D':
+                date_raw = value.strip()
                 for fmt in date_formats:
                     try:
                         txn_date = datetime.strptime(value.strip(), fmt).date()
@@ -350,8 +407,10 @@ def parse_qif(content: bytes, date_format: str | None = None) -> list[Transactio
                     except ValueError:
                         continue
             elif tag == 'T' or tag == 'U':
+                raw = value.strip().replace(',', '')
+                amount_raws.append(raw)
                 try:
-                    amount = Decimal(value.strip().replace(',', ''))
+                    amounts.append(Decimal(raw))
                 except Exception:
                     pass
             elif tag == 'P':
@@ -359,23 +418,65 @@ def parse_qif(content: bytes, date_format: str | None = None) -> list[Transactio
             elif tag == 'M':
                 memo = value.strip()
 
-        if txn_date is None or amount is None:
+        # A block with neither an amount field nor a parseable date is not
+        # a record (e.g. a "Date:January 2026" preamble line, whose tag is
+        # 'D' but whose value is not a date).
+        if not amount_raws and txn_date is None:
             continue
 
-        description = payee or memo or "Unknown"
+        description = payee or memo or ""
+
+        if txn_date is None:
+            failed_rows.append(FailedRow(line_number=record_line, description=description, raw_value=date_raw or "", error_reason="invalid_date"))
+            continue
+        if not amount_raws:
+            failed_rows.append(FailedRow(line_number=record_line, description=description, raw_value="", error_reason="no_amount"))
+            continue
+        if not amounts:
+            failed_rows.append(FailedRow(line_number=record_line, description=description, raw_value=amount_raws[-1], error_reason="invalid_amount"))
+            continue
+        if len(set(amounts)) > 1:
+            # Two amount fields that disagree: "the last one that parsed"
+            # used to win, which may not be the real value of the record.
+            failed_rows.append(FailedRow(line_number=record_line, description=description, raw_value=", ".join(amount_raws), error_reason="conflicting_amount"))
+            continue
+
+        amount = amounts[-1]
         transactions.append(TransactionImport(
-            description=description,
+            description=payee or memo or "Unknown",
             amount=abs(amount),
             date=txn_date,
             type="credit" if amount > 0 else "debit",
             payee_raw=payee,
         ))
 
-    return transactions
+    return transactions, failed_rows
 
 
-def parse_camt(content: bytes) -> list[TransactionImport]:
-    """Parse CAMT.052/CAMT.053 (ISO 20022) XML file content and return transactions."""
+def _camt_entry_lines(content: bytes) -> list[int]:
+    """1-based source line of every <Ntry> start tag, in document order."""
+    lines: list[int] = []
+    parser = expat.ParserCreate()
+
+    def start(name: str, _attrs: dict) -> None:
+        if name.rsplit(':', 1)[-1] == 'Ntry':
+            lines.append(parser.CurrentLineNumber)
+
+    parser.StartElementHandler = start
+    try:
+        parser.Parse(content, True)
+    except expat.ExpatError:
+        return []
+    return lines
+
+
+def parse_camt(content: bytes) -> tuple[list[TransactionImport], list[FailedRow]]:
+    """Parse CAMT.052/CAMT.053 (ISO 20022) XML file content.
+
+    Returns the parsed transactions plus the entries that had to be
+    dropped, each with a reason, so the preview can show them per record
+    instead of the file coming back short with no explanation.
+    """
     root = ET.fromstring(content)
 
     # Detect namespace dynamically
@@ -402,6 +503,20 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
         el = find(element, path)
         return el.text if el is not None else None
 
+    # Failed rows are labelled "Line" in the preview, so an entry is reported
+    # by the line of its opening <Ntry> tag. Only when the raw scan and the
+    # parsed tree disagree on the entry count (which should not happen) does
+    # it fall back to the entry's position in the file.
+    entry_lines = _camt_entry_lines(content)
+    entry_total = sum(1 for el in root.iter() if el.tag.rsplit('}', 1)[-1] == 'Ntry')
+
+    def line_of(n: int) -> int:
+        if len(entry_lines) == entry_total:
+            return entry_lines[n - 1]
+        return n
+
+    failed_rows = []
+    entry_no = 0
     transactions = []
 
     # Navigate: Document > BkToCstmrStmt > Stmt > Ntry (CAMT.053, end-of-day statement)
@@ -411,6 +526,18 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
     stmts = findall(root, 'BkToCstmrStmt/Stmt') or findall(root, 'BkToCstmrAcctRpt/Rpt')
     for stmt in stmts:
         for ntry in findall(stmt, 'Ntry'):
+            entry_no += 1
+
+            # Description up front so a dropped entry can carry it in its
+            # failure report.
+            description = (
+                find_text(ntry, 'NtryDtls/TxDtls/RmtInf/Ustrd')
+                or find_text(ntry, 'NtryDtls/TxDtls/RltdPties/Cdtr/Nm')
+                or find_text(ntry, 'NtryDtls/TxDtls/RltdPties/Dbtr/Nm')
+                or find_text(ntry, 'AddtlNtryInf')
+                or "Unknown"
+            )
+
             # Entry status: BOOK (final) vs. PDNG/INFO (pending/informational).
             # CAMT.052 intraday reports commonly include PDNG entries for
             # transactions that haven't settled yet; the same transaction is
@@ -427,33 +554,34 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
             # Amount
             amt_el = find(ntry, 'Amt')
             if amt_el is None:
+                failed_rows.append(FailedRow(line_number=line_of(entry_no), description=description, raw_value="", error_reason="no_amount"))
                 continue
             try:
                 amount = Decimal(amt_el.text)
             except Exception:
+                failed_rows.append(FailedRow(line_number=line_of(entry_no), description=description, raw_value=(amt_el.text or '').strip(), error_reason="invalid_amount"))
                 continue
 
             # Credit/Debit indicator
-            cdt_dbt = find_text(ntry, 'CdtDbtInd')
+            cdt_dbt = (find_text(ntry, 'CdtDbtInd') or '').strip().upper()
+            # Anything that is neither CRDT nor DBIT is not a direction:
+            # importing it as a debit would flip the amount's sign, so skip
+            # the entry like the other malformed ones above.
+            if cdt_dbt not in ('CRDT', 'DBIT'):
+                failed_rows.append(FailedRow(line_number=line_of(entry_no), description=description, raw_value=cdt_dbt, error_reason="invalid_direction"))
+                continue
             txn_type = "credit" if cdt_dbt == "CRDT" else "debit"
 
             # Date: try BookgDt/Dt then ValDt/Dt
             date_str = find_text(ntry, 'BookgDt/Dt') or find_text(ntry, 'ValDt/Dt')
             if not date_str:
+                failed_rows.append(FailedRow(line_number=line_of(entry_no), description=description, raw_value="", error_reason="invalid_date"))
                 continue
             try:
                 txn_date = datetime.strptime(date_str.strip(), '%Y-%m-%d').date()
             except ValueError:
+                failed_rows.append(FailedRow(line_number=line_of(entry_no), description=description, raw_value=date_str.strip(), error_reason="invalid_date"))
                 continue
-
-            # Description from various paths
-            description = (
-                find_text(ntry, 'NtryDtls/TxDtls/RmtInf/Ustrd')
-                or find_text(ntry, 'NtryDtls/TxDtls/RltdPties/Cdtr/Nm')
-                or find_text(ntry, 'NtryDtls/TxDtls/RltdPties/Dbtr/Nm')
-                or find_text(ntry, 'AddtlNtryInf')
-                or "Unknown"
-            )
 
             # Extract currency from Ccy attribute on Amt element
             txn_currency = amt_el.get('Ccy') or None
@@ -466,7 +594,7 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
                 currency=txn_currency,
             ))
 
-    return transactions
+    return transactions, failed_rows
 
 
 DATE_FORMAT_MAP = {
@@ -543,6 +671,10 @@ def parse_csv(
     payee_cols = ['payee', 'merchant', 'beneficiary', 'beneficiario', 'pagador']
     external_id_cols = [] # External ID must be mapped explicitly
     notes_cols = ['notes', 'nota', 'observacao']
+    # Written by our own export for a transaction split across categories.
+    # Detected only by these exact names: a bank file never has them.
+    split_group_col = 'split_group' if 'split_group' in fieldnames else None
+    split_index_col = 'split_index' if 'split_index' in fieldnames else None
 
     # Normalize the user-supplied column mapping (Securo field -> CSV header).
     mapping = {
@@ -626,6 +758,8 @@ def parse_csv(
     )
 
     transactions = []
+    # Index in `transactions` -> (split_group, split_index) for exported parts.
+    split_keys: dict[int, tuple[str, int]] = {}
     failed_rows = []
     for row in reader:
         # Normalize row keys, and missing cells along with them. A row with
@@ -655,26 +789,48 @@ def parse_csv(
 
         # Parse amount
         if use_split:
-            inflow_str = normalize_amount(row.get(inflow_col, ""), decimal_separator)
-            outflow_str = normalize_amount(row.get(outflow_col, ""), decimal_separator)
+            inflow_raw = (row.get(inflow_col, "") or "").strip()
+            outflow_raw = (row.get(outflow_col, "") or "").strip()
+            inflow_str = normalize_amount(inflow_raw, decimal_separator)
+            outflow_str = normalize_amount(outflow_raw, decimal_separator)
 
-            try:
-                inflow = Decimal(inflow_str) if inflow_str else Decimal('0')
-            except Exception:
-                inflow = Decimal('0')
-            try:
-                outflow = Decimal(outflow_str) if outflow_str else Decimal('0')
-            except Exception:
-                outflow = Decimal('0')
-
-            if inflow > 0:
+            # A filled cell that survives no normalization is garbage, not
+            # zero: report it like the single-amount path does for
+            # invalid_amount instead of silently importing it as nothing.
+            inflow = outflow = None
+            bad_cell = None
+            if inflow_raw:
+                try:
+                    inflow = Decimal(inflow_str) if inflow_str else None
+                except Exception:
+                    inflow = None
+                if inflow is None:
+                    bad_cell = f"inflow: {inflow_raw}"
+            if bad_cell is None and outflow_raw:
+                try:
+                    outflow = Decimal(outflow_str) if outflow_str else None
+                except Exception:
+                    outflow = None
+                if outflow is None:
+                    bad_cell = f"outflow: {outflow_raw}"
+            if bad_cell is not None:
+                failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=bad_cell, error_reason="invalid_amount"))
+                continue  # Skip invalid amounts
+            if inflow and inflow > 0 and outflow and outflow > 0:
+                # Both columns positive cannot be read as credit-versus-debit
+                # without guessing; make the user fix the file instead of
+                # importing the wrong direction.
+                raw_val = f"inflow: {inflow_raw}, outflow: {outflow_raw}"
+                failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=raw_val, error_reason="ambiguous_amount"))
+                continue
+            if inflow and inflow > 0:
                 amount = inflow
                 txn_type = "credit"
-            elif outflow > 0:
+            elif outflow and outflow > 0:
                 amount = outflow
                 txn_type = "debit"
             else:
-                raw_val = f"inflow: {row.get(inflow_col, '')}, outflow: {row.get(outflow_col, '')}"
+                raw_val = f"inflow: {inflow_raw}, outflow: {outflow_raw}"
                 failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=raw_val, error_reason="no_amount"))
                 continue  # Skip rows with no amount
         else:
@@ -702,17 +858,32 @@ def parse_csv(
         txn_fx_rate = None
         if currency_col and row.get(currency_col):
             txn_currency = row[currency_col].strip().upper() or None
-        if fx_rate_col and row.get(fx_rate_col):
-            fx_str = normalize_amount(row[fx_rate_col].strip())
-            if fx_str:
-                try:
-                    txn_fx_rate = Decimal(fx_str)
-                except Exception:
-                    pass
+        fx_raw = (row.get(fx_rate_col) or "").strip() if fx_rate_col else ""
+        if fx_raw:
+            fx_str = normalize_amount(fx_raw)
+            # A rate the user typed has to be a rate: an unparseable or
+            # negative cell used to be dropped silently, importing the row as
+            # if it were already in the account's currency. A blank cell or a
+            # zero still means "no rate given" (files often fill the column
+            # with 0 on rows in the account's own currency), which is how a
+            # zero rate was already treated at import time.
+            try:
+                rate = Decimal(fx_str) if fx_str else None
+            except Exception:
+                rate = None
+            if rate is None or rate < 0:
+                failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=fx_raw, error_reason="invalid_fx_rate"))
+                continue
+            txn_fx_rate = rate or None
 
         txn_payee = row[payee_col].strip() if payee_col and row.get(payee_col) else None
         txn_external_id = row[external_id_col].strip() if external_id_col and row.get(external_id_col) else None
         txn_notes = row[notes_col].strip() if notes_col and row.get(notes_col) else None
+
+        split_group = (row.get(split_group_col) or "").strip() if split_group_col else ""
+        split_index_raw = (row.get(split_index_col) or "").strip() if split_index_col else ""
+        if split_group and split_index_raw.isdigit():
+            split_keys[len(transactions)] = (split_group, int(split_index_raw))
 
         transactions.append(TransactionImport(
             description=row[desc_col].strip(),
@@ -727,7 +898,72 @@ def parse_csv(
             notes=txn_notes,
         ))
 
-    return transactions, failed_rows
+    return _collapse_split_groups(transactions, split_keys), failed_rows
+
+
+def _collapse_split_groups(
+    transactions: list[TransactionImport],
+    split_keys: dict[int, tuple[str, int]],
+) -> list[TransactionImport]:
+    """Put a split exported as one row per part back into one transaction.
+
+    A group collapses only when it is unambiguous: two or more rows with the
+    same `split_group`, distinct indexes, the same date, type, currency and
+    description, and a category on every part. Anything else imports row by
+    row, exactly as a file without the columns would, so a hand-edited CSV
+    never fails because of them.
+    """
+    if not split_keys:
+        return transactions
+    groups: dict[str, list[int]] = {}
+    for position, (group, _) in split_keys.items():
+        groups.setdefault(group, []).append(position)
+
+    merged_into: dict[int, TransactionImport] = {}
+    absorbed: set[int] = set()
+    for positions in groups.values():
+        rows = [transactions[p] for p in positions]
+        first = rows[0]
+        indexes = [split_keys[p][1] for p in positions]
+        if (
+            len(rows) < 2
+            or len(set(indexes)) != len(indexes)
+            # Everything but the category and amount is the transaction's
+            # own, so the parts of one export agree on it; rows that differ
+            # (a rate, a payee, a note, an id) are not one transaction.
+            or any(
+                (r.date, r.type, r.currency, r.description, r.fx_rate, r.payee_raw,
+                 r.notes, r.external_id)
+                != (first.date, first.type, first.currency, first.description, first.fx_rate,
+                    first.payee_raw, first.notes, first.external_id)
+                for r in rows
+            )
+            or any(not r.category_name for r in rows)
+        ):
+            continue
+        ordered = [p for _, p in sorted(zip(indexes, positions))]
+        parts = [transactions[p] for p in ordered]
+        try:
+            lines = [
+                ImportCategoryLine(category_name=part.category_name or "", amount=part.amount)
+                for part in parts
+            ]
+        except ValidationError:
+            # A part that is not a valid line (a zero amount): import the rows
+            # one by one instead of failing the whole preview.
+            continue
+        merged_into[ordered[0]] = first.model_copy(update={
+            "amount": sum((part.amount for part in parts), Decimal("0")),
+            "category_name": None,
+            "category_lines": lines,
+        })
+        absorbed.update(ordered[1:])
+
+    return [
+        merged_into.get(i, txn)
+        for i, txn in enumerate(transactions)
+        if i not in absorbed
+    ]
 
 
 async def enrich_with_category_suggestions(
@@ -758,11 +994,15 @@ async def enrich_with_category_suggestions(
         return transactions
 
     for txn in transactions:
+        if txn.category_lines:
+            # A split from an export keeps its own categories.
+            continue
         proxy: Transaction = Transaction(
             description=txn.description,
             amount=txn.amount,
             date=txn.date,
             type=txn.type,
+            status="posted",
             account_id=None,
             payee_id=None,
             notes=None,
@@ -862,11 +1102,16 @@ async def import_transactions(
         select(Category).where(Category.workspace_id == workspace_id)
     )
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
-    category_map = {
-        c.name.strip().lower(): c.id
-        for c in category_result.scalars()
-        if c.id in assignable_categories
-    }
+    assignable = [c for c in category_result.scalars() if c.id in assignable_categories]
+    category_map = {c.name.strip().lower(): c.id for c in assignable}
+    # Two categories sharing a name cannot be told apart from a CSV, so a
+    # split part naming one of them is not resolved (the row imports unsplit
+    # rather than putting money in a category the user did not mean).
+    seen_names: set[str] = set()
+    ambiguous_names: set[str] = set()
+    for c in assignable:
+        name = c.name.strip().lower()
+        (ambiguous_names if name in seen_names else seen_names).add(name)
 
     imported = 0
     landed: list[Transaction] = []
@@ -962,6 +1207,7 @@ async def import_transactions(
             amount=txn_data.amount,
             date=txn_data.date,
             type=txn_data.type,
+            status="posted",
             source=source,
             import_id=import_log.id,
             external_id=txn_data.external_id,
@@ -1011,7 +1257,35 @@ async def import_transactions(
             # wins, the charge only fills what is still empty, and only its
             # provenance is recorded outright.
             placeholder.original_description = txn_data.description
-            if placeholder.category_id is None:
+            if placeholder.amount != txn_data.amount or txn_data.fx_rate:
+                # Matched under a tolerance, or the file says what the charge
+                # cost in the primary currency: the row now stands for what was
+                # actually charged, not for what the bill expected.
+                expected_amount = placeholder.amount
+                placeholder.amount = txn_data.amount
+                if txn_data.fx_rate:
+                    placeholder.fx_rate_used = txn_data.fx_rate
+                    placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                else:
+                    await stamp_primary_amount(session, user_id, placeholder)
+                # A split placeholder keeps its split, resized.
+                await category_line_service.rescale_lines(session, placeholder, expected_amount)
+            placeholder_split = (
+                _import_split_payload(txn_data, category_map, ambiguous_names)
+                if placeholder.category_id is None and not placeholder.has_category_lines
+                else None
+            )
+            if placeholder_split is not None:
+                # An uncategorized placeholder takes the split the file
+                # carries, as a new row would.
+                try:
+                    async with session.begin_nested():
+                        await category_line_service.replace_lines(
+                            session, placeholder, placeholder_split
+                        )
+                except ValueError:
+                    await session.refresh(placeholder)
+            if placeholder.category_id is None and not placeholder.has_category_lines:
                 placeholder.category_id = preview.category_id
             if import_payee_raw and not placeholder.payee:
                 placeholder.payee = import_payee_raw
@@ -1055,14 +1329,29 @@ async def import_transactions(
         if recurring_link is not None:
             recurring_match_service.advance_past(recurring_link, txn_data.date)
 
+        split_payload = _import_split_payload(txn_data, category_map, ambiguous_names)
         await apply_rules_to_transaction(
             session,
             user_id,
             incoming,
-            skip_category_rules=txn_data.force_uncategorized,
+            # A split brought back from an export keeps its categories; rules
+            # never categorize a split row.
+            skip_category_rules=txn_data.force_uncategorized or split_payload is not None,
         )
-        if incoming.category_id is None and not txn_data.force_uncategorized:
-            incoming.category_id = csv_category_id
+        if split_payload is not None:
+            try:
+                async with session.begin_nested():
+                    await category_line_service.replace_lines(session, incoming, split_payload)
+            except ValueError:
+                # The parts no longer fit (an ignored category, a rule that
+                # ignored the row): keep the transaction, uncategorized.
+                await session.refresh(incoming)
+        elif incoming.category_id is None and not txn_data.force_uncategorized:
+            if recurring_link is not None:
+                # A split bill hands its parts to the charge it claims.
+                await category_line_service.apply_template_split(session, incoming, recurring_link)
+            if incoming.category_id is None and not incoming.has_category_lines:
+                incoming.category_id = csv_category_id
 
         if not txn_data.fx_rate:
             await stamp_primary_amount(session, user_id, incoming)
@@ -1196,3 +1485,35 @@ def normalize_amount(amount_str: str | None, decimal_separator: str | None = Non
         amount_str = amount_str.replace(',', '.')
 
     return f"-{amount_str}" if negative else amount_str
+
+
+def _import_split_payload(
+    txn_data: TransactionImport,
+    category_map: dict[str, uuid.UUID],
+    ambiguous_names: set[str],
+) -> TransactionCategoryLinesInput | None:
+    """The category split a CSV row carries, with categories resolved by
+    name, or None when it has none, or a category is missing here or shares
+    its name with another (the row then imports unsplit rather than
+    half-split or split into the wrong category)."""
+    lines: list[ImportCategoryLine] = txn_data.category_lines or []
+    if len(lines) < 2 or txn_data.force_uncategorized:
+        return None
+    names = [line.category_name.strip().lower() for line in lines]
+    if any(name in ambiguous_names for name in names):
+        return None
+    resolved = [category_map.get(name) for name in names]
+    if any(category_id is None for category_id in resolved):
+        return None
+    if len(set(resolved)) != len(resolved):
+        # Two parts in one category ("Food" and "food"): a split holds each
+        # category once.
+        return None
+    return TransactionCategoryLinesInput(
+        share_type="exact",
+        lines=[
+            TransactionCategoryLineInput(category_id=category_id, amount=line.amount)
+            for category_id, line in zip(resolved, lines)
+            if category_id is not None
+        ],
+    )

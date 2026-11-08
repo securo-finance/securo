@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from app.models.transaction_attachment import TransactionAttachment
     from app.models.transaction_split import TransactionSplit
     from app.models.goal import GoalAllocation
+    from app.models.transaction_category_line import TransactionCategoryLine
 
 
 class Transaction(Base):
@@ -106,6 +107,14 @@ class Transaction(Base):
     exclude_from_pnl: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # True while the amount is split across several categories, kept in
+    # `category_lines`. `category_id` is null for those rows, which every
+    # other path reads as "uncategorized"; this flag is how rules, sync and
+    # bulk edits tell the two apart without a subquery. Written only by
+    # category_line_service.
+    has_category_lines: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     # Link to the recurring bill this transaction fulfills (issue #116). Set when
     # a synced/imported/manual charge is matched to a recurring bill, or stamped
     # onto the placeholder generate_pending materializes. ON DELETE SET NULL: if
@@ -135,6 +144,15 @@ class Transaction(Base):
     goal_allocations: Mapped[list["GoalAllocation"]] = relationship(
         back_populates="transaction", passive_deletes="all", lazy="selectin"
     )
+    # Loaded with every transaction: an unsplit row costs one empty IN query,
+    # and any response that serializes a row needs its lines.
+    category_lines: Mapped[list["TransactionCategoryLine"]] = relationship(
+        back_populates="transaction",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="TransactionCategoryLine.position",
+        lazy="selectin",
+    )
 
     # Populated dynamically by the service (not DB columns).
     is_shared: bool = False
@@ -143,6 +161,10 @@ class Transaction(Base):
     parent_owner_name = cast(Optional[str], None)
     attachment_count: int = 0
     payee_name = cast(Optional[str], None)
+    running_balance = cast(Optional[float], None)
+    running_balance_primary = cast(Optional[float], None)
+    matched_amount = cast(Optional[Decimal], None)
+    matched_amount_primary = cast(Optional[Decimal], None)
 
 
 # Safety net: `effective_date` is NOT NULL. For non-CC transactions it always

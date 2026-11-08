@@ -210,6 +210,13 @@ _RUNTIME_GUARDRAIL = (
     "`description_contains` to `aggregate` rather than listing and "
     "summing. The only acceptable place to do arithmetic yourself is a "
     "single combine step on tool outputs (e.g. `1847 * 12` = 22164).\n"
+    "\n"
+    "8. A transaction can be split across several categories: "
+    "`category_lines` is set and `category_id` is null on purpose. It is "
+    "categorized, never call it 'uncategorized'; name its parts instead. "
+    "It cannot be re-categorized as a whole (`propose_categorize` skips it); "
+    "if the user asks to, say so and suggest changing its parts in the app. "
+    "Totals by category already count each part in its own category.\n"
 )
 
 
@@ -431,6 +438,9 @@ class AgentExecutor:
             logger.exception("provider resolution failed; falling back to legacy path")
             provider = _provider_for(agent)
             model = _model_for(agent)
+        # Some OpenAI-compatible backends route on a per-conversation
+        # session id; providers that support it read this as a header.
+        provider.session_id = str(conversation_id)
         if not model:
             yield ExecutorEvent(
                 type="error",

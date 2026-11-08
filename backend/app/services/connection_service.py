@@ -2,9 +2,10 @@ import hashlib
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Optional
+from typing import Literal, Optional
 
 from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -25,6 +26,7 @@ from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
 from app.models.transaction import Transaction
+from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
 from app.providers import get_provider
 from app.providers.base import (
@@ -34,13 +36,14 @@ from app.providers.base import (
     ProviderRateLimited,
     ProviderUserActionRequired,
     SessionExpiredError,
+    TransactionData,
 )
 from app.services import goal_allocation_service, oauth_state
 from app.services import admin_service
-from app.services import reconciliation_service, recurring_match_service
+from app.services import category_line_service, reconciliation_service, recurring_match_service
 from app.services.text_similarity import token_overlap
 from app.services.account_service import (
-    _simplefin_to_internal_balance,
+    _provider_to_internal_balance,
     sync_opening_balance_for_connected_account,
 )
 from app.services.asset_group_service import (
@@ -246,13 +249,241 @@ def _sync_assets_enabled(settings: Optional[dict]) -> bool:
     return (settings or {}).get("sync_assets", True) is not False
 
 
+def _account_balance(acc_data: AccountData, deducted: set[str]) -> Decimal:
+    """Balance to store for a synced account.
+
+    Some banks auto-apply idle cash to an investment and the provider reports
+    that money both inside the account balance and as a holding (issue #843).
+    The invested portion leaves the account balance only for the accounts in
+    ``deducted`` (see ``_auto_invested_deductions``); every other account
+    keeps the full reported balance so the money is never dropped from net
+    worth.
+    """
+    if acc_data.external_id not in deducted or acc_data.auto_invested_balance <= 0:
+        return acc_data.balance
+    return acc_data.balance - acc_data.auto_invested_balance
+
+
+async def _fetch_holdings(
+    connection: BankConnection, credentials: dict
+) -> Optional[list[HoldingData]]:
+    """Fetch the connection's holdings, or None when the provider call fails.
+
+    Provider-side failures are tolerated (not every connector exposes
+    investment data, and a brokerage hiccup must not break the bank-account
+    sync), so they are logged and reported as None.
+    """
+    try:
+        provider = get_provider(connection.provider)
+        return await provider.get_holdings(credentials)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Failed to fetch holdings for connection %s", connection.id
+        )
+        return None
+
+
+@dataclass(frozen=True)
+class _CountedHolding:
+    """A holding that stays counted in net worth after this sync."""
+
+    account_external_id: Optional[str]  # None: not attributable to an account
+    value: Decimal
+    currency: str
+
+
+def _provider_sell_date_reverts(asset: Asset) -> bool:
+    """Whether a live payload clears this asset's sell date.
+
+    Only a sell date the sync itself set for a provider withdrawal
+    (TOTAL_WITHDRAWAL) is reversible; a date the user entered stays.
+    """
+    if asset.sell_date is None:
+        return False
+    metadata = asset.external_metadata or {}
+    return (
+        str(metadata.get("status") or "").upper() == "TOTAL_WITHDRAWAL"
+        and metadata.get(_PROVIDER_SELL_DATE_METADATA_KEY)
+        == asset.sell_date.isoformat()
+    )
+
+
+def _stays_counted(existing: Optional[Asset], connection_id: uuid.UUID) -> bool:
+    """Whether a live holding leaves its asset counted after ``_sync_holdings``.
+
+    Mirrors what the assets sync keeps: a user-set sell date survives, and
+    an archived asset is only unarchived when the holding moved to another
+    connection.
+    """
+    if existing is None:
+        return True
+    if existing.sell_date is not None and not _provider_sell_date_reverts(existing):
+        return False
+    return not (existing.is_archived and existing.connection_id == connection_id)
+
+
+async def _counted_holdings(
+    session: AsyncSession,
+    connection: BankConnection,
+    holdings: Optional[list[HoldingData]],
+    accounts_data: list[AccountData],
+) -> list[_CountedHolding]:
+    """Holdings this sync leaves counted in net worth, with their owners.
+
+    A fetched payload decides on its own: withdrawn positions are not
+    counted, and neither are positions whose stored asset the user sold or
+    archived, since the assets sync keeps that state. Without a payload
+    (asset sync disabled, or the fetch failed) the assets sync does not run
+    and whatever it stored last stays in place, so the answer comes from
+    the database: every live (not archived, not sold) asset this
+    connection's holdings sync owns, at its latest stored value. Its owner
+    is read back from the per-account wallet the sync put it in; any other
+    wallet means unattributed.
+    """
+    if holdings is not None:
+        live = [h for h in holdings if not h.is_withdrawn]
+        if not live:
+            return []
+        existing_by_external = {
+            asset.external_id: asset
+            for asset in (
+                await session.scalars(
+                    select(Asset).where(
+                        Asset.workspace_id == connection.workspace_id,
+                        Asset.source == connection.provider,
+                        Asset.external_id.in_([h.external_id for h in live]),
+                    )
+                )
+            ).all()
+        }
+        return [
+            _CountedHolding(h.account_external_id, h.current_value, h.currency)
+            for h in live
+            if _stays_counted(existing_by_external.get(h.external_id), connection.id)
+        ]
+
+    latest_value = (
+        select(AssetValue.amount)
+        .where(AssetValue.asset_id == Asset.id)
+        .order_by(AssetValue.date.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    rows = (
+        await session.execute(
+            select(AssetGroup.external_id, latest_value, Asset.currency)
+            .select_from(Asset)
+            .outerjoin(AssetGroup, Asset.group_id == AssetGroup.id)
+            .where(
+                Asset.workspace_id == connection.workspace_id,
+                Asset.source == connection.provider,
+                Asset.connection_id == connection.id,
+                Asset.external_id.is_not(None),
+                Asset.is_archived.is_(False),
+                Asset.sell_date.is_(None),
+            )
+        )
+    ).all()
+    account_by_wallet = {
+        _wallet_external_id(connection.external_id, acc.external_id): acc.external_id
+        for acc in accounts_data
+        if acc.external_id
+    }
+    return [
+        _CountedHolding(
+            account_by_wallet.get(key) if key else None,
+            Decimal(value) if value is not None else Decimal(0),
+            currency,
+        )
+        for key, value, currency in rows
+    ]
+
+
+# How far an unattributed holding's value may sit from an account's
+# auto-invested balance and still count as the same money: the larger of
+# 1% and 1.00 in the account currency. The two figures come from different
+# provider endpoints and can drift by a day's yield.
+_AUTO_INVEST_MATCH_RELATIVE = Decimal("0.01")
+_AUTO_INVEST_MATCH_ABSOLUTE = Decimal("1")
+
+
+def _mirrors_auto_invested(holding: _CountedHolding, acc: AccountData) -> bool:
+    """Whether an unattributed holding looks like this account's auto-invested money."""
+    if holding.currency != acc.currency:
+        return False
+    tolerance = max(
+        acc.auto_invested_balance * _AUTO_INVEST_MATCH_RELATIVE,
+        _AUTO_INVEST_MATCH_ABSOLUTE,
+    )
+    return abs(holding.value - acc.auto_invested_balance) <= tolerance
+
+
+def _auto_invested_deductions(
+    accounts_data: list[AccountData], counted: list[_CountedHolding]
+) -> set[str]:
+    """External ids of the accounts whose auto-invested portion is deducted.
+
+    The deduction is per account: an account loses its auto-invested portion
+    only when a counted holding is attributed to that same account, never
+    because some other account of the connection has one.
+
+    Holdings without an owning account (Pluggy's investments payload carries
+    the item but no account id, so this is the normal case there) cannot say
+    which account they came from, or whether they are the auto-invested
+    money at all (the same item can hold unrelated investments). Deducting
+    on a guess would understate net worth, so an unattributed holding only
+    allows the deduction when both hold:
+
+    - exactly one account of the connection reports an auto-invested
+      balance, so it is the only account the holding can mirror;
+    - the holding's value matches that balance, in the same currency,
+      within the tolerance above (in the case of issue #843 the two figures
+      were identical).
+
+    Otherwise the account keeps the full reported balance, which can count
+    the money twice but never drops it.
+    """
+    candidates = [acc for acc in accounts_data if acc.auto_invested_balance > 0]
+    owners = {h.account_external_id for h in counted}
+    deducted = {acc.external_id for acc in candidates if acc.external_id in owners}
+    if len(candidates) == 1:
+        only = candidates[0]
+        if any(
+            h.account_external_id is None and _mirrors_auto_invested(h, only)
+            for h in counted
+        ):
+            deducted.add(only.external_id)
+    return deducted
+
+
+async def _resolve_auto_invested_deductions(
+    session: AsyncSession,
+    connection: BankConnection,
+    holdings: Optional[list[HoldingData]],
+    accounts_data: list[AccountData],
+) -> set[str]:
+    """Accounts whose auto-invested portion leaves the stored balance.
+
+    Skips the database lookup when no account reports an auto-invested
+    portion, which is every connection but the affected ones.
+    """
+    if not any(acc.auto_invested_balance > 0 for acc in accounts_data):
+        return set()
+    counted = await _counted_holdings(session, connection, holdings, accounts_data)
+    return _auto_invested_deductions(accounts_data, counted)
+
+
 async def _sync_holdings(
     session: AsyncSession,
     user_id: uuid.UUID,
     connection: BankConnection,
     credentials: dict,
+    holdings: Optional[list[HoldingData]] = None,
 ) -> None:
     """Fetch investment holdings from the provider and upsert them as Assets.
+
+    ``holdings`` lets a caller pass a payload it already fetched with
+    ``_fetch_holdings``; when omitted the provider is called here.
 
     Each holding becomes one Asset (type="investment") keyed by
     (workspace_id, source, external_id). Every sync appends an AssetValue row
@@ -267,18 +498,10 @@ async def _sync_holdings(
     investment data, and we don't want a brokerage hiccup to break the
     bank-account sync that just succeeded.
     """
-    # Tolerate provider-side failures (e.g. Pluggy returning 500 for a
-    # specific connector, a bank that doesn't expose /investments).
-    # Storage errors below are intentionally not caught — they indicate
-    # a schema/invariant bug we want to surface, not a hiccup to swallow.
-    try:
-        provider = get_provider(connection.provider)
-        holdings = await provider.get_holdings(credentials)
-    except Exception:  # noqa: BLE001
-        logger.exception(
-            "Failed to fetch holdings for connection %s", connection.id
-        )
-        return
+    if holdings is None:
+        holdings = await _fetch_holdings(connection, credentials)
+        if holdings is None:
+            return
 
     source = connection.provider
     today = app_today()
@@ -583,15 +806,7 @@ async def _sync_holdings(
         # is needed to distinguish TOTAL_WITHDRAWAL -> ACTIVE from a manually
         # entered sell date. Manual dates remain authoritative when there was
         # no provider withdrawal transition.
-        previous_metadata = existing.external_metadata or {} if existing is not None else {}
-        previous_provider_status = str(previous_metadata.get("status") or "").upper()
-        provider_sell_date = previous_metadata.get(_PROVIDER_SELL_DATE_METADATA_KEY)
-        if (
-            existing is not None
-            and existing.sell_date is not None
-            and previous_provider_status == "TOTAL_WITHDRAWAL"
-            and provider_sell_date == existing.sell_date.isoformat()
-        ):
+        if existing is not None and _provider_sell_date_reverts(existing):
             existing.sell_date = None
 
         asset = await _upsert_asset_from_holding(
@@ -848,11 +1063,55 @@ async def _match_pluggy_category(
     return result.scalars().first()
 
 
+def _bank_converted_amount(
+    txn_data: TransactionData, account_currency: str, user_currency: str
+) -> Optional[Decimal]:
+    """The bank's own conversion of a foreign charge into the primary currency.
+
+    Only when the account is held in the primary currency, so the figure the
+    bank charged the account is the primary amount. None otherwise.
+    """
+    if (
+        txn_data.amount_in_account_currency is not None
+        and txn_data.amount
+        and account_currency == user_currency
+        and txn_data.currency != account_currency
+    ):
+        return txn_data.amount_in_account_currency
+    return None
+
+
+async def _stamp_synced_primary_amount(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    transaction: Transaction,
+    converted: Optional[Decimal],
+) -> None:
+    """Prefer the bank's conversion (see _bank_converted_amount); else use our FX rates.
+
+    The transaction's amount must already be the charged amount.
+    """
+    if converted is not None:
+        transaction.amount_primary = converted
+        transaction.fx_rate_used = converted / transaction.amount
+    else:
+        await stamp_primary_amount(session, user_id, transaction)
+
+
 async def _find_installment_category(
     session: AsyncSession,
     account_id: uuid.UUID,
     txn_data,
 ) -> Optional[uuid.UUID]:
+    source = await _find_installment_source(session, account_id, txn_data)
+    return source.category_id if source is not None else None
+
+
+async def _find_installment_source(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    txn_data,
+) -> Optional[Transaction]:
     """Reuse the latest user-selected category from an earlier installment.
 
     Pluggy gives every parcel the original purchase date, installment count,
@@ -862,7 +1121,8 @@ async def _find_installment_category(
 
     Only earlier synced parcels qualify. This keeps manual installment series
     separate and lets a user's most recent category correction become the
-    source of truth for the next imported parcel.
+    source of truth for the next imported parcel. A split parcel hands on its
+    parts (see `_find_installment_source`).
     """
     if (
         txn_data.installment_number is None
@@ -873,11 +1133,16 @@ async def _find_installment_category(
         return None
 
     result = await session.execute(
-        select(Transaction.category_id)
+        select(Transaction)
         .where(
             Transaction.account_id == account_id,
             Transaction.source == "sync",
-            Transaction.category_id.is_not(None),
+            # A split parcel counts as the latest choice too, and hands on its
+            # parts rather than letting an older parcel's category win.
+            or_(
+                Transaction.category_id.is_not(None),
+                Transaction.has_category_lines.is_(True),
+            ),
             Transaction.installment_purchase_date == txn_data.installment_purchase_date,
             Transaction.total_installments == txn_data.total_installments,
             Transaction.installment_total_amount == txn_data.installment_total_amount,
@@ -1075,6 +1340,19 @@ async def handle_oauth_callback(
         existing_reconnect.status = "active"
         # Re-sync from current data on next sync cycle.
         existing_reconnect.last_sync_at = None
+        # New credentials end a backoff earned by failing ones, so the next
+        # cycle syncs it. A rate-limit backoff stays: the bank's quota is the
+        # same whatever the credentials.
+        reconnect_settings = existing_reconnect.settings or {}
+        backoff = reconnect_settings.get(SYNC_BACKOFF_KEY)
+        if backoff is not None and not (
+            isinstance(backoff, dict) and backoff.get("rate_limited") is True
+        ):
+            existing_reconnect.settings = {
+                key: value
+                for key, value in reconnect_settings.items()
+                if key != SYNC_BACKOFF_KEY
+            }
         await session.commit()
         await session.refresh(existing_reconnect)
         return existing_reconnect
@@ -1107,6 +1385,17 @@ async def handle_oauth_callback(
 
     use_provider_cats = await admin_service.use_provider_categories(session)
 
+    # Holdings are fetched before the accounts so each account balance knows
+    # whether its auto-invested portion is counted as an asset (issue #843).
+    # Without a payload (asset sync off or a failed fetch) the deduction is
+    # decided from the live synced assets already stored.
+    holdings: Optional[list[HoldingData]] = None
+    if _sync_assets_enabled(connection.settings):
+        holdings = await _fetch_holdings(connection, connection_data.credentials)
+    auto_invested_deducted = await _resolve_auto_invested_deductions(
+        session, connection, holdings, connection_data.accounts
+    )
+
     institution_cache: dict[str, Institution] = {}
     for acc_data in connection_data.accounts:
         is_cc = acc_data.type == "credit_card"
@@ -1122,7 +1411,7 @@ async def handle_oauth_callback(
             display_name=institution.name if institution else None,
             masked_number=acc_data.masked_number,
             type=acc_data.type,
-            balance=acc_data.balance,
+            balance=_account_balance(acc_data, auto_invested_deducted),
             currency=acc_data.currency,
             credit_limit=acc_data.credit_limit if is_cc else None,
             statement_close_day=acc_data.statement_close_day if is_cc else None,
@@ -1193,9 +1482,17 @@ async def handle_oauth_callback(
                     )
                 continue
 
-            category_id = await _find_installment_category(
+            installment_source = await _find_installment_source(
                 session, account.id, txn_data
             )
+            category_id = installment_source.category_id if installment_source else None
+            # The previous parcel was split: this one starts with the same parts.
+            split_source = (
+                installment_source
+                if installment_source is not None and installment_source.has_category_lines
+                else None
+            )
+            recurring_link_for_split = None
             if category_id is None:
                 category_id = await _match_pluggy_category(
                     session,
@@ -1242,25 +1539,30 @@ async def handle_oauth_callback(
             apply_effective_date(
                 transaction, account, bill_due_date=bill.due_date if bill else None
             )
+            if split_source is not None:
+                category_line_service.copy_lines_to(transaction, split_source.category_lines)
             session.add(transaction)
             await session.flush()
             new_tx_ids.append(transaction.id)
-            await apply_rules_to_transaction(session, user_id, transaction)
-            if transaction.category_id is None:
+            await apply_rules_to_transaction(
+                session, user_id, transaction,
+                skip_category_rules=split_source is not None,
+            )
+            if recurring_link_for_split is not None:
+                # A split bill hands its parts to the charge it claims.
+                await category_line_service.apply_template_split(
+                    session, transaction, recurring_link_for_split
+                )
+            if transaction.category_id is None and not transaction.has_category_lines:
                 transaction.category_id = category_id
 
-            # Prefer bank-provided conversion for international transactions
             acct_currency = acc_data.currency or user_currency
-            if (
-                txn_data.amount_in_account_currency is not None
-                and txn_data.amount
-                and acct_currency == user_currency
-                and txn_data.currency != acct_currency
-            ):
-                transaction.amount_primary = txn_data.amount_in_account_currency
-                transaction.fx_rate_used = txn_data.amount_in_account_currency / txn_data.amount
-            else:
-                await stamp_primary_amount(session, user_id, transaction)
+            await _stamp_synced_primary_amount(
+                session,
+                user_id,
+                transaction,
+                _bank_converted_amount(txn_data, acct_currency, user_currency),
+            )
 
         # After importing the initial batch, reconcile the opening balance so
         # that SUM(all transactions) matches the provider-reported balance. Any
@@ -1285,10 +1587,13 @@ async def handle_oauth_callback(
         await reconciliation_service.match_incoming(session, workspace_id, landed)
 
     # Investment holdings live on /investments — separate endpoint from
-    # /accounts. Pulled after account setup when enabled so holdings are
-    # available on the Assets page immediately after the widget closes.
-    if _sync_assets_enabled(connection.settings):
-        await _sync_holdings(session, user_id, connection, connection_data.credentials)
+    # /accounts. Fetched before the account loop and stored here once the
+    # accounts exist, so holdings are available on the Assets page
+    # immediately after the widget closes.
+    if holdings is not None:
+        await _sync_holdings(
+            session, user_id, connection, connection_data.credentials, holdings
+        )
 
     connection.last_sync_at = datetime.now(timezone.utc)
     await session.commit()
@@ -1311,6 +1616,7 @@ async def _find_existing_connected_account(
     acc_data: AccountData,
     institution: Optional[Institution],
     incoming_external_ids: set[str],
+    incoming_institution_external_ids: frozenset[str] = frozenset(),
 ) -> Optional[Account]:
     """Find an existing account for incoming provider account data.
 
@@ -1326,8 +1632,58 @@ async def _find_existing_connected_account(
         )
     )
     account = result.scalar_one_or_none()
-    if account or connection.provider != "simplefin":
+    if account is not None:
         return account
+
+    # The provider re-keyed this account. Enable Banking issues a `uid` scoped to
+    # one session, so reauthorising changes it while `stable_external_id` (the
+    # identification_hash) survives. Rebind the existing row, keeping its
+    # transactions, rules and name overrides, instead of inserting a duplicate.
+    # EB does not guarantee the hash is unique, so require exactly one unclaimed
+    # candidate: a row another incoming account already took in this run carries
+    # an external_id that is in the batch, and adopting it a second time would
+    # put both transaction feeds on one account.id.
+    if acc_data.stable_external_id:
+        stable_rows = (await session.execute(
+            select(Account).where(
+                Account.connection_id == connection.id,
+                Account.stable_external_id == acc_data.stable_external_id,
+            )
+        )).scalars().all()
+        stable_rows = [
+            row for row in stable_rows if row.external_id not in incoming_external_ids
+        ]
+        if len(stable_rows) > 1:
+            return None
+        if len(stable_rows) == 1:
+            stable_rows[0].external_id = acc_data.external_id
+            return stable_rows[0]
+
+    # Last resort for rows that predate `stable_external_id` (added by migration
+    # 097, and only ever backfilled by a *successful* sync, which a user whose
+    # bank was failing never had). The masked identifier is the closest thing to
+    # an account number we keep. Two guards, both fail-closed: a single candidate
+    # (a shared last-4 must never merge two accounts), and candidates limited to
+    # rows with no stable id: a row that is already identified is a different
+    # account, so adopting it would overwrite its identity and mix histories.
+    if connection.provider == "enable_banking" and acc_data.masked_number:
+        masked_rows = (await session.execute(
+            select(Account).where(
+                Account.connection_id == connection.id,
+                Account.masked_number == acc_data.masked_number,
+                Account.currency == acc_data.currency,
+                Account.stable_external_id.is_(None),
+            )
+        )).scalars().all()
+        masked_rows = [
+            row for row in masked_rows if row.external_id not in incoming_external_ids
+        ]
+        if len(masked_rows) == 1:
+            masked_rows[0].external_id = acc_data.external_id
+            return masked_rows[0]
+
+    if connection.provider != "simplefin":
+        return None
 
     normalized_name = _normalized_account_name(acc_data.name)
     if not normalized_name:
@@ -1350,6 +1706,29 @@ async def _find_existing_connected_account(
             candidate for candidate in candidates
             if candidate.institution_id == institution.id
         ]
+        if not matched_institution and candidates:
+            # Re-linking a bank in SimpleFIN Bridge can send it under a new
+            # conn_id, so _resolve_institution just minted a fresh row while
+            # the account still points at the old, same-named one.
+            #
+            # Only a conn_id this pull no longer carries can have been
+            # re-linked. A bank still listed under its own conn_id was not,
+            # so a same-named one arriving beside it is a second login at
+            # that bank (SimpleFIN has no account number to tell them apart,
+            # and two logins at one bank share its name). Adopting its
+            # account would point the user's existing row, display name and
+            # history at the other login's feed.
+            same_name_ids = set((await session.execute(
+                select(Institution.id).where(
+                    Institution.connection_id == connection.id,
+                    Institution.name == institution.name,
+                    Institution.external_id.not_in(incoming_institution_external_ids),
+                )
+            )).scalars().all())
+            matched_institution = [
+                candidate for candidate in candidates
+                if candidate.institution_id in same_name_ids
+            ]
         if matched_institution:
             candidates = matched_institution
         else:
@@ -1565,6 +1944,72 @@ async def _find_synced_duplicate(
             ):
                 return candidate
 
+    # Path 4: Enable Banking re-key. Its id hashes the entry_reference with
+    # the payload, so a richer remittance text or a settled date on a later
+    # fetch changes the id of a row we already hold. The reference is not
+    # unique on its own (#753), so it must also agree on amount and type
+    # within a few days, and the old id must have dropped out of this batch:
+    # a sibling sharing the reference that is still returned is its own
+    # transaction. More than one candidate is ambiguous, so none is chosen.
+    # A pending fetch never takes over a booked row.
+    #
+    # Some institutions return a booked row with no entry_reference on the day
+    # it books and fill one in ("2026-11-03.1") on a later fetch. The first
+    # copy was keyed by the payload fingerprint and the second by the
+    # reference, so the held row carries no reference to compare. Such a row
+    # is the same transaction only when it is a synced row that also agrees on
+    # the currency, date, status and description, no row holding the reference
+    # itself competes, and it is the single candidate: two identical purchases
+    # on one day are ambiguous, and picking one would hang its category and
+    # notes on the other.
+    entry_ref = raw.get("entry_reference")
+    entry_ref = entry_ref.strip() if isinstance(entry_ref, str) else ""
+    if entry_ref and entry_ref != "0":
+        statement = select(Transaction).where(
+            Transaction.account_id == account_id,
+            or_(
+                Transaction.source == "sync",
+                Transaction.source.in_(LOCAL_IMPORT_SOURCES),
+            ),
+            Transaction.raw_data.is_not(None),
+            Transaction.date >= txn_data.date - timedelta(days=3),
+            Transaction.date <= txn_data.date + timedelta(days=3),
+            Transaction.amount == txn_data.amount,
+            Transaction.type == txn_data.type,
+            Transaction.external_id != txn_data.external_id,
+        )
+        if txn_data.status == "pending":
+            statement = statement.where(Transaction.status == "pending")
+        result = await session.execute(statement)
+        rekey_matches = []
+        late_ref_matches = []
+        for candidate in result.scalars():
+            if candidate.external_id in incoming_external_ids:
+                continue
+            if not isinstance(candidate.raw_data, dict):
+                continue
+            candidate_ref = candidate.raw_data.get("entry_reference")
+            if isinstance(candidate_ref, str):
+                candidate_ref = candidate_ref.strip()
+            if candidate_ref == entry_ref:
+                rekey_matches.append(candidate)
+            elif (
+                candidate_ref in (None, "", "0")
+                and candidate.source == "sync"
+                and candidate.currency == txn_data.currency
+                and candidate.date == txn_data.date
+                and candidate.status == txn_data.status
+                and token_overlap(
+                    candidate.original_description or candidate.description,
+                    txn_data.description,
+                ) >= 0.9
+            ):
+                late_ref_matches.append(candidate)
+        if len(rekey_matches) == 1:
+            return rekey_matches[0]
+        if not rekey_matches and len(late_ref_matches) == 1:
+            return late_ref_matches[0]
+
     # Path 5: local import history from before the account was connected.
     # Posting lag and statement exports can shift the date or shorten the
     # merchant description, so accept only one exact normalized merchant/payee.
@@ -1581,6 +2026,8 @@ async def _find_synced_duplicate(
 async def _cleanup_phantom_duplicates(
     session: AsyncSession,
     connection_id: uuid.UUID,
+    live_external_ids: Optional[dict[uuid.UUID, set[str]]] = None,
+    skip_account_ids: Optional[set[uuid.UUID]] = None,
 ) -> set[uuid.UUID]:
     """Delete synced transactions that are phantom duplicates.
 
@@ -1595,13 +2042,30 @@ async def _cleanup_phantom_duplicates(
     us distinguish the duplicate from a legitimate same-day repeat (e.g. two
     real Uber rides for the same fare).
 
+    ``live_external_ids`` maps an account id to the transaction ids the
+    provider returned for it in this sync. For an account in that map, a
+    sibling with a different id marks the tx as a phantom only when exactly
+    one of the two ids is still returned, which is what a re-keyed twin looks
+    like. Both ids returned means two real payments (e.g. two same-day Pix of
+    the same amount, #1038). Neither returned means the rows have left the
+    provider's fetch window, so this sync has no evidence about them, and they
+    were already checked while they were in it.
+
+    ``skip_account_ids`` are accounts whose fetch this sync was cut short
+    (e.g. an authorization failure mid-window). Their live set is partial,
+    so a row from the missing part would look like a re-keyed twin of a
+    returned sibling; they are left alone until a complete fetch.
+
     Returns the ids of the accounts that lost a row, so the caller can
     reconcile their opening balances against what is left.
     """
     accounts_result = await session.execute(
         select(Account.id).where(Account.connection_id == connection_id)
     )
-    account_ids = [row[0] for row in accounts_result.all()]
+    account_ids = [
+        row[0] for row in accounts_result.all()
+        if row[0] not in (skip_account_ids or set())
+    ]
     if not account_ids:
         return set()
 
@@ -1616,6 +2080,7 @@ async def _cleanup_phantom_duplicates(
 
     touched: set[uuid.UUID] = set()
     for tx in unmatched:
+        live = (live_external_ids or {}).get(tx.account_id)
         date_lo = tx.date - timedelta(days=1)
         date_hi = tx.date + timedelta(days=1)
         sibling_result = await session.execute(
@@ -1631,6 +2096,12 @@ async def _cleanup_phantom_duplicates(
             )
         )
         for sibling in sibling_result.scalars():
+            if (
+                live is not None
+                and tx.external_id != sibling.external_id
+                and (tx.external_id in live) == (sibling.external_id in live)
+            ):
+                continue
             if token_overlap(
                 sibling.original_description or sibling.description,
                 tx.original_description or tx.description,
@@ -1879,13 +2350,29 @@ async def _sync_credit_card_bills(
     return by_external_id
 
 
+# Outcome of a sync that completed without raising, reported to the caller
+# so the UI can tell "data read" from "the provider throttled us and nothing
+# was pulled" (issue #736). "refreshed" covers the normal path (the data may
+# be the provider's cached copy; whether a fresh pull happened is the
+# provider's own semantics). "rate_limited" means the provider returned a
+# 429: nothing was pulled and last_sync_at was left untouched so the next
+# sync retries the same window. Errors (expired session, user action
+# required, generic failure) still propagate as exceptions.
+SyncOutcome = Literal["refreshed", "rate_limited"]
+
+# Key in BankConnection.settings where the scheduler keeps its backoff state
+# for connections whose scheduled syncs keep failing (app.tasks.sync_tasks).
+# Any successful sync clears it, so a manual sync that works ends the backoff.
+SYNC_BACKOFF_KEY = "sync_backoff"
+
+
 async def sync_connection(
     session: AsyncSession,
     connection_id: uuid.UUID,
     workspace_id: uuid.UUID,
     requesting_user_id: uuid.UUID,
     trigger_provider_refresh: bool = False,
-) -> tuple[BankConnection, int]:
+) -> tuple[BankConnection, int, SyncOutcome]:
     connection = await get_connection(
         session, connection_id, workspace_id, for_update=True
     )
@@ -1972,8 +2459,25 @@ async def sync_connection(
         user_currency = user.primary_currency if user else get_settings().default_currency
         new_tx_ids: list[uuid.UUID] = []
         merged_count = 0
+        live_txn_external_ids: dict[uuid.UUID, set[str]] = {}
+        incomplete_fetch_account_ids: set[uuid.UUID] = set()
         accounts_data = await provider.get_accounts(credentials)
         incoming_external_ids = {acc.external_id for acc in accounts_data}
+        incoming_institution_external_ids = frozenset(
+            acc.institution_external_id
+            for acc in accounts_data
+            if acc.institution_external_id
+        )
+        # Holdings are fetched before the accounts so each account balance
+        # knows whether its auto-invested portion is counted as an asset
+        # (issue #843). Without a payload (asset sync off or a failed fetch)
+        # the deduction is decided from the live synced assets already stored.
+        holdings: Optional[list[HoldingData]] = None
+        if _sync_assets_enabled(conn_settings):
+            holdings = await _fetch_holdings(connection, credentials)
+        auto_invested_deducted = await _resolve_auto_invested_deductions(
+            session, connection, holdings, accounts_data
+        )
         institution_cache: dict[str, Institution] = {}
         for acc_data in accounts_data:
             institution = await _resolve_institution(
@@ -1985,6 +2489,7 @@ async def sync_connection(
                 acc_data,
                 institution,
                 incoming_external_ids,
+                incoming_institution_external_ids,
             )
 
             if account is not None:
@@ -1997,6 +2502,18 @@ async def sync_connection(
                         Transaction.source == "sync",
                     )
                     .values(user_id=user_id, workspace_id=connection.workspace_id)
+                )
+                await session.execute(
+                    update(TransactionCategoryLine)
+                    .where(
+                        TransactionCategoryLine.transaction_id.in_(
+                            select(Transaction.id).where(
+                                Transaction.account_id == account.id,
+                                Transaction.source == "sync",
+                            )
+                        )
+                    )
+                    .values(workspace_id=connection.workspace_id)
                 )
                 await session.execute(
                     update(CreditCardBill)
@@ -2023,9 +2540,12 @@ async def sync_connection(
                 # SimpleFIN reports card debt as negative under a "checking"
                 # label; once the user overrides the type to credit_card the
                 # downstream sites negate it, so store positive-for-debt to keep
-                # them provider-agnostic and avoid double-counting.
-                account.balance = _simplefin_to_internal_balance(
-                    connection.provider, account.type, acc_data.balance
+                # them provider-agnostic and avoid double-counting. A loan reads
+                # the same way whatever the provider called the account.
+                account.balance = _provider_to_internal_balance(
+                    connection.provider,
+                    account.type,
+                    _account_balance(acc_data, auto_invested_deducted),
                 )
                 account.name = acc_data.name
                 # Backfills existing accounts on their next sync. Only written
@@ -2033,6 +2553,11 @@ async def sync_connection(
                 # that intermittently omits it can't blank out a known mask.
                 if acc_data.masked_number is not None:
                     account.masked_number = acc_data.masked_number
+                # Backfills existing accounts on their next sync, same rule as
+                # masked_number: provider-owned, and a payload that omits it
+                # must not blank a value that is already known.
+                if acc_data.stable_external_id is not None:
+                    account.stable_external_id = acc_data.stable_external_id
                 # Backfills existing accounts on next sync (issue #345).
                 if institution is not None:
                     account.institution_id = institution.id
@@ -2071,11 +2596,16 @@ async def sync_connection(
                     workspace_id=workspace_id,
                     connection_id=connection.id,
                     external_id=acc_data.external_id,
+                    stable_external_id=acc_data.stable_external_id,
                     name=acc_data.name,
                     display_name=institution.name if institution else None,
                     masked_number=acc_data.masked_number,
                     type=acc_data.type,
-                    balance=acc_data.balance,
+                    balance=_provider_to_internal_balance(
+                        connection.provider,
+                        acc_data.type,
+                        _account_balance(acc_data, auto_invested_deducted),
+                    ),
                     currency=acc_data.currency,
                     credit_limit=acc_data.credit_limit if is_cc else None,
                     statement_close_day=acc_data.statement_close_day if is_cc else None,
@@ -2113,6 +2643,14 @@ async def sync_connection(
                 credentials, acc_data.external_id, since, payee_source=payee_source
             )
 
+            # Every id the provider returned, pending ones included, so the
+            # phantom cleanup still sees a pending row the filter below skips.
+            live_txn_external_ids[account.id] = {
+                txn.external_id for txn in transactions_data
+            }
+            incomplete = getattr(provider, "incomplete_account_ids", None)
+            if isinstance(incomplete, set) and acc_data.external_id in incomplete:
+                incomplete_fetch_account_ids.add(account.id)
             if not import_pending:
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
@@ -2218,9 +2756,21 @@ async def sync_connection(
                 incoming_currency = (
                     txn_data.currency or acc_data.currency or user_currency
                 )
-                category_id = await _find_installment_category(
+                acct_currency = acc_data.currency or user_currency
+                converted = _bank_converted_amount(
+                    txn_data, acct_currency, user_currency
+                )
+                installment_source = await _find_installment_source(
                     session, account.id, txn_data
                 )
+                category_id = installment_source.category_id if installment_source else None
+                # The previous parcel was split: this one starts with the same parts.
+                split_source = (
+                    installment_source
+                    if installment_source is not None and installment_source.has_category_lines
+                    else None
+                )
+                recurring_link_for_split = None
                 if category_id is None:
                     category_id = await _match_pluggy_category(
                         session,
@@ -2272,6 +2822,8 @@ async def sync_connection(
                     account,
                     bill_due_date=bill.due_date if bill else None,
                 )
+                if split_source is not None:
+                    category_line_service.copy_lines_to(transaction, split_source.category_lines)
                 preview = await preview_rules_for_transaction(
                     session, user_id, transaction
                 )
@@ -2305,7 +2857,21 @@ async def sync_connection(
                     # win, the charge fills the empty ones, and only its
                     # provenance is recorded outright.
                     placeholder.original_description = txn_data.description
-                    if placeholder.category_id is None:
+                    if placeholder.amount != txn_data.amount or converted is not None:
+                        # Matched under a tolerance, or the bank said what the
+                        # charge cost in the primary currency: the row now
+                        # stands for what was actually charged, not for what
+                        # the bill expected.
+                        expected_amount = placeholder.amount
+                        placeholder.amount = txn_data.amount
+                        await _stamp_synced_primary_amount(
+                            session, user_id, placeholder, converted
+                        )
+                        # A split placeholder keeps its split, resized.
+                        await category_line_service.rescale_lines(
+                            session, placeholder, expected_amount
+                        )
+                    if placeholder.category_id is None and not placeholder.has_category_lines:
                         placeholder.category_id = preview.category_id or category_id
                     if txn_data.payee and not placeholder.payee:
                         placeholder.payee = txn_data.payee
@@ -2334,6 +2900,7 @@ async def sync_connection(
                 transaction.recurring_transaction_id = (
                     recurring_link.id if recurring_link else None
                 )
+                recurring_link_for_split = recurring_link
                 session.add(transaction)
                 await session.flush()
                 if recurring_link is not None:
@@ -2341,22 +2908,21 @@ async def sync_connection(
                         recurring_link, txn_data.date
                     )
                 new_tx_ids.append(transaction.id)
-                await apply_rules_to_transaction(session, user_id, transaction)
-                if transaction.category_id is None:
+                await apply_rules_to_transaction(
+                    session, user_id, transaction,
+                    skip_category_rules=split_source is not None,
+                )
+                if recurring_link_for_split is not None:
+                    # A split bill hands its parts to the charge it claims.
+                    await category_line_service.apply_template_split(
+                        session, transaction, recurring_link_for_split
+                    )
+                if transaction.category_id is None and not transaction.has_category_lines:
                     transaction.category_id = category_id
 
-                # Prefer bank-provided conversion for international transactions
-                acct_currency = acc_data.currency or user_currency
-                if (
-                    txn_data.amount_in_account_currency is not None
-                    and txn_data.amount
-                    and acct_currency == user_currency
-                    and txn_data.currency != acct_currency
-                ):
-                    transaction.amount_primary = txn_data.amount_in_account_currency
-                    transaction.fx_rate_used = txn_data.amount_in_account_currency / txn_data.amount
-                else:
-                    await stamp_primary_amount(session, user_id, transaction)
+                await _stamp_synced_primary_amount(
+                    session, user_id, transaction, converted
+                )
 
             # Reconcile the opening balance after any new transactions land so
             # SUM(all txs) keeps matching account.balance from the provider.
@@ -2388,7 +2954,10 @@ async def sync_connection(
         # Clean up phantom duplicates: providers occasionally double-report the
         # same payment with different ids. Once transfer detection has paired
         # the real one, the orphan twin gets removed here.
-        touched_account_ids = await _cleanup_phantom_duplicates(session, connection.id)
+        touched_account_ids = await _cleanup_phantom_duplicates(
+            session, connection.id, live_txn_external_ids,
+            skip_account_ids=incomplete_fetch_account_ids,
+        )
 
         # The opening balances above were reconciled with the phantoms still
         # counted. Reconcile the open accounts that lost one again, so the
@@ -2409,8 +2978,8 @@ async def sync_connection(
         # etc.) when enabled for this connection. Errors here are logged but
         # don't fail the sync; a bank connector that doesn't expose
         # /investments shouldn't block the transaction sync that just succeeded.
-        if _sync_assets_enabled(conn_settings):
-            await _sync_holdings(session, user_id, connection, credentials)
+        if holdings is not None:
+            await _sync_holdings(session, user_id, connection, credentials, holdings)
 
         # Reap institution rows referenced by nothing. Id-carrying servers
         # never orphan a row (renames update in place), but a name-only
@@ -2430,7 +2999,21 @@ async def sync_connection(
         for orphan in orphaned_institutions.scalars().all():
             await session.delete(orphan)
 
-        connection.last_sync_at = datetime.now(timezone.utc)
+        # An account whose fetch was cut short (issue #1077) is missing the
+        # rest of the window. The next fetch starts from last_sync_at, so
+        # moving it forward would leave that gap behind for good once the
+        # user reauthorizes; keep it until every account fetched in full.
+        # The healthy accounts just re-read a longer window, deduplicated.
+        if not incomplete_fetch_account_ids:
+            connection.last_sync_at = datetime.now(timezone.utc)
+        # A successful read ends any scheduler backoff (app.tasks.sync_tasks).
+        current_settings = connection.settings or {}
+        if SYNC_BACKOFF_KEY in current_settings:
+            connection.settings = {
+                key: value
+                for key, value in current_settings.items()
+                if key != SYNC_BACKOFF_KEY
+            }
         action_required_warnings = getattr(provider, "action_required_warnings", None)
         if isinstance(action_required_warnings, list) and action_required_warnings:
             logger.warning(
@@ -2444,7 +3027,7 @@ async def sync_connection(
             connection.status = "active"
         await session.commit()
         await session.refresh(connection)
-        return connection, merged_count
+        return connection, merged_count, "refreshed"
 
     except SessionExpiredError:
         # Provider consent expired — distinct from a generic error so the UI
@@ -2480,7 +3063,9 @@ async def sync_connection(
         # to the one we already hold rather than raising: re-raising here would
         # escape as a 500, which is exactly what this handler exists to avoid.
         refreshed = await session.get(BankConnection, connection_id)
-        return refreshed or connection, 0
+        # Report "rate_limited" so the caller (manual sync endpoint, UI) knows
+        # no fresh data was pulled and can say so instead of a success toast.
+        return refreshed or connection, 0, "rate_limited"
     except Exception:
         # Mark connection as errored so UI shows reconnect banner
         await session.rollback()

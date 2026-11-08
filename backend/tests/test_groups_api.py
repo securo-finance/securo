@@ -37,6 +37,51 @@ async def test_create_list_get_group(client: AsyncClient, auth_headers, test_use
 
 
 @pytest.mark.asyncio
+async def test_list_groups_search_and_status(client, auth_headers, test_user):
+    active = await _create_group(client, auth_headers, name="Vacación familiar")
+    archived = await _create_group(client, auth_headers, name="Vacación pasada")
+    await _create_group(client, auth_headers, name="Trabajo")
+    response = await client.patch(
+        f"/api/groups/{archived['id']}", headers=auth_headers, json={"is_archived": True}
+    )
+    assert response.status_code == 200
+
+    for group_status, expected_ids in [
+        ("active", {active["id"]}),
+        ("archived", {archived["id"]}),
+        ("all", {active["id"], archived["id"]}),
+    ]:
+        response = await client.get(
+            "/api/groups", headers=auth_headers,
+            params={"q": "  VACACION  ", "status": group_status},
+        )
+        assert response.status_code == 200
+        assert {group["id"] for group in response.json()} == expected_ids
+
+    response = await client.get(
+        "/api/groups", headers=auth_headers, params={"q": "missing", "status": "all"}
+    )
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_list_groups_literal_search_and_invalid_status(client, auth_headers, test_user):
+    literal = await _create_group(client, auth_headers, name="100%_complete")
+    other = await _create_group(client, auth_headers, name="Other")
+    response = await client.get("/api/groups", headers=auth_headers, params={"q": "%_"})
+    assert response.status_code == 200
+    assert {group["id"] for group in response.json()} == {literal["id"]}
+
+    response = await client.get("/api/groups", headers=auth_headers, params={"q": "  "})
+    assert response.status_code == 200
+    assert {group["id"] for group in response.json()} == {literal["id"], other["id"]}
+
+    response = await client.get("/api/groups", headers=auth_headers, params={"status": "invalid"})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_duplicate_group_name_returns_400(client, auth_headers, test_user):
     await _create_group(client, auth_headers, name="Same")
     resp = await client.post(

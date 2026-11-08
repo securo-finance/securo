@@ -143,6 +143,35 @@ async def test_create_recurring_skip_first_new_frequencies(
 
 
 @pytest.mark.asyncio
+async def test_generate_pending_button_covers_auto_generate_off(client, auth_headers, test_account):
+    """The endpoint behind Generate Pending also creates schedules whose
+    auto-generate toggle is off (issue #1145)."""
+    create_resp = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Manual rent",
+            "amount": 900.00,
+            "currency": "BRL",
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": "2026-02-01",
+            "account_id": str(test_account.id),
+            "auto_generate": False,
+        },
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 201
+    assert create_resp.json()["auto_generate"] is False
+
+    gen_resp = await client.post(
+        "/api/recurring-transactions/generate",
+        headers=auth_headers,
+    )
+    assert gen_resp.status_code == 200
+    assert gen_resp.json()["generated"] >= 1
+
+
+@pytest.mark.asyncio
 async def test_generate_pending_creates_transactions(client, auth_headers, test_account):
     """Generate pending creates transactions and advances next_occurrence."""
     # Create a recurring that's already past due

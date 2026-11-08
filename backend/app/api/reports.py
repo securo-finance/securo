@@ -5,9 +5,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
-from app.schemas.report import ReportResponse
+from app.schemas.report import ReportDataRange, ReportResponse
 from app.services import report_service
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -67,7 +68,12 @@ def _resolve_custom_range(
             status_code=422,
             detail="end_date must be on or after start_date",
         )
-    if end_date > date.today():
+    # The app's calendar, not the host clock: the workspace's request runs
+    # on its own timezone (see the `current_workspace` dependency), and the
+    # service below builds the same window from `app_today()`. Comparing
+    # against a different calendar would reject the workspace's own today
+    # or accept a date the workspace has not reached yet.
+    if end_date > app_today():
         raise HTTPException(
             status_code=422,
             detail="end_date must be on or before today",
@@ -81,6 +87,26 @@ def _resolve_custom_range(
             ),
         )
     return start_date, end_date
+
+
+@router.get("/data-range", response_model=ReportDataRange)
+async def get_data_range(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The span of transaction data this workspace actually has.
+
+    The Reports page builds its year picker from these bounds (issue #765).
+    Opening balances are excluded: their dates are synthetic. Both bounds
+    are null when the workspace has no reportable transactions.
+    """
+    min_date, max_date = await report_service.get_report_data_range(
+        session, ctx.workspace.id
+    )
+    return ReportDataRange(
+        min_date=min_date.isoformat() if min_date else None,
+        max_date=max_date.isoformat() if max_date else None,
+    )
 
 
 @router.get("/net-worth", response_model=ReportResponse)

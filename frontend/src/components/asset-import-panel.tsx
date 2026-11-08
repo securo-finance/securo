@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AlertCircle, AlertTriangle, CheckCircle2, Download, FileText, Info, Settings2, Upload, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, Download, FileText, Info, Settings2, Upload, X } from 'lucide-react'
 
 import { assets as assetsApi, assetGroups as assetGroupsApi } from '@/lib/api'
 import type { AssetImportPreview, AssetOrderImport } from '@/types'
@@ -45,6 +45,7 @@ export function AssetImportPanel() {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<AssetImportPreview | null>(null)
   const [mapping, setMapping] = useState<Record<string, string>>({})
+  const [mappingOpen, setMappingOpen] = useState(false)
   const [groupId, setGroupId] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -59,6 +60,7 @@ export function AssetImportPanel() {
     selected: File,
     nextMapping: Record<string, string>,
     nextGroup: string,
+    options: { keepOpen?: boolean } = {},
   ) {
     setLoading(true)
     try {
@@ -67,9 +69,16 @@ export function AssetImportPanel() {
         group_id: nextGroup || null,
       })
       setPreview(result)
+      // The mapping panel opens while a required column is missing. A file
+      // that reads cleanly closes it, but the collapsed bar keeps the column
+      // choices reachable: a wrong guess shows up as skipped rows, and the
+      // fix is changing a dropdown, not re-uploading the file.
+      if (result.parse_error) setMappingOpen(true)
+      else if (!options.keepOpen) setMappingOpen(false)
     } catch {
       toast.error(t('assetImport.previewError'))
       setPreview(null)
+      setMappingOpen(false)
     } finally {
       setLoading(false)
     }
@@ -105,7 +114,9 @@ export function AssetImportPanel() {
 
   function handleWalletChange(value: string) {
     setGroupId(value)
-    if (file) runPreview(file, mapping, value)
+    // Changing the destination re-previews the same mapping, so the panel
+    // stays exactly where the user left it.
+    if (file) runPreview(file, mapping, value, { keepOpen: true })
   }
 
   async function handleImport() {
@@ -133,6 +144,13 @@ export function AssetImportPanel() {
   const rowErrors = preview?.errors ?? []
   const walletWarnings = preview?.warnings ?? []
   const needsMapping = !!preview?.parse_error
+  // Compact view of the explicit choices, shown in the collapsed bar so a
+  // wrong column can be spotted without re-opening the grid.
+  const mappingSummary = MAPPABLE_FIELDS.map(({ key }) =>
+    mapping[key] ? `${t(`assetImport.field.${key}`)}: ${mapping[key]}` : null,
+  )
+    .filter((item): item is string => item !== null)
+    .join('  ·  ')
 
   return (
     <div className="space-y-6">
@@ -199,32 +217,52 @@ export function AssetImportPanel() {
         </div>
       )}
 
-      {needsMapping && (
+      {preview && (
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-          <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-5 py-4">
-            <Settings2 size={14} className="text-muted-foreground" />
-            <p className="text-xs font-medium text-muted-foreground">{t('assetImport.mapPrompt')}</p>
-          </div>
-          <div className="grid gap-3 p-5 sm:grid-cols-2">
-            {MAPPABLE_FIELDS.map(({ key, required }) => (
-              <div key={key} className="grid gap-1">
-                <Label htmlFor={`map-${key}`} className="text-xs">
-                  {t(`assetImport.field.${key}`)}{required ? ' *' : ''}
-                </Label>
-                <select
-                  id={`map-${key}`}
-                  className={SELECT_CLASS}
-                  value={mapping[key] ?? ''}
-                  onChange={(e) => handleMappingChange(key, e.target.value)}
-                >
-                  <option value="">{t('assetImport.ignoreColumn')}</option>
-                  {(preview?.csv_columns ?? []).map((col) => (
-                    <option key={col} value={col}>{col}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={() => setMappingOpen((open) => !open)}
+            aria-expanded={needsMapping || mappingOpen}
+            className="flex w-full items-center gap-2 border-b border-border bg-muted/30 px-5 py-4 text-left"
+          >
+            <Settings2 size={14} className="shrink-0 text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground">
+              {needsMapping ? t('assetImport.mapPrompt') : t('assetImport.columnMapping')}
+            </span>
+            {!needsMapping && mappingSummary && (
+              <span className="min-w-0 truncate text-xs text-muted-foreground/70">
+                {mappingSummary}
+              </span>
+            )}
+            <ChevronDown
+              size={16}
+              className={`ml-auto shrink-0 text-muted-foreground transition-transform ${
+                needsMapping || mappingOpen ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+          {(needsMapping || mappingOpen) && (
+            <div className="grid gap-3 p-5 sm:grid-cols-2">
+              {MAPPABLE_FIELDS.map(({ key, required }) => (
+                <div key={key} className="grid gap-1">
+                  <Label htmlFor={`map-${key}`} className="text-xs">
+                    {t(`assetImport.field.${key}`)}{required ? ' *' : ''}
+                  </Label>
+                  <select
+                    id={`map-${key}`}
+                    className={SELECT_CLASS}
+                    value={mapping[key] ?? ''}
+                    onChange={(e) => handleMappingChange(key, e.target.value)}
+                  >
+                    <option value="">{t('assetImport.ignoreColumn')}</option>
+                    {(preview?.csv_columns ?? []).map((col) => (
+                      <option key={col} value={col}>{col}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -288,10 +326,23 @@ export function AssetImportPanel() {
 
           {rowErrors.length > 0 && (
             <div className="border-b border-border bg-amber-500/10 px-4 py-3 sm:px-5">
-              <p className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
-                <AlertTriangle size={14} />
-                {t('assetImport.rowsSkipped', { count: rowErrors.length })}
-              </p>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+                  <AlertTriangle size={14} />
+                  {t('assetImport.rowsSkipped', { count: rowErrors.length })}
+                </p>
+                {/* The usual cause of a skipped row is a column picked for the
+                    wrong field; send the user straight to the grid. */}
+                {!needsMapping && !mappingOpen && (
+                  <button
+                    type="button"
+                    onClick={() => setMappingOpen(true)}
+                    className="shrink-0 text-xs font-medium text-primary hover:underline"
+                  >
+                    {t('assetImport.adjustMapping')}
+                  </button>
+                )}
+              </div>
               <ul className="space-y-1 text-xs text-muted-foreground">
                 {rowErrors.slice(0, 8).map((err) => (
                   <li key={`${err.row}-${err.reason}`}>
@@ -362,7 +413,7 @@ export function AssetImportPanel() {
                 <X size={14} className="mr-1" />
                 {t('common.cancel')}
               </Button>
-              <Button onClick={handleImport} disabled={importing || importable === 0} className="gap-2">
+              <Button onClick={handleImport} disabled={importing || loading || importable === 0} className="gap-2">
                 <Upload size={14} />
                 {importing ? t('assetImport.importing') : t('assetImport.confirm', { count: importable })}
               </Button>

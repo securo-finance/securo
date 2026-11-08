@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CATEGORY_ICONS } from '@/lib/category-icons'
+import { CATEGORY_ICONS, getCategoryIconLabel } from '@/lib/category-icons'
 import { cn } from '@/lib/utils'
 
 interface IconPickerProps {
@@ -19,9 +19,9 @@ export function IconPicker({ value, color, onChange }: IconPickerProps) {
     return CATEGORY_ICONS.filter(
       (entry) =>
         entry.name.includes(q) ||
-        entry.label.toLowerCase().includes(q)
+        getCategoryIconLabel(t, entry.name).toLowerCase().includes(q)
     )
-  }, [search])
+  }, [search, t])
 
   return (
     <div className="space-y-2">
@@ -40,7 +40,7 @@ export function IconPicker({ value, color, onChange }: IconPickerProps) {
             <button
               key={entry.name}
               type="button"
-              title={entry.label}
+              title={getCategoryIconLabel(t, entry.name)}
               className={cn(
                 'w-9 h-9 rounded-lg flex items-center justify-center transition-all',
                 isSelected

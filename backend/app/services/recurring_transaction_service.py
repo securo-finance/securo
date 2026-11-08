@@ -3,7 +3,7 @@ import uuid
 from datetime import date, timedelta
 from typing import Optional
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today, get_workspace_timezone, today_in
@@ -12,7 +12,7 @@ from app.models.bank_connection import BankConnection
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate, RecurringTransactionUpdate
-from app.services import recurring_match_service
+from app.services import category_line_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.fx_rate_service import stamp_primary_amount
 
@@ -70,6 +70,8 @@ async def create_recurring_transaction(
             data.start_date, data.frequency,
             intended_day=data.day_of_month or data.start_date.day,
         )
+    if data.category_id and data.category_lines and data.category_lines.lines:
+        raise ValueError("Choose either a category or a split across categories")
     recurring = RecurringTransaction(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -89,11 +91,13 @@ async def create_recurring_transaction(
     )
     session.add(recurring)
     await session.flush()
+    await category_line_service.replace_template_lines(session, recurring, data.category_lines)
     await stamp_primary_amount(
         session, user_id, recurring,
         date_field="start_date",
     )
     await session.commit()
+    await session.refresh(recurring, ["category_lines"])
     await session.refresh(recurring)
     return recurring
 
@@ -106,6 +110,23 @@ async def update_recurring_transaction(
         return None
 
     update_data = data.model_dump(exclude_unset=True)
+    # Same payload rules as a transaction: absent keeps the parts, a list
+    # replaces them, an empty list undoes the split.
+    lines_payload = data.category_lines if "category_lines" in update_data else None
+    update_data.pop("category_lines", None)
+    splitting = lines_payload is not None and bool(lines_payload.lines)
+    unsplitting = lines_payload is not None and not lines_payload.lines
+    if splitting and update_data.get("category_id") is not None:
+        raise ValueError("Choose either a category or a split across categories")
+    if (splitting or (recurring.has_category_lines and not unsplitting)) and "category_id" in update_data:
+        if update_data["category_id"] is not None and not unsplitting:
+            raise ValueError("Undo the split across categories before choosing a single category")
+        update_data.pop("category_id")
+    if unsplitting and update_data.get("category_id") is None:
+        # The editor sends a null category alongside; the largest part's
+        # category is what an undone split keeps.
+        update_data.pop("category_id", None)
+    old_amount = recurring.amount
 
     for required in ("weekend_adjustment", "start_date", "frequency"):
         if required in update_data and update_data[required] is None:
@@ -126,8 +147,21 @@ async def update_recurring_transaction(
     )
     previous_next_occurrence = recurring.next_occurrence
 
+    if unsplitting:
+        await category_line_service.replace_template_lines(session, recurring, lines_payload)
     for key, value in update_data.items():
         setattr(recurring, key, value)
+    if splitting:
+        await session.flush()
+        await category_line_service.replace_template_lines(session, recurring, lines_payload)
+    elif "amount" in update_data:
+        # An amount edited without new parts resizes the split.
+        await category_line_service.rescale_template_lines(session, recurring, old_amount)
+    if {"type", "account_id"} & update_data.keys():
+        # A debit turned card credit may now carry a transfer part the
+        # statement cannot drop.
+        await session.flush()
+        await category_line_service.validate_template_lines(session, recurring)
 
     if schedule_changed:
         recurring.next_occurrence = _first_occurrence_on_or_after(
@@ -138,6 +172,7 @@ async def update_recurring_transaction(
         )
 
     await session.commit()
+    await session.refresh(recurring, ["category_lines"])
     await session.refresh(recurring)
     return recurring
 
@@ -265,12 +300,33 @@ def get_occurrences_in_range(
 
 
 async def generate_pending(
-    session: AsyncSession, user_id: uuid.UUID, up_to: Optional[date] = None
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    up_to: Optional[date] = None,
+    include_manual: bool = False,
+    workspace_id: Optional[uuid.UUID] = None,
 ) -> int:
     """Generate transactions for all pending recurring transactions up to a given date.
     If up_to is None, defaults to today. This allows the dashboard to pre-generate
     transactions for future months when the user navigates ahead.
+
+    Schedules with auto_generate off are left alone unless include_manual is
+    set: the hourly task must never materialize them, while the Generate
+    Pending button is the user asking for exactly that.
+
+    workspace_id narrows the run to one workspace. The button passes the
+    workspace it was authorized for, so a click there cannot write into
+    another workspace the user merely belongs to; unattended runs leave it
+    unset and cover all of them.
     Returns the count of transactions generated."""
+    # Unattended runs only touch schedules that opted in to auto-generation.
+    generation_filter = (
+        true() if include_manual else RecurringTransaction.auto_generate == True
+    )
+    if workspace_id is not None:
+        generation_filter = and_(
+            generation_filter, RecurringTransaction.workspace_id == workspace_id
+        )
     # A person's recurring rows may live in several workspaces, and each
     # workspace keeps its own calendar, so "today" is resolved per workspace.
     # The query is bounded by the latest of those days and the loop below
@@ -283,7 +339,7 @@ async def generate_pending(
                 .where(
                     RecurringTransaction.user_id == user_id,
                     RecurringTransaction.is_active == True,
-                    RecurringTransaction.auto_generate == True,
+                    generation_filter,
                 )
                 .distinct()
             )
@@ -301,7 +357,7 @@ async def generate_pending(
         .where(
             RecurringTransaction.user_id == user_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.auto_generate == True,
+            generation_filter,
             or_(
                 and_(
                     RecurringTransaction.weekend_adjustment == "previous_friday",
@@ -347,6 +403,8 @@ async def generate_pending(
             )
             if existing_real is not None:
                 existing_real.recurring_transaction_id = recurring.id
+                # A split bill hands its parts to an uncategorized charge.
+                await category_line_service.apply_template_split(session, existing_real, recurring)
             else:
                 account = await session.get(Account, recurring.account_id)
                 # Only occurrences that already came due reach this point, so
@@ -369,6 +427,7 @@ async def generate_pending(
                 is_synced_account = account is not None and account.connection_id is not None
                 transaction = Transaction(
                     user_id=user_id,
+                    workspace_id=recurring.workspace_id,
                     account_id=recurring.account_id,
                     category_id=recurring.category_id,
                     description=recurring.description,
@@ -381,6 +440,9 @@ async def generate_pending(
                     recurring_transaction_id=recurring.id,
                 )
                 apply_effective_date(transaction, account)
+                if recurring.has_category_lines:
+                    # The occurrence starts split like its template.
+                    category_line_service.copy_lines_to(transaction, recurring.category_lines)
                 session.add(transaction)
                 await session.flush()
                 await stamp_primary_amount(session, user_id, transaction)

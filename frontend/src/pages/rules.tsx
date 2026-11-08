@@ -12,15 +12,18 @@ import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload } from '@/types'
+import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload, RulePack } from '@/types'
 import { isConditionGroup } from '@/lib/rule-conditions'
 import { normalizeRuleMatchValue, ruleSearchText } from '@/lib/rule-match-utils'
 import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Search, Power } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
+import { PageRefreshButton } from '@/components/page-refresh-button'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { RuleDialog } from '@/components/rule-dialog'
 import { ReconciliationRules } from '@/components/reconciliation-rules'
@@ -190,7 +193,7 @@ export default function RulesPage() {
     setDialogOpen(true)
   }
 
-  const { data: rulesList } = useQuery({
+  const { data: rulesList, isFetching: rulesFetching } = useQuery({
     queryKey: ['rules'],
     queryFn: rulesApi.list,
   })
@@ -442,7 +445,16 @@ export default function RulesPage() {
 
   return (
     <div>
-      <PageHeader section={t('rules.section')} title={t('nav.rules')} />
+      <PageHeader
+        section={t('rules.section')}
+        title={t('nav.rules')}
+        action={
+          <PageRefreshButton
+            onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
+            refreshing={rulesFetching}
+          />
+        }
+      />
 
       <div className="mb-4">
         <Segmented
@@ -771,10 +783,16 @@ export default function RulesPage() {
   )
 }
 
+/** The pack's name in the UI language, falling back to English. */
+function packName(pack: RulePack, lang: string): string {
+  return pack.names[lang] ?? pack.names[lang.split('-')[0]] ?? pack.name
+}
+
 function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const [createMissingCategories, setCreateMissingCategories] = useState(true)
+  const [removing, setRemoving] = useState<RulePack | null>(null)
 
   const { data: rulePacks } = useQuery({
     queryKey: ['rule-packs'],
@@ -839,7 +857,7 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
             >
               <span className="text-2xl">{pack.flag}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">{pack.name}</p>
+                <p className="text-sm font-semibold text-foreground">{packName(pack, i18n.language)}</p>
                 <p className="text-xs text-muted-foreground">
                   {t('rules.packRuleCount', { count: pack.rule_count })}
                 </p>
@@ -861,9 +879,125 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
                   {t('rules.installPack')}
                 </Button>
               )}
+              {pack.rules_from_pack > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => setRemoving(pack)}
+                  aria-label={t('rules.removePackAria', { name: packName(pack, i18n.language) })}
+                  title={t('rules.removePack')}
+                >
+                  <Trash2 size={13} />
+                </Button>
+              )}
             </div>
           ))}
         </div>
+      </DialogContent>
+      {removing && <RemovePackDialog pack={removing} onClose={() => setRemoving(null)} />}
+    </Dialog>
+  )
+}
+
+/** Edited rules listed by name before the rest are summed up as "and N more". */
+const KEPT_NAMES_SHOWN = 5
+
+function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => void }) {
+  const { t, i18n } = useTranslation()
+  const queryClient = useQueryClient()
+
+  const { data: plan, isFetching, isError, refetch } = useQuery({
+    queryKey: ['rule-pack-removal', pack.code],
+    queryFn: () => rulesApi.packRemoval(pack.code),
+    // Every opening starts from a fresh preview, never a cached one.
+    gcTime: 0,
+    // Fail fast to the retry button rather than sit on "Loading" for seconds.
+    retry: 1,
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: (token: string) => rulesApi.removePack(pack.code, token),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] })
+      queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
+      toast.success(t('rules.packRemoved', { count: result.remove.length }), {
+        description: result.keep.length > 0
+          ? t('rules.packKeptEdited', { count: result.keep.length })
+          : undefined,
+      })
+      onClose()
+    },
+    onError: (error: unknown) => {
+      const err = error as { response?: { status?: number } }
+      if (err?.response?.status === 409) {
+        // The rules changed since this preview: show the current plan instead.
+        toast.error(t('rules.removePackChanged'))
+        void refetch()
+      } else {
+        toast.error(t('common.error'))
+      }
+    },
+  })
+
+  const pending = removeMutation.isPending
+  // A failed refresh counts as failed even with an older plan on screen:
+  // that plan is exactly what the server would refuse, so it isn't shown.
+  const failed = isError && !isFetching
+  const kept = !failed && plan ? plan.keep : []
+  // Confirm only the plan just fetched, and only if removing does something:
+  // delete untouched rules, or hand edited ones over to the user.
+  const confirmable =
+    plan !== undefined && !isFetching && !isError && plan.remove.length + plan.keep.length > 0
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose() }}>
+      <DialogContent className="sm:max-w-md" showCloseButton={!pending}>
+        <DialogHeader>
+          <DialogTitle>{t('rules.removePackTitle', { name: packName(pack, i18n.language) })}</DialogTitle>
+          <DialogDescription>
+            {failed
+              ? t('rules.removePackPreviewFailed')
+              : plan
+                ? t('rules.removePackSummary', { count: plan.remove.length })
+                : t('common.loading')}
+          </DialogDescription>
+        </DialogHeader>
+        {kept.length > 0 && (
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
+            <p className="font-medium text-foreground">
+              {t('rules.removePackKeeps', { count: kept.length })}
+            </p>
+            <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
+              {kept.slice(0, KEPT_NAMES_SHOWN).map((rule) => (
+                <li key={rule.id} className="truncate">{rule.name}</li>
+              ))}
+              {kept.length > KEPT_NAMES_SHOWN && (
+                <li>{t('rules.removePackMore', { count: kept.length - KEPT_NAMES_SHOWN })}</li>
+              )}
+            </ul>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={pending}>
+            {t('common.cancel')}
+          </Button>
+          {failed ? (
+            <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
+              <RefreshCw size={14} className="mr-1" />
+              {t('common.retry')}
+            </Button>
+          ) : (
+            <Button
+              variant="destructive"
+              onClick={() => plan && removeMutation.mutate(plan.token)}
+              disabled={pending || !confirmable}
+            >
+              <Trash2 size={14} className="mr-1" />
+              {t('rules.removePackConfirm')}
+            </Button>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

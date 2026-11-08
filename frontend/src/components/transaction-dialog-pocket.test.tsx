@@ -116,11 +116,14 @@ it('restores the pocket assignments of a draft when installments are switched of
   const { user, onSave } = renderDraft()
   const installments = screen.getByRole('checkbox', { name: t('transactions.makeInstallment') })
   await user.click(installments)
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+  expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ goal_allocations: [] }))
+
   await user.click(installments)
   await user.click(screen.getByRole('button', { name: 'Save' }))
 
-  expect(onSave).toHaveBeenCalledWith(
+  expect(onSave).toHaveBeenCalledTimes(2)
+  expect(onSave.mock.calls[1][0]).toEqual(
     expect.objectContaining({ goal_allocations: draft.goal_allocations }),
-    undefined, undefined, undefined, 'save',
   )
 })

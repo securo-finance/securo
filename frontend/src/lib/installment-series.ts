@@ -1,6 +1,7 @@
 import type {
   InstallmentSeriesInput,
   Transaction,
+  TransactionCategoryLinesInput,
   TransactionEditPayload,
   TransactionSplitsInput,
 } from '../types'
@@ -15,13 +16,15 @@ export interface InstallmentSeriesFormInput {
   categoryId: string | null
   payeeId: string | null
   description: string
-  amount: string
+  amount: number
   date: string
   type: 'debit' | 'credit'
   currency?: string
   notes: string
   fxFields: Pick<Partial<Transaction>, 'amount_primary' | 'fx_rate_used'>
   splits: TransactionSplitsInput | null
+  /** A split across categories: every installment gets the same parts. */
+  categoryLines?: TransactionCategoryLinesInput | null
   installmentCount: string
   installmentFrequency: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
   status: 'posted' | 'pending'
@@ -75,16 +78,17 @@ export function buildInstallmentSeriesInput(
   return {
     base: {
       account_id: input.accountId,
-      category_id: input.categoryId || null,
+      category_id: input.categoryLines ? null : input.categoryId || null,
       payee_id: input.payeeId || null,
       description: input.description,
-      amount: parseFloat(input.amount),
+      amount: input.amount,
       date: input.date,
       type: input.type,
       ...(input.currency ? { currency: input.currency } : {}),
       notes: input.notes.trim() || null,
       ...input.fxFields,
       ...(input.splits ? { splits: input.splits } : {}),
+      ...(input.categoryLines ? { category_lines: input.categoryLines } : {}),
     },
     installments,
     first_installment_status: input.status,

@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.reconciliation import ReconciliationRule
 from app.services import reconciliation_policy
+from app.services.reconciliation_engine import Decision
 from app.services.module_service import ModuleId
 
 #: The nodes a person is shown and may edit, and the module each needs.
@@ -445,6 +446,38 @@ def assert_safe_to_link(strategy: dict[str, Any]) -> None:
         )
 
 
+def pick_linked(
+    linked: list[tuple[Any, Decision]], policy: dict[str, Any]
+) -> tuple[Any, list[tuple[Any, Decision]]]:
+    """Which of several candidates that each linked on their own wins.
+
+    For callers that ask the engine about one candidate at a time and so get
+    neither of the two guarantees it gives for a list. Strategies are ordered
+    and the first that matches wins, so a candidate that linked under an
+    earlier rule beats a better-scoring one under a later rule; within that
+    rule the best score wins, the first seen on a tie. And a rule that asks
+    for a single candidate (`unique_candidate`) is refused when it linked
+    more than one.
+
+    Returns the winner (None when refused or when nothing linked) and the
+    candidates that linked under the winning rule, which are the ones to put
+    to a person when it was refused.
+    """
+    if not linked:
+        return None, []
+    strategies = policy.get("strategies", [])
+    order = {strategy["id"]: index for index, strategy in enumerate(strategies)}
+    front = min(order.get(decision.strategy, len(order)) for _, decision in linked)
+    rivals = [
+        entry for entry in linked
+        if order.get(entry[1].strategy, len(order)) == front
+    ]
+    winning = next((s for s in strategies if s["id"] == rivals[0][1].strategy), {})
+    if winning.get("when", {}).get("unique_candidate", False) and len(rivals) > 1:
+        return None, rivals
+    return max(rivals, key=lambda entry: entry[1].score)[0], rivals
+
+
 def _positive_number(value: Any, code: str, message: str) -> str:
     try:
         number = float(value)
@@ -597,7 +630,7 @@ _TIE_BREAKS = ("closest_date",)
 #: The kinds of account a rule may name. Closed rather than free text:
 #: a typo in a condition is a rule that silently never fires, and the one
 #: place that is unforgivable is matching, where nobody is watching.
-_ACCOUNT_TYPES = ("checking", "savings", "credit_card", "investment", "wallet")
+_ACCOUNT_TYPES = ("checking", "savings", "credit_card", "loan", "investment", "wallet")
 
 
 def _validate_account_types(rule: Any) -> list[str]:

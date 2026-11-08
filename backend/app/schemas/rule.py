@@ -170,6 +170,8 @@ class RulePreviewItem(BaseModel):
     type: str
     current_category_id: Optional[uuid.UUID] = None
     current_category_name: Optional[str] = None
+    # Split across categories: no category of its own, and rules leave it alone.
+    current_has_category_lines: bool = False
     new_category_id: Optional[uuid.UUID] = None
     new_category_name: Optional[str] = None
     # False when the rule matches but leaves the transaction as it is — most
@@ -189,3 +191,31 @@ class RulePreviewResponse(BaseModel):
     # whether more can be fetched.
     sample: list[RulePreviewItem]
     offset: int = 0
+
+
+class RulePackRead(BaseModel):
+    code: str
+    name: str
+    names: dict[str, str] = Field(description="The pack's name per locale; `name` is the English one.")
+    flag: str
+    rule_count: int
+    installed: bool
+    rules_from_pack: int = Field(description="Rules in this workspace that still come from the pack.")
+
+
+class RuleRefRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+
+
+class RulePackRemovalRead(BaseModel):
+    """Removing a pack deletes `remove` and leaves `keep`, the rules the user
+    edited after installing, as their own."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    remove: list[RuleRefRead]
+    keep: list[RuleRefRead]
+    token: str = Field(description="Pass it back to remove the pack; refused if the plan changed since.")

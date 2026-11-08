@@ -12,7 +12,7 @@ const base: InstallmentSeriesFormInput = {
   categoryId: 'cat-1',
   payeeId: null,
   description: 'Notebook',
-  amount: '150.00',
+  amount: 150,
   date: '2026-08-06',
   type: 'debit',
   currency: 'BRL',
@@ -25,6 +25,17 @@ const base: InstallmentSeriesFormInput = {
 }
 
 describe('buildInstallmentSeriesInput', () => {
+  it('carries a split across categories to every parcel, without a single category', () => {
+    const categoryLines = {
+      share_type: 'percent' as const,
+      lines: [{ category_id: 'cat-1', share_pct: 70 }, { category_id: 'cat-2', share_pct: 30 }],
+    }
+    const payload = buildInstallmentSeriesInput({ ...base, categoryLines })
+    expect(payload.base.category_lines).toEqual(categoryLines)
+    expect(payload.base.category_id).toBeNull()
+    expect(buildInstallmentSeriesInput(base).base).not.toHaveProperty('category_lines')
+  })
+
   it('builds the base payload with per-parcel amount', () => {
     const payload = buildInstallmentSeriesInput(base)
     expect(payload.base).toMatchObject({
