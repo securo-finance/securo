@@ -927,6 +927,38 @@ async def test_asset_value_at_purchase_date_after_cutoff(session: AsyncSession, 
 
 
 @pytest.mark.asyncio
+async def test_net_worth_counts_asset_sold_after_the_cutoff(
+    session: AsyncSession, test_user, test_workspace: User,
+):
+    """A snapshot taken before an asset was sold still holds it."""
+    asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Sold Car", type="vehicle", currency="BRL", valuation_method="manual",
+        purchase_date=date(2025, 1, 10), purchase_price=Decimal("30000"),
+        sell_date=date(2025, 3, 15), sell_price=Decimal("28000"),
+    )
+    session.add(asset)
+    await session.flush()
+    session.add(AssetValue(
+        id=uuid.uuid4(), asset_id=asset.id,
+        amount=Decimal("29000"), date=date(2025, 2, 1), source="manual",
+    ))
+    await session.commit()
+
+    before = await _net_worth_at(session, test_workspace.id, date(2025, 2, 28), "BRL")
+    assert before.breakdowns["assets"] == 29000.0
+    assert before.value == 29000.0
+    assert [c.key for c in before.composition if c.group == "assets"] == [str(asset.id)]
+
+    # From the day it is sold, the asset is gone from net worth.
+    on_sale = await _net_worth_at(session, test_workspace.id, date(2025, 3, 15), "BRL")
+    assert on_sale.breakdowns["assets"] == 0.0
+    after = await _net_worth_at(session, test_workspace.id, date(2025, 3, 31), "BRL")
+    assert after.breakdowns["assets"] == 0.0
+    assert await _asset_value_at(session, test_workspace.id, date(2025, 2, 28), "BRL") == 29000.0
+
+
+@pytest.mark.asyncio
 async def test_net_worth_with_credit_card(session: AsyncSession, test_user, test_workspace: User):
     checking = await _make_manual_account(session, test_user.id, "NW Check")
     await _add_txn(session, test_user.id, checking.id, 5000, "credit", date.today())
