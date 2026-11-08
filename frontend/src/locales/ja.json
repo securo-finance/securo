@@ -1466,6 +1466,7 @@
     "withdrawalHint": "1つ以上のポケットの確保済み資金を使用します。",
     "postedOnlyHint": "確定済みの取引のみポケットを変更できます。",
     "ignoredHint": "無視された取引はポケットに割り当てられません。",
+    "savingRemovesAssignments": "保存すると、この取引のポケットへの割り当てが削除されます。",
     "allocated": "割り当て済み",
     "remaining": "残り",
     "allocationFor": "{{name}} への割り当て",

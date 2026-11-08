@@ -823,6 +823,10 @@ function TransactionForm({
   // draft is set aside per combination: returning to one restores exactly
   // what it held, unsaved edits included, instead of saving a wipe.
   const pocketDraftsRef = useRef(new Map<string, { allocations: GoalAllocationInput[]; dirty: boolean }>())
+  const removesSavedPockets = !!transaction?.goal_allocations?.length
+    && goalAllocationsDirty
+    && goalAllocations.length === 0
+
   const resetGoalAllocations = (changed: Partial<{
     status: typeof status
     type: typeof type
@@ -1426,6 +1430,9 @@ function TransactionForm({
             setGoalAllocationsDirty(true)
           }}
         />
+      )}
+      {removesSavedPockets && (
+        <p className="text-xs text-amber-700 dark:text-amber-400">{t('goals.savingRemovesAssignments')}</p>
       )}
 
       <div className="space-y-2">

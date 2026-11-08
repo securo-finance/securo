@@ -1470,6 +1470,7 @@
     "withdrawalHint": "Usa dinero reservado de uno o más Pockets.",
     "postedOnlyHint": "Solo las transacciones contabilizadas pueden modificar Pockets.",
     "ignoredHint": "Las transacciones ignoradas no se pueden asignar a Pockets.",
+    "savingRemovesAssignments": "Al guardar se eliminarán las asignaciones a Pockets de esta transacción.",
     "allocated": "Asignado",
     "remaining": "Restante",
     "allocationFor": "Asignación para {{name}}",

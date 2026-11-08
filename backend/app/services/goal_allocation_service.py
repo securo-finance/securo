@@ -106,6 +106,8 @@ async def _ensure_assignable(
         raise ValueError("Only posted transactions can be assigned to pockets")
     if transaction.source == MORTGAGE_PRINCIPAL_SOURCE:
         raise ValueError("Mortgage principal entries cannot be assigned to pockets")
+    if transaction.amount < 0:
+        raise ValueError("Pocket assignments require a positive transaction amount")
     category = None
     if transaction.category_id:
         category = await session.scalar(
@@ -199,6 +201,16 @@ async def release_for_background_delete(
     except ValueError:
         return False
     return True
+
+
+async def release_invalid_for_background_edit(
+    session: AsyncSession, workspace_id: uuid.UUID, transaction: Transaction
+) -> None:
+    """Drop assignments a job's edit made invalid, without ever raising."""
+    try:
+        await validate_transaction_allocations(session, workspace_id, transaction)
+    except ValueError:
+        await release_for_background_delete(session, workspace_id, transaction)
 
 
 async def replace_transaction_allocations(

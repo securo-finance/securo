@@ -1466,6 +1466,7 @@
     "withdrawalHint": "Use reserved money from one or more pockets.",
     "postedOnlyHint": "Only posted transactions can change pockets.",
     "ignoredHint": "Ignored transactions cannot be assigned to pockets.",
+    "savingRemovesAssignments": "Saving will remove this transaction's pocket assignments.",
     "allocated": "Allocated",
     "remaining": "Remaining",
     "allocationFor": "Allocation for {{name}}",

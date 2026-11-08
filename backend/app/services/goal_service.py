@@ -148,6 +148,21 @@ async def _account_reserved_total(
     return Decimal(str(value or 0))
 
 
+async def delete_account_pockets(session: AsyncSession, account_ids: list[uuid.UUID]) -> None:
+    """Delete the Pockets of accounts about to be deleted.
+
+    A Pocket has no meaning without its backing account and cannot be re-linked
+    after creation, so its goal and allocation history go with the account.
+    """
+    pocket_goal_ids = select(Goal.id).where(
+        Goal.account_id.in_(account_ids), Goal.tracking_type == "pocket"
+    )
+    await session.execute(delete(GoalAllocation).where(GoalAllocation.goal_id.in_(pocket_goal_ids)))
+    await session.execute(
+        delete(Goal).where(Goal.account_id.in_(account_ids), Goal.tracking_type == "pocket")
+    )
+
+
 async def _lock_pocket_account(
     session: AsyncSession, workspace_id: uuid.UUID, account_id: uuid.UUID
 ) -> Account:

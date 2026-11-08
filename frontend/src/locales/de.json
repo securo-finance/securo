@@ -1467,6 +1467,7 @@
     "withdrawalHint": "Verwende reserviertes Geld aus einem oder mehreren Pockets.",
     "postedOnlyHint": "Nur gebuchte Transaktionen können Pockets verändern.",
     "ignoredHint": "Ignorierte Transaktionen können keinen Pockets zugeordnet werden.",
+    "savingRemovesAssignments": "Beim Speichern werden die Pocket-Zuordnungen dieser Transaktion entfernt.",
     "allocated": "Zugeordnet",
     "remaining": "Noch verfügbar",
     "allocationFor": "Zuordnung für {{name}}",

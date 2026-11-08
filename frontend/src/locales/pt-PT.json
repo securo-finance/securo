@@ -1470,6 +1470,7 @@
     "withdrawalHint": "Utilize o dinheiro reservado de um ou mais Pockets.",
     "postedOnlyHint": "Só as transações lançadas podem alterar Pockets.",
     "ignoredHint": "As transações ignoradas não podem ser alocadas a Pockets.",
+    "savingRemovesAssignments": "Ao guardar, as alocações a Pockets desta transação serão removidas.",
     "allocated": "Alocado",
     "remaining": "Restante",
     "allocationFor": "Alocação para {{name}}",

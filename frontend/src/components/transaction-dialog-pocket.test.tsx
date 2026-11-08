@@ -94,6 +94,22 @@ it('clears saved pocket assignments when the status change is kept', async () =>
   expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ status: 'pending', goal_allocations: [] }))
 })
 
+it('warns before saving would remove saved pocket assignments', async () => {
+  const saved = {
+    ...draft, id: 'tx', goal_allocations: [{ id: 'allocation', goal_id: 'monitor', goal_name: 'Monitor', amount: 50 }],
+  } as unknown as Transaction
+  const { user } = renderDraft(saved)
+  const notice = t('goals.savingRemovesAssignments')
+  const status = screen.getByDisplayValue(t('transactions.statusPosted'))
+  expect(screen.queryByText(notice)).not.toBeInTheDocument()
+
+  await user.selectOptions(status, 'pending')
+  expect(screen.getByText(notice)).toBeInTheDocument()
+
+  await user.selectOptions(status, 'posted')
+  expect(screen.queryByText(notice)).not.toBeInTheDocument()
+})
+
 it('keeps edited pocket assignments when a status change is reverted', async () => {
   const saved = {
     ...draft, id: 'tx', goal_allocations: [{ id: 'allocation', goal_id: 'monitor', goal_name: 'Monitor', amount: 50 }],

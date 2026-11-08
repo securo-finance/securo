@@ -1519,6 +1519,7 @@
     "withdrawalHint": "Użyj zarezerwowanych środków z jednego lub więcej Pocketów.",
     "postedOnlyHint": "Tylko zaksięgowane transakcje mogą zmieniać Pockety.",
     "ignoredHint": "Ignorowane transakcje nie mogą być przypisane do Pocketów.",
+    "savingRemovesAssignments": "Zapisanie usunie przypisania tej transakcji do Pocketów.",
     "allocated": "Przydzielono",
     "remaining": "Pozostało",
     "allocationFor": "Przydział dla {{name}}",

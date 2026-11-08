@@ -1468,6 +1468,7 @@
     "withdrawalHint": "Gebruik gereserveerd geld uit een of meer Pockets.",
     "postedOnlyHint": "Alleen geboekte transacties kunnen Pockets wijzigen.",
     "ignoredHint": "Genegeerde transacties kunnen niet aan Pockets worden toegewezen.",
+    "savingRemovesAssignments": "Bij opslaan worden de Pocket-toewijzingen van deze transactie verwijderd.",
     "allocated": "Toegewezen",
     "remaining": "Resterend",
     "allocationFor": "Toewijzing voor {{name}}",

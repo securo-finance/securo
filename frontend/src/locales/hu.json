@@ -1522,6 +1522,7 @@
     "withdrawalHint": "Használjon lefoglalt pénzt egy vagy több zsebből.",
     "postedOnlyHint": "Csak a könyvelt tranzakciók módosíthatják a zsebeket.",
     "ignoredHint": "A figyelmen kívül hagyott tranzakciók nem rendelhetők zsebekhez.",
+    "savingRemovesAssignments": "Mentéskor a tranzakció zsebekhez rendelései törlődnek.",
     "allocated": "Hozzárendelve",
     "remaining": "Fennmaradó",
     "allocationFor": "Hozzárendelés: {{name}}",

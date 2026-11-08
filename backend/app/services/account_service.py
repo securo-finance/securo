@@ -502,6 +502,16 @@ async def update_account(
     # its opening balance; with real history it would silently reinterpret it.
     # A connected account keeps its provider balance and history: the sync
     # renormalizes the balance to the new type on its next run.
+    if new_type == "credit_card" and account.type != "credit_card":
+        from app.models.goal import Goal
+
+        has_pocket = await session.scalar(
+            select(Goal.id)
+            .where(Goal.account_id == account.id, Goal.tracking_type == "pocket")
+            .limit(1)
+        )
+        if has_pocket is not None:
+            raise ValueError("Remove this account's pockets before changing it to a credit card")
     if (
         account.connection_id is None
         and new_type != account.type
@@ -615,7 +625,7 @@ async def update_account(
     from app.services import goal_allocation_service
     from app.services.goal_service import _lock_pocket_account
 
-    if "balance" in update_data or balance_date:
+    if "balance" in update_data or balance_date or new_type != account.type:
         account = await _lock_pocket_account(session, workspace_id, account_id)
 
     for key, value in update_data.items():
@@ -684,11 +694,16 @@ async def update_account(
                 Transaction.account_id == account_id,
                 Transaction.source == "opening_balance",
             )
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
         )
         opening_tx = existing_opening.scalar_one_or_none()
         if opening_tx:
             if opening_balance_type_changed and account.balance != Decimal("0.00"):
                 _, opening_tx.type = _opening_balance_values(account.type, account.balance)
+                await goal_allocation_service.validate_transaction_allocations(
+                    session, workspace_id, opening_tx
+                )
             if balance_date:
                 opening_tx.date = balance_date
             apply_effective_date(opening_tx, account)
@@ -901,7 +916,8 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
     from app.services.attachment_service import cleanup_attachment_files
     from app.models.import_log import ImportLog
     from app.models.recurring_transaction import RecurringTransaction
-    from app.models.goal import Goal, GoalAllocation
+    from app.models.goal import Goal
+    from app.services import goal_service
     tx_result = await session.execute(
         select(Transaction.id).where(Transaction.account_id == account_id)
     )
@@ -931,24 +947,7 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
             RecurringTransaction.account_id == account_id
         )
     )
-    # A Pocket has no meaning without its backing account and cannot be
-    # re-linked after creation. Delete those goals (and their allocation
-    # history) with the account instead of leaving unusable orphan Pockets.
-    pocket_goal_ids = list(
-        (
-            await session.scalars(
-                select(Goal.id).where(
-                    Goal.account_id == account_id,
-                    Goal.tracking_type == "pocket",
-                )
-            )
-        ).all()
-    )
-    if pocket_goal_ids:
-        await session.execute(
-            delete(GoalAllocation).where(GoalAllocation.goal_id.in_(pocket_goal_ids))
-        )
-        await session.execute(delete(Goal).where(Goal.id.in_(pocket_goal_ids)))
+    await goal_service.delete_account_pockets(session, [account_id])
     await session.execute(
         update(Goal)
         .where(Goal.account_id == account_id)

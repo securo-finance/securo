@@ -1534,6 +1534,7 @@
     "withdrawalHint": "Použite rezervované peniaze z jedného alebo viacerých Pocketov.",
     "postedOnlyHint": "Pockety môžu meniť iba zaúčtované transakcie.",
     "ignoredHint": "Ignorované transakcie nemožno prideliť do Pocketov.",
+    "savingRemovesAssignments": "Uložením sa odstránia priradenia tejto transakcie do Pocketov.",
     "allocated": "Pridelené",
     "remaining": "Zostáva",
     "allocationFor": "Pridelenie pre {{name}}",

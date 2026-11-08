@@ -1148,11 +1148,11 @@ async def _transactions_for_rule_update(
     )).all())
 
 
-async def _clear_invalid_pocket_assignments(
+async def _has_invalid_pocket_assignments(
     session: AsyncSession, workspace_id: uuid.UUID, transaction: Transaction
-) -> None:
+) -> bool:
     if not transaction.goal_allocations:
-        return
+        return False
     from app.services import goal_allocation_service
 
     try:
@@ -1160,9 +1160,19 @@ async def _clear_invalid_pocket_assignments(
             session, workspace_id, transaction
         )
     except ValueError:
-        await goal_allocation_service.clear_transaction_allocations(
-            session, workspace_id, transaction
-        )
+        return True
+    return False
+
+
+async def _clear_pocket_assignments(
+    session: AsyncSession, workspace_id: uuid.UUID, transactions: list[Transaction]
+) -> None:
+    """Clear together, so a deposit can go along with the spending it funded."""
+    from app.services import goal_allocation_service
+
+    await goal_allocation_service.clear_transactions_allocations(
+        session, workspace_id, transactions
+    )
 
 
 async def apply_single_rule(
@@ -1188,6 +1198,7 @@ async def apply_single_rule(
         return 0
 
     transactions = await _transactions_for_rule_update(session, workspace_id)
+    invalid_assignments: list[Transaction] = []
     conditions = rule.conditions or []
     actions = rule.actions or []
 
@@ -1222,7 +1233,8 @@ async def apply_single_rule(
             skip_description=_has_manual_description(tx),
             assignable_category_ids=assignable_categories,
         )
-        await _clear_invalid_pocket_assignments(session, workspace_id, tx)
+        if await _has_invalid_pocket_assignments(session, workspace_id, tx):
+            invalid_assignments.append(tx)
         after = (
             tx.category_id,
             tx.payee_id,
@@ -1235,6 +1247,7 @@ async def apply_single_rule(
         if before != after:
             count += 1
 
+    await _clear_pocket_assignments(session, workspace_id, invalid_assignments)
     if commit:
         await session.commit()
     else:
@@ -1245,6 +1258,7 @@ async def apply_single_rule(
 async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int:
     """Reset rule-managed fields and reapply active rules in priority order."""
     transactions = await _transactions_for_rule_update(session, workspace_id)
+    invalid_assignments: list[Transaction] = []
 
     rules_result = await session.execute(
         select(Rule)
@@ -1290,7 +1304,8 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                     assignable_category_ids=assignable_categories,
                 )
 
-        await _clear_invalid_pocket_assignments(session, workspace_id, tx)
+        if await _has_invalid_pocket_assignments(session, workspace_id, tx):
+            invalid_assignments.append(tx)
         after = (
             tx.category_id,
             tx.payee_id,
@@ -1303,5 +1318,6 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
         if matched or before != after:
             count += 1
 
+    await _clear_pocket_assignments(session, workspace_id, invalid_assignments)
     await session.commit()
     return count

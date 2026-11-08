@@ -12,13 +12,17 @@ from sqlalchemy import select
 from app.core.app_clock import use_resolved_timezone
 from app.models.account import Account
 from app.models.category import Category
+from app.models.goal import Goal, GoalAllocation
 from app.models.mortgage_payment_allocation import MORTGAGE_PRINCIPAL_SOURCE
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.schemas.goal import GoalAdjustmentCreate, GoalAllocationInput, GoalCreate
 from app.schemas.transaction import TransactionImport
-from app.services import goal_service, import_service, rule_service
-from app.services.goal_allocation_service import replace_transaction_allocations
+from app.services import connection_service, goal_service, import_service, rule_service
+from app.services.goal_allocation_service import (
+    release_invalid_for_background_edit,
+    replace_transaction_allocations,
+)
 from tests.test_goal_pockets import create_pocket, post_transaction
 
 pytestmark = pytest.mark.asyncio
@@ -595,3 +599,198 @@ async def test_background_release_never_raises_when_spending_depends_on_the_row(
     assert await release_for_background_delete(session, workspace_id, debit) is True
     await session.commit()
     assert await _pocket_amount(client, auth_headers, pocket) == 100
+
+
+async def _pocket_on_opening_balance(client, auth_headers, session) -> tuple[uuid.UUID, Transaction]:
+    response = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={"name": "Savings", "type": "savings", "balance": "500", "currency": "BRL"},
+    )
+    assert response.status_code == 201
+    account_id = uuid.UUID(response.json()["id"])
+    account = await session.get(Account, account_id)
+    assert account is not None
+    pocket = await create_pocket(client, auth_headers, account)
+    opening = await session.scalar(
+        select(Transaction).where(
+            Transaction.account_id == account_id, Transaction.source == "opening_balance"
+        )
+    )
+    assert opening is not None
+    response = await client.patch(
+        f"/api/transactions/{opening.id}",
+        headers=auth_headers,
+        json={"goal_allocations": [{"goal_id": pocket["id"], "amount": "100"}]},
+    )
+    assert response.status_code == 200
+    return account_id, opening
+
+
+async def test_loan_conversion_rejects_assignments_on_opening_balance(
+    client, auth_headers, session
+):
+    account_id, opening = await _pocket_on_opening_balance(client, auth_headers, session)
+
+    response = await client.patch(
+        f"/api/accounts/{account_id}", headers=auth_headers, json={"type": "loan"}
+    )
+
+    assert response.status_code == 400
+    response = await client.get(f"/api/transactions/{opening.id}", headers=auth_headers)
+    assert response.json()["type"] == "credit"
+
+
+async def test_credit_card_conversion_requires_removing_pockets(
+    client, auth_headers, test_account
+):
+    await create_pocket(client, auth_headers, test_account)
+
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers, json={"type": "credit_card"}
+    )
+
+    assert response.status_code == 400
+    assert "pockets" in response.json()["detail"]
+
+
+async def test_negative_transactions_cannot_be_assigned_to_pockets(
+    client, auth_headers, test_account
+):
+    pocket = await create_pocket(client, auth_headers, test_account, initial="100")
+
+    response = await post_transaction(
+        client,
+        auth_headers,
+        test_account,
+        "Negative debit",
+        "-40",
+        "debit",
+        allocations=[(pocket["id"], "40")],
+    )
+
+    assert response.status_code == 400
+    assert "positive" in response.json()["detail"]
+
+
+async def test_deleting_connection_removes_its_pockets(session, test_user, test_connection):
+    account = Account(
+        user_id=test_user.id,
+        workspace_id=test_connection.workspace_id,
+        connection_id=test_connection.id,
+        name="Connected",
+        type="checking",
+        balance=Decimal("500"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    pocket = Goal(
+        user_id=test_user.id,
+        workspace_id=test_connection.workspace_id,
+        name="Connected pocket",
+        target_amount=Decimal("100"),
+        currency="BRL",
+        tracking_type="pocket",
+        account_id=account.id,
+    )
+    session.add(pocket)
+    await session.flush()
+    session.add(
+        GoalAllocation(
+            workspace_id=test_connection.workspace_id,
+            goal_id=pocket.id,
+            user_id=test_user.id,
+            amount=Decimal("50"),
+            source="opening",
+        )
+    )
+    await session.commit()
+    pocket_id = pocket.id
+
+    assert await connection_service.delete_connection(
+        session, test_connection.id, test_connection.workspace_id
+    )
+
+    assert await session.scalar(select(Goal.id).where(Goal.id == pocket_id)) is None
+
+
+async def test_background_edit_drops_assignments_it_invalidated(
+    client, auth_headers, test_account, session
+):
+    pocket = await create_pocket(client, auth_headers, test_account, initial="100")
+    response = await post_transaction(
+        client,
+        auth_headers,
+        test_account,
+        "Recurring placeholder",
+        "40",
+        "debit",
+        allocations=[(pocket["id"], "40")],
+    )
+    transaction = await session.get(Transaction, uuid.UUID(response.json()["id"]))
+    assert transaction is not None
+    transaction.is_ignored = True
+
+    await release_invalid_for_background_edit(session, test_account.workspace_id, transaction)
+    await session.commit()
+
+    assert await session.scalar(
+        select(GoalAllocation.id).where(GoalAllocation.transaction_id == transaction.id)
+    ) is None
+
+
+@pytest.mark.parametrize("apply_all", [False, True], ids=["single-rule", "all-rules"])
+async def test_ignore_rule_clears_a_deposit_together_with_its_spending(
+    client, auth_headers, test_account, test_user, session, apply_all
+):
+    pocket = await create_pocket(client, auth_headers, test_account)
+    goal_id = uuid.UUID(pocket["id"])
+    # The deposit is locked and processed first, while its spending still needs it.
+    deposit, spending = (
+        Transaction(
+            id=transaction_id,
+            user_id=test_user.id,
+            workspace_id=test_account.workspace_id,
+            account_id=test_account.id,
+            description="Paired ignore",
+            amount=Decimal(amount),
+            currency=test_account.currency,
+            date=date.today(),
+            type=transaction_type,
+            status="posted",
+            source="manual",
+        )
+        for transaction_id, amount, transaction_type in (
+            (uuid.UUID(int=1), "100", "credit"),
+            (uuid.UUID(int=2**128 - 1), "60", "debit"),
+        )
+    )
+    session.add_all([deposit, spending])
+    await session.commit()
+    allocation = [GoalAllocationInput(goal_id=goal_id, amount=Decimal("60"))]
+    for transaction in (deposit, spending):
+        await replace_transaction_allocations(
+            session, test_account.workspace_id, test_user.id, transaction, allocation
+        )
+    await session.commit()
+    rule = Rule(
+        user_id=test_user.id,
+        workspace_id=test_account.workspace_id,
+        name="Ignore both",
+        conditions_op="AND",
+        conditions=[{"field": "description", "op": "contains", "value": "Paired ignore"}],
+        actions=[{"op": "ignore"}],
+        is_active=True,
+    )
+    session.add(rule)
+    await session.commit()
+
+    if apply_all:
+        await rule_service.apply_all_rules(session, test_account.workspace_id)
+    else:
+        await rule_service.apply_single_rule(session, test_account.workspace_id, rule)
+
+    assert await session.scalar(
+        select(GoalAllocation.id).where(GoalAllocation.goal_id == goal_id)
+    ) is None

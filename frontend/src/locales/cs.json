@@ -1614,6 +1614,7 @@
     "withdrawalHint": "Použijte vyhrazené peníze z jedné nebo více kapes.",
     "postedOnlyHint": "Kapsy mohou měnit pouze zaúčtované transakce.",
     "ignoredHint": "Ignorované transakce nelze přiřadit do kapes.",
+    "savingRemovesAssignments": "Uložením se odstraní přiřazení této transakce do kapes.",
     "allocated": "Přiřazeno",
     "remaining": "Zbývá",
     "allocationFor": "Přiřazení pro {{name}}",

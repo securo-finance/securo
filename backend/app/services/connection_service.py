@@ -38,7 +38,7 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
 )
-from app.services import goal_allocation_service, oauth_state
+from app.services import goal_allocation_service, goal_service, oauth_state
 from app.services import admin_service
 from app.services import category_line_service, reconciliation_service, recurring_match_service
 from app.services.text_similarity import token_overlap
@@ -2882,6 +2882,10 @@ async def sync_connection(
                     )
                     if preview.is_ignored:
                         placeholder.is_ignored = True
+                    if placeholder.goal_allocations:
+                        await goal_allocation_service.release_invalid_for_background_edit(
+                            session, placeholder.workspace_id, placeholder
+                        )
                     merged_count += 1
                     continue
 
@@ -3108,6 +3112,16 @@ async def delete_connection(
         )
     ).scalars().all()
 
+    await goal_service.delete_account_pockets(
+        session,
+        list(
+            (
+                await session.scalars(
+                    select(Account.id).where(Account.connection_id == connection.id)
+                )
+            ).all()
+        ),
+    )
     await session.delete(connection)
     await session.flush()
 

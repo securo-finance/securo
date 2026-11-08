@@ -1483,6 +1483,7 @@
     "withdrawalHint": "Використайте зарезервовані гроші з одного або кількох Pocket.",
     "postedOnlyHint": "Змінювати Pocket можуть лише проведені транзакції.",
     "ignoredHint": "Ігноровані транзакції не можна розподіляти по Pocket.",
+    "savingRemovesAssignments": "Під час збереження розподіли цієї транзакції по Pocket буде видалено.",
     "allocated": "Розподілено",
     "remaining": "Залишилось",
     "allocationFor": "Розподіл для {{name}}",
