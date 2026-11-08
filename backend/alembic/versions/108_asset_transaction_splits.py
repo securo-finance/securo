@@ -1,7 +1,7 @@
 """let the asset ledger record stock splits
 
-Revision ID: 102
-Revises: 101
+Revision ID: 108
+Revises: 107
 Create Date: 2026-10-29
 
 The ledger only knew buys and sells. After a stock split the position kept
@@ -20,8 +20,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "102"
-down_revision: Union[str, None] = "101"
+revision: str = "108"
+down_revision: Union[str, None] = "107"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
