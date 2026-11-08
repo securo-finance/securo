@@ -112,6 +112,19 @@ PERIODS_PER_YEAR: dict[str, Decimal] = {
 MAX_CONSECUTIVE_FAILURES = 3
 
 
+def read_term_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Copy stored lines into input form without changing legacy inheritance.
+
+    Older terms stored null for omitted fiscal references. New terms omit
+    inherited references and store an explicit clear as {}, so a read/resave
+    keeps the distinction without rewriting existing agreements.
+    """
+    return [
+        {key: value for key, value in line.items() if key != "fiscal_refs" or value is not None}
+        for line in lines
+    ]
+
+
 class InvoiceSchedule(Base):
     """One agreement with one client to bill them every period."""
 
@@ -180,7 +193,7 @@ class InvoiceSchedule(Base):
     # Who created it. Not an owner: the agreement belongs to the
     # workspace and outlives any member.
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     # RESTRICT for the same reason as on invoices: deleting a client must
     # never silently delete the record of what they agreed to pay.

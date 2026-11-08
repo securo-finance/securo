@@ -53,7 +53,7 @@ import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
 import { isManualInstallmentSeriesRow } from '@/lib/installment-series'
-import { CategoryIcon } from '@/components/category-icon'
+import { TransactionCategoryIcon, TransactionCategoryLabel } from '@/components/category-lines-display'
 import { CategorySelect } from '@/components/category-select'
 import { CategoryPicker } from '@/components/category-picker'
 import { TransactionDialog, type SaveAction, type TransactionSavePayload } from '@/components/transaction-dialog'
@@ -597,10 +597,15 @@ export default function TransactionsPage() {
     mutationFn: ({ ids, categoryId }: { ids: string[]; categoryId: string | null }) =>
       transactions.bulkCategorize(ids, categoryId),
     onSuccess: (result) => {
+      // The backend never overwrites a split across categories; say how many
+      // of the selected rows it left alone, or the count looks wrong.
+      const skipped = result.skipped_split ?? 0
       invalidateAfterTxMutation()
       setSelectedIds(new Set())
       setBulkCategory('')
-      toast.success(t('transactions.bulkSuccess', { count: result.updated }))
+      toast.success(t('transactions.bulkSuccess', { count: result.updated }), {
+        description: skipped > 0 ? t('categoryLines.bulkSkipped', { count: skipped }) : undefined,
+      })
     },
     onError: (error) => {
       toast.error(extractApiError(error))
@@ -1128,7 +1133,7 @@ export default function TransactionsPage() {
       : ''
     return (
       <div className="flex items-center gap-2 md:gap-3">
-        <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size="lg" />
+        <TransactionCategoryIcon tx={tx} size="lg" />
         <div className="min-w-0 flex-1">
           {/* The column has a fixed width, so a row carrying several badges
               (transfer with its counterpart account, report exclusion, an
@@ -1316,11 +1321,7 @@ export default function TransactionsPage() {
       case 'category':
         return (
           <TableCell key={col.id} style={widthStyle} className={baseClass}>
-            {tx.category ? (
-              <span className="text-sm text-muted-foreground">{tx.category.name}</span>
-            ) : (
-              <span className="text-xs text-muted-foreground italic">{t('transactions.noCategory')}</span>
-            )}
+            <TransactionCategoryLabel tx={tx} />
           </TableCell>
         )
       case 'account': {
@@ -2245,16 +2246,16 @@ export default function TransactionsPage() {
           <p className="text-sm text-muted-foreground">
             {t('transactions.confirmTransferCategoryDesc')}
           </p>
-          <DialogFooter className="flex-row flex-nowrap items-center justify-end gap-2 sm:space-x-0">
+          <DialogFooter className="flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-2">
             <Button
-              className="shrink-0"
+              className="w-full sm:w-auto"
               variant="outline"
               onClick={() => setPendingTransferCategoryUpdate(null)}
             >
               {t('common.cancel')}
             </Button>
             <Button
-              className="min-w-0 flex-1 truncate"
+              className="w-full sm:w-auto"
               variant="outline"
               onClick={() => submitPendingTransferCategoryUpdate(false)}
               disabled={updateMutation.isPending}
@@ -2262,7 +2263,7 @@ export default function TransactionsPage() {
               {t('transactions.confirmTransferCategorySingle')}
             </Button>
             <Button
-              className="min-w-0 flex-1 truncate"
+              className="w-full sm:w-auto"
               onClick={() => submitPendingTransferCategoryUpdate(true)}
               disabled={updateMutation.isPending}
             >

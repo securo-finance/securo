@@ -6,6 +6,8 @@ dashboard) just check that the wrapper returns a serializable shape, not
 the full numeric correctness of those services.
 """
 import uuid
+from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 import pytest_asyncio
@@ -13,6 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # Importing this package registers all tools into mcp_server.registry.REGISTRY.
 import mcp_server.tools  # noqa: F401
+from app.models.account import Account
+from app.models.transaction import Transaction
+from app.schemas.account import AccountCreate
+from app.services import account_service
 from mcp_server.auth import CallContext
 from mcp_server.registry import REGISTRY
 
@@ -221,6 +227,58 @@ async def test_list_recurring_transactions_returns_empty_dict_with_no_data(
     assert r == {"items": [], "total": 0}
 
 
+async def test_list_accounts_reports_current_balance(
+    session: AsyncSession, ctx: CallContext, test_user, test_account, test_connection
+):
+    """A manual account's balance is its opening balance plus its
+    transactions, as on the Accounts page, not the stored opening amount."""
+    ws_id = test_account.workspace_id
+    manual = await account_service.create_account(
+        session,
+        ws_id,
+        test_user.id,
+        AccountCreate(name="Manual", type="checking", balance=Decimal("100.00"), currency="BRL"),
+    )
+    for amount, tx_type in (("50.00", "credit"), ("20.00", "debit")):
+        session.add(
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=ws_id,
+                account_id=manual.id,
+                description=f"Seeded {tx_type}",
+                amount=Decimal(amount),
+                date=date.today() - timedelta(days=1),
+                type=tx_type,
+                source="manual",
+                currency="BRL",
+            )
+        )
+    session.add(
+        Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=ws_id,
+            connection_id=test_connection.id,
+            external_id="card-ext-1",
+            name="Connected Card",
+            type="credit_card",
+            balance=Decimal("300.00"),
+            currency="BRL",
+        )
+    )
+    await session.commit()
+
+    handler = REGISTRY["list_accounts"].handler
+    r = await handler(session=session, ctx=ctx)
+    balances = {item["name"]: item["balance"] for item in r["items"]}
+    assert balances["Manual"] == pytest.approx(130.00)
+    # A connected account reports what the bank sent, as before.
+    assert balances["Conta Corrente"] == pytest.approx(1500.00)
+    # A card is debt, so it comes back negative, as on the Accounts page.
+    assert balances["Connected Card"] == pytest.approx(-300.00)
+
+
 async def test_list_assets_empty(session: AsyncSession, ctx: CallContext):
     handler = REGISTRY["list_assets"].handler
     r = await handler(session=session, ctx=ctx)
@@ -260,6 +318,54 @@ async def test_aggregate_currency_filter(
     assert "error" not in usd
     eur = await handler(session=session, ctx=ctx, currency="EUR", group_by="category")
     assert "error" not in eur and eur["items"] == []
+
+
+async def test_aggregate_exclude_transfers_drops_treat_as_transfer_categories(
+    session: AsyncSession, ctx: CallContext, test_user, test_account
+):
+    """exclude_transfers leaves out rows in a treat_as_transfer category, not
+    only paired legs, and still keeps uncategorized rows (#1342)."""
+    from datetime import date, datetime, timezone
+    from decimal import Decimal
+
+    from app.models.category import Category
+    from app.models.transaction import Transaction
+
+    investing = Category(
+        id=uuid.uuid4(), user_id=test_user.id, name="Investing",
+        icon="tag", color="#000", is_system=False, treat_as_transfer=True,
+    )
+    groceries = Category(
+        id=uuid.uuid4(), user_id=test_user.id, name="Groceries",
+        icon="tag", color="#000", is_system=False,
+    )
+    session.add_all([investing, groceries])
+    await session.commit()
+
+    def tx(amount: str, category_id=None, transfer_pair_id=None) -> Transaction:
+        return Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, account_id=test_account.id,
+            category_id=category_id, transfer_pair_id=transfer_pair_id,
+            description="row", amount=Decimal(amount), date=date(2026, 3, 10),
+            type="debit", source="manual", created_at=datetime.now(timezone.utc),
+        )
+
+    session.add_all([
+        tx("500", investing.id),  # unpaired, in a treat_as_transfer category
+        tx("40", groceries.id),
+        tx("15"),  # uncategorized
+        tx("200", transfer_pair_id=uuid.uuid4()),  # paired leg
+    ])
+    await session.commit()
+
+    handler = REGISTRY["aggregate"].handler
+    period = {"from_date": "2026-03-01", "to_date": "2026-03-31", "group_by": "account"}
+
+    excluded = await handler(session=session, ctx=ctx, exclude_transfers=True, **period)
+    assert [(i["value"], i["count"]) for i in excluded["items"]] == [(55.0, 2)]
+
+    included = await handler(session=session, ctx=ctx, exclude_transfers=False, **period)
+    assert [(i["value"], i["count"]) for i in included["items"]] == [(755.0, 4)]
 
 
 async def test_list_transactions_account_types_filter(

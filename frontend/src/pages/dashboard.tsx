@@ -36,6 +36,7 @@ import {
   XAxis,
   YAxis,
   Tooltip as RechartsTooltip,
+  DefaultTooltipContent,
   ResponsiveContainer,
 } from 'recharts'
 import { CheckCircle2, CalendarIcon, ChevronDown, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle } from 'lucide-react'
@@ -44,6 +45,8 @@ import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
 import { CategoryIcon } from '@/components/category-icon'
+import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
+import { isSplitByCategory, projectedSplitSource } from '@/lib/category-lines'
 import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
 import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
@@ -622,6 +625,8 @@ export default function DashboardPage() {
     installmentNumber: number | null
     totalInstallments: number | null
     showPendingBadge: boolean
+    /** Set when the row is split across categories, to label its parts. */
+    splitSource: Transaction | null
   }
 
   const [txPerPage, setTxPerPage] = useState<number>(() => {
@@ -672,9 +677,12 @@ export default function DashboardPage() {
         installmentNumber: tx.installment_number,
         totalInstallments: tx.total_installments,
         showPendingBadge: shouldShowPendingBadge(tx),
+        splitSource: isSplitByCategory(tx) ? tx : null,
       })
     }
     for (const pt of projectedTxs ?? []) {
+      // A split template's occurrence shows its parts like a split row.
+      const projectedSplit = projectedSplitSource(pt) as Transaction | null
       rows.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,
         description: pt.description,
@@ -699,6 +707,7 @@ export default function DashboardPage() {
         installmentNumber: null,
         totalInstallments: null,
         showPendingBadge: false,
+        splitSource: projectedSplit,
       })
     }
     rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
@@ -1232,10 +1241,9 @@ export default function DashboardPage() {
                   className="cursor-pointer"
                   onMouseMove={(state) => {
                     const idx = state?.activeTooltipIndex
-                    if (typeof idx === 'number') {
-                      const point = cumulativeData[idx]
-                      if (point) setHoveredDay(point.day)
-                    }
+                    const index = idx == null ? NaN : Number(idx)
+                    const point = Number.isInteger(index) ? cumulativeData[index] : undefined
+                    setHoveredDay(point?.day ?? null)
                   }}
                   onMouseLeave={() => setHoveredDay(null)}
                   onClick={(_state) => {
@@ -1283,6 +1291,19 @@ export default function DashboardPage() {
                     ]}
                   />
                   <RechartsTooltip
+                    content={({ payload, ...props }) => (
+                      <DefaultTooltipContent
+                        {...props}
+                        payload={payload.map((entry) => entry.dataKey === 'current' && typeof entry.value === 'number'
+                          ? {
+                            ...entry,
+                            color: entry.value === 0
+                              ? 'var(--muted-foreground)'
+                              : entry.value > 0 ? '#10B981' : '#F43F5E',
+                          }
+                          : entry)}
+                      />
+                    )}
                     formatter={(value, name) => {
                       const fmt = (v: number) => (privacyMode ? MASK : formatCurrency(v, userCurrency, locale))
                       if (name === 'band') {
@@ -1350,34 +1371,32 @@ export default function DashboardPage() {
             const footerDay = hoveredDay ?? lastDay
             const point = cumulativeData.find(d => d.day === footerDay)
             const comparisonValue = comparisonMonths.length === 1 ? point?.comparison : point?.median
-            if (!point || comparisonValue == null || point.current == null) return null
-            const footerDelta = point.current - comparisonValue
-            if (comparisonMonths.length === 1) {
-              return (
-                <div className="px-5 pb-4 pt-0 shrink-0">
-                  <p className="text-xs text-muted-foreground">
-                    {t('dashboard.balanceFlowVsMonth', {
-                      day: footerDay,
-                      month: monthLabel(comparisonMonths[0], uiLocale),
-                      delta: mask(`${footerDelta >= 0 ? '+' : ''}${formatCurrency(footerDelta, userCurrency, locale)}`),
-                    })}
-                  </p>
-                </div>
-              )
-            }
+            const rawDelta = point?.current != null && comparisonValue != null
+              ? point.current - comparisonValue
+              : null
+            const formattedDelta = rawDelta == null ? '' : formatCurrency(Math.abs(rawDelta), userCurrency, locale)
+            const footerDelta = formattedDelta === formatCurrency(0, userCurrency, locale) ? 0 : rawDelta
             return (
-              <div className="px-5 pb-4 pt-0 shrink-0">
-                <p className="text-xs text-muted-foreground">
-                  {t('dashboard.balanceFlowVsMedian', {
-                    day: footerDay,
-                    median: mask(formatCurrency(point.median, userCurrency, locale)),
-                    delta: mask(`${footerDelta >= 0 ? '+' : ''}${formatCurrency(footerDelta, userCurrency, locale)}`),
-                  })}
-                  {' '}
-                  <span className={footerDelta >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
-                    {footerDelta >= 0 ? '\u25B2' : '\u25BC'}
-                  </span>
-                </p>
+              <div className="h-20 overflow-y-auto px-5 pb-4 pt-0 shrink-0">
+                {point && footerDelta != null && (
+                  <p className="text-xs text-muted-foreground">
+                    {t(comparisonMonths.length === 1 ? 'dashboard.balanceFlowVsMonth' : 'dashboard.balanceFlowVsMedian', {
+                      context: footerDelta > 0 ? 'above' : footerDelta < 0 ? 'below' : 'equal',
+                      day: point.day,
+                      month: monthLabel(comparisonMonths[0], uiLocale),
+                      median: mask(formatCurrency(comparisonValue, userCurrency, locale)),
+                      delta: mask(formattedDelta),
+                    })}
+                    {footerDelta !== 0 && (
+                      <>
+                        {' '}
+                        <span className={footerDelta > 0 ? 'text-emerald-600' : 'text-rose-500'} aria-hidden="true">
+                          {footerDelta > 0 ? '\u25B2' : '\u25BC'}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
             )
           })()}
@@ -1523,13 +1542,16 @@ export default function DashboardPage() {
                       >
                         {/* Category Icon */}
                         <div className="shrink-0">
-                          <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />
+                          {row.splitSource
+                            ? <TransactionCategoryIcon tx={row.splitSource} size="md" />
+                            : <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />}
                         </div>
 
                         {/* Content */}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             <p className="text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
+                            {row.splitSource && <CategorySplitBadge tx={row.splitSource} compact className="shrink-0 text-[9px] px-1" />}
                             {row.groupId && (
                               <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
                                 {row.isShared && row.parentOwnerName
@@ -1640,10 +1662,13 @@ export default function DashboardPage() {
                           </TableCell>
                           <TableCell className="py-2.5 pl-5 sm:pl-0">
                             <div className="flex items-center gap-3">
-                              <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
+                              {row.splitSource
+                                ? <TransactionCategoryIcon tx={row.splitSource} size="lg" />
+                                : <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />}
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
+                                  {row.splitSource && <CategorySplitBadge tx={row.splitSource} className="shrink-0" />}
                                   {row.groupId && (
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 shrink-0 uppercase tracking-wide">
                                       {row.isShared && row.parentOwnerName
