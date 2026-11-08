@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.util
+import uuid
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -14,10 +15,12 @@ from sqlalchemy import inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api.mortgage_payments import _get_payment
 from app.models.account import Account
 from app.models.category import Category
 from app.models.goal import Goal, GoalAllocation
 from app.models.import_log import ImportLog
+from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
@@ -522,6 +525,60 @@ async def test_concurrent_import_logs_do_not_deadlock_on_account_fk(
         assert len(rows) == 2
         assert all(row.import_id is not None for row in rows)
         assert await _pocket_current_amount(fresh, goal.id) == 100
+
+
+async def test_mortgage_breakdown_takes_principal_entry_before_higher_payment(
+    session, postgres_sessions, pocket_state
+):
+    """Rule application locks rows in ID order, so a breakdown save must too."""
+    user, workspace, account, _, _ = pocket_state
+    principal_id = uuid.UUID(int=1)
+    payment_id = uuid.UUID(int=2**128 - 1)
+    session.add_all(
+        Transaction(
+            id=transaction_id,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            account_id=account.id,
+            description=description,
+            amount=Decimal("50"),
+            currency=account.currency,
+            date=date(2026, 1, 1),
+            type="debit",
+            source="manual",
+        )
+        for transaction_id, description in ((principal_id, "Principal"), (payment_id, "Payment"))
+    )
+    await session.flush()
+    session.add(
+        MortgagePaymentAllocation(
+            workspace_id=workspace.id,
+            payment_transaction_id=payment_id,
+            loan_account_id=account.id,
+            principal_amount=Decimal("40"),
+            interest_amount=Decimal("10"),
+            loan_transaction_id=principal_id,
+        )
+    )
+    await session.commit()
+
+    async with postgres_sessions() as saver, postgres_sessions() as probe:
+        pid = await saver.scalar(text("SELECT pg_backend_pid()"))
+        await session.execute(
+            select(Transaction.id).where(Transaction.id == principal_id).with_for_update()
+        )
+
+        async with asyncio.TaskGroup() as tasks:
+            save = tasks.create_task(_get_payment(saver, payment_id, workspace.id, lock=True))
+            await _wait_for_lock(probe, pid)
+            await probe.execute(
+                select(Transaction.id).where(Transaction.id == payment_id).with_for_update(nowait=True)
+            )
+            await probe.rollback()
+            await session.commit()
+
+        assert save.result() is not None
+        await saver.rollback()
 
 
 async def test_deleting_allocation_actor_preserves_reservations(
