@@ -1095,12 +1095,12 @@ async def _sync_holding_trades(
     The ledger lets performance count exactly what was bought and sold
     instead of inferring it from valuation changes. A holding is fetched only
     when its stored trades no longer add up to the share count the provider
-    reports: before its first import, or after a purchase, a redemption or its
-    closure. A sync where no position moved therefore makes no requests. One
-    whose trades still do not add up is not fetched again until its share
-    count changes. Stored trades are combined with the fetched ones in case
-    the provider only returns recent history. Only provider-sourced rows are
-    touched; trades the user entered stay.
+    reports: before its first import, after a purchase, redemption or closure,
+    or when a user-initiated sync explicitly retries an unresolved history. A
+    scheduled sync where no position moved therefore makes no requests. Stored
+    trades are combined with the fetched ones in case the provider only
+    returns recent history. Only provider-sourced rows are touched; trades the
+    user entered stay.
     """
     source = connection.provider
     settings = connection.settings or {}
