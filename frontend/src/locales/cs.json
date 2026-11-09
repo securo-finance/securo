@@ -1119,7 +1119,7 @@
     "transferSameAccount": "Zdrojový a cílový účet se musí lišit",
     "transferDescription": "Popis",
     "transferNotes": "Poznámka",
-    "transferInfo": "Toto je převod — změny popisu, data a poznámky se projeví na obou stranách",
+    "transferInfo": "Toto je převod — změny popisu a poznámky se projeví na obou stranách",
     "transferLinkedTo": "Propojeno s:",
     "transferOpenAccount": "Otevřít účet {{account}}",
     "transferTooltip": "Převody jsou vyloučeny ze součtů v reportech a v přehledu",

@@ -1058,7 +1058,7 @@
     "transferSameAccount": "La cuenta origen y destino deben ser diferentes",
     "transferDescription": "Descripción",
     "transferNotes": "Notas",
-    "transferInfo": "Esto es una transferencia — los cambios en descripción, fecha y notas se aplicarán a ambos lados",
+    "transferInfo": "Esto es una transferencia — los cambios en descripción y notas se aplicarán a ambos lados",
     "transferLinkedTo": "Vinculada a:",
     "transferOpenAccount": "Abrir la cuenta {{account}}",
     "transferTooltip": "Las transferencias están excluidas de los informes y totales del panel",

@@ -1091,7 +1091,7 @@
     "transferSameAccount": "Źródło i cel muszą być różne",
     "transferDescription": "Opis",
     "transferNotes": "Notatki",
-    "transferInfo": "To transfer — zmiany opisu, daty i notatek obejmą obie strony",
+    "transferInfo": "To transfer — zmiany opisu i notatek obejmą obie strony",
     "transferLinkedTo": "Powiązana z:",
     "transferOpenAccount": "Otwórz konto {{account}}",
     "transferTooltip": "Transfery są wyłączone z sum w raportach i na pulpicie",

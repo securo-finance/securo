@@ -1059,7 +1059,7 @@
     "transferSameAccount": "Source and destination must be different",
     "transferDescription": "Description",
     "transferNotes": "Notes",
-    "transferInfo": "This is a transfer — changes to description, date, and notes will apply to both sides",
+    "transferInfo": "This is a transfer — changes to description and notes will apply to both sides",
     "transferLinkedTo": "Linked to:",
     "transferOpenAccount": "Open {{account}}",
     "transferTooltip": "Transfers are excluded from report and dashboard totals",

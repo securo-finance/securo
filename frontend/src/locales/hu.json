@@ -1059,7 +1059,7 @@
     "transferSameAccount": "A forrás- és a célszámla nem lehet azonos",
     "transferDescription": "Leírás",
     "transferNotes": "Megjegyzések",
-    "transferInfo": "Ez egy átvezetés – a leírás, a dátum és a megjegyzések módosítása mindkét oldalra vonatkozik",
+    "transferInfo": "Ez egy átvezetés – a leírás és a megjegyzések módosítása mindkét oldalra vonatkozik",
     "transferLinkedTo": "Kapcsolva ehhez:",
     "transferOpenAccount": "Megnyitás: {{account}}",
     "transferTooltip": "Az átvezetések nem számítanak bele a jelentések és az Áttekintés összesítéseibe",

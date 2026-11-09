@@ -1059,7 +1059,7 @@
     "transferSameAccount": "स्रोत और गंतव्य अलग होने चाहिए",
     "transferDescription": "विवरण",
     "transferNotes": "नोट्स",
-    "transferInfo": "यह एक ट्रांसफ़र है — विवरण, तिथि और नोट्स में बदलाव दोनों तरफ़ लागू होंगे",
+    "transferInfo": "यह एक ट्रांसफ़र है — विवरण और नोट्स में बदलाव दोनों तरफ़ लागू होंगे",
     "transferLinkedTo": "इससे जुड़ा:",
     "transferOpenAccount": "{{account}} खाता खोलें",
     "transferTooltip": "ट्रांसफ़र रिपोर्ट और डैशबोर्ड के कुल से बाहर रखे जाते हैं",

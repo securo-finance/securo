@@ -1059,7 +1059,7 @@
     "transferSameAccount": "Quell- und Zielkonto müssen unterschiedlich sein",
     "transferDescription": "Beschreibung",
     "transferNotes": "Notizen",
-    "transferInfo": "Dies ist eine Umbuchung — Änderungen an Beschreibung, Datum und Notizen wirken sich auf beide Seiten aus",
+    "transferInfo": "Dies ist eine Umbuchung — Änderungen an Beschreibung und Notizen wirken sich auf beide Seiten aus",
     "transferLinkedTo": "Verknüpft mit:",
     "transferOpenAccount": "Konto {{account}} öffnen",
     "transferTooltip": "Umbuchungen sind von den Berichts- und Dashboard-Summen ausgeschlossen",

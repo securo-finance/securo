@@ -1059,7 +1059,7 @@
     "transferSameAccount": "振替元と振替先は異なる口座にしてください",
     "transferDescription": "摘要",
     "transferNotes": "メモ",
-    "transferInfo": "これは振替です — 摘要・日付・メモの変更は両方の取引に適用されます",
+    "transferInfo": "これは振替です — 摘要・メモの変更は両方の取引に適用されます",
     "transferLinkedTo": "紐付け先:",
     "transferOpenAccount": "{{account}} 口座を開く",
     "transferTooltip": "振替はレポートやダッシュボードの合計から除外されます",

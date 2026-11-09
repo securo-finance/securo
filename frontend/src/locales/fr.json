@@ -1061,7 +1061,7 @@
     "transferSameAccount": "La source et la destination doivent être différentes",
     "transferDescription": "Description",
     "transferNotes": "Notes",
-    "transferInfo": "Il s'agit d'un virement — les modifications de la description, de la date et des notes s'appliqueront aux deux côtés",
+    "transferInfo": "Il s'agit d'un virement — les modifications de la description et des notes s'appliqueront aux deux côtés",
     "transferLinkedTo": "Liée à :",
     "transferOpenAccount": "Ouvrir le compte {{account}}",
     "transferTooltip": "Les virements sont exclus des totaux des rapports et du tableau de bord",

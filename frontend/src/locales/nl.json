@@ -1059,7 +1059,7 @@
     "transferSameAccount": "Bron en bestemming moeten verschillend zijn",
     "transferDescription": "Beschrijving",
     "transferNotes": "Opmerkingen",
-    "transferInfo": "Dit is een overdracht. Wijzigingen in de beschrijving, datum en opmerkingen zijn van toepassing op beide partijen",
+    "transferInfo": "Dit is een overdracht. Wijzigingen in de beschrijving en opmerkingen zijn van toepassing op beide partijen",
     "transferLinkedTo": "Gekoppeld aan:",
     "transferOpenAccount": "Rekening {{account}} openen",
     "transferTooltip": "Overboekingen zijn uitgesloten van de rapport- en dashboardtotalen",
