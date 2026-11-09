@@ -286,7 +286,10 @@ async def test_override_rejects_scoped_move_when_sibling_has_override(
             TransactionUpdate(
                 account_id=card.id,
                 apply_to="all",
-                **({"category_lines": {"share_type": "exact", "lines": []}} if unsplit else {}),
+                category_lines=(
+                    TransactionCategoryLinesInput(share_type="exact", lines=[])
+                    if unsplit else None
+                ),
             ),
         )
 
