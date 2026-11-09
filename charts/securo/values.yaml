@@ -232,6 +232,12 @@ redis:
     repository: docker.io/library/redis
     tag: 8-alpine
     pullPolicy: IfNotPresent
+  # The official Redis image runs as uid 999 / gid 1000. Longhorn-provisioned
+  # volumes are initially owned by root, so fsGroup must be applied before the
+  # container starts or Redis cannot persist its RDB snapshots.
+  podSecurityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
   resources: {}
 
 serviceAccount:
