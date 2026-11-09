@@ -397,11 +397,11 @@ async def test_update_cascades_to_paired_transaction(
     debit_id = data["debit"]["id"]
     credit_id = data["credit"]["id"]
 
-    # Update debit description and date
+    # Update debit amount, description, and date
     new_date = "2025-06-15"
     update_response = await client.patch(
         f"/api/transactions/{debit_id}",
-        json={"description": "Updated description", "date": new_date},
+        json={"amount": "450.00", "description": "Updated description", "date": new_date},
         headers=auth_headers,
     )
     assert update_response.status_code == 200
@@ -414,6 +414,7 @@ async def test_update_cascades_to_paired_transaction(
     credit_data = credit_response.json()
     assert credit_data["description"] == "Updated description"
     assert credit_data["date"] == new_date
+    assert Decimal(str(credit_data["amount"])) == Decimal("450.00")
 
 
 @pytest.mark.asyncio
