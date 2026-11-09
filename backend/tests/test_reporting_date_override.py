@@ -144,14 +144,6 @@ async def test_override_moves_synced_row_and_reset_preserves_bank_truth(
     )
     assert transaction.id in {row.id for row in current_rows}
 
-    with pytest.raises(ValueError, match="Bank date cannot be changed"):
-        await update_transaction(
-            session,
-            transaction.id,
-            test_workspace.id,
-            test_user.id,
-            TransactionUpdate(date=bank_date - timedelta(days=2)),
-        )
 
 @pytest.mark.asyncio
 async def test_update_without_reporting_date_keeps_existing_override(

@@ -885,7 +885,9 @@ export default function AccountDetailPage() {
   }, [ledgerItems, ledger.hasNextPage, projectedRows, isCreditCard, summary, usePrimary, displayCurrency, openingBalance, ccRunningTotal])
 
   const totalBalance = (usePrimary ? summary?.current_balance_primary : undefined) ?? summary?.current_balance ?? 0
-  const projectedBalance = displayRows.length > 0 ? displayRows[0].runningBalance : openingBalance
+  const projectedBalance = isCreditCard
+    ? (displayRows[0]?.runningBalance ?? openingBalance)
+    : (chartData.at(-1)?.balance ?? openingBalance)
 
   const actualIncome = (usePrimary ? summary?.monthly_income_primary : undefined) ?? summary?.monthly_income ?? 0
   const actualExpenses = (usePrimary ? summary?.monthly_expenses_primary : undefined) ?? summary?.monthly_expenses ?? 0
