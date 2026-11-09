@@ -1,0 +1,380 @@
+{
+  "id": "securo/rules-eu",
+  "name": {
+    "en": "Europe",
+    "pt-BR": "Europa"
+  },
+  "description": {
+    "en": "Common merchants and transfer patterns, mapped to the default categories.",
+    "pt-BR": "Estabelecimentos e padrões de transferência comuns, mapeados para as categorias padrão."
+  },
+  "version": "1.0.0",
+  "repository": "https://github.com/securo-finance/securo",
+  "license": "AGPL-3.0-only",
+  "min_securo_version": "0.19.0",
+  "contributes": {
+    "rules": [
+      {
+        "key": "bolt-freenow",
+        "name": "Bolt / FreeNow",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "BOLT"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "FREENOW"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "deliveroo-just-eat-glovo",
+        "name": "Deliveroo / Just Eat / Glovo",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "DELIVEROO"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "JUST EAT"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "GLOVO"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "food"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "lidl-aldi-carrefour",
+        "name": "Lidl / Aldi / Carrefour",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "LIDL"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "ALDI"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "CARREFOUR"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "groceries"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "sepa-transfer",
+        "name": "SEPA Transfer",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "SEPA"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "WIRE TRANSFER"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transfers"
+          }
+        ],
+        "priority": 50
+      },
+      {
+        "key": "wolt",
+        "name": "Wolt",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "WOLT"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "food"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "flixbus-blablacar",
+        "name": "Flixbus / BlaBlaCar",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "FLIXBUS"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "BLABLACAR"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "rossmann-dm",
+        "name": "Rossmann / DM",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "ROSSMANN"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "DM "
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "health"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "ikea",
+        "name": "IKEA",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "IKEA"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "housing"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "deutsche-bahn-sncf-renfe",
+        "name": "Deutsche Bahn / SNCF / Renfe",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "DEUTSCHE BAHN"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "DB "
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "SNCF"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "RENFE"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "albert-heijn-rewe-mercadona-edeka",
+        "name": "Albert Heijn / Rewe / Mercadona / Edeka",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "ALBERT HEIJN"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "REWE"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "MERCADONA"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "EDEKA"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "groceries"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "miete-loyer-rent",
+        "name": "Miete / Loyer (Rent)",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "MIETE"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "LOYER"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "housing"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "gehalt-salaire-salary",
+        "name": "Gehalt / Salaire (Salary)",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "GEHALT|SALAIRE|LOHN|SALARY|STIPENDIO"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "salary"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "spende-don-donation",
+        "name": "Spende / Don (Donation)",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "SPENDE"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "DONATION"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "DON "
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "donations"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "steuer-impot-tax",
+        "name": "Steuer / Impôt (Tax)",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "STEUER"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "IMPOT"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "FINANZAMT"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "taxes"
+          }
+        ],
+        "priority": 10
+      }
+    ]
+  }
+}

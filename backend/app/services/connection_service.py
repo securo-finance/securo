@@ -1681,6 +1681,19 @@ async def handle_oauth_callback(
         existing_reconnect.status = "active"
         # Re-sync from current data on next sync cycle.
         existing_reconnect.last_sync_at = None
+        # New credentials end a backoff earned by failing ones, so the next
+        # cycle syncs it. A rate-limit backoff stays: the bank's quota is the
+        # same whatever the credentials.
+        reconnect_settings = existing_reconnect.settings or {}
+        backoff = reconnect_settings.get(SYNC_BACKOFF_KEY)
+        if backoff is not None and not (
+            isinstance(backoff, dict) and backoff.get("rate_limited") is True
+        ):
+            existing_reconnect.settings = {
+                key: value
+                for key, value in reconnect_settings.items()
+                if key != SYNC_BACKOFF_KEY
+            }
         await session.commit()
         await session.refresh(existing_reconnect)
         return existing_reconnect
@@ -2684,6 +2697,11 @@ async def _sync_credit_card_bills(
 # required, generic failure) still propagate as exceptions.
 SyncOutcome = Literal["refreshed", "rate_limited"]
 
+# Key in BankConnection.settings where the scheduler keeps its backoff state
+# for connections whose scheduled syncs keep failing (app.tasks.sync_tasks).
+# Any successful sync clears it, so a manual sync that works ends the backoff.
+SYNC_BACKOFF_KEY = "sync_backoff"
+
 
 async def sync_connection(
     session: AsyncSession,
@@ -3333,6 +3351,14 @@ async def sync_connection(
         # The healthy accounts just re-read a longer window, deduplicated.
         if not incomplete_fetch_account_ids:
             connection.last_sync_at = datetime.now(timezone.utc)
+        # A successful read ends any scheduler backoff (app.tasks.sync_tasks).
+        current_settings = connection.settings or {}
+        if SYNC_BACKOFF_KEY in current_settings:
+            connection.settings = {
+                key: value
+                for key, value in current_settings.items()
+                if key != SYNC_BACKOFF_KEY
+            }
         action_required_warnings = getattr(provider, "action_required_warnings", None)
         if isinstance(action_required_warnings, list) and action_required_warnings:
             logger.warning(
