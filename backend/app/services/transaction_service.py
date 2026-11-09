@@ -1614,13 +1614,13 @@ async def _apply_update_to_row(
     paths behave identically (FX restamp, bill re-link, transfer cascade,
     splits replacement).
     """
-    # Preflight already rejected changes. Drop equal provider values so an
-    # idempotent form save cannot restamp FX or cascade them to the manual leg.
-    if tx.source == "sync" and ({"amount", "date"} & update_data.keys()):
+    # Preflight already rejected amount/date changes. Drop equal provider values
+    # so an idempotent form save cannot restamp FX or cascade to the manual leg.
+    if tx.source == "sync" and ({"amount", "currency", "date"} & update_data.keys()):
         update_data = {
             key: value
             for key, value in update_data.items()
-            if key not in {"amount", "date"}
+            if key not in {"amount", "currency", "date"} or value != getattr(tx, key)
         }
 
     has_fx_override = "amount_primary" in update_data or "fx_rate_used" in update_data

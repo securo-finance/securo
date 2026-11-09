@@ -34,7 +34,9 @@ There is no change to provider refresh strategy or transaction fetch windows.
 
 Synchronized amounts and booking dates remain provider-owned: changing either
 through a transaction edit is rejected with HTTP 400; supplying its existing value
-is allowed. Installment-scoped edits validate every affected row before updating.
+is allowed. Resubmitting unchanged amount, currency, or date values preserves the
+stored FX conversion; actual currency edits and explicit FX overrides still apply.
+Installment-scoped edits validate every affected row before updating.
 Editing a manual transfer leg cannot change its synchronized counterpart's amount,
 date, derived FX values, or effective date. Description, notes, and explicitly
 requested category propagation remain available. The "post today" action rejects

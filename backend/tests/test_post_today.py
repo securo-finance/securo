@@ -15,6 +15,7 @@ from httpx import AsyncClient
 
 from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.workspace_service import create_personal_workspace_for_user
@@ -87,6 +88,7 @@ async def test_post_today_preserves_synced_pair_provider_fields(
     monkeypatch.setattr(
         "app.services.transaction_service.app_today", lambda: fixed_today
     )
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
     paired_account = Account(
         id=uuid4(),
         user_id=test_user.id,
@@ -94,7 +96,7 @@ async def test_post_today_preserves_synced_pair_provider_fields(
         name=f"{paired_source} pair",
         type="checking",
         balance=Decimal("0"),
-        currency="BRL",
+        currency="USD",
     )
     pair_id = uuid4()
     pending_transaction.transfer_pair_id = pair_id
@@ -105,17 +107,36 @@ async def test_post_today_preserves_synced_pair_provider_fields(
         account_id=paired_account.id,
         description="Paired transfer",
         amount=Decimal("123.45"),
-        currency="BRL",
+        currency="USD",
         date=date(2025, 1, 15),
         effective_date=date(2025, 2, 20),
         type="credit",
         source=paired_source,
         status="pending",
         transfer_pair_id=pair_id,
-        amount_primary=Decimal("678.90"),
-        fx_rate_used=Decimal("5.5"),
+        amount_primary=Decimal("678.90") if paired_source == "sync" else Decimal("617.25"),
+        fx_rate_used=Decimal("5.5") if paired_source == "sync" else Decimal("5"),
     )
-    session.add_all([paired_account, paired])
+    session.add_all(
+        [
+            paired_account,
+            paired,
+            FxRate(
+                base_currency="USD",
+                quote_currency="BRL",
+                date=date(2025, 1, 15),
+                rate=Decimal("5"),
+                source="test",
+            ),
+            FxRate(
+                base_currency="USD",
+                quote_currency="BRL",
+                date=fixed_today,
+                rate=Decimal("6"),
+                source="test",
+            ),
+        ]
+    )
     await session.commit()
     protected = (
         paired.amount,
@@ -145,6 +166,9 @@ async def test_post_today_preserves_synced_pair_provider_fields(
             paired.effective_date,
         ) == protected
     else:
+        assert paired.amount == Decimal("123.45")
+        assert paired.amount_primary == Decimal("740.70")
+        assert paired.fx_rate_used == Decimal("6")
         assert paired.date == fixed_today
         assert paired.effective_date == fixed_today
 

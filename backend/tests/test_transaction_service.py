@@ -1236,8 +1236,9 @@ async def test_get_transactions_skip_pagination(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["manual", "sync"])
 async def test_update_transaction_fx_override(
-    session: AsyncSession, test_user, test_workspace, txn_account
+    session: AsyncSession, test_user, test_workspace, txn_account, source
 ):
     txn = await create_transaction(
         session,
@@ -1251,11 +1252,18 @@ async def test_update_transaction_fx_override(
             type="debit",
         ),
     )
-    data = TransactionUpdate(amount_primary=Decimal("500"), fx_rate_used=Decimal("5"))
+    txn.source = source
+    await session.commit()
+    data = TransactionUpdate(
+        currency=txn.currency,
+        amount_primary=Decimal("500"),
+        fx_rate_used=Decimal("5"),
+    )
     updated = await update_transaction(session, txn.id, test_workspace.id, test_user.id, data)
 
     assert updated is not None
     assert updated.amount_primary == Decimal("500")
+    assert updated.fx_rate_used == Decimal("5")
 
 
 @pytest.mark.asyncio
@@ -1638,15 +1646,40 @@ async def test_update_synced_transaction_rejects_provider_fields_before_metadata
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"amount": Decimal("123.45"), "date": date(2025, 1, 15)},
+        {"currency": "USD"},
+        {
+            "amount": Decimal("123.45"),
+            "currency": "USD",
+            "date": date(2025, 1, 15),
+        },
+    ],
+    ids=["amount-date", "currency-only", "full-form"],
+)
 async def test_equal_synced_provider_fields_are_idempotent(
     session: AsyncSession,
     test_user,
     test_workspace,
     txn_account,
+    payload,
 ):
     manual, synced = await _create_mixed_source_pair(
-        session, test_user, test_workspace, txn_account
+        session, test_user, test_workspace, txn_account, synced_currency="USD"
     )
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    session.add(
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=synced.date,
+            rate=Decimal("6"),
+            source="test",
+        )
+    )
+    await session.commit()
     protected = (
         synced.amount,
         synced.date,
@@ -1660,16 +1693,14 @@ async def test_equal_synced_provider_fields_are_idempotent(
         synced.id,
         test_workspace.id,
         test_user.id,
-        TransactionUpdate(
-            amount=Decimal("123.45"),
-            date=date(2025, 1, 15),
-            notes="Reviewed",
-        ),
+        TransactionUpdate(notes="Reviewed", **payload),
     )
     await session.refresh(synced)
     await session.refresh(manual)
 
     assert synced.notes == "Reviewed"
+    assert manual.notes == "Reviewed"
+    assert synced.currency == "USD"
     assert (
         synced.amount,
         synced.date,
@@ -1679,6 +1710,34 @@ async def test_equal_synced_provider_fields_are_idempotent(
     ) == protected
     assert manual.amount == Decimal("200")
     assert manual.date == date(2025, 1, 15)
+
+
+@pytest.mark.asyncio
+async def test_update_synced_transaction_changed_currency_restamps_fx(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    txn_account,
+):
+    _, synced = await _create_mixed_source_pair(
+        session, test_user, test_workspace, txn_account, synced_currency="USD"
+    )
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    await session.commit()
+
+    await update_transaction(
+        session,
+        synced.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(currency="BRL"),
+    )
+    await session.refresh(synced)
+
+    assert synced.currency == "BRL"
+    assert synced.amount == Decimal("123.45")
+    assert synced.amount_primary == Decimal("123.45")
+    assert synced.fx_rate_used == Decimal("1")
 
 
 @pytest.mark.asyncio
