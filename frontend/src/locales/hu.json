@@ -2165,7 +2165,11 @@
     "total": "Összesen",
     "confirmRegenerateTitle": "Újragenerálod az értékeket?",
     "confirmRegenerate": "A növekedési paraméterek megváltoztak. Az összes automatikusan generált érték törlődik és újraszámolódik. A kézi értékek megmaradnak.",
-    "regenerate": "Újragenerálás"
+    "regenerate": "Újragenerálás",
+    "performanceTradeImportIssues": "{{count}} befektetés igényel figyelmet.",
+    "performanceTradeImportIncomplete": "Hiányos előzmények",
+    "performanceTradeImportNoHistory": "Nem érhető el előzmény",
+    "performanceTradeImportRetry": "Hiányos importok újrapróbálása"
   },
   "reports": {
     "section": "Elemzések",

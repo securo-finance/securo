@@ -2182,7 +2182,11 @@
     "confirmRegenerate": "Параметры роста изменены. Все автоматически сгенерированные значения будут удалены и пересчитаны. Ручные значения сохранятся.",
     "regenerate": "Перегенерировать",
     "linkedLoans": "Связанные кредиты",
-    "propertyEquity": "Стоимость {{value}} · Долг {{debt}} · Собственный капитал {{equity}}"
+    "propertyEquity": "Стоимость {{value}} · Долг {{debt}} · Собственный капитал {{equity}}",
+    "performanceTradeImportIssues": "{{count}} инвестиций требуют внимания.",
+    "performanceTradeImportIncomplete": "Неполная история",
+    "performanceTradeImportNoHistory": "История недоступна",
+    "performanceTradeImportRetry": "Повторить неполный импорт"
   },
   "reports": {
     "section": "Аналитика",

@@ -2166,7 +2166,11 @@
     "confirmRegenerate": "Wachstumsparameter wurden geändert. Alle automatisch generierten Werte werden gelöscht und neu berechnet. Manuell eingegebene Werte bleiben erhalten.",
     "regenerate": "Neu generieren",
     "linkedLoans": "Verknüpfte Kredite",
-    "propertyEquity": "Wert {{value}} · Schuld {{debt}} · Eigenkapital {{equity}}"
+    "propertyEquity": "Wert {{value}} · Schuld {{debt}} · Eigenkapital {{equity}}",
+    "performanceTradeImportIssues": "{{count}} Anlagen benötigen Aufmerksamkeit.",
+    "performanceTradeImportIncomplete": "Unvollständige Historie",
+    "performanceTradeImportNoHistory": "Keine Historie verfügbar",
+    "performanceTradeImportRetry": "Unvollständige Importe erneut versuchen"
   },
   "reports": {
     "section": "Analysen",

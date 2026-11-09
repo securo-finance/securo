@@ -192,11 +192,22 @@ class MarketSymbolMatch(BaseModel):
     quote_type: Optional[str] = None
 
 
+class HoldingTradeImportIssueRead(BaseModel):
+    """A connected holding whose provider trade history cannot be used."""
+
+    connection_id: uuid.UUID
+    asset_id: uuid.UUID
+    name: str
+    ticker: Optional[str] = None
+    status: Literal["incomplete", "no_history"]
+
+
 class HoldingTradeImportRead(BaseModel):
     """Whether bank sync imports the trades behind connected holdings."""
 
     available: bool
     enabled: bool
+    issues: list[HoldingTradeImportIssueRead] = Field(default_factory=list)
 
 
 class BenchmarkMatch(BaseModel):

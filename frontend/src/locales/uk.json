@@ -2182,7 +2182,11 @@
     "confirmRegenerate": "Параметри зростання змінено. Усі автоматично згенеровані значення буде видалено та перераховано. Ручні значення збережуться.",
     "regenerate": "Перегенерувати",
     "linkedLoans": "Пов’язані кредити",
-    "propertyEquity": "Вартість {{value}} · Борг {{debt}} · Власний капітал {{equity}}"
+    "propertyEquity": "Вартість {{value}} · Борг {{debt}} · Власний капітал {{equity}}",
+    "performanceTradeImportIssues": "{{count}} інвестицій потребують уваги.",
+    "performanceTradeImportIncomplete": "Неповна історія",
+    "performanceTradeImportNoHistory": "Історія недоступна",
+    "performanceTradeImportRetry": "Повторити неповне імпортування"
   },
   "reports": {
     "section": "Аналітика",

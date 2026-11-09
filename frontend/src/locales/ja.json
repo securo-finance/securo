@@ -2165,7 +2165,11 @@
     "performanceTradeImportEnabled": "取引は次回の同期で取り込まれます。",
     "performanceTradeImportError": "取引の取り込みを有効にできませんでした。",
     "linkedLoans": "紐付けたローン",
-    "propertyEquity": "評価額 {{value}} · 負債 {{debt}} · 純資産 {{equity}}"
+    "propertyEquity": "評価額 {{value}} · 負債 {{debt}} · 純資産 {{equity}}",
+    "performanceTradeImportIssues": "{{count}}件の投資に確認が必要です。",
+    "performanceTradeImportIncomplete": "履歴が不完全です",
+    "performanceTradeImportNoHistory": "利用できる履歴がありません",
+    "performanceTradeImportRetry": "不完全なインポートを再試行"
   },
   "reports": {
     "section": "分析",

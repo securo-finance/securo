@@ -2281,7 +2281,11 @@
     "performanceTradeImportEnabled": "Obchody sa naimportujú pri ďalšej synchronizácii.",
     "performanceTradeImportError": "Import obchodov sa nepodarilo zapnúť.",
     "linkedLoans": "Prepojené úvery",
-    "propertyEquity": "Hodnota {{value}} · Dlh {{debt}} · Vlastný kapitál {{equity}}"
+    "propertyEquity": "Hodnota {{value}} · Dlh {{debt}} · Vlastný kapitál {{equity}}",
+    "performanceTradeImportIssues": "{{count}} investícií vyžaduje pozornosť.",
+    "performanceTradeImportIncomplete": "Neúplná história",
+    "performanceTradeImportNoHistory": "História nie je dostupná",
+    "performanceTradeImportRetry": "Skúsiť neúplné importy znova"
   },
   "reports": {
     "section": "Analytika",

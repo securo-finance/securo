@@ -2169,7 +2169,11 @@
     "confirmRegenerate": "Les paramètres de croissance ont changé. Toutes les valeurs générées automatiquement seront supprimées et recalculées. Les valeurs manuelles seront conservées.",
     "regenerate": "Régénérer",
     "linkedLoans": "Prêts liés",
-    "propertyEquity": "Valeur {{value}} · Dette {{debt}} · Valeur nette {{equity}}"
+    "propertyEquity": "Valeur {{value}} · Dette {{debt}} · Valeur nette {{equity}}",
+    "performanceTradeImportIssues": "{{count}} placements nécessitent votre attention.",
+    "performanceTradeImportIncomplete": "Historique incomplet",
+    "performanceTradeImportNoHistory": "Aucun historique disponible",
+    "performanceTradeImportRetry": "Réessayer les imports incomplets"
   },
   "reports": {
     "section": "Analyses",

@@ -2254,7 +2254,11 @@
     "confirmRegenerate": "Zmieniono parametry wzrostu. Wszystkie automatycznie wygenerowane wartości zostaną usunięte i przeliczone ponownie. Wartości ręczne zostaną zachowane.",
     "regenerate": "Przelicz ponownie",
     "linkedLoans": "Powiązane kredyty",
-    "propertyEquity": "Wartość {{value}} · Dług {{debt}} · Kapitał własny {{equity}}"
+    "propertyEquity": "Wartość {{value}} · Dług {{debt}} · Kapitał własny {{equity}}",
+    "performanceTradeImportIssues": "{{count}} inwestycji wymaga uwagi.",
+    "performanceTradeImportIncomplete": "Niekompletna historia",
+    "performanceTradeImportNoHistory": "Brak dostępnej historii",
+    "performanceTradeImportRetry": "Ponów niepełne importy"
   },
   "reports": {
     "section": "Analityka",

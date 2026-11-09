@@ -76,6 +76,7 @@ class _TradesProvider(BankProvider):
     holdings: list[HoldingData] = []
     requests: list[list[str]] = []
     short: set[str] = set()  # holdings whose trades leave out a purchase
+    empty: set[str] = set()  # holdings whose provider has no trade history
     failing: set[str] = set()  # holdings whose request fails
 
     @property
@@ -106,9 +107,13 @@ class _TradesProvider(BankProvider):
         _TradesProvider.requests.append(sorted(h.external_id for h in holdings))
         return {
             holding.external_id: (
-                _partial(holding)
-                if holding.external_id in _TradesProvider.short
-                else _adds_up(holding)
+                []
+                if holding.external_id in _TradesProvider.empty
+                else (
+                    _partial(holding)
+                    if holding.external_id in _TradesProvider.short
+                    else _adds_up(holding)
+                )
             )
             for holding in holdings
             if holding.external_id not in _TradesProvider.failing
@@ -121,6 +126,7 @@ def _register_provider():
     _TradesProvider.holdings = []
     _TradesProvider.requests = []
     _TradesProvider.short = set()
+    _TradesProvider.empty = set()
     _TradesProvider.failing = set()
 
 
@@ -161,9 +167,21 @@ def _fund(
     )
 
 
-async def _sync(session: AsyncSession, user: User, connection: BankConnection, *holdings):
+async def _sync(
+    session: AsyncSession,
+    user: User,
+    connection: BankConnection,
+    *holdings,
+    retry_unmatched: bool = False,
+):
     _TradesProvider.holdings = list(holdings)
-    await _sync_holdings(session, user.id, connection, {"item_id": "item-trades"})
+    await _sync_holdings(
+        session,
+        user.id,
+        connection,
+        {"item_id": "item-trades"},
+        retry_unmatched_trades=retry_unmatched,
+    )
     await session.commit()
 
 
@@ -232,6 +250,27 @@ async def test_trades_that_do_not_add_up_wait_for_the_share_count_to_change(
 
 
 @pytest.mark.asyncio
+async def test_manual_sync_retries_incomplete_history_without_a_quantity_change(
+    session: AsyncSession, test_user: User, test_workspace, connection: BankConnection
+):
+    await enable_holding_trades(session, test_workspace.id)
+    _TradesProvider.short = {"a"}
+
+    await _sync(session, test_user, connection, _fund("a", "10"))
+    await _sync(session, test_user, connection, _fund("a", "10", "105"))
+    assert _TradesProvider.requests == [["a"]]
+
+    await _sync(
+        session,
+        test_user,
+        connection,
+        _fund("a", "10", "105"),
+        retry_unmatched=True,
+    )
+    assert _TradesProvider.requests == [["a"], ["a"]]
+
+
+@pytest.mark.asyncio
 async def test_a_failed_request_is_retried_on_the_next_sync(
     session: AsyncSession, test_user: User, test_workspace, connection: BankConnection
 ):
@@ -294,11 +333,40 @@ async def test_trade_import_is_available_once_a_connection_has_holdings(
 ):
     endpoint = "/api/assets/performance/trade-import"
     response = await client.get(endpoint, headers=auth_headers)
-    assert response.json() == {"available": False, "enabled": False}
+    assert response.json() == {"available": False, "enabled": False, "issues": []}
 
     await _sync(session, test_user, connection, _fund("a", "10"))
     response = await client.get(endpoint, headers=auth_headers)
-    assert response.json() == {"available": True, "enabled": False}
+    assert response.json() == {"available": True, "enabled": False, "issues": []}
+
+
+@pytest.mark.asyncio
+async def test_trade_import_status_lists_incomplete_and_missing_histories(
+    client: AsyncClient,
+    auth_headers: dict,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    connection: BankConnection,
+):
+    await enable_holding_trades(session, test_workspace.id)
+    _TradesProvider.short = {"a"}
+    _TradesProvider.empty = {"b"}
+    await _sync(session, test_user, connection, _fund("a", "10"), _fund("b", "5"))
+
+    response = await client.get(
+        "/api/assets/performance/trade-import", headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is True
+    assert body["enabled"] is True
+    assert [(issue["name"], issue["status"]) for issue in body["issues"]] == [
+        ("Fund a", "incomplete"),
+        ("Fund b", "no_history"),
+    ]
+    assert all(issue["connection_id"] == str(connection.id) for issue in body["issues"])
 
 
 @pytest.mark.asyncio
@@ -314,7 +382,7 @@ async def test_owner_turns_trade_import_on(
     response = await client.post("/api/assets/performance/trade-import", headers=auth_headers)
 
     assert response.status_code == 200
-    assert response.json() == {"available": True, "enabled": True}
+    assert response.json() == {"available": True, "enabled": True, "issues": []}
     await session.refresh(connection)
     assert (connection.settings or {})["holding_trades"] == {}
 

@@ -1094,6 +1094,15 @@ export interface BenchmarkPerformance {
 export interface HoldingTradeImport {
   available: boolean
   enabled: boolean
+  issues: HoldingTradeImportIssue[]
+}
+
+export interface HoldingTradeImportIssue {
+  connection_id: string
+  asset_id: string
+  name: string
+  ticker: string | null
+  status: 'incomplete' | 'no_history'
 }
 
 export interface PortfolioPerformance {

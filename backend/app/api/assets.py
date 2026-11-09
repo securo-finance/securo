@@ -40,6 +40,7 @@ from app.schemas.asset import (
     AssetValueCreate,
     AssetValueRead,
     BenchmarkMatch,
+    HoldingTradeImportIssueRead,
     HoldingTradeImportRead,
     MarketSymbolMatch,
     MarketSymbolQuote,
@@ -149,10 +150,23 @@ async def benchmark_search(
 
 
 async def _trade_import_read(session: AsyncSession, workspace_id: uuid.UUID) -> HoldingTradeImportRead:
-    available, enabled = await connection_service.holding_trade_import_status(
+    available, enabled, issues = await connection_service.holding_trade_import_status(
         session, workspace_id
     )
-    return HoldingTradeImportRead(available=available, enabled=enabled)
+    return HoldingTradeImportRead(
+        available=available,
+        enabled=enabled,
+        issues=[
+            HoldingTradeImportIssueRead(
+                connection_id=issue.connection_id,
+                asset_id=issue.asset_id,
+                name=issue.name,
+                ticker=issue.ticker,
+                status=issue.status,
+            )
+            for issue in issues
+        ],
+    )
 
 
 @router.get("/performance/trade-import", response_model=HoldingTradeImportRead)

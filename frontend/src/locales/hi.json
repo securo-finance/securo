@@ -2165,7 +2165,11 @@
     "performanceTradeImportEnabled": "ट्रेड अगले सिंक में आयात किए जाएंगे।",
     "performanceTradeImportError": "ट्रेड आयात चालू नहीं किया जा सका।",
     "linkedLoans": "जुड़े हुए ऋण",
-    "propertyEquity": "मूल्य {{value}} · ऋण {{debt}} · इक्विटी {{equity}}"
+    "propertyEquity": "मूल्य {{value}} · ऋण {{debt}} · इक्विटी {{equity}}",
+    "performanceTradeImportIssues": "{{count}} निवेशों पर ध्यान देना आवश्यक है।",
+    "performanceTradeImportIncomplete": "अधूरा इतिहास",
+    "performanceTradeImportNoHistory": "कोई इतिहास उपलब्ध नहीं",
+    "performanceTradeImportRetry": "अधूरे आयात फिर से आज़माएँ"
   },
   "reports": {
     "section": "एनालिटिक्स",

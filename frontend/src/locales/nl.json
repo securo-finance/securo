@@ -2167,7 +2167,11 @@
     "performanceTradeImportEnabled": "Transacties worden bij de volgende synchronisatie geïmporteerd.",
     "performanceTradeImportError": "Transactie-import kon niet worden ingeschakeld.",
     "linkedLoans": "Gekoppelde leningen",
-    "propertyEquity": "Waarde {{value}} · Schuld {{debt}} · Eigen vermogen {{equity}}"
+    "propertyEquity": "Waarde {{value}} · Schuld {{debt}} · Eigen vermogen {{equity}}",
+    "performanceTradeImportIssues": "{{count}} beleggingen vereisen aandacht.",
+    "performanceTradeImportIncomplete": "Onvolledige geschiedenis",
+    "performanceTradeImportNoHistory": "Geen geschiedenis beschikbaar",
+    "performanceTradeImportRetry": "Onvolledige imports opnieuw proberen"
   },
   "reports": {
     "section": "Analyses",

@@ -2297,7 +2297,11 @@
     "total": "Celkem",
     "confirmRegenerateTitle": "Přepočítat hodnoty?",
     "confirmRegenerate": "Parametry růstu se změnily. Všechny automaticky vygenerované hodnoty se smažou a přepočítají. Ruční hodnoty zůstanou zachovány.",
-    "regenerate": "Přepočítat"
+    "regenerate": "Přepočítat",
+    "performanceTradeImportIssues": "{{count}} investic vyžaduje pozornost.",
+    "performanceTradeImportIncomplete": "Neúplná historie",
+    "performanceTradeImportNoHistory": "Historie není dostupná",
+    "performanceTradeImportRetry": "Zkusit neúplné importy znovu"
   },
   "reports": {
     "section": "Analytika",

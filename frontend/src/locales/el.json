@@ -2165,7 +2165,11 @@
     "performanceTradeImportEnabled": "Οι συναλλαγές θα εισαχθούν στον επόμενο συγχρονισμό.",
     "performanceTradeImportError": "Δεν ήταν δυνατή η ενεργοποίηση της εισαγωγής συναλλαγών.",
     "linkedLoans": "Συνδεδεμένα δάνεια",
-    "propertyEquity": "Αξία {{value}} · Χρέος {{debt}} · Καθαρή αξία {{equity}}"
+    "propertyEquity": "Αξία {{value}} · Χρέος {{debt}} · Καθαρή αξία {{equity}}",
+    "performanceTradeImportIssues": "{{count}} επενδύσεις χρειάζονται προσοχή.",
+    "performanceTradeImportIncomplete": "Ελλιπές ιστορικό",
+    "performanceTradeImportNoHistory": "Δεν υπάρχει διαθέσιμο ιστορικό",
+    "performanceTradeImportRetry": "Επανάληψη ελλιπών εισαγωγών"
   },
   "payees": {
     "noPayeeFound": "Δεν βρέθηκε δικαιούχος.",

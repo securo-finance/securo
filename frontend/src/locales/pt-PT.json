@@ -2169,7 +2169,11 @@
     "confirmRegenerate": "Os parâmetros de crescimento foram alterados. Todos os valores gerados automaticamente serão eliminados e recalculados. Valores manuais serão mantidos.",
     "regenerate": "Regenerar",
     "linkedLoans": "Empréstimos associados",
-    "propertyEquity": "Valor {{value}} · Dívida {{debt}} · Capital próprio {{equity}}"
+    "propertyEquity": "Valor {{value}} · Dívida {{debt}} · Capital próprio {{equity}}",
+    "performanceTradeImportIssues": "{{count}} investimentos precisam de atenção.",
+    "performanceTradeImportIncomplete": "Histórico incompleto",
+    "performanceTradeImportNoHistory": "Histórico indisponível",
+    "performanceTradeImportRetry": "Tentar importar novamente"
   },
   "reports": {
     "section": "Análises",

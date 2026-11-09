@@ -12,6 +12,7 @@ import {
   Plus,
   Search,
   Trash2,
+  TriangleAlert,
   Wallet,
   X,
 } from 'lucide-react'
@@ -27,9 +28,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { assets, auth as authApi } from '@/lib/api'
+import { assets, auth as authApi, connections } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { invalidateConnectionSyncQueries } from '@/lib/invalidate-queries'
 import {
   MAX_PERFORMANCE_BENCHMARKS,
   type PerformanceView,
@@ -209,6 +211,22 @@ export function PortfolioPerformance({
     },
     onError: () => toast.error(t('assets.performanceTradeImportError')),
   })
+  const retryTradeImport = useMutation({
+    mutationFn: async () => {
+      const connectionIds = [
+        ...new Set((tradeImport.data?.issues ?? []).map((issue) => issue.connection_id)),
+      ]
+      for (const connectionId of connectionIds) {
+        await connections.sync(connectionId)
+      }
+    },
+    onSettled: () => {
+      invalidateConnectionSyncQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: tradeImportKey })
+    },
+    onError: () => toast.error(t('assets.performanceTradeImportError')),
+  })
+  const tradeImportIssues = tradeImport.data?.issues ?? []
 
   const holdingsByGroup = useMemo(() => {
     const grouped = new Map<string | null, Asset[]>()
@@ -1209,6 +1227,43 @@ export function PortfolioPerformance({
             onClick={() => enableTradeImport.mutate()}
           >
             {t('assets.performanceTradeImportAction')}
+          </Button>
+        </div>
+      )}
+      {canManage && tradeImport.data?.enabled && tradeImportIssues.length > 0 && (
+        <div className="flex flex-wrap items-start gap-3 border-t border-border px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 flex-1 basis-64 items-start gap-2">
+            <TriangleAlert
+              size={15}
+              className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+              aria-hidden="true"
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-foreground">
+                {t('assets.performanceTradeImportIssues', { count: tradeImportIssues.length })}
+              </p>
+              <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto text-[11px] text-muted-foreground">
+                {tradeImportIssues.map((issue) => (
+                  <li key={issue.asset_id} title={issue.name}>
+                    {issue.ticker ?? issue.name} ·{' '}
+                    {t(
+                      issue.status === 'no_history'
+                        ? 'assets.performanceTradeImportNoHistory'
+                        : 'assets.performanceTradeImportIncomplete',
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={retryTradeImport.isPending}
+            onClick={() => retryTradeImport.mutate()}
+          >
+            {retryTradeImport.isPending && <Loader2 size={14} className="animate-spin" />}
+            {t('assets.performanceTradeImportRetry')}
           </Button>
         </div>
       )}
