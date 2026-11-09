@@ -47,6 +47,7 @@ vi.mock('@/hooks/use-display-locale', () => ({
 
 vi.mock('@/lib/invalidate-queries', () => ({
   invalidateFinancialQueries: vi.fn(),
+  invalidateConnectionSyncQueries: vi.fn(),
 }))
 
 vi.mock('@/components/bank-connect-dialog', () => ({ BankConnectDialog: () => null }))

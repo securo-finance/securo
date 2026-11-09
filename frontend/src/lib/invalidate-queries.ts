@@ -24,3 +24,17 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['reports'] })
   queryClient.invalidateQueries({ queryKey: ['drill-down'] })
 }
+
+// A connection sync can update cash accounts and the investment ledger. Keep
+// every derived portfolio and import view in the same invalidation boundary
+// so users see the result immediately instead of waiting for staleTime.
+export function invalidateConnectionSyncQueries(queryClient: QueryClient) {
+  invalidateFinancialQueries(queryClient)
+  queryClient.invalidateQueries({ queryKey: ['connections'] })
+  queryClient.invalidateQueries({ queryKey: ['assets'] })
+  queryClient.invalidateQueries({ queryKey: ['asset-groups'] })
+  queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
+  queryClient.invalidateQueries({ queryKey: ['holding-trade-import'] })
+  queryClient.invalidateQueries({ queryKey: ['portfolio-trend'] })
+  queryClient.invalidateQueries({ queryKey: ['import-logs'] })
+}

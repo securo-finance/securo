@@ -176,6 +176,7 @@ async def sync_connection(
             ctx.workspace.id,
             ctx.user_id,
             trigger_provider_refresh=True,
+            retry_trade_import=True,
         )
         result = BankConnectionRead.model_validate(connection)
         return {

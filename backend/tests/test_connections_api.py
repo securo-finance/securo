@@ -265,6 +265,8 @@ async def test_sync_connection_user_action_returns_conflict(
         "code": "credentials_invalid",
         "help_url": "https://bridge.simplefin.org/",
     }
+    assert mock_sync.await_args is not None
+    assert mock_sync.await_args.kwargs["retry_trade_import"] is True
 
 
 @pytest.mark.asyncio

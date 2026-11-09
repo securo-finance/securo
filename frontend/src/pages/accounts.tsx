@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { accounts, assets, connections, currencies } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
-import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { invalidateConnectionSyncQueries, invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -142,8 +142,7 @@ export default function AccountsPage() {
   const syncMutation = useMutation({
     mutationFn: (id: string) => connections.sync(id),
     onSuccess: (result) => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      invalidateConnectionSyncQueries(queryClient)
       // The provider can throttle the sync (429) and still return success
       // without pulling anything: say so instead of a false "Sync completed".
       if (result.sync_outcome === 'rate_limited') {
