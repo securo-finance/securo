@@ -1308,7 +1308,9 @@ async def _get_baseline_projection(
     actual window used in the response (zero when there's no history).
     """
     acct_filter = [Transaction.account_id.in_(account_ids)] if account_ids is not None else []
-    report_date = reporting_date_col(accounting_mode)
+    # Cash-flow timing ignores invoice attribution, unlike general reporting.
+    movement_date = Transaction.effective_date if accounting_mode == "accrual" else Transaction.date
+    report_date = func.coalesce(Transaction.reporting_date_override, movement_date)
     cap_start = _add_months(today, -_BASELINE_MAX_LOOKBACK_MONTHS)
     earliest_result = await session.execute(
         with_category_lines(select(func.min(report_date)).select_from(Transaction))
@@ -1416,7 +1418,7 @@ async def get_cash_flow_report(
     Respects the global ``credit_card_accounting_mode`` setting. A manual
     ``reporting_date_override`` wins in either mode; otherwise cash uses the
     provider date and accrual uses the credit-card effective date. Balance
-    reconstruction remains based on provider dates.
+    reconstruction keeps the mode's original movement date, not the override.
     """
     from app.services.dashboard_service import _balance_at, _get_recurring_projections
     from app.services.fx_rate_service import get_rate
@@ -1472,8 +1474,9 @@ async def get_cash_flow_report(
         else:
             bucket["outflow"] += amount
 
-    flow_date_col = reporting_date_col(accounting_mode)
     balance_date_col = Transaction.effective_date if accrual else Transaction.date
+    # Invoice attribution affects general reports, not cash-flow timing.
+    flow_date_col = func.coalesce(Transaction.reporting_date_override, balance_date_col)
 
     # Reporting buckets follow the user override. Balance reconstruction
     # follows the original movement date to avoid applying a posted row twice.
@@ -1493,7 +1496,7 @@ async def get_cash_flow_report(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             or_(
-                and_(flow_date_col > chart_start, flow_date_col <= end),
+                and_(flow_date_col >= chart_start, flow_date_col <= end),
                 and_(balance_date_col > chart_start, balance_date_col <= end),
             ),
             Transaction.source != "opening_balance",
@@ -1510,14 +1513,14 @@ async def get_cash_flow_report(
         if amount_primary == 0:
             continue
         amount_primary = abs(amount_primary)
-        if chart_start < report_date <= end:
+        if chart_start <= report_date <= end:
             _add_flow(report_date, amount_primary, tx_type == "credit")
         if chart_start < balance_date <= end:
             _add_balance_flow(balance_date, amount_primary, tx_type == "credit")
 
     # 2. Pending rows are forecast rows. They never enter the past/actual
     # section, including pending credit-card purchases in accrual mode.
-    # Use the effective bill date when cash leaves on the card's due date.
+    # Use the mode's movement date unless a reporting override is set.
     # Pending rows whose forecast date is already past still belong to the
     # payable position today, so carry them into the forward projected walk
     # instead of silently dropping them.
@@ -1534,8 +1537,8 @@ async def get_cash_flow_report(
         pnl_ratio = user_pnl_ratio(tx)
         if tx.status != "pending" or not pnl_ratio:
             continue
-        report_date = reporting_date_value(tx, accounting_mode)
         balance_date = tx.effective_date if accrual else tx.date
+        report_date = tx.reporting_date_override or balance_date
         if tx.amount_primary is not None:
             amount_primary = abs(float(tx.amount_primary))
         else:

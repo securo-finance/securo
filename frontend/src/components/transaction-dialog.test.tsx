@@ -617,6 +617,8 @@ describe('TransactionDialog reporting date override', () => {
     const { onSave, user } = renderSyncedDialog(syncedTransaction())
 
     expect(screen.getByDisplayValue('2026-10-01')).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: t('transactions.colStatus') })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: t('transactions.colStatus') })).toHaveValue('posted')
     fireEvent.change(
       screen.getByLabelText(t('transactions.reportingDatePlaceholder')),
       { target: { value: '2026-09-30' } },

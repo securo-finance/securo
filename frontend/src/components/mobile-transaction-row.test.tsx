@@ -132,3 +132,16 @@ describe('MobileTransactionRow transfer indicator', () => {
     expect(screen.queryByLabelText('transactions.transfer')).not.toBeInTheDocument()
   })
 })
+
+describe('MobileTransactionRow reporting date indicator', () => {
+  it('shows reporting and original bank dates for moved rows', () => {
+    renderRow(makeTx({ reporting_date_override: '2026-09-30' }))
+    expect(screen.getByText(/^transactions.reportingDate:/)).toHaveTextContent('9/30/2026')
+    expect(screen.getByText(/^· transactions.bankDate:/)).toHaveTextContent('10/20/2026')
+  })
+
+  it('does not mark an unchanged date as moved', () => {
+    renderRow(makeTx({ reporting_date_override: '2026-10-20' }))
+    expect(screen.queryByText(/^transactions.reportingDate:/)).not.toBeInTheDocument()
+  })
+})

@@ -4,8 +4,6 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    ColumnElement,
-    Select,
     and_,
     case,
     delete,
@@ -1577,20 +1575,33 @@ async def _running_balance_seed(
 
 
 async def get_running_balances(
-    session: AsyncSession, account: Account, filtered_ids: Select, order_col: ColumnElement,
+    session: AsyncSession, account: Account,
     date_from: _Date, row_ids: list[uuid.UUID], primary_currency: str,
 ) -> dict[uuid.UUID, tuple[float, Optional[float]]]:
-    """Balance right after each of `row_ids`, walking the whole filtered list.
+    """Ledger balance right after each requested row, regardless of placement.
 
-    `filtered_ids` selects the ids of every row the list matched, not just the
-    page, so a row's value does not depend on which page it was loaded on
-    (#1202). The window orders by the exact reverse of the list's default
-    order, so the newest row carries the balance at the end of the range.
+    Reporting dates decide which rows the list displays, not which movements
+    affect their balances. Seed before the earliest requested bank date, then
+    walk every ledger row in bank-date/created-at/id order, including rows
+    moved outside the reporting window. Pagination cannot change the result.
     """
-    opening, opening_primary = await _running_balance_seed(
-        session, account, date_from, primary_currency,
+    if not row_ids:
+        return {}
+    bounds = await session.execute(
+        select(func.min(Transaction.date), func.max(Transaction.date)).where(
+            Transaction.account_id == account.id,
+            Transaction.workspace_id == account.workspace_id,
+            Transaction.id.in_(row_ids),
+        )
     )
-    order_by = (order_col.asc(), Transaction.created_at.asc(), Transaction.id.asc())
+    earliest, latest = bounds.one()
+    if earliest is None:
+        return {}
+    ledger_start = min(date_from, earliest)
+    opening, opening_primary = await _running_balance_seed(
+        session, account, ledger_start, primary_currency,
+    )
+    order_by = (Transaction.date.asc(), Transaction.created_at.asc(), Transaction.id.asc())
     columns = [
         Transaction.id,
         func.sum(_running_balance_delta(account.currency))
@@ -1603,7 +1614,12 @@ async def get_running_balances(
             .over(order_by=order_by, rows=(None, 0))
             .label("walk_primary")
         )
-    walk = select(*columns).where(Transaction.id.in_(filtered_ids)).subquery()
+    walk = select(*columns).where(
+        Transaction.account_id == account.id,
+        Transaction.workspace_id == account.workspace_id,
+        Transaction.date >= ledger_start,
+        Transaction.date <= latest,
+    ).subquery()
     result = await session.execute(select(walk).where(walk.c.id.in_(row_ids)))
 
     balances: dict[uuid.UUID, tuple[float, Optional[float]]] = {}

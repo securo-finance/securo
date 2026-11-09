@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { transactionDescription } from '@/lib/transaction-description'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
 
 /** Keep long merchant references on one line when there are no word breaks. */
 function hasWordBreaks(text: string): boolean {
@@ -186,6 +187,7 @@ export function MobileTransactionRow({
             </div>
           )
         )}
+        <ReportingDateBadge tx={tx} locale={locale} />
       </div>
 
       {/* Amount */}

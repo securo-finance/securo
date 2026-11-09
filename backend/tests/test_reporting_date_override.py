@@ -11,7 +11,8 @@ from app.models.account import Account
 from app.models.budget import Budget
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionUpdate
-from app.services import budget_service, dashboard_service
+from app.schemas.transaction_category_line import TransactionCategoryLinesInput
+from app.services import budget_service, category_line_service, dashboard_service
 from app.services.transaction_service import get_transactions, update_transaction
 
 
@@ -224,11 +225,14 @@ async def test_override_rejects_unsupported_transactions(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("unsplit", [False, True])
 async def test_override_rejects_scoped_move_when_sibling_has_override(
     session: AsyncSession,
     test_user,
     test_workspace,
     test_account,
+    test_categories,
+    unsplit,
 ):
     bank_date = date.today()
     reporting_date = bank_date - timedelta(days=1)
@@ -266,6 +270,17 @@ async def test_override_rejects_scoped_move_when_sibling_has_override(
     )
     session.add(card)
     await session.commit()
+    if unsplit:
+        payload = TransactionCategoryLinesInput(
+            share_type="exact",
+            lines=[
+                {"category_id": test_categories[0].id, "amount": Decimal("60")},
+                {"category_id": test_categories[1].id, "amount": Decimal("40")},
+            ],
+        )
+        for row in (anchor, sibling):
+            await category_line_service.replace_lines(session, row, payload)
+        await session.commit()
 
     with pytest.raises(
         ValueError,
@@ -276,7 +291,11 @@ async def test_override_rejects_scoped_move_when_sibling_has_override(
             anchor.id,
             test_workspace.id,
             test_user.id,
-            TransactionUpdate(account_id=card.id, apply_to="all"),
+            TransactionUpdate(
+                account_id=card.id,
+                apply_to="all",
+                **({"category_lines": {"share_type": "exact", "lines": []}} if unsplit else {}),
+            ),
         )
 
     await session.refresh(anchor)
@@ -285,6 +304,12 @@ async def test_override_rejects_scoped_move_when_sibling_has_override(
     assert sibling.account_id == test_account.id
     assert anchor.reporting_date_override is None
     assert sibling.reporting_date_override == reporting_date
+    if unsplit:
+        for row in (anchor, sibling):
+            await session.refresh(row, ["has_category_lines", "category_id", "category_lines"])
+            assert row.has_category_lines is True
+            assert row.category_id is None
+            assert [line.amount for line in row.category_lines] == [Decimal("60"), Decimal("40")]
 
 
 @pytest.mark.asyncio

@@ -674,8 +674,6 @@ async def get_transactions(
             if running_account is not None:
                 balances = await get_running_balances(
                     session, running_account,
-                    filtered_ids=select(base_query.subquery().c.id),
-                    order_col=default_order_col,
                     date_from=from_date,
                     row_ids=[tx.id for tx in transactions],
                     primary_currency=primary_currency,
@@ -697,10 +695,10 @@ async def _running_balance_account(
 ) -> Optional[Account]:
     """The account whose running balance the list can carry, if any (#1202).
 
-    A running balance only means something on one account's full ledger read
-    newest first: a filter would skip rows the balance moved by, another order
-    would show values out of sequence. A card's balance is the bill cycle, which
-    the account page walks itself. Anything else gets no value, not an error.
+    A running balance is exposed on one account's unfiltered ledger in its
+    default display order. Reporting overrides can reorder rows, but each
+    balance stays anchored to the bank-date ledger. A card's balance is the
+    bill cycle, which the account page walks itself.
     """
     if narrowed or not default_order or len(set(account_ids)) != 1:
         return None
@@ -1973,13 +1971,6 @@ async def update_transaction(
                     "An installment in this series is split across categories; edit it on its own"
                 )
 
-    # Undoing a split happens before the column updates, so a category sent
-    # in the same request wins over the one the split hands back.
-    unsplitting = lines_payload is not None and not lines_payload.lines
-    if unsplitting:
-        for row in rows:
-            await category_line_service.replace_lines(session, row, lines_payload)
-
     prepared_rows = []
     for row in rows:
         # The edited transaction itself reflects the full form payload; the
@@ -2019,6 +2010,13 @@ async def update_transaction(
                 "Reporting date override is only supported for synchronized "
                 "non-credit-card transactions"
             )
+
+    # Undoing a split happens before the column updates, so a category sent
+    # in the same request wins over the one the split hands back.
+    unsplitting = lines_payload is not None and not lines_payload.lines
+    if unsplitting:
+        for row in rows:
+            await category_line_service.replace_lines(session, row, lines_payload)
 
     for row, row_update, row_splits in prepared_rows:
         await _apply_update_to_row(
