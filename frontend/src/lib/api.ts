@@ -61,6 +61,8 @@ import type {
   RuleAction,
   RuleConditionNode,
   RuleExportPayload,
+  RulePack,
+  RulePackRemoval,
   RuleImportResponse,
   RulePreviewResponse,
   ImportLog,
@@ -696,7 +698,7 @@ export const transactions = {
     const { data } = await api.post('/transactions/transfer', transfer)
     return data
   },
-  bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number }> => {
+  bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number; skipped_split?: number }> => {
     const { data } = await api.patch('/transactions/bulk-categorize', {
       transaction_ids: transactionIds,
       category_id: categoryId,
@@ -1180,8 +1182,17 @@ export const rules = {
     const { data } = await api.post('/rules/import', { payload, overwrite })
     return data
   },
-  packs: async (): Promise<{ code: string; name: string; flag: string; rule_count: number; installed: boolean }[]> => {
+  packs: async (): Promise<RulePack[]> => {
     const { data } = await api.get('/rules/packs')
+    return data
+  },
+  packRemoval: async (packCode: string): Promise<RulePackRemoval> => {
+    const { data } = await api.get(`/rules/packs/${packCode}/removal`)
+    return data
+  },
+  /** `token` is the preview's; the server answers 409 if the plan changed since. */
+  removePack: async (packCode: string, token: string): Promise<RulePackRemoval> => {
+    const { data } = await api.delete(`/rules/packs/${packCode}`, { params: { token } })
     return data
   },
   installPack: async (

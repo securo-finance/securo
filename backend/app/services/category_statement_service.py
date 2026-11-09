@@ -28,8 +28,11 @@ from app.schemas.report import (
 )
 from app.services._query_filters import (
     counts_as_user_pnl,
+    line_category_id,
+    line_primary_or_amount,
     reporting_date_col,
     viewer_shared_spending_by_category,
+    with_category_lines,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 
@@ -164,9 +167,13 @@ async def get_category_statement(
         Transaction.source != "opening_balance",
         Transaction.status == "posted",
         report_date <= today,
-        counts_as_user_pnl(),
         *acct_filter,
     ]
+    # The statement's own sums go part by part, so a row split across
+    # categories lands in each of them; group-split offsets stay whole rows.
+    line_amount_expr = func.abs(line_primary_or_amount())
+    line_filters = [*base_filters, counts_as_user_pnl(line_category_id())]
+    base_filters.append(counts_as_user_pnl(Transaction.category_id))
 
     cats_result = await session.execute(
         select(Category, CategoryGroup)
@@ -184,15 +191,16 @@ async def get_category_statement(
             continue
         m_end = _shift_month(m_start, 1)
         result = await session.execute(
-            select(
-                Transaction.category_id,
-                func.sum(case((Transaction.type == "credit", amount_expr), else_=0)),
-                func.sum(case((Transaction.type == "debit", amount_expr), else_=0)),
+            with_category_lines(
+                select(
+                    line_category_id(),
+                    func.sum(case((Transaction.type == "credit", line_amount_expr), else_=0)),
+                    func.sum(case((Transaction.type == "debit", line_amount_expr), else_=0)),
+                ).select_from(Transaction)
             )
-            .select_from(Transaction)
             .join(Account, Transaction.account_id == Account.id)
-            .where(*base_filters, report_date >= m_start, report_date < m_end)
-            .group_by(Transaction.category_id)
+            .where(*line_filters, report_date >= m_start, report_date < m_end)
+            .group_by(line_category_id())
         )
         for cat_id, credits, debits in result.all():
             totals[cat_id] = (float(credits or 0), float(debits or 0))
@@ -234,18 +242,21 @@ async def get_category_statement(
     # the monthly values, so a row sits in the section its numbers point to.
     lifetime_end = _shift_month(selected, 1)
     lifetime_result = await session.execute(
-        select(
-            Transaction.category_id,
-            func.sum(case((Transaction.type == "credit", amount_expr), else_=-amount_expr)),
+        with_category_lines(
+            select(
+                line_category_id(),
+                func.sum(
+                    case((Transaction.type == "credit", line_amount_expr), else_=-line_amount_expr)
+                ),
+            ).select_from(Transaction)
         )
-        .select_from(Transaction)
         .join(Account, Transaction.account_id == Account.id)
         .where(
-            *base_filters,
-            Transaction.category_id.isnot(None),
+            *line_filters,
+            line_category_id().isnot(None),
             report_date < lifetime_end,
         )
-        .group_by(Transaction.category_id)
+        .group_by(line_category_id())
     )
     lifetime_net = {cat_id: float(net or 0) for cat_id, net in lifetime_result.all()}
     if not filtered:

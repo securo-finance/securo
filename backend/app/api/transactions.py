@@ -22,6 +22,7 @@ from app.models.transaction import Transaction
 from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
+from app.services.category_line_service import csv_export_parts
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
 
@@ -299,24 +300,31 @@ async def export_transactions(
     output = io.StringIO()
     output.write("﻿")  # UTF-8 BOM for Excel
     writer = csv.writer(output)
-    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used"])
+    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used", "split_group", "split_index"])
     for tx in transactions:
-        writer.writerow([
-            tx.date.isoformat(),
-            tx.description,
-            str(tx.amount),
-            tx.type,
-            tx.currency,
-            tx.category.name if tx.category else "",
-            tx.account.name if tx.account else "",
-            tx.payee or "",
-            getattr(tx, "payee_name", "") or "",
-            tx.notes or "",
-            tx.status,
-            tx.source,
-            str(tx.amount_primary) if tx.amount_primary is not None else "",
-            str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
-        ])
+        # A transaction split across categories leaves one row per part, so
+        # a spreadsheet summing `amount` by `category` gets the same figures
+        # as the reports. `split_group` (the transaction id) and
+        # `split_index` let an import put the parts back together.
+        for amount, amount_primary, category, split_group, split_index in csv_export_parts(tx):
+            writer.writerow([
+                tx.date.isoformat(),
+                tx.description,
+                str(amount),
+                tx.type,
+                tx.currency,
+                category.name if category else "",
+                tx.account.name if tx.account else "",
+                tx.payee or "",
+                getattr(tx, "payee_name", "") or "",
+                tx.notes or "",
+                tx.status,
+                tx.source,
+                str(amount_primary) if amount_primary is not None else "",
+                str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
+                split_group,
+                split_index,
+            ])
 
     output.seek(0)
     today = app_today().isoformat()
@@ -333,13 +341,18 @@ async def bulk_categorize(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    # Counted before the update: split rows are left alone, and the client
+    # says how many, whatever page it is showing by the time this returns.
+    skipped_split = await transaction_service.count_split_rows(
+        session, ctx.workspace.id, data.transaction_ids
+    )
     try:
         count = await transaction_service.bulk_update_category(
             session, ctx.workspace.id, data.transaction_ids, data.category_id
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    return {"updated": count}
+    return {"updated": count, "skipped_split": skipped_split}
 
 
 @router.patch("/bulk-add-tags")

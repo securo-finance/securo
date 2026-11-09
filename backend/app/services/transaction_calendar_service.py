@@ -120,25 +120,30 @@ async def get_transaction_calendar(
             session, tx.amount, tx.currency, primary_currency, tx.amount_primary
         )
 
-        is_transfer = bool(tx.transfer_pair_id) or bool(
-            tx.category and tx.category.treat_as_transfer
-        )
+        parts = _category_parts(tx)
+        is_transfer = _is_transfer_item(tx, parts)
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
         if not ignored and not tx.exclude_from_pnl:
-            if is_transfer or tx.source == "transfer":
-                transfer_delta = await _signed_balance_delta_primary(session, tx, primary_currency)
-                day.transfer_net += transfer_delta
-                day.actual_transfer_net += transfer_delta
-                day.has_transfer = True
-            elif tx.source != "opening_balance":
-                if tx.type == "credit":
-                    day.income += amount_primary
-                    day.actual_income += amount_primary
-                    day.has_income = True
-                else:
-                    day.expense += amount_primary
-                    day.actual_expense += amount_primary
-                    day.has_expense = True
+            # A split row lands part by part: its transfer-like parts in the
+            # transfer bucket, the rest in income or expense.
+            for category, ratio in parts:
+                if _is_transfer_part(tx, category):
+                    transfer_delta = (
+                        await _signed_balance_delta_primary(session, tx, primary_currency)
+                    ) * ratio
+                    day.transfer_net += transfer_delta
+                    day.actual_transfer_net += transfer_delta
+                    day.has_transfer = True
+                elif tx.source != "opening_balance":
+                    part_amount = amount_primary * ratio
+                    if tx.type == "credit":
+                        day.income += part_amount
+                        day.actual_income += part_amount
+                        day.has_income = True
+                    else:
+                        day.expense += part_amount
+                        day.actual_expense += part_amount
+                        day.has_expense = True
 
         day.actual_count += 1
         day.items.append(_actual_item(tx, amount_primary, is_transfer, ignored))
@@ -154,24 +159,26 @@ async def get_transaction_calendar(
         amount_primary = await _positive_primary_amount(
             session, tx.amount, tx.currency, primary_currency, tx.amount_primary
         )
-        is_transfer = bool(tx.transfer_pair_id) or bool(
-            tx.category and tx.category.treat_as_transfer
-        )
+        parts = _category_parts(tx)
+        is_transfer = _is_transfer_item(tx, parts)
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
         if not ignored and not tx.exclude_from_pnl:
-            if is_transfer or tx.source == "transfer":
-                delta = await _signed_balance_delta_primary(session, tx, primary_currency)
-                day.transfer_net += delta
-                day.projected_transfer_net += delta
-                day.has_transfer = True
-            elif tx.type == "credit":
-                day.income += amount_primary
-                day.projected_income += amount_primary
-                day.has_income = True
-            else:
-                day.expense += amount_primary
-                day.projected_expense += amount_primary
-                day.has_expense = True
+            for category, ratio in parts:
+                if _is_transfer_part(tx, category):
+                    delta = (
+                        await _signed_balance_delta_primary(session, tx, primary_currency)
+                    ) * ratio
+                    day.transfer_net += delta
+                    day.projected_transfer_net += delta
+                    day.has_transfer = True
+                elif tx.type == "credit":
+                    day.income += amount_primary * ratio
+                    day.projected_income += amount_primary * ratio
+                    day.has_income = True
+                else:
+                    day.expense += amount_primary * ratio
+                    day.projected_expense += amount_primary * ratio
+                    day.has_expense = True
         day.projected_count += 1
         day.items.append(_forecast_item(tx, amount_primary, is_transfer, ignored))
 
@@ -192,26 +199,29 @@ async def get_transaction_calendar(
         requested_account_ids,
     )
     start_balance += carried_projected_delta
-    for item, signed_delta in projected_items:
+    for item, signed_delta, parts in projected_items:
         day = days[item.date]
-        amount_primary = abs(signed_delta)
         # Ignored projections stay out of every aggregate, exactly like ignored
         # actuals: out of the activity buckets here, and out of the balance deltas
         # built in _project_recurring_items. A recurring the user chose to ignore
         # must not move a projected balance that will not move once it posts.
         if not item.is_ignored:
-            if item.is_transfer:
-                day.transfer_net += signed_delta
-                day.projected_transfer_net += signed_delta
-                day.has_transfer = True
-            elif item.type == "credit":
-                day.income += amount_primary
-                day.projected_income += amount_primary
-                day.has_income = True
-            else:
-                day.expense += amount_primary
-                day.projected_expense += amount_primary
-                day.has_expense = True
+            # A split template lands part by part, like a split actual.
+            for part_is_transfer, ratio in parts:
+                part_delta = signed_delta * ratio
+                part_amount = abs(part_delta)
+                if part_is_transfer:
+                    day.transfer_net += part_delta
+                    day.projected_transfer_net += part_delta
+                    day.has_transfer = True
+                elif item.type == "credit":
+                    day.income += part_amount
+                    day.projected_income += part_amount
+                    day.has_income = True
+                else:
+                    day.expense += part_amount
+                    day.projected_expense += part_amount
+                    day.has_expense = True
         day.projected_count += 1
         day.items.append(item)
 
@@ -311,6 +321,37 @@ async def _load_actual_transactions(
     return list(result.scalars().all())
 
 
+def _category_parts(tx: Transaction) -> list[tuple[Optional[Category], float]]:
+    """`(category, share)` for each part of `tx`: one part for a plain row,
+    one per category line for a row split across categories."""
+    total = abs(float(tx.amount or 0))
+    if not tx.has_category_lines or not tx.category_lines or not total:
+        return [(tx.category, 1.0)]
+    # A line cannot be saved in an ignored category, but the category can be
+    # ignored while the split is being saved; leave that part out, as the
+    # shared P/L filters do.
+    return [
+        (line.category, float(line.amount) / total)
+        for line in tx.category_lines
+        if not (line.category and line.category.is_ignored)
+    ]
+
+
+def _is_transfer_part(tx: Transaction, category: Optional[Category]) -> bool:
+    return (
+        bool(tx.transfer_pair_id)
+        or tx.source == "transfer"
+        or bool(category and category.treat_as_transfer)
+    )
+
+
+def _is_transfer_item(tx: Transaction, parts: list[tuple[Optional[Category], float]]) -> bool:
+    """The row reads as a transfer only when all of it is one."""
+    return bool(tx.transfer_pair_id) or all(
+        bool(category and category.treat_as_transfer) for category, _ in parts
+    )
+
+
 async def _positive_primary_amount(
     session: AsyncSession,
     amount: Decimal,
@@ -369,6 +410,7 @@ def _actual_item(
         transfer_pair_id=tx.transfer_pair_id,
         is_transfer=is_transfer,
         is_ignored=ignored,
+        has_category_lines=bool(tx.has_category_lines),
         exclude_from_pnl=bool(tx.exclude_from_pnl),
     )
 
@@ -398,6 +440,7 @@ def _forecast_item(
         transfer_pair_id=tx.transfer_pair_id,
         is_transfer=is_transfer,
         is_ignored=ignored,
+        has_category_lines=bool(tx.has_category_lines),
         exclude_from_pnl=bool(tx.exclude_from_pnl),
     )
 
@@ -443,7 +486,9 @@ async def _project_recurring_items(
     start: date,
     end: date,
     account_ids: Optional[list[uuid.UUID]],
-) -> tuple[list[tuple[TransactionCalendarItem, float]], dict[date, float], float]:
+) -> tuple[
+    list[tuple[TransactionCalendarItem, float, list[tuple[bool, float]]]], dict[date, float], float
+]:
     stmt = (
         select(RecurringTransaction)
         .join(Account, RecurringTransaction.account_id == Account.id)
@@ -464,7 +509,7 @@ async def _project_recurring_items(
     result = await session.execute(stmt)
     recurring_rows = list(result.scalars().all())
 
-    items: list[tuple[TransactionCalendarItem, float]] = []
+    items: list[tuple[TransactionCalendarItem, float, list[tuple[bool, float]]]] = []
     deltas: dict[date, float] = {}
     carried_delta = 0.0
     for rec in recurring_rows:
@@ -487,6 +532,16 @@ async def _project_recurring_items(
         signed_delta = amount_primary if rec.type == "credit" else -amount_primary
         is_transfer = bool(category and category.treat_as_transfer)
         is_ignored = bool(category and category.is_ignored)
+        template_total = abs(float(rec.amount or 0))
+        if rec.has_category_lines and rec.category_lines and template_total:
+            parts = [
+                (bool(line.category and line.category.treat_as_transfer), float(line.amount) / template_total)
+                for line in rec.category_lines
+                if not (line.category and line.category.is_ignored)
+            ]
+            is_transfer = all(part_is_transfer for part_is_transfer, _ in parts)
+        else:
+            parts = [(is_transfer, 1.0)]
         if not is_ignored:
             carried_delta += _count_occurrences_before(rec, start) * signed_delta
         for occ_date in occurrences:
@@ -508,8 +563,9 @@ async def _project_recurring_items(
                 source="recurring",
                 is_transfer=is_transfer,
                 is_ignored=is_ignored,
+                has_category_lines=bool(rec.has_category_lines),
             )
-            items.append((item, signed_delta))
+            items.append((item, signed_delta, parts))
             # The row is still listed, but an ignored occurrence never moves the
             # projected balance: _daily_balance_deltas_by_date already leaves the
             # posted version out, so counting the projection here would promise a

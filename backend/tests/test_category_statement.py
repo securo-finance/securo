@@ -14,6 +14,7 @@ from app.models.transaction_split import TransactionSplit
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
 from app.models.transaction import Transaction
+from app.models.transaction_category_line import TransactionCategoryLine
 from app.core.app_clock import app_today
 from app.services.category_statement_service import (
     _shift_month,
@@ -134,6 +135,35 @@ async def test_statement_nets_categories_into_sections(
     assert [row.key for row in result.expenses.rows] == [
         str(group.id), str(transport.id), "uncategorized",
     ]
+
+
+@pytest.mark.asyncio
+async def test_statement_counts_a_category_split_row_part_by_part(
+    session: AsyncSession, test_user, test_workspace, statement_data
+):
+    food, transport, _ = statement_data["categories"]
+    tx = _txn(
+        test_user.id, statement_data["account"], "100", date(2025, 2, 12), "debit",
+        has_category_lines=True,
+    )
+    session.add(tx)
+    await session.flush()
+    for position, (cat, amount) in enumerate(((food, "60"), (transport, "40"))):
+        session.add(TransactionCategoryLine(
+            workspace_id=tx.workspace_id, transaction_id=tx.id, category_id=cat.id,
+            amount=Decimal(amount), position=position,
+        ))
+    await session.commit()
+
+    result = await get_category_statement(
+        session, test_workspace.id, test_user.id, date(2025, 2, 1), months=1,
+        primary_currency="BRL",
+    )
+
+    expenses = {row.key: row for row in result.expenses.rows}
+    assert expenses[str(statement_data["group"].id)].values == [-310.0]
+    assert expenses[str(transport.id)].values == [-140.0]
+    assert expenses["uncategorized"].values == [-40.0]
 
 
 @pytest.mark.asyncio

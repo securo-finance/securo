@@ -732,7 +732,7 @@ async def _set_installments(
 async def create_invoice(
     session: AsyncSession,
     workspace_id: uuid.UUID,
-    user_id: uuid.UUID,
+    user_id: Optional[uuid.UUID],
     data: dict[str, Any],
 ) -> Invoice:
     settings = await get_settings(session, workspace_id)
@@ -1107,10 +1107,14 @@ async def allocate(
     await session.refresh(invoice, ["allocations", "deductions"])
 
     result = await session.execute(
-        select(Transaction).where(
+        select(Transaction)
+        .where(
             Transaction.id == transaction_id,
             Transaction.workspace_id == invoice.workspace_id,
         )
+        # Two links of the same payment at once must not both read the
+        # same unspent amount below.
+        .with_for_update()
     )
     transaction = result.scalar_one_or_none()
     if transaction is None:
@@ -1130,18 +1134,44 @@ async def allocate(
     available = balance(invoice)
     if available <= ZERO:
         raise InvoiceError("already_settled", "This invoice is already fully settled")
+    # Before the payment's remainder: relinking a payment that is already
+    # on this invoice is the more precise answer, even when it has nothing
+    # left. The unique constraint below still catches a concurrent insert.
+    if any(a.transaction_id == transaction_id for a in invoice.allocations):
+        raise InvoiceError(
+            "already_allocated", "This transaction is already linked to this invoice"
+        )
 
     # Magnitude, not sign: a receivable is settled by money coming in and
     # a payable by money going out, and the allocation records how much of
     # that movement this document accounts for either way. Defaulting to
     # the smaller of "what is left" and "what moved" is what makes the
     # common case — one payment, one document — a single click.
-    incoming = abs(transaction.amount)
+    #
+    # A payment can never write more than it carried, across every invoice
+    # it settles: what earlier links already took is not there to give.
+    already_spent = (
+        await session.execute(
+            select(func.coalesce(func.sum(InvoiceAllocation.amount), 0)).where(
+                InvoiceAllocation.transaction_id == transaction_id
+            )
+        )
+    ).scalar_one()
+    incoming = max(abs(transaction.amount) - Decimal(already_spent), ZERO)
+    if incoming <= ZERO:
+        raise InvoiceError(
+            "transaction_over_allocation", "Nothing of this transaction is left to link"
+        )
     proposed = Decimal(amount) if amount is not None else min(available, incoming)
     if proposed <= ZERO:
         raise InvoiceError("amount_not_positive", "Allocation amount must be positive")
     if proposed > available:
         raise InvoiceError("over_allocation", f"Only {available} remains on this invoice")
+    if proposed > incoming:
+        raise InvoiceError(
+            "transaction_over_allocation",
+            f"Only {incoming} of this transaction is left to link",
+        )
 
     allocation = InvoiceAllocation(
         invoice_id=invoice.id,

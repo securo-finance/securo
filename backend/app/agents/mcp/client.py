@@ -16,7 +16,7 @@ from typing import Any, Optional
 import httpx
 
 from app.agents.config import get_agent_settings
-from app.agents.mcp.auth import mint_token
+from app.agents.mcp.auth import extra_server_audience, mint_token
 from app.agents.providers.base import ToolDefinition
 
 logger = logging.getLogger(__name__)
@@ -38,9 +38,12 @@ class _ServerSpec:
     url: str
 
 
+BUILTIN_SERVER_NAME = "securo"
+
+
 def _parse_servers() -> list[_ServerSpec]:
     s = get_agent_settings()
-    out = [_ServerSpec(name="securo", url=s.builtin_mcp_url)]
+    out = [_ServerSpec(name=BUILTIN_SERVER_NAME, url=s.builtin_mcp_url)]
     extra = (s.extra_mcp_servers or "").strip()
     if extra:
         for raw in extra.split(","):
@@ -51,7 +54,19 @@ def _parse_servers() -> list[_ServerSpec]:
                 url, name = raw.split("|", 1)
             else:
                 url, name = raw, raw
-            out.append(_ServerSpec(name=name.strip(), url=url.strip()))
+            name = name.strip()
+            if name == BUILTIN_SERVER_NAME:
+                # The built-in name is reserved: an extra server registered
+                # under it would replace the built-in one in the registry and
+                # receive tokens the built-in server accepts.
+                logger.warning(
+                    "Ignoring extra MCP server %r: the name %r is reserved "
+                    "for the built-in server.",
+                    url.strip(),
+                    BUILTIN_SERVER_NAME,
+                )
+                continue
+            out.append(_ServerSpec(name=name, url=url.strip()))
     return out
 
 
@@ -278,6 +293,18 @@ class MCPRegistry:
     def server_names(self) -> list[str]:
         return list(self._servers.keys())
 
+    @staticmethod
+    def _token_for(server_name: str, **claims: Any) -> str:
+        """Mint a token only `server_name` accepts.
+
+        The built-in server gets its own audience. Every other server gets
+        an audience bound to its name, so a third-party server cannot replay
+        what it receives against the built-in one and read the workspace.
+        """
+        if server_name == BUILTIN_SERVER_NAME:
+            return mint_token(**claims)
+        return mint_token(audience=extra_server_audience(server_name), **claims)
+
     async def discover(
         self,
         *,
@@ -286,16 +313,16 @@ class MCPRegistry:
         conversation_id: Optional[uuid.UUID] = None,
         agent_id: Optional[uuid.UUID] = None,
     ) -> list[ToolHandle]:
-        token = mint_token(
+        claims = dict(
             user_id=user_id,
             workspace_id=workspace_id,
             conversation_id=conversation_id,
             agent_id=agent_id,
         )
         out: list[ToolHandle] = []
-        for client in self._servers.values():
+        for server_name, client in self._servers.items():
             try:
-                tools = await client.list_tools(token=token)
+                tools = await client.list_tools(token=self._token_for(server_name, **claims))
             except Exception as exc:
                 # A server that can't be reached costs the agent every tool it
                 # exposes, and the chat still answers, just without any data.
@@ -344,7 +371,7 @@ class MCPRegistry:
         # Pass agent_id so per-agent tools (search_knowledge_base) can
         # scope their results. Without this, MCP-side ctx.agent_id is
         # None and the knowledge tool refuses.
-        token = mint_token(
+        claims = dict(
             user_id=user_id,
             workspace_id=workspace_id,
             conversation_id=conversation_id,
@@ -356,12 +383,15 @@ class MCPRegistry:
             server, tool_name = wire_name.split("__", 1)
             client = self._servers.get(server)
             if client is not None:
-                return await client.call_tool(name=tool_name, arguments=arguments, token=token)
+                return await client.call_tool(
+                    name=tool_name, arguments=arguments, token=self._token_for(server, **claims)
+                )
 
         # Fallback: many LLMs drop the namespace prefix and emit just the
         # bare tool name. Resolve by scanning every registered server.
         bare = wire_name.split("__", 1)[-1]
         for server_name, client in self._servers.items():
+            token = self._token_for(server_name, **claims)
             try:
                 handles = await client.list_tools(token=token)
             except Exception as exc:
