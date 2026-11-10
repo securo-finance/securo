@@ -11,6 +11,7 @@ from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
@@ -2458,6 +2459,12 @@ async def sync_connection(
         live_txn_external_ids: dict[uuid.UUID, set[str]] = {}
         incomplete_fetch_account_ids: set[uuid.UUID] = set()
         accounts_data = await provider.get_accounts(credentials)
+        # A provider may note what it learned about the accounts in the
+        # credentials (Enable Banking caches account details for background
+        # syncs). It updates the dict in place, which the JSON column does not
+        # notice on its own.
+        connection.credentials = credentials
+        flag_modified(connection, "credentials")
         incoming_external_ids = {acc.external_id for acc in accounts_data}
         incoming_institution_external_ids = frozenset(
             acc.institution_external_id

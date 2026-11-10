@@ -568,8 +568,10 @@ async def test_get_transactions_retries_shorter_window_on_wrong_period(eb_keys):
 
 
 @pytest.mark.asyncio
-async def test_get_transactions_wrong_period_with_explicit_since_raises(eb_keys):
-    """An explicit ``since`` is the caller's choice; never silently shorten it."""
+async def test_get_transactions_wrong_period_with_explicit_since_retries_once(eb_keys):
+    """A refused ``since`` older than 90 days is retried once with the last 90
+    days (the cut is logged and kept for a later sync); when that is refused
+    too, the error is the caller's, with no further shortening."""
     provider = EnableBankingProvider()
     requests: list[httpx.Request] = []
 
@@ -582,7 +584,12 @@ async def test_get_transactions_wrong_period_with_explicit_since_raises(eb_keys)
             _CREDENTIALS, "acc-1", date.today() - timedelta(days=200)
         )
 
-    assert len(requests) == 1
+    assert len(requests) == 2
+    retry = requests[1].url.params
+    retry_days = (
+        date.fromisoformat(retry["date_to"]) - date.fromisoformat(retry["date_from"])
+    ).days + 1
+    assert retry_days == 90
 
 
 @pytest.mark.asyncio
