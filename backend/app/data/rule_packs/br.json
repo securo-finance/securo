@@ -1,0 +1,563 @@
+{
+  "id": "securo/rules-br",
+  "name": {
+    "en": "Brazil",
+    "pt-BR": "Brasil"
+  },
+  "description": {
+    "en": "Common merchants and transfer patterns, mapped to the default categories.",
+    "pt-BR": "Estabelecimentos e padrões de transferência comuns, mapeados para as categorias padrão."
+  },
+  "version": "1.0.0",
+  "repository": "https://github.com/securo-finance/securo",
+  "license": "AGPL-3.0-only",
+  "min_securo_version": "0.19.0",
+  "contributes": {
+    "rules": [
+      {
+        "key": "99-ride-hailing",
+        "name": "99 (Ride-hailing)",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "99"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "99POP"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "ifood-rappi",
+        "name": "iFood / Rappi",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "IFOOD"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "RAPPI"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "food"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "mercado-livre",
+        "name": "Mercado Livre",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "MERCADOLIVRE"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "MERCADO LIVRE"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "shopping"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "pix-recebido",
+        "name": "Pix Recebido",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "PIX.*RECEBIDO"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transfers"
+          }
+        ],
+        "priority": 50
+      },
+      {
+        "key": "transferencia",
+        "name": "Transferência",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "TRANSFERENCIA"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transfers"
+          }
+        ],
+        "priority": 90
+      },
+      {
+        "key": "shopee-magazine-luiza",
+        "name": "Shopee / Magazine Luiza",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "SHOPEE"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "MAGALU"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "MAGAZINE LUIZA"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "shopping"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "drogaria-farmacia",
+        "name": "Drogaria / Farmácia",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "DROGARIA"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "FARMACIA"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "DROGA RAIA"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "DROGASIL"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "health"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "uber-eats",
+        "name": "Uber Eats",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "UBER EATS"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "UBEREATS"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "food"
+          }
+        ],
+        "priority": 5
+      },
+      {
+        "key": "claro-vivo-tim",
+        "name": "Claro / Vivo / Tim",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "CLARO"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "VIVO"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "TIM"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "subscriptions"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "posto-shell-combustivel",
+        "name": "Posto / Shell (Combustível)",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "POSTO"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "SHELL"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "COMBUSTIVEL"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "supermercado-carrefour-assai",
+        "name": "Supermercado / Carrefour / Assaí",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "SUPERMERCADO"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "CARREFOUR"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "ASSAI"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "groceries"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "smart-fit-academia",
+        "name": "Smart Fit / Academia",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "SMART FIT"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "ACADEMIA"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "health"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "aluguel",
+        "name": "Aluguel",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "ALUGUEL"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "housing"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "salario-folha",
+        "name": "Salário / Folha",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "SALARIO|FOLHA|PGTO.*SALARIO"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "salary"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "dizimo-doacao",
+        "name": "Dízimo / Doação",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "DIZIMO"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "DOACAO"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "CARIDADE"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "donations"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "pix-enviado",
+        "name": "Pix Enviado",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "PIX.*ENVIADO|PIX.*TRANSF"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transfers"
+          }
+        ],
+        "priority": 50
+      },
+      {
+        "key": "estacionamento-pedagio",
+        "name": "Estacionamento / Pedágio",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "ESTACIONAMENTO"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "PEDAGIO"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "SEM PARAR"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "barbearia-salao",
+        "name": "Barbearia / Salão",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "BARBEARIA"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "SALAO"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "CABELEIREIRO"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "personal_care"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "iptu-ipva-imposto",
+        "name": "IPTU / IPVA / Imposto",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "IPTU"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "IPVA"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "IMPOSTO"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "DARF"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "taxes"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "condominio",
+        "name": "Condomínio",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "CONDOMINIO"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "housing"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "curso-escola-faculdade",
+        "name": "Curso / Escola / Faculdade",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "ESCOLA"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "FACULDADE"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "UNIVERSIDADE"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "UDEMY"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "ALURA"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "education"
+          }
+        ],
+        "priority": 10
+      }
+    ]
+  }
+}

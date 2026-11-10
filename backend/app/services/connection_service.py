@@ -11,6 +11,7 @@ from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
@@ -1340,6 +1341,19 @@ async def handle_oauth_callback(
         existing_reconnect.status = "active"
         # Re-sync from current data on next sync cycle.
         existing_reconnect.last_sync_at = None
+        # New credentials end a backoff earned by failing ones, so the next
+        # cycle syncs it. A rate-limit backoff stays: the bank's quota is the
+        # same whatever the credentials.
+        reconnect_settings = existing_reconnect.settings or {}
+        backoff = reconnect_settings.get(SYNC_BACKOFF_KEY)
+        if backoff is not None and not (
+            isinstance(backoff, dict) and backoff.get("rate_limited") is True
+        ):
+            existing_reconnect.settings = {
+                key: value
+                for key, value in reconnect_settings.items()
+                if key != SYNC_BACKOFF_KEY
+            }
         await session.commit()
         await session.refresh(existing_reconnect)
         return existing_reconnect
@@ -2496,6 +2510,11 @@ async def _sync_credit_card_bills(
 # required, generic failure) still propagate as exceptions.
 SyncOutcome = Literal["refreshed", "rate_limited"]
 
+# Key in BankConnection.settings where the scheduler keeps its backoff state
+# for connections whose scheduled syncs keep failing (app.tasks.sync_tasks).
+# Any successful sync clears it, so a manual sync that works ends the backoff.
+SYNC_BACKOFF_KEY = "sync_backoff"
+
 
 async def sync_connection(
     session: AsyncSession,
@@ -2593,6 +2612,12 @@ async def sync_connection(
         live_txn_external_ids: dict[uuid.UUID, set[str]] = {}
         incomplete_fetch_account_ids: set[uuid.UUID] = set()
         accounts_data = await provider.get_accounts(credentials)
+        # A provider may note what it learned about the accounts in the
+        # credentials (Enable Banking caches account details for background
+        # syncs). It updates the dict in place, which the JSON column does not
+        # notice on its own.
+        connection.credentials = credentials
+        flag_modified(connection, "credentials")
         incoming_external_ids = {acc.external_id for acc in accounts_data}
         incoming_institution_external_ids = frozenset(
             acc.institution_external_id
@@ -3152,6 +3177,14 @@ async def sync_connection(
         # The healthy accounts just re-read a longer window, deduplicated.
         if not incomplete_fetch_account_ids:
             connection.last_sync_at = datetime.now(timezone.utc)
+        # A successful read ends any scheduler backoff (app.tasks.sync_tasks).
+        current_settings = connection.settings or {}
+        if SYNC_BACKOFF_KEY in current_settings:
+            connection.settings = {
+                key: value
+                for key, value in current_settings.items()
+                if key != SYNC_BACKOFF_KEY
+            }
         action_required_warnings = getattr(provider, "action_required_warnings", None)
         if isinstance(action_required_warnings, list) and action_required_warnings:
             logger.warning(
