@@ -68,6 +68,11 @@ config:
   fxSyncMode: "on_demand"
   tesouroDiretoEnabled: "true"
 
+  # Data plugins (categories and rules) from the plugin catalog. Opt-in; the
+  # catalog is fetched only when someone opens it.
+  pluginsEnabled: "false"
+  pluginsIndexUrl: "https://plugins.usesecuro.com/v1/index.json"
+
   # Redis configuration
   # If redis.enabled is true, the internal redis will be deployed.
   # If redis.enabled is false, you must provide your external Redis URL here.

@@ -23,7 +23,8 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, text
 
 from alembic import op
-from app.services.rule_packs import find_pack_rule, rule_content_hash
+from app.plugins.provenance import rule_content_hash
+from app.services.rule_packs import find_pack_rule
 
 revision = "107"
 down_revision = "106"

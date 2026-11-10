@@ -170,6 +170,14 @@ class Settings(BaseSettings):
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
 
+    # Data plugins (categories and rules) from the plugin catalog. Gated by
+    # PLUGINS_ENABLED, off by default: while off nothing is fetched and no
+    # plugin can be installed. The built-in rule packs don't depend on it.
+    # The catalog is a static index, fetched only when someone opens it,
+    # never in the background; manifests come from the same host, checked
+    # against the index's sha256. Point it at a mirror to host your own.
+    plugins_index_url: str = "https://plugins.usesecuro.com/v1/index.json"
+
     @property
     def oidc_login_available(self) -> bool:
         return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)

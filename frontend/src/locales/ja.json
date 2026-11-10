@@ -3182,5 +3182,152 @@
       "categoryInUse": "このカテゴリーには分割された取引の内訳があります。先にそれらの分割を変更してください。",
       "destinationInvalid": "分割された取引の内訳は、無視または非表示のカテゴリーに移せません。"
     }
+  },
+  "plugins": {
+    "title": "プラグイン",
+    "hint": "コミュニティが作ったカテゴリとルール。適用前にすべての変更を確認でき、データはサーバーの外に出ません。",
+    "browse": "カタログを見る",
+    "noneInstalled": "このワークスペースにインストールされたプラグインはありません。",
+    "remove": "プラグインを削除",
+    "removeAria": "{{name}} を削除",
+    "catalogFailed": "カタログを読み込めませんでした。",
+    "catalogEmpty": "カタログにはまだプラグインがありません。",
+    "viewSource": "ソースを見る",
+    "revoked": "取り消し済み",
+    "unavailable": "利用不可",
+    "needsVersion": "Securo {{version}} が必要",
+    "updateAvailable": "アップデートあり",
+    "installed": "インストール済み",
+    "install": "インストール",
+    "update": "アップデート",
+    "andMore": "ほか {{count}} 件",
+    "planTitle": {
+      "install": "{{name}} をインストールしますか？",
+      "update": "{{name}} をアップデートしますか？",
+      "remove": "{{name}} を削除しますか？"
+    },
+    "planIntro": "このワークスペースで変わる内容:",
+    "planFailed": "変更内容を読み込めませんでした。",
+    "planChanged": "このプレビューの後に変更がありました。もう一度確認してください。",
+    "privacy": "このプラグインはこのワークスペースにデータを追加するだけです。どこにも送信されません。",
+    "history": "取引は現在のカテゴリを保持します。",
+    "confirm": {
+      "install": "インストール",
+      "update": "アップデート",
+      "remove": "削除"
+    },
+    "done": {
+      "install": "{{name}} をインストールしました",
+      "update": "{{name}} をアップデートしました",
+      "remove": "{{name}} を削除しました"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} グループ",
+      "category_groups_other": "{{count}} グループ",
+      "categories_one": "{{count}} カテゴリ",
+      "categories_other": "{{count}} カテゴリ",
+      "rules_one": "{{count}} ルール",
+      "rules_other": "{{count}} ルール"
+    },
+    "plan": {
+      "create": "追加: {{items}}",
+      "update": "更新: {{items}}",
+      "delete": "削除: {{items}}",
+      "keep": "編集済みのためそのまま: {{items}}:",
+      "release": "あなたに引き継ぎ (編集済みまたは使用中): {{items}}:",
+      "existing": "既にあるためスキップ: {{items}}:",
+      "unresolved": "カテゴリがないためスキップ: {{items}}:",
+      "defaults_one": "ルール用のデフォルトカテゴリも {{count}} 件作成します",
+      "defaults_other": "ルール用のデフォルトカテゴリも {{count}} 件作成します"
+    },
+    "page": {
+      "section": "カタログ",
+      "notice": "プラグインは Securo によって審査されていません。適用する前に何が変わるかを正確に確認でき、データはサーバーの外に出ません。",
+      "search": "プラグインを検索",
+      "type": {
+        "data": "データ",
+        "interface": "インターフェース",
+        "code": "コード"
+      },
+      "status": {
+        "installed": "インストール済み",
+        "updates": "アップデートあり"
+      },
+      "clear": "フィルターを解除",
+      "trendingHint": "規模に対して最も伸びているもの",
+      "newestHint": "過去30日間に追加",
+      "sortBy": "並べ替え",
+      "sort": {
+        "popular": "人気",
+        "trending": "トレンド",
+        "updated": "最近更新",
+        "newest": "新しい順",
+        "name": "名前"
+      },
+      "noResults": "条件に一致するプラグインはありません。",
+      "byOwner": "作成者: {{owner}}",
+      "updated": "{{when}}に更新",
+      "count_one": "{{count}} 件のプラグイン",
+      "count_other": "{{count}} 件のプラグイン",
+      "stars_one": "スター {{count}}",
+      "stars_other": "スター {{count}}",
+      "authors_one": "{{count}} 人の作者",
+      "authors_other": "{{count}} 人の作者",
+      "clearSearch": "検索をクリア",
+      "facet": {
+        "type": "種類",
+        "content": "内容",
+        "language": "言語",
+        "status": "状態"
+      },
+      "view": {
+        "all": "すべて",
+        "trending": "トレンド",
+        "new": "新着"
+      },
+      "any": "すべて",
+      "trendingEmpty": "今週スターを獲得したプラグインはありません。",
+      "newEmpty": "過去 30 日間に追加されたプラグインはありません。"
+    },
+    "kindName": {
+      "category_groups": "カテゴリグループ",
+      "categories": "カテゴリ",
+      "rules": "ルール",
+      "csv_presets": "CSV プリセット",
+      "fiscal_jurisdictions": "税務管轄",
+      "invoice_labels": "請求書ラベル",
+      "widgets": "ウィジェット",
+      "reports": "レポート",
+      "dashboard_layouts": "ダッシュボードのレイアウト",
+      "connectors": "銀行コネクタ",
+      "parsers": "ファイルリーダー",
+      "price_providers": "価格プロバイダー",
+      "agent_tools": "エージェントツール"
+    },
+    "detail": {
+      "overview": "概要",
+      "inside": "含まれるもの",
+      "insideHint": "このプラグインがワークスペースに追加するすべての項目。インストール時に既存のものを確認できます。",
+      "noReadme": "作者はまだこのプラグインの README を書いていません。",
+      "loadFailed": "プラグインの詳細を読み込めませんでした。",
+      "contentsUnavailable": "この Securo のバージョンではこのプラグインの内容を表示できません。",
+      "version": "バージョン",
+      "license": "ライセンス",
+      "requires": "必要条件",
+      "updated": "更新",
+      "languages": "言語",
+      "builtIn": "既定",
+      "when": "条件",
+      "previewNote": "インストール前にすべての変更を確認でき、データがサーバーの外に出ることはありません。",
+      "notFound": "このプラグインはカタログにありません。",
+      "type": "種類",
+      "added": "追加日"
+    },
+    "installedFailed": "インストール済みのプラグインを読み込めませんでした。",
+    "planRecordOnly": {
+      "install": "このワークスペースには既にすべての項目があります。インストールすると記録され、更新を受け取れます。",
+      "update": "ワークスペースの項目は変わりません。インストール済みのバージョンが {{version}} になります。",
+      "remove": "項目はもう残っていません。削除するとリストから外れるだけです。"
+    }
   }
 }

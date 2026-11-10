@@ -3184,5 +3184,152 @@
       "categoryInUse": "Deze categorie bevat delen van verdeelde transacties. Pas die verdelingen eerst aan.",
       "destinationInvalid": "Delen van verdeelde transacties kunnen niet naar een genegeerde of verborgen categorie."
     }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "hint": "Categorieën en regels gemaakt door de community. Je bekijkt elke wijziging voordat die wordt toegepast, en niets verlaat je server.",
+    "browse": "Catalogus bekijken",
+    "noneInstalled": "Geen plugins geïnstalleerd in deze workspace.",
+    "remove": "Plugin verwijderen",
+    "removeAria": "{{name}} verwijderen",
+    "catalogFailed": "Kon de catalogus niet laden.",
+    "catalogEmpty": "De catalogus heeft nog geen plugins.",
+    "viewSource": "Broncode bekijken",
+    "revoked": "Ingetrokken",
+    "unavailable": "Niet beschikbaar",
+    "needsVersion": "Vereist Securo {{version}}",
+    "updateAvailable": "Update beschikbaar",
+    "installed": "Geïnstalleerd",
+    "install": "Installeren",
+    "update": "Bijwerken",
+    "andMore": "en nog {{count}}",
+    "planTitle": {
+      "install": "{{name}} installeren?",
+      "update": "{{name}} bijwerken?",
+      "remove": "{{name}} verwijderen?"
+    },
+    "planIntro": "Dit verandert er in deze workspace:",
+    "planFailed": "Kon niet laden wat dit zou veranderen.",
+    "planChanged": "Er is iets veranderd sinds dit voorbeeld. Bekijk het opnieuw.",
+    "privacy": "Deze plugin voegt alleen gegevens toe aan deze workspace. Er wordt niets verstuurd.",
+    "history": "Transacties houden de categorieën die ze al hebben.",
+    "confirm": {
+      "install": "Installeren",
+      "update": "Bijwerken",
+      "remove": "Verwijderen"
+    },
+    "done": {
+      "install": "{{name}} geïnstalleerd",
+      "update": "{{name}} bijgewerkt",
+      "remove": "{{name}} verwijderd"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} groep",
+      "category_groups_other": "{{count}} groepen",
+      "categories_one": "{{count}} categorie",
+      "categories_other": "{{count}} categorieën",
+      "rules_one": "{{count}} regel",
+      "rules_other": "{{count}} regels"
+    },
+    "plan": {
+      "create": "Voegt {{items}} toe",
+      "update": "Werkt {{items}} bij",
+      "delete": "Verwijdert {{items}}",
+      "keep": "Laat {{items}} die je hebt bewerkt zoals ze zijn:",
+      "release": "Draagt {{items}} aan je over, bewerkt of nog in gebruik:",
+      "existing": "Slaat {{items}} over die je al hebt:",
+      "unresolved": "Slaat {{items}} over waarvan de categorie ontbreekt:",
+      "defaults_one": "Maakt ook {{count}} standaardcategorie die de regels nodig hebben",
+      "defaults_other": "Maakt ook {{count}} standaardcategorieën die de regels nodig hebben"
+    },
+    "page": {
+      "section": "Catalogus",
+      "notice": "Plugins worden niet door Securo beoordeeld. Voordat er iets wordt toegepast zie je precies wat er verandert, en niets verlaat je server.",
+      "search": "Plugins zoeken",
+      "type": {
+        "data": "Gegevens",
+        "interface": "Interface",
+        "code": "Code"
+      },
+      "status": {
+        "installed": "Geïnstalleerd",
+        "updates": "Update beschikbaar"
+      },
+      "clear": "Filters wissen",
+      "trendingHint": "Snelst groeiend, naar verhouding van hun grootte",
+      "newestHint": "Toegevoegd in de laatste 30 dagen",
+      "sortBy": "Sorteren op",
+      "sort": {
+        "popular": "Populair",
+        "trending": "Trending",
+        "updated": "Recent bijgewerkt",
+        "newest": "Nieuwste",
+        "name": "Naam"
+      },
+      "noResults": "Geen plugins voldoen aan deze filters.",
+      "byOwner": "door {{owner}}",
+      "updated": "Bijgewerkt {{when}}",
+      "count_one": "{{count}} plugin",
+      "count_other": "{{count}} plugins",
+      "stars_one": "{{count}} ster",
+      "stars_other": "{{count}} sterren",
+      "authors_one": "{{count}} auteur",
+      "authors_other": "{{count}} auteurs",
+      "clearSearch": "Zoekopdracht wissen",
+      "facet": {
+        "type": "Type",
+        "content": "Inhoud",
+        "language": "Taal",
+        "status": "Status"
+      },
+      "view": {
+        "all": "Alle",
+        "trending": "Trending",
+        "new": "Nieuw"
+      },
+      "any": "Alle",
+      "trendingEmpty": "Geen plugin kreeg deze week sterren.",
+      "newEmpty": "Er kwam de afgelopen 30 dagen geen plugin bij."
+    },
+    "kindName": {
+      "category_groups": "Categoriegroepen",
+      "categories": "Categorieën",
+      "rules": "Regels",
+      "csv_presets": "CSV-sjablonen",
+      "fiscal_jurisdictions": "Fiscale rechtsgebieden",
+      "invoice_labels": "Factuurlabels",
+      "widgets": "Widgets",
+      "reports": "Rapporten",
+      "dashboard_layouts": "Dashboard-indelingen",
+      "connectors": "Bankkoppelingen",
+      "parsers": "Bestandslezers",
+      "price_providers": "Prijsaanbieders",
+      "agent_tools": "Agenttools"
+    },
+    "detail": {
+      "overview": "Overzicht",
+      "inside": "Inhoud",
+      "insideHint": "Alles wat deze plugin aan een workspace toevoegt. Bij installatie zie je wat je al hebt.",
+      "noReadme": "De auteur heeft nog geen README voor deze plugin geschreven.",
+      "loadFailed": "De plugindetails konden niet worden geladen.",
+      "contentsUnavailable": "Deze versie van Securo kan de inhoud van deze plugin niet tonen.",
+      "version": "Versie",
+      "license": "Licentie",
+      "requires": "Vereist",
+      "updated": "Bijgewerkt",
+      "languages": "Talen",
+      "builtIn": "standaard",
+      "when": "Als",
+      "previewNote": "Bij installatie zie je elke wijziging voordat er iets wordt toegepast, en niets verlaat je server.",
+      "notFound": "Deze plugin staat niet in de catalogus.",
+      "type": "Type",
+      "added": "Toegevoegd"
+    },
+    "installedFailed": "De geïnstalleerde plugins konden niet worden geladen.",
+    "planRecordOnly": {
+      "install": "Deze workspace heeft al alles wat de plugin meebrengt. Installeren legt het vast, zodat je updates krijgt.",
+      "update": "Er verandert niets aan de items in deze workspace; de geïnstalleerde versie wordt {{version}}.",
+      "remove": "Geen van de items staat hier nog; verwijderen haalt het alleen van de lijst."
+    }
   }
 }
