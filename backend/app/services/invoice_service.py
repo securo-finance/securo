@@ -40,7 +40,7 @@ from app.models.transaction import Transaction
 from app.models.workspace import Workspace, WorkspaceTaxId
 # Safe at module level: the attachment service reaches for models and the
 # storage provider, never back into this one.
-from app.services import invoice_attachment_service
+from app.services import fx_rate_service, invoice_attachment_service
 
 ZERO = Decimal("0.00")
 
@@ -517,14 +517,33 @@ async def aging_summary(
     workspace_id: uuid.UUID,
     today: Optional[_date] = None,
     direction: str = DEFAULT_DIRECTION,
+    currency: Optional[str] = None,
 ) -> dict[str, Any]:
     """A receber · vencidas · recebido no mês · próximos vencimentos.
 
     Drafts are excluded from every figure — a document nobody has issued
     is not money anybody owes. Voided and uncollectible invoices are
     excluded for the same reason, one decision later.
+
+    Each invoice is in its own currency, and every figure here is one
+    sum. With `currency` (the reader's), each invoice's amounts are
+    converted into it before they are added: balances at today's rate,
+    money received at the rate of the day it was linked. Only stored
+    rates are read, so a page load does not call the rate provider.
     """
     reference = today or app_today()
+    rates: dict[tuple[str, _date], Decimal] = {}
+
+    async def in_currency(amount: Decimal, source: Optional[str], on: _date) -> Decimal:
+        if currency is None or not source or source == currency:
+            return amount
+        key = (source, on)
+        if key not in rates:
+            rates[key] = await fx_rate_service.get_rate(
+                session, source, currency, on, allow_fetch=False
+            )
+        return (amount * rates[key]).quantize(Decimal("0.01"))
+
     result = await session.execute(
         _base_query(direction).where(
             Invoice.workspace_id == workspace_id,
@@ -545,6 +564,7 @@ async def aging_summary(
         remaining = balance(invoice)
         if remaining <= ZERO:
             continue
+        remaining = await in_currency(remaining, invoice.currency, reference)
         outstanding += remaining
         overdue_days = days_overdue(invoice, reference)
         if overdue_days > 0:
@@ -575,7 +595,9 @@ async def aging_summary(
                 allocated_at = allocated_at.replace(tzinfo=timezone.utc)
             allocated_on = allocated_at.astimezone(reporting_timezone).date()
             if month_start <= allocated_on <= reference:
-                received_this_month += allocation.amount
+                received_this_month += await in_currency(
+                    allocation.amount, invoice.currency, allocated_on
+                )
 
     upcoming.sort(key=lambda i: i.due_date)
     return {
