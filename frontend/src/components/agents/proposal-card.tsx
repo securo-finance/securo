@@ -9,6 +9,7 @@ import { formatDate } from '@/lib/date-range-format'
 import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import {
+  accounts,
   budgets,
   categories,
   categoryGroups,
@@ -162,6 +163,8 @@ function kindTitle(kind: ProposalKind, t: ReturnType<typeof useTranslation>['t']
   if (kind === 'create_rule') return t('rules.newRule')
   if (kind === 'update_rule') return t('rules.editRule')
   if (kind === 'delete_rule') return t('rules.confirmDeleteTitle')
+  if (kind === 'create_manual_account') return t('accounts.addManual')
+  if (kind === 'update_manual_account') return t('accounts.editAccount')
   return t(`agents.proposal.kind.${kind}`)
 }
 
@@ -189,6 +192,12 @@ function renderSummary(
         amount: fmt(p.amount, p.currency),
         month: String(p.month ?? '?'),
       })
+    case 'create_manual_account': {
+      const accountType = String(p.type ?? '?')
+      const typeLabel = t(`accounts.type${accountType.charAt(0).toUpperCase()}${accountType.slice(1)}`)
+      return `${String(p.name ?? '?')} · ${typeLabel} · ${fmt(p.balance, p.currency)}`
+        + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+    }
     case 'create_payee_rule':
       return t('agents.proposal.summary.createPayeeRule', {
         pattern: String(p.match_pattern ?? '?'),
@@ -269,6 +278,17 @@ function renderSummary(
         before: fmt(tgt.amount, tgt.currency),
         after: fmt(changes.amount, tgt.currency),
       })
+    }
+    case 'update_manual_account': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      const lines = Object.entries(changes).map(([key, value]) => {
+        const before = tgt[key]
+        return `${key}: ${String(before ?? '∅')} → ${String(value ?? '∅')}`
+      })
+      return t('agents.proposal.summary.updateGoal', {
+        name: String(tgt.name ?? '?'),
+        changes: lines.join(', ') || '—',
+      }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
     }
     case 'delete_budget':
       return t(tgt.is_recurring ? 'agents.proposal.summary.deleteRecurringBudget' : 'agents.proposal.summary.deleteBudget', {
@@ -406,6 +426,16 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       })
       return b.id
     }
+    case 'create_manual_account': {
+      const account = await accounts.create({
+        name: String(p.name),
+        type: String(p.type),
+        currency: String(p.currency),
+        balance: Number(p.balance),
+        balance_date: (p.balance_date as string) || undefined,
+      })
+      return account.id
+    }
     case 'create_payee_rule': {
       const r = await rules.create({
         name: `Rule: ${String(p.match_pattern).slice(0, 60)}`,
@@ -527,6 +557,14 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       // Only the amount goes out, the same edit the budgets page makes.
       const id = String((data.target as Record<string, unknown>).id)
       await budgets.update(id, { amount: Number((data.changes as Record<string, unknown>).amount) })
+      return id
+    }
+    case 'update_manual_account': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await accounts.update(
+        id,
+        (data.changes || {}) as Parameters<typeof accounts.update>[1],
+      )
       return id
     }
     case 'delete_budget': {

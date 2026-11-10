@@ -167,6 +167,7 @@ ADDITIVE_PROPOSALS = frozenset(
         "propose_create_budget",
         "propose_create_category",
         "propose_create_goal",
+        "propose_create_manual_account",
         "propose_create_payee_rule",
         "propose_create_recurring_transaction",
         "propose_create_transaction",

@@ -5,10 +5,22 @@ import { createTestQueryClient, renderWithProviders } from '@/test/utils'
 import { isProposalData } from '@/lib/agent-proposals'
 import { toast } from 'sonner'
 
-const { linkTransfer, unlinkTransfer, updateGoal, updateBudget, deleteBudget, updateTransaction, createGroup } =
+const {
+  createAccount,
+  linkTransfer,
+  unlinkTransfer,
+  updateAccount,
+  updateGoal,
+  updateBudget,
+  deleteBudget,
+  updateTransaction,
+  createGroup,
+} =
   vi.hoisted(() => ({
+    createAccount: vi.fn(),
     linkTransfer: vi.fn(),
     unlinkTransfer: vi.fn(),
+    updateAccount: vi.fn(),
     updateGoal: vi.fn(),
     updateBudget: vi.fn(),
     deleteBudget: vi.fn(),
@@ -16,6 +28,7 @@ const { linkTransfer, unlinkTransfer, updateGoal, updateBudget, deleteBudget, up
     createGroup: vi.fn(),
   }))
 vi.mock('@/lib/api', () => ({
+  accounts: { create: createAccount, update: updateAccount },
   budgets: { update: updateBudget, delete: deleteBudget },
   categories: {},
   categoryGroups: { create: createGroup },
@@ -190,6 +203,113 @@ describe('ProposalCard goal and budget kinds', () => {
     await user.click(screen.getByRole('button', { name: /Apply/ }))
 
     await waitFor(() => expect(deleteBudget).toHaveBeenCalledWith('budget-2'))
+  })
+})
+
+describe('ProposalCard manual account kinds', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    createAccount.mockReset()
+    updateAccount.mockReset()
+  })
+
+  it('treats manual account previews as proposals', () => {
+    expect(isProposalData({ kind: 'create_manual_account' })).toBe(true)
+    expect(isProposalData({ kind: 'update_manual_account' })).toBe(true)
+  })
+
+  it('creates a manual account on Apply', async () => {
+    createAccount.mockResolvedValue({ id: 'account-1' })
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-create-account"
+        data={{
+          kind: 'create_manual_account',
+          proposed: {
+            name: 'CommBank',
+            type: 'checking',
+            currency: 'AUD',
+            balance: 4493.28,
+            balance_date: '2026-11-10',
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Add Account')).toBeInTheDocument()
+    expect(screen.getByText(/CommBank · Checking ·/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() =>
+      expect(createAccount).toHaveBeenCalledWith({
+        name: 'CommBank',
+        type: 'checking',
+        currency: 'AUD',
+        balance: 4493.28,
+        balance_date: '2026-11-10',
+      }),
+    )
+  })
+
+  it('updates only the proposed account fields on Apply', async () => {
+    updateAccount.mockResolvedValue({ id: 'account-2' })
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-update-account"
+        data={{
+          kind: 'update_manual_account',
+          target: {
+            id: 'account-2',
+            name: 'Ubank',
+            type: 'savings',
+            currency: 'AUD',
+            balance: 3272.25,
+            balance_date: '2026-11-03',
+          },
+          changes: { balance: 3400 },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Edit Account')).toBeInTheDocument()
+    expect(screen.getByText('Ubank → balance: 3272.25 → 3400')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() =>
+      expect(updateAccount).toHaveBeenCalledWith('account-2', { balance: 3400 }),
+    )
+  })
+
+  it('keeps an opening-less legacy account balance when applying a date', async () => {
+    updateAccount.mockResolvedValue({ id: 'account-3' })
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-update-legacy-account"
+        data={{
+          kind: 'update_manual_account',
+          target: {
+            id: 'account-3',
+            name: 'Legacy',
+            type: 'checking',
+            currency: 'AUD',
+            balance: 4493.28,
+            balance_date: null,
+          },
+          changes: { balance: 4493.28, balance_date: '2026-11-10' },
+        }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() =>
+      expect(updateAccount).toHaveBeenCalledWith('account-3', {
+        balance: 4493.28,
+        balance_date: '2026-11-10',
+      }),
+    )
   })
 })
 

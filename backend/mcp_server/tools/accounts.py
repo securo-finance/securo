@@ -1,13 +1,25 @@
 from __future__ import annotations
 
+import re
+from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
+from app.models.account import Account
+from app.models.transaction import Transaction
+from app.schemas.account import AccountCreate, AccountUpdate
 from app.services import account_service
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import num, parse_date, parse_uuid, resolve_workspace_id
+from mcp_server.tools.proposals import _APPLY_FIELD, _PROPOSAL_PREFACE, _can_apply
+
+
+_MANUAL_ACCOUNT_TYPES = frozenset({"checking", "savings", "wallet", "investment"})
+_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
 
 @tool(
@@ -100,3 +112,352 @@ async def get_account_summary(
         "projected_income": num(summary.get("projected_income")),
         "projected_expenses": num(summary.get("projected_expenses")),
     }
+
+
+def _normalize_account_name(name: str) -> str:
+    normalized = name.strip()
+    if not normalized:
+        raise ValueError("name is required")
+    if len(normalized) > 255:
+        raise ValueError("name must be at most 255 characters")
+    return normalized
+
+
+def _normalize_account_type(account_type: str) -> str:
+    normalized = account_type.strip().lower()
+    if normalized not in _MANUAL_ACCOUNT_TYPES:
+        allowed = ", ".join(sorted(_MANUAL_ACCOUNT_TYPES))
+        raise ValueError(f"type must be one of: {allowed}")
+    return normalized
+
+
+def _normalize_currency(currency: str) -> str:
+    normalized = currency.strip().upper()
+    if not _CURRENCY_RE.fullmatch(normalized):
+        raise ValueError("currency must be a three-letter code")
+    return normalized
+
+
+def _parse_balance_date(value: str | None):
+    if value is None or value == "":
+        return None
+    try:
+        return parse_date(value)
+    except ValueError as exc:
+        raise ValueError("balance_date must be an ISO date (YYYY-MM-DD)") from exc
+
+
+async def _opening_balance_date(
+    session: AsyncSession, account_id, workspace_id
+):
+    return await session.scalar(
+        select(Transaction.date)
+        .where(
+            Transaction.account_id == account_id,
+            Transaction.workspace_id == workspace_id,
+            Transaction.source == "opening_balance",
+        )
+        .order_by(Transaction.date.desc())
+        .limit(1)
+    )
+
+
+async def _account_snapshot(
+    session: AsyncSession, account: Account
+) -> dict[str, Any]:
+    balance_date = await _opening_balance_date(
+        session, account.id, account.workspace_id
+    )
+    return {
+        "id": str(account.id),
+        "name": account.name,
+        "type": account.type,
+        "currency": account.currency,
+        "balance": num(account.balance),
+        "balance_date": balance_date.isoformat() if balance_date else None,
+    }
+
+
+async def _matching_manual_accounts(
+    session: AsyncSession,
+    *,
+    workspace_id,
+    name: str,
+    currency: str,
+) -> list[Account]:
+    rows = await session.execute(
+        select(Account)
+        .where(
+            Account.workspace_id == workspace_id,
+            Account.connection_id.is_(None),
+            func.lower(Account.name) == name.lower(),
+            Account.currency == currency,
+        )
+        .order_by(Account.name)
+    )
+    return list(rows.scalars().all())
+
+
+@tool(
+    name="propose_create_manual_account",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for creating a manual checking, savings, wallet or "
+        "investment account with an opening balance. This is the correct tool "
+        "for cash balances that are not connected through a bank provider. "
+        "The preview warns about same-name manual accounts in the same "
+        "currency but does not block a deliberate duplicate."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "type": {
+                "type": "string",
+                "enum": sorted(_MANUAL_ACCOUNT_TYPES),
+            },
+            "currency": {
+                "type": "string",
+                "pattern": "^[A-Za-z]{3}$",
+            },
+            "balance": {"type": "number"},
+            "balance_date": {"type": "string", "format": "date"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["name", "type", "currency", "balance"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "accounts"],
+)
+async def propose_create_manual_account(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    name: str,
+    type: str,
+    currency: str,
+    balance: float,
+    balance_date: str | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    try:
+        normalized_name = _normalize_account_name(name)
+        normalized_type = _normalize_account_type(type)
+        normalized_currency = _normalize_currency(currency)
+        normalized_balance = Decimal(str(balance))
+        normalized_date = _parse_balance_date(balance_date)
+    except (ValueError, ArithmeticError) as exc:
+        return {"error": str(exc)}
+    if normalized_balance == 0 and normalized_date is not None:
+        return {"error": "balance_date requires a non-zero balance"}
+    effective_date = (
+        (normalized_date or app_today())
+        if normalized_balance != 0
+        else None
+    )
+
+    ws_id = await resolve_workspace_id(session, ctx)
+    existing = await _matching_manual_accounts(
+        session,
+        workspace_id=ws_id,
+        name=normalized_name,
+        currency=normalized_currency,
+    )
+    preview = {
+        "kind": "create_manual_account",
+        "proposed": {
+            "name": normalized_name,
+            "type": normalized_type,
+            "currency": normalized_currency,
+            "balance": num(normalized_balance),
+            "balance_date": effective_date.isoformat() if effective_date else None,
+        },
+        "existing_accounts": [
+            await _account_snapshot(session, account) for account in existing
+        ],
+        **(
+            {
+                "name_collision": {
+                    "id": str(existing[0].id),
+                    "name": existing[0].name,
+                }
+            }
+            if existing
+            else {}
+        ),
+        "apply_endpoint": "POST /api/accounts",
+    }
+
+    if _can_apply(ctx, apply):
+        created = await account_service.create_account(
+            session,
+            ws_id,
+            ctx.user_id,
+            AccountCreate(
+                name=normalized_name,
+                type=normalized_type,
+                currency=normalized_currency,
+                balance=normalized_balance,
+                balance_date=effective_date,
+            ),
+        )
+        return {**preview, "applied": True, "id": str(created.id)}
+
+    return preview
+
+
+@tool(
+    name="propose_update_manual_account",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for updating a manual account's name, type, opening "
+        "balance or balance date. Call list_accounts first to find the "
+        "account_id. Bank-connected accounts are refused because their "
+        "balances are owned by the sync provider."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "account_id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "type": {
+                "type": "string",
+                "enum": sorted(_MANUAL_ACCOUNT_TYPES),
+            },
+            "balance": {"type": "number"},
+            "balance_date": {"type": "string", "format": "date"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["account_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "accounts"],
+)
+async def propose_update_manual_account(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    account_id: str,
+    name: str | None = None,
+    type: str | None = None,
+    balance: float | None = None,
+    balance_date: str | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    account_uuid = parse_uuid(account_id)
+    if account_uuid is None:
+        return {"error": "account not found"}
+    account = await account_service.get_account(session, account_uuid, ws_id)
+    if account is None:
+        return {"error": "account not found"}
+    if account.type not in _MANUAL_ACCOUNT_TYPES:
+        return {
+            "error": (
+                f"{account.type} is outside this tool's scope; "
+                "only checking, savings, wallet and investment accounts can be edited"
+            )
+        }
+    if account.connection_id is not None:
+        return {
+            "error": (
+                "bank-connected accounts cannot be edited through this tool; "
+                "their balance is managed by the provider sync"
+            )
+        }
+
+    current_date = await _opening_balance_date(session, account.id, ws_id)
+    changes: dict[str, Any] = {}
+    try:
+        parsed_date = _parse_balance_date(balance_date)
+        effective_balance = (
+            Decimal(str(balance)) if balance is not None else account.balance
+        )
+        if name is not None:
+            normalized_name = _normalize_account_name(name)
+            if normalized_name != account.name:
+                changes["name"] = normalized_name
+        if type is not None:
+            normalized_type = _normalize_account_type(type)
+            if normalized_type != account.type:
+                changes["type"] = normalized_type
+        if balance is not None:
+            normalized_balance = Decimal(str(balance))
+            if (
+                normalized_balance != account.balance
+                or (current_date is None and parsed_date is not None)
+            ):
+                changes["balance"] = num(normalized_balance)
+        if parsed_date is not None and effective_balance == 0:
+            return {
+                "error": "balance_date requires a non-zero balance"
+            }
+        if parsed_date is not None and current_date is None and balance is None:
+            return {
+                "error": (
+                    "balance_date requires an opening balance; "
+                    "provide balance in the same update"
+                )
+            }
+        if parsed_date is not None and parsed_date != current_date:
+            changes["balance_date"] = parsed_date.isoformat()
+    except (ValueError, ArithmeticError) as exc:
+        return {"error": str(exc)}
+
+    if not changes:
+        return {"error": "nothing to change"}
+
+    prospective_name = changes.get("name", account.name)
+    duplicates = [
+        candidate
+        for candidate in await _matching_manual_accounts(
+            session,
+            workspace_id=ws_id,
+            name=prospective_name,
+            currency=account.currency,
+        )
+        if candidate.id != account.id
+    ]
+    preview = {
+        "kind": "update_manual_account",
+        "target": await _account_snapshot(session, account),
+        "changes": changes,
+        "existing_accounts": [
+            await _account_snapshot(session, candidate)
+            for candidate in duplicates
+        ],
+        **(
+            {
+                "name_collision": {
+                    "id": str(duplicates[0].id),
+                    "name": duplicates[0].name,
+                }
+            }
+            if duplicates
+            else {}
+        ),
+        "apply_endpoint": f"PATCH /api/accounts/{account.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        update_payload: dict[str, Any] = dict(changes)
+        if "balance" in update_payload:
+            update_payload["balance"] = Decimal(str(update_payload["balance"]))
+        if "balance_date" in update_payload:
+            update_payload["balance_date"] = parse_date(
+                update_payload["balance_date"]
+            )
+        update = AccountUpdate.model_validate(update_payload)
+        try:
+            updated = await account_service.update_account(
+                session, account.id, ws_id, update
+            )
+        except ValueError as exc:
+            return {**preview, "error": str(exc)}
+        if updated is None:
+            return {**preview, "error": "account not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
+
+    return preview
