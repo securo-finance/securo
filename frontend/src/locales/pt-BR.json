@@ -1059,7 +1059,7 @@
     "transferSameAccount": "Origem e destino devem ser diferentes",
     "transferDescription": "Descrição",
     "transferNotes": "Notas",
-    "transferInfo": "Esta é uma transferência — alterações na descrição e nas notas se aplicam a ambos os lados. Alterações de data também se aplicam à contrapartida manual (não sincronizada), nunca à sincronizada.",
+    "transferInfo": "Esta é uma transferência: alterações na descrição e nas notas se aplicam aos dois lados. Alterações de valor e data também se aplicam à contrapartida manual (não sincronizada), nunca à sincronizada.",
     "transferLinkedTo": "Vinculada a:",
     "transferOpenAccount": "Abrir a conta {{account}}",
     "transferTooltip": "Transferências são excluídas dos totais de relatórios e dashboard",

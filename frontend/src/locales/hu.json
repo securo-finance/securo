@@ -1060,7 +1060,7 @@
     "transferSameAccount": "A forrás- és a célszámla nem lehet azonos",
     "transferDescription": "Leírás",
     "transferNotes": "Megjegyzések",
-    "transferInfo": "Ez egy átvezetés – a leírás és a megjegyzések módosítása mindkét oldalra vonatkozik. A dátummódosítások a kézzel rögzített (nem szinkronizált) ellenoldali tranzakcióra is érvényesek, a szinkronizáltra viszont soha.",
+    "transferInfo": "Ez egy átvezetés: a leírás és a megjegyzések módosítása mindkét oldalra vonatkozik. Az összeg és a dátum módosítása a kézzel rögzített (nem szinkronizált) ellenoldali tranzakcióra is érvényes, a szinkronizáltra viszont soha.",
     "transferLinkedTo": "Kapcsolva ehhez:",
     "transferOpenAccount": "Megnyitás: {{account}}",
     "transferTooltip": "Az átvezetések nem számítanak bele a jelentések és az Áttekintés összesítéseibe",

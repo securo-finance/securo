@@ -1104,7 +1104,7 @@
     "transferSameAccount": "Zdrojový a cieľový účet musia byť rôzne",
     "transferDescription": "Popis",
     "transferNotes": "Poznámka",
-    "transferInfo": "Toto je prevod — zmeny popisu a poznámky sa prejavia na oboch stranách. Zmeny dátumu sa prenesú aj na ručne zadanú (nesynchronizovanú) protistranu, nikdy však na synchronizovanú.",
+    "transferInfo": "Toto je prevod: zmeny popisu a poznámky sa prejavia na oboch stranách. Zmeny sumy a dátumu sa prenesú aj na ručne zadanú (nesynchronizovanú) protistranu, nikdy však na synchronizovanú.",
     "transferLinkedTo": "Prepojené s:",
     "transferOpenAccount": "Otvoriť účet {{account}}",
     "transferTooltip": "Prevody sú vylúčené zo súčtov v reportoch a v prehľade",

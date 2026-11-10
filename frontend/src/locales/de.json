@@ -1060,7 +1060,7 @@
     "transferSameAccount": "Quell- und Zielkonto müssen unterschiedlich sein",
     "transferDescription": "Beschreibung",
     "transferNotes": "Notizen",
-    "transferInfo": "Dies ist eine Umbuchung — Änderungen an Beschreibung und Notizen wirken sich auf beide Seiten aus. Datumsänderungen werden auch auf manuell erfasste (nicht synchronisierte) Gegenbuchungen übertragen, niemals auf synchronisierte.",
+    "transferInfo": "Dies ist eine Umbuchung: Änderungen an Beschreibung und Notizen wirken sich auf beide Seiten aus. Betrags- und Datumsänderungen werden auch auf eine manuell erfasste (nicht synchronisierte) Gegenbuchung übertragen, niemals auf eine synchronisierte.",
     "transferLinkedTo": "Verknüpft mit:",
     "transferOpenAccount": "Konto {{account}} öffnen",
     "transferTooltip": "Umbuchungen sind von den Berichts- und Dashboard-Summen ausgeschlossen",

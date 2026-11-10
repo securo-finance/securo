@@ -1062,7 +1062,7 @@
     "transferSameAccount": "La source et la destination doivent être différentes",
     "transferDescription": "Description",
     "transferNotes": "Notes",
-    "transferInfo": "Il s'agit d'un virement — les modifications de la description et des notes s'appliquent aux deux côtés. Les changements de date s'appliquent aussi à la contrepartie saisie manuellement (non synchronisée), jamais à une contrepartie synchronisée.",
+    "transferInfo": "Il s'agit d'un virement : les modifications de la description et des notes s'appliquent aux deux côtés. Les changements de montant et de date s'appliquent aussi à la contrepartie saisie manuellement (non synchronisée), jamais à une contrepartie synchronisée.",
     "transferLinkedTo": "Liée à :",
     "transferOpenAccount": "Ouvrir le compte {{account}}",
     "transferTooltip": "Les virements sont exclus des totaux des rapports et du tableau de bord",

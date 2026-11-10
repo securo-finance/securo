@@ -1060,7 +1060,7 @@
     "transferSameAccount": "Source and destination must be different",
     "transferDescription": "Description",
     "transferNotes": "Notes",
-    "transferInfo": "This is a transfer — changes to description and notes apply to both sides. Date changes also apply to manual (non-synchronized) counterparts, never synchronized ones.",
+    "transferInfo": "This is a transfer: changes to description and notes apply to both sides. Amount and date changes also apply to a manual (non-synchronized) counterpart, never to a synchronized one.",
     "transferLinkedTo": "Linked to:",
     "transferOpenAccount": "Open {{account}}",
     "transferTooltip": "Transfers are excluded from report and dashboard totals",

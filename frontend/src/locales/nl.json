@@ -1060,7 +1060,7 @@
     "transferSameAccount": "Bron en bestemming moeten verschillend zijn",
     "transferDescription": "Beschrijving",
     "transferNotes": "Opmerkingen",
-    "transferInfo": "Dit is een overdracht — wijzigingen in de beschrijving en opmerkingen gelden voor beide kanten. Datumwijzigingen gelden ook voor de handmatig ingevoerde (niet-gesynchroniseerde) tegenboeking, nooit voor een gesynchroniseerde tegenboeking.",
+    "transferInfo": "Dit is een overdracht: wijzigingen in de beschrijving en opmerkingen gelden voor beide kanten. Wijzigingen in bedrag en datum gelden ook voor de handmatig ingevoerde (niet-gesynchroniseerde) tegenboeking, nooit voor een gesynchroniseerde tegenboeking.",
     "transferLinkedTo": "Gekoppeld aan:",
     "transferOpenAccount": "Rekening {{account}} openen",
     "transferTooltip": "Overboekingen zijn uitgesloten van de rapport- en dashboardtotalen",

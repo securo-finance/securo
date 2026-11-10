@@ -1092,7 +1092,7 @@
     "transferSameAccount": "Źródło i cel muszą być różne",
     "transferDescription": "Opis",
     "transferNotes": "Notatki",
-    "transferInfo": "To transfer — zmiany opisu i notatek obejmują obie strony. Zmiany daty obejmują też ręcznie wprowadzoną (niezsynchronizowaną) transakcję po drugiej stronie, nigdy jednak zsynchronizowaną.",
+    "transferInfo": "To transfer: zmiany opisu i notatek obejmują obie strony. Zmiany kwoty i daty obejmują też ręcznie wprowadzoną (niezsynchronizowaną) transakcję po drugiej stronie, nigdy jednak zsynchronizowaną.",
     "transferLinkedTo": "Powiązana z:",
     "transferOpenAccount": "Otwórz konto {{account}}",
     "transferTooltip": "Transfery są wyłączone z sum w raportach i na pulpicie",
