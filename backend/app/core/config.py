@@ -152,6 +152,8 @@ class Settings(BaseSettings):
     # number of trusted reverse proxies in front of the backend (usually 1) to
     # derive the client IP from X-Forwarded-For instead, trusting only that
     # many hops from the right; a chain shorter than expected is not trusted.
+    # The same IP is the Psu-Ip-Address of user-triggered Enable Banking syncs
+    # (app.providers.psu), which only sends it when it is a public address.
     trusted_proxy_hops: int = 0
 
     # Logo size for market-priced asset icons. The logo URL is built from
@@ -174,6 +176,14 @@ class Settings(BaseSettings):
     # an index. Set PERFORMANCE_BENCHMARKS_ENABLED=false to avoid those
     # external hosts; portfolio returns keep working without them.
     performance_benchmarks_enabled: bool = True
+
+    # Data plugins (categories and rules) from the plugin catalog. Gated by
+    # PLUGINS_ENABLED, off by default: while off nothing is fetched and no
+    # plugin can be installed. The built-in rule packs don't depend on it.
+    # The catalog is a static index, fetched only when someone opens it,
+    # never in the background; manifests come from the same host, checked
+    # against the index's sha256. Point it at a mirror to host your own.
+    plugins_index_url: str = "https://plugins.usesecuro.com/v1/index.json"
 
     @property
     def oidc_login_available(self) -> bool:

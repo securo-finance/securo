@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Una fattura emessa non si elimina mai — annullala.",
       "issued_invoice_immutable": "Una fattura emessa non può cambiare. Annullala ed emettine un'altra.",
       "over_allocation": "È più di quanto questa fattura deve ancora.",
+      "transaction_over_allocation": "È più di quanto resta di questa transazione da collegare.",
       "already_allocated": "Questa transazione è già collegata a questa fattura.",
       "already_settled": "Questa fattura è già completamente saldata.",
       "currency_mismatch": "La transazione è in un'altra valuta.",
@@ -1591,6 +1592,21 @@
     "packMissingCategories": "Questo pacchetto richiede categorie predefinite che non hai. Abilita \"Crea categorie mancanti\" e riprova.",
     "packInstalledWithCategories": "{{rules}} regole installate e {{categories}} categorie create",
     "createMissingCategories": "Crea anche le categorie predefinite necessarie al pacchetto",
+    "removePack": "Rimuovi pacchetto",
+    "removePackAria": "Rimuovi il pacchetto {{name}}",
+    "removePackTitle": "Rimuovere il pacchetto {{name}}?",
+    "removePackSummary_one": "Elimina {{count}} regola di questo pacchetto. Le transazioni mantengono le categorie che hanno già.",
+    "removePackSummary_other": "Elimina {{count}} regole di questo pacchetto. Le transazioni mantengono le categorie che hanno già.",
+    "removePackKeeps_one": "{{count}} regola che hai modificato resta tua:",
+    "removePackKeeps_other": "{{count}} regole che hai modificato restano tue:",
+    "removePackMore": "e altre {{count}}",
+    "removePackConfirm": "Rimuovi pacchetto",
+    "removePackChanged": "Le regole del pacchetto sono cambiate da questa anteprima. Controllala di nuovo prima di rimuovere.",
+    "removePackPreviewFailed": "Impossibile caricare cosa farebbe la rimozione di questo pacchetto.",
+    "packRemoved_one": "{{count}} regola rimossa",
+    "packRemoved_other": "{{count}} regole rimosse",
+    "packKeptEdited_one": "{{count}} regola modificata mantenuta",
+    "packKeptEdited_other": "{{count}} regole modificate mantenute",
     "duplicateName": "Esiste già una regola con questo nome",
     "sectionTitle": "Regole di categorizzazione",
     "sectionHint": "Come categorizzare le transazioni.",
@@ -3221,6 +3237,153 @@
       "undoFirstMortgage": "Annulla la divisione prima di aggiungere la ripartizione del mutuo.",
       "categoryInUse": "Questa categoria contiene parti di transazioni divise. Modifica prima quelle divisioni.",
       "destinationInvalid": "Le parti di transazioni divise non possono passare a una categoria ignorata o nascosta."
+    }
+  },
+  "plugins": {
+    "title": "Plugin",
+    "hint": "Categorie e regole create dalla comunità. Rivedi ogni modifica prima che venga applicata, e nulla lascia il tuo server.",
+    "browse": "Sfoglia il catalogo",
+    "noneInstalled": "Nessun plugin installato in questo spazio di lavoro.",
+    "remove": "Rimuovi plugin",
+    "removeAria": "Rimuovi {{name}}",
+    "catalogFailed": "Impossibile caricare il catalogo.",
+    "catalogEmpty": "Il catalogo non ha ancora plugin.",
+    "viewSource": "Vedi sorgente",
+    "revoked": "Revocato",
+    "unavailable": "Non disponibile",
+    "needsVersion": "Richiede Securo {{version}}",
+    "updateAvailable": "Aggiornamento disponibile",
+    "installed": "Installato",
+    "install": "Installa",
+    "update": "Aggiorna",
+    "andMore": "e altri {{count}}",
+    "planTitle": {
+      "install": "Installare {{name}}?",
+      "update": "Aggiornare {{name}}?",
+      "remove": "Rimuovere {{name}}?"
+    },
+    "planIntro": "Ecco cosa cambia in questo spazio di lavoro:",
+    "planFailed": "Impossibile caricare cosa cambierebbe.",
+    "planChanged": "Qualcosa è cambiato da questa anteprima. Controllala di nuovo.",
+    "privacy": "Questo plugin aggiunge solo dati a questo spazio di lavoro. Nulla viene inviato altrove.",
+    "history": "Le transazioni mantengono le categorie che hanno già.",
+    "confirm": {
+      "install": "Installa",
+      "update": "Aggiorna",
+      "remove": "Rimuovi"
+    },
+    "done": {
+      "install": "{{name}} installato",
+      "update": "{{name}} aggiornato",
+      "remove": "{{name}} rimosso"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} gruppo",
+      "category_groups_other": "{{count}} gruppi",
+      "categories_one": "{{count}} categoria",
+      "categories_other": "{{count}} categorie",
+      "rules_one": "{{count}} regola",
+      "rules_other": "{{count}} regole"
+    },
+    "plan": {
+      "create": "Aggiunge {{items}}",
+      "update": "Aggiorna {{items}}",
+      "delete": "Elimina {{items}}",
+      "keep": "Lascia come sono {{items}} che hai modificato:",
+      "release": "Ti affida {{items}}, modificati o ancora in uso:",
+      "existing": "Salta {{items}} che hai già:",
+      "unresolved": "Salta {{items}} la cui categoria non esiste:",
+      "defaults_one": "Crea anche {{count}} categoria predefinita usata dalle regole",
+      "defaults_other": "Crea anche {{count}} categorie predefinite usate dalle regole"
+    },
+    "page": {
+      "section": "Catalogo",
+      "notice": "I plugin non sono revisionati da Securo. Prima di applicare vedi esattamente cosa cambia, e nulla lascia il tuo server.",
+      "search": "Cerca plugin",
+      "type": {
+        "data": "Dati",
+        "interface": "Interfaccia",
+        "code": "Codice"
+      },
+      "status": {
+        "installed": "Installati",
+        "updates": "Con aggiornamento"
+      },
+      "clear": "Rimuovi filtri",
+      "trendingHint": "I più in crescita, in proporzione alla dimensione",
+      "newestHint": "Arrivati negli ultimi 30 giorni",
+      "sortBy": "Ordina per",
+      "sort": {
+        "popular": "Popolari",
+        "trending": "Di tendenza",
+        "updated": "Aggiornati di recente",
+        "newest": "Più nuovi",
+        "name": "Nome"
+      },
+      "noResults": "Nessun plugin corrisponde a questi filtri.",
+      "byOwner": "di {{owner}}",
+      "updated": "Aggiornato {{when}}",
+      "count_one": "{{count}} plugin",
+      "count_other": "{{count}} plugin",
+      "stars_one": "{{count}} stella",
+      "stars_other": "{{count}} stelle",
+      "authors_one": "{{count}} autore",
+      "authors_other": "{{count}} autori",
+      "clearSearch": "Cancella ricerca",
+      "facet": {
+        "type": "Tipo",
+        "content": "Contenuto",
+        "language": "Lingua",
+        "status": "Stato"
+      },
+      "view": {
+        "all": "Tutti",
+        "trending": "Di tendenza",
+        "new": "Nuovi"
+      },
+      "any": "Qualsiasi",
+      "trendingEmpty": "Nessun plugin ha ricevuto stelle questa settimana.",
+      "newEmpty": "Nessun plugin è arrivato negli ultimi 30 giorni."
+    },
+    "kindName": {
+      "category_groups": "Gruppi di categorie",
+      "categories": "Categorie",
+      "rules": "Regole",
+      "csv_presets": "Modelli CSV",
+      "fiscal_jurisdictions": "Giurisdizioni fiscali",
+      "invoice_labels": "Etichette fattura",
+      "widgets": "Widget",
+      "reports": "Report",
+      "dashboard_layouts": "Layout della dashboard",
+      "connectors": "Connettori bancari",
+      "parsers": "Lettori di file",
+      "price_providers": "Fornitori di prezzi",
+      "agent_tools": "Strumenti dell'agente"
+    },
+    "detail": {
+      "overview": "Panoramica",
+      "inside": "Cosa contiene",
+      "insideHint": "Tutto ciò che questo plugin aggiunge a uno spazio. All'installazione vedi cosa hai già.",
+      "noReadme": "L'autore non ha ancora scritto un README per questo plugin.",
+      "loadFailed": "Impossibile caricare i dettagli del plugin.",
+      "contentsUnavailable": "Questa versione di Securo non può elencare il contenuto di questo plugin.",
+      "version": "Versione",
+      "license": "Licenza",
+      "requires": "Richiede",
+      "updated": "Aggiornato",
+      "languages": "Lingue",
+      "builtIn": "predefinita",
+      "when": "Quando",
+      "previewNote": "L'installazione mostra ogni modifica prima di applicarla, e niente lascia il tuo server.",
+      "notFound": "Questo plugin non è nel catalogo.",
+      "type": "Tipo",
+      "added": "Aggiunto"
+    },
+    "installedFailed": "Impossibile caricare i plugin installati.",
+    "planRecordOnly": {
+      "install": "Questo spazio ha già tutto ciò che porta. Installarlo lo registra, così ricevi gli aggiornamenti.",
+      "update": "Nessun elemento di questo spazio cambia; la versione installata diventa {{version}}.",
+      "remove": "Nessuno dei suoi elementi è rimasto qui; rimuoverlo lo toglie solo dall'elenco."
     }
   }
 }

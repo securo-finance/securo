@@ -183,8 +183,9 @@ async def _check_category_lines(
 
 
 def _can_apply(ctx: CallContext, apply: bool) -> bool:
-    """Gate: writes only happen when the caller is external AND set apply."""
-    return bool(apply) and ctx.external
+    """Gate: writes only happen when the caller is external, set apply, and
+    holds a role that can write in the workspace."""
+    return bool(apply) and ctx.external and ctx.can_write
 
 
 @tool(

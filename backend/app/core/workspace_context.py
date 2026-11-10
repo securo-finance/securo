@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import use_resolved_timezone, workspace_timezone
@@ -69,6 +69,7 @@ class WorkspaceContext:
 
 
 async def current_workspace(
+    request: Request,
     x_workspace_id: Optional[str] = Header(default=None, alias="X-Workspace-Id"),
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
@@ -78,7 +79,21 @@ async def current_workspace(
     The rest of the request then runs on the workspace's calendar: a
     workspace with a timezone of its own keeps its books there, any other
     follows the application timezone the session already captured.
+
+    A request made with an access token always runs in the token's
+    workspace; naming any other one is refused. Membership is still checked
+    as usual, so a token stops working once its creator leaves.
     """
+    access_token = getattr(request.state, "access_token", None)
+    if access_token is not None:
+        if x_workspace_id:
+            try:
+                named = uuid.UUID(x_workspace_id)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="Invalid X-Workspace-Id")
+            if named != access_token.workspace_id:
+                raise HTTPException(status_code=403, detail="This access token belongs to another workspace")
+        x_workspace_id = str(access_token.workspace_id)
     ctx = await resolve_workspace(x_workspace_id, user, session)
     with use_resolved_timezone(workspace_timezone(ctx.workspace.timezone)):
         yield ctx

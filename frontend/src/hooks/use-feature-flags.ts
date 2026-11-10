@@ -17,5 +17,6 @@ export function useFeatureFlags() {
     agentsEnabled: !!data?.features?.agents,
     // On unless the server says otherwise, matching the backend default.
     benchmarksEnabled: data?.features?.performance_benchmarks !== false,
+    pluginsEnabled: !!data?.features?.plugins,
   }
 }

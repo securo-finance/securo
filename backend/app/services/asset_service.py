@@ -48,7 +48,8 @@ def _next_due_date(last_date: date, frequency: str) -> date:
         day = min(last_date.day, 28)
         return date(year, month, day)
     elif frequency == "yearly":
-        return date(last_date.year + 1, last_date.month, last_date.day)
+        day = min(last_date.day, 28) if last_date.month == 2 else last_date.day
+        return date(last_date.year + 1, last_date.month, day)
     return last_date + timedelta(days=1)
 
 
@@ -1223,6 +1224,19 @@ async def get_portfolio_trend(
     return {"assets": asset_meta, "trend": trend, "total": round(total, 2)}
 
 
+def held_on(as_of_date: Optional[date] = None):
+    """Filter for assets held on `as_of_date`.
+
+    With no date (the live view) only assets with no sell_date count, as
+    before. With a date, an asset sold after that date was still held on it,
+    so a past snapshot includes it. From the sale day on it is left out:
+    by then the proceeds are usually recorded in an account.
+    """
+    if as_of_date is None:
+        return Asset.sell_date.is_(None)
+    return or_(Asset.sell_date.is_(None), Asset.sell_date > as_of_date)
+
+
 async def get_asset_values_at(
     session: AsyncSession,
     scope_id: uuid.UUID,
@@ -1236,12 +1250,14 @@ async def get_asset_values_at(
 
     `scope_id` is a workspace_id when `by_workspace=True` (preferred for
     multi-tenant code paths), otherwise treated as a legacy user_id
-    filter. Both branches honor the `is_archived=False` + `sell_date is None`
-    filters.
+    filter. Both branches honor the `is_archived=False` filter.
 
-    - as_of_date=None: uses live prices (current view).
+    - as_of_date=None: uses live prices (current view); sold assets are
+      left out.
     - as_of_date set: uses the latest AssetValue on or before that date,
       falling back to purchase_price only if the asset existed by that date.
+      An asset sold after that date was still held on it and counts, the
+      same way the portfolio trend keeps its pre-sale history (#120).
     - primary_currency=None: primary_total is 0.0.
     """
     scope_filter = (
@@ -1254,7 +1270,7 @@ async def get_asset_values_at(
     stmt = select(Asset).where(
         scope_filter,
         Asset.is_archived == False,
-        Asset.sell_date.is_(None),
+        held_on(as_of_date),
     )
     if group_ids:
         stmt = stmt.where(Asset.group_id.in_(group_ids))

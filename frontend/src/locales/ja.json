@@ -284,6 +284,7 @@
       "only_drafts_deletable": "発行済みの請求書は削除されません — 無効化してください。",
       "issued_invoice_immutable": "発行済みの請求書は変更できません。無効化して新しく発行してください。",
       "over_allocation": "この請求書の残額を超えています。",
+      "transaction_over_allocation": "この取引で紐付けできる残額を超えています。",
       "already_allocated": "この取引はすでにこの請求書に紐付けられています。",
       "already_settled": "この請求書はすでに全額決済済みです。",
       "currency_mismatch": "取引の通貨が異なります。",
@@ -1587,6 +1588,21 @@
     "packMissingCategories": "このパックには、あなたが持っていない既定カテゴリが必要です。「不足カテゴリを作成」を有効にして再試行してください。",
     "packInstalledWithCategories": "{{rules}}件のルールをインストールし、{{categories}}件のカテゴリを作成しました",
     "createMissingCategories": "パックに必要な既定カテゴリも作成する",
+    "removePack": "パックを削除",
+    "removePackAria": "{{name}} パックを削除",
+    "removePackTitle": "{{name}} パックを削除しますか？",
+    "removePackSummary_one": "このパックのルール {{count}} 件を削除します。取引のカテゴリはそのまま残ります。",
+    "removePackSummary_other": "このパックのルール {{count}} 件を削除します。取引のカテゴリはそのまま残ります。",
+    "removePackKeeps_one": "編集したルール {{count}} 件はあなたのルールとして残ります:",
+    "removePackKeeps_other": "編集したルール {{count}} 件はあなたのルールとして残ります:",
+    "removePackMore": "ほか {{count}} 件",
+    "removePackConfirm": "パックを削除",
+    "removePackChanged": "このプレビューの後にパックのルールが変更されました。削除する前にもう一度確認してください。",
+    "removePackPreviewFailed": "このパックを削除した場合の内容を読み込めませんでした。",
+    "packRemoved_one": "ルール {{count}} 件を削除しました",
+    "packRemoved_other": "ルール {{count}} 件を削除しました",
+    "packKeptEdited_one": "編集済みのルール {{count}} 件を残しました",
+    "packKeptEdited_other": "編集済みのルール {{count}} 件を残しました",
     "duplicateName": "この名前のルールはすでに存在します",
     "sectionTitle": "分類ルール",
     "resetAndReapplyAll": "リセットして再適用",
@@ -3217,6 +3233,153 @@
       "undoFirstMortgage": "住宅ローンの内訳を追加する前に分割を取り消してください。",
       "categoryInUse": "このカテゴリーには分割された取引の内訳があります。先にそれらの分割を変更してください。",
       "destinationInvalid": "分割された取引の内訳は、無視または非表示のカテゴリーに移せません。"
+    }
+  },
+  "plugins": {
+    "title": "プラグイン",
+    "hint": "コミュニティが作ったカテゴリとルール。適用前にすべての変更を確認でき、データはサーバーの外に出ません。",
+    "browse": "カタログを見る",
+    "noneInstalled": "このワークスペースにインストールされたプラグインはありません。",
+    "remove": "プラグインを削除",
+    "removeAria": "{{name}} を削除",
+    "catalogFailed": "カタログを読み込めませんでした。",
+    "catalogEmpty": "カタログにはまだプラグインがありません。",
+    "viewSource": "ソースを見る",
+    "revoked": "取り消し済み",
+    "unavailable": "利用不可",
+    "needsVersion": "Securo {{version}} が必要",
+    "updateAvailable": "アップデートあり",
+    "installed": "インストール済み",
+    "install": "インストール",
+    "update": "アップデート",
+    "andMore": "ほか {{count}} 件",
+    "planTitle": {
+      "install": "{{name}} をインストールしますか？",
+      "update": "{{name}} をアップデートしますか？",
+      "remove": "{{name}} を削除しますか？"
+    },
+    "planIntro": "このワークスペースで変わる内容:",
+    "planFailed": "変更内容を読み込めませんでした。",
+    "planChanged": "このプレビューの後に変更がありました。もう一度確認してください。",
+    "privacy": "このプラグインはこのワークスペースにデータを追加するだけです。どこにも送信されません。",
+    "history": "取引は現在のカテゴリを保持します。",
+    "confirm": {
+      "install": "インストール",
+      "update": "アップデート",
+      "remove": "削除"
+    },
+    "done": {
+      "install": "{{name}} をインストールしました",
+      "update": "{{name}} をアップデートしました",
+      "remove": "{{name}} を削除しました"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} グループ",
+      "category_groups_other": "{{count}} グループ",
+      "categories_one": "{{count}} カテゴリ",
+      "categories_other": "{{count}} カテゴリ",
+      "rules_one": "{{count}} ルール",
+      "rules_other": "{{count}} ルール"
+    },
+    "plan": {
+      "create": "追加: {{items}}",
+      "update": "更新: {{items}}",
+      "delete": "削除: {{items}}",
+      "keep": "編集済みのためそのまま: {{items}}:",
+      "release": "あなたに引き継ぎ (編集済みまたは使用中): {{items}}:",
+      "existing": "既にあるためスキップ: {{items}}:",
+      "unresolved": "カテゴリがないためスキップ: {{items}}:",
+      "defaults_one": "ルール用のデフォルトカテゴリも {{count}} 件作成します",
+      "defaults_other": "ルール用のデフォルトカテゴリも {{count}} 件作成します"
+    },
+    "page": {
+      "section": "カタログ",
+      "notice": "プラグインは Securo によって審査されていません。適用する前に何が変わるかを正確に確認でき、データはサーバーの外に出ません。",
+      "search": "プラグインを検索",
+      "type": {
+        "data": "データ",
+        "interface": "インターフェース",
+        "code": "コード"
+      },
+      "status": {
+        "installed": "インストール済み",
+        "updates": "アップデートあり"
+      },
+      "clear": "フィルターを解除",
+      "trendingHint": "規模に対して最も伸びているもの",
+      "newestHint": "過去30日間に追加",
+      "sortBy": "並べ替え",
+      "sort": {
+        "popular": "人気",
+        "trending": "トレンド",
+        "updated": "最近更新",
+        "newest": "新しい順",
+        "name": "名前"
+      },
+      "noResults": "条件に一致するプラグインはありません。",
+      "byOwner": "作成者: {{owner}}",
+      "updated": "{{when}}に更新",
+      "count_one": "{{count}} 件のプラグイン",
+      "count_other": "{{count}} 件のプラグイン",
+      "stars_one": "スター {{count}}",
+      "stars_other": "スター {{count}}",
+      "authors_one": "{{count}} 人の作者",
+      "authors_other": "{{count}} 人の作者",
+      "clearSearch": "検索をクリア",
+      "facet": {
+        "type": "種類",
+        "content": "内容",
+        "language": "言語",
+        "status": "状態"
+      },
+      "view": {
+        "all": "すべて",
+        "trending": "トレンド",
+        "new": "新着"
+      },
+      "any": "すべて",
+      "trendingEmpty": "今週スターを獲得したプラグインはありません。",
+      "newEmpty": "過去 30 日間に追加されたプラグインはありません。"
+    },
+    "kindName": {
+      "category_groups": "カテゴリグループ",
+      "categories": "カテゴリ",
+      "rules": "ルール",
+      "csv_presets": "CSV プリセット",
+      "fiscal_jurisdictions": "税務管轄",
+      "invoice_labels": "請求書ラベル",
+      "widgets": "ウィジェット",
+      "reports": "レポート",
+      "dashboard_layouts": "ダッシュボードのレイアウト",
+      "connectors": "銀行コネクタ",
+      "parsers": "ファイルリーダー",
+      "price_providers": "価格プロバイダー",
+      "agent_tools": "エージェントツール"
+    },
+    "detail": {
+      "overview": "概要",
+      "inside": "含まれるもの",
+      "insideHint": "このプラグインがワークスペースに追加するすべての項目。インストール時に既存のものを確認できます。",
+      "noReadme": "作者はまだこのプラグインの README を書いていません。",
+      "loadFailed": "プラグインの詳細を読み込めませんでした。",
+      "contentsUnavailable": "この Securo のバージョンではこのプラグインの内容を表示できません。",
+      "version": "バージョン",
+      "license": "ライセンス",
+      "requires": "必要条件",
+      "updated": "更新",
+      "languages": "言語",
+      "builtIn": "既定",
+      "when": "条件",
+      "previewNote": "インストール前にすべての変更を確認でき、データがサーバーの外に出ることはありません。",
+      "notFound": "このプラグインはカタログにありません。",
+      "type": "種類",
+      "added": "追加日"
+    },
+    "installedFailed": "インストール済みのプラグインを読み込めませんでした。",
+    "planRecordOnly": {
+      "install": "このワークスペースには既にすべての項目があります。インストールすると記録され、更新を受け取れます。",
+      "update": "ワークスペースの項目は変わりません。インストール済みのバージョンが {{version}} になります。",
+      "remove": "項目はもう残っていません。削除するとリストから外れるだけです。"
     }
   }
 }
