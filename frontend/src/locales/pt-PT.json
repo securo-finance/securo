@@ -3211,7 +3211,6 @@
       "remove": "Remover {{name}}?"
     },
     "planIntro": "Isto é o que muda neste espaço de trabalho:",
-    "planNothing": "Nada muda neste espaço de trabalho.",
     "planFailed": "Não foi possível carregar o que isto mudaria.",
     "planChanged": "Algo mudou desde esta pré-visualização. Reveja-a de novo.",
     "privacy": "Este plugin só adiciona dados a este espaço de trabalho. Nada é enviado para fora.",
@@ -3327,6 +3326,12 @@
       "notFound": "Este plugin não está no catálogo.",
       "type": "Tipo",
       "added": "Adicionado"
+    },
+    "installedFailed": "Não foi possível carregar os plugins instalados.",
+    "planRecordOnly": {
+      "install": "Este espaço já tem tudo o que ele traz. Instalar regista o plugin, para receber as atualizações.",
+      "update": "Nenhum item deste espaço muda; a versão instalada passa a ser {{version}}.",
+      "remove": "Nenhum item dele ficou aqui; remover apenas tira o plugin da lista."
     }
   }
 }

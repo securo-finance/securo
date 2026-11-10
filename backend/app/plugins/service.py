@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.rule import Rule
+from app.models.workspace import Workspace
 from app.models.workspace_plugin import WorkspacePlugin
 from app.plugins import index, sync
 from app.plugins.manifest import Manifest
@@ -143,9 +144,9 @@ def contents(manifest: Manifest) -> dict[str, list[dict[str, Any]]]:
 async def plan(
     session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, action: Action, *, lang: str
 ) -> PluginPlan:
-    commit, manifest = await _target(session, workspace_id, plugin_id, action)
+    commit, manifest, checksum = await _target(session, workspace_id, plugin_id, action)
     plan = await sync.plan_sync(
-        session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True
+        session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True, fingerprint=checksum
     )
     return PluginPlan(action, plugin_id, commit, plan)
 
@@ -162,12 +163,17 @@ async def apply(
     lang: str,
 ) -> PluginPlan:
     """Carry out the confirmed plan; `PluginChanged` or `sync.SyncPlanChanged` if it moved."""
-    target_commit, manifest = await _target(session, workspace_id, plugin_id, action)
+    target_commit, manifest, checksum = await _target(session, workspace_id, plugin_id, action)
     if target_commit != commit:
         raise PluginChanged
+    # One plugin change per workspace at a time: two confirmations of the same
+    # first install would otherwise both find nothing to lock and both create.
+    # Taken after the catalog fetch, so no network wait holds it; the plan is
+    # worked out again under it, and the second one no longer matches its token.
+    await session.execute(select(Workspace.id).where(Workspace.id == workspace_id).with_for_update())
     result = await sync.apply_sync(
         session, workspace_id, user_id, plugin_id, manifest, token,
-        lang=lang, create_default_categories=True,
+        lang=lang, create_default_categories=True, fingerprint=checksum,
     )
     record = (await installed_plugins(session, workspace_id)).get(plugin_id)
     if manifest is None or target_commit is None:  # removing
@@ -184,15 +190,15 @@ async def apply(
 
 async def _target(
     session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, action: Action
-) -> tuple[str | None, Manifest | None]:
-    """The commit and manifest the action brings the workspace to."""
+) -> tuple[str | None, Manifest | None, str | None]:
+    """The commit, manifest and manifest checksum the action brings the workspace to."""
     if plugin_id in {pack.source for pack in built_in_packs().values()}:
         raise PluginNotFound  # built-in packs are managed from the rules page
     installed = (await installed_plugins(session, workspace_id)).get(plugin_id)
     if action == "remove":
         if installed is None and not await _has_items(session, workspace_id, plugin_id):
             raise PluginNotFound
-        return None, None
+        return None, None, None
     if action == "install" and installed is not None:
         raise PluginUnavailable("already installed")
     if action == "update" and installed is None:
@@ -208,9 +214,12 @@ async def _target(
         if not entry.supported:
             raise PluginUnavailable("contributes something this Securo version can't apply")
         manifest = await index.fetch_manifest(client, entry)
+    # The index's copy of the minimum is a summary; the verified manifest decides.
+    if not index.is_compatible(manifest.min_securo_version):
+        raise PluginUnavailable(f"needs Securo {manifest.min_securo_version} or newer")
     if action == "update" and installed is not None and installed.commit == entry.commit:
         raise PluginUnavailable("already up to date")
-    return entry.commit, manifest
+    return entry.commit, manifest, entry.manifest_sha256
 
 
 async def _has_items(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str) -> bool:

@@ -22,7 +22,16 @@ export function PluginStatus({ entry, className }: { entry: PluginCatalogEntry; 
       </span>
     )
   }
+  const blocked = !entry.compatible || !entry.supported
+  const reason = (
+    <span className={cn(PILL, 'bg-muted text-muted-foreground', className)}>
+      <CircleSlash />
+      {entry.compatible ? t('plugins.unavailable') : t('plugins.needsVersion', { version: entry.min_securo_version })}
+    </span>
+  )
   if (entry.update_available) {
+    // An update this Securo can't take says why, rather than offering nothing.
+    if (blocked) return reason
     return (
       <span className={cn(PILL, 'bg-primary/10 text-primary', className)}>
         <ArrowUpCircle />
@@ -38,14 +47,7 @@ export function PluginStatus({ entry, className }: { entry: PluginCatalogEntry; 
       </span>
     )
   }
-  if (!entry.compatible || !entry.supported) {
-    return (
-      <span className={cn(PILL, 'bg-muted text-muted-foreground', className)}>
-        <CircleSlash />
-        {entry.compatible ? t('plugins.unavailable') : t('plugins.needsVersion', { version: entry.min_securo_version })}
-      </span>
-    )
-  }
+  if (blocked) return reason
   return null
 }
 

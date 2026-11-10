@@ -3188,7 +3188,7 @@
     "title": "Plugins",
     "hint": "Kategorien und Regeln aus der Community. Du prüfst jede Änderung, bevor sie angewendet wird, und nichts verlässt deinen Server.",
     "browse": "Katalog durchsuchen",
-    "noneInstalled": "In diesem Arbeitsbereich sind keine Plugins installiert.",
+    "noneInstalled": "In diesem Workspace sind keine Plugins installiert.",
     "remove": "Plugin entfernen",
     "removeAria": "{{name}} entfernen",
     "catalogFailed": "Der Katalog konnte nicht geladen werden.",
@@ -3207,11 +3207,10 @@
       "update": "{{name}} aktualisieren?",
       "remove": "{{name}} entfernen?"
     },
-    "planIntro": "Das ändert sich in diesem Arbeitsbereich:",
-    "planNothing": "In diesem Arbeitsbereich ändert sich nichts.",
+    "planIntro": "Das ändert sich in diesem Workspace:",
     "planFailed": "Konnte nicht laden, was sich ändern würde.",
     "planChanged": "Seit dieser Vorschau hat sich etwas geändert. Prüfe sie erneut.",
-    "privacy": "Dieses Plugin fügt diesem Arbeitsbereich nur Daten hinzu. Es wird nichts irgendwohin gesendet.",
+    "privacy": "Dieses Plugin fügt diesem Workspace nur Daten hinzu. Es wird nichts irgendwohin gesendet.",
     "history": "Transaktionen behalten ihre bisherigen Kategorien.",
     "confirm": {
       "install": "Installieren",
@@ -3309,7 +3308,7 @@
     "detail": {
       "overview": "Übersicht",
       "inside": "Inhalt",
-      "insideHint": "Alles, was dieses Plugin einem Bereich hinzufügt. Bei der Installation sehen Sie, was schon vorhanden ist.",
+      "insideHint": "Alles, was dieses Plugin einem Workspace hinzufügt. Bei der Installation siehst du, was schon vorhanden ist.",
       "noReadme": "Der Autor hat noch kein README für dieses Plugin geschrieben.",
       "loadFailed": "Die Plugin-Details konnten nicht geladen werden.",
       "contentsUnavailable": "Diese Securo-Version kann den Inhalt dieses Plugins nicht auflisten.",
@@ -3324,6 +3323,12 @@
       "notFound": "Dieses Plugin ist nicht im Katalog.",
       "type": "Typ",
       "added": "Hinzugefügt"
+    },
+    "installedFailed": "Die installierten Plugins konnten nicht geladen werden.",
+    "planRecordOnly": {
+      "install": "Dieser Workspace hat bereits alles, was das Plugin mitbringt. Die Installation vermerkt es, damit du Updates bekommst.",
+      "update": "Keine Einträge in diesem Workspace ändern sich; die installierte Version wird {{version}}.",
+      "remove": "Keiner seiner Einträge ist mehr hier; Entfernen nimmt es nur von der Liste."
     }
   }
 }

@@ -3329,7 +3329,6 @@
       "remove": "Usunąć {{name}}?"
     },
     "planIntro": "Oto co zmieni się w tym obszarze roboczym:",
-    "planNothing": "Nic się nie zmienia w tym obszarze roboczym.",
     "planFailed": "Nie udało się wczytać, co by się zmieniło.",
     "planChanged": "Coś się zmieniło od tego podglądu. Sprawdź go ponownie.",
     "privacy": "Ta wtyczka tylko dodaje dane do tego obszaru roboczego. Nic nie jest nigdzie wysyłane.",
@@ -3459,6 +3458,12 @@
       "notFound": "Tej wtyczki nie ma w katalogu.",
       "type": "Typ",
       "added": "Dodano"
+    },
+    "installedFailed": "Nie udało się wczytać zainstalowanych wtyczek.",
+    "planRecordOnly": {
+      "install": "Ta przestrzeń ma już wszystko, co wnosi. Instalacja ją zapisuje, aby otrzymywać aktualizacje.",
+      "update": "Żaden element tej przestrzeni się nie zmienia; zainstalowana wersja to teraz {{version}}.",
+      "remove": "Żaden jej element tu nie został; usunięcie tylko zdejmuje ją z listy."
     }
   }
 }

@@ -3363,7 +3363,6 @@
       "remove": "Odstrániť {{name}}?"
     },
     "planIntro": "Toto sa v tomto pracovnom priestore zmení:",
-    "planNothing": "V tomto pracovnom priestore sa nič nezmení.",
     "planFailed": "Nepodarilo sa načítať, čo by sa zmenilo.",
     "planChanged": "Od tohto náhľadu sa niečo zmenilo. Skontrolujte ho znova.",
     "privacy": "Tento plugin iba pridáva údaje do tohto pracovného priestoru. Nič sa nikam neodosiela.",
@@ -3493,6 +3492,12 @@
       "notFound": "Tento plugin nie je v katalógu.",
       "type": "Typ",
       "added": "Pridané"
+    },
+    "installedFailed": "Nainštalované pluginy sa nepodarilo načítať.",
+    "planRecordOnly": {
+      "install": "Tento priestor už má všetko, čo prináša. Inštalácia ho zaznamená, aby ste dostávali aktualizácie.",
+      "update": "Žiadne položky v tomto priestore sa nemenia; nainštalovaná verzia bude {{version}}.",
+      "remove": "Žiadna jeho položka tu nezostala; odstránenie ho len vyradí zo zoznamu."
     }
   }
 }

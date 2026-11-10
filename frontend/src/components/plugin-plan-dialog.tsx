@@ -43,7 +43,8 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
   const applyMutation = useMutation({
     mutationFn: (confirmed: PluginPlan) => pluginsApi.apply(target.id, confirmed),
     onSuccess: () => {
-      for (const key of ['plugins', 'categories', 'category-groups', 'rules']) {
+      // Both group keys are in use across pages; refresh every view of what changed.
+      for (const key of ['plugins', 'categories', 'category-groups', 'categoryGroups', 'rules']) {
         queryClient.invalidateQueries({ queryKey: [key] })
       }
       toast.success(t(`plugins.done.${target.action}`, { name: target.name }))
@@ -69,7 +70,9 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
   const changes = shown
     ? shown.create.length + shown.update.length + shown.delete.length + shown.release.length > 0
     : false
-  const confirmable = shown !== undefined && !isFetching && changes
+  // A plan that touches no item still records something: the installed version
+  // moves, or an installation whose items are all gone is taken off the list.
+  const confirmable = shown !== undefined && !isFetching
 
   const lines: { key: string; items: PluginItem[]; names: boolean }[] = shown
     ? [
@@ -95,7 +98,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
                 ? t('common.loading')
                 : changes
                   ? t('plugins.planIntro')
-                  : t('plugins.planNothing')}
+                  : t(`plugins.planRecordOnly.${target.action}`, { version: shown.version ?? '' })}
           </DialogDescription>
         </DialogHeader>
 

@@ -155,7 +155,7 @@ export default function PluginDetailPage() {
 
           {tab === 'overview' ? (
             data.readme ? (
-              <PluginReadme markdown={data.readme} />
+              <PluginReadme markdown={data.readme} base={`${plugin.repository}/blob/${plugin.commit}/`} />
             ) : (
               <p className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">{t('plugins.detail.noReadme')}</p>
             )

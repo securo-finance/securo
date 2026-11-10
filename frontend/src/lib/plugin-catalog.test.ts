@@ -65,6 +65,8 @@ describe('plugin catalog', () => {
     expect(ids({ type: 'code' })).toEqual(['b/code'])
     expect(ids({ kind: 'rules' })).toEqual(['a/data'])
     expect(ids({ locale: 'pt-BR' })).toEqual(['a/data', 'b/code'])
+    const english = entry({ id: 'c/english', name: { en: 'Other' } })
+    expect(filterPlugins([data, english], { ...NO_FILTERS, locale: 'pt-BR' }).map((e) => e.id)).toEqual(['a/data'])
     expect(ids({ status: 'installed' })).toEqual(['b/code'])
     expect(ids({ status: 'updates' })).toEqual(['b/code'])
   })

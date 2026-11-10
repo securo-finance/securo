@@ -108,10 +108,13 @@ async def install_rule_pack(
     pack = get_pack(pack_code)
     if pack is None:
         return RulePackInstallResult([], 0)
-    options = {"lang": lang, "create_default_categories": create_missing_categories}
-    plan = await sync.plan_sync(session, workspace_id, pack.source, pack.manifest, **options)
+    plan = await sync.plan_sync(
+        session, workspace_id, pack.source, pack.manifest,
+        lang=lang, create_default_categories=create_missing_categories,
+    )
     result = await sync.apply_sync(
-        session, workspace_id, user_id, pack.source, pack.manifest, plan.token, **options
+        session, workspace_id, user_id, pack.source, pack.manifest, plan.token,
+        lang=lang, create_default_categories=create_missing_categories,
     )
     await session.commit()
     return RulePackInstallResult(

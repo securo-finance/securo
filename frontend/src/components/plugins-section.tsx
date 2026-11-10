@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { Puzzle, Trash2 } from 'lucide-react'
+import { Puzzle, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -19,7 +19,10 @@ export function PluginsSection() {
   const [target, setTarget] = useState<PluginTarget | null>(null)
 
   // The database only: opening settings never reaches the catalog.
-  const { data: installed, isLoading } = useQuery({ queryKey: ['plugins', 'installed'], queryFn: pluginsApi.installed })
+  const { data: installed, isLoading, isError, isFetching, refetch } = useQuery({
+    queryKey: ['plugins', 'installed'],
+    queryFn: pluginsApi.installed,
+  })
 
   return (
     <section className="space-y-4 rounded-xl border bg-card p-6">
@@ -38,6 +41,15 @@ export function PluginsSection() {
 
       {isLoading ? (
         <Skeleton className="h-14 w-full" />
+      ) : isError && !installed ? (
+        // Not "none installed": that would hide plugins the user may want to remove.
+        <div className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm">
+          <span className="text-muted-foreground">{t('plugins.installedFailed')}</span>
+          <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching}>
+            <RefreshCw size={14} className="mr-1" />
+            {t('common.retry')}
+          </Button>
+        </div>
       ) : !installed?.length ? (
         <p className="text-sm text-muted-foreground">{t('plugins.noneInstalled')}</p>
       ) : (

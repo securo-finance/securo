@@ -10,7 +10,18 @@ type NodeProps = { children?: ReactNode }
  * links instead of loaded: an image would be fetched from wherever its
  * author hosts it, telling that host who opened the plugin.
  */
-export function PluginReadme({ markdown }: { markdown: string }) {
+export function PluginReadme({ markdown, base }: { markdown: string; base: string }) {
+  /** Relative links point into the repository at the pinned commit, not into Securo. */
+  const resolve = (href: unknown): string | undefined => {
+    if (typeof href !== 'string' || !href) return undefined
+    if (href.startsWith('#')) return href
+    try {
+      const url = new URL(href, base)
+      return ['http:', 'https:', 'mailto:'].includes(url.protocol) ? url.toString() : undefined
+    } catch {
+      return undefined
+    }
+  }
   return (
     <div className="text-sm leading-relaxed text-foreground/90 [&>:first-child]:mt-0 [&>:last-child]:mb-0">
       <ReactMarkdown
@@ -31,13 +42,13 @@ export function PluginReadme({ markdown }: { markdown: string }) {
             <blockquote className="my-3 border-l-2 pl-3 text-muted-foreground">{children}</blockquote>
           ),
           a: ({ href, children }: NodeProps & { href?: string }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer nofollow" className="text-primary underline underline-offset-2 hover:opacity-80">
+            <a href={resolve(href)} target="_blank" rel="noopener noreferrer nofollow" className="text-primary underline underline-offset-2 hover:opacity-80">
               {children}
             </a>
           ),
           img: ({ src, alt }: { src?: unknown; alt?: string }) => (
             <a
-              href={typeof src === 'string' ? src : undefined}
+              href={resolve(src)}
               target="_blank"
               rel="noopener noreferrer nofollow"
               className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"

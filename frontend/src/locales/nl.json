@@ -3189,7 +3189,7 @@
     "title": "Plugins",
     "hint": "Categorieën en regels gemaakt door de community. Je bekijkt elke wijziging voordat die wordt toegepast, en niets verlaat je server.",
     "browse": "Catalogus bekijken",
-    "noneInstalled": "Geen plugins geïnstalleerd in deze werkruimte.",
+    "noneInstalled": "Geen plugins geïnstalleerd in deze workspace.",
     "remove": "Plugin verwijderen",
     "removeAria": "{{name}} verwijderen",
     "catalogFailed": "Kon de catalogus niet laden.",
@@ -3208,11 +3208,10 @@
       "update": "{{name}} bijwerken?",
       "remove": "{{name}} verwijderen?"
     },
-    "planIntro": "Dit verandert er in deze werkruimte:",
-    "planNothing": "Er verandert niets in deze werkruimte.",
+    "planIntro": "Dit verandert er in deze workspace:",
     "planFailed": "Kon niet laden wat dit zou veranderen.",
     "planChanged": "Er is iets veranderd sinds dit voorbeeld. Bekijk het opnieuw.",
-    "privacy": "Deze plugin voegt alleen gegevens toe aan deze werkruimte. Er wordt niets verstuurd.",
+    "privacy": "Deze plugin voegt alleen gegevens toe aan deze workspace. Er wordt niets verstuurd.",
     "history": "Transacties houden de categorieën die ze al hebben.",
     "confirm": {
       "install": "Installeren",
@@ -3310,7 +3309,7 @@
     "detail": {
       "overview": "Overzicht",
       "inside": "Inhoud",
-      "insideHint": "Alles wat deze plugin aan een werkruimte toevoegt. Bij installatie zie je wat je al hebt.",
+      "insideHint": "Alles wat deze plugin aan een workspace toevoegt. Bij installatie zie je wat je al hebt.",
       "noReadme": "De auteur heeft nog geen README voor deze plugin geschreven.",
       "loadFailed": "De plugindetails konden niet worden geladen.",
       "contentsUnavailable": "Deze versie van Securo kan de inhoud van deze plugin niet tonen.",
@@ -3325,6 +3324,12 @@
       "notFound": "Deze plugin staat niet in de catalogus.",
       "type": "Type",
       "added": "Toegevoegd"
+    },
+    "installedFailed": "De geïnstalleerde plugins konden niet worden geladen.",
+    "planRecordOnly": {
+      "install": "Deze workspace heeft al alles wat de plugin meebrengt. Installeren legt het vast, zodat je updates krijgt.",
+      "update": "Er verandert niets aan de items in deze workspace; de geïnstalleerde versie wordt {{version}}.",
+      "remove": "Geen van de items staat hier nog; verwijderen haalt het alleen van de lijst."
     }
   }
 }

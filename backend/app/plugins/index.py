@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.core.config import get_settings
 from app.plugins.manifest import (
+    DATA_KINDS,
     ID_PATTERN,
     REPOSITORY_PATTERN,
     VERSION_PATTERN,
@@ -45,7 +46,7 @@ _MANIFEST_CACHE_SIZE = 256
 
 #: Contributions this version can apply. A plugin with anything else is
 #: listed but can't be installed here.
-SUPPORTED_CONTRIBUTIONS = frozenset({"category_groups", "categories", "rules"})
+SUPPORTED_CONTRIBUTIONS = DATA_KINDS
 
 
 class PluginIndexError(Exception):
@@ -159,19 +160,20 @@ def _remember(cache: dict, key: str, value) -> None:
 
 async def fetch_manifest(client: httpx.AsyncClient, entry: IndexEntry) -> Manifest:
     """The manifest the index pins: its sha256 must match, and it must be that plugin."""
-    if entry.manifest_sha256 in _manifests:  # addressed by content: a hit can't be stale
-        return _manifests[entry.manifest_sha256]
-    body = await _get(client, manifest_url(entry), _MAX_MANIFEST_BYTES)
-    if hashlib.sha256(body).hexdigest() != entry.manifest_sha256:
-        raise PluginIndexError(f"{entry.id}: the manifest doesn't match the catalog's checksum")
-    try:
-        manifest = parse_manifest(json.loads(body))
-    except ValueError as exc:
-        reason = exc.errors()[0]["msg"] if isinstance(exc, ValidationError) else "not JSON"
-        raise PluginIndexError(f"{entry.id}: invalid manifest ({str(reason).removeprefix('Value error, ')})") from exc
+    manifest = _manifests.get(entry.manifest_sha256)  # addressed by content: a hit can't be stale
+    if manifest is None:
+        body = await _get(client, manifest_url(entry), _MAX_MANIFEST_BYTES)
+        if hashlib.sha256(body).hexdigest() != entry.manifest_sha256:
+            raise PluginIndexError(f"{entry.id}: the manifest doesn't match the catalog's checksum")
+        try:
+            manifest = parse_manifest(json.loads(body))
+        except ValueError as exc:
+            reason = exc.errors()[0]["msg"] if isinstance(exc, ValidationError) else "not JSON"
+            raise PluginIndexError(f"{entry.id}: invalid manifest ({str(reason).removeprefix('Value error, ')})") from exc
+        _remember(_manifests, entry.manifest_sha256, manifest)
+    # Checked on every read: another entry may point at content already cached.
     if (manifest.id, manifest.repository, manifest.version) != (entry.id, entry.repository, entry.version):
         raise PluginIndexError(f"{entry.id}: the manifest isn't the plugin the catalog lists")
-    _remember(_manifests, entry.manifest_sha256, manifest)
     return manifest
 
 

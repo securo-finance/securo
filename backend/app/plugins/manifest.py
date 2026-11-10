@@ -15,9 +15,10 @@ import copy
 import re
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from app.services.category_defaults import DEFAULT_CATEGORIES, DEFAULT_GROUPS
+from app.services.rule_engine import compile_rule_regex
 
 KEY_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,63}$"
 LOCALE_PATTERN = r"^[a-z]{2,3}(-[A-Z]{2})?$"
@@ -25,6 +26,10 @@ VERSION_PATTERN = r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$"
 ID_PATTERN = r"^[a-z0-9][a-z0-9-]{0,38}/[a-z0-9][a-z0-9-]{0,63}$"
 REPOSITORY_PATTERN = r"^https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
 COLOR_PATTERN = r"^#[0-9A-Fa-f]{6}$"
+#: The longest name a category or group column holds.
+NAME_MAX = 100
+#: Contributions this version can apply.
+DATA_KINDS = frozenset({"category_groups", "categories", "rules"})
 
 #: Condition fields a plugin rule may use. Account and payee ids are a
 #: workspace's own data, so a plugin can't know them.
@@ -66,6 +71,19 @@ def _translated(text: Any) -> Any:
 Text = Annotated[dict[str, str], BeforeValidator(_translated)]
 
 
+def _short_name(text: dict[str, str]) -> dict[str, str]:
+    long = [locale for locale, name in text.items() if len(name.strip()) > NAME_MAX]
+    if long:
+        raise ValueError(f"names are limited to {NAME_MAX} characters ({', '.join(long)})")
+    if not all(name.strip() for name in text.values()):
+        raise ValueError("names can't be blank")
+    return text
+
+
+#: A category or group name: translated, and short enough to store.
+Name = Annotated[Text, AfterValidator(_short_name)]
+
+
 def localized(text: dict[str, str], lang: str) -> str:
     """`text` in `lang`, its base language, or English."""
     return text.get(lang) or text.get(lang.split("-")[0]) or text["en"]
@@ -79,10 +97,9 @@ class Condition(_Model):
     @model_validator(mode="after")
     def _valid_value(self) -> Condition:
         if self.op == "regex":
-            try:
-                re.compile(str(self.value))
-            except re.error as exc:
-                raise ValueError(f"bad regex: {exc}") from exc
+            # The policy rules are held to when created, so a plugin can't ship one
+            # that matches everything (".*") and only fails once applied.
+            compile_rule_regex(str(self.value))
         if self.field == "status" and (
             self.op not in ("equals", "not_equals") or str(self.value).lower() not in ("pending", "posted")
         ):
@@ -138,14 +155,14 @@ class Rule(_Model):
 
 class CategoryGroup(_Model):
     key: str = Field(pattern=KEY_PATTERN)
-    name: Text
+    name: Name
     icon: str = Field(default="folder", max_length=50)
     color: str = Field(default="#6B7280", pattern=COLOR_PATTERN)
 
 
 class Category(_Model):
     key: str = Field(pattern=KEY_PATTERN)
-    name: Text
+    name: Name
     group: str | None = Field(default=None, pattern=KEY_PATTERN)
     icon: str = Field(default="circle-help", max_length=50)
     color: str = Field(default="#6B7280", pattern=COLOR_PATTERN)
@@ -165,6 +182,10 @@ class Contributes(_Model):
             keys = [item.key for item in getattr(self, kind)]
             if len(keys) != len(set(keys)):
                 raise ValueError(f"{kind}: keys must be unique")
+        # Rules are told apart by name in a workspace, as when created by hand.
+        names = [rule.name.strip().casefold() for rule in self.rules]
+        if len(names) != len(set(names)):
+            raise ValueError("rules: names must be unique")
         groups = {g.key for g in self.category_groups} | set(DEFAULT_GROUPS)
         for category in self.categories:
             if category.group is not None and category.group not in groups:
@@ -181,7 +202,7 @@ class Manifest(_Model):
     id: str = Field(pattern=ID_PATTERN)
     name: Text
     description: Text
-    version: str = Field(pattern=VERSION_PATTERN)
+    version: str = Field(pattern=VERSION_PATTERN, max_length=32)
     repository: str = Field(pattern=REPOSITORY_PATTERN)
     license: str = Field(min_length=2, max_length=64)
     min_securo_version: str = Field(pattern=VERSION_PATTERN)
@@ -196,11 +217,15 @@ class Manifest(_Model):
                 raise ValueError(f"plugins with code aren't supported yet ({', '.join(code)})")
             contributes = data.get("contributes")
             if isinstance(contributes, dict):
-                unsupported = {str(kind) for kind in contributes} - {"category_groups", "categories", "rules"}
+                # An empty list of a kind this version doesn't know contributes
+                # nothing, as the index counts it: drop it rather than refuse.
+                kept = {k: v for k, v in contributes.items() if str(k) in DATA_KINDS or v not in ([], {}, None)}
+                unsupported = {str(kind) for kind in kept} - DATA_KINDS
                 if unsupported:
                     raise ValueError(
                         f"this Securo version can't apply: {', '.join(sorted(unsupported))}"
                     )
+                data = {**data, "contributes": kept}
         return data
 
 

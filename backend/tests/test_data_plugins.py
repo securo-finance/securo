@@ -103,6 +103,8 @@ class Catalog:
                 return httpx.Response(200, content=self._body(commit) + (b" " if self.tampered else b""))
         if url == f"https://plugins.usesecuro.com/v1/readmes/{self.commit}.md":
             return httpx.Response(200, content=self.readme + (b" " if self.tampered else b""))
+        if url.startswith("https://evil.example.com/"):  # answers, so only the host check can refuse it
+            return httpx.Response(200, content=self.readme)
         return httpx.Response(404)
 
     def publish(self, commit: str, change) -> None:
@@ -151,6 +153,12 @@ def test_the_example_manifest_is_valid():
     assert manifest.description == {"en": "Categories and rules for a home with pets."}
 
 
+def test_an_empty_list_of_an_unknown_kind_contributes_nothing():
+    manifest: dict[str, Any] = copy.deepcopy(MANIFEST)
+    manifest["contributes"]["csv_presets"] = []
+    assert parse_manifest(manifest).contributes.rules  # accepted, as the index counts it: zero
+
+
 def test_a_condition_group_is_stored_the_way_the_rule_engine_reads_it():
     manifest: dict[str, Any] = copy.deepcopy(MANIFEST)
     manifest["contributes"]["rules"][0]["conditions"] = [
@@ -169,7 +177,7 @@ def test_a_condition_group_is_stored_the_way_the_rule_engine_reads_it():
     [
         lambda m: m.update(runtime={"entrypoint": "x:y", "lockfile": "uv.lock"}),
         lambda m: m.update(network=[{"host": "api.example.com", "purpose": "x"}]),
-        lambda m: m["contributes"].update(widgets=[]),
+        lambda m: m["contributes"].update(widgets=[{"key": "chart"}]),
         lambda m: m["contributes"]["rules"][0]["actions"].__setitem__(0, {"op": "set_category", "value": "nope"}),
         lambda m: m["contributes"]["rules"][0]["actions"].__setitem__(0, {"op": "set_payee", "value": "x"}),
         lambda m: m["contributes"]["rules"][0]["conditions"][0].update(field="account_id"),
@@ -177,10 +185,17 @@ def test_a_condition_group_is_stored_the_way_the_rule_engine_reads_it():
         lambda m: m["contributes"]["categories"][0].update(group="nope"),
         lambda m: m.update(name={"pt-BR": "Casa"}),
         lambda m: m.update(contributes={}),
+        lambda m: m["contributes"]["rules"][0]["conditions"][0].update(op="regex", value=".*"),
+        lambda m: m["contributes"]["categories"][0].update(name={"en": "x" * 101}),
+        lambda m: m["contributes"]["category_groups"][0].update(name={"en": "Home", "pt-BR": "x" * 101}),
+        lambda m: m["contributes"]["rules"][1].update(name="pet SHOP"),
+        lambda m: m.update(version="1.0." + "1" * 30),
     ],
     ids=[
         "code", "network", "unsupported contribution", "unknown category", "set_payee needs an id",
         "account id", "bad regex", "unknown group", "translation without en", "contributes nothing",
+        "regex matching everything", "category name too long", "group translation too long",
+        "duplicate rule names", "version too long",
     ],
 )
 def test_manifests_that_break_the_contract_are_rejected(change):
@@ -402,10 +417,19 @@ async def test_a_manifest_that_does_not_match_its_checksum_is_refused(session: A
         await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil.example.com/securo-plugin.json",
+        "http://plugins.usesecuro.com/v1/securo-plugin.json",
+        "https://user@plugins.usesecuro.com/v1/securo-plugin.json",
+    ],
+    ids=["other host", "plain http", "credentials"],
+)
 @pytest.mark.asyncio
-async def test_manifests_are_read_only_from_the_catalog_host(session: AsyncSession, ids, catalog):
+async def test_manifests_are_read_only_from_the_catalog_host(session: AsyncSession, ids, catalog, url):
     workspace_id, _ = ids
-    catalog.extra["manifest"] = "https://evil.example.com/securo-plugin.json"
+    catalog.extra["manifest"] = url
     with pytest.raises(index.PluginIndexError, match="catalog's host"):
         await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
 
@@ -555,3 +579,63 @@ async def test_details_of_a_plugin_this_securo_cannot_apply_have_no_contents(
     body = (await client.get(f"/api/plugins/{PLUGIN}", headers=auth_headers)).json()
     assert body["contents"] is None and body["readme"].startswith("# Home")
     assert (await client.get("/api/plugins/nobody/nothing", headers=auth_headers)).status_code == 404
+
+
+# --- What the catalog can't slip past a preview ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_cached_manifest_still_has_to_be_the_plugin_the_entry_names(session: AsyncSession, ids, catalog):
+    async with index.http_client() as client:
+        entry = (await index.fetch_index(client))[0]
+        await index.fetch_manifest(client, entry)  # cached by its checksum
+        other = entry.model_copy(update={"id": "joao/other", "repository": "https://github.com/joao/other"})
+        with pytest.raises(index.PluginIndexError, match="isn't the plugin"):
+            await index.fetch_manifest(client, other)
+
+
+@pytest.mark.asyncio
+async def test_the_manifest_decides_the_minimum_version(session: AsyncSession, ids, catalog):
+    workspace_id, _ = ids
+    catalog.publish(V2, lambda m: m.update(min_securo_version="99.0.0"))
+    catalog.extra = {"min_securo_version": "0.1.0"}  # the index summary says otherwise
+    with pytest.raises(service.PluginUnavailable, match="99.0.0"):
+        await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
+
+
+@pytest.mark.asyncio
+async def test_a_preview_is_refused_once_the_manifest_copy_changed(session: AsyncSession, ids, catalog):
+    workspace_id, user_id = ids
+    plan = await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
+    # Same commit and the same items, but a rule that now does something else.
+    catalog.manifests[V1]["contributes"]["rules"][0]["actions"] = [{"op": "set_category", "value": "garden"}]
+    index._manifests.clear()
+    with pytest.raises(SyncPlanChanged):
+        await service.apply(session, workspace_id, user_id, PLUGIN, "install", commit=V1, token=plan.sync.token, lang="en")
+
+
+@pytest.mark.asyncio
+async def test_an_update_never_renames_a_rule_onto_another(session: AsyncSession, ids, catalog):
+    workspace_id, user_id = ids
+    await _install(session, workspace_id, user_id)
+    session.add(Rule(user_id=user_id, workspace_id=workspace_id, name="Vet", conditions_op="and",
+                     conditions=[{"field": "description", "op": "contains", "value": "VET"}], actions=[]))
+    await session.commit()
+    catalog.publish(V2, lambda m: m["contributes"]["rules"][0].update(name="Vet"))
+    result = await _install(session, workspace_id, user_id, action="update")
+    assert ("rules", "petshop") in {(i.kind, i.key) for i in result.sync.existing}
+    assert len(await _of(session, Rule, workspace_id, name="Vet")) == 1
+    assert len(await _of(session, Rule, workspace_id, name="Pet shop")) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_default_group_created_for_a_rule_also_holds_the_plugins_category(
+    session: AsyncSession, ids, catalog
+):
+    workspace_id, user_id = ids  # no default categories, so no Housing group either
+    # The garden-center rule now needs the default `housing` category, which brings its group.
+    catalog.manifests[V1]["contributes"]["rules"][1]["actions"] = [{"op": "set_category", "value": "housing"}]
+    await _install(session, workspace_id, user_id)
+    garden = (await _of(session, Category, workspace_id, source_key="garden"))[0]
+    housing = (await _of(session, Category, workspace_id, name="Housing"))[0]
+    assert garden.group_id is not None and garden.group_id == housing.group_id

@@ -79,6 +79,8 @@ class SyncPlan:
     """Rules whose default category the workspace doesn't have."""
     default_categories: tuple[str, ...] = ()
     """Default category keys created first so rules can use them."""
+    fingerprint: str | None = None
+    """The exact content planned from (a manifest checksum), so a changed copy is refused."""
 
     @property
     def token(self) -> str:
@@ -89,6 +91,7 @@ class SyncPlan:
         payload = {
             "source": self.source,
             "version": self.version,
+            "fingerprint": self.fingerprint,
             "default_categories": sorted(self.default_categories),
             **{
                 bucket: refs(getattr(self, bucket))
@@ -122,8 +125,6 @@ class _State:
     """The plugin's rows in the workspace, by kind then key."""
     adopted: dict[str, dict[str, uuid.UUID]]
     """Keys the workspace already has by name: key -> that row's id."""
-    group_ids_by_name: dict[str, uuid.UUID]
-    """The workspace's other groups, for default group keys."""
 
 
 async def plan_sync(
@@ -134,8 +135,11 @@ async def plan_sync(
     *,
     lang: str = "en",
     create_default_categories: bool = False,
+    fingerprint: str | None = None,
 ) -> SyncPlan:
-    plan, _ = await _plan(session, workspace_id, source, manifest, lang, create_default_categories, lock=False)
+    plan, _ = await _plan(
+        session, workspace_id, source, manifest, lang, create_default_categories, lock=False, fingerprint=fingerprint
+    )
     return plan
 
 
@@ -148,23 +152,14 @@ async def _plan(
     create_defaults: bool,
     *,
     lock: bool,
+    fingerprint: str | None = None,
 ) -> tuple[SyncPlan, _State]:
     rows = {
         GROUPS: await _rows(session, CategoryGroup, workspace_id, source, lock),
         CATEGORIES: await _rows(session, Category, workspace_id, source, lock),
         RULES: await _rows(session, Rule, workspace_id, source, lock),
     }
-    group_names = {
-        name: gid
-        for gid, name, src in (
-            await session.execute(
-                select(CategoryGroup.id, CategoryGroup.name, CategoryGroup.source).where(
-                    CategoryGroup.workspace_id == workspace_id
-                )
-            )
-        ).all()
-        if src != source
-    }
+    group_names = await _group_names(session, workspace_id, source)
     category_rows = (
         await session.execute(
             select(Category.id, Category.name, Category.source).where(Category.workspace_id == workspace_id)
@@ -175,7 +170,7 @@ async def _plan(
     rule_names = await existing_rule_names(session, workspace_id)
     own_rule_names = {row.name for row in rows[RULES].values()}
 
-    state = _State(rows, {GROUPS: {}, CATEGORIES: {}}, group_names)
+    state = _State(rows, {GROUPS: {}, CATEGORIES: {}})
     buckets: dict[str, list[Item]] = {
         b: [] for b in ("create", "update", "delete", "keep", "release", "existing", "unresolved")
     }
@@ -185,6 +180,8 @@ async def _plan(
     target_categories = {c.key: c for c in contributes.categories} if contributes else {}
     target_rules = {r.key: r for r in contributes.rules} if contributes else {}
     default_ids = resolve_default_category_keys(category_names)
+    planned_refs: set[str] = set()
+    """Category ids the plugin's rules will point at after this sync."""
 
     # Groups
     for key, group in target_groups.items():
@@ -248,24 +245,33 @@ async def _plan(
         return category_ref(key, for_new_rule=False)
 
     # Rules
+    taken_rule_names = rule_names - own_rule_names
     for key, rule in target_rules.items():
         template = rule.template()
         row = rows[RULES].get(key)
         if row is not None:
-            if None in {existing_ref(k) for k in rule.category_keys()}:
+            refs = {existing_ref(k) for k in rule.category_keys()}
+            if None in refs:
                 continue  # its category is gone from the workspace: leave the rule as it is
+            if is_untouched(row) and rule.name != row.name and rule.name in taken_rule_names:
+                # Renamed to a name another rule has: leave this one as it is.
+                buckets["existing"].append(Item(RULES, key, rule.name, row.id))
+                planned_refs |= _ids(row.actions or [])
+                continue
             actions = _resolve_actions(template["actions"], existing_ref)
             desired = rule_content_hash(
                 name=rule.name, conditions_op=rule.conditions_op, conditions=template["conditions"],
                 actions=actions, priority=rule.priority,
             )
             _place(buckets, RULES, key, row, desired)
-        elif rule.name in rule_names and rule.name not in own_rule_names:
+            planned_refs |= _ids(actions if is_untouched(row) else row.actions or [])
+        elif rule.name in taken_rule_names:
             buckets["existing"].append(Item(RULES, key, rule.name))
-        elif None in {category_ref(k, for_new_rule=True) for k in rule.category_keys()}:
+        elif None in (refs := {category_ref(k, for_new_rule=True) for k in rule.category_keys()}):
             buckets["unresolved"].append(Item(RULES, key, rule.name))
         else:
             buckets["create"].append(Item(RULES, key, rule.name))
+            planned_refs |= {ref for ref in refs if ref}
     for key, row in rows[RULES].items():
         if key not in target_rules:
             _drop(buckets, RULES, key, row)
@@ -281,7 +287,7 @@ async def _plan(
         usage = await get_category_usage(session, workspace_id, row.id)
         held = usage.transactions or usage.budgets or usage.recurring_transactions or any(
             r.id not in deleted_rules for r in usage.rules
-        )
+        ) or str(row.id) in planned_refs  # a rule this sync creates or updates points at it
         bucket = "release" if held else "delete"
         buckets[bucket].append(Item(CATEGORIES, key, row.name, row.id))
     deleted_categories = {item.id for item in buckets["delete"] if item.kind == CATEGORIES}
@@ -299,6 +305,7 @@ async def _plan(
         source=source,
         version=manifest.version if manifest else None,
         default_categories=tuple(sorted(defaults_needed)),
+        fingerprint=fingerprint,
         **{bucket: tuple(items) for bucket, items in buckets.items()},
     )
     return plan, state
@@ -326,11 +333,24 @@ async def _rows(session: AsyncSession, model: Any, workspace_id: uuid.UUID, sour
     return {row.source_key: row for row in (await session.execute(query)).scalars().all()}
 
 
+async def _group_names(session: AsyncSession, workspace_id: uuid.UUID, source: str) -> dict[str, uuid.UUID]:
+    """The workspace's groups that aren't this plugin's, by name: for default group keys."""
+    rows = await session.execute(
+        select(CategoryGroup.id, CategoryGroup.name, CategoryGroup.source).where(CategoryGroup.workspace_id == workspace_id)
+    )
+    return {name: gid for gid, name, src in rows.all() if src != source}
+
+
 def _default_group_id(key: str, group_names: dict[str, uuid.UUID]) -> uuid.UUID | None:
     data = DEFAULT_GROUPS.get(key)
     if data is None:
         return None
     return next((group_names[name] for name in name_variants(data) if name in group_names), None)
+
+
+def _ids(actions: list[dict[str, Any]]) -> set[str]:
+    """The category ids a rule's actions set."""
+    return {str(a["value"]) for a in actions if a.get("op") == "set_category" and a.get("value")}
 
 
 def _resolve_actions(actions: list[dict[str, Any]], category_ref: Any) -> list[dict[str, Any]]:
@@ -353,13 +373,14 @@ async def apply_sync(
     *,
     lang: str = "en",
     create_default_categories: bool = False,
+    fingerprint: str | None = None,
 ) -> SyncResult:
     """Carry out the plan `token` names, or raise `SyncPlanChanged` and change nothing.
 
     Flushes without committing; the caller commits.
     """
     plan, state = await _plan(
-        session, workspace_id, source, manifest, lang, create_default_categories, lock=True
+        session, workspace_id, source, manifest, lang, create_default_categories, lock=True, fingerprint=fingerprint
     )
     if plan.token != token:
         await session.rollback()
@@ -396,7 +417,8 @@ async def apply_sync(
         await session.flush()
         group_ids |= {row.source_key: row.id for row in result.created[GROUPS]}
 
-        group_names = dict(state.group_ids_by_name)
+        # Creating default categories may have created their default groups too.
+        group_names = await _group_names(session, workspace_id, source)
         categories = {c.key: c for c in contributes.categories}
         for item in plan.of("create", CATEGORIES) + plan.of("update", CATEGORIES):
             spec = categories[item.key]
