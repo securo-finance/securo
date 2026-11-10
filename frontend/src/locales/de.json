@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Eine ausgestellte Rechnung wird nie gelöscht — stornieren Sie sie.",
       "issued_invoice_immutable": "Eine ausgestellte Rechnung kann sich nicht ändern. Stornieren und neu ausstellen.",
       "over_allocation": "Das ist mehr, als diese Rechnung noch offen hat.",
+      "transaction_over_allocation": "Das ist mehr, als von dieser Transaktion noch zuzuordnen ist.",
       "already_allocated": "Diese Transaktion ist dieser Rechnung bereits zugeordnet.",
       "already_settled": "Diese Rechnung ist bereits vollständig beglichen.",
       "currency_mismatch": "Die Transaktion lautet auf eine andere Währung.",
@@ -1588,6 +1589,21 @@
     "packMissingCategories": "Dieses Paket erfordert Standardkategorien, die du nicht hast. Aktiviere \"Fehlende Kategorien erstellen\" und versuche es erneut.",
     "packInstalledWithCategories": "{{rules}} Regeln installiert und {{categories}} Kategorien erstellt",
     "createMissingCategories": "Auch die benötigten Standardkategorien erstellen",
+    "removePack": "Paket entfernen",
+    "removePackAria": "Paket {{name}} entfernen",
+    "removePackTitle": "Paket {{name}} entfernen?",
+    "removePackSummary_one": "Löscht {{count}} Regel aus diesem Paket. Transaktionen behalten ihre Kategorien.",
+    "removePackSummary_other": "Löscht {{count}} Regeln aus diesem Paket. Transaktionen behalten ihre Kategorien.",
+    "removePackKeeps_one": "{{count}} von dir bearbeitete Regel bleibt erhalten:",
+    "removePackKeeps_other": "{{count}} von dir bearbeitete Regeln bleiben erhalten:",
+    "removePackMore": "und {{count}} weitere",
+    "removePackConfirm": "Paket entfernen",
+    "removePackChanged": "Die Regeln des Pakets haben sich seit dieser Vorschau geändert. Prüfe sie erneut, bevor du entfernst.",
+    "removePackPreviewFailed": "Konnte nicht laden, was das Entfernen dieses Pakets bewirken würde.",
+    "packRemoved_one": "{{count}} Regel entfernt",
+    "packRemoved_other": "{{count}} Regeln entfernt",
+    "packKeptEdited_one": "{{count}} bearbeitete Regel behalten",
+    "packKeptEdited_other": "{{count}} bearbeitete Regeln behalten",
     "duplicateName": "Eine Regel mit diesem Namen existiert bereits",
     "sectionTitle": "Kategorisierungsregeln",
     "sectionHint": "Wie Transaktionen kategorisiert werden.",
@@ -3222,6 +3238,153 @@
       "undoFirstMortgage": "Hebe die Aufteilung auf, bevor du das Darlehen aufschlüsselst.",
       "categoryInUse": "Diese Kategorie enthält Anteile aufgeteilter Buchungen. Ändere zuerst diese Aufteilungen.",
       "destinationInvalid": "Anteile aufgeteilter Buchungen können nicht in eine ignorierte oder ausgeblendete Kategorie wechseln."
+    }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "hint": "Kategorien und Regeln aus der Community. Du prüfst jede Änderung, bevor sie angewendet wird, und nichts verlässt deinen Server.",
+    "browse": "Katalog durchsuchen",
+    "noneInstalled": "In diesem Workspace sind keine Plugins installiert.",
+    "remove": "Plugin entfernen",
+    "removeAria": "{{name}} entfernen",
+    "catalogFailed": "Der Katalog konnte nicht geladen werden.",
+    "catalogEmpty": "Der Katalog enthält noch keine Plugins.",
+    "viewSource": "Quellcode ansehen",
+    "revoked": "Widerrufen",
+    "unavailable": "Nicht verfügbar",
+    "needsVersion": "Benötigt Securo {{version}}",
+    "updateAvailable": "Update verfügbar",
+    "installed": "Installiert",
+    "install": "Installieren",
+    "update": "Aktualisieren",
+    "andMore": "und {{count}} weitere",
+    "planTitle": {
+      "install": "{{name}} installieren?",
+      "update": "{{name}} aktualisieren?",
+      "remove": "{{name}} entfernen?"
+    },
+    "planIntro": "Das ändert sich in diesem Workspace:",
+    "planFailed": "Konnte nicht laden, was sich ändern würde.",
+    "planChanged": "Seit dieser Vorschau hat sich etwas geändert. Prüfe sie erneut.",
+    "privacy": "Dieses Plugin fügt diesem Workspace nur Daten hinzu. Es wird nichts irgendwohin gesendet.",
+    "history": "Transaktionen behalten ihre bisherigen Kategorien.",
+    "confirm": {
+      "install": "Installieren",
+      "update": "Aktualisieren",
+      "remove": "Entfernen"
+    },
+    "done": {
+      "install": "{{name}} installiert",
+      "update": "{{name}} aktualisiert",
+      "remove": "{{name}} entfernt"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} Gruppe",
+      "category_groups_other": "{{count}} Gruppen",
+      "categories_one": "{{count}} Kategorie",
+      "categories_other": "{{count}} Kategorien",
+      "rules_one": "{{count}} Regel",
+      "rules_other": "{{count}} Regeln"
+    },
+    "plan": {
+      "create": "Fügt {{items}} hinzu",
+      "update": "Aktualisiert {{items}}",
+      "delete": "Löscht {{items}}",
+      "keep": "Lässt {{items}}, die du bearbeitet hast, unverändert:",
+      "release": "Übergibt dir {{items}}, bearbeitet oder noch in Verwendung:",
+      "existing": "Überspringt {{items}}, die du schon hast:",
+      "unresolved": "Überspringt {{items}}, deren Kategorie fehlt:",
+      "defaults_one": "Erstellt außerdem {{count}} Standardkategorie, die seine Regeln brauchen",
+      "defaults_other": "Erstellt außerdem {{count}} Standardkategorien, die seine Regeln brauchen"
+    },
+    "page": {
+      "section": "Katalog",
+      "notice": "Plugins werden nicht von Securo geprüft. Bevor etwas angewendet wird, siehst du genau, was sich ändert, und nichts verlässt deinen Server.",
+      "search": "Plugins suchen",
+      "type": {
+        "data": "Daten",
+        "interface": "Oberfläche",
+        "code": "Code"
+      },
+      "status": {
+        "installed": "Installiert",
+        "updates": "Update verfügbar"
+      },
+      "clear": "Filter zurücksetzen",
+      "trendingHint": "Am schnellsten wachsend, gemessen an ihrer Größe",
+      "newestHint": "In den letzten 30 Tagen hinzugekommen",
+      "sortBy": "Sortieren nach",
+      "sort": {
+        "popular": "Beliebt",
+        "trending": "Im Trend",
+        "updated": "Kürzlich aktualisiert",
+        "newest": "Neueste",
+        "name": "Name"
+      },
+      "noResults": "Keine Plugins entsprechen diesen Filtern.",
+      "byOwner": "von {{owner}}",
+      "updated": "Aktualisiert {{when}}",
+      "count_one": "{{count}} Plugin",
+      "count_other": "{{count}} Plugins",
+      "stars_one": "{{count}} Stern",
+      "stars_other": "{{count}} Sterne",
+      "authors_one": "{{count}} Autor",
+      "authors_other": "{{count}} Autoren",
+      "clearSearch": "Suche löschen",
+      "facet": {
+        "type": "Typ",
+        "content": "Inhalt",
+        "language": "Sprache",
+        "status": "Status"
+      },
+      "view": {
+        "all": "Alle",
+        "trending": "Im Trend",
+        "new": "Neu"
+      },
+      "any": "Beliebig",
+      "trendingEmpty": "Kein Plugin hat diese Woche Sterne bekommen.",
+      "newEmpty": "In den letzten 30 Tagen kam kein Plugin hinzu."
+    },
+    "kindName": {
+      "category_groups": "Kategoriegruppen",
+      "categories": "Kategorien",
+      "rules": "Regeln",
+      "csv_presets": "CSV-Vorlagen",
+      "fiscal_jurisdictions": "Steuerjurisdiktionen",
+      "invoice_labels": "Rechnungsbeschriftungen",
+      "widgets": "Widgets",
+      "reports": "Berichte",
+      "dashboard_layouts": "Dashboard-Layouts",
+      "connectors": "Bankverbindungen",
+      "parsers": "Dateileser",
+      "price_providers": "Preisanbieter",
+      "agent_tools": "Agent-Werkzeuge"
+    },
+    "detail": {
+      "overview": "Übersicht",
+      "inside": "Inhalt",
+      "insideHint": "Alles, was dieses Plugin einem Workspace hinzufügt. Bei der Installation siehst du, was schon vorhanden ist.",
+      "noReadme": "Der Autor hat noch kein README für dieses Plugin geschrieben.",
+      "loadFailed": "Die Plugin-Details konnten nicht geladen werden.",
+      "contentsUnavailable": "Diese Securo-Version kann den Inhalt dieses Plugins nicht auflisten.",
+      "version": "Version",
+      "license": "Lizenz",
+      "requires": "Benötigt",
+      "updated": "Aktualisiert",
+      "languages": "Sprachen",
+      "builtIn": "Standard",
+      "when": "Wenn",
+      "previewNote": "Vor der Installation sehen Sie jede Änderung, und nichts verlässt Ihren Server.",
+      "notFound": "Dieses Plugin ist nicht im Katalog.",
+      "type": "Typ",
+      "added": "Hinzugefügt"
+    },
+    "installedFailed": "Die installierten Plugins konnten nicht geladen werden.",
+    "planRecordOnly": {
+      "install": "Dieser Workspace hat bereits alles, was das Plugin mitbringt. Die Installation vermerkt es, damit du Updates bekommst.",
+      "update": "Keine Einträge in diesem Workspace ändern sich; die installierte Version wird {{version}}.",
+      "remove": "Keiner seiner Einträge ist mehr hier; Entfernen nimmt es nur von der Liste."
     }
   }
 }

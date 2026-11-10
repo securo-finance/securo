@@ -20,5 +20,6 @@ async def get_app_info():
             # Read from settings, like the routes that enforce it, so a value
             # set only in backend/.env reaches the frontend too.
             "performance_benchmarks": get_settings().performance_benchmarks_enabled,
+            "plugins": feature_flag("PLUGINS_ENABLED"),
         },
     }

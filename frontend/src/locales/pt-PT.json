@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Uma cobrança emitida nunca é excluída — cancele-a.",
       "issued_invoice_immutable": "Uma cobrança emitida não muda. Cancele e emita outra.",
       "over_allocation": "Isso é mais do que esta cobrança ainda deve.",
+      "transaction_over_allocation": "Isso é mais do que resta desta transação para vincular.",
       "already_allocated": "Esta transação já está vinculada a esta cobrança.",
       "already_settled": "Esta cobrança já está totalmente quitada.",
       "currency_mismatch": "A transação está em outra moeda.",
@@ -1591,6 +1592,21 @@
     "packMissingCategories": "Este pacote precisa de categorias padrão que não tens. Marca \"Criar categorias ausentes\" e tenta novamente.",
     "packInstalledWithCategories": "{{rules}} regras instaladas e {{categories}} categorias criadas",
     "createMissingCategories": "Criar também as categorias padrão que o pacote precisa",
+    "removePack": "Remover pacote",
+    "removePackAria": "Remover o pacote {{name}}",
+    "removePackTitle": "Remover o pacote {{name}}?",
+    "removePackSummary_one": "Apaga {{count}} regra deste pacote. As transações mantêm as categorias que já têm.",
+    "removePackSummary_other": "Apaga {{count}} regras deste pacote. As transações mantêm as categorias que já têm.",
+    "removePackKeeps_one": "{{count}} regra que editou continua sua:",
+    "removePackKeeps_other": "{{count}} regras que editou continuam suas:",
+    "removePackMore": "e mais {{count}}",
+    "removePackConfirm": "Remover pacote",
+    "removePackChanged": "As regras do pacote mudaram desde esta pré-visualização. Reveja-a antes de remover.",
+    "removePackPreviewFailed": "Não foi possível carregar o que a remoção deste pacote faria.",
+    "packRemoved_one": "{{count}} regra removida",
+    "packRemoved_other": "{{count}} regras removidas",
+    "packKeptEdited_one": "{{count}} regra editada mantida",
+    "packKeptEdited_other": "{{count}} regras editadas mantidas",
     "duplicateName": "Já existe uma regra com este nome",
     "sectionTitle": "Regras de Categorização",
     "sectionHint": "Como categorizar as transações.",
@@ -3225,6 +3241,153 @@
       "undoFirstMortgage": "Desfaça a divisão antes de detalhar o crédito à habitação.",
       "categoryInUse": "Esta categoria tem partes de transações divididas. Altere essas divisões primeiro.",
       "destinationInvalid": "Partes de transações divididas não podem passar para uma categoria ignorada ou oculta."
+    }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "hint": "Categorias e regras feitas pela comunidade. Revê cada alteração antes de ser aplicada, e nada sai do seu servidor.",
+    "browse": "Ver catálogo",
+    "noneInstalled": "Nenhum plugin instalado neste espaço de trabalho.",
+    "remove": "Remover plugin",
+    "removeAria": "Remover {{name}}",
+    "catalogFailed": "Não foi possível carregar o catálogo.",
+    "catalogEmpty": "O catálogo ainda não tem plugins.",
+    "viewSource": "Ver código-fonte",
+    "revoked": "Revogado",
+    "unavailable": "Indisponível",
+    "needsVersion": "Requer Securo {{version}}",
+    "updateAvailable": "Atualização disponível",
+    "installed": "Instalado",
+    "install": "Instalar",
+    "update": "Atualizar",
+    "andMore": "e mais {{count}}",
+    "planTitle": {
+      "install": "Instalar {{name}}?",
+      "update": "Atualizar {{name}}?",
+      "remove": "Remover {{name}}?"
+    },
+    "planIntro": "Isto é o que muda neste espaço de trabalho:",
+    "planFailed": "Não foi possível carregar o que isto mudaria.",
+    "planChanged": "Algo mudou desde esta pré-visualização. Reveja-a de novo.",
+    "privacy": "Este plugin só adiciona dados a este espaço de trabalho. Nada é enviado para fora.",
+    "history": "As transações mantêm as categorias que já têm.",
+    "confirm": {
+      "install": "Instalar",
+      "update": "Atualizar",
+      "remove": "Remover"
+    },
+    "done": {
+      "install": "{{name}} instalado",
+      "update": "{{name}} atualizado",
+      "remove": "{{name}} removido"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} grupo",
+      "category_groups_other": "{{count}} grupos",
+      "categories_one": "{{count}} categoria",
+      "categories_other": "{{count}} categorias",
+      "rules_one": "{{count}} regra",
+      "rules_other": "{{count}} regras"
+    },
+    "plan": {
+      "create": "Adiciona {{items}}",
+      "update": "Atualiza {{items}}",
+      "delete": "Apaga {{items}}",
+      "keep": "Mantém como estão {{items}} que editou:",
+      "release": "Passa para si {{items}}, editados ou ainda em uso:",
+      "existing": "Ignora {{items}} que já tem:",
+      "unresolved": "Ignora {{items}} cuja categoria não existe:",
+      "defaults_one": "Também cria {{count}} categoria predefinida que as regras usam",
+      "defaults_other": "Também cria {{count}} categorias predefinidas que as regras usam"
+    },
+    "page": {
+      "section": "Catálogo",
+      "notice": "Os plugins não são revistos pelo Securo. Antes de aplicar vê exatamente o que muda, e nada sai do seu servidor.",
+      "search": "Pesquisar plugins",
+      "type": {
+        "data": "Dados",
+        "interface": "Interface",
+        "code": "Código"
+      },
+      "status": {
+        "installed": "Instalados",
+        "updates": "Com atualização"
+      },
+      "clear": "Limpar filtros",
+      "trendingHint": "Os que mais cresceram, proporcional ao tamanho",
+      "newestHint": "Entraram nos últimos 30 dias",
+      "sortBy": "Ordenar por",
+      "sort": {
+        "popular": "Populares",
+        "trending": "Em destaque",
+        "updated": "Atualizados recentemente",
+        "newest": "Mais recentes",
+        "name": "Nome"
+      },
+      "noResults": "Nenhum plugin corresponde a estes filtros.",
+      "byOwner": "por {{owner}}",
+      "updated": "Atualizado {{when}}",
+      "count_one": "{{count}} plugin",
+      "count_other": "{{count}} plugins",
+      "stars_one": "{{count}} estrela",
+      "stars_other": "{{count}} estrelas",
+      "authors_one": "{{count}} autor",
+      "authors_other": "{{count}} autores",
+      "clearSearch": "Limpar pesquisa",
+      "facet": {
+        "type": "Tipo",
+        "content": "Conteúdo",
+        "language": "Idioma",
+        "status": "Estado"
+      },
+      "view": {
+        "all": "Todos",
+        "trending": "Em destaque",
+        "new": "Novos"
+      },
+      "any": "Qualquer",
+      "trendingEmpty": "Nenhum plugin ganhou estrelas esta semana.",
+      "newEmpty": "Nenhum plugin entrou nos últimos 30 dias."
+    },
+    "kindName": {
+      "category_groups": "Grupos de categorias",
+      "categories": "Categorias",
+      "rules": "Regras",
+      "csv_presets": "Predefinições de CSV",
+      "fiscal_jurisdictions": "Jurisdições fiscais",
+      "invoice_labels": "Rótulos de fatura",
+      "widgets": "Widgets",
+      "reports": "Relatórios",
+      "dashboard_layouts": "Esquemas de painel",
+      "connectors": "Conectores bancários",
+      "parsers": "Leitores de ficheiros",
+      "price_providers": "Fornecedores de preços",
+      "agent_tools": "Ferramentas do agente"
+    },
+    "detail": {
+      "overview": "Visão geral",
+      "inside": "O que inclui",
+      "insideHint": "Tudo o que este plugin adiciona a um espaço. Ao instalar, vê o que já tem.",
+      "noReadme": "O autor ainda não escreveu um README para este plugin.",
+      "loadFailed": "Não foi possível carregar os detalhes do plugin.",
+      "contentsUnavailable": "Esta versão do Securo não consegue listar o conteúdo deste plugin.",
+      "version": "Versão",
+      "license": "Licença",
+      "requires": "Requer",
+      "updated": "Atualizado",
+      "languages": "Idiomas",
+      "builtIn": "predefinida",
+      "when": "Quando",
+      "previewNote": "Ao instalar, vê cada alteração antes de algo ser aplicado, e nada sai do seu servidor.",
+      "notFound": "Este plugin não está no catálogo.",
+      "type": "Tipo",
+      "added": "Adicionado"
+    },
+    "installedFailed": "Não foi possível carregar os plugins instalados.",
+    "planRecordOnly": {
+      "install": "Este espaço já tem tudo o que ele traz. Instalar regista o plugin, para receber as atualizações.",
+      "update": "Nenhum item deste espaço muda; a versão instalada passa a ser {{version}}.",
+      "remove": "Nenhum item dele ficou aqui; remover apenas tira o plugin da lista."
     }
   }
 }

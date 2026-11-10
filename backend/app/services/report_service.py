@@ -31,6 +31,7 @@ from app.services._query_filters import (
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.account_service import get_account_name
+from app.services.asset_service import held_on
 from app.services.fx_rate_service import convert
 from app.schemas.report import (
     CategoryTrendItem,
@@ -103,11 +104,11 @@ async def _asset_value_at(
     primary_currency: str = "USD",
     group_ids: Optional[list[uuid.UUID]] = None,
 ) -> float:
-    """Sum of all active asset values at a given date, converted to primary currency."""
+    """Sum of all asset values held at a given date, converted to primary currency."""
     asset_stmt = select(Asset).where(
         Asset.workspace_id == workspace_id,
         Asset.is_archived == False,
-        Asset.sell_date.is_(None),
+        held_on(cutoff),
     )
     if group_ids is not None:
         asset_stmt = asset_stmt.where(Asset.group_id.in_(group_ids))
@@ -187,7 +188,10 @@ async def _net_worth_at(
             session, Decimal(str(abs(bal))), account.currency, primary_currency, cutoff
         )
         converted_val = float(converted)
-        if account.type in {"credit_card", "loan"} or bal < 0:
+        # The sign decides the bucket, for every account type: a card or loan
+        # in credit (overpaid, refunded after the bill) is money the user
+        # holds, and counting it as debt would subtract it from net worth.
+        if bal < 0:
             liabilities_total += converted_val
             if converted_val > 0:
                 composition.append(ReportCompositionItem(
@@ -208,12 +212,13 @@ async def _net_worth_at(
                     group="accounts",
                 ))
 
-    # Per-asset composition at the cutoff date
+    # Per-asset composition at the cutoff date. An asset sold after the
+    # cutoff was still held on it.
     filtered = account_ids is not None
     asset_stmt = select(Asset).where(
         Asset.workspace_id == workspace_id,
         Asset.is_archived == False,
-        Asset.sell_date.is_(None),
+        held_on(cutoff),
     )
     if filtered:
         asset_stmt = asset_stmt.where(Asset.group_id.in_(asset_group_ids or []))

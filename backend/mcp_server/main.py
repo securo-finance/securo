@@ -25,7 +25,7 @@ from app.agents.config import get_agent_settings
 from app.core.database import async_session_maker
 from mcp_server import protocol as p
 from mcp_server import tools as _tools_pkg  # noqa: F401  triggers tool registration
-from mcp_server.auth import CallContext, verify_request
+from mcp_server.auth import CallContext, ToolAccessDenied, verify_request
 from mcp_server.registry import REGISTRY, call_tool, list_tools
 
 logger = logging.getLogger(__name__)
@@ -284,6 +284,15 @@ async def _call_tool(
             "content": [{"type": "text", "text": _safe_json(result)}],
             "structuredContent": result,
             "isError": False,
+        }
+    except ToolAccessDenied as exc:
+        # Expected, not a bug: the caller lost access or holds a read-only
+        # role. Still a tool result, so an agent can tell the user why;
+        # the message never names a workspace the caller can't see.
+        logger.info("MCP tool denied: %s: %s", name, exc)
+        payload = {
+            "content": [{"type": "text", "text": f"Access denied: {exc}"}],
+            "isError": True,
         }
     except Exception as exc:  # noqa: BLE001
         logger.exception("MCP tool failure: %s", name)
