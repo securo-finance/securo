@@ -38,10 +38,26 @@ export function useLayout(surface: Surface) {
   const saved = data?.[surface]?.map((item) => item.id) ?? null
   const ids = useMemo(() => resolveLayout(surface, saved), [surface, saved])
 
+  const reconcile = (workspace: string | null, seq: number | undefined) => {
+    const chain = `${workspace}:${surface}`
+    if (seq !== latestWrite.get(chain)) return
+    uiLayouts
+      .get(workspace)
+      .then((fresh) => {
+        // A save made while this read was out decides instead.
+        if (seq !== latestWrite.get(chain)) return
+        queryClient.setQueryData<UiLayouts>(['ui-layouts', workspace], (old) => ({
+          dashboard: null,
+          reports: null,
+          ...old,
+          [surface]: fresh[surface],
+        }))
+      })
+      .catch(() => {})
+  }
+
   // Optimistic: the page rearranges at once. Saves to one surface go out one
-  // after another, so the server ends on the last arrangement made; a save
-  // that fails re-reads what the server has, unless a newer one is coming.
-  // Each save carries the workspace it was made in, so one that goes out late
+  // after another, so the server ends on the last arrangement made. Each save carries the workspace it was made in, so one that goes out late
   // (queued, or paused while offline) can't land in another workspace.
   const mutation = useMutation({
     mutationFn: ({ next, workspace }: LayoutWrite) => {
@@ -66,18 +82,14 @@ export function useLayout(surface: Surface) {
       latestWrite.set(chain, seq)
       return { seq }
     },
-    onSuccess: (_result, { workspace }, context) => {
-      // The last save to land re-reads the server, in case the cache was
-      // replaced meanwhile (a workspace switch resets it).
-      if (context?.seq === latestWrite.get(`${workspace}:${surface}`)) {
-        void queryClient.invalidateQueries({ queryKey: ['ui-layouts', workspace] })
-      }
-    },
+    // Once the last save to a surface lands (or fails), that surface is read
+    // back from the server, in case the cache was replaced meanwhile (a
+    // workspace switch resets it). Only that surface: the other one may have
+    // its own save still on the way.
+    onSuccess: (_result, { workspace }, context) => reconcile(workspace, context?.seq),
     onError: (_error, { workspace }, context) => {
       toast.error(t('library.saveFailed'))
-      if (context?.seq === latestWrite.get(`${workspace}:${surface}`)) {
-        void queryClient.invalidateQueries({ queryKey: ['ui-layouts', workspace] })
-      }
+      reconcile(workspace, context?.seq)
     },
   })
 

@@ -1,0 +1,73 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
+
+import { useLayout } from '@/hooks/use-layout'
+import { createTestQueryClient } from '@/test/utils'
+
+const server = vi.hoisted(() => ({
+  saved: {} as Record<string, { id: string }[] | null>,
+  // A save to a surface listed here waits until it's released.
+  holds: {} as Record<string, Promise<void>>,
+}))
+
+vi.mock('@/lib/api', () => ({
+  uiLayouts: {
+    get: async () => ({ dashboard: null, reports: null, ...server.saved }),
+    save: async (surface: string, ids: string[]) => {
+      await server.holds[surface]
+      server.saved = { ...server.saved, [surface]: ids.map((id) => ({ id })) }
+    },
+    reset: async (surface: string) => {
+      server.saved = { ...server.saved, [surface]: null }
+    },
+  },
+}))
+
+beforeEach(() => {
+  server.saved = {}
+  server.holds = {}
+})
+
+function renderBoth() {
+  const client = createTestQueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  return renderHook(() => ({ dashboard: useLayout('dashboard'), reports: useLayout('reports') }), { wrapper })
+}
+
+describe('useLayout', () => {
+  it("doesn't let one surface's save bring back the other's old arrangement", async () => {
+    const { result } = renderBoth()
+    await waitFor(() => expect(result.current.reports.ready).toBe(true))
+
+    let release: () => void = () => {}
+    server.holds.reports = new Promise((done) => { release = done })
+    act(() => result.current.reports.save(['net_worth']))
+    act(() => result.current.dashboard.save(['overview']))
+
+    // The dashboard save landed and was read back; the pending report choice stays.
+    await waitFor(() => expect(server.saved.dashboard).toEqual([{ id: 'overview' }]))
+    await new Promise((done) => setTimeout(done, 20))
+    expect(result.current.reports.ids).toEqual(['net_worth'])
+    expect(result.current.dashboard.ids).toEqual(['overview'])
+
+    release()
+    await waitFor(() => expect(server.saved.reports).toEqual([{ id: 'net_worth' }]))
+    expect(result.current.reports.ids).toEqual(['net_worth'])
+  })
+
+  it('sends saves to a surface in the order they were made', async () => {
+    const { result } = renderBoth()
+    await waitFor(() => expect(result.current.dashboard.ready).toBe(true))
+    let release: () => void = () => {}
+    server.holds.dashboard = new Promise((done) => { release = done })
+
+    act(() => result.current.dashboard.save(['goals']))
+    act(() => result.current.dashboard.save(['overview', 'goals']))
+    release()
+
+    await waitFor(() => expect(server.saved.dashboard).toEqual([{ id: 'overview' }, { id: 'goals' }]))
+    expect(result.current.dashboard.ids).toEqual(['overview', 'goals'])
+  })
+})
