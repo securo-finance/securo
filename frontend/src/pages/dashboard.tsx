@@ -63,6 +63,15 @@ import type { Rule, Transaction } from '@/types'
 import { formatCompactCurrency, formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { WidgetGrid } from '@/components/widget-grid'
+import {
+  AssistantWidget,
+  CreditCardsWidget,
+  MonthResultWidget,
+  SpendingDistributionWidget,
+  SpendingPaceWidget,
+  UpcomingWidget,
+  type DashboardScope,
+} from '@/components/dashboard-widgets'
 import { DASHBOARD_WIDGETS } from '@/lib/library'
 import { useLayout } from '@/hooks/use-layout'
 import { useLibrary } from '@/contexts/library-context'
@@ -744,8 +753,23 @@ export default function DashboardPage() {
     ? '---'
     : `${savingsRate.toFixed(0)}%`
 
+  // Widgets that load their own data see the same month and collection.
+  const widgetScope: DashboardScope = {
+    month: selectedMonth,
+    activeAccountIds,
+    activeWalletIds,
+    noAccounts,
+    currency: userCurrency,
+  }
+
   // What each widget shows; the grid places them as this person arranged them.
   const widgetContent: Record<string, ReactNode> = {
+    'spending-pace': <SpendingPaceWidget scope={widgetScope} />,
+    'spending-distribution': <SpendingDistributionWidget scope={widgetScope} />,
+    'month-result': <MonthResultWidget scope={widgetScope} />,
+    upcoming: <UpcomingWidget scope={widgetScope} />,
+    'credit-cards': <CreditCardsWidget scope={widgetScope} />,
+    assistant: <AssistantWidget />,
     'overview': (
       // A container, so the indicators below lay out by the widget's width, not the screen's.
       <div className="@container bg-card rounded-xl border border-border shadow-sm px-5 pt-5 pb-4">

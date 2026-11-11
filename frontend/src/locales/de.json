@@ -3362,7 +3362,10 @@
       "forest": "Wald",
       "sunset": "Abendrot",
       "graphite": "Graphit",
-      "high-contrast": "Hoher Kontrast"
+      "high-contrast": "Hoher Kontrast",
+      "midnight": "Mitternacht",
+      "terminal": "Terminal",
+      "nebula": "Nebel"
     },
     "saveFailed": "Deine Auswahl konnte nicht gespeichert werden. Versuch es noch einmal.",
     "appearance": "Darstellung",
@@ -3400,6 +3403,52 @@
       "6": "Hälfte",
       "8": "Zwei Drittel",
       "12": "Volle Breite"
+    }
+  },
+  "widgets": {
+    "budgets": "Budgets",
+    "viewAll": "Alle anzeigen",
+    "spendingPace": {
+      "title": "Ausgaben im Monat",
+      "hint": "Die Ausgaben des Monats gegenüber deinen Budgets, und was pro Tag bleibt.",
+      "noBudget": "Lege Budgets fest, um zu sehen, ob deine Ausgaben im Takt sind.",
+      "used": "{{percent}} % der Budgets verbraucht",
+      "paceMark": "die Markierung zeigt, wo ein gleichmäßiges Tempo heute wäre",
+      "over": "{{amount}} über dem Budget",
+      "perDay": "Bleib bei {{amount}} pro Tag, um im Budget zu bleiben",
+      "left": "{{amount}} im Budget übrig"
+    },
+    "distribution": {
+      "title": "Ausgabenverteilung",
+      "hint": "Wohin das Geld des Monats ging, nach Kategorie.",
+      "total": "Gesamtausgaben"
+    },
+    "monthResult": {
+      "title": "Monatsergebnis",
+      "hint": "Einnahmen minus Ausgaben in diesem Monat, verglichen mit dem Vormonat.",
+      "previous": "{{amount}} im Vormonat"
+    },
+    "upcoming": {
+      "title": "Demnächst",
+      "hint": "Wiederkehrende Transaktionen in den nächsten 30 Tagen.",
+      "none": "In den nächsten {{days}} Tagen ist nichts fällig."
+    },
+    "cards": {
+      "title": "Kreditkarten",
+      "hint": "Was deine Karten schulden, und der Saldo nach dem Bezahlen.",
+      "none": "Keine offenen Kreditkarten.",
+      "afterPaying": "{{amount}} bleiben nach dem Bezahlen"
+    },
+    "assistant": {
+      "title": "Frag deinen Agenten",
+      "libraryHint": "Schick deinem Standard-Agenten eine Frage, ohne das Dashboard zu verlassen.",
+      "hint": "Frag alles rund um dein Geld. Die Antwort öffnet sich im Chat.",
+      "placeholder": "Frag deinen Agenten…",
+      "suggestion1": "Wie viel habe ich diesen Monat ausgegeben?",
+      "suggestion2": "Wo kann ich sparen?",
+      "suggestion3": "Welche Rechnungen stehen an?",
+      "send": "Senden",
+      "unavailable": "Aktiviere KI-Agenten, um hier Fragen zu stellen."
     }
   }
 }

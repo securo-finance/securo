@@ -3361,7 +3361,10 @@
       "forest": "Forest",
       "sunset": "Sunset",
       "graphite": "Graphite",
-      "high-contrast": "High contrast"
+      "high-contrast": "High contrast",
+      "midnight": "Midnight",
+      "terminal": "Terminal",
+      "nebula": "Nebula"
     },
     "saveFailed": "Couldn't save your choice. Try again.",
     "appearance": "Appearance",
@@ -3399,6 +3402,52 @@
       "6": "Half",
       "8": "Two thirds",
       "12": "Full width"
+    }
+  },
+  "widgets": {
+    "budgets": "Budgets",
+    "viewAll": "View all",
+    "spendingPace": {
+      "title": "Month's spending",
+      "hint": "This month's spending against your budgets, and what's left per day.",
+      "noBudget": "Set budgets to see how your spending keeps pace.",
+      "used": "{{percent}}% of budgets used",
+      "paceMark": "the mark is where an even pace would be today",
+      "over": "{{amount}} over budget",
+      "perDay": "Keep to {{amount}} a day to stay within budget",
+      "left": "{{amount}} left in the budget"
+    },
+    "distribution": {
+      "title": "Spending breakdown",
+      "hint": "Where the month's money went, by category.",
+      "total": "Total spent"
+    },
+    "monthResult": {
+      "title": "Month result",
+      "hint": "Income minus spending this month, compared with last month.",
+      "previous": "{{amount}} last month"
+    },
+    "upcoming": {
+      "title": "Upcoming",
+      "hint": "Recurring transactions due in the next 30 days.",
+      "none": "Nothing due in the next {{days}} days."
+    },
+    "cards": {
+      "title": "Credit cards",
+      "hint": "What your cards owe, and the balance left once they're paid.",
+      "none": "No open credit cards.",
+      "afterPaying": "{{amount}} left after paying them"
+    },
+    "assistant": {
+      "title": "Ask your agent",
+      "libraryHint": "Send a question to your default agent without leaving the dashboard.",
+      "hint": "Ask anything about your money. The answer opens in the chat.",
+      "placeholder": "Ask your agent…",
+      "suggestion1": "How much did I spend this month?",
+      "suggestion2": "Where can I cut back?",
+      "suggestion3": "What bills are coming up?",
+      "send": "Send",
+      "unavailable": "Turn on AI agents to ask questions from here."
     }
   }
 }

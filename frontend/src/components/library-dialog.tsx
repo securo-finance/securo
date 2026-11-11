@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useLayout } from '@/hooks/use-layout'
+import { useAssistant } from '@/contexts/assistant-context'
 import { useAppTheme } from '@/hooks/use-app-theme'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { SURFACE_ENTRIES, type LibraryEntry, type LibraryKind, type Surface } from '@/lib/library'
@@ -90,6 +91,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
   const { t } = useTranslation()
   // Until the saved arrangement is in, a change would be made to the default and overwrite it.
   const { items, ids, save, reset, isCustom, ready } = useLayout(surface)
+  const { available: assistantAvailable } = useAssistant()
   const placed = new Set(ids)
   // The reports page can't be left empty; the dashboard can.
   const lastReport = surface === 'reports' && ids.length === 1
@@ -97,7 +99,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
   return (
     <div className="space-y-2">
       <ul className="divide-y rounded-xl border">
-        {SURFACE_ENTRIES[surface].map((entry) => {
+        {SURFACE_ENTRIES[surface].filter((entry) => !('requires' in entry) || (entry.requires === 'assistant' && assistantAvailable)).map((entry) => {
           const isPlaced = placed.has(entry.id)
           const locked = isPlaced && lastReport
           return (

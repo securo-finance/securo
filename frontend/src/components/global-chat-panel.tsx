@@ -40,6 +40,9 @@ import { cn } from '@/lib/utils'
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** A message to send to the active agent as soon as the panel is ready. */
+  initialMessage?: string | null
+  onInitialMessageSent?: () => void
 }
 
 const STORAGE_KEY = 'securo.global-chat'
@@ -68,7 +71,7 @@ function writeState(s: PersistedState) {
   }
 }
 
-export function GlobalChatPanel({ open, onOpenChange }: Props) {
+export function GlobalChatPanel({ open, onOpenChange, initialMessage, onInitialMessageSent }: Props) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [view, setView] = useState<'chat' | 'history'>('chat')
@@ -337,6 +340,8 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                 }}
                 focusSignal={focusBump}
                 getPageContext={() => getEffectivePageChatContext()}
+                initialMessage={initialMessage}
+                onInitialMessageSent={onInitialMessageSent}
               />
             )}
             {activeAgent && view === 'history' && (

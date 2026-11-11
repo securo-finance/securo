@@ -18,7 +18,9 @@ describe('library', () => {
 
   it("defaults to everything Securo has, in Securo's order", () => {
     expect(defaultLayout('reports').map((item) => item.id)).toEqual(['net_worth', 'income_expenses', 'cash_flow', 'money_map'])
-    expect(resolveLayout('dashboard', null)).toEqual(DASHBOARD_WIDGETS.map((widget) => ({ id: widget.id })))
+    expect(resolveLayout('dashboard', null)).toEqual(DASHBOARD_WIDGETS.filter((widget) => !widget.optional).map((widget) => ({ id: widget.id })))
+    // New widgets wait in the library instead of appearing on everyone's dashboard.
+    expect(resolveLayout('dashboard', null).map((item) => item.id)).not.toContain('spending-pace')
   })
 
   it('keeps a saved arrangement, minus what this version no longer has or a width it never offers', () => {

@@ -3365,7 +3365,10 @@
       "forest": "Forêt",
       "sunset": "Coucher de soleil",
       "graphite": "Graphite",
-      "high-contrast": "Contraste élevé"
+      "high-contrast": "Contraste élevé",
+      "midnight": "Minuit",
+      "terminal": "Terminal",
+      "nebula": "Nébuleuse"
     },
     "saveFailed": "Impossible d'enregistrer votre choix. Réessayez.",
     "appearance": "Apparence",
@@ -3403,6 +3406,52 @@
       "6": "Moitié",
       "8": "Deux tiers",
       "12": "Pleine largeur"
+    }
+  },
+  "widgets": {
+    "budgets": "Budgets",
+    "viewAll": "Tout voir",
+    "spendingPace": {
+      "title": "Dépenses du mois",
+      "hint": "Les dépenses du mois face à vos budgets, et ce qui reste par jour.",
+      "noBudget": "Définissez des budgets pour suivre le rythme de vos dépenses.",
+      "used": "{{percent}} % des budgets utilisés",
+      "paceMark": "le repère indique un rythme régulier à ce jour",
+      "over": "{{amount}} au-dessus du budget",
+      "perDay": "Limitez-vous à {{amount}} par jour pour rester dans le budget",
+      "left": "{{amount}} restants dans le budget"
+    },
+    "distribution": {
+      "title": "Répartition des dépenses",
+      "hint": "Où est passé l'argent du mois, par catégorie.",
+      "total": "Total dépensé"
+    },
+    "monthResult": {
+      "title": "Résultat du mois",
+      "hint": "Revenus moins dépenses ce mois-ci, comparé au mois dernier.",
+      "previous": "{{amount}} le mois dernier"
+    },
+    "upcoming": {
+      "title": "À venir",
+      "hint": "Transactions récurrentes dues dans les 30 prochains jours.",
+      "none": "Rien à payer dans les {{days}} prochains jours."
+    },
+    "cards": {
+      "title": "Cartes de crédit",
+      "hint": "Ce que doivent vos cartes, et le solde restant une fois payées.",
+      "none": "Aucune carte de crédit ouverte.",
+      "afterPaying": "{{amount}} restants après paiement"
+    },
+    "assistant": {
+      "title": "Demandez à votre agent",
+      "libraryHint": "Envoyez une question à votre agent par défaut sans quitter le tableau de bord.",
+      "hint": "Posez n'importe quelle question sur votre argent. La réponse s'ouvre dans le chat.",
+      "placeholder": "Demandez à votre agent…",
+      "suggestion1": "Combien ai-je dépensé ce mois-ci ?",
+      "suggestion2": "Où puis-je réduire ?",
+      "suggestion3": "Quelles factures arrivent ?",
+      "send": "Envoyer",
+      "unavailable": "Activez les agents IA pour poser des questions d'ici."
     }
   }
 }

@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { CalendarRange, ChartColumnBig, ChartSpline, LayoutList, Network, PiggyBank, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
+import { CalendarClock, CalendarRange, ChartColumnBig, ChartPie, ChartSpline, CreditCard, Gauge, LayoutList, Network, PiggyBank, Scale, Sparkles, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
 
 /**
  * The library: what someone can place on a surface (widgets on the
@@ -29,6 +29,10 @@ export interface WidgetEntry extends LibraryEntry {
   minSpan: Span
   /** Charts need height to be read; a row holding one is at least this tall. */
   tall?: boolean
+  /** Left out of Securo's default arrangement; added from the library. */
+  optional?: boolean
+  /** Only offered when this part of Securo is available. */
+  requires?: 'assistant'
 }
 
 /** One item placed on a surface, as saved. */
@@ -44,6 +48,12 @@ export const DASHBOARD_WIDGETS: WidgetEntry[] = [
   { id: 'balance-flow', titleKey: 'dashboard.balanceFlow', descriptionKey: 'library.widget.balanceFlowHint', icon: ChartSpline, span: 6, minSpan: 6, tall: true },
   { id: 'goals', titleKey: 'goals.dashboardTitle', descriptionKey: 'library.widget.goalsHint', icon: Target, span: 12, minSpan: 4 },
   { id: 'transactions', titleKey: 'dashboard.periodTransactions', descriptionKey: 'library.widget.transactionsHint', icon: LayoutList, span: 12, minSpan: 6 },
+  { id: 'spending-pace', titleKey: 'widgets.spendingPace.title', descriptionKey: 'widgets.spendingPace.hint', icon: Gauge, span: 4, minSpan: 4, optional: true },
+  { id: 'spending-distribution', titleKey: 'widgets.distribution.title', descriptionKey: 'widgets.distribution.hint', icon: ChartPie, span: 8, minSpan: 6, optional: true },
+  { id: 'month-result', titleKey: 'widgets.monthResult.title', descriptionKey: 'widgets.monthResult.hint', icon: Scale, span: 4, minSpan: 4, optional: true },
+  { id: 'upcoming', titleKey: 'widgets.upcoming.title', descriptionKey: 'widgets.upcoming.hint', icon: CalendarClock, span: 4, minSpan: 4, optional: true },
+  { id: 'credit-cards', titleKey: 'widgets.cards.title', descriptionKey: 'widgets.cards.hint', icon: CreditCard, span: 4, minSpan: 4, optional: true },
+  { id: 'assistant', titleKey: 'widgets.assistant.title', descriptionKey: 'widgets.assistant.libraryHint', icon: Sparkles, span: 6, minSpan: 4, optional: true, requires: 'assistant' },
 ]
 
 export const REPORTS: LibraryEntry[] = [
@@ -58,9 +68,9 @@ export const SURFACE_ENTRIES: Record<Surface, LibraryEntry[]> = {
   reports: REPORTS,
 }
 
-/** Securo's arrangement when someone hasn't made their own: everything, in order, at its own width. */
+/** Securo's arrangement when someone hasn't made their own: its core widgets, in order, at their own width. */
 export function defaultLayout(surface: Surface): LayoutItem[] {
-  return SURFACE_ENTRIES[surface].map((entry) => ({ id: entry.id }))
+  return SURFACE_ENTRIES[surface].filter((entry) => !(entry as WidgetEntry).optional).map((entry) => ({ id: entry.id }))
 }
 
 /**

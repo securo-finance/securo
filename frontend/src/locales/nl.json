@@ -3363,7 +3363,10 @@
       "forest": "Bos",
       "sunset": "Zonsondergang",
       "graphite": "Grafiet",
-      "high-contrast": "Hoog contrast"
+      "high-contrast": "Hoog contrast",
+      "midnight": "Middernacht",
+      "terminal": "Terminal",
+      "nebula": "Nevel"
     },
     "saveFailed": "Je keuze kon niet worden opgeslagen. Probeer het opnieuw.",
     "appearance": "Weergave",
@@ -3401,6 +3404,52 @@
       "6": "Helft",
       "8": "Twee derde",
       "12": "Volledige breedte"
+    }
+  },
+  "widgets": {
+    "budgets": "Budgetten",
+    "viewAll": "Alles bekijken",
+    "spendingPace": {
+      "title": "Uitgaven deze maand",
+      "hint": "De uitgaven van de maand tegenover je budgetten, en wat er per dag over is.",
+      "noBudget": "Stel budgetten in om te zien of je uitgaven het tempo houden.",
+      "used": "{{percent}}% van de budgetten gebruikt",
+      "paceMark": "de markering is waar een gelijkmatig tempo vandaag zou zijn",
+      "over": "{{amount}} boven budget",
+      "perDay": "Houd het bij {{amount}} per dag om binnen budget te blijven",
+      "left": "{{amount}} over in het budget"
+    },
+    "distribution": {
+      "title": "Uitgavenverdeling",
+      "hint": "Waar het geld van de maand naartoe ging, per categorie.",
+      "total": "Totaal uitgegeven"
+    },
+    "monthResult": {
+      "title": "Maandresultaat",
+      "hint": "Inkomsten min uitgaven deze maand, vergeleken met vorige maand.",
+      "previous": "{{amount}} vorige maand"
+    },
+    "upcoming": {
+      "title": "Binnenkort",
+      "hint": "Terugkerende transacties in de komende 30 dagen.",
+      "none": "Niets te betalen in de komende {{days}} dagen."
+    },
+    "cards": {
+      "title": "Creditcards",
+      "hint": "Wat je kaarten schuldig zijn, en het saldo na betaling.",
+      "none": "Geen open creditcards.",
+      "afterPaying": "{{amount}} over na betaling"
+    },
+    "assistant": {
+      "title": "Vraag het je agent",
+      "libraryHint": "Stuur een vraag naar je standaardagent zonder het dashboard te verlaten.",
+      "hint": "Vraag alles over je geld. Het antwoord opent in de chat.",
+      "placeholder": "Vraag het je agent…",
+      "suggestion1": "Hoeveel heb ik deze maand uitgegeven?",
+      "suggestion2": "Waar kan ik op besparen?",
+      "suggestion3": "Welke rekeningen komen eraan?",
+      "send": "Versturen",
+      "unavailable": "Zet AI-agents aan om hier vragen te stellen."
     }
   }
 }

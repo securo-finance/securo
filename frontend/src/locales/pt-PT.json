@@ -3365,7 +3365,10 @@
       "forest": "Floresta",
       "sunset": "Pôr do sol",
       "graphite": "Grafite",
-      "high-contrast": "Alto contraste"
+      "high-contrast": "Alto contraste",
+      "midnight": "Meia-noite",
+      "terminal": "Terminal",
+      "nebula": "Nebulosa"
     },
     "saveFailed": "Não foi possível guardar a sua escolha. Tente novamente.",
     "appearance": "Aspeto",
@@ -3403,6 +3406,52 @@
       "6": "Metade",
       "8": "Dois terços",
       "12": "Largura total"
+    }
+  },
+  "widgets": {
+    "budgets": "Orçamentos",
+    "viewAll": "Ver tudo",
+    "spendingPace": {
+      "title": "Gastos do mês",
+      "hint": "Os gastos do mês face aos orçamentos, e quanto sobra por dia.",
+      "noBudget": "Defina orçamentos para ver se os gastos estão no ritmo.",
+      "used": "{{percent}}% dos orçamentos usados",
+      "paceMark": "a marca é onde um ritmo constante estaria hoje",
+      "over": "{{amount}} acima do orçamento",
+      "perDay": "Gaste até {{amount}} por dia para ficar no orçamento",
+      "left": "{{amount}} restantes no orçamento"
+    },
+    "distribution": {
+      "title": "Distribuição de gastos",
+      "hint": "Para onde foi o dinheiro do mês, por categoria.",
+      "total": "Total gasto"
+    },
+    "monthResult": {
+      "title": "Resultado do mês",
+      "hint": "Receitas menos gastos este mês, face ao mês passado.",
+      "previous": "{{amount}} no mês passado"
+    },
+    "upcoming": {
+      "title": "Próximas",
+      "hint": "Transações recorrentes que vencem nos próximos 30 dias.",
+      "none": "Nada vence nos próximos {{days}} dias."
+    },
+    "cards": {
+      "title": "Cartões de crédito",
+      "hint": "Quanto os cartões devem, e o saldo que sobra depois de pagar.",
+      "none": "Nenhum cartão de crédito aberto.",
+      "afterPaying": "{{amount}} sobram depois de pagar"
+    },
+    "assistant": {
+      "title": "Pergunte ao seu agente",
+      "libraryHint": "Envie uma pergunta ao seu agente predefinido sem sair do painel.",
+      "hint": "Pergunte o que quiser sobre o seu dinheiro. A resposta abre no chat.",
+      "placeholder": "Pergunte ao seu agente…",
+      "suggestion1": "Quanto gastei este mês?",
+      "suggestion2": "Onde posso poupar?",
+      "suggestion3": "Que contas estão a chegar?",
+      "send": "Enviar",
+      "unavailable": "Ative os agentes de IA para perguntar daqui."
     }
   }
 }

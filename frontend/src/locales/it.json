@@ -3365,7 +3365,10 @@
       "forest": "Foresta",
       "sunset": "Tramonto",
       "graphite": "Grafite",
-      "high-contrast": "Contrasto elevato"
+      "high-contrast": "Contrasto elevato",
+      "midnight": "Mezzanotte",
+      "terminal": "Terminale",
+      "nebula": "Nebulosa"
     },
     "saveFailed": "Impossibile salvare la scelta. Riprova.",
     "appearance": "Aspetto",
@@ -3403,6 +3406,52 @@
       "6": "Metà",
       "8": "Due terzi",
       "12": "Larghezza piena"
+    }
+  },
+  "widgets": {
+    "budgets": "Budget",
+    "viewAll": "Vedi tutto",
+    "spendingPace": {
+      "title": "Spese del mese",
+      "hint": "Le spese del mese rispetto ai budget, e quanto resta al giorno.",
+      "noBudget": "Imposta dei budget per vedere se le spese tengono il ritmo.",
+      "used": "{{percent}}% dei budget usato",
+      "paceMark": "il segno indica dove sarebbe oggi un ritmo costante",
+      "over": "{{amount}} oltre il budget",
+      "perDay": "Resta entro {{amount}} al giorno per rispettare il budget",
+      "left": "{{amount}} rimasti nel budget"
+    },
+    "distribution": {
+      "title": "Ripartizione delle spese",
+      "hint": "Dove sono andati i soldi del mese, per categoria.",
+      "total": "Totale speso"
+    },
+    "monthResult": {
+      "title": "Risultato del mese",
+      "hint": "Entrate meno spese di questo mese, rispetto al mese scorso.",
+      "previous": "{{amount}} il mese scorso"
+    },
+    "upcoming": {
+      "title": "In arrivo",
+      "hint": "Transazioni ricorrenti in scadenza nei prossimi 30 giorni.",
+      "none": "Nulla in scadenza nei prossimi {{days}} giorni."
+    },
+    "cards": {
+      "title": "Carte di credito",
+      "hint": "Quanto devono le carte, e il saldo che resta dopo averle pagate.",
+      "none": "Nessuna carta di credito aperta.",
+      "afterPaying": "{{amount}} restano dopo il pagamento"
+    },
+    "assistant": {
+      "title": "Chiedi al tuo agente",
+      "libraryHint": "Invia una domanda al tuo agente predefinito senza lasciare la dashboard.",
+      "hint": "Chiedi qualsiasi cosa sui tuoi soldi. La risposta si apre nella chat.",
+      "placeholder": "Chiedi al tuo agente…",
+      "suggestion1": "Quanto ho speso questo mese?",
+      "suggestion2": "Dove posso risparmiare?",
+      "suggestion3": "Quali pagamenti stanno arrivando?",
+      "send": "Invia",
+      "unavailable": "Attiva gli agenti IA per fare domande da qui."
     }
   }
 }

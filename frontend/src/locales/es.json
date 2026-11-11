@@ -3365,7 +3365,10 @@
       "forest": "Bosque",
       "sunset": "Atardecer",
       "graphite": "Grafito",
-      "high-contrast": "Alto contraste"
+      "high-contrast": "Alto contraste",
+      "midnight": "Medianoche",
+      "terminal": "Terminal",
+      "nebula": "Nebulosa"
     },
     "saveFailed": "No se pudo guardar tu elección. Inténtalo de nuevo.",
     "appearance": "Apariencia",
@@ -3403,6 +3406,52 @@
       "6": "Mitad",
       "8": "Dos tercios",
       "12": "Ancho completo"
+    }
+  },
+  "widgets": {
+    "budgets": "Presupuestos",
+    "viewAll": "Ver todo",
+    "spendingPace": {
+      "title": "Gastos del mes",
+      "hint": "Los gastos del mes frente a tus presupuestos, y lo que queda por día.",
+      "noBudget": "Define presupuestos para ver si tus gastos van al ritmo.",
+      "used": "{{percent}}% de los presupuestos usado",
+      "paceMark": "la marca es donde estaría un ritmo constante hoy",
+      "over": "{{amount}} por encima del presupuesto",
+      "perDay": "Gasta hasta {{amount}} al día para no pasarte",
+      "left": "{{amount}} restantes del presupuesto"
+    },
+    "distribution": {
+      "title": "Distribución de gastos",
+      "hint": "A dónde fue el dinero del mes, por categoría.",
+      "total": "Total gastado"
+    },
+    "monthResult": {
+      "title": "Resultado del mes",
+      "hint": "Ingresos menos gastos este mes, comparado con el mes pasado.",
+      "previous": "{{amount}} el mes pasado"
+    },
+    "upcoming": {
+      "title": "Próximos",
+      "hint": "Transacciones recurrentes que vencen en los próximos 30 días.",
+      "none": "Nada vence en los próximos {{days}} días."
+    },
+    "cards": {
+      "title": "Tarjetas de crédito",
+      "hint": "Lo que deben tus tarjetas, y el saldo que queda tras pagarlas.",
+      "none": "Ninguna tarjeta de crédito abierta.",
+      "afterPaying": "{{amount}} quedan tras pagarlas"
+    },
+    "assistant": {
+      "title": "Pregunta a tu agente",
+      "libraryHint": "Envía una pregunta a tu agente predeterminado sin salir del panel.",
+      "hint": "Pregunta lo que quieras sobre tu dinero. La respuesta se abre en el chat.",
+      "placeholder": "Pregunta a tu agente…",
+      "suggestion1": "¿Cuánto gasté este mes?",
+      "suggestion2": "¿Dónde puedo recortar?",
+      "suggestion3": "¿Qué pagos se acercan?",
+      "send": "Enviar",
+      "unavailable": "Activa los agentes de IA para preguntar desde aquí."
     }
   }
 }

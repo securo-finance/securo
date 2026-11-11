@@ -3547,7 +3547,10 @@
       "forest": "Les",
       "sunset": "Západ slunce",
       "graphite": "Grafit",
-      "high-contrast": "Vysoký kontrast"
+      "high-contrast": "Vysoký kontrast",
+      "midnight": "Půlnoc",
+      "terminal": "Terminál",
+      "nebula": "Mlhovina"
     },
     "saveFailed": "Volbu se nepodařilo uložit. Zkuste to znovu.",
     "appearance": "Vzhled",
@@ -3585,6 +3588,52 @@
       "6": "Polovina",
       "8": "Dvě třetiny",
       "12": "Celá šířka"
+    }
+  },
+  "widgets": {
+    "budgets": "Rozpočty",
+    "viewAll": "Zobrazit vše",
+    "spendingPace": {
+      "title": "Výdaje za měsíc",
+      "hint": "Výdaje měsíce oproti rozpočtům a kolik zbývá na den.",
+      "noBudget": "Nastavte rozpočty a uvidíte, zda výdaje drží tempo.",
+      "used": "Využito {{percent}} % rozpočtů",
+      "paceMark": "značka ukazuje, kde by dnes bylo rovnoměrné tempo",
+      "over": "{{amount}} nad rozpočet",
+      "perDay": "Držte se {{amount}} denně, abyste zůstali v rozpočtu",
+      "left": "V rozpočtu zbývá {{amount}}"
+    },
+    "distribution": {
+      "title": "Rozložení výdajů",
+      "hint": "Kam šly peníze za měsíc, podle kategorií.",
+      "total": "Celkem utraceno"
+    },
+    "monthResult": {
+      "title": "Výsledek měsíce",
+      "hint": "Příjmy minus výdaje tento měsíc ve srovnání s minulým.",
+      "previous": "{{amount}} minulý měsíc"
+    },
+    "upcoming": {
+      "title": "Nadcházející",
+      "hint": "Opakované transakce splatné v příštích 30 dnech.",
+      "none": "V příštích {{days}} dnech není nic splatné."
+    },
+    "cards": {
+      "title": "Kreditní karty",
+      "hint": "Kolik dlužíte na kartách a zůstatek po jejich zaplacení.",
+      "none": "Žádné otevřené kreditní karty.",
+      "afterPaying": "Po zaplacení zbude {{amount}}"
+    },
+    "assistant": {
+      "title": "Zeptejte se agenta",
+      "libraryHint": "Pošlete otázku výchozímu agentovi, aniž byste opustili přehled.",
+      "hint": "Zeptejte se na cokoli o svých penězích. Odpověď se otevře v chatu.",
+      "placeholder": "Zeptejte se agenta…",
+      "suggestion1": "Kolik jsem tento měsíc utratil?",
+      "suggestion2": "Kde mohu ušetřit?",
+      "suggestion3": "Jaké platby se blíží?",
+      "send": "Odeslat",
+      "unavailable": "Zapněte AI agenty, abyste se mohli ptát odsud."
     }
   }
 }

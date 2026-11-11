@@ -72,6 +72,7 @@ import { Bot, Plus, Search, Sparkles } from 'lucide-react'
 import { useAppTheme } from '@/hooks/use-app-theme'
 import { LibraryProvider } from '@/components/library-provider'
 import { useLibrary } from '@/contexts/library-context'
+import { AssistantContext } from '@/contexts/assistant-context'
 import { nextTheme, THEME_LABEL_KEY } from '@/lib/theme-cycle'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { formatCurrency } from '@/lib/format'
@@ -121,6 +122,8 @@ export function AppLayout() {
   const [backupOpen, setBackupOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  // A message the assistant widget sent, waiting for the chat to pick it up.
+  const [chatMessage, setChatMessage] = useState<string | null>(null)
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   useCommandPaletteHotkey(setPaletteOpen)
   const { agentsEnabled } = useFeatureFlags()
@@ -185,6 +188,17 @@ export function AppLayout() {
     }
   }, [user, updateUser])
 
+  const assistant = useMemo(
+    () => ({
+      available: chatAvailable,
+      ask: (message: string) => {
+        setChatMessage(message)
+        setChatOpen(true)
+      },
+    }),
+    [chatAvailable],
+  )
+
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? '?'
   // The button shows, and switches to, the next theme in the cycle.
   const upcomingTheme = nextTheme(theme)
@@ -207,6 +221,7 @@ export function AppLayout() {
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
+    <AssistantContext.Provider value={assistant}>
     <LibraryProvider>
     <div className="min-h-screen bg-background">
       {/* Mobile header */}
@@ -638,13 +653,21 @@ export function AppLayout() {
       {/* Slide-over global chat — opened from the sidebar pill or via
           ⌘J. The previous floating bottom-right button was removed
           since the entry point now lives in the sidebar next to ⌘K. */}
-      {chatAvailable && <GlobalChatPanel open={chatOpen} onOpenChange={setChatOpen} />}
+      {chatAvailable && (
+        <GlobalChatPanel
+          open={chatOpen}
+          onOpenChange={setChatOpen}
+          initialMessage={chatMessage}
+          onInitialMessageSent={() => setChatMessage(null)}
+        />
+      )}
       <UpdateAvailableDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
       />
     </div>
     </LibraryProvider>
+    </AssistantContext.Provider>
   )
 }
 

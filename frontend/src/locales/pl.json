@@ -3497,7 +3497,10 @@
       "forest": "Las",
       "sunset": "Zachód słońca",
       "graphite": "Grafit",
-      "high-contrast": "Wysoki kontrast"
+      "high-contrast": "Wysoki kontrast",
+      "midnight": "Północ",
+      "terminal": "Terminal",
+      "nebula": "Mgławica"
     },
     "saveFailed": "Nie udało się zapisać wyboru. Spróbuj ponownie.",
     "appearance": "Wygląd",
@@ -3535,6 +3538,52 @@
       "6": "Połowa",
       "8": "Dwie trzecie",
       "12": "Pełna szerokość"
+    }
+  },
+  "widgets": {
+    "budgets": "Budżety",
+    "viewAll": "Zobacz wszystko",
+    "spendingPace": {
+      "title": "Wydatki w miesiącu",
+      "hint": "Wydatki miesiąca na tle budżetów i ile zostaje na dzień.",
+      "noBudget": "Ustaw budżety, aby sprawdzać tempo wydatków.",
+      "used": "Wykorzystano {{percent}}% budżetów",
+      "paceMark": "znacznik pokazuje, gdzie byłoby dziś równe tempo",
+      "over": "{{amount}} ponad budżet",
+      "perDay": "Wydawaj do {{amount}} dziennie, aby zmieścić się w budżecie",
+      "left": "Zostało {{amount}} w budżecie"
+    },
+    "distribution": {
+      "title": "Podział wydatków",
+      "hint": "Na co poszły pieniądze w tym miesiącu, według kategorii.",
+      "total": "Wydano łącznie"
+    },
+    "monthResult": {
+      "title": "Wynik miesiąca",
+      "hint": "Przychody minus wydatki w tym miesiącu, w porównaniu z poprzednim.",
+      "previous": "{{amount}} w poprzednim miesiącu"
+    },
+    "upcoming": {
+      "title": "Nadchodzące",
+      "hint": "Transakcje cykliczne w ciągu najbliższych 30 dni.",
+      "none": "Nic do zapłaty w ciągu najbliższych {{days}} dni."
+    },
+    "cards": {
+      "title": "Karty kredytowe",
+      "hint": "Ile są winne Twoje karty i saldo po ich spłacie.",
+      "none": "Brak otwartych kart kredytowych.",
+      "afterPaying": "Po spłacie zostanie {{amount}}"
+    },
+    "assistant": {
+      "title": "Zapytaj agenta",
+      "libraryHint": "Wyślij pytanie do domyślnego agenta bez wychodzenia z pulpitu.",
+      "hint": "Zapytaj o cokolwiek dotyczącego Twoich pieniędzy. Odpowiedź otworzy się w czacie.",
+      "placeholder": "Zapytaj agenta…",
+      "suggestion1": "Ile wydałem w tym miesiącu?",
+      "suggestion2": "Gdzie mogę zaoszczędzić?",
+      "suggestion3": "Jakie rachunki się zbliżają?",
+      "send": "Wyślij",
+      "unavailable": "Włącz agentów AI, aby zadawać pytania stąd."
     }
   }
 }

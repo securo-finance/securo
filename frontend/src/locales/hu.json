@@ -3361,7 +3361,10 @@
       "forest": "Erdő",
       "sunset": "Naplemente",
       "graphite": "Grafit",
-      "high-contrast": "Magas kontraszt"
+      "high-contrast": "Magas kontraszt",
+      "midnight": "Éjfél",
+      "terminal": "Terminál",
+      "nebula": "Köd"
     },
     "saveFailed": "Nem sikerült menteni a választást. Próbáld újra.",
     "appearance": "Megjelenés",
@@ -3399,6 +3402,52 @@
       "6": "Fele",
       "8": "Kétharmad",
       "12": "Teljes szélesség"
+    }
+  },
+  "widgets": {
+    "budgets": "Költségvetések",
+    "viewAll": "Összes",
+    "spendingPace": {
+      "title": "Havi kiadások",
+      "hint": "A hónap kiadásai a költségvetésekhez képest, és mennyi marad naponta.",
+      "noBudget": "Állíts be költségvetéseket, hogy lásd, tartják-e a kiadások a tempót.",
+      "used": "A költségvetések {{percent}}%-a elfogyott",
+      "paceMark": "a jelölés azt mutatja, hol tartana ma az egyenletes tempó",
+      "over": "{{amount}} a költségvetés felett",
+      "perDay": "Napi {{amount}} alatt maradva tartod a költségvetést",
+      "left": "{{amount}} maradt a költségvetésben"
+    },
+    "distribution": {
+      "title": "Kiadások megoszlása",
+      "hint": "Hová ment a hónap pénze, kategóriánként.",
+      "total": "Összes kiadás"
+    },
+    "monthResult": {
+      "title": "Havi eredmény",
+      "hint": "Bevételek mínusz kiadások ebben a hónapban, az előzőhöz képest.",
+      "previous": "{{amount}} az előző hónapban"
+    },
+    "upcoming": {
+      "title": "Közelgő",
+      "hint": "Ismétlődő tranzakciók a következő 30 napban.",
+      "none": "A következő {{days}} napban nincs esedékes tétel."
+    },
+    "cards": {
+      "title": "Hitelkártyák",
+      "hint": "Mennyivel tartoznak a kártyáid, és mennyi marad a kifizetésük után.",
+      "none": "Nincs nyitott hitelkártya.",
+      "afterPaying": "Kifizetés után {{amount}} marad"
+    },
+    "assistant": {
+      "title": "Kérdezd az ügynöködet",
+      "libraryHint": "Küldj kérdést az alapértelmezett ügynöködnek az irányítópult elhagyása nélkül.",
+      "hint": "Kérdezz bármit a pénzedről. A válasz a csevegésben nyílik meg.",
+      "placeholder": "Kérdezd az ügynöködet…",
+      "suggestion1": "Mennyit költöttem ebben a hónapban?",
+      "suggestion2": "Hol spórolhatok?",
+      "suggestion3": "Milyen számlák jönnek?",
+      "send": "Küldés",
+      "unavailable": "Kapcsold be az MI-ügynököket, hogy innen kérdezhess."
     }
   }
 }

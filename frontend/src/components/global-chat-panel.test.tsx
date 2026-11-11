@@ -71,3 +71,29 @@ describe('GlobalChatPanel stored conversation', () => {
     expect(stored().conversationByAgent?.['agent-1']).toBe('conv-gone')
   })
 })
+
+describe('GlobalChatPanel message from elsewhere', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    api.list.mockResolvedValue([agent])
+    api.getDefault.mockResolvedValue(agent)
+    api.conversations.mockResolvedValue([])
+    api.messages.mockResolvedValue([])
+    api.streamChat.mockResolvedValue(undefined)
+  })
+
+  it('sends a message typed in the dashboard to the default agent, once', async () => {
+    const sent = vi.fn()
+    const { rerender } = renderWithProviders(
+      <GlobalChatPanel open onOpenChange={() => {}} initialMessage="How am I doing?" onInitialMessageSent={sent} />,
+    )
+    await waitFor(() => expect(api.streamChat).toHaveBeenCalledTimes(1))
+    expect(api.streamChat.mock.calls[0][0]).toMatchObject({ agentId: 'agent-1', content: 'How am I doing?' })
+    expect(sent).toHaveBeenCalledTimes(1)
+
+    rerender(<GlobalChatPanel open onOpenChange={() => {}} initialMessage="How am I doing?" onInitialMessageSent={sent} />)
+    expect(api.streamChat).toHaveBeenCalledTimes(1)
+  })
+})
+
