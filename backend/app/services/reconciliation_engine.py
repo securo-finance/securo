@@ -561,9 +561,9 @@ def _share_out(moved: Decimal, chosen: list[Expectation]) -> list[Settlement]:
     this is the same rule for a group: a payment can never write more than
     it carried. Without it a tolerance-based group was allowed to settle
     every invoice at its full value, so 980 arriving against two invoices
-    of 500 wrote 1.000 of allocations. `allocate` would not catch it: it
-    guards each invoice's own balance and knows nothing about how much of
-    the transaction earlier members of the group already spent.
+    of 500 wrote 1.000 of allocations. `allocate` now refuses a link larger
+    than what the transaction has left, but that would reject the whole
+    group; sharing the payment out here keeps every member within it.
 
     Short payments are shared **in proportion**, because that is what the
     shortfall usually is: a gateway's cut is a percentage of the gross, so

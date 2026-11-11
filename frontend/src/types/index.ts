@@ -621,6 +621,133 @@ export interface RuleExportItem {
   is_active: boolean
 }
 
+export interface RulePack {
+  code: string
+  /** English name; `names` has it per locale. */
+  name: string
+  names: Record<string, string>
+  flag: string
+  rule_count: number
+  installed: boolean
+  /** Rules in this workspace that still come from the pack. */
+  rules_from_pack: number
+}
+
+/** Removing a pack deletes `remove` and keeps `keep`, the rules the user edited. */
+export interface RulePackRemoval {
+  remove: { id: string; name: string }[]
+  keep: { id: string; name: string }[]
+  /** Identifies this plan; removal is refused if the plan changed since. */
+  token: string
+}
+
+/** Text per locale; always has `en`. */
+export type LocalizedText = Record<string, string>
+
+export type PluginAction = 'install' | 'update' | 'remove'
+export type PluginItemKind = 'category_groups' | 'categories' | 'rules'
+
+export interface InstalledPlugin {
+  plugin_id: string
+  name: LocalizedText
+  version: string
+  commit: string
+  installed_at: string
+}
+
+export interface PluginCatalogEntry {
+  id: string
+  owner: string
+  repository: string
+  release: string
+  commit: string
+  name: LocalizedText
+  description: LocalizedText
+  version: string
+  license: string
+  min_securo_version: string
+  /** How many items of each kind the plugin brings, by contribution kind. */
+  contributes: Record<string, number>
+  locales: string[]
+  /** The repository's GitHub topics. */
+  topics: string[]
+  stars: number
+  /** Stars gained in the last 7 days. */
+  stars_7d: number
+  added_at: string | null
+  updated_at: string | null
+  revoked: boolean
+  revoked_reason: string | null
+  /** This Securo is at least min_securo_version. */
+  compatible: boolean
+  /** This Securo can apply everything the plugin contributes. */
+  supported: boolean
+  installed_version: string | null
+  update_available: boolean
+}
+
+/** An item a plugin points at: one of its own, or a built-in default. */
+export interface PluginRef {
+  key: string
+  name: LocalizedText
+  default: boolean
+}
+
+export interface PluginContents {
+  category_groups: { key: string; name: LocalizedText; icon: string; color: string }[]
+  categories: {
+    key: string
+    name: LocalizedText
+    icon: string
+    color: string
+    group: PluginRef | null
+    treat_as_transfer: boolean
+  }[]
+  rules: {
+    key: string
+    name: string
+    priority: number
+    conditions_op: 'and' | 'or'
+    conditions: RuleConditionNode[]
+    actions: { op: string; value?: string | boolean | null; category: PluginRef | null }[]
+  }[]
+}
+
+/** One plugin opened from the catalog. */
+export interface PluginDetail {
+  plugin: PluginCatalogEntry
+  /** Markdown, from the catalog's verified copy. */
+  readme: string | null
+  /** Null when this Securo can't read what the plugin contains. */
+  contents: PluginContents | null
+}
+
+export interface PluginItem {
+  kind: PluginItemKind
+  key: string
+  name: string
+}
+
+/** What installing, updating or removing a plugin does, item by item. */
+export interface PluginPlan {
+  action: PluginAction
+  plugin_id: string
+  version: string | null
+  commit: string | null
+  token: string
+  create: PluginItem[]
+  update: PluginItem[]
+  delete: PluginItem[]
+  /** Edited by the user: left as they are. */
+  keep: PluginItem[]
+  /** No longer the plugin's (edited, or still in use): handed over to the user. */
+  release: PluginItem[]
+  /** Already in the workspace by name: left alone. */
+  existing: PluginItem[]
+  unresolved: PluginItem[]
+  default_categories: string[]
+}
+
 export interface RuleExportPayload {
   format: 'securo-categorization-rules'
   version: number
