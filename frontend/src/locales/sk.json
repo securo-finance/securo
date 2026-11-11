@@ -3538,8 +3538,6 @@
     "emptyDashboard": "Váš prehľad je prázdny",
     "emptyDashboardHint": "Pridajte widgety z knižnice a vyberte, čo tu uvidíte.",
     "addWidget": "Pridať widget",
-    "moveUp": "Posunúť {{name}} nahor",
-    "moveDown": "Posunúť {{name}} nadol",
     "nothingToShow": "Teraz nie je čo zobraziť",
     "editingDashboard": "Meňte poradie, odoberajte alebo pridávajte widgety. Zmeny sa ukladajú hneď.",
     "restoreDefault": "Obnoviť predvolené",
@@ -3562,6 +3560,15 @@
       "incomeExpensesHint": "Príjmy a výdavky podľa kategórií.",
       "cashFlowHint": "Kam smeruje váš zostatok.",
       "moneyMapHint": "Ako sa príjmy delia medzi výdavky a úspory."
+    },
+    "dragToMove": "Potiahnutím presuniete {{name}}",
+    "widthOf": "Šírka {{name}}",
+    "widthLabel": "Šírka",
+    "width": {
+      "4": "Tretina",
+      "6": "Polovica",
+      "8": "Dve tretiny",
+      "12": "Celá šírka"
     }
   }
 }

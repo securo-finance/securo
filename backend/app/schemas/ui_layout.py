@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 #: The surfaces someone can arrange from the library.
 Surface = Literal["dashboard", "reports"]
@@ -11,10 +11,25 @@ ITEM_ID_PATTERN = r"^[a-z0-9][a-z0-9:/_.-]{0,159}$"
 MAX_ITEMS = 40
 
 
+#: Widths a dashboard widget can take, in columns of a 12-column grid:
+#: a third, a half, two thirds, the whole row.
+Span = Literal[4, 6, 8, 12]
+
+
 class LayoutItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(pattern=ITEM_ID_PATTERN)
+    #: How wide the item is; none is the item's own default width.
+    span: Span | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_default_span(self, handler):
+        # An item at its default width reads back as just its id.
+        data = handler(self)
+        if data.get("span") is None:
+            data.pop("span", None)
+        return data
 
 
 class LayoutWrite(BaseModel):

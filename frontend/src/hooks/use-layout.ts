@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 
 import { uiLayouts, type UiLayouts } from '@/lib/api'
-import { resolveLayout, type Surface } from '@/lib/library'
+import { resolveLayout, type LayoutItem, type Surface } from '@/lib/library'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 
 // Per workspace and surface: the write in flight, and how many were made.
@@ -12,7 +12,7 @@ const writeChains = new Map<string, Promise<unknown>>()
 const latestWrite = new Map<string, number>()
 
 interface LayoutWrite {
-  next: string[] | null
+  next: LayoutItem[] | null
   workspace: string | null
 }
 
@@ -35,8 +35,9 @@ export function useLayout(surface: Surface) {
     staleTime: Infinity,
     retry: 1,
   })
-  const saved = data?.[surface]?.map((item) => item.id) ?? null
-  const ids = useMemo(() => resolveLayout(surface, saved), [surface, saved])
+  const saved = data?.[surface] ?? null
+  const items = useMemo(() => resolveLayout(surface, saved), [surface, saved])
+  const ids = useMemo(() => items.map((item) => item.id), [items])
 
   const reconcile = (workspace: string | null, seq: number | undefined) => {
     const chain = `${workspace}:${surface}`
@@ -75,7 +76,7 @@ export function useLayout(surface: Surface) {
         dashboard: null,
         reports: null,
         ...old,
-        [surface]: next?.map((id) => ({ id })) ?? null,
+        [surface]: next,
       }))
       const chain = `${workspace}:${surface}`
       const seq = (latestWrite.get(chain) ?? 0) + 1
@@ -94,8 +95,8 @@ export function useLayout(surface: Surface) {
   })
 
   const { mutate } = mutation
-  const save = useCallback((next: string[]) => mutate({ next, workspace: workspaceId }), [mutate, workspaceId])
+  const save = useCallback((next: LayoutItem[]) => mutate({ next, workspace: workspaceId }), [mutate, workspaceId])
   const reset = useCallback(() => mutate({ next: null, workspace: workspaceId }), [mutate, workspaceId])
 
-  return { ids, isCustom: saved !== null, ready: !isPending, save, reset }
+  return { items, ids, isCustom: saved !== null, ready: !isPending, save, reset }
 }

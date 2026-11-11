@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { LayoutItem } from '@/lib/library'
 import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
 import type { NumberFormat, DateFormat } from '@/lib/format'
@@ -1831,8 +1832,8 @@ export const admin = {
 // How someone arranged the dashboard and the reports in this workspace;
 // null is Securo's default arrangement.
 export interface UiLayouts {
-  dashboard: { id: string }[] | null
-  reports: { id: string }[] | null
+  dashboard: LayoutItem[] | null
+  reports: LayoutItem[] | null
 }
 
 function workspaceHeader(workspaceId?: string | null) {
@@ -1846,8 +1847,8 @@ export const uiLayouts = {
   },
   // `workspaceId` pins a read or a write to one workspace, whatever the active
   // one is when it goes out (a queued save, another tab switching).
-  save: async (surface: 'dashboard' | 'reports', ids: string[], workspaceId?: string | null): Promise<void> => {
-    await api.put(`/ui/layouts/${surface}`, { items: ids.map((id) => ({ id })) }, workspaceHeader(workspaceId))
+  save: async (surface: 'dashboard' | 'reports', items: LayoutItem[], workspaceId?: string | null): Promise<void> => {
+    await api.put(`/ui/layouts/${surface}`, { items }, workspaceHeader(workspaceId))
   },
   reset: async (surface: 'dashboard' | 'reports', workspaceId?: string | null): Promise<void> => {
     await api.delete(`/ui/layouts/${surface}`, workspaceHeader(workspaceId))

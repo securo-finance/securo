@@ -15,9 +15,9 @@ const server = vi.hoisted(() => ({
 vi.mock('@/lib/api', () => ({
   uiLayouts: {
     get: async () => ({ dashboard: null, reports: null, ...server.saved }),
-    save: async (surface: string, ids: string[]) => {
+    save: async (surface: string, items: { id: string }[]) => {
       await server.holds[surface]
-      server.saved = { ...server.saved, [surface]: ids.map((id) => ({ id })) }
+      server.saved = { ...server.saved, [surface]: items }
     },
     reset: async (surface: string) => {
       server.saved = { ...server.saved, [surface]: null }
@@ -43,8 +43,8 @@ describe('useLayout', () => {
 
     let release: () => void = () => {}
     server.holds.reports = new Promise((done) => { release = done })
-    act(() => result.current.reports.save(['net_worth']))
-    act(() => result.current.dashboard.save(['overview']))
+    act(() => result.current.reports.save([{ id: 'net_worth' }]))
+    act(() => result.current.dashboard.save([{ id: 'overview' }]))
 
     // The dashboard save landed and was read back; the pending report choice stays.
     await waitFor(() => expect(server.saved.dashboard).toEqual([{ id: 'overview' }]))
@@ -63,11 +63,11 @@ describe('useLayout', () => {
     let release: () => void = () => {}
     server.holds.dashboard = new Promise((done) => { release = done })
 
-    act(() => result.current.dashboard.save(['goals']))
-    act(() => result.current.dashboard.save(['overview', 'goals']))
+    act(() => result.current.dashboard.save([{ id: 'goals' }]))
+    act(() => result.current.dashboard.save([{ id: 'overview' }, { id: 'goals', span: 4 }]))
     release()
 
-    await waitFor(() => expect(server.saved.dashboard).toEqual([{ id: 'overview' }, { id: 'goals' }]))
+    await waitFor(() => expect(server.saved.dashboard).toEqual([{ id: 'overview' }, { id: 'goals', span: 4 }]))
     expect(result.current.dashboard.ids).toEqual(['overview', 'goals'])
   })
 })

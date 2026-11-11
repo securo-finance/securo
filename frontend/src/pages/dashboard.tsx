@@ -747,7 +747,8 @@ export default function DashboardPage() {
   // What each widget shows; the grid places them as this person arranged them.
   const widgetContent: Record<string, ReactNode> = {
     'overview': (
-      <div className="bg-card rounded-xl border border-border shadow-sm px-5 pt-5 pb-4">
+      // A container, so the indicators below lay out by the widget's width, not the screen's.
+      <div className="@container bg-card rounded-xl border border-border shadow-sm px-5 pt-5 pb-4">
         {/* Available balance in checking/savings accounts */}
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
@@ -826,7 +827,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Secondary indicators */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-4">
+        <div className="grid grid-cols-2 @xl:grid-cols-4 gap-x-5 gap-y-4">
           {/* Income */}
           <button
             type="button"
@@ -858,7 +859,7 @@ export default function DashboardPage() {
           {/* Expenses */}
           <button
             type="button"
-            className="relative min-w-0 text-left cursor-pointer hover:opacity-70 transition-opacity before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border"
+            className="relative min-w-0 text-left cursor-pointer hover:opacity-70 transition-opacity before:content-[''] before:hidden @xl:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border"
             onClick={() => setDrillDown({
               title: t('dashboard.drillDownExpenses', { month: monthLabelStr }),
               type: 'debit',
@@ -884,7 +885,7 @@ export default function DashboardPage() {
           </button>
 
           {/* Net worth */}
-          <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
+          <div className="relative min-w-0 before:content-[''] before:hidden @xl:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center gap-1">
               {t('dashboard.netWorth')}
               <Tooltip>
@@ -953,7 +954,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Savings rate */}
-          <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
+          <div className="relative min-w-0 before:content-[''] before:hidden @xl:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.savingsRate')}</p>
             {summaryLoading ? (
               <Skeleton className="h-6 w-16" />
@@ -1874,7 +1875,7 @@ export default function DashboardPage() {
         </div>
       ) : (
       <WidgetGrid
-        ids={dashboardLayout.ids}
+        items={dashboardLayout.items}
         entries={DASHBOARD_WIDGETS}
         content={widgetContent}
         editing={editing}

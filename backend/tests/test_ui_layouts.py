@@ -77,9 +77,10 @@ async def test_personal_even_for_a_viewer(client: AsyncClient, auth_headers, vie
         {"items": [{"id": "Not An Id"}]},
         {"items": [{"id": ""}]},
         {"items": [{"id": "goals", "size": "full"}]},
+        {"items": [{"id": "goals", "span": 5}]},
         {"items": [{"id": f"item-{n}"} for n in range(41)]},
     ],
-    ids=["duplicate", "malformed", "blank", "unknown field", "too many"],
+    ids=["duplicate", "malformed", "blank", "unknown field", "odd span", "too many"],
 )
 async def test_refuses_what_isnt_a_layout(client: AsyncClient, auth_headers, test_workspace, body):
     response = await client.put("/api/ui/layouts/dashboard", json=body, headers=_in(test_workspace, auth_headers))
@@ -124,3 +125,15 @@ async def test_theme_is_kept_per_user(client: AsyncClient, auth_headers):
 async def test_theme_must_be_an_id(client: AsyncClient, auth_headers, theme):
     response = await client.patch("/api/users/me", json={"theme": theme}, headers=auth_headers)
     assert response.status_code == 422
+
+
+async def test_keeps_widths(client: AsyncClient, auth_headers, test_workspace):
+    headers = _in(test_workspace, auth_headers)
+    items = [{"id": "overview", "span": 8}, {"id": "goals", "span": 4}, {"id": "transactions"}]
+    saved = await client.put("/api/ui/layouts/dashboard", json={"items": items}, headers=headers)
+    assert saved.status_code == 200
+    assert (await client.get("/api/ui/layouts", headers=headers)).json()["dashboard"] == [
+        {"id": "overview", "span": 8},
+        {"id": "goals", "span": 4},
+        {"id": "transactions"},
+    ]

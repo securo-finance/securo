@@ -3369,8 +3369,6 @@
     "emptyDashboard": "Dein Dashboard ist leer",
     "emptyDashboardHint": "Füge Widgets aus der Bibliothek hinzu, um festzulegen, was du hier siehst.",
     "addWidget": "Widget hinzufügen",
-    "moveUp": "{{name}} nach oben",
-    "moveDown": "{{name}} nach unten",
     "nothingToShow": "Gerade nichts anzuzeigen",
     "editingDashboard": "Widgets umsortieren, entfernen oder hinzufügen. Änderungen werden sofort gespeichert.",
     "restoreDefault": "Standard wiederherstellen",
@@ -3393,6 +3391,15 @@
       "incomeExpensesHint": "Ein- und Ausgänge nach Kategorie.",
       "cashFlowHint": "Wohin sich dein Saldo bewegt.",
       "moneyMapHint": "Wie sich Einnahmen auf Ausgaben und Ersparnisse verteilen."
+    },
+    "dragToMove": "Ziehen, um {{name}} zu verschieben",
+    "widthOf": "Breite von {{name}}",
+    "widthLabel": "Breite",
+    "width": {
+      "4": "Ein Drittel",
+      "6": "Hälfte",
+      "8": "Zwei Drittel",
+      "12": "Volle Breite"
     }
   }
 }

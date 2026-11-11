@@ -3372,8 +3372,6 @@
     "emptyDashboard": "Votre tableau de bord est vide",
     "emptyDashboardHint": "Ajoutez des widgets depuis la bibliothèque pour choisir ce qui s'affiche ici.",
     "addWidget": "Ajouter un widget",
-    "moveUp": "Monter {{name}}",
-    "moveDown": "Descendre {{name}}",
     "nothingToShow": "Rien à afficher pour le moment",
     "editingDashboard": "Réorganisez, retirez ou ajoutez des widgets. Les changements sont enregistrés au fur et à mesure.",
     "restoreDefault": "Rétablir par défaut",
@@ -3396,6 +3394,15 @@
       "incomeExpensesHint": "Entrées et sorties, par catégorie.",
       "cashFlowHint": "Où va votre solde.",
       "moneyMapHint": "Comment les revenus se répartissent entre dépenses et épargne."
+    },
+    "dragToMove": "Faites glisser pour déplacer {{name}}",
+    "widthOf": "Largeur de {{name}}",
+    "widthLabel": "Largeur",
+    "width": {
+      "4": "Un tiers",
+      "6": "Moitié",
+      "8": "Deux tiers",
+      "12": "Pleine largeur"
     }
   }
 }

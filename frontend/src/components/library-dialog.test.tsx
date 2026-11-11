@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
   held: null as Promise<void> | null,
   workspaces: [] as (string | null | undefined)[],
   saved: {} as Record<string, { id: string }[] | null>,
-  saves: [] as { surface: string; ids: string[] }[],
+  saves: [] as { surface: string; ids: string[]; items: { id: string; span?: number }[] }[],
   user: null as unknown as User,
   pluginsEnabled: true,
   listeners: new Set<() => void>(),
@@ -24,10 +24,10 @@ const api = vi.hoisted(() => ({
       return { dashboard: null, reports: null, ...state.saved }
     },
     // Like the server: what was saved is what the next read returns.
-    save: async (surface: string, ids: string[], workspaceId?: string | null) => {
-      state.saves.push({ surface, ids })
+    save: async (surface: string, items: { id: string; span?: number }[], workspaceId?: string | null) => {
+      state.saves.push({ surface, ids: items.map((item) => item.id), items })
       state.workspaces.push(workspaceId)
-      state.saved = { ...state.saved, [surface]: ids.map((id) => ({ id })) }
+      state.saved = { ...state.saved, [surface]: items }
     },
     reset: async (surface: string) => {
       state.saved = { ...state.saved, [surface]: null }
@@ -94,7 +94,7 @@ describe('LibraryDialog', () => {
     const { user } = open('widgets')
     const add = await screen.findByRole('button', { name: t('library.addTo.dashboard', { name: t('goals.dashboardTitle') }) })
     await user.click(add)
-    await waitFor(() => expect(state.saves.at(-1)).toEqual({ surface: 'dashboard', ids: ['overview', 'goals'] }))
+    await waitFor(() => expect(state.saves.at(-1)?.items).toEqual([{ id: 'overview' }, { id: 'goals' }]))
     // The row flips to remove at once.
     expect(await screen.findByRole('button', { name: t('library.removeFrom.dashboard', { name: t('goals.dashboardTitle') }) })).toBeInTheDocument()
   })

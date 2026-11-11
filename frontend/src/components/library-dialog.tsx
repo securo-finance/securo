@@ -89,7 +89,7 @@ export function LibraryDialog({
 function SurfaceItems({ surface }: { surface: Surface }) {
   const { t } = useTranslation()
   // Until the saved arrangement is in, a change would be made to the default and overwrite it.
-  const { ids, save, reset, isCustom, ready } = useLayout(surface)
+  const { items, ids, save, reset, isCustom, ready } = useLayout(surface)
   const placed = new Set(ids)
   // The reports page can't be left empty; the dashboard can.
   const lastReport = surface === 'reports' && ids.length === 1
@@ -115,7 +115,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
                   disabled={locked || !ready}
                   title={locked ? t('library.lastReport') : undefined}
                   aria-label={t(`library.removeFrom.${surface}`, { name: t(entry.titleKey) })}
-                  onClick={() => save(ids.filter((id) => id !== entry.id))}
+                  onClick={() => save(items.filter((item) => item.id !== entry.id))}
                 >
                   <Minus size={14} className="mr-1" />
                   {t('library.remove')}
@@ -126,7 +126,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
                   className="shrink-0"
                   disabled={!ready}
                   aria-label={t(`library.addTo.${surface}`, { name: t(entry.titleKey) })}
-                  onClick={() => save([...ids, entry.id])}
+                  onClick={() => save([...items, { id: entry.id }])}
                 >
                   <Plus size={14} className="mr-1" />
                   {t('library.add')}

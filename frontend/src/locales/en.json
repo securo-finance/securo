@@ -3368,8 +3368,6 @@
     "emptyDashboard": "Your dashboard is empty",
     "emptyDashboardHint": "Add widgets from the library to choose what you see here.",
     "addWidget": "Add widget",
-    "moveUp": "Move {{name}} up",
-    "moveDown": "Move {{name}} down",
     "nothingToShow": "Nothing to show right now",
     "editingDashboard": "Reorder, remove or add widgets. Changes are saved as you go.",
     "restoreDefault": "Restore default",
@@ -3392,6 +3390,15 @@
       "incomeExpensesHint": "Money in and out, by category.",
       "cashFlowHint": "Where your balance is heading.",
       "moneyMapHint": "How income flows into spending and savings."
+    },
+    "dragToMove": "Drag to move {{name}}",
+    "widthOf": "Width of {{name}}",
+    "widthLabel": "Width",
+    "width": {
+      "4": "A third",
+      "6": "Half",
+      "8": "Two thirds",
+      "12": "Full width"
     }
   }
 }

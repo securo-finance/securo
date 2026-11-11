@@ -3368,8 +3368,6 @@
     "emptyDashboard": "Az irányítópultod üres",
     "emptyDashboardHint": "Adj hozzá widgeteket a könyvtárból, hogy eldöntsd, mit látsz itt.",
     "addWidget": "Widget hozzáadása",
-    "moveUp": "{{name}} feljebb",
-    "moveDown": "{{name}} lejjebb",
     "nothingToShow": "Most nincs mit mutatni",
     "editingDashboard": "Rendezd át, távolítsd el vagy add hozzá a widgeteket. A változások azonnal mentődnek.",
     "restoreDefault": "Alapértelmezés visszaállítása",
@@ -3392,6 +3390,15 @@
       "incomeExpensesHint": "Bevételek és kiadások kategóriánként.",
       "cashFlowHint": "Merre tart az egyenleged.",
       "moneyMapHint": "Hogyan oszlik meg a bevétel a kiadások és a megtakarítás között."
+    },
+    "dragToMove": "Húzd a(z) {{name}} áthelyezéséhez",
+    "widthOf": "{{name}} szélessége",
+    "widthLabel": "Szélesség",
+    "width": {
+      "4": "Egyharmad",
+      "6": "Fele",
+      "8": "Kétharmad",
+      "12": "Teljes szélesség"
     }
   }
 }

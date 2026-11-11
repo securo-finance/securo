@@ -7,7 +7,7 @@ import type { ReportResponse } from '@/types'
 
 const layouts = vi.hoisted(() => ({
   saved: {} as Record<string, { id: string }[] | null>,
-  saves: [] as { surface: string; ids: string[] }[],
+  saves: [] as { surface: string; ids: string[]; items: { id: string; span?: number }[] }[],
 }))
 
 const api = vi.hoisted(() => ({
@@ -25,9 +25,9 @@ const api = vi.hoisted(() => ({
   uiLayouts: {
     get: async () => ({ dashboard: null, reports: null, ...layouts.saved }),
     // Like the server: what was saved is what the next read returns.
-    save: async (surface: string, ids: string[]) => {
-      layouts.saves.push({ surface, ids })
-      layouts.saved = { ...layouts.saved, [surface]: ids.map((id) => ({ id })) }
+    save: async (surface: string, items: { id: string; span?: number }[]) => {
+      layouts.saves.push({ surface, ids: items.map((item) => item.id), items })
+      layouts.saved = { ...layouts.saved, [surface]: items }
     },
     reset: async (surface: string) => {
       layouts.saved = { ...layouts.saved, [surface]: null }

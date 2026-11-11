@@ -3370,8 +3370,6 @@
     "emptyDashboard": "Je dashboard is leeg",
     "emptyDashboardHint": "Voeg widgets uit de bibliotheek toe om te kiezen wat je hier ziet.",
     "addWidget": "Widget toevoegen",
-    "moveUp": "{{name}} omhoog",
-    "moveDown": "{{name}} omlaag",
     "nothingToShow": "Nu niets te tonen",
     "editingDashboard": "Widgets herschikken, verwijderen of toevoegen. Wijzigingen worden direct opgeslagen.",
     "restoreDefault": "Standaard herstellen",
@@ -3394,6 +3392,15 @@
       "incomeExpensesHint": "Geld in en uit, per categorie.",
       "cashFlowHint": "Waar je saldo naartoe gaat.",
       "moneyMapHint": "Hoe inkomsten verdeeld worden over uitgaven en sparen."
+    },
+    "dragToMove": "Sleep om {{name}} te verplaatsen",
+    "widthOf": "Breedte van {{name}}",
+    "widthLabel": "Breedte",
+    "width": {
+      "4": "Een derde",
+      "6": "Helft",
+      "8": "Twee derde",
+      "12": "Volledige breedte"
     }
   }
 }

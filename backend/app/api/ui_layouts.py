@@ -36,7 +36,7 @@ async def save_layout(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    items = [item.model_dump() for item in body.items]
+    items = [item.model_dump(exclude_none=True) for item in body.items]
     row = (
         await session.execute(select(UiLayout).where(_mine(ctx), UiLayout.surface == surface).with_for_update())
     ).scalar_one_or_none()

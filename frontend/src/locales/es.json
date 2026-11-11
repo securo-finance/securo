@@ -3372,8 +3372,6 @@
     "emptyDashboard": "Tu panel está vacío",
     "emptyDashboardHint": "Añade widgets de la biblioteca para elegir qué ves aquí.",
     "addWidget": "Añadir widget",
-    "moveUp": "Subir {{name}}",
-    "moveDown": "Bajar {{name}}",
     "nothingToShow": "Nada que mostrar por ahora",
     "editingDashboard": "Reordena, quita o añade widgets. Los cambios se guardan al momento.",
     "restoreDefault": "Restaurar predeterminado",
@@ -3396,6 +3394,15 @@
       "incomeExpensesHint": "Entradas y salidas, por categoría.",
       "cashFlowHint": "Hacia dónde va tu saldo.",
       "moneyMapHint": "Cómo se reparten los ingresos entre gastos y ahorro."
+    },
+    "dragToMove": "Arrastra para mover {{name}}",
+    "widthOf": "Ancho de {{name}}",
+    "widthLabel": "Ancho",
+    "width": {
+      "4": "Un tercio",
+      "6": "Mitad",
+      "8": "Dos tercios",
+      "12": "Ancho completo"
     }
   }
 }

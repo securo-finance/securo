@@ -3504,8 +3504,6 @@
     "emptyDashboard": "Twój pulpit jest pusty",
     "emptyDashboardHint": "Dodaj widżety z biblioteki, aby wybrać, co tu widzisz.",
     "addWidget": "Dodaj widżet",
-    "moveUp": "Przesuń {{name}} w górę",
-    "moveDown": "Przesuń {{name}} w dół",
     "nothingToShow": "Na razie nic do pokazania",
     "editingDashboard": "Zmieniaj kolejność, usuwaj lub dodawaj widżety. Zmiany zapisują się od razu.",
     "restoreDefault": "Przywróć domyślne",
@@ -3528,6 +3526,15 @@
       "incomeExpensesHint": "Wpływy i wydatki według kategorii.",
       "cashFlowHint": "Dokąd zmierza Twoje saldo.",
       "moneyMapHint": "Jak przychody dzielą się na wydatki i oszczędności."
+    },
+    "dragToMove": "Przeciągnij, aby przenieść {{name}}",
+    "widthOf": "Szerokość {{name}}",
+    "widthLabel": "Szerokość",
+    "width": {
+      "4": "Jedna trzecia",
+      "6": "Połowa",
+      "8": "Dwie trzecie",
+      "12": "Pełna szerokość"
     }
   }
 }

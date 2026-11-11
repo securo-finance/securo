@@ -11,7 +11,7 @@ import type { Account, DashboardSummary } from '@/types'
 
 const layouts = vi.hoisted(() => ({
   saved: {} as Record<string, { id: string }[] | null>,
-  saves: [] as { surface: string; ids: string[] }[],
+  saves: [] as { surface: string; ids: string[]; items: { id: string; span?: number }[] }[],
 }))
 
 const api = vi.hoisted(() => ({
@@ -39,9 +39,9 @@ const api = vi.hoisted(() => ({
   uiLayouts: {
     get: async () => ({ dashboard: null, reports: null, ...layouts.saved }),
     // Like the server: what was saved is what the next read returns.
-    save: async (surface: string, ids: string[]) => {
-      layouts.saves.push({ surface, ids })
-      layouts.saved = { ...layouts.saved, [surface]: ids.map((id) => ({ id })) }
+    save: async (surface: string, items: { id: string; span?: number }[]) => {
+      layouts.saves.push({ surface, ids: items.map((item) => item.id), items })
+      layouts.saved = { ...layouts.saved, [surface]: items }
     },
     reset: async (surface: string) => {
       layouts.saved = { ...layouts.saved, [surface]: null }
@@ -818,18 +818,16 @@ describe('Dashboard arranged from the library', () => {
     expect(api.budgets.comparison).not.toHaveBeenCalled()
   })
 
-  it('saves a widget moved while customizing', async () => {
+  it('saves a widget resized while customizing', async () => {
     const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
     await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
     await user.click(screen.getByRole('button', { name: t('library.customizeDashboard') }))
     expect(screen.getByText(t('library.editingDashboard'))).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: t('library.moveDown', { name: t('library.widget.overview') }) }))
-    await waitFor(() => expect(layouts.saves.at(-1)).toEqual({
-      surface: 'dashboard',
-      ids: ['uncategorized', 'overview', 'spending-by-category', 'balance-flow', 'goals', 'transactions'],
-    }))
-    expect(regions()[1]).toBe(t('library.widget.overview'))
+    await user.click(screen.getByRole('button', { name: t('library.widthOf', { name: t('dashboard.spendingByCategory') }) }))
+    await user.click(screen.getByRole('menuitemradio', { name: t('library.width.8') }))
+    await waitFor(() => expect(layouts.saves.at(-1)?.items).toContainEqual({ id: 'spending-by-category', span: 8 }))
+    expect(screen.getByRole('region', { name: t('dashboard.spendingByCategory') })).toHaveClass('lg:col-span-8')
 
     await user.click(screen.getByRole('button', { name: t('library.done') }))
     expect(screen.queryByText(t('library.editingDashboard'))).not.toBeInTheDocument()

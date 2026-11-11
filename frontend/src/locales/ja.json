@@ -3368,8 +3368,6 @@
     "emptyDashboard": "ダッシュボードは空です",
     "emptyDashboardHint": "ライブラリからウィジェットを追加して、ここに表示する内容を選びましょう。",
     "addWidget": "ウィジェットを追加",
-    "moveUp": "{{name}}を上へ移動",
-    "moveDown": "{{name}}を下へ移動",
     "nothingToShow": "今は表示するものがありません",
     "editingDashboard": "ウィジェットの並べ替え、削除、追加ができます。変更はすぐに保存されます。",
     "restoreDefault": "デフォルトに戻す",
@@ -3392,6 +3390,15 @@
       "incomeExpensesHint": "カテゴリ別の入出金。",
       "cashFlowHint": "残高の見通し。",
       "moneyMapHint": "収入が支出と貯蓄にどう分かれるか。"
+    },
+    "dragToMove": "ドラッグして{{name}}を移動",
+    "widthOf": "{{name}}の幅",
+    "widthLabel": "幅",
+    "width": {
+      "4": "3分の1",
+      "6": "半分",
+      "8": "3分の2",
+      "12": "全幅"
     }
   }
 }
