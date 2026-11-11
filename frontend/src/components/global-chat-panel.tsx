@@ -88,16 +88,19 @@ export function GlobalChatPanel({ open, onOpenChange, initialMessage, onInitialM
     enabled: open,
     staleTime: 1000 * 30,
   })
+  // A saved choice counts only while that agent still exists; otherwise the
+  // default is looked up, as when nothing was saved.
+  const savedAgentExists = Boolean(persisted.agentId && agentsList?.some((a) => a.id === persisted.agentId))
   const { data: defaultAgent, isFetched: defaultChecked } = useQuery({
     queryKey: ['agents-default'],
     queryFn: () => agents.getDefault(),
-    enabled: open && !persisted.agentId,
+    enabled: open && !savedAgentExists,
     retry: false,
     staleTime: 1000 * 60,
   })
   // A message from elsewhere waits until we know which agent gets it: the
   // saved choice, or the default once that lookup is done (failed counts as done).
-  const agentSettled = Boolean(persisted.agentId) || defaultChecked
+  const agentSettled = savedAgentExists || defaultChecked
 
   // Resolve which agent is active. Order: persisted choice → default →
   // first in the list. The picked id always points at an agent that

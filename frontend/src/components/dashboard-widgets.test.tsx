@@ -131,8 +131,8 @@ describe('CreditCardsWidget', () => {
   it('adds up what the cards owe once, and what is left after paying', async () => {
     api.accounts.list.mockResolvedValue([
       account({ id: 'checking', type: 'checking', current_balance: 2000 }),
-      account({ id: 'card-a', name: 'Card A', type: 'credit_card', current_balance: -300, shared_balance_group: 'line' }),
-      account({ id: 'card-b', name: 'Card B', type: 'credit_card', current_balance: -300, shared_balance_group: 'line' }),
+      account({ id: 'card-a', name: 'Card A', type: 'credit_card', current_balance: -300, shared_balance_group: 'line', next_due_date: '2026-04-20' }),
+      account({ id: 'card-b', name: 'Card B', type: 'credit_card', current_balance: -300, shared_balance_group: 'line', next_due_date: '2026-04-10' }),
       account({ id: 'card-c', name: 'Card C', type: 'credit_card', current_balance: -200 }),
       account({ id: 'closed', name: 'Old', type: 'credit_card', current_balance: -999, is_closed: true }),
     ])
@@ -144,6 +144,9 @@ describe('CreditCardsWidget', () => {
     // The shared line is listed once, under both cards, so the rows add up to the total.
     expect(screen.getByText('Card A · Card B')).toBeInTheDocument()
     expect(screen.getAllByText(usd(300))).toHaveLength(1)
+    // The line is due on the earlier of its cards' dates.
+    const line = screen.getByText('Card A · Card B').closest('li')!
+    expect(line).toHaveTextContent(new Date('2026-04-10T00:00:00').toLocaleDateString('en-US', { day: '2-digit', month: 'short' }))
   })
 
   it('says when there are no cards', async () => {

@@ -92,4 +92,20 @@ describe('useLayout', () => {
     release()
     await waitFor(() => expect(result.current.dashboard.ids).toEqual(['goals']))
   })
+
+  it('goes back to what the server last had, not to an unsaved arrangement in between', async () => {
+    server.saved = { dashboard: [{ id: 'goals' }] }
+    const { result } = renderBoth()
+    await waitFor(() => expect(result.current.dashboard.ids).toEqual(['goals']))
+
+    let release: () => void = () => {}
+    server.holds.dashboard = new Promise((done) => { release = done })
+    act(() => result.current.dashboard.save([{ id: 'overview' }]))
+    act(() => result.current.dashboard.save([{ id: 'transactions' }]))
+    await waitFor(() => expect(result.current.dashboard.ids).toEqual(['transactions']))
+
+    server.down = true
+    release()
+    await waitFor(() => expect(result.current.dashboard.ids).toEqual(['goals']))
+  })
 })

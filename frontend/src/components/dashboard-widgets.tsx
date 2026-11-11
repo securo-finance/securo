@@ -344,15 +344,22 @@ export function CreditCardsWidget({ scope }: { scope: DashboardScope }) {
   const money = (value: number, currency = scope.currency) => mask(formatCurrency(value, currency, locale))
   // Cards on one shared credit line report the line's whole balance each: list
   // the line once, under all its cards' names, so the rows add up to the total.
-  const lines = new Map<string, { card: (typeof cards)[number]; label: string; owes: number }>()
+  // The line is due on the earliest of its cards' due dates.
+  const lines = new Map<string, { card: (typeof cards)[number]; label: string; owes: number; due: string | null }>()
   for (const card of cards) {
     const key = card.shared_balance_group ?? card.id
     const existing = lines.get(key)
     if (existing) {
       existing.label = `${existing.label} · ${getAccountLabel(card)}`
+      if (card.next_due_date && (!existing.due || card.next_due_date < existing.due)) existing.due = card.next_due_date
       continue
     }
-    lines.set(key, { card, label: getAccountLabel(card), owes: Math.max(0, -Number(card.balance_primary ?? card.current_balance)) })
+    lines.set(key, {
+      card,
+      label: getAccountLabel(card),
+      owes: Math.max(0, -Number(card.balance_primary ?? card.current_balance)),
+      due: card.next_due_date,
+    })
   }
   const shown = [...lines.values()]
     .filter((row) => row.owes > 0)
@@ -377,14 +384,14 @@ export function CreditCardsWidget({ scope }: { scope: DashboardScope }) {
           </div>
           {shown.length > 0 && (
             <ul className="space-y-2">
-              {shown.map(({ card, label, owes }) => (
+              {shown.map(({ card, label, owes, due }) => (
                 <li key={card.id} className="flex items-center gap-2.5">
                   <AccountIcon account={card} size="xs" className="h-5 w-5 rounded-md" />
                   <span className="min-w-0 flex-1 truncate text-sm" title={label}>{label}</span>
                   <span className="text-sm font-semibold tabular-nums">{money(owes)}</span>
-                  {card.next_due_date && (
+                  {due && (
                     <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">
-                      {new Date(`${card.next_due_date}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })}
+                      {new Date(`${due}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })}
                     </span>
                   )}
                 </li>

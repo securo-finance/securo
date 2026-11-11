@@ -124,5 +124,18 @@ describe('GlobalChatPanel message waiting for the default agent', () => {
     await waitFor(() => expect(api.streamChat).toHaveBeenCalledTimes(1))
     expect(api.streamChat.mock.calls[0][0]).toMatchObject({ agentId: 'chosen', content: 'Hi' })
   })
-})
 
+  it('looks up the default when the saved agent no longer exists', async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ agentId: 'deleted' }))
+    let answer: (value: unknown) => void = () => {}
+    api.list.mockResolvedValue([{ id: 'first', name: 'First' }, { id: 'chosen', name: 'Chosen' }])
+    api.getDefault.mockReturnValue(new Promise((done) => { answer = done }))
+    renderWithProviders(<GlobalChatPanel open onOpenChange={() => {}} initialMessage="Hi" onInitialMessageSent={() => {}} />)
+
+    await waitFor(() => expect(api.getDefault).toHaveBeenCalled())
+    expect(api.streamChat).not.toHaveBeenCalled()
+    answer({ id: 'chosen', name: 'Chosen' })
+    await waitFor(() => expect(api.streamChat).toHaveBeenCalledTimes(1))
+    expect(api.streamChat.mock.calls[0][0]).toMatchObject({ agentId: 'chosen' })
+  })
+})
