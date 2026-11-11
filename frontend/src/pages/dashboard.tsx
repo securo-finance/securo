@@ -1102,7 +1102,7 @@ export default function DashboardPage() {
                             </div>
                           </div>
                           {hasBudget && (
-                            <BudgetSpendingProgress percentage={pct!} budgetAmount={item.budget_amount!} currency={userCurrency} />
+                            <BudgetSpendingProgress categoryName={item.category_name} percentage={pct!} budgetAmount={item.budget_amount!} currency={userCurrency} />
                           )}
                         </div>
                       </div>

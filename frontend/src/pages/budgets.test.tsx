@@ -167,6 +167,8 @@ describe('Budget spending in the inline editor', () => {
 
     expect(await screen.findByText('$450.00')).toBeInTheDocument()
     expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
+    expect(screen.getByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Rent` })).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Archived utilities` })).toBeInTheDocument()
     expect(budgetRow('Archived utilities').getByText('$0.00')).toBeInTheDocument()
     expect(budgetRow('Archived utilities').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
     expect(budgetRow('Groceries').queryByRole('progressbar')).not.toBeInTheDocument()

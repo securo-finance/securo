@@ -364,7 +364,7 @@ export default function BudgetsPage() {
                           <span className="text-sm font-normal tabular-nums text-foreground break-words">{spendingAvailable ? fmt(spent) : '—'}</span>
                         </p>
                         {spendingAvailable && limit !== null && limit > 0 && (
-                          <BudgetSpendingProgress percentage={percentage} budgetAmount={limit} currency={userCurrency} showBudgetLabel={false} />
+                          <BudgetSpendingProgress categoryName={category.name} percentage={percentage} budgetAmount={limit} currency={userCurrency} showBudgetLabel={false} />
                         )}
                       </div>
                       <button

@@ -4,10 +4,11 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { formatCurrency } from '@/lib/format'
 
 /** Shared spending-versus-budget bar for Overview and Budgets. */
-export function BudgetSpendingProgress({ percentage, budgetAmount, currency, showBudgetLabel = true }: {
+export function BudgetSpendingProgress({ percentage, budgetAmount, currency, categoryName, showBudgetLabel = true }: {
   percentage: number
   budgetAmount: number
   currency: string
+  categoryName: string
   showBudgetLabel?: boolean
 }) {
   const { t } = useTranslation()
@@ -19,7 +20,7 @@ export function BudgetSpendingProgress({ percentage, budgetAmount, currency, sho
     <div className="flex items-center gap-2">
       <div
         role="progressbar"
-        aria-label={t('dashboard.spendingByCategory')}
+        aria-label={`${t('dashboard.spendingByCategory')}: ${categoryName}`}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.min(Math.max(percentage, 0), 100)}

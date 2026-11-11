@@ -783,3 +783,19 @@ it('keeps a wallet-only Expenses drill-down empty instead of querying all accoun
   expect(await within(panel).findByText(t('dashboard.drillDownEmpty'))).toBeInTheDocument()
   expect(api.transactions.list.mock.calls.some(([params]) => params?.user_pnl_only === true)).toBe(false)
 })
+
+
+it('identifies each category in its spending progress bar accessible name', async () => {
+  api.dashboard.spendingByCategory.mockResolvedValue([
+    { category_id: 'rent', category_name: 'Rent', projected_total: 450, total: 450 },
+    { category_id: 'food', category_name: 'Groceries', projected_total: 200, total: 200 },
+  ])
+  api.budgets.comparison.mockResolvedValue([
+    { category_id: 'rent', budget_amount: 900, percentage_used: 50, projected_prev_month_amount: 0 },
+    { category_id: 'food', budget_amount: 500, percentage_used: 40, projected_prev_month_amount: 0 },
+  ])
+  renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+
+  expect(await screen.findByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Rent` })).toHaveAttribute('aria-valuenow', '50')
+  expect(screen.getByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Groceries` })).toHaveAttribute('aria-valuenow', '40')
+})
