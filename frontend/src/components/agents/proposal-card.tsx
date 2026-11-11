@@ -195,8 +195,9 @@ function renderSummary(
     case 'create_manual_account': {
       const accountType = String(p.type ?? '?')
       const typeLabel = t(`accounts.type${accountType.charAt(0).toUpperCase()}${accountType.slice(1)}`)
-      return `${String(p.name ?? '?')} · ${typeLabel} · ${fmt(p.balance, p.currency)}`
-        + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+      const datePart = p.opening_balance_date ? ` on ${String(p.opening_balance_date)}` : ''
+      return `${String(p.name ?? '?')} · ${typeLabel} · Current balance: ${fmt(p.current_balance ?? p.opening_balance, p.currency)}. Opening balance: ${fmt(p.opening_balance, p.currency)}${datePart}`
+        + (d.name_collision ? `. ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
     }
     case 'create_payee_rule':
       return t('agents.proposal.summary.createPayeeRule', {
@@ -281,14 +282,19 @@ function renderSummary(
     }
     case 'update_manual_account': {
       const changes = (d.changes || {}) as Record<string, unknown>
-      const lines = Object.entries(changes).map(([key, value]) => {
-        const before = tgt[key]
-        return `${key}: ${String(before ?? '∅')} → ${String(value ?? '∅')}`
-      })
-      return t('agents.proposal.summary.updateGoal', {
-        name: String(tgt.name ?? '?'),
-        changes: lines.join(', ') || '—',
-      }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+      const parts: string[] = []
+      if (changes.opening_balance !== undefined) {
+        parts.push(`opening_balance: ${String(tgt.opening_balance ?? '?')} → ${String(changes.opening_balance)}`)
+      }
+      if (changes.opening_balance_date !== undefined) {
+        parts.push(`opening_balance_date: ${String(tgt.opening_balance_date ?? '?')} → ${String(changes.opening_balance_date)}`)
+      }
+      for (const [key, value] of Object.entries(changes)) {
+        if (key === 'opening_balance' || key === 'opening_balance_date') continue
+        parts.push(`${key}: ${String(tgt[key] ?? '?')} → ${String(value ?? '?')}`)
+      }
+      return `${String(tgt.name ?? '?')}. Current balance: ${fmt(tgt.current_balance, tgt.currency)}. ${parts.join('. ') || 'No changes'}`
+        + (d.name_collision ? `. ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
     }
     case 'delete_budget':
       return t(tgt.is_recurring ? 'agents.proposal.summary.deleteRecurringBudget' : 'agents.proposal.summary.deleteBudget', {
@@ -431,8 +437,8 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         name: String(p.name),
         type: String(p.type),
         currency: String(p.currency),
-        balance: Number(p.balance),
-        balance_date: (p.balance_date as string) || undefined,
+        balance: Number(p.opening_balance),
+        balance_date: (p.opening_balance_date as string) || undefined,
       })
       return account.id
     }
@@ -561,9 +567,15 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
     }
     case 'update_manual_account': {
       const id = String((data.target as Record<string, unknown>).id)
+      const c = (data.changes || {}) as Record<string, unknown>
+      const payload: Record<string, unknown> = {}
+      if (c.opening_balance !== undefined) payload.balance = Number(c.opening_balance)
+      if (c.opening_balance_date !== undefined) payload.balance_date = c.opening_balance_date as string
+      if (typeof c.name === 'string') payload.name = c.name
+      if (typeof c.type === 'string') payload.type = c.type
       await accounts.update(
         id,
-        (data.changes || {}) as Parameters<typeof accounts.update>[1],
+        payload as Parameters<typeof accounts.update>[1],
       )
       return id
     }
