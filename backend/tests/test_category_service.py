@@ -23,7 +23,7 @@ from app.services.category_service import (
     get_category,
     update_category,
 )
-from app.services.rule_service import _ensure_categories_for_keys
+from app.services.rule_service import ensure_default_categories
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ async def test_ensure_categories_reuses_group_under_former_spanish_name(
     session.add(legacy)
     await session.flush()
 
-    created = await _ensure_categories_for_keys(
+    created = await ensure_default_categories(
         session, test_workspace.id, test_user.id, {"housing"}, "es"
     )
 
