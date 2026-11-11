@@ -23,22 +23,21 @@ from app.schemas.budget import (
 )
 from app.services._query_filters import (
     counts_as_user_pnl,
+    forecast_owner_share_fractions,
+    line_category_id,
+    line_primary_or_amount,
     owner_split_offset_by_category,
     reporting_date_col,
+    user_pnl_parts,
+    with_category_lines,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.dashboard_service import (
-    _counts_as_user_pnl_row,
     _get_forecast_transactions,
     _get_recurring_projections,
 )
 from app.services.fx_rate_service import convert
 from app.core.config import get_settings
-
-
-def _primary_amount_expr():
-    """Amount in primary currency: uses amount_primary when available, falls back to amount."""
-    return func.coalesce(Transaction.amount_primary, Transaction.amount)
 
 
 async def _build_budget_map(
@@ -277,26 +276,28 @@ async def get_budget_vs_actual(
     # Net spending = Debits - Credits (refunds offset expenses)
     # Use amount_primary for multi-currency support
     spending_result = await session.execute(
-        select(
-            Transaction.category_id,
-            func.sum(
-                case(
-                    (Transaction.type == "debit", _primary_amount_expr()),
-                    (Transaction.type == "credit", -_primary_amount_expr()),
-                    else_=0,
-                )
-            ),
+        with_category_lines(
+            select(
+                line_category_id(),
+                func.sum(
+                    case(
+                        (Transaction.type == "debit", line_primary_or_amount()),
+                        (Transaction.type == "credit", -line_primary_or_amount()),
+                        else_=0,
+                    )
+                ),
+            ).select_from(Transaction)
         )
         .where(
             Transaction.workspace_id == workspace_id,
             report_date >= month_start,
             report_date < month_end,
-            Transaction.category_id.isnot(None),
+            line_category_id().isnot(None),
             report_date <= app_today(),
             Transaction.status == "posted",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(line_category_id()),
         )
-        .group_by(Transaction.category_id)
+        .group_by(line_category_id())
     )
     spending_map: dict[str, Decimal] = {}
     for row in spending_result.all():
@@ -354,10 +355,15 @@ async def get_budget_vs_actual(
         session, workspace_id, month_start, month_end,
         range_date_col=report_date,
     )
+    forecast_fractions = await forecast_owner_share_fractions(
+        session, user_id, forecast_transactions
+    )
     for tx in forecast_transactions:
-        if tx.type != "debit" or not tx.category_id or not _counts_as_user_pnl_row(tx):
+        if tx.type != "debit":
             continue
-        cat_id = str(tx.category_id)
+        parts = [part for part in user_pnl_parts(tx) if part[0] is not None]
+        if not parts:
+            continue
         amount = tx.amount_primary
         if amount is not None:
             converted = abs(Decimal(str(amount)))
@@ -365,32 +371,42 @@ async def get_budget_vs_actual(
             converted, _ = await convert(
                 session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
             )
-        projected_spending_map[cat_id] = projected_spending_map.get(cat_id, Decimal("0")) + converted
+        converted *= forecast_fractions.get(tx.id, 1)
+        for part_category_id, _, ratio in parts:
+            cat_id = str(part_category_id)
+            projected_spending_map[cat_id] = projected_spending_map.get(cat_id, Decimal("0")) + converted * ratio
+    # A negative owner share can pull a category below zero; like posted
+    # spending, a category that ends up nonpositive drops out.
+    for cat_id, total in list(projected_spending_map.items()):
+        if total <= 0:
+            del projected_spending_map[cat_id]
 
     # Get previous month spending by category (exclude transfer pairs)
     # Net spending = Debits - Credits (refunds offset expenses)
     # Use amount_primary for multi-currency support
     prev_spending_result = await session.execute(
-        select(
-            Transaction.category_id,
-            func.sum(
-                case(
-                    (Transaction.type == "debit", _primary_amount_expr()),
-                    (Transaction.type == "credit", -_primary_amount_expr()),
-                    else_=0,
-                )
-            ),
+        with_category_lines(
+            select(
+                line_category_id(),
+                func.sum(
+                    case(
+                        (Transaction.type == "debit", line_primary_or_amount()),
+                        (Transaction.type == "credit", -line_primary_or_amount()),
+                        else_=0,
+                    )
+                ),
+            ).select_from(Transaction)
         )
         .where(
             Transaction.workspace_id == workspace_id,
             report_date >= prev_month_start,
             report_date < prev_month_end,
-            Transaction.category_id.isnot(None),
+            line_category_id().isnot(None),
             report_date <= app_today(),
             Transaction.status == "posted",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(line_category_id()),
         )
-        .group_by(Transaction.category_id)
+        .group_by(line_category_id())
     )
     prev_spending_map: dict[str, Decimal] = {}
     for row in prev_spending_result.all():
@@ -443,10 +459,15 @@ async def get_budget_vs_actual(
         session, workspace_id, prev_month_start, prev_month_end,
         range_date_col=report_date,
     )
+    prev_forecast_fractions = await forecast_owner_share_fractions(
+        session, user_id, prev_forecast_transactions
+    )
     for tx in prev_forecast_transactions:
-        if tx.type != "debit" or not tx.category_id or not _counts_as_user_pnl_row(tx):
+        if tx.type != "debit":
             continue
-        cat_id = str(tx.category_id)
+        parts = [part for part in user_pnl_parts(tx) if part[0] is not None]
+        if not parts:
+            continue
         amount = tx.amount_primary
         if amount is not None:
             converted = abs(Decimal(str(amount)))
@@ -454,7 +475,15 @@ async def get_budget_vs_actual(
             converted, _ = await convert(
                 session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
             )
-        projected_prev_spending_map[cat_id] = projected_prev_spending_map.get(cat_id, Decimal("0")) + converted
+        converted *= prev_forecast_fractions.get(tx.id, 1)
+        for part_category_id, _, ratio in parts:
+            cat_id = str(part_category_id)
+            projected_prev_spending_map[cat_id] = projected_prev_spending_map.get(cat_id, Decimal("0")) + converted * ratio
+    # A negative owner share can pull a category below zero; like posted
+    # spending, a category that ends up nonpositive drops out.
+    for cat_id, total in list(projected_prev_spending_map.items()):
+        if total <= 0:
+            del projected_prev_spending_map[cat_id]
 
     comparisons = []
     for category, group in all_categories:
@@ -550,8 +579,8 @@ async def get_budget_suggestions(
     all_categories = cats_result.all()
 
     net_expr = case(
-        (Transaction.type == "debit", _primary_amount_expr()),
-        (Transaction.type == "credit", -_primary_amount_expr()),
+        (Transaction.type == "debit", line_primary_or_amount()),
+        (Transaction.type == "credit", -line_primary_or_amount()),
         else_=0,
     )
     window_filters = (
@@ -559,15 +588,17 @@ async def get_budget_suggestions(
         report_date >= window_start,
         report_date < window_end,
         report_date <= today,
-        Transaction.category_id.isnot(None),
+        line_category_id().isnot(None),
         Transaction.status == "posted",
-        counts_as_user_pnl(),
+        counts_as_user_pnl(line_category_id()),
     )
 
     spending_result = await session.execute(
-        select(Transaction.category_id, func.sum(net_expr))
+        with_category_lines(
+            select(line_category_id(), func.sum(net_expr)).select_from(Transaction)
+        )
         .where(*window_filters)
-        .group_by(Transaction.category_id)
+        .group_by(line_category_id())
     )
     total_by_cat: dict[str, Decimal] = {}
     for cat_uuid, net in spending_result.all():
@@ -580,9 +611,11 @@ async def get_budget_suggestions(
     # "has spending" check runs on the month total, so a debit and an equal
     # refund later in the same month leave that month without data.
     daily_result = await session.execute(
-        select(Transaction.category_id, report_date, func.sum(net_expr))
+        with_category_lines(
+            select(line_category_id(), report_date, func.sum(net_expr)).select_from(Transaction)
+        )
         .where(*window_filters)
-        .group_by(Transaction.category_id, report_date)
+        .group_by(line_category_id(), report_date)
     )
     monthly_net: dict[tuple[str, date], Decimal] = {}
     for cat_uuid, d, net in daily_result.all():
@@ -719,3 +752,167 @@ async def create_budgets_batch(
     for budget in budgets:
         await session.refresh(budget)
     return budgets
+
+
+# Budget.amount is Numeric(15, 2).
+_MAX_BUDGET_AMOUNT = Decimal("1e13")
+
+
+async def copy_monthly_budgets(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    source_month: date,
+    target_month: date,
+    adjustment_percentage: Decimal = Decimal("0.0"),
+    overwrite_existing: bool = False,
+) -> list[Budget]:
+    """Copy the budgets a source month resolves to into a target month.
+
+    The source is read with the same resolution the budget screen uses
+    (month override first, then the latest recurring default), across the
+    whole workspace, so inherited recurring amounts are copied and adjusted
+    too. Only month-specific overrides are written: recurring defaults are
+    never created or changed, so the months after the target keep resolving
+    the way they did before the copy.
+
+    A category that already has a budget in the target month is left alone
+    unless ``overwrite_existing`` is set. When it is, an existing override is
+    updated in place (whoever in the workspace created it) instead of adding
+    a second row next to it, and a category whose target month already
+    resolves to the copied amount is skipped, so it stays on its recurring
+    default. Adjusted amounts round half a cent up, as splits do.
+    """
+    source_first = source_month.replace(day=1)
+    target_first = target_month.replace(day=1)
+    if source_first == target_first:
+        raise ValueError("source_month and target_month must be different months")
+
+    source_map = await _build_budget_map(db, workspace_id, source_first)
+    target_map = await _build_budget_map(db, workspace_id, target_first)
+
+    overrides_result = await db.execute(
+        select(Budget).where(
+            Budget.workspace_id == workspace_id,
+            Budget.is_recurring == False,  # noqa: E712
+            Budget.month == target_first,
+        )
+    )
+    target_overrides: dict[str, list[Budget]] = {}
+    for b in overrides_result.scalars().all():
+        target_overrides.setdefault(str(b.category_id), []).append(b)
+
+    multiplier = Decimal("1.0") + (adjustment_percentage / Decimal("100.0"))
+    changed: list[Budget] = []
+
+    for cat_id, (amount, _is_recurring) in source_map.items():
+        new_amount = (amount * multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if new_amount >= _MAX_BUDGET_AMOUNT:
+            raise ValueError("Adjusted budget amount is too large")
+        if cat_id in target_map and (
+            not overwrite_existing or target_map[cat_id][0] == new_amount
+        ):
+            continue
+        overrides = target_overrides.get(cat_id)
+        if overrides:
+            for override in overrides:
+                override.amount = new_amount
+                changed.append(override)
+        else:
+            new_budget = Budget(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                category_id=uuid.UUID(cat_id),
+                amount=new_amount,
+                month=target_first,
+                is_recurring=False,
+            )
+            db.add(new_budget)
+            changed.append(new_budget)
+
+    await db.commit()
+    for b in changed:
+        await db.refresh(b)
+    return changed
+
+
+async def get_budget_rollover_summary(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    month: date,
+) -> dict:
+    """End-of-month surplus or deficit per budgeted category.
+
+    ``remaining`` is measured against the projected spend (posted spend plus
+    the recurring and planned transactions still due that month), so a month
+    in progress or in the future isn't reported as mostly unspent.
+
+    Only categories with a budget that month are included, in the list and in
+    the totals: ``net_surplus`` is the headroom left across the budget, not
+    the whole month's result, so spending in unbudgeted categories never
+    turns it into a deficit.
+    """
+    vs_actuals = await get_budget_vs_actual(db, workspace_id, user_id, month)
+    total_budgeted = Decimal("0.00")
+    total_spent = Decimal("0.00")
+    total_projected = Decimal("0.00")
+    categories_summary = []
+
+    for item in vs_actuals:
+        if item.budget_amount is None:
+            continue
+        budgeted = item.budget_amount
+        spent = item.actual_amount
+        projected = item.projected_amount
+        remaining = budgeted - projected
+        total_budgeted += budgeted
+        total_spent += spent
+        total_projected += projected
+        categories_summary.append({
+            "category_id": item.category_id,
+            "category_name": item.category_name,
+            "budgeted": budgeted,
+            "actual_spent": spent,
+            "projected_spent": projected,
+            "remaining": remaining,
+            "carryover_eligible": remaining > Decimal("0.00"),
+        })
+
+    return {
+        "month": month.replace(day=1),
+        "total_budgeted": total_budgeted,
+        "total_spent": total_spent,
+        "total_projected_spent": total_projected,
+        "net_surplus": total_budgeted - total_projected,
+        "categories": categories_summary,
+    }
+
+
+async def get_multi_month_forecast(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    start_month: date,
+    num_months: int = 6,
+) -> dict:
+    items = []
+    m_date = start_month.replace(day=1)
+
+    for _ in range(num_months):
+        summary = await get_budget_rollover_summary(db, workspace_id, user_id, m_date)
+        items.append({
+            "month": m_date,
+            "projected_budget": summary["total_budgeted"],
+            "projected_spend": summary["total_projected_spent"],
+            "projected_variance": summary["net_surplus"],
+        })
+        if m_date.month == 12:
+            m_date = m_date.replace(year=m_date.year + 1, month=1)
+        else:
+            m_date = m_date.replace(month=m_date.month + 1)
+
+    return {
+        "forecast_months": num_months,
+        "items": items,
+    }

@@ -299,3 +299,25 @@ async def test_currencies_include_gel_with_metadata(client: AsyncClient):
     assert gel["symbol"] == "₾"
     assert gel["name"] == "Georgian Lari"
     assert gel["flag"] == "🇬🇪"
+
+@pytest.mark.asyncio
+async def test_currencies_include_pen_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    pen = next((currency for currency in data if currency["code"] == "PEN"), None)
+
+    assert pen is not None
+    assert pen["symbol"] == "S/"
+    assert pen["name"] == "Sol Peruano"
+    assert pen["flag"] == "🇵🇪"
+
+@pytest.mark.asyncio
+async def test_currencies_include_uyu_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    uyu = next((currency for currency in data if currency["code"] == "UYU"), None)
+
+    assert uyu is not None
+    assert uyu["symbol"] == "$U"
+    assert uyu["name"] == "Peso Uruguayo"
+    assert uyu["flag"] == "🇺🇾"

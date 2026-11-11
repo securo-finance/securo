@@ -1,5 +1,5 @@
 import { fireEvent, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LoanScheduleCard } from '@/components/loan-schedule-card'
 import { formatCurrency } from '@/lib/format'
@@ -56,6 +56,14 @@ const money = (value: number) => formatCurrency(value, 'EUR', 'en-US')
 describe('LoanScheduleCard', () => {
   beforeEach(() => loanSchedule.mockReset())
 
+  // The layout test below stands in for jsdom's missing geometry on the
+  // prototype, so put both back or it leaks into every later test.
+  const clientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
+  afterEach(() => {
+    if (clientHeight) Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeight)
+    vi.restoreAllMocks()
+  })
+
   it('shows the next payment split and how far ahead the loan is', async () => {
     loanSchedule.mockResolvedValue(schedule())
 
@@ -81,6 +89,36 @@ describe('LoanScheduleCard', () => {
     renderWithProviders(<LoanScheduleCard {...props} />)
 
     expect(await screen.findByText(t('loans.behind', { amount: money(300) }))).toBeInTheDocument()
+  })
+
+  it('marks the current installment so the table can scroll to it', async () => {
+    loanSchedule.mockResolvedValue(schedule())
+    renderWithProviders(<LoanScheduleCard {...props} />)
+
+    fireEvent.click(await screen.findByText(t('loans.showSchedule')))
+
+    const current = await screen.findByRole('row', { current: 'step' })
+    // next_payment is installment 2, so the first row must not be the marked one.
+    expect(current).toHaveTextContent('2')
+    expect(screen.getAllByRole('row', { current: 'step' })).toHaveLength(1)
+  })
+
+  it('scrolls the table so the current installment is in view', async () => {
+    // jsdom has no layout, so stand in for it: the table shows 384px at a time
+    // and the current row sits 792px down, the way installment 24 of a
+    // mortgage does.
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 384 })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { top: this.tagName === 'TR' ? 792 : 0 } as DOMRect
+    })
+    loanSchedule.mockResolvedValue(schedule())
+    renderWithProviders(<LoanScheduleCard {...props} />)
+
+    fireEvent.click(await screen.findByText(t('loans.showSchedule')))
+    const container = (await screen.findByRole('row', { current: 'step' })).closest('div')!
+
+    // Centred: 792 - 384 / 2. Without this the table opens on installment 1.
+    expect(container.scrollTop).toBe(600)
   })
 
   it('opens the full schedule on demand', async () => {
@@ -128,3 +166,4 @@ describe('LoanScheduleCard', () => {
     expect(await screen.findByRole('button', { name: t('loans.adjustAction') })).toBeInTheDocument()
   })
 })
+

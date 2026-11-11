@@ -426,8 +426,9 @@ async def resolve_lines(
         line["price_id"] = price_id
         # The product's fiscal references travel with the line, copied
         # now so the document later reads what the line says. A line
-        # that brought its own keeps them.
-        if line.get("fiscal_refs"):
+        # that brought its own keeps them, including an explicit empty/null
+        # snapshot. Only an omitted field inherits the product's current refs.
+        if "fiscal_refs" in line:
             line["fiscal_refs"] = clean_fiscal_refs(line["fiscal_refs"])
         elif product_id and product_id in products:
             line["fiscal_refs"] = dict(products[product_id].fiscal_refs or {}) or None

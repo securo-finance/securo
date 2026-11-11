@@ -635,6 +635,36 @@ async def test_get_summary_pending_categorization(session: AsyncSession, test_us
 
 
 @pytest.mark.asyncio
+async def test_pending_categorization_matches_the_uncategorized_list(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Ignored rows and rows excluded from P/L are not pending categorization (#1336).
+
+    The dashboard counter opens the uncategorized list, which hides them, so
+    counting them made the counter promise rows the list never shows."""
+    account = await _make_account(session, test_user.id, "Pending Ignored")
+    today = date.today()
+
+    await _add_txn(session, test_user.id, account.id, 100, "debit", today)
+    ignored = await _add_txn(session, test_user.id, account.id, 40, "debit", today)
+    ignored.is_ignored = True
+    adjustment = await _add_txn(session, test_user.id, account.id, 7, "credit", today)
+    adjustment.exclude_from_pnl = True
+    await session.commit()
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+    assert summary.pending_categorization == 1
+    assert summary.pending_categorization_amount == pytest.approx(100.0)
+
+    rows, total, _ = await get_transactions(
+        session, test_workspace.id, test_user.id,
+        uncategorized=True, user_pnl_only=True, skip_pagination=True,
+    )
+    assert total == summary.pending_categorization
+    assert [float(r.amount) for r in rows] == [100.0]
+
+
+@pytest.mark.asyncio
 async def test_get_summary_with_specific_month(session: AsyncSession, test_user, test_workspace):
     """Summary uses the specified month."""
     account = await _make_account(session, test_user.id, "Month Test")

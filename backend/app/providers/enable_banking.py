@@ -37,6 +37,7 @@ from app.providers.base import (
     default_oauth_redirect_uri,
     mask_last4,
 )
+from app.providers.psu import current_psu_context
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,17 @@ def _counterparty_name(raw: dict, party: str) -> str:
     return name.strip() if isinstance(name, str) else ""
 
 
+def _counterparty_identity(raw: dict, party: str) -> str:
+    """IBAN of the counterparty account, falling back to its name."""
+    account = raw.get(f"{party}_account")
+    iban = (
+        account.get("iban")
+        if isinstance(account, dict) and isinstance(account.get("iban"), str)
+        else ""
+    )
+    return iban.strip() or _counterparty_name(raw, party)
+
+
 def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     """Stable id for a booked transaction.
 
@@ -158,20 +170,8 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     sync layer's pending↔posted twin matcher handles that.
     """
     amount = raw.get("transaction_amount") or {}
-    creditor_acc = raw.get("creditor_account")
-    debtor_acc = raw.get("debtor_account")
-    creditor_iban = (
-        creditor_acc.get("iban")
-        if isinstance(creditor_acc, dict) and isinstance(creditor_acc.get("iban"), str)
-        else ""
-    )
-    debtor_iban = (
-        debtor_acc.get("iban")
-        if isinstance(debtor_acc, dict) and isinstance(debtor_acc.get("iban"), str)
-        else ""
-    )
-    creditor_identity = creditor_iban.strip() or _counterparty_name(raw, "creditor")
-    debtor_identity = debtor_iban.strip() or _counterparty_name(raw, "debtor")
+    creditor_identity = _counterparty_identity(raw, "creditor")
+    debtor_identity = _counterparty_identity(raw, "debtor")
     parts = [
         str(account_uid),
         str(raw.get("booking_date") or ""),
@@ -186,6 +186,75 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     ]
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
     return digest[:32]
+
+
+def _canonical_amount(amount_obj: Any) -> str:
+    """Canonical string for an EB amount.
+
+    "12", "12.0" and "12.00" are the same amount, so parse it as a Decimal
+    to give every spelling the same external id.
+    """
+    if not isinstance(amount_obj, dict):
+        return ""
+    raw = amount_obj.get("amount")
+    if raw is None or raw == "":
+        return ""
+    try:
+        return format(Decimal(str(raw)).normalize(), "f")
+    except InvalidOperation:
+        return str(raw)
+
+
+def _entry_reference_external_id(entry_ref: str, amount_obj: dict, raw: dict) -> str:
+    """Disambiguate a non-empty ``entry_reference`` with transaction details.
+
+    EB's `entry_reference` is not guaranteed unique per transaction: some
+    institutions reuse it across a batch/settlement (multiple ledger lines
+    clearing under one shared reference) or across follow-on charges against
+    the same card authorization (see #753). Folding in the amount, the
+    available date fields, the direction, the remittance text and the
+    counterparties keeps a truly-unique reference stable across re-fetches
+    while separating genuinely distinct transactions that happen to share
+    one (e.g. a charge and its refund, or settlement lines for different
+    counterparties with equal amounts).
+    """
+    parts = [
+        entry_ref,
+        _canonical_amount(amount_obj),
+        str(amount_obj.get("currency") or "") if isinstance(amount_obj, dict) else "",
+        str(raw.get("booking_date") or ""),
+        str(raw.get("value_date") or ""),
+        str(raw.get("transaction_date") or ""),
+        str(raw.get("credit_debit_indicator") or "").upper(),
+        _join_remittance(raw.get("remittance_information"))[:80],
+        _counterparty_identity(raw, "creditor"),
+        _counterparty_identity(raw, "debtor"),
+    ]
+    digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    return digest[:32]
+
+
+def _settlement_key(raw: dict) -> Optional[tuple[str, str, str, str]]:
+    """Identity of one operation across its pending and booked spellings.
+
+    A pending entry and the booked entry it settles into keep the reference,
+    the amount, the currency and the direction; the booking date is what the
+    settlement adds. Returns None when the reference is absent or is the "0"
+    placeholder, which carries no identity of its own.
+    """
+    entry_ref = raw.get("entry_reference")
+    entry_ref = entry_ref.strip() if isinstance(entry_ref, str) else ""
+    if not entry_ref or entry_ref == "0":
+        return None
+    amount_obj = raw.get("transaction_amount")
+    if not isinstance(amount_obj, dict):
+        return None
+    return (
+        entry_ref,
+        _canonical_amount(amount_obj),
+        str(amount_obj.get("currency") or ""),
+        str(raw.get("credit_debit_indicator") or "").upper(),
+    )
 
 
 def _extract_payee(raw: dict, indicator: str, source: str) -> Optional[str]:
@@ -210,6 +279,111 @@ def _history_start(today: date, days: int) -> date:
     return today - timedelta(days=days - 1)
 
 
+# PSU headers sent on every user-present data request when the user's request
+# supplied them. Enable Banking's FAQ asks for the user's headers whenever the
+# user triggered the fetch, and for none when the application fetches on its
+# own schedule:
+# https://enablebanking.com/docs/faq/#what-are-the-psu-headers-in-the-endpoints-for-fetching-account-details-balances-and-transactions-used-for
+DEFAULT_PSU_HEADERS = ("Psu-Ip-Address", "Psu-User-Agent")
+
+
+# Key in the connection credentials holding what /details said about each
+# account, by uid: what a background sync needs to name an account without
+# calling /details, which some banks only answer with the user present.
+ACCOUNT_DETAILS_KEY = "account_details"
+
+
+def _details_summary(raw: dict) -> dict[str, Optional[str]]:
+    """The part of an account's details payload the sync uses.
+
+    The masked number is kept rather than the identifier itself, so the cache
+    holds nothing the account row does not already show.
+    """
+    name = raw.get("display_name") or raw.get("product") or raw.get("name")
+    return {
+        "name": name if isinstance(name, str) else None,
+        "cash_account_type": raw.get("cash_account_type"),
+        "currency": raw.get("currency"),
+        "masked_number": mask_last4(_account_identifier(raw)),
+    }
+
+
+def _is_data_request(path: str) -> bool:
+    """Endpoints EB forwards to the bank and that accept PSU headers."""
+    return path.startswith("/accounts/")
+
+
+def _select_psu_headers(
+    available: dict[str, str], required: Optional[list[str]]
+) -> dict[str, str]:
+    """PSU headers to send with one data request.
+
+    Psu-Ip-Address and Psu-User-Agent go out whenever the user's request had
+    them. An ASPSP's `required_psu_headers` must be sent all together or not
+    at all (EB answers anything in between with PSU_HEADER_NOT_PROVIDED), so
+    when one of them is missing nothing is sent and the request is a plain
+    background one.
+    """
+    by_name = {name.lower(): (name, value) for name, value in available.items()}
+    selected = {name: available[name] for name in DEFAULT_PSU_HEADERS if name in available}
+    for wanted in required or []:
+        match = by_name.get(wanted.lower())
+        if match is None:
+            return {}
+        selected[match[0]] = match[1]
+    return selected
+
+
+def _error_body(resp: httpx.Response) -> dict:
+    try:
+        body = resp.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+# EB's wording for an ASPSP_ERROR it has no further reason for.
+_GENERIC_ASPSP_ERROR_MESSAGE = "error interacting with aspsp"
+
+
+def _error_detail(body: dict) -> str:
+    """The bank's own reason, when EB relays one in `detail`."""
+    detail = body.get("detail")
+    if isinstance(detail, dict):
+        detail = detail.get("message")
+    return detail.strip() if isinstance(detail, str) else ""
+
+
+def _needs_present_user(resp: httpx.Response, requires_psu_headers: bool) -> bool:
+    """True when a header-less data request failed the way a bank that wants
+    the user present refuses one.
+
+    Banks answer a background call they do not allow (an endpoint outside
+    their background allowance, or one past its daily quota) with an error
+    that names the missing PSU header, which counts whatever /aspsps said.
+    They can also answer with EB's generic ASPSP_ERROR, which carries no
+    reason at all; that only counts for an ASPSP that declares
+    `required_psu_headers`. An ASPSP_ERROR that gives any other reason, in
+    `message` or `detail`, is not a presence refusal.
+    """
+    if resp.status_code >= 500:
+        return False
+    body = _error_body(resp)
+    error = body.get("error")
+    if error == "PSU_HEADER_NOT_PROVIDED":
+        return True
+    raw_message = body.get("message")
+    message = raw_message if isinstance(raw_message, str) else ""
+    detail = _error_detail(body)
+    text = f"{message} {detail}".lower()
+    if "psu" in text and "header" in text:
+        return True
+    if resp.status_code == 400 and error == "ASPSP_ERROR":
+        generic = message.strip().lower() in ("", _GENERIC_ASPSP_ERROR_MESSAGE)
+        return requires_psu_headers and generic and not detail
+    return False
+
+
 def _is_wrong_period_error(resp: httpx.Response) -> bool:
     """True when the bank rejected the requested date range as out of bounds."""
     if resp.status_code != 422:
@@ -228,6 +402,30 @@ class EnableBankingProvider(BankProvider):
     _cached_token: Optional[str] = None
     _cached_token_exp: float = 0.0
     _cached_private_key: Optional[str] = None
+
+    def __init__(self) -> None:
+        # The connected ASPSP's `required_psu_headers`, from the credentials
+        # of the connection being synced. None while unknown.
+        self._required_psu_headers: Optional[list[str]] = None
+        self._institution_name = "The bank"
+        # Accounts whose transactions this sync fetched only in part; the
+        # sync then leaves last_sync_at alone so the rest is asked for again.
+        self.incomplete_account_ids: set[str] = set()
+        # External ids of accounts whose transaction pages stopped before the
+        # last one (a repeated cursor or the page cap). What was read is still
+        # imported, but it is not the whole feed, so the sync layer must not
+        # take an entry missing from it as one the bank stopped listing.
+        self.truncated_account_ids: set[str] = set()
+
+    def _use_credentials(self, credentials: dict) -> None:
+        aspsp = credentials.get("aspsp") if isinstance(credentials, dict) else None
+        if not isinstance(aspsp, dict):
+            return
+        required = aspsp.get("required_psu_headers")
+        if isinstance(required, list):
+            self._required_psu_headers = [h for h in required if isinstance(h, str)]
+        if isinstance(aspsp.get("name"), str) and aspsp["name"]:
+            self._institution_name = aspsp["name"]
 
     @property
     def name(self) -> str:
@@ -306,6 +504,14 @@ class EnableBankingProvider(BankProvider):
             timeout=30.0,
         )
 
+    def _present_psu_headers(self) -> dict[str, str]:
+        """The PSU headers a data request sends now; empty when it goes out
+        as a background request, which is how the bank will treat it."""
+        psu = current_psu_context()
+        if psu is None:
+            return {}
+        return _select_psu_headers(psu.headers, self._required_psu_headers)
+
     async def _request(
         self,
         method: str,
@@ -314,8 +520,22 @@ class EnableBankingProvider(BankProvider):
         params: Optional[dict] = None,
         json_body: Optional[dict] = None,
     ) -> dict:
+        psu_headers: dict[str, str] = {}
+        if _is_data_request(path):
+            psu_headers = self._present_psu_headers()
+            if current_psu_context() is not None:
+                if not psu_headers:
+                    logger.warning(
+                        "Enable Banking %s %s: the user's request lacks a PSU header "
+                        "the bank requires (%s); sending none",
+                        method,
+                        path,
+                        ", ".join(self._required_psu_headers or []),
+                    )
         async with self._client() as client:
-            resp = await client.request(method, path, params=params, json=json_body)
+            resp = await client.request(
+                method, path, params=params, json=json_body, headers=psu_headers or None
+            )
         if resp.status_code in (401, 410):
             raise SessionExpiredError(
                 f"Enable Banking returned {resp.status_code} for {path}"
@@ -323,9 +543,42 @@ class EnableBankingProvider(BankProvider):
         if resp.status_code == 429:
             # The bank (ASPSP) is throttling us — transient, not a broken
             # connection. Surface a distinct type so sync can skip-and-retry
-            # instead of erroring the connection.
+            # instead of erroring the connection. This holds whatever the body
+            # says: a bank whose daily background allowance has run out can
+            # answer 429 naming the PSU header it wanted, and that is still a
+            # limit that resets on its own, not a refusal.
             raise ProviderRateLimited(
                 f"Enable Banking {method} {path} → 429: {resp.text[:200]}"
+            )
+        if (
+            resp.status_code >= 400
+            and _is_data_request(path)
+            and not psu_headers
+            and _needs_present_user(resp, bool(self._required_psu_headers))
+        ):
+            # Never answered by inventing headers: the bank wants the user,
+            # so the user is asked to sync while present, which sends theirs.
+            logger.warning(
+                "Enable Banking %s %s → %s without PSU headers: %s",
+                method,
+                path,
+                resp.status_code,
+                resp.text[:300],
+            )
+            if current_psu_context() is not None:
+                # The user did sync, but their request had no public IP to
+                # pass on. Only the operator can fix that, so the hint is for
+                # the log, not for the member reading the error.
+                logger.warning(
+                    "A user-triggered Enable Banking sync reached %s without the "
+                    "user's PSU headers; check that TRUSTED_PROXY_HOPS matches the "
+                    "reverse proxies in front of the backend",
+                    self._institution_name,
+                )
+            raise ProviderUserActionRequired(
+                f"{self._institution_name} only answers this request while you are "
+                "present. Sync this connection from Securo to refresh it.",
+                code="psu_present_required",
             )
         if resp.status_code >= 400:
             raise httpx.HTTPStatusError(
@@ -370,6 +623,38 @@ class EnableBankingProvider(BankProvider):
             countries=sorted(countries),
             institutions=institutions,
         )
+
+    async def _lookup_required_psu_headers(
+        self, name: Optional[str], country: Optional[str]
+    ) -> Optional[list[str]]:
+        """The ASPSP's `required_psu_headers` from GET /aspsps, or None if unknown.
+
+        /aspsps is answered by Enable Banking itself, so this never spends the
+        bank's request allowance. An ASPSP without the field requires none.
+        """
+        if not name:
+            return None
+        params = {"country": country.upper()} if country else None
+        try:
+            data = await self._request("GET", "/aspsps", params=params)
+        except Exception as exc:
+            logger.warning("Could not look up PSU headers required by %s: %s", name, exc)
+            return None
+        aspsps = data.get("aspsps")
+        for item in aspsps if isinstance(aspsps, list) else []:
+            if isinstance(item, dict) and item.get("name") == name:
+                required = item.get("required_psu_headers")
+                if required is None:
+                    return []
+                if not isinstance(required, list):
+                    # Not the documented list of header names; guessing what
+                    # it means could suppress headers the bank needs.
+                    logger.warning(
+                        "Ignoring malformed required_psu_headers for %s: %r", name, required
+                    )
+                    return None
+                return [h for h in required if isinstance(h, str)]
+        return None
 
     # ----- OAuth (authorization) -----
 
@@ -463,21 +748,39 @@ class EnableBankingProvider(BankProvider):
         institution_name = aspsp.get("name") or "Bank"
         access = data.get("access") or {}
         valid_until = access.get("valid_until")
+        stored_aspsp: dict[str, Any] = {
+            "name": institution_name,
+            "country": aspsp.get("country"),
+        }
+        required_psu_headers = await self._lookup_required_psu_headers(
+            aspsp.get("name"), aspsp.get("country")
+        )
+        if required_psu_headers is not None:
+            stored_aspsp["required_psu_headers"] = required_psu_headers
+        self._use_credentials({"aspsp": stored_aspsp})
 
         accounts: list[AccountData] = []
+        account_details: dict[str, dict] = {}
         for raw_acc in accounts_raw:
             if isinstance(raw_acc, str):
                 continue  # restricted clients can return account IDs as strings
-            accounts.append(await self._build_account(raw_acc))
+            # A balance refused for want of the user's headers (no public IP
+            # behind a misconfigured proxy) must not cost the new session: the
+            # authorization code is single-use, so failing here would make a
+            # reconnect start over at the bank. The next sync reads the balance.
+            accounts.append(
+                await self._build_account(raw_acc, tolerate_presence_refusal=True)
+            )
+            uid = raw_acc.get("uid") or raw_acc.get("account_uid")
+            if uid:
+                account_details[uid] = _details_summary(raw_acc)
 
         encrypted_session = encrypt(session_id) or session_id
         credentials: dict[str, Any] = {
             "session_id_enc": encrypted_session,
             "valid_until": valid_until,
-            "aspsp": {
-                "name": institution_name,
-                "country": aspsp.get("country"),
-            },
+            "aspsp": stored_aspsp,
+            ACCOUNT_DETAILS_KEY: account_details,
         }
         return ConnectionData(
             external_id=session_id,
@@ -502,8 +805,15 @@ class EnableBankingProvider(BankProvider):
         return None
 
     async def _build_account(
-        self, raw: dict, stable_external_id: Optional[str] = None
+        self,
+        raw: dict,
+        stable_external_id: Optional[str] = None,
+        *,
+        tolerate_presence_refusal: bool = False,
+        require_balance: bool = False,
     ) -> AccountData:
+        """An account from its details; a failed balance reads as zero unless
+        `require_balance`, when the failure is raised to the caller instead."""
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
         # EB doesn't include balances in the session payload; fetch separately.
@@ -514,8 +824,16 @@ class EnableBankingProvider(BankProvider):
             balance = _balance_decimal(picked)
             currency = _balance_currency(picked, currency)
         except (httpx.HTTPError, SessionExpiredError) as exc:
+            if require_balance:
+                raise
             logger.warning(
                 "Failed to fetch balances for account %s: %s", uid, exc
+            )
+        except ProviderUserActionRequired as exc:
+            if not tolerate_presence_refusal or exc.code != "psu_present_required":
+                raise
+            logger.warning(
+                "Balances of account %s need the user's PSU headers: %s", uid, exc
             )
         name = (
             raw.get("display_name")
@@ -534,6 +852,24 @@ class EnableBankingProvider(BankProvider):
             # hash is what lets a later session find the same account again.
             stable_external_id=stable_external_id,
         )
+
+    async def _build_cached_account(
+        self, uid: str, cached: dict, stable_external_id: Optional[str]
+    ) -> AccountData:
+        """An account named from cached details; only its balance is fetched."""
+        account = await self._build_account(
+            {
+                "uid": uid,
+                "currency": cached.get("currency"),
+                "display_name": cached.get("name"),
+                "cash_account_type": cached.get("cash_account_type"),
+            },
+            stable_external_id,
+            require_balance=True,
+        )
+        masked = cached.get("masked_number")
+        account.masked_number = masked if isinstance(masked, str) else None
+        return account
 
     # ----- account / transaction fetches -----
 
@@ -568,6 +904,7 @@ class EnableBankingProvider(BankProvider):
         return [a for a in (session_data.get("accounts") or []) if isinstance(a, str)]
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
+        self._use_credentials(credentials)
         session_id = self._session_id(credentials)
         if not session_id:
             raise SessionExpiredError("Enable Banking session_id missing")
@@ -589,10 +926,47 @@ class EnableBankingProvider(BankProvider):
             for entry in (data.get("accounts_data") or [])
             if isinstance(entry, dict) and entry.get("uid")
         }
+        # A background sync names known accounts from the cached details:
+        # banks cap unattended calls per endpoint (often 4 a day), and some do
+        # not allow /details without the user at all. A user-present sync
+        # reads them fresh, which also refreshes the cache.
+        cached_details = credentials.get(ACCOUNT_DETAILS_KEY)
+        if not isinstance(cached_details, dict):
+            cached_details = {}
+            credentials[ACCOUNT_DETAILS_KEY] = cached_details
+        # Present means the requests carry the user's headers: a user-present
+        # sync that cannot send them reaches the bank as a background one.
+        user_present = bool(self._present_psu_headers())
         result: list[AccountData] = []
+        transient_error: Optional[httpx.HTTPError] = None
+        presence_refusal: Optional[ProviderUserActionRequired] = None
         for uid in uids:
+            cached = cached_details.get(uid)
             try:
+                if not user_present and isinstance(cached, dict) and cached.get("name"):
+                    # The balance is then the only call for this account, so
+                    # its failure is handled like a failed /details below
+                    # rather than syncing a zero balance.
+                    result.append(
+                        await self._build_cached_account(
+                            uid, cached, stable_external_ids.get(uid)
+                        )
+                    )
+                    continue
                 details = await self._request("GET", f"/accounts/{uid}/details")
+                cached_details[uid] = _details_summary(details)
+                result.append(
+                    await self._build_account(details, stable_external_ids.get(uid))
+                )
+            except ProviderUserActionRequired as exc:
+                # A bank refusing one account without the user present says
+                # nothing about the others, so this account is skipped for the
+                # run like a refused /details, and the rest still sync.
+                if exc.code != "psu_present_required":
+                    raise
+                logger.warning("Account %s needs the user present: %s", uid, exc)
+                presence_refusal = presence_refusal or exc
+                continue
             except httpx.HTTPError as exc:
                 # A *transient* per-account failure. Without details we can't
                 # safely name/type the account, and a bare-uid AccountData would
@@ -601,9 +975,34 @@ class EnableBankingProvider(BankProvider):
                 # transactions are left intact and the next sync retries) rather
                 # than corrupt it. SessionExpiredError is deliberately NOT caught
                 # here: a dead consent is global, never per-account.
-                logger.warning("Failed to fetch details for account %s: %s", uid, exc)
+                logger.warning("Failed to fetch account %s: %s", uid, exc)
+                is_refusal = (
+                    isinstance(exc, httpx.HTTPStatusError)
+                    and exc.response.status_code < 500
+                    and exc.response.status_code != 408
+                )
+                if not is_refusal:
+                    transient_error = exc
                 continue
-            result.append(await self._build_account(details, stable_external_ids.get(uid)))
+        # Skipping is only safe while something still syncs. When the bank refuses
+        # every account, an empty list would pass for a successful sync: the
+        # connection stays "active", last_sync_at keeps moving and the balances
+        # silently go stale. The next sync that reaches an account clears this.
+        if uids and not result:
+            # A 5xx, timeout or network failure says nothing about the accounts,
+            # so it surfaces as the original error, like any other provider
+            # failure, rather than as accounts_unavailable.
+            if transient_error is not None:
+                raise transient_error
+            # Every account wanted the user (or was otherwise refused): say
+            # what the user can do about it rather than the generic refusal.
+            if presence_refusal is not None:
+                raise presence_refusal
+            raise ProviderUserActionRequired(
+                f"The bank refused all {len(uids)} account(s) on this connection. "
+                "Retry later, or reconnect if it keeps failing.",
+                code="accounts_unavailable",
+            )
         return result
 
     async def get_transactions(
@@ -613,6 +1012,7 @@ class EnableBankingProvider(BankProvider):
         since: Optional[date] = None,
         payee_source: str = "auto",
     ) -> list[TransactionData]:
+        self._use_credentials(credentials)
         _ = self._session_id(credentials)  # surface expired credentials early
         # Enable Banking reads date_to as an inclusive UTC calendar day, so the
         # window ends on the UTC date regardless of the application calendar;
@@ -620,7 +1020,7 @@ class EnableBankingProvider(BankProvider):
         # newest transactions until its own date caught up.
         today = datetime.now(timezone.utc).date()
         if since is not None:
-            return await self._fetch_transactions(
+            return await self._fetch_transactions_since(
                 account_external_id, since, today, payee_source
             )
         try:
@@ -647,6 +1047,68 @@ class EnableBankingProvider(BankProvider):
                 payee_source,
             )
 
+    async def _fetch_transactions_since(
+        self,
+        account_external_id: str,
+        since: date,
+        today: date,
+        payee_source: str,
+    ) -> list[TransactionData]:
+        """The window from `since`, cut to 90 days only when the bank refuses it.
+
+        A connection that has not synced for a while asks for more than 90
+        days (the sync rewinds from last_sync_at). Many banks serve that, but
+        PSD2 banks may refuse anything older than 90 days without the user
+        present, either as WRONG_TRANSACTIONS_PERIOD or the way they refuse
+        any background call they do not allow. Only then is the request
+        repeated with the last 90 days.
+
+        A cut made on a background request leaves the account marked
+        incomplete, so the sync keeps last_sync_at where it was and a later
+        sync, one with the user present, asks for the full window again. A
+        cut the bank imposes with the user's headers is final: only fresh
+        SCA could unlock older data, and a reconnect starts from 90 days
+        anyway, so holding the cursor back would only repeat the refusal.
+        """
+        oldest_background = _history_start(today, DEFAULT_HISTORY_DAYS)
+        # Whether the request carries the user's headers decides whether a
+        # cut range can still be fetched later.
+        refused_in_background = not self._present_psu_headers()
+        try:
+            return await self._fetch_transactions(
+                account_external_id, since, today, payee_source
+            )
+        except (httpx.HTTPStatusError, ProviderUserActionRequired) as exc:
+            if since >= oldest_background:
+                raise
+            if isinstance(exc, httpx.HTTPStatusError):
+                if not _is_wrong_period_error(exc.response):
+                    raise
+            elif exc.code != "psu_present_required":
+                raise
+        transactions = await self._fetch_transactions(
+            account_external_id, oldest_background, today, payee_source
+        )
+        if refused_in_background:
+            self.incomplete_account_ids.add(account_external_id)
+            logger.warning(
+                "Enable Banking refused transactions of account %s from %s without "
+                "the user present; fetched from %s and kept the earlier range for a "
+                "sync with the user present",
+                account_external_id,
+                since.isoformat(),
+                oldest_background.isoformat(),
+            )
+        else:
+            logger.warning(
+                "Enable Banking refused transactions of account %s from %s with the "
+                "user present; fetched from %s, the earlier range needs a new consent",
+                account_external_id,
+                since.isoformat(),
+                oldest_background.isoformat(),
+            )
+        return transactions
+
     async def _fetch_transactions(
         self,
         account_external_id: str,
@@ -656,7 +1118,9 @@ class EnableBankingProvider(BankProvider):
     ) -> list[TransactionData]:
         date_from = start.isoformat()
         date_to = end.isoformat()
-        transactions: list[TransactionData] = []
+        collected: list[tuple[TransactionData, Optional[tuple[str, str, str, str]]]] = []
+        booked_keys: dict[tuple[str, str, str, str], int] = {}
+        pending_keys: dict[tuple[str, str, str, str], int] = {}
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
         seen_transaction_ids: set[str] = set()
@@ -676,9 +1140,14 @@ class EnableBankingProvider(BankProvider):
                 # A broken pagination cursor can make Enable Banking return a
                 # page we have already consumed. Keep the result idempotent
                 # even before the repeated cursor is detected below.
-                if parsed and parsed.external_id not in seen_transaction_ids:
-                    transactions.append(parsed)
-                    seen_transaction_ids.add(parsed.external_id)
+                if not parsed or parsed.external_id in seen_transaction_ids:
+                    continue
+                key = _settlement_key(raw_txn)
+                if key is not None:
+                    counts = pending_keys if parsed.status == "pending" else booked_keys
+                    counts[key] = counts.get(key, 0) + 1
+                collected.append((parsed, key))
+                seen_transaction_ids.add(parsed.external_id)
 
             next_continuation_key = page.get("continuation_key") or None
             if not next_continuation_key:
@@ -689,10 +1158,35 @@ class EnableBankingProvider(BankProvider):
                     "(repeated continuation key); stopping pagination",
                     account_external_id,
                 )
+                self.truncated_account_ids.add(account_external_id)
                 break
             seen_continuation_keys.add(next_continuation_key)
             continuation_key = next_continuation_key
-        return transactions
+        else:
+            logger.warning(
+                "Enable Banking returned more than %d transaction pages for "
+                "account %s; stopping pagination",
+                TRANSACTION_PAGE_LIMIT,
+                account_external_id,
+            )
+            self.truncated_account_ids.add(account_external_id)
+        # While an operation settles, an institution can list it as booked and
+        # still as pending in the same response. The two spellings differ (the
+        # booked one carries the booking date), so they hash to different ids:
+        # both would land, and the pending row would never clear, because the
+        # id it already holds is in this batch and the re-key skips a sibling
+        # that is still returned. Booked is the truth, so its pending twin is
+        # dropped here and the sync re-keys the row it already holds. Only an
+        # unambiguous pair counts: a reference shared by several entries on
+        # either side is #753's case, where each entry is its own transaction.
+        return [
+            parsed
+            for parsed, key in collected
+            if key is None
+            or parsed.status != "pending"
+            or booked_keys.get(key) != 1
+            or pending_keys.get(key) != 1
+        ]
 
     @staticmethod
     def _iter_transactions(page: dict):
@@ -744,7 +1238,9 @@ class EnableBankingProvider(BankProvider):
         description = description.strip()[:500] or "Transaction"
         entry_ref = (raw.get("entry_reference") or "").strip()
         external_id = (
-            entry_ref if entry_ref and entry_ref != "0" else _txn_fingerprint(account_uid, raw)
+            _entry_reference_external_id(entry_ref, amount_obj, raw)
+            if entry_ref and entry_ref != "0"
+            else _txn_fingerprint(account_uid, raw)
         )
         return TransactionData(
             external_id=external_id,
@@ -775,4 +1271,13 @@ class EnableBankingProvider(BankProvider):
                     )
             except ValueError:
                 pass
+        # Connections linked before the required headers were stored learn
+        # them here, once; the sync saves the returned credentials.
+        aspsp = credentials.get("aspsp")
+        if isinstance(aspsp, dict) and "required_psu_headers" not in aspsp:
+            required = await self._lookup_required_psu_headers(
+                aspsp.get("name"), aspsp.get("country")
+            )
+            if required is not None:
+                return {**credentials, "aspsp": {**aspsp, "required_psu_headers": required}}
         return credentials

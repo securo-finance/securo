@@ -76,6 +76,17 @@ class BalanceHistory(BaseModel):
     comparison_opening_balance: Optional[float] = None
 
 
+class ProjectedCategoryLine(BaseModel):
+    """One part of a projected occurrence of a split recurring template."""
+
+    category_id: str
+    category_name: Optional[str] = None
+    category_icon: Optional[str] = None
+    category_color: Optional[str] = None
+    amount: float
+    treat_as_transfer: bool = False
+
+
 class ProjectedTransaction(BaseModel):
     recurring_id: str
     account_id: Optional[str] = None
@@ -90,3 +101,6 @@ class ProjectedTransaction(BaseModel):
     category_icon: Optional[str]
     category_color: Optional[str] = None
     category_treat_as_transfer: bool = False
+    # Split template: `category_*` are empty and the parts are listed here.
+    has_category_lines: bool = False
+    category_lines: list[ProjectedCategoryLine] = []
