@@ -662,6 +662,156 @@ async def test_delete_connection_keeps_payees_with_external_mappings(session: As
     assert refreshed is not None
 
 
+async def _connected_payee(session: AsyncSession, user_id, name: str):
+    """A connection whose only account holds one synced row naming a payee
+    that nothing else references."""
+    from app.models.payee import Payee
+
+    conn = await _make_connection(session, user_id, f"{name} Bank")
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        connection_id=conn.id,
+        name="Connected Account",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    payee = Payee(id=uuid.uuid4(), user_id=user_id, name=name)
+    session.add_all([account, payee])
+    await session.flush()
+    session.add(
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            account_id=account.id,
+            description="Synced tx",
+            amount=Decimal("10"),
+            date=date.today(),
+            type="debit",
+            source="sync",
+            payee_id=payee.id,
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    return conn, account, payee
+
+
+@pytest.mark.asyncio
+async def test_delete_connection_keeps_payee_a_rule_assigns(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A payee a rule assigns survives the disconnect, so the rule still
+    works when the bank is connected again (#1018)."""
+    from app.models.payee import Payee
+    from app.models.rule import Rule
+
+    conn, _account, payee = await _connected_payee(session, test_user.id, "Rule Payee")
+    session.add(
+        Rule(
+            user_id=test_user.id,
+            name="Name the payee",
+            conditions=[{"field": "description", "op": "contains", "value": "Synced"}],
+            actions=[{"op": "set_payee", "value": str(payee.id)}],
+        )
+    )
+    await session.commit()
+
+    assert await delete_connection(session, conn.id, test_workspace.id) is True
+
+    refreshed = (await session.execute(select(Payee).where(Payee.id == payee.id))).scalar_one_or_none()
+    assert refreshed is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reference", ["invoice", "invoice_schedule"])
+async def test_delete_connection_keeps_payee_an_invoice_names(
+    session: AsyncSession, test_user, test_workspace, reference,
+):
+    """Invoices and invoice schedules hold their payee under a RESTRICT
+    foreign key. Purging such a payee failed the disconnect on PostgreSQL,
+    so it is left alone."""
+    from app.models.invoice import Invoice
+    from app.models.invoice_schedule import InvoiceSchedule
+    from app.models.payee import Payee
+
+    conn, _account, payee = await _connected_payee(session, test_user.id, "Client")
+    if reference == "invoice":
+        session.add(
+            Invoice(
+                workspace_id=test_workspace.id, user_id=test_user.id, payee_id=payee.id,
+                issue_date=date.today(), due_date=date.today(), currency="BRL",
+            )
+        )
+    else:
+        session.add(
+            InvoiceSchedule(
+                workspace_id=test_workspace.id, payee_id=payee.id, name="Retainer",
+                frequency="monthly", start_date=date.today(), currency="BRL",
+            )
+        )
+    await session.commit()
+
+    assert await delete_connection(session, conn.id, test_workspace.id) is True
+
+    refreshed = (await session.execute(select(Payee).where(Payee.id == payee.id))).scalar_one_or_none()
+    assert refreshed is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_connection_unpairs_transfer_partner_on_manual_account(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A transfer between a connected and a manual account loses its
+    connected leg on disconnect, so the manual leg is unpaired instead of
+    pointing at a deleted row. Other pairs are left alone (#1018)."""
+    conn = await _make_connection(session, test_user.id, "Transfer Bank")
+    connected = Account(
+        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
+        name="Connected", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    manual = Account(
+        id=uuid.uuid4(), user_id=test_user.id,
+        name="Manual", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    other_manual = Account(
+        id=uuid.uuid4(), user_id=test_user.id,
+        name="Other manual", type="savings", balance=Decimal("0"), currency="BRL",
+    )
+    session.add_all([connected, manual, other_manual])
+    await session.flush()
+
+    def _leg(account, tx_type: str, pair_id) -> Transaction:
+        return Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
+            description="Transfer", amount=Decimal("50"), date=date.today(),
+            type=tx_type, source="sync" if account is connected else "manual",
+            transfer_pair_id=pair_id, created_at=datetime.now(timezone.utc),
+        )
+
+    pair_id, other_pair_id = uuid.uuid4(), uuid.uuid4()
+    partner = _leg(manual, "credit", pair_id)
+    other_debit = _leg(manual, "debit", other_pair_id)
+    other_credit = _leg(other_manual, "credit", other_pair_id)
+    session.add_all([_leg(connected, "debit", pair_id), partner, other_debit, other_credit])
+    await session.commit()
+
+    assert await delete_connection(session, conn.id, test_workspace.id) is True
+
+    pairs = dict(
+        (
+            await session.execute(
+                select(Transaction.id, Transaction.transfer_pair_id).where(
+                    Transaction.id.in_([partner.id, other_debit.id, other_credit.id])
+                )
+            )
+        ).tuples().all()
+    )
+    assert pairs == {
+        partner.id: None, other_debit.id: other_pair_id, other_credit.id: other_pair_id,
+    }
+
+
 # ---------------------------------------------------------------------------
 # create_connect_token
 # ---------------------------------------------------------------------------

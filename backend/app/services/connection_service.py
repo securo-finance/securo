@@ -22,10 +22,13 @@ from app.models.bank_connection import BankConnection
 from app.models.account import Account
 from app.models.category import Category
 from app.models.institution import Institution
+from app.models.invoice import Invoice
+from app.models.invoice_schedule import InvoiceSchedule
 from app.models.goal import Goal
 from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
+from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
@@ -53,7 +56,11 @@ from app.services.asset_group_service import (
 )
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import merge_notes
-from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
+from app.services.rule_service import (
+    apply_rules_to_transaction,
+    preview_rules_for_transaction,
+    rule_payee_ids,
+)
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
@@ -3278,6 +3285,31 @@ async def delete_connection(
             .distinct()
         )
     ).scalars().all()
+    # A payee a rule assigns stays, so the rule keeps working when the bank is
+    # connected again.
+    rules = (
+        await session.execute(select(Rule).where(Rule.workspace_id == workspace_id))
+    ).scalars().all()
+    affected_payee_ids = set(affected_payee_ids) - rule_payee_ids(rules)
+
+    # transfer_pair_id has no foreign key, so a transfer partner on an account
+    # outside this connection would stay paired with a deleted row.
+    pair_ids = (
+        select(Transaction.transfer_pair_id)
+        .join(Account, Account.id == Transaction.account_id)
+        .where(
+            Account.connection_id == connection.id,
+            Transaction.transfer_pair_id.isnot(None),
+        )
+    )
+    await session.execute(
+        update(Transaction)
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.transfer_pair_id.in_(pair_ids),
+        )
+        .values(transfer_pair_id=None)
+    )
 
     await session.delete(connection)
     await session.flush()
@@ -3292,12 +3324,20 @@ async def delete_connection(
                 PayeeMapping.id != Payee.id,
             )
         )
+        # Invoices and invoice schedules hold their payee under a RESTRICT
+        # foreign key, so deleting it would fail the whole disconnect.
+        has_invoices = exists(select(Invoice.id).where(Invoice.payee_id == Payee.id))
+        has_invoice_schedules = exists(
+            select(InvoiceSchedule.id).where(InvoiceSchedule.payee_id == Payee.id)
+        )
         await session.execute(
             delete(Payee).where(
                 Payee.workspace_id == workspace_id,
                 Payee.id.in_(affected_payee_ids),
                 ~has_transactions,
                 ~has_external_mappings,
+                ~has_invoices,
+                ~has_invoice_schedules,
             )
         )
 
