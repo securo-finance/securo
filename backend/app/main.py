@@ -47,6 +47,8 @@ from app.api.transactions import router as transactions_router
 from app.api.two_factor import router as two_factor_router
 from app.api.user_lookup import router as user_lookup_router
 from app.api.workspaces import router as workspaces_router
+from app.api.access_tokens import router as access_tokens_router
+from app.api.plugins import router as plugins_router
 from app.api.admin import router as admin_router, check_registration_enabled
 from app.core.auth import fastapi_users
 from app.core.auth_policy import require_local_auth_enabled
@@ -206,6 +208,8 @@ app.include_router(public_invoices_router)
 app.include_router(products_router)
 app.include_router(settings_router)
 app.include_router(workspaces_router)
+app.include_router(access_tokens_router)
+app.include_router(plugins_router)
 app.include_router(admin_router)
 app.include_router(info_router)
 

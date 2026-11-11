@@ -1,4 +1,5 @@
 from app.models.user import User
+from app.models.access_token import AccessToken
 from app.models.passkey import UserPasskey
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceTaxId
 from app.models.category import Category
@@ -8,6 +9,7 @@ from app.models.institution import Institution
 from app.models.account import Account
 from app.models.transaction import Transaction
 from app.models.rule import Rule
+from app.models.workspace_plugin import WorkspacePlugin
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.budget import Budget
 from app.models.import_log import ImportLog
@@ -23,6 +25,8 @@ from app.models.goal import Goal
 from app.models.credit_card_bill import CreditCardBill
 from app.models.group import Group, GroupMember
 from app.models.transaction_split import TransactionSplit
+from app.models.transaction_category_line import TransactionCategoryLine
+from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
 from app.models.group_settlement import GroupSettlement
 from app.models.collection import Collection, collection_accounts, collection_asset_groups
 from app.models.invoice import (
@@ -49,6 +53,7 @@ from app.models.reconciliation import (
 from app.core import workspace_autostamp  # noqa: F401, E402
 
 __all__ = [
+    "AccessToken",
     "User",
     "UserPasskey",
     "Workspace",
@@ -61,6 +66,7 @@ __all__ = [
     "Account",
     "Transaction",
     "Rule",
+    "WorkspacePlugin",
     "RecurringTransaction",
     "Budget",
     "ImportLog",
@@ -79,6 +85,8 @@ __all__ = [
     "Group",
     "GroupMember",
     "TransactionSplit",
+    "TransactionCategoryLine",
+    "RecurringTransactionCategoryLine",
     "GroupSettlement",
     "Collection",
     "Invoice",

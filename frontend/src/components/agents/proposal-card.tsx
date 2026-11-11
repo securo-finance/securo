@@ -209,7 +209,7 @@ function renderSummary(
         type: String(p.type ?? '?'),
         date: String(p.date ?? ''),
         account: String((p.account_name as string) ?? '?'),
-      })
+      }) + splitSummary(p as Record<string, unknown>, fmt)
     case 'create_recurring_transaction':
       return t('agents.proposal.summary.createRecurring', {
         description: String(p.description ?? '?'),
@@ -217,7 +217,7 @@ function renderSummary(
         frequency: String(p.frequency ?? '?'),
         day: p.day_of_month ? `${p.day_of_month}` : '?',
         account: String((p.account_name as string) ?? '?'),
-      })
+      }) + splitSummary(p as Record<string, unknown>, fmt)
     case 'update_recurring_transaction': {
       const changes = (d.changes || {}) as Record<string, unknown>
       const lines = Object.entries(changes).map(([k, v]) => {
@@ -308,6 +308,31 @@ function fmt(amount: unknown, currency: unknown): string {
     return new Intl.NumberFormat(undefined, { style: 'currency', currency: c }).format(n)
   } catch {
     return `${c} ${n.toFixed(2)}`
+  }
+}
+
+/** " · Food 120.00, Home 80.00" for a proposal split across categories,
+ * so the user sees where the money goes before Apply. */
+function splitSummary(p: Record<string, unknown>, format: typeof fmt): string {
+  const block = p.category_lines as { lines?: Array<Record<string, unknown>> } | undefined
+  if (!block?.lines?.length) return ''
+  return ' · ' + block.lines
+    .map((line) => `${String(line.category_name ?? '?')} ${format(line.amount, p.currency)}`)
+    .join(', ')
+}
+
+/** The parts a proposal validated, in the shape the API takes, or undefined. */
+function categoryLinesPayload(p: Record<string, unknown>) {
+  const block = p.category_lines as { share_type?: string; lines?: Array<Record<string, unknown>> } | undefined
+  if (!block || !Array.isArray(block.lines) || block.lines.length < 2) return undefined
+  const percent = block.share_type === 'percent'
+  return {
+    share_type: percent ? 'percent' : 'exact',
+    lines: block.lines.map((line) => (
+      percent
+        ? { category_id: String(line.category_id), share_pct: Number(line.share_pct) }
+        : { category_id: String(line.category_id), amount: Number(line.amount) }
+    )),
   }
 }
 
@@ -426,6 +451,7 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
             })),
           }
         : undefined
+      const linesPayload = categoryLinesPayload(p)
       const t = await transactions.create({
         description: String(p.description),
         amount: Number(p.amount),
@@ -436,6 +462,7 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         category_id: (p.category_id as string) || undefined,
         notes: (p.notes as string) || undefined,
         ...(splitsPayload ? { splits: splitsPayload } : {}),
+        ...(linesPayload ? { category_lines: linesPayload, category_id: undefined } : {}),
       } as Parameters<typeof transactions.create>[0])
       return t.id
     }
@@ -451,6 +478,8 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         end_date: (p.end_date as string) || undefined,
         account_id: (p.account_id as string) || undefined,
         category_id: (p.category_id as string) || undefined,
+        // Every occurrence of the bill starts with these parts.
+        ...(categoryLinesPayload(p) ? { category_lines: categoryLinesPayload(p), category_id: undefined } : {}),
       } as Parameters<typeof recurring.create>[0])
       return rt.id
     }

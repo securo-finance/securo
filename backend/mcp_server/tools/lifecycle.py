@@ -74,6 +74,21 @@ async def list_recurring_transactions(
             "end_date": r.end_date.isoformat() if r.end_date else None,
             "is_active": bool(getattr(r, "is_active", True)),
             "category_id": str(r.category_id) if getattr(r, "category_id", None) else None,
+            # Split template: category_id is null on purpose and every
+            # occurrence starts with these parts.
+            "category_lines": (
+                [
+                    {
+                        "category_id": str(line.category_id),
+                        "category_name": line.category.name if line.category else None,
+                        "amount": num(line.amount),
+                        "share_pct": num(line.share_pct),
+                    }
+                    for line in r.category_lines
+                ]
+                if r.has_category_lines
+                else None
+            ),
             "account_id": str(r.account_id) if getattr(r, "account_id", None) else None,
         }
         for r in rows
