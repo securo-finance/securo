@@ -1,43 +1,143 @@
-"""re-key Enable Banking rows that still carry the old fallback id (#1085)
+"""re-key Enable Banking rows that still carry the pre-v0.16.3 fallback id (#1085)
 
-The fallback id for an entry without a usable ``entry_reference`` used to
-leave out the transaction date and keep only the counterparty IBANs. The
-current recipe includes both, so the next sync computes a different id for
-every such row it already stored and would insert it again, or let a held
-row be claimed by a different purchase.
+Before v0.16.3 an entry without a usable ``entry_reference`` got a fallback id
+that left out the transaction date and kept only the counterparty IBANs, and
+an entry_reference of "0" was stored as the literal id "0". Since v0.16.3 the
+id includes the transaction date and the counterparty identity, so the next
+sync computes a different id for every such row it already stored and imports
+it again.
 
 Each row is re-keyed from its own stored payload, the way 102 did for rows
-with a reference. A row is only touched when all of these hold:
+with a reference. Both id recipes are frozen in this file (the old one from
+v0.16.2, the current one from v0.16.3), so later changes to the provider
+cannot change what this migration does. A row is only touched when all of
+these hold:
 
 - its connection is Enable Banking, it is posted, and it has a stored payload;
-- its id is exactly the old id of that payload (so the id still describes
-  the payload, not a payload merged in from a later entry);
+- its reference is empty or "0" and its id is exactly the old id of that
+  payload (so the id still describes the payload, not one merged in from a
+  later entry);
 - the payload still describes the row (amount, direction and date);
 - the new id is not already used in the account and no other row of the
   account would get the same new id. Such rows keep their old id.
 
-Only posted rows are re-keyed. A pending row is left as it is: it is not
-final, and it settles or leaves the feed on its own.
+A row whose payload cannot be read is skipped. Pending rows are not touched.
+Rows that are skipped keep their old id and may still be imported again by
+the next sync; this migration does not repair duplicates that already exist.
 
 Idempotent: a re-keyed row no longer carries the old id. Safe to re-run.
 
 Revision ID: 109
 Revises: 108
 """
+import hashlib
 from collections import defaultdict
+from datetime import date
+from decimal import Decimal
+from typing import Any, Optional
 
 from alembic import op
 from sqlalchemy import text
-
-from app.providers.enable_banking import (
-    EnableBankingProvider,
-    legacy_fallback_external_id,
-)
 
 revision = "109"
 down_revision = "108"
 branch_labels = None
 depends_on = None
+
+# Errors a malformed stored payload can raise while its id is computed. Only
+# the pure computation is guarded; database errors are never swallowed.
+_PAYLOAD_ERRORS = (AttributeError, TypeError, ValueError, ArithmeticError)
+
+
+def _join_remittance(value: Any) -> str:
+    if isinstance(value, list):
+        return " ".join(str(v) for v in value if v).strip()
+    return (value or "").strip() if isinstance(value, str) else ""
+
+
+def _counterparty_name(raw: dict, party: str) -> str:
+    party_obj = raw.get(party)
+    name = party_obj.get("name") if isinstance(party_obj, dict) else None
+    if not isinstance(name, str) or not name.strip():
+        name = raw.get(f"{party}_name")
+    return name.strip() if isinstance(name, str) else ""
+
+
+def _iban(raw: dict, party: str) -> str:
+    account = raw.get(f"{party}_account")
+    iban = account.get("iban") if isinstance(account, dict) else None
+    return iban if isinstance(iban, str) else ""
+
+
+def _legacy_fingerprint(account_uid: str, raw: dict) -> str:
+    """The fallback id up to v0.16.2 (no transaction date, IBANs only)."""
+    amount = raw.get("transaction_amount") or {}
+    parts = [
+        str(account_uid),
+        str(raw.get("booking_date") or ""),
+        str(raw.get("value_date") or ""),
+        str(amount.get("amount") or ""),
+        str(amount.get("currency") or ""),
+        str(raw.get("credit_debit_indicator") or ""),
+        _join_remittance(raw.get("remittance_information"))[:80],
+        _iban(raw, "creditor"),
+        _iban(raw, "debtor"),
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:32]
+
+
+def _current_fingerprint(account_uid: str, raw: dict) -> str:
+    """The fallback id from v0.16.3 on."""
+    amount = raw.get("transaction_amount") or {}
+    parts = [
+        str(account_uid),
+        str(raw.get("booking_date") or ""),
+        str(raw.get("value_date") or ""),
+        str(raw.get("transaction_date") or ""),
+        str(amount.get("amount") or ""),
+        str(amount.get("currency") or ""),
+        str(raw.get("credit_debit_indicator") or ""),
+        _join_remittance(raw.get("remittance_information"))[:80],
+        _iban(raw, "creditor").strip() or _counterparty_name(raw, "creditor"),
+        _iban(raw, "debtor").strip() or _counterparty_name(raw, "debtor"),
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:32]
+
+
+def _iso_date(value: Any) -> Optional[date]:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def _new_id(account_uid: str, raw: dict, stored_id: str, row: Any) -> Optional[str]:
+    """The id to give the row, or None when it must keep its current one."""
+    entry_ref = str(raw.get("entry_reference") or "").strip()
+    if entry_ref == "0":
+        old_id = "0"
+    elif not entry_ref:
+        old_id = _legacy_fingerprint(account_uid, raw)
+    else:
+        return None
+    if old_id != stored_id:
+        return None
+    amount_obj = raw.get("transaction_amount")
+    if not isinstance(amount_obj, dict):
+        return None
+    amount = Decimal(str(amount_obj.get("amount", "0"))).copy_abs()
+    txn_type = "debit" if str(raw.get("credit_debit_indicator") or "").upper() == "DBIT" else "credit"
+    txn_date = (
+        _iso_date(raw.get("booking_date"))
+        or _iso_date(raw.get("value_date"))
+        or _iso_date(raw.get("transaction_date"))
+    )
+    if (amount, txn_type, txn_date) != (row.amount, row.type, row.date):
+        return None
+    new_id = _current_fingerprint(account_uid, raw)
+    return None if new_id == stored_id else new_id
 
 
 def upgrade() -> None:
@@ -62,25 +162,17 @@ def upgrade() -> None:
         )
     ).fetchall()
 
-    provider = EnableBankingProvider()
-    planned: dict = defaultdict(list)  # (account_id, new_id) -> [row id]
+    planned: dict = defaultdict(list)  # (account_id, new id) -> [row id]
     for row in rows:
         raw = row.raw_data
         if not isinstance(raw, dict):
             continue
-        account_uid = row.account_uid or ""
-        if legacy_fallback_external_id(account_uid, raw) != row.external_id:
+        try:
+            new_id = _new_id(row.account_uid or "", raw, row.external_id, row)
+        except _PAYLOAD_ERRORS:
             continue
-        parsed = provider._build_transaction(account_uid, raw, "posted", "auto")
-        if parsed is None or (parsed.amount, parsed.type, parsed.date) != (
-            row.amount,
-            row.type,
-            row.date,
-        ):
-            continue
-        if parsed.external_id == row.external_id:
-            continue
-        planned[(row.account_id, parsed.external_id)].append(row.id)
+        if new_id is not None:
+            planned[(row.account_id, new_id)].append(row.id)
 
     for (account_id, new_id), row_ids in planned.items():
         if len(row_ids) != 1:

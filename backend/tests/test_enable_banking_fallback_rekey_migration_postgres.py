@@ -12,11 +12,7 @@ from sqlalchemy import select, text
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
-from app.providers.enable_banking import (
-    EnableBankingProvider,
-    _txn_fingerprint,
-    legacy_fallback_external_id,
-)
+from app.providers.enable_banking import EnableBankingProvider, _txn_fingerprint
 
 pytestmark = pytest.mark.asyncio
 
@@ -67,7 +63,7 @@ def _payload(
 
 
 def _legacy_id(raw: dict) -> str:
-    return _txn_fingerprint(ACCOUNT_UID, raw, legacy=True)
+    return migration._legacy_fingerprint(ACCOUNT_UID, raw)
 
 
 def _new_id(raw: dict, status="posted") -> str:
@@ -124,15 +120,128 @@ async def _external_id(session, transaction_id) -> str:
     )
 
 
-async def test_legacy_recipe_differs_from_current_and_ignores_transaction_date():
-    raw = _payload()
-    assert _legacy_id(raw) != _new_id(raw)
-    other_date = _payload(transaction_date="2026-08-29")
-    assert _legacy_id(raw) == _legacy_id(other_date)
-    assert _new_id(raw) != _new_id(other_date)
-    assert legacy_fallback_external_id(ACCOUNT_UID, raw) == _legacy_id(raw)
-    assert legacy_fallback_external_id(ACCOUNT_UID, _payload("0")) == "0"
-    assert legacy_fallback_external_id(ACCOUNT_UID, _payload("ref-1")) is None
+# Ids computed by running the real _txn_fingerprint of each release (git tags
+# v0.16.2 and v0.16.3, backend/app/providers/enable_banking.py), account "acc-1".
+GOLDEN = {
+    "name_only": {
+        "raw": {
+            "entry_reference": "",
+            "transaction_amount": {
+                "currency": "EUR",
+                "amount": "12.34"
+            },
+            "credit_debit_indicator": "DBIT",
+            "booking_date": "2026-08-23",
+            "value_date": "2026-08-20",
+            "transaction_date": "2026-08-19",
+            "creditor": {
+                "name": "Coffee Shop"
+            },
+            "remittance_information": [
+                "CARD PURCHASE"
+            ]
+        },
+        "v0.16.2": "fcf192182d5d787f5c01bccd3a3ac065",
+        "v0.16.3": "cbc2789d092e130a3ff95f74c6a43d43"
+    },
+    "ibans": {
+        "raw": {
+            "transaction_amount": {
+                "currency": "EUR",
+                "amount": "100.00"
+            },
+            "credit_debit_indicator": "CRDT",
+            "booking_date": "2026-09-01",
+            "value_date": "2026-09-01",
+            "creditor_account": {
+                "iban": "DE89370400440532013000"
+            },
+            "debtor_account": {
+                "iban": " FR1420041010050500013M02606 "
+            },
+            "debtor": {
+                "name": "Payer"
+            },
+            "remittance_information": "SALARY"
+        },
+        "v0.16.2": "7184ee6c2c550f2ad0af09324ec06eb1",
+        "v0.16.3": "825294a856ed57100fa37dcc3a3ecc5b"
+    },
+    "pending_no_booking": {
+        "raw": {
+            "entry_reference": "",
+            "transaction_amount": {
+                "currency": "EUR",
+                "amount": "30.00"
+            },
+            "credit_debit_indicator": "DBIT",
+            "value_date": "2026-09-02",
+            "creditor_name": "Bakery",
+            "remittance_information": []
+        },
+        "v0.16.2": "302bd8fa13df79f85eb735971abd7075",
+        "v0.16.3": "43e8abc0f5db07e839ea487b5bf15656"
+    },
+    "long_remittance_list": {
+        "raw": {
+            "transaction_amount": {
+                "currency": "BRL",
+                "amount": "7.5"
+            },
+            "credit_debit_indicator": "DBIT",
+            "booking_date": "2026-10-01",
+            "transaction_date": "2026-09-30",
+            "creditor": {
+                "name": "Shop"
+            },
+            "remittance_information": [
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                "C"
+            ]
+        },
+        "v0.16.2": "ed048aa79a4e83083662e4febbddbce2",
+        "v0.16.3": "4cf8c878ffaf5b526b9262fa65445b68"
+    },
+    "zero_ref": {
+        "raw": {
+            "entry_reference": "0",
+            "transaction_amount": {
+                "currency": "EUR",
+                "amount": "5.00"
+            },
+            "credit_debit_indicator": "DBIT",
+            "booking_date": "2026-08-23",
+            "value_date": "2026-08-20",
+            "transaction_date": "2026-08-20",
+            "creditor": {
+                "name": "Coffee Shop"
+            }
+        },
+        "v0.16.2": "4016db750882f036973b63da8747dc6c",
+        "v0.16.3": "509fbc93465db1c716afcf95d502e0e5"
+    }
+}
+
+
+@pytest.mark.parametrize("name", sorted(GOLDEN))
+async def test_frozen_recipes_match_the_released_ones(name):
+    case = GOLDEN[name]
+    assert migration._legacy_fingerprint(ACCOUNT_UID, case["raw"]) == case["v0.16.2"]
+    assert migration._current_fingerprint(ACCOUNT_UID, case["raw"]) == case["v0.16.3"]
+    # The provider must still produce what the migration assigns. If this
+    # fails, the id recipe changed after v0.16.3 and rows re-keyed by 109 no
+    # longer match what a sync computes.
+    assert _txn_fingerprint(ACCOUNT_UID, case["raw"]) == case["v0.16.3"]
+
+
+async def test_zero_reference_row_is_rekeyed_from_the_literal_id():
+    # v0.16.2 stored `entry_reference.strip() or fingerprint`, so "0" was the id.
+    raw = GOLDEN["zero_ref"]["raw"]
+    assert migration._new_id(
+        ACCOUNT_UID, raw, "0",
+        type("Row", (), {"amount": Decimal("5.00"), "type": "debit", "date": date(2026, 8, 23)}),
+    ) == GOLDEN["zero_ref"]["v0.16.3"]
 
 
 async def test_rekeys_posted_rows_and_leaves_pending_rows(session, test_user, monkeypatch):
@@ -280,3 +389,33 @@ async def test_rerun_changes_nothing(session, test_user, monkeypatch):
 
     assert once == _new_id(raw)
     assert await _external_id(session, row.id) == once
+
+
+async def test_unreadable_payloads_are_skipped_without_aborting_the_upgrade(
+    session, test_user, monkeypatch
+):
+    account = await _account(session, test_user.id, "enable_banking")
+    good_raw = _payload(amount="11.00")
+    good = _row(account, test_user.id, _legacy_id(good_raw), good_raw)
+    bad_rows = []
+    for amount, mutate in [
+        ("21.00", lambda r: r["transaction_amount"].update(amount="not-a-number")),
+        ("22.00", lambda r: r.update(transaction_amount=["22.00"])),
+        ("23.00", lambda r: r["transaction_amount"].update(amount={"nested": 1})),
+        ("24.00", lambda r: r.update(transaction_amount="24.00")),
+    ]:
+        raw = _payload("0", amount=amount)
+        row = _row(account, test_user.id, "0", raw)
+        mutate(raw)
+        row.raw_data = raw
+        bad_rows.append(row)
+    not_a_dict = _row(account, test_user.id, "0", _payload("0", amount="25.00"))
+    not_a_dict.raw_data = ["not", "a", "dict"]
+    session.add_all([good, *bad_rows, not_a_dict])
+    await session.flush()
+
+    await _upgrade(session, monkeypatch)
+
+    assert await _external_id(session, good.id) == _new_id(good_raw)
+    for row in (*bad_rows, not_a_dict):
+        assert await _external_id(session, row.id) == "0"
