@@ -5,6 +5,7 @@ mode must remain side-effect free, and connected accounts remain owned by their
 sync provider.
 """
 
+import math
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -73,17 +74,36 @@ async def _manual_account(
     account_type: str = "checking",
     balance: str = "4493.28",
     currency: str = "AUD",
+    with_opening: bool = True,
+    opening_date: date = date(2026, 11, 3),
 ) -> Account:
+    opening_balance = Decimal(balance)
     account = Account(
         id=uuid.uuid4(),
         user_id=user.id,
         workspace_id=workspace.id,
         name=name,
         type=account_type,
-        balance=Decimal(balance),
+        balance=opening_balance,
         currency=currency,
     )
     session.add(account)
+    if with_opening and opening_balance != 0:
+        is_credit = (opening_balance > 0) == (account_type not in {"credit_card", "loan"})
+        session.add(
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                workspace_id=workspace.id,
+                account_id=account.id,
+                description="Saldo inicial",
+                amount=abs(opening_balance),
+                currency=currency,
+                date=opening_date,
+                type="credit" if is_credit else "debit",
+                source="opening_balance",
+            )
+        )
     await session.commit()
     await session.refresh(account)
     return account
@@ -125,10 +145,24 @@ def test_manual_account_tools_are_registered_as_proposals():
 def test_manual_account_schemas_are_narrow():
     assert set(
         REGISTRY["propose_create_manual_account"].parameters["properties"]
-    ) == {"name", "type", "currency", "balance", "balance_date", "apply"}
+    ) == {
+        "name",
+        "type",
+        "currency",
+        "opening_balance",
+        "opening_balance_date",
+        "apply",
+    }
     assert set(
         REGISTRY["propose_update_manual_account"].parameters["properties"]
-    ) == {"account_id", "name", "type", "balance", "balance_date", "apply"}
+    ) == {
+        "account_id",
+        "name",
+        "type",
+        "opening_balance",
+        "opening_balance_date",
+        "apply",
+    }
 
 
 async def test_create_preview_normalizes_values_and_does_not_write(
@@ -140,8 +174,8 @@ async def test_create_preview_normalizes_values_and_does_not_write(
         name="  CommBank  ",
         type="checking",
         currency="aud",
-        balance=4493.28,
-        balance_date="2026-11-10",
+        opening_balance=4493.28,
+        opening_balance_date="2026-11-10",
     )
 
     assert result["kind"] == "create_manual_account"
@@ -149,8 +183,9 @@ async def test_create_preview_normalizes_values_and_does_not_write(
         "name": "CommBank",
         "type": "checking",
         "currency": "AUD",
-        "balance": 4493.28,
-        "balance_date": "2026-11-10",
+        "current_balance": 4493.28,
+        "opening_balance": 4493.28,
+        "opening_balance_date": "2026-11-10",
     }
     assert result["existing_accounts"] == []
     assert result["apply_endpoint"] == "POST /api/accounts"
@@ -173,8 +208,8 @@ async def test_create_apply_creates_manual_account_and_opening_balance(
         name="Ubank",
         type="savings",
         currency="AUD",
-        balance=3272.25,
-        balance_date="2026-11-10",
+        opening_balance=3272.25,
+        opening_balance_date="2026-11-10",
         apply=True,
     )
 
@@ -210,10 +245,10 @@ async def test_create_preview_uses_the_opening_date_that_apply_will_create(
         name="CommBank",
         type="checking",
         currency="AUD",
-        balance=4493.28,
+        opening_balance=4493.28,
     )
 
-    assert preview["proposed"]["balance_date"] == app_today().isoformat()
+    assert preview["proposed"]["opening_balance_date"] == app_today().isoformat()
 
     applied = await _call("propose_create_manual_account")(
         session=session,
@@ -221,7 +256,7 @@ async def test_create_preview_uses_the_opening_date_that_apply_will_create(
         name="CommBank",
         type="checking",
         currency="AUD",
-        balance=4493.28,
+        opening_balance=4493.28,
         apply=True,
     )
     opening = (
@@ -251,7 +286,7 @@ async def test_create_preview_warns_about_a_possible_duplicate(
         name=" commbank ",
         type="checking",
         currency="aud",
-        balance=5000,
+        opening_balance=5000,
     )
 
     assert result["existing_accounts"] == [
@@ -260,8 +295,9 @@ async def test_create_preview_warns_about_a_possible_duplicate(
             "name": "CommBank",
             "type": "savings",
             "currency": "AUD",
-            "balance": 4493.28,
-            "balance_date": None,
+            "current_balance": 4493.28,
+            "opening_balance": 4493.28,
+            "opening_balance_date": "2026-11-03",
         }
     ]
 
@@ -275,12 +311,17 @@ async def test_internal_runtime_cannot_apply_create(
         name="CommBank",
         type="checking",
         currency="AUD",
-        balance=4493.28,
+        opening_balance=4493.28,
         apply=True,
     )
 
     assert "applied" not in result
-    assert await _account(session, uuid.uuid4()) is None
+    rows = (
+        await session.execute(
+            select(Account).where(Account.workspace_id == test_workspace.id)
+        )
+    ).scalars().all()
+    assert rows == []
 
 
 async def test_read_only_external_role_cannot_apply_create(
@@ -299,7 +340,7 @@ async def test_read_only_external_role_cannot_apply_create(
         name="CommBank",
         type="checking",
         currency="AUD",
-        balance=4493.28,
+        opening_balance=4493.28,
         apply=True,
     )
 
@@ -324,8 +365,8 @@ async def test_update_preview_shows_current_and_proposed_values(
         ctx=ctx,
         account_id=str(account.id),
         name="  Commonwealth  ",
-        balance=5000,
-        balance_date="2026-11-10",
+        opening_balance=5000,
+        opening_balance_date="2026-11-10",
     )
 
     assert result["kind"] == "update_manual_account"
@@ -334,13 +375,14 @@ async def test_update_preview_shows_current_and_proposed_values(
         "name": "CommBank",
         "type": "checking",
         "currency": "AUD",
-        "balance": 4493.28,
-        "balance_date": None,
+        "current_balance": 4493.28,
+        "opening_balance": 4493.28,
+        "opening_balance_date": "2026-11-03",
     }
     assert result["changes"] == {
         "name": "Commonwealth",
-        "balance": 5000.0,
-        "balance_date": "2026-11-10",
+        "opening_balance": 5000.0,
+        "opening_balance_date": "2026-11-10",
     }
     assert result["existing_accounts"] == []
     assert result["apply_endpoint"] == f"PATCH /api/accounts/{account.id}"
@@ -349,6 +391,71 @@ async def test_update_preview_shows_current_and_proposed_values(
     unchanged = await _account(session, account.id)
     assert unchanged is not None
     assert (unchanged.name, unchanged.balance) == ("CommBank", Decimal("4493.28"))
+
+
+async def test_account_previews_show_current_balance_separately_from_opening_balance(
+    session: AsyncSession, ctx: CallContext, test_user, test_workspace
+):
+    account = await _manual_account(
+        session, user=test_user, workspace=test_workspace
+    )
+    session.add(
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Compra",
+            amount=Decimal("100.00"),
+            currency="AUD",
+            date=date(2026, 11, 4),
+            type="debit",
+            source="manual",
+        )
+    )
+    await session.commit()
+
+    result = await _call("propose_update_manual_account")(
+        session=session,
+        ctx=ctx,
+        account_id=str(account.id),
+        name="Commonwealth",
+    )
+
+    assert result["target"]["opening_balance"] == 4493.28
+    assert result["target"]["current_balance"] == 4393.28
+    assert result["target"]["opening_balance_date"] == "2026-11-03"
+    assert result["changes"] == {"name": "Commonwealth"}
+
+
+async def test_list_accounts_names_the_opening_and_current_balances(
+    session: AsyncSession, ctx: CallContext, test_user, test_workspace
+):
+    account = await _manual_account(
+        session, user=test_user, workspace=test_workspace
+    )
+    session.add(
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Compra",
+            amount=Decimal("100.00"),
+            currency="AUD",
+            date=date(2026, 11, 4),
+            type="debit",
+            source="manual",
+        )
+    )
+    await session.commit()
+
+    result = await _call("list_accounts")(session=session, ctx=ctx)
+    item = next(row for row in result["items"] if row["id"] == str(account.id))
+
+    assert item["balance"] == 4393.28
+    assert item["current_balance"] == 4393.28
+    assert item["opening_balance"] == 4493.28
 
 
 async def test_update_preview_warns_about_a_possible_duplicate(
@@ -377,8 +484,9 @@ async def test_update_preview_warns_about_a_possible_duplicate(
             "name": "Commonwealth Bank",
             "type": "checking",
             "currency": "AUD",
-            "balance": 4493.28,
-            "balance_date": None,
+            "current_balance": 4493.28,
+            "opening_balance": 4493.28,
+            "opening_balance_date": "2026-11-03",
         }
     ]
 
@@ -395,8 +503,8 @@ async def test_update_apply_changes_manual_account_and_opening_balance(
         ctx=ext_ctx,
         account_id=str(account.id),
         name="Commonwealth Bank",
-        balance=5100,
-        balance_date="2026-11-11",
+        opening_balance=5100,
+        opening_balance_date="2026-11-11",
         apply=True,
     )
 
@@ -427,7 +535,7 @@ async def test_update_refuses_connected_accounts(
         session=session,
         ctx=ext_ctx,
         account_id=str(test_account.id),
-        balance=2000,
+        opening_balance=2000,
         apply=True,
     )
 
@@ -451,7 +559,7 @@ async def test_account_tools_refuse_manual_account_types_outside_scope(
         session=session,
         ctx=ext_ctx,
         account_id=str(account.id),
-        balance=900,
+        opening_balance=900,
         apply=True,
     )
 
@@ -459,6 +567,60 @@ async def test_account_tools_refuse_manual_account_types_outside_scope(
     unchanged = await _account(session, account.id)
     assert unchanged is not None
     assert unchanged.balance == Decimal("1000.00")
+
+
+async def test_update_refuses_closed_manual_accounts(
+    session: AsyncSession, ext_ctx: CallContext, test_user, test_workspace
+):
+    account = await _manual_account(
+        session, user=test_user, workspace=test_workspace
+    )
+    account.is_closed = True
+    await session.commit()
+
+    result = await _call("propose_update_manual_account")(
+        session=session,
+        ctx=ext_ctx,
+        account_id=str(account.id),
+        opening_balance=5000,
+        apply=True,
+    )
+
+    assert "closed" in result["error"]
+    unchanged = await _account(session, account.id)
+    assert unchanged is not None
+    assert unchanged.balance == Decimal("4493.28")
+
+
+async def test_manual_account_amounts_must_be_finite(
+    session: AsyncSession, ext_ctx: CallContext, test_user, test_workspace
+):
+    account = await _manual_account(
+        session, user=test_user, workspace=test_workspace
+    )
+
+    create_nan = await _call("propose_create_manual_account")(
+        session=session,
+        ctx=ext_ctx,
+        name="NaN",
+        type="checking",
+        currency="AUD",
+        opening_balance=math.nan,
+        apply=True,
+    )
+    update_inf = await _call("propose_update_manual_account")(
+        session=session,
+        ctx=ext_ctx,
+        account_id=str(account.id),
+        opening_balance=math.inf,
+        apply=True,
+    )
+
+    assert "opening_balance must be finite" in create_nan["error"]
+    assert "opening_balance must be finite" in update_inf["error"]
+    unchanged = await _account(session, account.id)
+    assert unchanged is not None
+    assert unchanged.balance == Decimal("4493.28")
 
 
 async def test_balance_date_requires_a_nonzero_balance(
@@ -470,8 +632,8 @@ async def test_balance_date_requires_a_nonzero_balance(
         name="Empty",
         type="checking",
         currency="AUD",
-        balance=0,
-        balance_date="2026-11-10",
+        opening_balance=0,
+        opening_balance_date="2026-11-10",
         apply=True,
     )
     account = await _manual_account(
@@ -480,12 +642,13 @@ async def test_balance_date_requires_a_nonzero_balance(
         workspace=test_workspace,
         name="No opening",
         balance="0.00",
+        with_opening=False,
     )
     update = await _call("propose_update_manual_account")(
         session=session,
         ctx=ext_ctx,
         account_id=str(account.id),
-        balance_date="2026-11-10",
+        opening_balance_date="2026-11-10",
         apply=True,
     )
     account_with_stored_balance = await _manual_account(
@@ -493,18 +656,19 @@ async def test_balance_date_requires_a_nonzero_balance(
         user=test_user,
         workspace=test_workspace,
         name="Legacy",
+        with_opening=False,
     )
     legacy_date_only = await _call("propose_update_manual_account")(
         session=session,
         ctx=ext_ctx,
         account_id=str(account_with_stored_balance.id),
-        balance_date="2026-11-10",
+        opening_balance_date="2026-11-10",
         apply=True,
     )
 
-    assert "balance_date requires a non-zero balance" in create["error"]
-    assert "balance_date requires a non-zero balance" in update["error"]
-    assert "balance_date requires an opening balance" in legacy_date_only["error"]
+    assert "opening_balance_date requires a non-zero opening_balance" in create["error"]
+    assert "opening_balance_date requires a non-zero opening_balance" in update["error"]
+    assert "opening_balance_date requires an opening balance" in legacy_date_only["error"]
 
 
 async def test_update_creates_an_opening_for_legacy_balance_and_date(
@@ -515,26 +679,27 @@ async def test_update_creates_an_opening_for_legacy_balance_and_date(
         user=test_user,
         workspace=test_workspace,
         name="Legacy",
+        with_opening=False,
     )
 
     preview = await _call("propose_update_manual_account")(
         session=session,
         ctx=ext_ctx,
         account_id=str(account.id),
-        balance=4493.28,
-        balance_date="2026-11-10",
+        opening_balance=4493.28,
+        opening_balance_date="2026-11-10",
     )
     assert preview["changes"] == {
-        "balance": 4493.28,
-        "balance_date": "2026-11-10",
+        "opening_balance": 4493.28,
+        "opening_balance_date": "2026-11-10",
     }
 
     result = await _call("propose_update_manual_account")(
         session=session,
         ctx=ext_ctx,
         account_id=str(account.id),
-        balance=4493.28,
-        balance_date="2026-11-10",
+        opening_balance=4493.28,
+        opening_balance_date="2026-11-10",
         apply=True,
     )
 
@@ -568,7 +733,7 @@ async def test_update_rejects_foreign_workspace_and_invalid_values(
         session=session,
         ctx=ext_ctx,
         account_id=str(foreign.id),
-        balance=1,
+        opening_balance=1,
     )
     invalid_type = await _call("propose_create_manual_account")(
         session=session,
@@ -576,7 +741,7 @@ async def test_update_rejects_foreign_workspace_and_invalid_values(
         name="Bad",
         type="credit_card",
         currency="AUD",
-        balance=1,
+        opening_balance=1,
     )
     invalid_currency = await _call("propose_create_manual_account")(
         session=session,
@@ -584,7 +749,7 @@ async def test_update_rejects_foreign_workspace_and_invalid_values(
         name="Bad",
         type="checking",
         currency="AUDX",
-        balance=1,
+        opening_balance=1,
     )
     empty_name = await _call("propose_create_manual_account")(
         session=session,
@@ -592,7 +757,7 @@ async def test_update_rejects_foreign_workspace_and_invalid_values(
         name="   ",
         type="checking",
         currency="AUD",
-        balance=1,
+        opening_balance=1,
     )
 
     assert missing == {"error": "account not found"}
@@ -613,7 +778,7 @@ async def test_update_no_changes_is_a_clear_error(
         ctx=ctx,
         account_id=str(account.id),
         name="CommBank",
-        balance=4493.28,
+        opening_balance=4493.28,
     )
 
     assert "nothing to change" in result["error"]
@@ -652,8 +817,8 @@ async def test_manual_account_create_over_mcp_requires_external_apply(
         "name": "CommBank",
         "type": "checking",
         "currency": "AUD",
-        "balance": 4493.28,
-        "balance_date": "2026-11-10",
+        "opening_balance": 4493.28,
+        "opening_balance_date": "2026-11-10",
     }
 
     preview = await _mcp_call(
