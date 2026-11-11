@@ -1437,7 +1437,7 @@
   },
   "budgets": {
     "spending": "Spese",
-    "spendingDescription": "Corrisponde alle spese per categoria della panoramica per il mese e il filtro conti selezionati, incluse le spese in sospeso e previste.",
+    "spendingDescription": "Include le spese in sospeso e previste.",
     "spendingError": "Impossibile caricare le spese.",
     "title": "Budget",
     "add": "Aggiungi budget",

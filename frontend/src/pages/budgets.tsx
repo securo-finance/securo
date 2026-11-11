@@ -64,6 +64,7 @@ export default function BudgetsPage() {
   const { canWrite } = useWorkspace()
   const { activeAccountIds } = useCollectionFilter()
   const noAccounts = activeAccountIds !== null && activeAccountIds.length === 0
+  const mobileColumns = canWrite ? 'grid-cols-[minmax(0,1fr)_6rem_4.5rem]' : 'grid-cols-[minmax(0,1fr)_6rem]'
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const queryClient = useQueryClient()
@@ -189,9 +190,9 @@ export default function BudgetsPage() {
     const category = findCategoryReference(displayCategories, categoryId)
     if (!category) return <span>{categoryId}</span>
     return (
-      <span className="flex items-center gap-2">
+      <span className="flex min-w-0 items-center gap-2">
         <CategoryIcon icon={category.icon} color={category.color} size="sm" />
-        <span>{category.name}</span>
+        <span className="min-w-0 break-words">{category.name}</span>
       </span>
     )
   }
@@ -268,16 +269,16 @@ export default function BudgetsPage() {
         {spendingError && !noAccounts && <p role="alert" className="px-4 sm:px-5 pb-3 text-sm text-destructive">{t('budgets.spendingError')}</p>}
         {budgetsList && budgetsList.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] table-fixed">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className={`${TH} pl-4 sm:pl-5 text-left w-[28%]`}>{t('budgets.category')}</th>
-                  <th className={`${TH} pr-4 sm:pr-5 text-right`}>{t('budgets.spending')}</th>
-                  <th className={`${TH} text-left w-32`}>{t('budgets.amount')}</th>
-                  {canWrite && <th className={`${TH} pr-4 sm:pr-5 text-right w-24`}>{t('budgets.actions')}</th>}
+            <table className="block w-full md:table md:min-w-[640px] table-fixed">
+              <thead className="block md:table-header-group">
+                <tr className={`grid ${mobileColumns} md:table-row border-b border-border`}>
+                  <th id="budget-category" className={`${TH} pl-4 sm:pl-5 text-left md:w-[28%]`}>{t('budgets.category')}</th>
+                  <th id="budget-spending" className={`${TH} max-md:sr-only pr-4 sm:pr-5 text-right`}>{t('budgets.spending')}</th>
+                  <th id="budget-limit" className={`${TH} text-left md:w-32`}>{t('budgets.amount')}</th>
+                  {canWrite && <th id="budget-actions" className={`${TH} pr-4 sm:pr-5 text-right md:w-24`}>{t('budgets.actions')}</th>}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="block md:table-row-group">
                 {budgetsList.map((budget) => {
                   const amount = spendingByCategory.get(budget.category_id) ?? 0
                   const spendingAvailable = noAccounts || (!spendingPending && !spendingError)
@@ -286,16 +287,16 @@ export default function BudgetsPage() {
                   // decimal, green below 80%, amber through 100%, red above it.
                   const pct = limit > 0 ? Math.round(amount / limit * 1000) / 10 : 0
                   return (
-                    <tr key={budget.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors cursor-pointer"
+                    <tr key={budget.id} className={`grid ${mobileColumns} md:table-row border-b border-border last:border-0 hover:bg-muted transition-colors cursor-pointer`}
                       onClick={(event) => {
                         event.currentTarget.querySelector('button')?.focus()
                         setDrillDownCategoryId(budget.category_id)
                       }}
                     >
-                      <td className="py-3 pl-4 sm:pl-5 pr-4 text-sm font-medium text-foreground break-words">
+                      <td headers="budget-category" className="min-w-0 pt-3 pb-1 md:py-3 pl-4 sm:pl-5 pr-2 sm:pr-4 text-sm font-medium text-foreground break-words">
                         <button
                           type="button"
-                          className="flex items-center gap-1.5 text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          className="flex max-w-full items-center gap-1.5 text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                           aria-label={t('dashboard.drillDownCategory', { category: findCategoryReference(displayCategories, budget.category_id)?.name ?? budget.category_id, month: monthLabel(selectedMonth, uiLocale) })}
                         >
                           {getCategoryDisplay(budget.category_id)}
@@ -306,19 +307,19 @@ export default function BudgetsPage() {
                           )}
                         </button>
                       </td>
-                      <td className="py-3 pr-4 sm:pr-5 text-right text-sm font-semibold tabular-nums text-foreground">
+                      <td headers="budget-spending" className="col-start-1 row-start-2 min-w-0 pb-3 pl-4 pr-2 md:py-3 md:pl-0 sm:pr-5 text-left md:text-right text-sm font-normal tabular-nums text-foreground break-words">
                         {spendingAvailable ? (
                           <>
                             <div className="mb-1">{mask(formatCurrency(amount, userCurrency, locale))}</div>
                             {limit > 0 && (
-                              <BudgetSpendingProgress percentage={pct} budgetAmount={limit} currency={userCurrency} />
+                              <BudgetSpendingProgress percentage={pct} budgetAmount={limit} currency={userCurrency} hideBudgetLabelOnMobile />
                             )}
                           </>
                         ) : '—'}
                       </td>
-                      <td className="py-3 text-sm font-semibold tabular-nums text-foreground">{mask(formatCurrency(budget.amount, userCurrency, locale))}</td>
+                      <td headers="budget-limit" className="col-start-2 row-start-1 row-span-2 self-center py-3 pr-2 md:pr-0 text-sm font-semibold tabular-nums text-foreground break-words">{mask(formatCurrency(budget.amount, userCurrency, locale))}</td>
                       {canWrite && (
-                        <td className="py-3 pr-4 sm:pr-5">
+                        <td headers="budget-actions" className="col-start-3 row-start-1 row-span-2 self-center py-3 pr-4 sm:pr-5">
                           <div className="flex items-center justify-end gap-1">
                             <button
                               className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"

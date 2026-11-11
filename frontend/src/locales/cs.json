@@ -1517,7 +1517,7 @@
   },
   "budgets": {
     "spending": "Výdaje",
-    "spendingDescription": "Odpovídá výdajům podle kategorií v přehledu pro vybraný měsíc a filtr účtů, včetně čekajících a předpokládaných výdajů.",
+    "spendingDescription": "Zahrnuje čekající a předpokládané výdaje.",
     "spendingError": "Výdaje se nepodařilo načíst.",
     "title": "Rozpočty",
     "add": "Přidat rozpočet",

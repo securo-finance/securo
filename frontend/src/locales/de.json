@@ -1434,7 +1434,7 @@
   },
   "budgets": {
     "spending": "Ausgaben",
-    "spendingDescription": "Entspricht den Ausgaben nach Kategorie in der Übersicht für den gewählten Monat und Kontenfilter, einschließlich ausstehender und prognostizierter Ausgaben.",
+    "spendingDescription": "Enthält ausstehende und prognostizierte Ausgaben.",
     "spendingError": "Ausgaben konnten nicht geladen werden.",
     "title": "Budgets",
     "add": "Budget hinzufügen",

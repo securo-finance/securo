@@ -8,6 +8,7 @@ import { renderWithProviders, t } from '@/test/utils'
 
 const api = vi.hoisted(() => ({
   activeAccountIds: null as string[] | null,
+  canWrite: true,
   mask: vi.fn((value: string) => value),
   dashboard: { spendingByCategory: vi.fn(), projectedTransactions: vi.fn() },
   transactions: { list: vi.fn() },
@@ -49,7 +50,7 @@ vi.mock('@/contexts/auth-context', () => ({
 }))
 
 vi.mock('@/contexts/workspace-context', () => ({
-  useWorkspace: () => ({ canWrite: true }),
+  useWorkspace: () => ({ canWrite: api.canWrite }),
 }))
 
 vi.mock('@/contexts/collection-filter-context', () => ({
@@ -101,6 +102,7 @@ describe('BudgetsPage suggestions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     api.activeAccountIds = null
+    api.canWrite = true
     api.mask.mockImplementation(value => value)
     api.dashboard.spendingByCategory.mockResolvedValue([])
     api.dashboard.projectedTransactions.mockResolvedValue([])
@@ -155,6 +157,38 @@ describe('BudgetsPage suggestions', () => {
     expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual([
       t('budgets.category'), t('budgets.spending'), t('budgets.amount'), t('budgets.actions'),
     ])
+  })
+
+  it.each([true, false])('stacks spending under the category while retaining limits and permitted actions (canWrite=%s)', async (canWrite) => {
+    api.canWrite = canWrite
+    mockBudgets()
+    api.dashboard.spendingByCategory.mockResolvedValue([{ category_id: 'cat-groceries', projected_total: 123.45 }])
+    renderWithProviders(<BudgetsPage />)
+    const row = (await screen.findByText('Groceries')).closest('tr')!
+    await within(row).findByText('$123.45')
+    const cells = within(row).getAllByRole('cell')
+    expect(screen.getByRole('table')).not.toHaveClass('min-w-[640px]')
+    expect(screen.getByRole('table')).toHaveClass('md:table', 'md:min-w-[640px]')
+    expect(row).toHaveClass('grid', 'md:table-row', canWrite ? 'grid-cols-[minmax(0,1fr)_6rem_4.5rem]' : 'grid-cols-[minmax(0,1fr)_6rem]')
+    expect(cells[1]).toHaveClass('col-start-1', 'row-start-2')
+    expect(cells.map(cell => cell.getAttribute('headers'))).toEqual(canWrite
+      ? ['budget-category', 'budget-spending', 'budget-limit', 'budget-actions']
+      : ['budget-category', 'budget-spending', 'budget-limit'])
+    expect(screen.getByRole('columnheader', { name: t('budgets.spending') })).toHaveClass('max-md:sr-only')
+    expect(within(cells[1]).getByRole('progressbar')).toBeInTheDocument()
+    expect(cells[2]).toHaveClass('col-start-2', 'row-span-2')
+    expect(cells[2]).toHaveTextContent('$500.00')
+    expect(cells[1]).toHaveClass('font-normal')
+    expect(cells[2]).toHaveClass('font-semibold')
+    expect(within(cells[1]).getByText(t('dashboard.ofBudget', { budget: '$500.00' }))).toHaveClass('hidden', 'md:inline')
+    if (canWrite) {
+      expect(cells[3]).toHaveClass('col-start-3', 'row-span-2')
+      expect(within(cells[3]).getByRole('button', { name: t('common.edit') })).toBeInTheDocument()
+      expect(within(cells[3]).getByRole('button', { name: t('common.delete') })).toBeInTheDocument()
+    } else {
+      expect(cells).toHaveLength(3)
+      expect(within(row).queryByRole('button', { name: t('common.edit') })).not.toBeInTheDocument()
+    }
   })
 
   it('omits the progress bar for a zero limit, as Overview does', async () => {

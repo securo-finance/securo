@@ -1437,7 +1437,7 @@
   },
   "budgets": {
     "spending": "Gastos",
-    "spendingDescription": "Coincide con los gastos por categoría del resumen para el mes y filtro de cuentas seleccionados, incluidos los gastos pendientes y previstos.",
+    "spendingDescription": "Incluye gastos pendientes y previstos.",
     "spendingError": "No se pudieron cargar los gastos.",
     "title": "Presupuestos",
     "add": "Agregar presupuesto",
