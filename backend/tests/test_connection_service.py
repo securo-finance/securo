@@ -4199,6 +4199,40 @@ def _holding(external_id, value, account_external_id=None):
     )
 
 
+def test_auto_invested_deduction_is_the_counted_value_of_attributed_holdings():
+    """The amount taken off an account is what its counted holdings are
+    worth, capped at the reported portion: a holding the user archived is
+    not counted, so its share stays in the balance; and the cash residual
+    plus the counted holdings add up to the reported balance."""
+    from app.services.connection_service import (
+        _CountedHolding,
+        _auto_invested_deductions,
+    )
+
+    accounts = [_auto_invest_account("acc-a", "1000", "400")]
+    counted = [_CountedHolding("acc-a", Decimal("150"), "BRL")]
+    assert _auto_invested_deductions(accounts, counted) == {"acc-a": Decimal("150")}
+
+    # Never more than the provider said was invested.
+    counted = [_CountedHolding("acc-a", Decimal("450"), "BRL")]
+    assert _auto_invested_deductions(accounts, counted) == {"acc-a": Decimal("400")}
+
+    # A holding in another currency cannot say how much of this balance it
+    # is, so the account keeps the full balance rather than losing money.
+    counted = [_CountedHolding("acc-a", Decimal("150"), "USD")]
+    assert _auto_invested_deductions(accounts, counted) == {}
+
+    # Only positive, finite values are deducted: a negative position stays
+    # in the cash residual, and a non-finite value is never compared.
+    counted = [
+        _CountedHolding("acc-a", Decimal("150"), "BRL"),
+        _CountedHolding("acc-a", Decimal("-40"), "BRL"),
+        _CountedHolding("acc-a", Decimal("NaN"), "BRL"),
+        _CountedHolding("acc-a", Decimal("Infinity"), "BRL"),
+    ]
+    assert _auto_invested_deductions(accounts, counted) == {"acc-a": Decimal("150")}
+
+
 @pytest.mark.asyncio
 async def test_sync_deducts_auto_invested_only_from_the_holding_account(
     session: AsyncSession, test_user, test_workspace
@@ -7753,3 +7787,190 @@ async def test_ensure_group_relocates_wallet_when_connection_moves_workspaces(
     assert group.connection_id == conn.id
     assert group.workspace_id == test_workspace.id
     assert group.name == "Moved Wallet"
+
+
+def _simplefin_brokerage_payload(balance="1057.20"):
+    return {
+        "accounts": [
+            {
+                "id": "brk-1", "name": "Brokerage", "currency": "USD", "balance": balance,
+                "holdings": [
+                    {"id": "h-mpc", "symbol": "MPC", "description": "Marathon Petroleum",
+                     "currency": "USD", "shares": "1.011168", "market_value": "425.96"},
+                    {"id": "h-bp", "symbol": "BP", "description": "BP PLC",
+                     "currency": "USD", "shares": "3.106678", "market_value": "147.64"},
+                ],
+            },
+            {"id": "chk-1", "name": "Checking", "currency": "USD", "balance": "889.92"},
+        ],
+    }
+
+
+async def _sync_simplefin_payload(session, test_user, test_workspace, conn, payload):
+    """Run ``payload`` through the real SimpleFIN parser and the real sync."""
+    from app.models.account import Account
+    from app.providers.simplefin import SimpleFinProvider
+
+    real = SimpleFinProvider()
+    with patch.object(SimpleFinProvider, "_fetch_accounts", AsyncMock(return_value=payload)):
+        accounts_data = await real.get_accounts({"access_url": "https://u:p@bridge.example/x"})
+        holdings_data = await real.get_holdings({"access_url": "https://u:p@bridge.example/x"})
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_institution_logo = AsyncMock(return_value=None)
+    mock_provider.get_accounts = AsyncMock(return_value=accounts_data)
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    mock_provider.get_holdings = AsyncMock(return_value=holdings_data)
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        result_conn, _, _ = await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+    assert result_conn.status == "active"
+    rows = (
+        await session.execute(
+            select(Account.external_id, Account.balance).where(Account.connection_id == conn.id)
+        )
+    ).all()
+    return {ext: balance for ext, balance in rows}
+
+
+@pytest.mark.asyncio
+async def test_sync_simplefin_brokerage_counts_portfolio_once(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Issue #343: a SimpleFIN brokerage arrives as an account whose balance
+    is the whole portfolio plus the positions as holdings. After the sync the
+    account keeps only the cash residual, the positions are assets, and net
+    worth equals the balances the provider reported."""
+    from datetime import date
+
+    from app.services.report_service import _net_worth_at
+
+    conn = await _make_connection(session, test_user.id, "SimpleFIN Brokerage")
+    balances = await _sync_simplefin_payload(
+        session, test_user, test_workspace, conn, _simplefin_brokerage_payload()
+    )
+
+    # Cash residual: 1057.20 - (425.96 + 147.64). The checking account is untouched.
+    assert balances == {"brk-1": Decimal("483.60"), "chk-1": Decimal("889.92")}
+    assets = (await session.execute(select(Asset).where(Asset.connection_id == conn.id))).scalars().all()
+    assert {a.external_id for a in assets} == {"h-bp", "h-mpc"}
+
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
+    assert dp.breakdowns["accounts"] == pytest.approx(483.60 + 889.92)
+    assert dp.breakdowns["assets"] == pytest.approx(573.60)
+    assert dp.value == pytest.approx(1057.20 + 889.92)
+
+
+@pytest.mark.asyncio
+async def test_sync_simplefin_archived_position_stays_in_the_balance(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A position the user archived is no longer counted as an asset, so
+    its value must stay in the account balance on the next sync instead of
+    being deducted along with the positions that are still counted."""
+    from datetime import date
+
+    from app.services.report_service import _net_worth_at
+
+    conn = await _make_connection(session, test_user.id, "SimpleFIN Brokerage")
+    payload = _simplefin_brokerage_payload()
+    await _sync_simplefin_payload(session, test_user, test_workspace, conn, payload)
+
+    bp = (await session.execute(select(Asset).where(Asset.external_id == "h-bp"))).scalar_one()
+    bp.is_archived = True
+    await session.commit()
+
+    balances = await _sync_simplefin_payload(session, test_user, test_workspace, conn, payload)
+
+    # Only MPC is counted now: 1057.20 - 425.96. BP's 147.64 stays as cash.
+    assert balances["brk-1"] == Decimal("631.24")
+    await session.refresh(bp)
+    assert bp.is_archived is True
+
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
+    assert dp.breakdowns["assets"] == pytest.approx(425.96)
+    assert dp.value == pytest.approx(1057.20 + 889.92)
+
+
+@pytest.mark.asyncio
+async def test_sync_simplefin_margin_debit_is_a_negative_cash_residual(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Positions worth more than the reported balance mean the broker lent
+    the difference. The account stores that as a negative balance, which
+    the reports count as a liability, so net worth is still what the broker
+    reported rather than the gross positions."""
+    from datetime import date
+
+    from app.services.dashboard_service import get_summary
+    from app.services.report_service import _net_worth_at
+
+    conn = await _make_connection(session, test_user.id, "SimpleFIN Margin")
+    balances = await _sync_simplefin_payload(
+        session, test_user, test_workspace, conn, _simplefin_brokerage_payload(balance="400")
+    )
+
+    assert balances["brk-1"] == Decimal("-173.60")
+
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
+    assert dp.breakdowns["liabilities"] == pytest.approx(173.60)
+    assert dp.breakdowns["assets"] == pytest.approx(573.60)
+    assert dp.value == pytest.approx(400 + 889.92)
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+    assert summary.total_balance["USD"] == pytest.approx(400 + 889.92)
+
+
+@pytest.mark.asyncio
+async def test_sync_simplefin_negative_position_stays_in_the_cash_residual(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A short position arrives with a negative market value. It stays in
+    the cash residual, where the net worth report counts it, so the report
+    still equals the balance the broker reported."""
+    from datetime import date
+
+    from app.services.report_service import _net_worth_at
+
+    payload = _simplefin_brokerage_payload(balance="957.20")
+    payload["accounts"][0]["holdings"].append(
+        {"id": "h-short", "symbol": "XYZ", "description": "Short XYZ",
+         "currency": "USD", "shares": "-2", "market_value": "-100.00"}
+    )
+    conn = await _make_connection(session, test_user.id, "SimpleFIN Short")
+    balances = await _sync_simplefin_payload(session, test_user, test_workspace, conn, payload)
+
+    # 957.20 - (425.96 + 147.64): the -100 short is not deducted.
+    assert balances["brk-1"] == Decimal("383.60")
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
+    assert dp.value == pytest.approx(957.20 + 889.92)
+
+
+@pytest.mark.asyncio
+async def test_sync_simplefin_lowercase_account_currency_counts_portfolio_once(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A broker that sends its account currency as ``"usd"`` and leaves the
+    positions without one: the positions take the stored account currency,
+    so they are still deducted and the portfolio is counted once."""
+    from datetime import date
+
+    from app.services.report_service import _net_worth_at
+
+    payload = _simplefin_brokerage_payload()
+    brokerage = payload["accounts"][0]
+    brokerage["currency"] = "usd"
+    for holding in brokerage["holdings"]:
+        del holding["currency"]
+    conn = await _make_connection(session, test_user.id, "SimpleFIN Loose Currency")
+    balances = await _sync_simplefin_payload(session, test_user, test_workspace, conn, payload)
+
+    assert balances["brk-1"] == Decimal("483.60")
+    assets = (await session.execute(select(Asset).where(Asset.connection_id == conn.id))).scalars().all()
+    assert {a.currency for a in assets} == {"USD"}
+    dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
+    assert dp.value == pytest.approx(1057.20 + 889.92)
