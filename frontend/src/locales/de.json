@@ -3330,5 +3330,69 @@
       "update": "Keine Einträge in diesem Workspace ändern sich; die installierte Version wird {{version}}.",
       "remove": "Keiner seiner Einträge ist mehr hier; Entfernen nimmt es nur von der Liste."
     }
+  },
+  "library": {
+    "title": "Bibliothek",
+    "subtitle": "Wähle, was Dashboard und Berichte zeigen und wie Securo aussieht.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Berichte",
+      "themes": "Themes"
+    },
+    "moreHint": {
+      "widgets": "Plugins können weitere Widgets hinzufügen.",
+      "reports": "Plugins können weitere Berichte hinzufügen.",
+      "themes": "Plugins können weitere Themes hinzufügen."
+    },
+    "browseCatalog": "Plugins durchsuchen",
+    "lastReport": "Behalte mindestens einen Bericht.",
+    "removeFrom": {
+      "dashboard": "{{name}} aus dem Dashboard entfernen",
+      "reports": "{{name}} aus den Berichten entfernen"
+    },
+    "addTo": {
+      "dashboard": "{{name}} zum Dashboard hinzufügen",
+      "reports": "{{name}} zu den Berichten hinzufügen"
+    },
+    "remove": "Entfernen",
+    "add": "Hinzufügen",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Ozean",
+      "forest": "Wald",
+      "sunset": "Abendrot",
+      "graphite": "Graphit",
+      "high-contrast": "Hoher Kontrast"
+    },
+    "saveFailed": "Deine Auswahl konnte nicht gespeichert werden. Versuch es noch einmal.",
+    "appearance": "Darstellung",
+    "emptyDashboard": "Dein Dashboard ist leer",
+    "emptyDashboardHint": "Füge Widgets aus der Bibliothek hinzu, um festzulegen, was du hier siehst.",
+    "addWidget": "Widget hinzufügen",
+    "moveUp": "{{name}} nach oben",
+    "moveDown": "{{name}} nach unten",
+    "nothingToShow": "Gerade nichts anzuzeigen",
+    "editingDashboard": "Widgets umsortieren, entfernen oder hinzufügen. Änderungen werden sofort gespeichert.",
+    "restoreDefault": "Standard wiederherstellen",
+    "done": "Fertig",
+    "customizeDashboard": "Dashboard anpassen",
+    "manageReports": "Berichte auswählen",
+    "manageReportsShort": "Verwalten",
+    "widget": {
+      "overview": "Saldo und Monat",
+      "overviewHint": "Verfügbarer Saldo, Einnahmen, Ausgaben, Nettovermögen und Sparquote.",
+      "uncategorized": "Ohne Kategorie",
+      "uncategorizedHint": "Transaktionen, die noch auf eine Kategorie warten.",
+      "spendingByCategoryHint": "Wohin das Geld des Monats ging, verglichen mit deinen Budgets.",
+      "balanceFlowHint": "Wie sich dein Saldo diesen Monat entwickelt hat, im Vergleich zu anderen.",
+      "goalsHint": "Der Fortschritt deiner Ziele.",
+      "transactionsHint": "Die Transaktionen des Monats, als Liste oder Kalender."
+    },
+    "report": {
+      "netWorthHint": "Konten, Vermögenswerte und Schulden im Zeitverlauf.",
+      "incomeExpensesHint": "Ein- und Ausgänge nach Kategorie.",
+      "cashFlowHint": "Wohin sich dein Saldo bewegt.",
+      "moneyMapHint": "Wie sich Einnahmen auf Ausgaben und Ersparnisse verteilen."
+    }
   }
 }

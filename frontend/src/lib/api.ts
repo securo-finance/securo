@@ -1827,6 +1827,26 @@ export const admin = {
   },
 }
 
+// How someone arranged the dashboard and the reports in this workspace;
+// null is Securo's default arrangement.
+export interface UiLayouts {
+  dashboard: { id: string }[] | null
+  reports: { id: string }[] | null
+}
+
+export const uiLayouts = {
+  get: async (): Promise<UiLayouts> => {
+    const { data } = await api.get('/ui/layouts')
+    return data
+  },
+  save: async (surface: 'dashboard' | 'reports', ids: string[]): Promise<void> => {
+    await api.put(`/ui/layouts/${surface}`, { items: ids.map((id) => ({ id })) })
+  },
+  reset: async (surface: 'dashboard' | 'reports'): Promise<void> => {
+    await api.delete(`/ui/layouts/${surface}`)
+  },
+}
+
 // Global search (powers the command palette)
 export type SearchHitType =
   | 'transaction'

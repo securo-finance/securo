@@ -3329,5 +3329,69 @@
       "update": "Nothing changes in this workspace's items; the installed version moves to {{version}}.",
       "remove": "None of its items are left here; removing only takes it off the list."
     }
+  },
+  "library": {
+    "title": "Library",
+    "subtitle": "Choose what your dashboard and reports show, and how Securo looks.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Reports",
+      "themes": "Themes"
+    },
+    "moreHint": {
+      "widgets": "Plugins can add more widgets.",
+      "reports": "Plugins can add more reports.",
+      "themes": "Plugins can add more themes."
+    },
+    "browseCatalog": "Browse plugins",
+    "lastReport": "Keep at least one report.",
+    "removeFrom": {
+      "dashboard": "Remove {{name}} from the dashboard",
+      "reports": "Remove {{name}} from reports"
+    },
+    "addTo": {
+      "dashboard": "Add {{name}} to the dashboard",
+      "reports": "Add {{name}} to reports"
+    },
+    "remove": "Remove",
+    "add": "Add",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Ocean",
+      "forest": "Forest",
+      "sunset": "Sunset",
+      "graphite": "Graphite",
+      "high-contrast": "High contrast"
+    },
+    "saveFailed": "Couldn't save your choice. Try again.",
+    "appearance": "Appearance",
+    "emptyDashboard": "Your dashboard is empty",
+    "emptyDashboardHint": "Add widgets from the library to choose what you see here.",
+    "addWidget": "Add widget",
+    "moveUp": "Move {{name}} up",
+    "moveDown": "Move {{name}} down",
+    "nothingToShow": "Nothing to show right now",
+    "editingDashboard": "Reorder, remove or add widgets. Changes are saved as you go.",
+    "restoreDefault": "Restore default",
+    "done": "Done",
+    "customizeDashboard": "Customize dashboard",
+    "manageReports": "Choose reports",
+    "manageReportsShort": "Manage",
+    "widget": {
+      "overview": "Balance and month",
+      "overviewHint": "Available balance, income, expenses, net worth and savings rate.",
+      "uncategorized": "Uncategorized",
+      "uncategorizedHint": "Transactions still waiting for a category.",
+      "spendingByCategoryHint": "Where the month's money went, against your budgets.",
+      "balanceFlowHint": "How your balance moved this month, compared with others.",
+      "goalsHint": "Progress on your goals.",
+      "transactionsHint": "The month's transactions, as a list or a calendar."
+    },
+    "report": {
+      "netWorthHint": "Accounts, assets and debts over time.",
+      "incomeExpensesHint": "Money in and out, by category.",
+      "cashFlowHint": "Where your balance is heading.",
+      "moneyMapHint": "How income flows into spending and savings."
+    }
   }
 }

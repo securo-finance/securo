@@ -14,13 +14,13 @@ import type { ReportCompositionItem } from '@/types'
 // flow was invisible. Category identity is carried by the always-on labels
 // instead. Links fade from their source colour to their target colour, so an
 // expense flow visibly turns from green (cash flow) to red at the category.
-const INCOME_COLOR = '#10B981' // emerald — money in
-const EXPENSE_COLOR = '#F43F5E' // rose — money out
-const INVEST_COLOR = '#0EA5E9' // sky blue — money set aside (investments)
-const CENTER_COLOR = '#059669' // deeper emerald — the cash-flow hub
-const SURPLUS_COLOR = '#10B981' // emerald — leftover income
-const DEFICIT_COLOR = '#F59E0B' // amber — overspend drawn from reserves
-const NEUTRAL_COLOR = '#9CA3AF' // gray — uncategorised / folded long tail
+const INCOME_COLOR = 'var(--chart-income)' // emerald — money in
+const EXPENSE_COLOR = 'var(--chart-expense)' // rose — money out
+const INVEST_COLOR = 'var(--chart-5)' // sky blue — money set aside (investments)
+const CENTER_COLOR = 'color-mix(in srgb, var(--chart-income), black 18%)' // deeper emerald — the cash-flow hub
+const SURPLUS_COLOR = 'var(--chart-income)' // emerald — leftover income
+const DEFICIT_COLOR = 'var(--chart-2)' // amber — overspend drawn from reserves
+const NEUTRAL_COLOR = 'var(--chart-muted)' // gray — uncategorised / folded long tail
 
 // Keep the diagram legible: personal-finance Sankeys read best at ~a dozen
 // streams per side. Beyond this we fold the smallest categories into "Other".

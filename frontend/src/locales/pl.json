@@ -3465,5 +3465,69 @@
       "update": "Żaden element tej przestrzeni się nie zmienia; zainstalowana wersja to teraz {{version}}.",
       "remove": "Żaden jej element tu nie został; usunięcie tylko zdejmuje ją z listy."
     }
+  },
+  "library": {
+    "title": "Biblioteka",
+    "subtitle": "Wybierz, co pokazują pulpit i raporty oraz jak wygląda Securo.",
+    "kind": {
+      "widgets": "Widżety",
+      "reports": "Raporty",
+      "themes": "Motywy"
+    },
+    "moreHint": {
+      "widgets": "Wtyczki mogą dodać więcej widżetów.",
+      "reports": "Wtyczki mogą dodać więcej raportów.",
+      "themes": "Wtyczki mogą dodać więcej motywów."
+    },
+    "browseCatalog": "Przeglądaj wtyczki",
+    "lastReport": "Zostaw co najmniej jeden raport.",
+    "removeFrom": {
+      "dashboard": "Usuń {{name}} z pulpitu",
+      "reports": "Usuń {{name}} z raportów"
+    },
+    "addTo": {
+      "dashboard": "Dodaj {{name}} do pulpitu",
+      "reports": "Dodaj {{name}} do raportów"
+    },
+    "remove": "Usuń",
+    "add": "Dodaj",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Ocean",
+      "forest": "Las",
+      "sunset": "Zachód słońca",
+      "graphite": "Grafit",
+      "high-contrast": "Wysoki kontrast"
+    },
+    "saveFailed": "Nie udało się zapisać wyboru. Spróbuj ponownie.",
+    "appearance": "Wygląd",
+    "emptyDashboard": "Twój pulpit jest pusty",
+    "emptyDashboardHint": "Dodaj widżety z biblioteki, aby wybrać, co tu widzisz.",
+    "addWidget": "Dodaj widżet",
+    "moveUp": "Przesuń {{name}} w górę",
+    "moveDown": "Przesuń {{name}} w dół",
+    "nothingToShow": "Na razie nic do pokazania",
+    "editingDashboard": "Zmieniaj kolejność, usuwaj lub dodawaj widżety. Zmiany zapisują się od razu.",
+    "restoreDefault": "Przywróć domyślne",
+    "done": "Gotowe",
+    "customizeDashboard": "Dostosuj pulpit",
+    "manageReports": "Wybierz raporty",
+    "manageReportsShort": "Zarządzaj",
+    "widget": {
+      "overview": "Saldo i miesiąc",
+      "overviewHint": "Dostępne saldo, przychody, wydatki, majątek netto i stopa oszczędności.",
+      "uncategorized": "Bez kategorii",
+      "uncategorizedHint": "Transakcje, które wciąż czekają na kategorię.",
+      "spendingByCategoryHint": "Na co poszły pieniądze w tym miesiącu, w porównaniu z budżetami.",
+      "balanceFlowHint": "Jak zmieniało się saldo w tym miesiącu, w porównaniu z innymi.",
+      "goalsHint": "Postęp Twoich celów.",
+      "transactionsHint": "Transakcje z miesiąca, jako lista lub kalendarz."
+    },
+    "report": {
+      "netWorthHint": "Konta, aktywa i długi w czasie.",
+      "incomeExpensesHint": "Wpływy i wydatki według kategorii.",
+      "cashFlowHint": "Dokąd zmierza Twoje saldo.",
+      "moneyMapHint": "Jak przychody dzielą się na wydatki i oszczędności."
+    }
   }
 }

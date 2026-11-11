@@ -3329,5 +3329,69 @@
       "update": "A munkaterület elemei nem változnak; a telepített verzió {{version}} lesz.",
       "remove": "Egyetlen eleme sem maradt itt; az eltávolítás csak a listáról veszi le."
     }
+  },
+  "library": {
+    "title": "Könyvtár",
+    "subtitle": "Válaszd ki, mit mutasson az irányítópult és a jelentések, és hogyan nézzen ki a Securo.",
+    "kind": {
+      "widgets": "Widgetek",
+      "reports": "Jelentések",
+      "themes": "Témák"
+    },
+    "moreHint": {
+      "widgets": "Bővítmények további widgeteket adhatnak hozzá.",
+      "reports": "Bővítmények további jelentéseket adhatnak hozzá.",
+      "themes": "Bővítmények további témákat adhatnak hozzá."
+    },
+    "browseCatalog": "Bővítmények böngészése",
+    "lastReport": "Legalább egy jelentést tarts meg.",
+    "removeFrom": {
+      "dashboard": "{{name}} eltávolítása az irányítópultról",
+      "reports": "{{name}} eltávolítása a jelentésekből"
+    },
+    "addTo": {
+      "dashboard": "{{name}} hozzáadása az irányítópulthoz",
+      "reports": "{{name}} hozzáadása a jelentésekhez"
+    },
+    "remove": "Eltávolítás",
+    "add": "Hozzáadás",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Óceán",
+      "forest": "Erdő",
+      "sunset": "Naplemente",
+      "graphite": "Grafit",
+      "high-contrast": "Magas kontraszt"
+    },
+    "saveFailed": "Nem sikerült menteni a választást. Próbáld újra.",
+    "appearance": "Megjelenés",
+    "emptyDashboard": "Az irányítópultod üres",
+    "emptyDashboardHint": "Adj hozzá widgeteket a könyvtárból, hogy eldöntsd, mit látsz itt.",
+    "addWidget": "Widget hozzáadása",
+    "moveUp": "{{name}} feljebb",
+    "moveDown": "{{name}} lejjebb",
+    "nothingToShow": "Most nincs mit mutatni",
+    "editingDashboard": "Rendezd át, távolítsd el vagy add hozzá a widgeteket. A változások azonnal mentődnek.",
+    "restoreDefault": "Alapértelmezés visszaállítása",
+    "done": "Kész",
+    "customizeDashboard": "Irányítópult testreszabása",
+    "manageReports": "Jelentések kiválasztása",
+    "manageReportsShort": "Kezelés",
+    "widget": {
+      "overview": "Egyenleg és hónap",
+      "overviewHint": "Elérhető egyenleg, bevételek, kiadások, nettó vagyon és megtakarítási ráta.",
+      "uncategorized": "Kategória nélkül",
+      "uncategorizedHint": "Tranzakciók, amelyek még kategóriára várnak.",
+      "spendingByCategoryHint": "Hová ment a hónap pénze, a költségvetésekhez képest.",
+      "balanceFlowHint": "Hogyan alakult az egyenleg ebben a hónapban, más hónapokhoz képest.",
+      "goalsHint": "A céljaid előrehaladása.",
+      "transactionsHint": "A hónap tranzakciói listában vagy naptárban."
+    },
+    "report": {
+      "netWorthHint": "Számlák, eszközök és tartozások az idő során.",
+      "incomeExpensesHint": "Bevételek és kiadások kategóriánként.",
+      "cashFlowHint": "Merre tart az egyenleged.",
+      "moneyMapHint": "Hogyan oszlik meg a bevétel a kiadások és a megtakarítás között."
+    }
   }
 }

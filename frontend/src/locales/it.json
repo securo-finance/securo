@@ -3333,5 +3333,69 @@
       "update": "Nessun elemento di questo spazio cambia; la versione installata diventa {{version}}.",
       "remove": "Nessuno dei suoi elementi è rimasto qui; rimuoverlo lo toglie solo dall'elenco."
     }
+  },
+  "library": {
+    "title": "Libreria",
+    "subtitle": "Scegli cosa mostrano la dashboard e i report, e l'aspetto di Securo.",
+    "kind": {
+      "widgets": "Widget",
+      "reports": "Report",
+      "themes": "Temi"
+    },
+    "moreHint": {
+      "widgets": "I plugin possono aggiungere altri widget.",
+      "reports": "I plugin possono aggiungere altri report.",
+      "themes": "I plugin possono aggiungere altri temi."
+    },
+    "browseCatalog": "Sfoglia i plugin",
+    "lastReport": "Mantieni almeno un report.",
+    "removeFrom": {
+      "dashboard": "Rimuovi {{name}} dalla dashboard",
+      "reports": "Rimuovi {{name}} dai report"
+    },
+    "addTo": {
+      "dashboard": "Aggiungi {{name}} alla dashboard",
+      "reports": "Aggiungi {{name}} ai report"
+    },
+    "remove": "Rimuovi",
+    "add": "Aggiungi",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Oceano",
+      "forest": "Foresta",
+      "sunset": "Tramonto",
+      "graphite": "Grafite",
+      "high-contrast": "Contrasto elevato"
+    },
+    "saveFailed": "Impossibile salvare la scelta. Riprova.",
+    "appearance": "Aspetto",
+    "emptyDashboard": "La tua dashboard è vuota",
+    "emptyDashboardHint": "Aggiungi widget dalla libreria per scegliere cosa vedere qui.",
+    "addWidget": "Aggiungi widget",
+    "moveUp": "Sposta {{name}} su",
+    "moveDown": "Sposta {{name}} giù",
+    "nothingToShow": "Niente da mostrare al momento",
+    "editingDashboard": "Riordina, rimuovi o aggiungi widget. Le modifiche vengono salvate subito.",
+    "restoreDefault": "Ripristina predefinito",
+    "done": "Fatto",
+    "customizeDashboard": "Personalizza dashboard",
+    "manageReports": "Scegli i report",
+    "manageReportsShort": "Gestisci",
+    "widget": {
+      "overview": "Saldo e mese",
+      "overviewHint": "Saldo disponibile, entrate, uscite, patrimonio netto e tasso di risparmio.",
+      "uncategorized": "Senza categoria",
+      "uncategorizedHint": "Transazioni che aspettano ancora una categoria.",
+      "spendingByCategoryHint": "Dove sono andati i soldi del mese, rispetto ai budget.",
+      "balanceFlowHint": "Come si è mosso il saldo questo mese, rispetto ad altri.",
+      "goalsHint": "L'avanzamento dei tuoi obiettivi.",
+      "transactionsHint": "Le transazioni del mese, in elenco o calendario."
+    },
+    "report": {
+      "netWorthHint": "Conti, beni e debiti nel tempo.",
+      "incomeExpensesHint": "Entrate e uscite, per categoria.",
+      "cashFlowHint": "Dove sta andando il tuo saldo.",
+      "moneyMapHint": "Come le entrate si dividono tra spese e risparmi."
+    }
   }
 }

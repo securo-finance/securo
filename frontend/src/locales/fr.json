@@ -3333,5 +3333,69 @@
       "update": "Aucun élément de cet espace ne change ; la version installée passe à {{version}}.",
       "remove": "Aucun de ses éléments n'est resté ici ; le retirer l'enlève seulement de la liste."
     }
+  },
+  "library": {
+    "title": "Bibliothèque",
+    "subtitle": "Choisissez ce qu'affichent le tableau de bord et les rapports, et l'apparence de Securo.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Rapports",
+      "themes": "Thèmes"
+    },
+    "moreHint": {
+      "widgets": "Des plugins peuvent ajouter d'autres widgets.",
+      "reports": "Des plugins peuvent ajouter d'autres rapports.",
+      "themes": "Des plugins peuvent ajouter d'autres thèmes."
+    },
+    "browseCatalog": "Parcourir les plugins",
+    "lastReport": "Gardez au moins un rapport.",
+    "removeFrom": {
+      "dashboard": "Retirer {{name}} du tableau de bord",
+      "reports": "Retirer {{name}} des rapports"
+    },
+    "addTo": {
+      "dashboard": "Ajouter {{name}} au tableau de bord",
+      "reports": "Ajouter {{name}} aux rapports"
+    },
+    "remove": "Retirer",
+    "add": "Ajouter",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Océan",
+      "forest": "Forêt",
+      "sunset": "Coucher de soleil",
+      "graphite": "Graphite",
+      "high-contrast": "Contraste élevé"
+    },
+    "saveFailed": "Impossible d'enregistrer votre choix. Réessayez.",
+    "appearance": "Apparence",
+    "emptyDashboard": "Votre tableau de bord est vide",
+    "emptyDashboardHint": "Ajoutez des widgets depuis la bibliothèque pour choisir ce qui s'affiche ici.",
+    "addWidget": "Ajouter un widget",
+    "moveUp": "Monter {{name}}",
+    "moveDown": "Descendre {{name}}",
+    "nothingToShow": "Rien à afficher pour le moment",
+    "editingDashboard": "Réorganisez, retirez ou ajoutez des widgets. Les changements sont enregistrés au fur et à mesure.",
+    "restoreDefault": "Rétablir par défaut",
+    "done": "Terminé",
+    "customizeDashboard": "Personnaliser le tableau de bord",
+    "manageReports": "Choisir les rapports",
+    "manageReportsShort": "Gérer",
+    "widget": {
+      "overview": "Solde et mois",
+      "overviewHint": "Solde disponible, revenus, dépenses, valeur nette et taux d'épargne.",
+      "uncategorized": "Sans catégorie",
+      "uncategorizedHint": "Transactions qui attendent encore une catégorie.",
+      "spendingByCategoryHint": "Où est passé l'argent du mois, par rapport à vos budgets.",
+      "balanceFlowHint": "Comment votre solde a évolué ce mois-ci, comparé à d'autres.",
+      "goalsHint": "La progression de vos objectifs.",
+      "transactionsHint": "Les transactions du mois, en liste ou en calendrier."
+    },
+    "report": {
+      "netWorthHint": "Comptes, biens et dettes dans le temps.",
+      "incomeExpensesHint": "Entrées et sorties, par catégorie.",
+      "cashFlowHint": "Où va votre solde.",
+      "moneyMapHint": "Comment les revenus se répartissent entre dépenses et épargne."
+    }
   }
 }

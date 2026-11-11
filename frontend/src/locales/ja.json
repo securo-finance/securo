@@ -3329,5 +3329,69 @@
       "update": "ワークスペースの項目は変わりません。インストール済みのバージョンが {{version}} になります。",
       "remove": "項目はもう残っていません。削除するとリストから外れるだけです。"
     }
+  },
+  "library": {
+    "title": "ライブラリ",
+    "subtitle": "ダッシュボードとレポートに表示する内容と、Securoの見た目を選べます。",
+    "kind": {
+      "widgets": "ウィジェット",
+      "reports": "レポート",
+      "themes": "テーマ"
+    },
+    "moreHint": {
+      "widgets": "プラグインでウィジェットを追加できます。",
+      "reports": "プラグインでレポートを追加できます。",
+      "themes": "プラグインでテーマを追加できます。"
+    },
+    "browseCatalog": "プラグインを見る",
+    "lastReport": "レポートを少なくとも1つ残してください。",
+    "removeFrom": {
+      "dashboard": "{{name}}をダッシュボードから外す",
+      "reports": "{{name}}をレポートから外す"
+    },
+    "addTo": {
+      "dashboard": "{{name}}をダッシュボードに追加",
+      "reports": "{{name}}をレポートに追加"
+    },
+    "remove": "外す",
+    "add": "追加",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "オーシャン",
+      "forest": "フォレスト",
+      "sunset": "サンセット",
+      "graphite": "グラファイト",
+      "high-contrast": "ハイコントラスト"
+    },
+    "saveFailed": "選択を保存できませんでした。もう一度お試しください。",
+    "appearance": "外観",
+    "emptyDashboard": "ダッシュボードは空です",
+    "emptyDashboardHint": "ライブラリからウィジェットを追加して、ここに表示する内容を選びましょう。",
+    "addWidget": "ウィジェットを追加",
+    "moveUp": "{{name}}を上へ移動",
+    "moveDown": "{{name}}を下へ移動",
+    "nothingToShow": "今は表示するものがありません",
+    "editingDashboard": "ウィジェットの並べ替え、削除、追加ができます。変更はすぐに保存されます。",
+    "restoreDefault": "デフォルトに戻す",
+    "done": "完了",
+    "customizeDashboard": "ダッシュボードをカスタマイズ",
+    "manageReports": "レポートを選ぶ",
+    "manageReportsShort": "管理",
+    "widget": {
+      "overview": "残高と今月",
+      "overviewHint": "利用可能残高、収入、支出、純資産、貯蓄率。",
+      "uncategorized": "未分類",
+      "uncategorizedHint": "まだカテゴリが必要な取引。",
+      "spendingByCategoryHint": "今月のお金の使い道と予算の比較。",
+      "balanceFlowHint": "今月の残高の動きを他の月と比較。",
+      "goalsHint": "目標の進捗。",
+      "transactionsHint": "今月の取引をリストまたはカレンダーで。"
+    },
+    "report": {
+      "netWorthHint": "口座、資産、負債の推移。",
+      "incomeExpensesHint": "カテゴリ別の入出金。",
+      "cashFlowHint": "残高の見通し。",
+      "moneyMapHint": "収入が支出と貯蓄にどう分かれるか。"
+    }
   }
 }

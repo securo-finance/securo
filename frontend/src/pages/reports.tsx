@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import { loadReportsRange, saveReportsRange, type ReportsRange } from '@/lib/remembered-range'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
@@ -21,10 +21,13 @@ import {
   ResponsiveContainer,
   type BarShapeProps,
 } from 'recharts'
-import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, HelpCircle, X } from 'lucide-react'
+import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, HelpCircle, LibraryBig, X } from 'lucide-react'
+import { useLayout } from '@/hooks/use-layout'
+import { useLibrary } from '@/contexts/library-context'
 import { reports } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { PageHeader } from '@/components/page-header'
@@ -50,21 +53,10 @@ import {
 // detail ring. Capped to a handful of slices, distinct colours make each
 // holding easy to match against its legend entry (which a same-hue ramp
 // across 15+ near-identical slices never could).
-const SLICE_COLORS = [
-  '#6366F1', // indigo
-  '#F59E0B', // amber
-  '#10B981', // emerald
-  '#EC4899', // pink
-  '#0EA5E9', // sky
-  '#8B5CF6', // violet
-  '#F97316', // orange
-  '#14B8A6', // teal
-  '#84CC16', // lime
-  '#D946EF', // fuchsia
-  '#F43F5E', // rose
-  '#06B6D4', // cyan
-]
-const OTHER_SLICE_COLOR = '#9CA3AF'
+// Twelve distinct series colors from the theme (index.css), so a theme
+// recolors every chart without the chart knowing.
+const SLICE_COLORS = Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`)
+const OTHER_SLICE_COLOR = 'var(--chart-muted)'
 
 /** "Apr 2026" from a YYYY-MM-DD date, in the date locale. */
 function formatShortMonth(isoDate: string, locale: string) {
@@ -225,13 +217,22 @@ export default function ReportsPage() {
   const dateLocale = useDateLocale()
 
   const customDefaults = defaultCustomRange()
+  // The reports this person keeps, in their order (all four by default).
+  const reportsLayout = useLayout('reports')
+  const { openLibrary } = useLibrary()
+  const shownTabs = useMemo(() => {
+    const tabs = reportsLayout.ids
+      .map((id) => REPORT_TABS.find((tab) => tab.key === id))
+      .filter((tab): tab is ReportTab => tab !== undefined)
+    return tabs.length > 0 ? tabs : REPORT_TABS
+  }, [reportsLayout.ids])
   // The page opens on the first tab with the range last used there (issue
   // #1053), or that tab's defaults if what was stored doesn't apply to it.
-  const [initialRange] = useState<ReportsRange>(() => storedReportsRange(REPORT_TABS[0]) ?? {
-    rangeKey: REPORT_TABS[0].fallbackRangeKey,
+  const [initialRange] = useState<ReportsRange>(() => storedReportsRange(shownTabs[0]) ?? {
+    rangeKey: shownTabs[0].fallbackRangeKey,
     from: '',
     to: '',
-    interval: REPORT_TABS[0].fallbackInterval,
+    interval: shownTabs[0].fallbackInterval,
   })
   const [rangeKey, setRangeKey] = useState(initialRange.rangeKey)
   const [interval, setInterval] = useState(initialRange.interval)
@@ -244,7 +245,7 @@ export default function ReportsPage() {
   // Period navigation (issue #519): how many periods of the active preset the
   // window has been stepped back. 0 means the window still ends today.
   const [periodOffset, setPeriodOffset] = useState(initialRange.periodOffset ?? 0)
-  const [activeTab, setActiveTab] = useState(REPORT_TABS[0].key)
+  const [activeTab, setActiveTab] = useState(shownTabs[0].key)
   // Each tab keeps its own range: Cash Flow clamping to its forward presets
   // must not overwrite what Net Worth was showing.
   useEffect(() => {
@@ -364,6 +365,15 @@ export default function ReportsPage() {
     }
   }
 
+  // A report taken out of the page (here or from the library) hands over to the first one left.
+  const firstShown = shownTabs[0].key
+  const activeShown = shownTabs.some((tab) => tab.key === activeTab)
+  useEffect(() => {
+    if (!activeShown) handleSelectTab(firstShown)
+    // handleSelectTab is recreated each render; what matters is the active tab leaving the page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeShown, firstShown])
+
   // Year picker (issue #765): one entry per year the workspace's data
   // covers, from this year back to the oldest transaction. Hidden until the
   // data spans at least two years, and never on Cash Flow, which has no
@@ -405,7 +415,7 @@ export default function ReportsPage() {
           ? reports.incomeExpenses(months, interval, acctIds, period, days, apiStart, apiEnd)
           : reports.netWorth(months, interval, acctIds, walletIds, period, apiStart, apiEnd),
     // Only request a custom report with both committed endpoints.
-    enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
+    enabled: currentTab.enabled && reportsLayout.ready && activeShown && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
   })
 
   const summary = data?.summary
@@ -491,7 +501,7 @@ export default function ReportsPage() {
             key,
             label: orig?.label ?? key,
             value: Math.abs(rawValue as number),
-            color: orig?.color ?? '#6366F1',
+            color: orig?.color ?? 'var(--chart-1)',
           }
         })
         .filter((b) => b.value > 0)
@@ -860,7 +870,7 @@ export default function ReportsPage() {
 
       {/* Tab Bar */}
       <div className="flex items-center gap-1 mb-5 border-b border-border">
-        {REPORT_TABS.map((tab) => (
+        {shownTabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => { if (tab.enabled) handleSelectTab(tab.key) }}
@@ -884,6 +894,17 @@ export default function ReportsPage() {
             )}
           </button>
         ))}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto mb-1 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
+          aria-label={t('library.manageReports')}
+          title={t('library.manageReports')}
+          onClick={() => openLibrary('reports')}
+        >
+          <LibraryBig size={15} />
+          <span className="hidden sm:inline">{t('library.manageReportsShort')}</span>
+        </Button>
       </div>
 
       {isError && (
@@ -1003,19 +1024,19 @@ export default function ReportsPage() {
             </p>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#10B981' }} />
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--chart-income)' }} />
                 <span className="text-[11px] text-muted-foreground">{t('reports.income')}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#F43F5E' }} />
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--chart-expense)' }} />
                 <span className="text-[11px] text-muted-foreground">{t('reports.expenses')}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#0EA5E9' }} />
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--chart-5)' }} />
                 <span className="text-[11px] text-muted-foreground">{t('reports.investments')}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#F59E0B' }} />
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--chart-2)' }} />
                 <span className="text-[11px] text-muted-foreground">{t('reports.deficit')}</span>
               </div>
             </div>
@@ -1042,7 +1063,7 @@ export default function ReportsPage() {
             <div className="flex items-center gap-3">
               {meta.type === 'net_worth' ? (
                 <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#6366F1' }} />
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--chart-1)' }} />
                   <span className="text-[11px] text-muted-foreground">
                     {t('reports.netWorth')}
                   </span>
@@ -1052,7 +1073,7 @@ export default function ReportsPage() {
                   <div key={key} className="flex items-center gap-1.5">
                     <div
                       className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: colorMap[key] || '#6366F1' }}
+                      style={{ backgroundColor: colorMap[key] || 'var(--chart-1)' }}
                     />
                     <span className="text-[11px] text-muted-foreground">
                       {t(`reports.${key}`, { defaultValue: key })}
@@ -1062,7 +1083,7 @@ export default function ReportsPage() {
               )}
               {meta.type === 'income_expenses' && (
                 <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#6366F1' }} />
+                  <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: 'var(--chart-1)' }} />
                   <span className="text-[11px] text-muted-foreground">
                     {t('reports.netIncome')}
                   </span>
@@ -1070,7 +1091,7 @@ export default function ReportsPage() {
               )}
               {meta.type === 'cash_flow' && (
                 <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#6366F1' }} />
+                  <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: 'var(--chart-1)' }} />
                   <span className="text-[11px] text-muted-foreground">
                     {meta.baseline_active ? t('reports.forecastBaseline') : t('reports.forecast')}
                   </span>
@@ -1092,8 +1113,8 @@ export default function ReportsPage() {
                   <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="cashFlowGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366F1" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#6366F1" stopOpacity={0.02} />
+                        <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.02} />
                       </linearGradient>
                     </defs>
                     <XAxis
@@ -1125,18 +1146,18 @@ export default function ReportsPage() {
                         return (
                           <div style={tooltipStyle} className="px-3 py-2">
                             <p className="text-xs font-medium mb-1">{label}</p>
-                            <p className="text-xs" style={{ color: '#6366F1' }}>
+                            <p className="text-xs" style={{ color: 'var(--chart-1)' }}>
                               {t('reports.balance', { defaultValue: 'Balance' })}:{' '}
                               {privacyMode ? MASK : formatCurrency(balance, userCurrency, locale)}
                             </p>
                             {inflow > 0 && (
-                              <p className="text-xs" style={{ color: '#10B981' }}>
+                              <p className="text-xs" style={{ color: 'var(--chart-income)' }}>
                                 {t('reports.inflow')}:{' '}
                                 {privacyMode ? MASK : `+${formatCurrency(inflow, userCurrency, locale)}`}
                               </p>
                             )}
                             {outflow > 0 && (
-                              <p className="text-xs" style={{ color: '#F43F5E' }}>
+                              <p className="text-xs" style={{ color: 'var(--chart-expense)' }}>
                                 {t('reports.outflow')}:{' '}
                                 {privacyMode ? MASK : `-${formatCurrency(outflow, userCurrency, locale)}`}
                               </p>
@@ -1152,7 +1173,7 @@ export default function ReportsPage() {
                       strokeOpacity={0.5}
                     />
                     {lowestBalance !== null && lowestBalance < 0 && (
-                      <ReferenceLine y={0} stroke="#F43F5E" strokeOpacity={0.6} />
+                      <ReferenceLine y={0} stroke="var(--chart-expense)" strokeOpacity={0.6} />
                     )}
                     {forecastStart && (
                       <ReferenceLine
@@ -1171,24 +1192,24 @@ export default function ReportsPage() {
                     <Area
                       type="monotone"
                       dataKey="valuePast"
-                      stroke="#6366F1"
+                      stroke="var(--chart-1)"
                       strokeWidth={2.5}
                       fill="url(#cashFlowGrad)"
                       dot={false}
-                      activeDot={{ r: 4, fill: '#6366F1' }}
+                      activeDot={{ r: 4, fill: 'var(--chart-1)' }}
                       isAnimationActive={false}
                       connectNulls={false}
                     />
                     <Area
                       type="monotone"
                       dataKey="valueForecast"
-                      stroke="#6366F1"
+                      stroke="var(--chart-1)"
                       strokeWidth={2.5}
                       strokeDasharray="6 3"
                       fill="url(#cashFlowGrad)"
                       fillOpacity={0.4}
                       dot={false}
-                      activeDot={{ r: 4, fill: '#6366F1' }}
+                      activeDot={{ r: 4, fill: 'var(--chart-1)' }}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -1226,18 +1247,18 @@ export default function ReportsPage() {
                   contentStyle={tooltipStyle}
                 />
                 <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
-                  <Bar dataKey="income" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={20} />
-                  <Bar dataKey="expenses" fill="#F43F5E" radius={[4, 4, 0, 0]} maxBarSize={20} />
-                  <Bar dataKey="projectedIncome" fill="#34D399" radius={[4, 4, 0, 0]} maxBarSize={20} fillOpacity={0.65} />
-                  <Bar dataKey="projectedExpenses" fill="#FB7185" radius={[4, 4, 0, 0]} maxBarSize={20} fillOpacity={0.65} />
+                  <Bar dataKey="income" fill="var(--chart-income)" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                  <Bar dataKey="expenses" fill="var(--chart-expense)" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                  <Bar dataKey="projectedIncome" fill="color-mix(in srgb, var(--chart-income), white 30%)" radius={[4, 4, 0, 0]} maxBarSize={20} fillOpacity={0.65} />
+                  <Bar dataKey="projectedExpenses" fill="color-mix(in srgb, var(--chart-expense), white 30%)" radius={[4, 4, 0, 0]} maxBarSize={20} fillOpacity={0.65} />
                 <Line
                   type="monotone"
                   dataKey="value"
-                  stroke="#6366F1"
+                  stroke="var(--chart-1)"
                   strokeWidth={2}
                   strokeDasharray="6 3"
                   dot={false}
-                  activeDot={{ r: 4, fill: '#6366F1' }}
+                  activeDot={{ r: 4, fill: 'var(--chart-1)' }}
                 />
               </ComposedChart>
             </ResponsiveContainer>
@@ -1246,8 +1267,8 @@ export default function ReportsPage() {
               <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="netWorthGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366F1" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#6366F1" stopOpacity={0.02} />
+                    <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
                 <XAxis
@@ -1276,11 +1297,11 @@ export default function ReportsPage() {
                     const value = (payload[0]?.value as number) ?? 0
                     const change = point.change ?? null
                     const changeSign = change !== null && change >= 0 ? '+' : ''
-                    const changeColor = change !== null ? (change >= 0 ? '#10B981' : '#F43F5E') : ''
+                    const changeColor = change !== null ? (change >= 0 ? 'var(--chart-income)' : 'var(--chart-expense)') : ''
                     return (
                       <div style={tooltipStyle} className="px-3 py-2">
                         <p className="text-xs font-medium mb-1">{label}</p>
-                        <p className="text-xs" style={{ color: '#6366F1' }}>
+                        <p className="text-xs" style={{ color: 'var(--chart-1)' }}>
                           {t(currentTab.labelKey)}:{' '}
                           {privacyMode ? MASK : formatCurrency(value, userCurrency, locale)}
                         </p>
@@ -1297,11 +1318,11 @@ export default function ReportsPage() {
                 <Area
                   type="monotone"
                   dataKey="value"
-                  stroke="#6366F1"
+                  stroke="var(--chart-1)"
                   strokeWidth={2.5}
                   fill={shouldFillNetWorthArea(netWorthDomain) ? 'url(#netWorthGrad)' : 'none'}
                   dot={false}
-                  activeDot={{ r: 4, fill: '#6366F1' }}
+                  activeDot={{ r: 4, fill: 'var(--chart-1)' }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -1765,14 +1786,14 @@ export default function ReportsPage() {
                         : null
                       const netFlowColor = !cashFlowPoint || cashFlowPoint.netFlow === 0
                         ? 'var(--muted-foreground)'
-                        : cashFlowPoint.netFlow > 0 ? '#10B981' : '#F43F5E'
+                        : cashFlowPoint.netFlow > 0 ? 'var(--chart-income)' : 'var(--chart-expense)'
                       // Cash-flow bars carry ranges, and a zero-height segment
                       // drops out of `items`; list both amounts from the period
                       // itself so the net flow always has both of its terms.
                       const rows = cashFlowPoint
                         ? [
-                            { key: 'inflow', name: 'inflow', color: '#10B981', value: cashFlowPoint.inflowAmount },
-                            { key: 'outflow', name: 'outflow', color: '#F43F5E', value: -cashFlowPoint.outflowAmount },
+                            { key: 'inflow', name: 'inflow', color: 'var(--chart-income)', value: cashFlowPoint.inflowAmount },
+                            { key: 'outflow', name: 'outflow', color: 'var(--chart-expense)', value: -cashFlowPoint.outflowAmount },
                           ]
                         : items.map((p) => ({
                             key: p.dataKey as string,
@@ -1813,10 +1834,10 @@ export default function ReportsPage() {
                     const isNetWorth = meta.type === 'net_worth'
                     const allSeries = meta.type === 'cash_flow'
                       ? [
-                          { key: 'inflow', color: '#10B981' },
-                          { key: 'outflow', color: '#F43F5E' },
+                          { key: 'inflow', color: 'var(--chart-income)' },
+                          { key: 'outflow', color: 'var(--chart-expense)' },
                         ]
-                      : meta.series_keys.map((k) => ({ key: k, color: colorMap[k] || '#6366F1' }))
+                      : meta.series_keys.map((k) => ({ key: k, color: colorMap[k] || 'var(--chart-1)' }))
                     const filteredSeries = allSeries.filter(({ key }) =>
                       barChartData.some((d) => {
                         const v = d[key]
@@ -1870,11 +1891,11 @@ export default function ReportsPage() {
                       type="monotone"
                       dataKey="value"
                       name={t('reports.netWorth', { defaultValue: 'Net Worth' })}
-                      stroke="#10B981"
+                      stroke="var(--chart-income)"
                       strokeWidth={2}
                       strokeDasharray="6 3"
                       dot={false}
-                      activeDot={{ r: 4, fill: '#10B981' }}
+                      activeDot={{ r: 4, fill: 'var(--chart-income)' }}
                       isAnimationActive={false}
                     />
                   )}

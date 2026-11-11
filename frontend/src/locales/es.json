@@ -3333,5 +3333,69 @@
       "update": "Ningún elemento de este espacio cambia; la versión instalada pasa a {{version}}.",
       "remove": "No queda ninguno de sus elementos aquí; quitarlo solo lo saca de la lista."
     }
+  },
+  "library": {
+    "title": "Biblioteca",
+    "subtitle": "Elige qué muestran el panel y los informes, y el aspecto de Securo.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Informes",
+      "themes": "Temas"
+    },
+    "moreHint": {
+      "widgets": "Los plugins pueden añadir más widgets.",
+      "reports": "Los plugins pueden añadir más informes.",
+      "themes": "Los plugins pueden añadir más temas."
+    },
+    "browseCatalog": "Ver plugins",
+    "lastReport": "Mantén al menos un informe.",
+    "removeFrom": {
+      "dashboard": "Quitar {{name}} del panel",
+      "reports": "Quitar {{name}} de los informes"
+    },
+    "addTo": {
+      "dashboard": "Añadir {{name}} al panel",
+      "reports": "Añadir {{name}} a los informes"
+    },
+    "remove": "Quitar",
+    "add": "Añadir",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Océano",
+      "forest": "Bosque",
+      "sunset": "Atardecer",
+      "graphite": "Grafito",
+      "high-contrast": "Alto contraste"
+    },
+    "saveFailed": "No se pudo guardar tu elección. Inténtalo de nuevo.",
+    "appearance": "Apariencia",
+    "emptyDashboard": "Tu panel está vacío",
+    "emptyDashboardHint": "Añade widgets de la biblioteca para elegir qué ves aquí.",
+    "addWidget": "Añadir widget",
+    "moveUp": "Subir {{name}}",
+    "moveDown": "Bajar {{name}}",
+    "nothingToShow": "Nada que mostrar por ahora",
+    "editingDashboard": "Reordena, quita o añade widgets. Los cambios se guardan al momento.",
+    "restoreDefault": "Restaurar predeterminado",
+    "done": "Listo",
+    "customizeDashboard": "Personalizar panel",
+    "manageReports": "Elegir informes",
+    "manageReportsShort": "Gestionar",
+    "widget": {
+      "overview": "Saldo y mes",
+      "overviewHint": "Saldo disponible, ingresos, gastos, patrimonio neto y tasa de ahorro.",
+      "uncategorized": "Sin categoría",
+      "uncategorizedHint": "Transacciones que aún esperan una categoría.",
+      "spendingByCategoryHint": "A dónde fue el dinero del mes, frente a tus presupuestos.",
+      "balanceFlowHint": "Cómo se movió tu saldo este mes, comparado con otros.",
+      "goalsHint": "El progreso de tus metas.",
+      "transactionsHint": "Las transacciones del mes, en lista o calendario."
+    },
+    "report": {
+      "netWorthHint": "Cuentas, bienes y deudas a lo largo del tiempo.",
+      "incomeExpensesHint": "Entradas y salidas, por categoría.",
+      "cashFlowHint": "Hacia dónde va tu saldo.",
+      "moneyMapHint": "Cómo se reparten los ingresos entre gastos y ahorro."
+    }
   }
 }

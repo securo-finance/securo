@@ -3499,5 +3499,69 @@
       "update": "Žiadne položky v tomto priestore sa nemenia; nainštalovaná verzia bude {{version}}.",
       "remove": "Žiadna jeho položka tu nezostala; odstránenie ho len vyradí zo zoznamu."
     }
+  },
+  "library": {
+    "title": "Knižnica",
+    "subtitle": "Vyberte, čo ukazuje prehľad a reporty a ako Securo vyzerá.",
+    "kind": {
+      "widgets": "Widgety",
+      "reports": "Reporty",
+      "themes": "Motívy"
+    },
+    "moreHint": {
+      "widgets": "Pluginy môžu pridať ďalšie widgety.",
+      "reports": "Pluginy môžu pridať ďalšie reporty.",
+      "themes": "Pluginy môžu pridať ďalšie motívy."
+    },
+    "browseCatalog": "Prehliadať pluginy",
+    "lastReport": "Ponechajte aspoň jeden report.",
+    "removeFrom": {
+      "dashboard": "Odobrať {{name}} z prehľadu",
+      "reports": "Odobrať {{name}} z reportov"
+    },
+    "addTo": {
+      "dashboard": "Pridať {{name}} do prehľadu",
+      "reports": "Pridať {{name}} do reportov"
+    },
+    "remove": "Odobrať",
+    "add": "Pridať",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Oceán",
+      "forest": "Les",
+      "sunset": "Západ slnka",
+      "graphite": "Grafit",
+      "high-contrast": "Vysoký kontrast"
+    },
+    "saveFailed": "Voľbu sa nepodarilo uložiť. Skúste to znova.",
+    "appearance": "Vzhľad",
+    "emptyDashboard": "Váš prehľad je prázdny",
+    "emptyDashboardHint": "Pridajte widgety z knižnice a vyberte, čo tu uvidíte.",
+    "addWidget": "Pridať widget",
+    "moveUp": "Posunúť {{name}} nahor",
+    "moveDown": "Posunúť {{name}} nadol",
+    "nothingToShow": "Teraz nie je čo zobraziť",
+    "editingDashboard": "Meňte poradie, odoberajte alebo pridávajte widgety. Zmeny sa ukladajú hneď.",
+    "restoreDefault": "Obnoviť predvolené",
+    "done": "Hotovo",
+    "customizeDashboard": "Prispôsobiť prehľad",
+    "manageReports": "Vybrať reporty",
+    "manageReportsShort": "Spravovať",
+    "widget": {
+      "overview": "Zostatok a mesiac",
+      "overviewHint": "Dostupný zostatok, príjmy, výdavky, čisté imanie a miera úspor.",
+      "uncategorized": "Bez kategórie",
+      "uncategorizedHint": "Transakcie, ktoré ešte čakajú na kategóriu.",
+      "spendingByCategoryHint": "Kam išli peniaze za mesiac, v porovnaní s rozpočtami.",
+      "balanceFlowHint": "Ako sa zostatok vyvíjal tento mesiac, v porovnaní s inými.",
+      "goalsHint": "Postup vašich cieľov.",
+      "transactionsHint": "Transakcie za mesiac ako zoznam alebo kalendár."
+    },
+    "report": {
+      "netWorthHint": "Účty, majetok a dlhy v čase.",
+      "incomeExpensesHint": "Príjmy a výdavky podľa kategórií.",
+      "cashFlowHint": "Kam smeruje váš zostatok.",
+      "moneyMapHint": "Ako sa príjmy delia medzi výdavky a úspory."
+    }
   }
 }

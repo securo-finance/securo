@@ -15,7 +15,7 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { CollectionSelector } from '@/components/collection-selector'
-import { auth as authApi, admin as adminApi } from '@/lib/api'
+import { auth as authApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { OnboardingTour } from '@/components/onboarding-tour'
 import { useTheme } from 'next-themes'
@@ -57,6 +57,7 @@ import {
   Shield,
   ShieldCheck,
   Fingerprint,
+  Palette,
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
@@ -68,7 +69,9 @@ import { useCommandPaletteHotkey } from '@/hooks/use-command-palette-hotkey'
 import { GlobalChatPanel } from '@/components/global-chat-panel'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { Bot, Plus, Search, Sparkles } from 'lucide-react'
-import { setThemeBasedOnSystem } from '@/lib/theme-utils'
+import { useAppTheme } from '@/hooks/use-app-theme'
+import { LibraryProvider } from '@/components/library-provider'
+import { useLibrary } from '@/contexts/library-context'
 import { nextTheme, THEME_LABEL_KEY } from '@/lib/theme-cycle'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { formatCurrency } from '@/lib/format'
@@ -102,7 +105,9 @@ export function AppLayout() {
   const { activeAccountIds } = useCollectionFilter()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
-  const { theme, setTheme, resolvedTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
+  // The theme picked from the library, kept on the page in light and dark.
+  useAppTheme()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
@@ -138,10 +143,6 @@ export function AppLayout() {
   // Gated on agentsEnabled so the hotkey is a no-op when the feature is
   // off — keeps ⌘J free for browsers/other tools.
   useEffect(() => {
-    adminApi.defaultColors().then(({ light, dark }) => {
-      setThemeBasedOnSystem(light, dark, resolvedTheme)
-    }).catch(() => {})
-    
     if (!chatAvailable) return
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey
@@ -152,7 +153,7 @@ export function AppLayout() {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [chatAvailable, resolvedTheme])
+  }, [chatAvailable])
   // The "Agents" management page used to live in the sidebar, but it's
   // a configuration surface (KB upload, providers, default selection),
   // not a daily destination. Moved to the user menu (Change password,
@@ -206,6 +207,7 @@ export function AppLayout() {
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
+    <LibraryProvider>
     <div className="min-h-screen bg-background">
       {/* Mobile header */}
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 bg-sidebar border-b border-sidebar-border px-4 lg:hidden">
@@ -642,6 +644,7 @@ export function AppLayout() {
         onClose={() => setUpdateDialogOpen(false)}
       />
     </div>
+    </LibraryProvider>
   )
 }
 
@@ -671,6 +674,7 @@ function UserMenu({
   const { user } = useAuth()
   const { t, i18n } = useTranslation()
   const nav = useNavigate()
+  const { openLibrary } = useLibrary()
   const currentLang = resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language)
   return (
     <DropdownMenu>
@@ -746,6 +750,13 @@ function UserMenu({
             {t('nav.aiAgents')}
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem
+          onClick={() => openLibrary('themes')}
+          className="flex items-center gap-2"
+        >
+          <Palette size={14} />
+          {t('library.appearance')}
+        </DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className="flex items-center gap-2">
             <Languages size={14} />

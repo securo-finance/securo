@@ -3333,5 +3333,69 @@
       "update": "Nenhum item deste workspace muda; a versão instalada passa a ser {{version}}.",
       "remove": "Nenhum item dele ficou aqui; remover só tira o plugin da lista."
     }
+  },
+  "library": {
+    "title": "Biblioteca",
+    "subtitle": "Escolha o que o painel e os relatórios mostram, e a aparência do Securo.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Relatórios",
+      "themes": "Temas"
+    },
+    "moreHint": {
+      "widgets": "Plugins podem adicionar mais widgets.",
+      "reports": "Plugins podem adicionar mais relatórios.",
+      "themes": "Plugins podem adicionar mais temas."
+    },
+    "browseCatalog": "Ver plugins",
+    "lastReport": "Mantenha pelo menos um relatório.",
+    "removeFrom": {
+      "dashboard": "Remover {{name}} do painel",
+      "reports": "Remover {{name}} dos relatórios"
+    },
+    "addTo": {
+      "dashboard": "Adicionar {{name}} ao painel",
+      "reports": "Adicionar {{name}} aos relatórios"
+    },
+    "remove": "Remover",
+    "add": "Adicionar",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Oceano",
+      "forest": "Floresta",
+      "sunset": "Pôr do sol",
+      "graphite": "Grafite",
+      "high-contrast": "Alto contraste"
+    },
+    "saveFailed": "Não foi possível salvar sua escolha. Tente de novo.",
+    "appearance": "Aparência",
+    "emptyDashboard": "Seu painel está vazio",
+    "emptyDashboardHint": "Adicione widgets da biblioteca para escolher o que aparece aqui.",
+    "addWidget": "Adicionar widget",
+    "moveUp": "Mover {{name}} para cima",
+    "moveDown": "Mover {{name}} para baixo",
+    "nothingToShow": "Nada para mostrar agora",
+    "editingDashboard": "Reordene, remova ou adicione widgets. As mudanças são salvas na hora.",
+    "restoreDefault": "Restaurar padrão",
+    "done": "Concluir",
+    "customizeDashboard": "Personalizar painel",
+    "manageReports": "Escolher relatórios",
+    "manageReportsShort": "Gerenciar",
+    "widget": {
+      "overview": "Saldo e mês",
+      "overviewHint": "Saldo disponível, receitas, despesas, patrimônio líquido e taxa de economia.",
+      "uncategorized": "Sem categoria",
+      "uncategorizedHint": "Transações que ainda esperam uma categoria.",
+      "spendingByCategoryHint": "Para onde foi o dinheiro do mês, comparado aos orçamentos.",
+      "balanceFlowHint": "Como o saldo andou neste mês, comparado a outros.",
+      "goalsHint": "O progresso das suas metas.",
+      "transactionsHint": "As transações do mês, em lista ou calendário."
+    },
+    "report": {
+      "netWorthHint": "Contas, bens e dívidas ao longo do tempo.",
+      "incomeExpensesHint": "Entradas e saídas, por categoria.",
+      "cashFlowHint": "Para onde o seu saldo está indo.",
+      "moneyMapHint": "Como a receita se divide entre gastos e poupança."
+    }
   }
 }

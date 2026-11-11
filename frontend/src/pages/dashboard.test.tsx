@@ -9,6 +9,11 @@ import { monthLabel } from '@/lib/month-utils'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, DashboardSummary } from '@/types'
 
+const layouts = vi.hoisted(() => ({
+  saved: {} as Record<string, { id: string }[] | null>,
+  saves: [] as { surface: string; ids: string[] }[],
+}))
+
 const api = vi.hoisted(() => ({
   dashboard: {
     summary: vi.fn(),
@@ -30,6 +35,12 @@ const api = vi.hoisted(() => ({
   payees: { list: vi.fn() },
   rules: { create: vi.fn(), list: vi.fn() },
   settings: { attachments: vi.fn() },
+  // Nobody arranged anything: Securo's default layout. Tests that need one set `layouts.saved`.
+  uiLayouts: {
+    get: async () => ({ dashboard: null, reports: null, ...layouts.saved }),
+    save: async (surface: string, ids: string[]) => { layouts.saves.push({ surface, ids }) },
+    reset: async () => {},
+  },
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -131,6 +142,8 @@ const summary: DashboardSummary = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  layouts.saved = {}
+  layouts.saves = []
   preferences.currency_display = 'USD'
   api.dashboard.summary.mockResolvedValue(summary)
   api.dashboard.spendingByCategory.mockResolvedValue([])
@@ -479,8 +492,8 @@ describe('Dashboard balance comparisons', () => {
   })
 
   it.each([
-    { current: 100, median: 150, color: '#10B981', comparison: '$50.00 below the median ($150.00)' },
-    { current: -100, median: -150, color: '#F43F5E', comparison: '$50.00 above the median (-$150.00)' },
+    { current: 100, median: 150, color: 'var(--chart-income)', comparison: '$50.00 below the median ($150.00)' },
+    { current: -100, median: -150, color: 'var(--chart-expense)', comparison: '$50.00 above the median (-$150.00)' },
     { current: 0, median: 0, color: 'var(--muted-foreground)', comparison: 'equals the median ($0.00)' },
   ])('colors the tooltip by cumulative change $current, not its difference from the median', async ({
     current, median, color, comparison,
@@ -511,7 +524,7 @@ describe('Dashboard balance comparisons', () => {
     const medianLabel = within(chart).getByText(t('dashboard.balanceMedianLegend'), {
       selector: '.recharts-tooltip-item-name',
     })
-    expect(medianLabel.closest('li')).toHaveStyle({ color: '#94A3B8' })
+    expect(medianLabel.closest('li')).toHaveStyle({ color: 'var(--chart-muted)' })
   })
 
   it.each([
@@ -766,5 +779,50 @@ describe('Dashboard refresh button', () => {
       '2026-04-01', undefined, ['2026-02-01'],
     )
     expect(screen.getByTestId('location-search')).toHaveTextContent('comparison_month=2026-02')
+  })
+})
+
+describe('Dashboard arranged from the library', () => {
+  const regions = () => screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))
+
+  it("shows Securo's arrangement when nothing was saved", async () => {
+    renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    expect(regions()).toEqual([
+      t('library.widget.overview'),
+      t('library.widget.uncategorized'),
+      t('dashboard.spendingByCategory'),
+      t('dashboard.balanceFlow'),
+      t('dashboard.periodTransactions'),
+    ])
+  })
+
+  it('follows the saved order and loads nothing for a widget left out', async () => {
+    layouts.saved = { dashboard: [{ id: 'transactions' }, { id: 'overview' }] }
+    renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await waitFor(() => expect(regions()).toEqual([t('dashboard.periodTransactions'), t('library.widget.overview')]))
+    expect(api.goals.summary).not.toHaveBeenCalled()
+    expect(api.dashboard.balanceHistory).not.toHaveBeenCalled()
+    expect(api.dashboard.balanceHistoryMonths).not.toHaveBeenCalled()
+    expect(api.dashboard.spendingByCategory).not.toHaveBeenCalled()
+    expect(api.budgets.comparison).not.toHaveBeenCalled()
+  })
+
+  it('saves a widget moved while customizing', async () => {
+    const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await user.click(screen.getByRole('button', { name: t('library.customizeDashboard') }))
+    expect(screen.getByText(t('library.editingDashboard'))).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: t('library.moveDown', { name: t('library.widget.overview') }) }))
+    await waitFor(() => expect(layouts.saves.at(-1)).toEqual({
+      surface: 'dashboard',
+      ids: ['uncategorized', 'overview', 'spending-by-category', 'balance-flow', 'goals', 'transactions'],
+    }))
+    expect(regions()[1]).toBe(t('library.widget.overview'))
+
+    await user.click(screen.getByRole('button', { name: t('library.done') }))
+    expect(screen.queryByText(t('library.editingDashboard'))).not.toBeInTheDocument()
   })
 })

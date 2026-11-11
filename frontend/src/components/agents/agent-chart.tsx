@@ -44,17 +44,8 @@ import { formatCurrency } from '@/lib/format'
  *   { "type":"pie", "data":[{"name":"Food","value":500},{"name":"Rent","value":1200}] }
  */
 
-// Same palette as reports.tsx so chats look like the rest of the app.
-const PALETTE = [
-  '#6366F1', // indigo
-  '#10B981', // emerald
-  '#F59E0B', // amber
-  '#F43F5E', // rose
-  '#8B5CF6', // violet
-  '#06B6D4', // cyan
-  '#EC4899', // pink
-  '#84CC16', // lime
-]
+// The theme's series colors, so chats look like the rest of the app.
+const PALETTE = Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`)
 
 type ChartType = 'line' | 'bar' | 'area' | 'pie'
 

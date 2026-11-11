@@ -5,6 +5,11 @@ import ReportsPage from '@/pages/reports'
 import { renderWithProviders, t } from '@/test/utils'
 import type { ReportResponse } from '@/types'
 
+const layouts = vi.hoisted(() => ({
+  saved: {} as Record<string, { id: string }[] | null>,
+  saves: [] as { surface: string; ids: string[] }[],
+}))
+
 const api = vi.hoisted(() => ({
   reports: {
     netWorth: vi.fn(),
@@ -16,9 +21,15 @@ const api = vi.hoisted(() => ({
   // negative from one that crosses later. Unresolved here, which lands on the
   // browser's own day.
   timezones: { list: vi.fn().mockResolvedValue({ timezones: [], default: null }) },
+  // Nobody arranged anything: Securo's default layout. Tests that need one set `layouts.saved`.
+  uiLayouts: {
+    get: async () => ({ dashboard: null, reports: null, ...layouts.saved }),
+    save: async (surface: string, ids: string[]) => { layouts.saves.push({ surface, ids }) },
+    reset: async () => {},
+  },
 }))
 
-vi.mock('@/lib/api', () => ({ reports: api.reports, timezones: api.timezones }))
+vi.mock('@/lib/api', () => ({ reports: api.reports, timezones: api.timezones, uiLayouts: api.uiLayouts }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
@@ -53,6 +64,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 8, 12, 12))
   vi.clearAllMocks()
+  layouts.saved = {}
+  layouts.saves = []
   privacy.on = false
   api.reports.netWorth.mockResolvedValue(emptyReport('net_worth'))
   api.reports.incomeExpenses.mockResolvedValue(emptyReport('income_expenses'))
@@ -347,7 +360,7 @@ describe('Reports page: month presets and period navigation (issue #519)', () =>
     expect(await screen.findByRole('heading', { name: 'Net Worth' })).toBeInTheDocument()
 
     // The default preset (1Y) keeps the API-anchored window: no explicit dates.
-    expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2)).toEqual([undefined, undefined])
+    await waitFor(() => expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2)).toEqual([undefined, undefined]))
 
     await user.click(screen.getByRole('button', { name: 'This Month' }))
     expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2)).toEqual(['2026-09-01', '2026-09-12'])
@@ -494,8 +507,8 @@ describe('Reports page - year picker (issue #765)', () => {
 })
 
 describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
-  const INFLOW_COLOR = 'rgb(16, 185, 129)'
-  const OUTFLOW_COLOR = 'rgb(244, 63, 94)'
+  const INFLOW_COLOR = 'var(--chart-income)'
+  const OUTFLOW_COLOR = 'var(--chart-expense)'
 
   // Bars grow in over animation frames. Report every frame as long past the
   // animation so the chart lands on its final geometry straight away.
@@ -560,7 +573,7 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
       const x = Number(path.getAttribute('x'))
       const column = byX.get(x) ?? { x, width: Number(path.getAttribute('width')) }
       const segment: Segment = { ...box(path), rounded: path.getAttribute('d')!.includes('A') }
-      if (path.getAttribute('fill') === '#10B981') column.inflow = segment
+      if (path.getAttribute('fill') === 'var(--chart-income)') column.inflow = segment
       else column.outflow = segment
       byX.set(x, column)
     }
@@ -794,5 +807,29 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
     expect(tooltip).toHaveTextContent(`${t('reports.liabilities')}: -$2,500.00`)
     expect(tooltip).not.toHaveTextContent(t('reports.netFlow'))
     expect(screen.queryByTestId('cash-flow-net')).not.toBeInTheDocument()
+  })
+})
+
+describe('Reports page arranged from the library', () => {
+  // The tab bar is the row that ends with the button to choose reports.
+  const tabs = () =>
+    within(screen.getByRole('button', { name: t('library.manageReports') }).parentElement!)
+      .getAllByRole('button')
+      .map((b) => b.textContent)
+      .filter((label) => REPORT_LABELS.includes(label ?? ''))
+  const REPORT_LABELS = ['Net Worth', 'Income vs Expenses', 'Cash Flow', 'Money Map']
+
+  it('lists the reports someone kept, in their order, and opens on the first', async () => {
+    layouts.saved = { reports: [{ id: 'cash_flow' }, { id: 'income_expenses' }] }
+    renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(tabs()).toEqual(['Cash Flow', 'Income vs Expenses']))
+    await waitFor(() => expect(api.reports.cashFlow).toHaveBeenCalled())
+    // A report left out never loads.
+    expect(api.reports.netWorth).not.toHaveBeenCalled()
+  })
+
+  it('lists all four by default', async () => {
+    renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(tabs()).toEqual(REPORT_LABELS))
   })
 })
