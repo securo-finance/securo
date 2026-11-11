@@ -18,7 +18,7 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-FILTERS = {"counts_as_pnl", "counts_as_user_pnl", "is_transfer", "is_not_transfer"}
+FILTERS = {"counts_as_pnl", "counts_as_user_pnl", "counts_in_rollup", "is_transfer", "is_not_transfer"}
 
 #: (file, enclosing function) -> why judging the whole row is right there.
 WHOLE_ROW: dict[tuple[str, str], str] = {
@@ -221,6 +221,14 @@ async def report(session):
     )
 '''
     assert _problems_in(source) == ["report:7"]
+
+
+def test_rollup_composition_is_audited_at_its_query_callers():
+    source = '''
+async def report(session):
+    rows = await session.execute(select(x).where(counts_in_rollup(line_category_id(), ids)))
+'''
+    assert _problems_in(source) == ["report:3"]
 
 
 def test_a_query_result_is_not_a_stored_filter():

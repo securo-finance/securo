@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.services._query_filters import (
+    account_counts_in_reports,
     is_not_transfer,
     line_category_id,
     line_primary_or_amount,
@@ -118,8 +119,9 @@ async def aggregate(
         q = q.where(Transaction.date <= td)
 
     accs = parse_uuid_list(account_ids)
-    if accs:
-        q = q.where(Transaction.account_id.in_(accs))
+    # The shared parser collapses []; this tool must retain empty intent.
+    selected_accounts = (accs or []) if account_ids is not None else None
+    q = q.where(account_counts_in_reports(selected_accounts))
     cats = parse_uuid_list(category_ids)
     if cats:
         q = q.where(category_col.in_(cats))

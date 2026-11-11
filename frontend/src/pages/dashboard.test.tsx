@@ -30,6 +30,7 @@ const api = vi.hoisted(() => ({
   payees: { list: vi.fn() },
   rules: { create: vi.fn(), list: vi.fn() },
   settings: { attachments: vi.fn() },
+  timezones: { list: vi.fn().mockResolvedValue({ timezones: [], default: 'UTC' }) },
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -49,8 +50,9 @@ vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences } }),
 }))
 
+const collection = vi.hoisted(() => ({ ids: null as string[] | null, wallets: null as string[] | null }))
 vi.mock('@/contexts/collection-filter-context', () => ({
-  useCollectionFilter: () => ({ activeAccountIds: null, activeWalletIds: null }),
+  useCollectionFilter: () => ({ activeAccountIds: collection.ids, activeWalletIds: collection.wallets }),
 }))
 
 function account(overrides: Partial<Account>): Account {
@@ -82,6 +84,7 @@ function account(overrides: Partial<Account>): Account {
     shared_balance_group: null,
     is_closed: false,
     closed_at: null,
+    exclude_from_reports: false,
     ...overrides,
   }
 }
@@ -131,6 +134,8 @@ const summary: DashboardSummary = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  collection.ids = null
+  collection.wallets = null
   preferences.currency_display = 'USD'
   api.dashboard.summary.mockResolvedValue(summary)
   api.dashboard.spendingByCategory.mockResolvedValue([])
@@ -172,6 +177,71 @@ beforeEach(() => {
 })
 
 describe('Dashboard net worth breakdown', () => {
+  it.each([
+    { ids: null, amount: 1000 },
+    { ids: ['mirror-cash'], amount: 9000 },
+    { ids: ['checking', 'mirror-cash', 'mirror-cash'], amount: 10000 },
+    { ids: [], amount: 0 },
+    { ids: ['foreign'], amount: 0 },
+  ])('respects original collection selection in available cash: $ids', async ({ ids, amount }) => {
+    collection.ids = ids
+    api.accounts.list.mockResolvedValue([
+      ...accounts,
+      account({ id: 'mirror-cash', name: 'Mirror Cash', current_balance: 9000, exclude_from_reports: true }),
+    ])
+    renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await waitFor(() => expect(api.accounts.list).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByText(t('dashboard.availableBalance')).nextElementSibling)
+      .toHaveTextContent(formatCurrency(amount, 'USD', 'en-US')))
+    if (ids?.length === 0) expect(api.dashboard.summary).not.toHaveBeenCalled()
+  })
+
+  it('keeps wallet-only summary independent and omits its calendar request', async () => {
+    collection.ids = []
+    collection.wallets = ['wallet']
+    renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>, { route: '/?view=calendar' })
+    await waitFor(() => expect(api.dashboard.summary).toHaveBeenCalledWith(expect.anything(), undefined, [], ['wallet']))
+    expect(api.transactions.calendar).not.toHaveBeenCalled()
+    expect(api.transactions.list).not.toHaveBeenCalled()
+  })
+
+  it('passes a flagged collection to the dashboard calendar', async () => {
+    collection.ids = ['mirror-cash']
+    api.transactions.calendar.mockResolvedValue({ month: '2026-07', currency: 'USD', days: [] })
+    renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>, { route: '/?view=calendar' })
+    await waitFor(() => expect(api.transactions.calendar).toHaveBeenCalledWith({
+      month: expect.any(String), account_ids: ['mirror-cash'],
+    }))
+  })
+
+  it('excludes mirror balances from available cash, cards and loans', async () => {
+    api.accounts.list.mockResolvedValue([
+      ...accounts,
+      account({ id: 'loan', name: 'Loan', type: 'loan', current_balance: -100 }),
+      account({ id: 'mirror-cash', name: 'Mirror Cash', current_balance: 9000, exclude_from_reports: true }),
+      account({ id: 'mirror-card', type: 'credit_card', current_balance: -8000, exclude_from_reports: true }),
+      account({ id: 'mirror-loan', type: 'loan', current_balance: -7000, exclude_from_reports: true }),
+    ])
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+    await screen.findByText('Checking')
+    expect(screen.queryByText('Mirror Cash')).not.toBeInTheDocument()
+    const headlineLabel = screen.getByText(t('dashboard.availableBalance'))
+    expect(headlineLabel.nextElementSibling).toHaveTextContent(formatCurrency(1000, 'USD', 'en-US'))
+    expect(headlineLabel.nextElementSibling).not.toHaveTextContent(formatCurrency(10000, 'USD', 'en-US'))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+    const tooltip = await screen.findByRole('tooltip')
+    for (const [key, amount] of [
+      ['availableBalance', 1000], ['creditCardBalance', -500], ['loanBalance', -100],
+    ] as const) {
+      const row = within(tooltip).getByText(t(`dashboard.${key}`)).parentElement!
+      expect(row).toHaveTextContent(formatCurrency(amount, 'USD', 'en-US'))
+    }
+  })
   it('counts a shared credit line once in the credit card total', async () => {
     const { user } = renderWithProviders(
       <TooltipProvider delayDuration={0}>

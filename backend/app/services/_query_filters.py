@@ -400,7 +400,32 @@ def counts_on_bill(net_payments: bool = False):
     )
 
 
-def counts_as_user_pnl(category_id):
+def account_counts_in_reports(account_ids: Optional[list[uuid.UUID]] = None):
+    """Account participation only; callers retain their authorization filters.
+
+    An explicit selection, including an empty one, overrides the preference
+    but never broadens the selected set. The subquery needs no Account join.
+    """
+    if account_ids is not None:
+        return Transaction.account_id.in_(account_ids)
+    return Transaction.account_id.not_in(
+        select(Account.id).where(Account.exclude_from_reports.is_(True))
+    )
+
+
+def counts_in_rollup(category_id, account_ids: Optional[list[uuid.UUID]] = None):
+    """SQL filter: P&L-counting AND the account participates in rollups.
+
+    For rollup consumers of ``counts_as_pnl`` that are not already
+    ``counts_as_user_pnl`` consumers (cash-flow queries, baseline means,
+    shared viewer splits, the transactions-list summary). Deliberately
+    separate from ``counts_as_pnl`` itself: per-account totals keep their
+    own semantics, and ``counts_on_bill`` answers to the bank.
+    """
+    return and_(counts_as_pnl(category_id), account_counts_in_reports(account_ids))
+
+
+def counts_as_user_pnl(category_id, account_ids: Optional[list[uuid.UUID]] = None):
     """SQL filter for *user-level* P/L (dashboard, reports, budgets).
 
     Stricter than `counts_as_pnl`: also drops settlement *credits*. Under
@@ -408,19 +433,23 @@ def counts_as_user_pnl(category_id):
     share, so the corresponding settlement credits would double-count.
     Per-account stats still use `counts_as_pnl` because account ledgers
     track real cash through the account, not user P/L.
+
+    Implicit totals also omit accounts flagged ``exclude_from_reports``;
+    deliberate account selection overrides that preference only.
     """
     return and_(
         counts_as_pnl(category_id),
         Transaction.source != "settlement",
+        account_counts_in_reports(account_ids),
     )
 
 
-def counts_as_user_pnl_row():
+def counts_as_user_pnl_row(account_ids: Optional[list[uuid.UUID]] = None):
     """SQL filter for a transaction *list*: the row counts toward the user's
     P/L, judging a split row by its parts (it counts when any part does).
     A list shows whole rows, so it cannot join the lines."""
     return and_(
-        counts_as_user_pnl(Transaction.category_id),
+        counts_as_user_pnl(Transaction.category_id, account_ids),
         or_(
             Transaction.has_category_lines.is_(False),
             exists().where(
@@ -715,7 +744,8 @@ async def viewer_shared_pnl(
             date_col < month_end,
             date_col <= app_today(),
             Transaction.status == "posted",
-            counts_as_pnl(Transaction.category_id),
+            # Shares must follow the parent account's rollup participation.
+            counts_in_rollup(Transaction.category_id),
         )
         .group_by(Transaction.currency)
     )
@@ -794,7 +824,8 @@ async def viewer_shared_spending_by_category(
             date_col < month_end,
             date_col <= app_today(),
             Transaction.status == "posted",
-            counts_as_pnl(Transaction.category_id),
+            # Shared category totals follow the parent account preference.
+            counts_in_rollup(Transaction.category_id),
         )
         .group_by(Transaction.category_id, Transaction.currency)
     )
