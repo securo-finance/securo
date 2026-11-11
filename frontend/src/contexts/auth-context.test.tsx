@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AxiosError } from 'axios'
 
 import { AuthProvider } from '@/contexts/auth-provider'
 import { useAuth } from '@/contexts/auth-context'
@@ -24,6 +25,18 @@ const USER: User = {
   is_verified: true,
   is_2fa_enabled: false,
   preferences: {},
+}
+
+/** An axios failure that carries an HTTP response, like a real 401 or 502. */
+function httpError(status: number): AxiosError {
+  const error = new AxiosError(`HTTP ${status}`)
+  error.response = { status } as AxiosError['response']
+  return error
+}
+
+/** An axios failure with no response: offline, DNS, connection refused. */
+function networkError(): AxiosError {
+  return new AxiosError('Network Error')
 }
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -70,13 +83,91 @@ describe('AuthProvider session restore', () => {
     // An expired or revoked token must not leave the app in a half-signed-in
     // state where every request 401s.
     localStorage.setItem('token', 'expired-jwt')
-    auth.me.mockRejectedValue(new Error('401'))
+    auth.me.mockRejectedValue(httpError(401))
 
     const { result } = await renderAuth()
 
     expect(result.current.token).toBeNull()
     expect(result.current.user).toBeNull()
     expect(localStorage.getItem('token')).toBeNull()
+  })
+
+  it('keeps the token when the server cannot be reached', async () => {
+    // Opening the app offline (or while the server restarts) must not sign the
+    // user out: the token is still good once the connection is back.
+    localStorage.setItem('token', 'stored-jwt')
+    auth.me.mockRejectedValue(networkError())
+
+    const { result } = await renderAuth()
+
+    expect(result.current.token).toBe('stored-jwt')
+    expect(result.current.user).toBeNull()
+    expect(localStorage.getItem('token')).toBe('stored-jwt')
+  })
+
+  it('keeps the token on a server error', async () => {
+    localStorage.setItem('token', 'stored-jwt')
+    auth.me.mockRejectedValue(httpError(502))
+
+    const { result } = await renderAuth()
+
+    expect(result.current.token).toBe('stored-jwt')
+    expect(localStorage.getItem('token')).toBe('stored-jwt')
+  })
+
+  it('loads the user once the connection is back', async () => {
+    localStorage.setItem('token', 'stored-jwt')
+    auth.me.mockRejectedValueOnce(networkError()).mockResolvedValue(USER)
+
+    const { result } = await renderAuth()
+    expect(result.current.user).toBeNull()
+
+    act(() => { window.dispatchEvent(new Event('online')) })
+
+    await waitFor(() => expect(result.current.user).toEqual(USER))
+    expect(auth.me).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries when the connection returns while the first check is still pending', async () => {
+    localStorage.setItem('token', 'stored-jwt')
+    let rejectFirst: (error: unknown) => void = () => {}
+    auth.me
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectFirst = reject }))
+      .mockResolvedValue(USER)
+
+    const result = renderHook(() => useAuth(), { wrapper })
+    act(() => { window.dispatchEvent(new Event('online')) })
+    await act(async () => { rejectFirst(networkError()) })
+
+    await waitFor(() => expect(result.result.current.user).toEqual(USER))
+    expect(auth.me).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops listening for retries once the user is loaded', async () => {
+    localStorage.setItem('token', 'stored-jwt')
+    auth.me.mockResolvedValue(USER)
+
+    const { result } = await renderAuth()
+    await waitFor(() => expect(result.current.user).toEqual(USER))
+
+    act(() => { window.dispatchEvent(new Event('online')) })
+
+    expect(auth.me).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops the previous user when another tab swaps the token and the check fails', async () => {
+    localStorage.setItem('token', 'old-jwt')
+    auth.me.mockResolvedValueOnce(USER).mockRejectedValue(networkError())
+
+    const { result } = await renderAuth()
+    await waitFor(() => expect(result.current.user).toEqual(USER))
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'token', newValue: 'new-jwt' }))
+    })
+
+    await waitFor(() => expect(result.current.user).toBeNull())
+    expect(result.current.token).toBe('new-jwt')
   })
 })
 
