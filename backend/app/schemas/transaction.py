@@ -189,7 +189,9 @@ class TransactionRead(TransactionBase):
     #: payment can settle several — a payout net of fees is the
     #: ordinary case, not the exotic one.
     invoice_links: list[TransactionInvoiceLink] = []
-    currency: str = "USD"
+    # A stored transaction always has a currency, so the read model narrows
+    # the optional input field on purpose.
+    currency: str = "USD"  # ty: ignore[invalid-mutable-override]
     source: str
     status: str = "posted"
     payee: Optional[str] = None
