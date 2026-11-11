@@ -209,6 +209,16 @@ class TestParseCsv:
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 4, 3)
 
+    def test_parse_csv_auto_date_order_from_whole_file(self):
+        """Auto mode reads every row month-first when one date can only be MM/DD."""
+        csv_content = (
+            "date,description,amount\n"
+            "11/03/2026,Coffee,-4.50\n"
+            "11/14/2026,Paycheck,2500.00\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+        assert [t.date for t in transactions] == [date(2026, 11, 3), date(2026, 11, 14)]
+
     def test_parse_csv_flip_amount(self):
         """Flip amount should negate amounts, swapping credit/debit."""
         csv_content = (
