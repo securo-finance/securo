@@ -3584,6 +3584,7 @@
       "suggestion3": "Jakie rachunki się zbliżają?",
       "send": "Wyślij",
       "unavailable": "Włącz agentów AI, aby zadawać pytania stąd."
-    }
+    },
+    "loadFailed": "Nie udało się wczytać tego widżetu."
   }
 }

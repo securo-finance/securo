@@ -3452,6 +3452,7 @@
       "suggestion3": "¿Qué pagos se acercan?",
       "send": "Enviar",
       "unavailable": "Activa los agentes de IA para preguntar desde aquí."
-    }
+    },
+    "loadFailed": "No se pudo cargar este widget."
   }
 }

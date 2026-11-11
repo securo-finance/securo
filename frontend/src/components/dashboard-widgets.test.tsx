@@ -61,6 +61,15 @@ describe('SpendingPaceWidget', () => {
     expect(await screen.findByText(t('widgets.spendingPace.over', { amount: usd(200) }))).toBeInTheDocument()
   })
 
+  it("says the budgets couldn't load rather than that there are none", async () => {
+    api.dashboard.summary.mockResolvedValue(summary(0, 300))
+    api.budgets.comparison.mockRejectedValue(new Error('offline'))
+    renderWithProviders(<SpendingPaceWidget scope={PAST} />)
+    expect(await screen.findByText(t('widgets.loadFailed'), {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.queryByText(t('widgets.spendingPace.noBudget'))).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('common.retry') })).toBeInTheDocument()
+  })
+
   it('asks for budgets when there are none', async () => {
     api.dashboard.summary.mockResolvedValue(summary(0, 300))
     api.budgets.comparison.mockResolvedValue([])
@@ -132,6 +141,9 @@ describe('CreditCardsWidget', () => {
     expect(await screen.findByText(usd(500))).toBeInTheDocument()
     expect(screen.getByText(t('widgets.cards.afterPaying', { amount: usd(1500) }))).toBeInTheDocument()
     expect(screen.queryByText('Old')).not.toBeInTheDocument()
+    // The shared line is listed once, under both cards, so the rows add up to the total.
+    expect(screen.getByText('Card A · Card B')).toBeInTheDocument()
+    expect(screen.getAllByText(usd(300))).toHaveLength(1)
   })
 
   it('says when there are no cards', async () => {

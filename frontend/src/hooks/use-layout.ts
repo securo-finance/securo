@@ -39,22 +39,31 @@ export function useLayout(surface: Surface) {
   const items = useMemo(() => resolveLayout(surface, saved), [surface, saved])
   const ids = useMemo(() => items.map((item) => item.id), [items])
 
-  const reconcile = (workspace: string | null, seq: number | undefined) => {
+  /**
+   * Read the surface back from the server once its last save is done. If
+   * that read fails too, a save that failed puts back what was shown before
+   * it (it never reached the server); a save that went through keeps its
+   * arrangement, which is what the server has.
+   */
+  const reconcile = (workspace: string | null, seq: number | undefined, fallback?: LayoutItem[] | null) => {
     const chain = `${workspace}:${surface}`
     if (seq !== latestWrite.get(chain)) return
+    const put = (value: LayoutItem[] | null) =>
+      queryClient.setQueryData<UiLayouts>(['ui-layouts', workspace], (old) => ({
+        dashboard: null,
+        reports: null,
+        ...old,
+        [surface]: value,
+      }))
     uiLayouts
       .get(workspace)
       .then((fresh) => {
         // A save made while this read was out decides instead.
-        if (seq !== latestWrite.get(chain)) return
-        queryClient.setQueryData<UiLayouts>(['ui-layouts', workspace], (old) => ({
-          dashboard: null,
-          reports: null,
-          ...old,
-          [surface]: fresh[surface],
-        }))
+        if (seq === latestWrite.get(chain)) put(fresh[surface])
       })
-      .catch(() => {})
+      .catch(() => {
+        if (fallback !== undefined && seq === latestWrite.get(chain)) put(fallback)
+      })
   }
 
   // Optimistic: the page rearranges at once. Saves to one surface go out one
@@ -72,6 +81,8 @@ export function useLayout(surface: Surface) {
     onMutate: async ({ next, workspace }) => {
       const key = ['ui-layouts', workspace]
       await queryClient.cancelQueries({ queryKey: key })
+      // What this surface showed before, to put back if the save can't be confirmed either way.
+      const before = queryClient.getQueryData<UiLayouts>(key)?.[surface] ?? null
       queryClient.setQueryData<UiLayouts>(key, (old) => ({
         dashboard: null,
         reports: null,
@@ -81,7 +92,7 @@ export function useLayout(surface: Surface) {
       const chain = `${workspace}:${surface}`
       const seq = (latestWrite.get(chain) ?? 0) + 1
       latestWrite.set(chain, seq)
-      return { seq }
+      return { seq, before }
     },
     // Once the last save to a surface lands (or fails), that surface is read
     // back from the server, in case the cache was replaced meanwhile (a
@@ -90,7 +101,7 @@ export function useLayout(surface: Surface) {
     onSuccess: (_result, { workspace }, context) => reconcile(workspace, context?.seq),
     onError: (_error, { workspace }, context) => {
       toast.error(t('library.saveFailed'))
-      reconcile(workspace, context?.seq)
+      reconcile(workspace, context?.seq, context?.before ?? null)
     },
   })
 

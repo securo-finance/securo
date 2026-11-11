@@ -3618,6 +3618,7 @@
       "suggestion3": "Aké platby sa blížia?",
       "send": "Odoslať",
       "unavailable": "Zapnite AI agentov, aby ste sa mohli pýtať odtiaľto."
-    }
+    },
+    "loadFailed": "Tento widget sa nepodarilo načítať."
   }
 }

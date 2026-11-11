@@ -3448,6 +3448,7 @@
       "suggestion3": "What bills are coming up?",
       "send": "Send",
       "unavailable": "Turn on AI agents to ask questions from here."
-    }
+    },
+    "loadFailed": "Couldn't load this widget."
   }
 }

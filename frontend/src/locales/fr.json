@@ -3452,6 +3452,7 @@
       "suggestion3": "Quelles factures arrivent ?",
       "send": "Envoyer",
       "unavailable": "Activez les agents IA pour poser des questions d'ici."
-    }
+    },
+    "loadFailed": "Impossible de charger ce widget."
   }
 }

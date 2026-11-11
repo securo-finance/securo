@@ -3452,6 +3452,7 @@
       "suggestion3": "Que contas estão a chegar?",
       "send": "Enviar",
       "unavailable": "Ative os agentes de IA para perguntar daqui."
-    }
+    },
+    "loadFailed": "Não foi possível carregar este widget."
   }
 }

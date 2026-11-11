@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
-import { ArrowRight, SendHorizontal, Sparkles } from 'lucide-react'
+import { ArrowRight, RefreshCw, SendHorizontal, Sparkles } from 'lucide-react'
 
 import { accounts as accountsApi, budgets, dashboard } from '@/lib/api'
 import { sumAccountBalances, getAccountLabel } from '@/lib/account-utils'
@@ -59,6 +59,20 @@ function Empty({ children }: { children: ReactNode }) {
   return <p className="flex flex-1 items-center justify-center py-6 text-center text-sm text-muted-foreground">{children}</p>
 }
 
+/** A load that failed: said so, with a retry, never shown as an empty result. */
+function Failed({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
+      <p className="text-sm text-muted-foreground">{t('widgets.loadFailed')}</p>
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        <RefreshCw size={14} className="mr-1" />
+        {t('common.retry')}
+      </Button>
+    </div>
+  )
+}
+
 function useSummary(scope: DashboardScope, month = scope.month) {
   const accountIds = scope.activeAccountIds ?? undefined
   const walletIds = scope.activeWalletIds ?? undefined
@@ -81,8 +95,8 @@ export function SpendingPaceWidget({ scope }: { scope: DashboardScope }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
   const { mask } = usePrivacyMode()
-  const { data: summary, isLoading } = useSummary(scope)
-  const { data: comparison, isLoading: budgetsLoading } = useQuery({
+  const { data: summary, isLoading, isError, refetch } = useSummary(scope)
+  const { data: comparison, isLoading: budgetsLoading, isError: budgetsError, refetch: refetchBudgets } = useQuery({
     queryKey: ['budgets', 'comparison', scope.month],
     queryFn: () => budgets.comparison(`${scope.month}-01`),
   })
@@ -103,6 +117,8 @@ export function SpendingPaceWidget({ scope }: { scope: DashboardScope }) {
     <WidgetCard title={t('widgets.spendingPace.title')} action={<CardLink to="/budgets" label={t('widgets.budgets')} />}>
       {isLoading || budgetsLoading ? (
         <Skeleton className="h-24 w-full" />
+      ) : isError || budgetsError ? (
+        <Failed onRetry={() => { void refetch(); void refetchBudgets() }} />
       ) : budget <= 0 ? (
         <div className="flex flex-1 flex-col justify-between gap-4">
           <p className="text-2xl font-bold tabular-nums">{money(spent)}</p>
@@ -148,7 +164,7 @@ export function SpendingDistributionWidget({ scope }: { scope: DashboardScope })
   const locale = useDisplayLocale()
   const { mask } = usePrivacyMode()
   const accountIds = scope.activeAccountIds ?? undefined
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['dashboard', 'spending', scope.month, scope.activeAccountIds],
     queryFn: () => dashboard.spendingByCategory(`${scope.month}-01`, accountIds),
     enabled: !scope.noAccounts,
@@ -176,6 +192,8 @@ export function SpendingDistributionWidget({ scope }: { scope: DashboardScope })
     <WidgetCard title={t('widgets.distribution.title')}>
       {isLoading ? (
         <Skeleton className="h-40 w-full" />
+      ) : isError ? (
+        <Failed onRetry={() => void refetch()} />
       ) : total <= 0 ? (
         <Empty>{t('dashboard.noData')}</Empty>
       ) : (
@@ -218,7 +236,7 @@ export function MonthResultWidget({ scope }: { scope: DashboardScope }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
   const { mask } = usePrivacyMode()
-  const { data: summary, isLoading } = useSummary(scope)
+  const { data: summary, isLoading, isError, refetch } = useSummary(scope)
   const { data: previous } = useSummary(scope, shiftMonth(scope.month, -1))
   const income = incomeOf(summary)
   const expenses = expensesOf(summary)
@@ -230,6 +248,8 @@ export function MonthResultWidget({ scope }: { scope: DashboardScope }) {
     <WidgetCard title={t('widgets.monthResult.title')}>
       {isLoading ? (
         <Skeleton className="h-24 w-full" />
+      ) : isError ? (
+        <Failed onRetry={() => void refetch()} />
       ) : (
         <div className="flex flex-1 flex-col justify-between gap-4">
           <div>
@@ -269,7 +289,7 @@ export function UpcomingWidget({ scope }: { scope: DashboardScope }) {
   const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   const from = iso(today)
   const to = iso(new Date(today.getFullYear(), today.getMonth(), today.getDate() + UPCOMING_DAYS))
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', 'upcoming', from],
     queryFn: () => dashboard.projectedTransactions({ from, to }),
   })
@@ -279,6 +299,8 @@ export function UpcomingWidget({ scope }: { scope: DashboardScope }) {
     <WidgetCard title={t('widgets.upcoming.title')} action={<CardLink to="/recurring" label={t('widgets.viewAll')} />}>
       {isLoading ? (
         <Skeleton className="h-32 w-full" />
+      ) : isError ? (
+        <Failed onRetry={() => void refetch()} />
       ) : rows.length === 0 ? (
         <Empty>{t('widgets.upcoming.none', { days: UPCOMING_DAYS })}</Empty>
       ) : (
@@ -312,7 +334,7 @@ export function CreditCardsWidget({ scope }: { scope: DashboardScope }) {
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
-  const { data: list, isLoading } = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list() })
+  const { data: list, isLoading, isError, refetch } = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list() })
   const scoped = (list ?? []).filter((a) => !a.is_closed && (scope.activeAccountIds ? scope.activeAccountIds.includes(a.id) : true))
   const cards = scoped.filter((a) => a.type === 'credit_card')
   const owed = Math.max(0, -sumAccountBalances(cards))
@@ -320,8 +342,19 @@ export function CreditCardsWidget({ scope }: { scope: DashboardScope }) {
     .filter((a) => a.type === 'checking' || a.type === 'savings')
     .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
   const money = (value: number, currency = scope.currency) => mask(formatCurrency(value, currency, locale))
-  const shown = [...cards]
-    .map((card) => ({ card, owes: Math.max(0, -Number(card.balance_primary ?? card.current_balance)) }))
+  // Cards on one shared credit line report the line's whole balance each: list
+  // the line once, under all its cards' names, so the rows add up to the total.
+  const lines = new Map<string, { card: (typeof cards)[number]; label: string; owes: number }>()
+  for (const card of cards) {
+    const key = card.shared_balance_group ?? card.id
+    const existing = lines.get(key)
+    if (existing) {
+      existing.label = `${existing.label} · ${getAccountLabel(card)}`
+      continue
+    }
+    lines.set(key, { card, label: getAccountLabel(card), owes: Math.max(0, -Number(card.balance_primary ?? card.current_balance)) })
+  }
+  const shown = [...lines.values()]
     .filter((row) => row.owes > 0)
     .sort((a, b) => b.owes - a.owes)
     .slice(0, 4)
@@ -330,6 +363,8 @@ export function CreditCardsWidget({ scope }: { scope: DashboardScope }) {
     <WidgetCard title={t('widgets.cards.title')} action={<CardLink to="/accounts" label={t('widgets.viewAll')} />}>
       {isLoading ? (
         <Skeleton className="h-28 w-full" />
+      ) : isError ? (
+        <Failed onRetry={() => void refetch()} />
       ) : cards.length === 0 ? (
         <Empty>{t('widgets.cards.none')}</Empty>
       ) : (
@@ -342,10 +377,10 @@ export function CreditCardsWidget({ scope }: { scope: DashboardScope }) {
           </div>
           {shown.length > 0 && (
             <ul className="space-y-2">
-              {shown.map(({ card, owes }) => (
+              {shown.map(({ card, label, owes }) => (
                 <li key={card.id} className="flex items-center gap-2.5">
                   <AccountIcon account={card} size="xs" className="h-5 w-5 rounded-md" />
-                  <span className="min-w-0 flex-1 truncate text-sm">{getAccountLabel(card)}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm" title={label}>{label}</span>
                   <span className="text-sm font-semibold tabular-nums">{money(owes)}</span>
                   {card.next_due_date && (
                     <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">

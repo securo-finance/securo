@@ -3448,6 +3448,7 @@
       "suggestion3": "Milyen számlák jönnek?",
       "send": "Küldés",
       "unavailable": "Kapcsold be az MI-ügynököket, hogy innen kérdezhess."
-    }
+    },
+    "loadFailed": "Nem sikerült betölteni ezt a widgetet."
   }
 }

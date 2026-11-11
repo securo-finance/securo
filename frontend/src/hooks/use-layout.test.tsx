@@ -7,6 +7,8 @@ import { useLayout } from '@/hooks/use-layout'
 import { createTestQueryClient } from '@/test/utils'
 
 const server = vi.hoisted(() => ({
+  // While true, every request fails, as if the server were down.
+  down: false,
   saved: {} as Record<string, { id: string }[] | null>,
   // A save to a surface listed here waits until it's released.
   holds: {} as Record<string, Promise<void>>,
@@ -14,9 +16,13 @@ const server = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => ({
   uiLayouts: {
-    get: async () => ({ dashboard: null, reports: null, ...server.saved }),
+    get: async () => {
+      if (server.down) throw new Error('down')
+      return { dashboard: null, reports: null, ...server.saved }
+    },
     save: async (surface: string, items: { id: string }[]) => {
       await server.holds[surface]
+      if (server.down) throw new Error('down')
       server.saved = { ...server.saved, [surface]: items }
     },
     reset: async (surface: string) => {
@@ -26,6 +32,7 @@ vi.mock('@/lib/api', () => ({
 }))
 
 beforeEach(() => {
+  server.down = false
   server.saved = {}
   server.holds = {}
 })
@@ -69,5 +76,20 @@ describe('useLayout', () => {
 
     await waitFor(() => expect(server.saved.dashboard).toEqual([{ id: 'overview' }, { id: 'goals', span: 4 }]))
     expect(result.current.dashboard.ids).toEqual(['overview', 'goals'])
+  })
+
+  it('puts back the last arrangement when a save fails and the server can\'t be read either', async () => {
+    server.saved = { dashboard: [{ id: 'goals' }] }
+    const { result } = renderBoth()
+    await waitFor(() => expect(result.current.dashboard.ids).toEqual(['goals']))
+
+    let release: () => void = () => {}
+    server.holds.dashboard = new Promise((done) => { release = done })
+    act(() => result.current.dashboard.save([{ id: 'overview' }]))
+    await waitFor(() => expect(result.current.dashboard.ids).toEqual(['overview']))
+
+    server.down = true
+    release()
+    await waitFor(() => expect(result.current.dashboard.ids).toEqual(['goals']))
   })
 })

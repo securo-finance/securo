@@ -220,7 +220,12 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
   // A message typed elsewhere (the assistant widget) goes out once the panel is up.
   const initialSent = useRef(false)
   useEffect(() => {
-    if (!initialMessage || initialSent.current) return
+    // The parent clears it once taken; the next one is a new message.
+    if (!initialMessage) {
+      initialSent.current = false
+      return
+    }
+    if (initialSent.current) return
     initialSent.current = true
     onInitialMessageSent?.()
     void send(initialMessage)

@@ -3450,6 +3450,7 @@
       "suggestion3": "Welke rekeningen komen eraan?",
       "send": "Versturen",
       "unavailable": "Zet AI-agents aan om hier vragen te stellen."
-    }
+    },
+    "loadFailed": "Deze widget kon niet worden geladen."
   }
 }

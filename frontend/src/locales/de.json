@@ -3449,6 +3449,7 @@
       "suggestion3": "Welche Rechnungen stehen an?",
       "send": "Senden",
       "unavailable": "Aktiviere KI-Agenten, um hier Fragen zu stellen."
-    }
+    },
+    "loadFailed": "Dieses Widget konnte nicht geladen werden."
   }
 }
