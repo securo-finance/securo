@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.models.bank_connection import BankConnection
-from app.tasks.sync_tasks import _should_trigger_provider_refresh, _sync_one
+from app.tasks.sync_tasks import _should_trigger_provider_refresh, _sync_all, _sync_one
 
 
 def test_should_trigger_provider_refresh_daily():
@@ -63,4 +63,28 @@ async def test_sync_one_forwards_provider_refresh(
         test_workspace.id,
         test_user.id,
         trigger_provider_refresh=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_sync_all_retries_processing_failures(session, test_user, test_workspace):
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        provider="test", external_id="retry-processing-failure",
+        institution_name="Retry Bank", credentials={"token": "fake"},
+        status="sync_error", last_sync_at=None,
+    )
+    session.add(conn)
+    await session.commit()
+    engine = AsyncMock()
+
+    def session_maker():
+        return session
+    with patch(
+        "app.tasks.sync_tasks._make_session_maker", return_value=(engine, session_maker),
+    ), patch("app.tasks.sync_tasks._sync_one", new_callable=AsyncMock) as sync_one:
+        assert await _sync_all() == 1
+
+    sync_one.assert_awaited_once_with(
+        session_maker, conn.id, test_user.id, trigger_provider_refresh=True,
     )

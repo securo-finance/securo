@@ -1322,6 +1322,8 @@
     "syncDone": "Synchronizacja zakończona",
     "syncRateLimited": "Osiągnięto dzienny limit banku, nie pobrano nowych danych. Spróbuj ponownie później.",
     "syncError": "Synchronizacja nie powiodła się",
+    "syncInProgress": "Trwa synchronizacja połączenia. Spróbuj ponownie za chwilę.",
+    "syncRetryError": "Synchronizacja nie powiodła się. Spróbuj ponownie.",
     "connected": "Pomyślnie połączono bank",
     "connectError": "Nie udało się połączyć banku",
     "disconnected": "Usunięto połączenie",
@@ -1342,7 +1344,7 @@
     "noTransactions": "Brak transakcji dla tego konta",
     "syncFailed": "Synchronizacja nie powiodła się",
     "reconnect": "Połącz ponownie",
-    "connectionError": "Błąd połączenia — połącz ponownie, aby naprawić",
+    "connectionError": "To połączenie z dostawcą wymaga uwagi. Połącz je ponownie, aby wznowić synchronizację kont wymienionych poniżej.",
     "close": "Zamknij konto",
     "reopen": "Otwórz konto ponownie",
     "accountClosed": "Zamknięto konto",
@@ -1366,7 +1368,7 @@
     "noInstitutionsFound": "Brak banków dostępnych dla tego kraju",
     "loadingInstitutions": "Wczytywanie banków…",
     "loadingInstitutionsError": "Nie udało się wczytać banków",
-    "connectionExpired": "Połączenie wygasło — połącz ponownie, aby naprawić",
+    "connectionExpired": "To połączenie wygasło. Połącz je ponownie, aby wznowić synchronizację kont wymienionych poniżej.",
     "back": "Wstecz",
     "redirecting": "Przekierowywanie do banku…",
     "oauthCallback": {
@@ -1410,10 +1412,13 @@
     },
     "reconnected": "Bank połączony ponownie",
     "connectionStatus": {
-      "active": "Aktywne",
-      "error": "Błąd",
-      "expired": "Wygasłe"
-    }
+      "active": "Połączono",
+      "error": "Wymagane ponowne połączenie",
+      "expired": "Wygasło",
+      "sync_error": "Synchronizacja nieudana"
+    },
+    "connectionSyncError": "Ostatnia synchronizacja tego połączenia nie powiodła się. Nie wskazano jednego konta; wszystkie połączone konta wymieniono poniżej.",
+    "connectionAccountError": "Ostatnia synchronizacja nie powiodła się podczas przetwarzania konta {{account}}."
   },
   "loans": {
     "title": "Umowa kredytu",

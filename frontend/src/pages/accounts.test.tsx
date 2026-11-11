@@ -1,15 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { screen, waitFor, within } from '@testing-library/react'
+import { AxiosError, AxiosHeaders } from 'axios'
 
 import AccountsPage, { AccountDialog } from '@/pages/accounts'
-import { renderWithProviders, t } from '@/test/utils'
+import { renderWithProviders, t, i18n } from '@/test/utils'
 import type { Account, BankConnection } from '@/types'
 
 const api = vi.hoisted(() => ({
   accountsList: vi.fn(),
   connectionsList: vi.fn(),
   sync: vi.fn(),
+  disconnect: vi.fn(),
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
 }))
+
+const collectionFilter = vi.hoisted(() => ({ activeAccountIds: null as string[] | null }))
 
 vi.mock('@/lib/api', () => ({
   accounts: { list: api.accountsList },
@@ -18,11 +24,13 @@ vi.mock('@/lib/api', () => ({
     list: api.connectionsList,
     getProviders: vi.fn().mockResolvedValue([]),
     sync: api.sync,
-    delete: vi.fn(),
+    delete: api.disconnect,
     getReauthUrl: vi.fn(),
   },
   currencies: { list: vi.fn().mockResolvedValue([]) },
 }))
+
+vi.mock('sonner', () => ({ toast: { error: api.toastError, success: api.toastSuccess } }))
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
@@ -33,11 +41,11 @@ vi.mock('@/contexts/workspace-context', () => ({
 }))
 
 vi.mock('@/contexts/collection-filter-context', () => ({
-  useCollectionFilter: () => ({ activeAccountIds: null }),
+  useCollectionFilter: () => collectionFilter,
 }))
 
 vi.mock('@/hooks/use-privacy-mode', () => ({
-  usePrivacyMode: () => ({ mask: false }),
+  usePrivacyMode: () => ({ mask: (value: string) => value }),
 }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
@@ -69,6 +77,7 @@ function makeConnection(overrides: Partial<BankConnection>): BankConnection {
     status: 'active',
     settings: null,
     last_sync_at: null,
+    last_sync_error_account_id: null,
     created_at: '2026-10-01T00:00:00Z',
     institutions: [],
     ...overrides,
@@ -100,14 +109,62 @@ function makeAccount(connectionId: string): Account {
   } as unknown as Account
 }
 
+afterEach(async () => { await i18n.changeLanguage('en') })
+
 describe('AccountsPage connection row actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    collectionFilter.activeAccountIds = null
     api.accountsList.mockImplementation((includeClosed: boolean) =>
       Promise.resolve(includeClosed ? [] : [makeAccount('conn-1')]),
     )
     api.connectionsList.mockResolvedValue([])
     api.sync.mockResolvedValue({ sync_outcome: 'success', merged_count: 0 })
+  })
+
+  it.each(['en', 'pt-BR'])('shows a localized sync conflict on disconnect and leaves it retryable (%s)', async (language) => {
+    await i18n.changeLanguage(language)
+    api.connectionsList.mockResolvedValue([makeConnection({})])
+    const message = 'Connection sync in progress. Please try again shortly.'
+    const config = { headers: new AxiosHeaders() }
+    api.disconnect.mockRejectedValueOnce(new AxiosError('conflict', undefined, config, undefined, {
+      status: 409, statusText: 'Conflict', headers: {}, config,
+      data: { detail: { code: 'sync_in_progress', message } },
+    })).mockResolvedValueOnce(undefined)
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.disconnect') }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: t('accounts.disconnect') }))
+    await waitFor(() => expect(api.toastError).toHaveBeenCalledWith(t('accounts.syncInProgress')))
+    expect(api.toastSuccess).not.toHaveBeenCalled()
+    expect(dialog).toBeInTheDocument()
+    const retry = within(dialog).getByRole('button', { name: t('accounts.disconnect') })
+    expect(retry).toBeEnabled()
+    await user.click(retry)
+    await waitFor(() => expect(api.toastSuccess).toHaveBeenCalledWith(t('accounts.disconnected')))
+    expect(api.disconnect).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it.each(['en', 'pt-BR'])('localizes the generic sync failure and permits retry (%s)', async (language) => {
+    await i18n.changeLanguage(language)
+    api.connectionsList.mockResolvedValue([makeConnection({ status: 'sync_error' })])
+    const config = { headers: new AxiosHeaders() }
+    api.sync.mockRejectedValueOnce(new AxiosError('failed', undefined, config, undefined, {
+      status: 500, statusText: 'Internal Server Error', headers: {}, config,
+      data: { detail: 'Sync failed. Please try again.' },
+    })).mockResolvedValueOnce({ sync_outcome: 'success', merged_count: 0 })
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.retrySync') }))
+    await waitFor(() => expect(api.toastError).toHaveBeenCalledWith(t('accounts.syncRetryError')))
+    expect(api.toastSuccess).not.toHaveBeenCalled()
+    const retry = screen.getByRole('button', { name: t('accounts.retrySync') })
+    expect(retry).toBeEnabled()
+    await user.click(retry)
+    await waitFor(() => expect(api.toastSuccess).toHaveBeenCalledWith(t('accounts.syncDone')))
+    expect(api.sync).toHaveBeenCalledTimes(2)
   })
 
   it('offers a retry next to reconnect for a connection in the error state', async () => {
@@ -133,6 +190,43 @@ describe('AccountsPage connection row actions', () => {
     await screen.findByRole('button', { name: t('accounts.sync') })
     expect(screen.queryByRole('button', { name: t('accounts.reconnect') })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('accounts.retrySync') })).not.toBeInTheDocument()
+  })
+
+  it('retries a processing failure with stored credentials and names its account', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({
+      status: 'sync_error', last_sync_error_account_id: 'acc-1',
+    })])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await screen.findByText(t('accounts.connectionAccountError', { account: 'Healthy Checking' }))
+    expect(screen.queryByRole('button', { name: t('accounts.reconnect') })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('accounts.retrySync') }))
+    expect(api.sync).toHaveBeenCalledWith('conn-1')
+  })
+
+  it('shows a connection-wide diagnostic when the failed account is unknown', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ status: 'sync_error' })])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await screen.findByText(t('accounts.connectionSyncError'))
+    expect(screen.queryByRole('button', { name: t('accounts.reconnect') })).not.toBeInTheDocument()
+  })
+
+  it('names a known failed account outside the active collection without adding it to the list', async () => {
+    collectionFilter.activeAccountIds = ['acc-1']
+    const excluded = { ...makeAccount('conn-1'), id: 'acc-2', name: 'Excluded Savings' }
+    api.accountsList.mockImplementation((includeClosed: boolean) =>
+      Promise.resolve(includeClosed ? [] : [makeAccount('conn-1'), excluded]),
+    )
+    api.connectionsList.mockResolvedValue([makeConnection({
+      status: 'sync_error', last_sync_error_account_id: excluded.id,
+    })])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await screen.findByText(t('accounts.connectionAccountError', { account: excluded.name }))
+    expect(screen.queryByText(t('accounts.connectionSyncError'))).not.toBeInTheDocument()
+    expect(screen.getByText('Healthy Checking', { exact: true })).toBeInTheDocument()
+    expect(screen.queryByText(excluded.name, { exact: true })).not.toBeInTheDocument()
   })
 
   it('retries the sync for the connection whose row the retry button sits in', async () => {

@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { AxiosError, AxiosHeaders } from 'axios'
-import { beforeEach, expect, it, vi } from 'vitest'
-import { renderWithProviders, t } from '@/test/utils'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { renderWithProviders, t, i18n } from '@/test/utils'
 
 const api = vi.hoisted(() => ({
   list: vi.fn(),
@@ -71,4 +71,31 @@ it('does not wait on an error the backend itself returned', async () => {
 
   await waitFor(() => expect(api.toastError).toHaveBeenCalledWith('Invalid token'))
   expect(api.waitForNewConnection).not.toHaveBeenCalled()
+})
+
+afterEach(async () => { await i18n.changeLanguage('en') })
+
+it.each(['en', 'pt-BR'])('localizes a reconnect conflict and leaves token retry enabled (%s)', async (language) => {
+  await i18n.changeLanguage(language)
+  const config = { headers: new AxiosHeaders() }
+  api.handleCallback.mockRejectedValueOnce(new AxiosError('conflict', undefined, config, undefined, {
+    status: 409, statusText: 'Conflict', headers: {}, config,
+    data: { detail: { code: 'sync_in_progress', message: 'Connection sync in progress. Please try again shortly.' } },
+  })).mockResolvedValueOnce(undefined)
+  const onClose = vi.fn()
+  const { user } = renderWithProviders(
+    <TokenConnectDialog open onClose={onClose} provider="simplefin" reconnectConnectionId="conn-1" />,
+  )
+  await user.type(screen.getByRole('textbox'), 'setup-token')
+  await user.click(screen.getByRole('button', { name: t('accounts.tokenConnect.reconnect') }))
+
+  await waitFor(() => expect(api.toastError).toHaveBeenCalledWith(t('accounts.syncInProgress')))
+  expect(onClose).not.toHaveBeenCalled()
+  expect(api.waitForNewConnection).not.toHaveBeenCalled()
+  const retry = screen.getByRole('button', { name: t('accounts.tokenConnect.reconnect') })
+  expect(retry).toBeEnabled()
+  await user.click(retry)
+  await waitFor(() => expect(onClose).toHaveBeenCalledExactlyOnceWith())
+  expect(api.handleCallback).toHaveBeenCalledTimes(2)
+  expect(api.toastSuccess).toHaveBeenCalledWith(t('accounts.reconnected'))
 })

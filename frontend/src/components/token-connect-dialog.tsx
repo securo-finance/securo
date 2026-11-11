@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
+import { extractApiError } from '@/lib/api-errors'
 import { useAuth } from '@/contexts/auth-context'
 import { connections } from '@/lib/api'
 import { isGatewayTimeout, waitForNewConnection } from '@/lib/await-new-connection'
@@ -87,13 +87,7 @@ export function TokenConnectDialog({
         onConnected()
         return
       }
-      const detail =
-        axios.isAxiosError(err) && err.response?.data?.detail
-          ? typeof err.response.data.detail === 'string'
-            ? err.response.data.detail
-            : err.response.data.detail.message
-          : null
-      toast.error(detail || t('accounts.connectError'))
+      toast.error(extractApiError(err, t('accounts.connectError')) || t('accounts.connectError'))
     } finally {
       setSubmitting(false)
     }

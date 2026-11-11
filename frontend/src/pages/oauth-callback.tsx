@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import axios from 'axios'
+import { extractApiError } from '@/lib/api-errors'
 import { connections } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { Button } from '@/components/ui/button'
@@ -69,10 +70,8 @@ export default function OAuthCallbackPage() {
             return
           }
         }
-        const message =
-          axios.isAxiosError(err) && err.response?.data?.detail
-            ? String(err.response.data.detail)
-            : t('accounts.connectError')
+        const message = extractApiError(err, t('accounts.connectError'))
+          || t('accounts.connectError')
         sessionStorage.removeItem(submitKey)
         toast.error(message)
         navigate('/accounts', { replace: true })

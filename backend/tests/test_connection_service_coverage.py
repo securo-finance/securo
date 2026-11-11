@@ -500,6 +500,7 @@ async def test_sync_trigger_refresh_needs_user_action(session: AsyncSession, tes
     assert refreshed.status == "error"
     assert refreshed.settings is not None
     assert "last_provider_refresh_at" in refreshed.settings
+    assert refreshed.sync_state_version == 1
 
 
 @pytest.mark.asyncio

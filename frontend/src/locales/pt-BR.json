@@ -1276,6 +1276,8 @@
     "syncDone": "Sincronização concluída",
     "syncRateLimited": "Limite diário do banco atingido, nenhum dado novo foi buscado. Tente novamente mais tarde.",
     "syncError": "Erro ao sincronizar",
+    "syncInProgress": "A sincronização da conexão está em andamento. Tente novamente em instantes.",
+    "syncRetryError": "Falha na sincronização. Tente novamente.",
     "connected": "Banco conectado com sucesso",
     "connectError": "Erro ao conectar banco",
     "disconnected": "Conexão removida",
@@ -1296,7 +1298,7 @@
     "noTransactions": "Nenhuma transação para esta conta",
     "syncFailed": "Sincronização falhou",
     "reconnect": "Reconectar",
-    "connectionError": "Erro na conexão — reconecte para corrigir",
+    "connectionError": "Esta conexão com o provedor requer atenção. Reconecte-a para retomar a sincronização das contas listadas abaixo.",
     "close": "Encerrar conta",
     "reopen": "Reabrir conta",
     "accountClosed": "Conta encerrada",
@@ -1317,7 +1319,7 @@
     "noInstitutionsFound": "Nenhum banco disponível para este país",
     "loadingInstitutions": "Carregando bancos…",
     "loadingInstitutionsError": "Falha ao carregar bancos",
-    "connectionExpired": "Conexão expirada — reconecte para corrigir",
+    "connectionExpired": "Esta conexão expirou. Reconecte-a para retomar a sincronização das contas listadas abaixo.",
     "back": "Voltar",
     "redirecting": "Redirecionando para o seu banco…",
     "oauthCallback": {
@@ -1361,10 +1363,13 @@
     },
     "reconnected": "Banco reconectado com sucesso",
     "connectionStatus": {
-      "active": "Ativa",
-      "error": "Erro",
-      "expired": "Expirada"
-    }
+      "active": "Conectado",
+      "error": "Reconexão necessária",
+      "expired": "Expirada",
+      "sync_error": "Falha na sincronização"
+    },
+    "connectionSyncError": "A última sincronização desta conexão falhou. Nenhuma conta específica foi identificada; todas as contas vinculadas estão listadas abaixo.",
+    "connectionAccountError": "A última sincronização falhou ao processar {{account}}."
   },
   "loans": {
     "title": "Contrato do empréstimo",

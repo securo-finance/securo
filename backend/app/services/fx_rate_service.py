@@ -18,32 +18,40 @@ logger = logging.getLogger(__name__)
 
 _provider = OpenExchangeRatesProvider()
 
+# Owned by one bank import, never by the process or a pooled session.
+FetchedRateCache = dict[date, dict[str, Decimal]]
+
+
+async def _fetch_supported_rates(target: date) -> dict[str, Decimal]:
+    supported = set(get_settings().supported_currencies.split(","))
+    if target == app_today():
+        rates = await _provider.fetch_latest()
+    else:
+        rates = await _provider.fetch_historical(target)
+    return {currency: rate for currency, rate in rates.items() if currency in supported}
+
 
 async def sync_rates(
-    session: AsyncSession, target_date: Optional[date] = None
+    session: AsyncSession, target_date: Optional[date] = None,
 ) -> int:
     """Fetch rates from the provider for the given date and upsert into fx_rates.
 
     Only saves rates for currencies in `supported_currencies`.
     Idempotent — existing rates for the same date are updated.
-    Returns the number of rates synced.
+    Returns the number of rates synced. This standalone cache refresh commits;
+    atomic bank imports use a non-persisting, import-local rate cache instead.
     """
     requested_target = target_date or app_today()
     # Providers cannot return a historical rate for a date that has not
     # happened yet. Treat a future request as a request for today's latest
     # published rate and store it under today's date.
     target = min(requested_target, app_today())
-    supported = set(get_settings().supported_currencies.split(","))
-
-    if target == app_today():
-        rates = await _provider.fetch_latest()
-    else:
-        rates = await _provider.fetch_historical(target)
+    rates = await _fetch_supported_rates(target)
 
     count = 0
-    for currency_code, rate in rates.items():
-        if currency_code not in supported:
-            continue
+    # Standalone refreshes write one date per transaction. Keep currency locks
+    # ordered too, regardless of the provider's response ordering.
+    for currency_code, rate in sorted(rates.items()):
         stmt = pg_insert(FxRate).values(
             base_currency="USD",
             quote_currency=currency_code,
@@ -70,6 +78,8 @@ async def _resolve_rate(
     target_date: Optional[date] = None,
     *,
     allow_fetch: bool = True,
+    persist_fetched_rates: bool = True,
+    fetched_rates: Optional[FetchedRateCache] = None,
 ) -> Optional[Decimal]:
     """Resolve the true FX rate, or None when no rate can be found.
 
@@ -78,7 +88,10 @@ async def _resolve_rate(
     Returns None (not a fake 1:1) when no rate is available, so callers that
     persist a conversion can honestly leave it NULL instead of storing a wrong
     amount (issue #353). Pass ``allow_fetch=False`` to skip the on-demand
-    provider call and rely only on already-stored rates.
+    provider call and rely only on already-stored rates. Bank imports pass
+    ``persist_fetched_rates=False`` and an import-local ``fetched_rates`` cache:
+    their conversions stay accurate without acquiring shared FX write locks.
+    Missing historical rates fetched by an import are not persisted to fx_rates.
     """
     if from_currency == to_currency:
         return Decimal("1")
@@ -89,28 +102,45 @@ async def _resolve_rate(
     # lets the closest-rate fallback select the last cached business day.
     target = min(requested_target, app_today())
 
-    # Step 1: Try exact date
-    usd_to_source = await _get_exact_date_rate(session, from_currency, target)
-    usd_to_target = await _get_exact_date_rate(session, to_currency, target)
+    if not persist_fetched_rates and fetched_rates is None:
+        fetched_rates = {}
+
+    # Step 1: Try exact date, including this import's earlier fetched snapshot.
+    usd_to_source = await _get_exact_date_rate(session, from_currency, target, fetched_rates)
+    usd_to_target = await _get_exact_date_rate(session, to_currency, target, fetched_rates)
 
     # Step 2: If missing, fetch from provider for exact date
     if allow_fetch and (usd_to_source is None or usd_to_target is None):
         try:
-            synced = await sync_rates(session, target)
+            if persist_fetched_rates:
+                synced = await sync_rates(session, target)
+            else:
+                assert fetched_rates is not None
+                if target not in fetched_rates:
+                    fetched_rates[target] = await _fetch_supported_rates(target)
+                synced = len(fetched_rates[target])
             if synced > 0:
                 logger.info("On-demand sync fetched %d rates for %s", synced, target)
                 if usd_to_source is None:
-                    usd_to_source = await _get_exact_date_rate(session, from_currency, target)
+                    usd_to_source = await _get_exact_date_rate(
+                        session, from_currency, target, fetched_rates,
+                    )
                 if usd_to_target is None:
-                    usd_to_target = await _get_exact_date_rate(session, to_currency, target)
+                    usd_to_target = await _get_exact_date_rate(
+                        session, to_currency, target, fetched_rates,
+                    )
         except Exception:
+            if not persist_fetched_rates and fetched_rates is not None:
+                # Do not hammer a failing provider once per transaction row.
+                # A new import gets a fresh cache and can retry this date.
+                fetched_rates.setdefault(target, {})
             logger.warning("On-demand FX rate sync failed for %s", target, exc_info=True)
 
     # Step 3: Fall back to closest available date
     if usd_to_source is None:
-        usd_to_source = await _get_closest_rate(session, from_currency, target)
+        usd_to_source = await _get_closest_rate(session, from_currency, target, fetched_rates)
     if usd_to_target is None:
-        usd_to_target = await _get_closest_rate(session, to_currency, target)
+        usd_to_target = await _get_closest_rate(session, to_currency, target, fetched_rates)
 
     if from_currency == "USD":
         usd_to_source = Decimal("1")
@@ -150,10 +180,15 @@ async def get_rate(
     return rate
 
 
-async def _get_exact_date_rate(session: AsyncSession, currency: str, target: date) -> Optional[Decimal]:
+async def _get_exact_date_rate(
+    session: AsyncSession, currency: str, target: date,
+    fetched_rates: Optional[FetchedRateCache] = None,
+) -> Optional[Decimal]:
     """Get the rate for an exact date."""
     if currency == "USD":
         return Decimal("1")
+    if fetched_rates is not None and currency in fetched_rates.get(target, {}):
+        return fetched_rates[target][currency]
     result = await session.scalar(
         select(FxRate.rate)
         .where(
@@ -165,13 +200,20 @@ async def _get_exact_date_rate(session: AsyncSession, currency: str, target: dat
     return result
 
 
-async def _get_closest_rate(session: AsyncSession, currency: str, target: date) -> Optional[Decimal]:
-    """Get the closest available rate to a target date (preferring before, then after)."""
+async def _get_closest_rate(
+    session: AsyncSession, currency: str, target: date,
+    fetched_rates: Optional[FetchedRateCache] = None,
+) -> Optional[Decimal]:
+    """Closest stored/import-local snapshot, preferring before, then after."""
     if currency == "USD":
         return Decimal("1")
-    # Try closest before or on target date
-    result = await session.scalar(
-        select(FxRate.rate)
+    local = [
+        (day, rates[currency]) for day, rates in (fetched_rates or {}).items()
+        if currency in rates
+    ]
+    before = [entry for entry in local if entry[0] <= target]
+    stored = (await session.execute(
+        select(FxRate.date, FxRate.rate)
         .where(
             FxRate.base_currency == "USD",
             FxRate.quote_currency == currency,
@@ -179,22 +221,26 @@ async def _get_closest_rate(session: AsyncSession, currency: str, target: date) 
         )
         .order_by(desc(FxRate.date))
         .limit(1)
-    )
-    if result is not None:
-        return result
-    # Try closest after target date
-    from sqlalchemy import asc
-    result = await session.scalar(
-        select(FxRate.rate)
+    )).first()
+    if stored is not None:
+        before.append((stored[0], stored[1]))
+    if before:
+        return max(before, key=lambda entry: entry[0])[1]
+
+    after = [entry for entry in local if entry[0] > target]
+    stored = (await session.execute(
+        select(FxRate.date, FxRate.rate)
         .where(
             FxRate.base_currency == "USD",
             FxRate.quote_currency == currency,
             FxRate.date > target,
         )
-        .order_by(asc(FxRate.date))
+        .order_by(FxRate.date.asc())
         .limit(1)
-    )
-    return result
+    )).first()
+    if stored is not None:
+        after.append((stored[0], stored[1]))
+    return min(after, key=lambda entry: entry[0])[1] if after else None
 
 
 async def has_rate(
@@ -289,6 +335,8 @@ async def stamp_primary_amount(
     currency_field: str = "currency",
     *,
     allow_fetch: bool = True,
+    persist_fetched_rates: bool = True,
+    fetched_rates: Optional[FetchedRateCache] = None,
 ) -> None:
     """Set obj's primary amount and fx_rate_used based on user's primary currency.
 
@@ -301,7 +349,9 @@ async def stamp_primary_amount(
     while an already-stamped row keeps its current value — so re-stamping never
     pushes a visible transaction into limbo. The row heals on a later pass once a
     rate for its date lands. Pass ``allow_fetch=False`` to avoid the on-demand
-    provider call (used by the healer to stay frugal).
+    provider call (used by the healer to stay frugal). A caller that owns a larger
+    transaction can pass ``persist_fetched_rates=False`` plus an import-local
+    cache so fetching rates neither commits its data nor locks shared FX rows.
     """
     user = await session.get(User, user_id)
     if not user:
@@ -325,7 +375,8 @@ async def stamp_primary_amount(
 
     obj_date = getattr(obj, date_field, None)
     rate = await _resolve_rate(
-        session, obj_currency, primary_currency, obj_date, allow_fetch=allow_fetch
+        session, obj_currency, primary_currency, obj_date, allow_fetch=allow_fetch,
+        persist_fetched_rates=persist_fetched_rates, fetched_rates=fetched_rates,
     )
 
     if rate is None:

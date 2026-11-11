@@ -1272,6 +1272,8 @@
     "syncDone": "同期が完了しました",
     "syncRateLimited": "銀行の1日の利用上限に達したため、新しいデータは取得されませんでした。しばらくしてから再度お試しください。",
     "syncError": "同期に失敗しました",
+    "syncInProgress": "接続を同期しています。しばらくしてからもう一度お試しください。",
+    "syncRetryError": "同期に失敗しました。もう一度お試しください。",
     "connected": "銀行を接続しました",
     "connectError": "銀行の接続に失敗しました",
     "disconnected": "接続を削除しました",
@@ -1359,8 +1361,11 @@
     "connectionStatus": {
       "active": "有効",
       "error": "エラー",
-      "expired": "期限切れ"
-    }
+      "expired": "期限切れ",
+      "sync_error": "同期失敗"
+    },
+    "connectionSyncError": "この接続の前回の同期に失敗しました。該当する口座は特定できませんでした。接続されたすべての口座を以下に表示します。",
+    "connectionAccountError": "{{account}} の処理中に前回の同期に失敗しました。"
   },
   "loans": {
     "title": "ローン契約",

@@ -1272,6 +1272,8 @@
     "syncDone": "Sync completed",
     "syncRateLimited": "Bank daily limit reached, no new data was fetched. Try again later.",
     "syncError": "Sync failed",
+    "syncInProgress": "Connection sync in progress. Please try again shortly.",
+    "syncRetryError": "Sync failed. Please try again.",
     "connected": "Bank connected successfully",
     "connectError": "Failed to connect bank",
     "disconnected": "Connection removed",
@@ -1292,7 +1294,7 @@
     "noTransactions": "No transactions for this account",
     "syncFailed": "Sync failed",
     "reconnect": "Reconnect",
-    "connectionError": "Connection error — reconnect to fix",
+    "connectionError": "This provider connection needs attention. Reconnect it to resume syncing the accounts listed below.",
     "close": "Close account",
     "reopen": "Reopen account",
     "accountClosed": "Account closed",
@@ -1313,7 +1315,7 @@
     "noInstitutionsFound": "No banks available for this country",
     "loadingInstitutions": "Loading banks…",
     "loadingInstitutionsError": "Failed to load banks",
-    "connectionExpired": "Connection expired — reconnect to fix",
+    "connectionExpired": "This connection has expired. Reconnect it to resume syncing the accounts listed below.",
     "back": "Back",
     "redirecting": "Redirecting to your bank…",
     "oauthCallback": {
@@ -1357,10 +1359,13 @@
     },
     "reconnected": "Bank reconnected successfully",
     "connectionStatus": {
-      "active": "Active",
-      "error": "Error",
-      "expired": "Expired"
-    }
+      "active": "Connected",
+      "error": "Reconnect required",
+      "expired": "Expired",
+      "sync_error": "Sync failed"
+    },
+    "connectionSyncError": "The last sync failed for this connection. No single account was identified; all linked accounts are listed below.",
+    "connectionAccountError": "The last sync failed while processing {{account}}."
   },
   "loans": {
     "title": "Loan contract",

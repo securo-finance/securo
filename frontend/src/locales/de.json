@@ -1273,6 +1273,8 @@
     "syncDone": "Synchronisierung abgeschlossen",
     "syncRateLimited": "Tägliches Banklimit erreicht, es wurden keine neuen Daten geladen. Bitte später erneut versuchen.",
     "syncError": "Synchronisierung fehlgeschlagen",
+    "syncInProgress": "Die Verbindung wird gerade synchronisiert. Bitte versuche es in Kürze erneut.",
+    "syncRetryError": "Synchronisierung fehlgeschlagen. Bitte versuche es erneut.",
     "connected": "Bank erfolgreich verbunden",
     "connectError": "Verbindung zur Bank fehlgeschlagen",
     "disconnected": "Verbindung entfernt",
@@ -1293,7 +1295,7 @@
     "noTransactions": "Keine Transaktionen für dieses Konto",
     "syncFailed": "Synchronisierung fehlgeschlagen",
     "reconnect": "Erneut verbinden",
-    "connectionError": "Verbindungsfehler — Erneut verbinden, um das Problem zu beheben",
+    "connectionError": "Diese Anbieterverbindung erfordert Aufmerksamkeit. Verbinde sie erneut, um die Synchronisierung der unten aufgeführten Konten fortzusetzen.",
     "close": "Konto schließen",
     "reopen": "Konto wiedereröffnen",
     "accountClosed": "Konto geschlossen",
@@ -1314,7 +1316,7 @@
     "noInstitutionsFound": "Keine Banken für dieses Land verfügbar",
     "loadingInstitutions": "Lade Banken…",
     "loadingInstitutionsError": "Fehler beim Laden der Banken",
-    "connectionExpired": "Verbindung abgelaufen — Erneut verbinden, um das Problem zu beheben",
+    "connectionExpired": "Diese Verbindung ist abgelaufen. Verbinde sie erneut, um die Synchronisierung der unten aufgeführten Konten fortzusetzen.",
     "back": "Zurück",
     "redirecting": "Weiterleitung zu deiner Bank…",
     "oauthCallback": {
@@ -1358,10 +1360,13 @@
     },
     "reconnected": "Bank erfolgreich erneut verbunden",
     "connectionStatus": {
-      "active": "Aktiv",
-      "error": "Fehler",
-      "expired": "Abgelaufen"
-    }
+      "active": "Verbunden",
+      "error": "Erneute Verbindung erforderlich",
+      "expired": "Abgelaufen",
+      "sync_error": "Synchronisierung fehlgeschlagen"
+    },
+    "connectionSyncError": "Die letzte Synchronisierung dieser Verbindung ist fehlgeschlagen. Es wurde kein einzelnes Konto ermittelt; alle verknüpften Konten sind unten aufgeführt.",
+    "connectionAccountError": "Die letzte Synchronisierung ist bei der Verarbeitung von {{account}} fehlgeschlagen."
   },
   "loans": {
     "title": "Kreditvertrag",

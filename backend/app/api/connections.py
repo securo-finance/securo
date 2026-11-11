@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -30,6 +31,8 @@ from app.schemas.bank_connection import (
 )
 from app.services import connection_service
 from app.services.transfer_detection_service import detect_transfer_pairs, unlink_transfer_pair
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
 
@@ -119,6 +122,11 @@ async def oauth_callback(
                 reconnect_connection_id=data.reconnect_connection_id,
             )
         return connection
+    except connection_service.ConnectionSyncInProgressError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "sync_in_progress", "message": str(e)},
+        )
     except ProviderUserActionRequired as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -191,7 +199,7 @@ async def sync_connection(
             "merged_count": merged_count,
             "sync_outcome": sync_outcome,
         }
-    except ValueError as e:
+    except connection_service.ConnectionSyncValidationError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ProviderUserActionRequired as e:
         raise HTTPException(
@@ -206,10 +214,11 @@ async def sync_connection(
         raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(e))
     except ProviderNotConfiguredError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-    except Exception as e:
+    except Exception:
+        logger.exception("Sync failed for connection %s", connection_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Sync failed: {str(e)}",
+            detail="Sync failed. Please try again.",
         )
 
 
@@ -269,7 +278,13 @@ async def delete_connection(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    deleted = await connection_service.delete_connection(session, connection_id, ctx.workspace.id)
+    try:
+        deleted = await connection_service.delete_connection(session, connection_id, ctx.workspace.id)
+    except connection_service.ConnectionSyncInProgressError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "sync_in_progress", "message": str(e)},
+        )
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
 

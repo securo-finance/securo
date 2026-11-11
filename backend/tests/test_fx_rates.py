@@ -1709,3 +1709,89 @@ class TestFxFallbackFlag:
         assert len(fallback_items) == 1
         assert fallback_items[0]["amount_primary"] is None
         assert fallback_items[0]["fx_fallback"] is True
+
+
+@pytest.mark.parametrize("missing_response", [{}, RuntimeError("offline")])
+async def test_import_fx_cache_retains_closest_fallback_without_persisting(
+    session, clean_db, missing_response,
+):
+    from app.services import fx_rate_service
+    from sqlalchemy import func, select
+
+    earlier, missing = date(2025, 6, 15), date(2025, 6, 16)
+    cache = {}
+    with patch.object(
+        fx_rate_service._provider, "fetch_historical",
+        new=AsyncMock(side_effect=[{"EUR": Decimal("2")}, missing_response]),
+    ) as fetch:
+        for target in (earlier, missing, missing):
+            rate = await fx_rate_service._resolve_rate(
+                session, "EUR", "USD", target,
+                persist_fetched_rates=False, fetched_rates=cache,
+            )
+            assert rate == Decimal("0.5")
+        assert fetch.await_count == 2
+    assert await session.scalar(select(func.count()).select_from(FxRate)) == 0
+    assert cache == {earlier: {"EUR": Decimal("2")}, missing: {}}
+
+
+@pytest.mark.parametrize("stored_day,local_day,expected", [
+    (date(2025, 6, 13), date(2025, 6, 14), Decimal("0.5")),
+    (date(2025, 6, 14), date(2025, 6, 13), Decimal("0.25")),
+    (date(2025, 6, 17), date(2025, 6, 16), Decimal("0.5")),
+    (date(2025, 6, 16), date(2025, 6, 13), Decimal("0.5")),
+    (date(2025, 6, 15), date(2025, 6, 14), Decimal("0.25")),
+    (date(2025, 6, 14), date(2025, 6, 14), Decimal("0.5")),
+    (date(2025, 6, 15), date(2025, 6, 15), Decimal("0.5")),
+])
+async def test_import_fx_cache_merges_closest_stored_and_local_rates(
+    session, clean_db, stored_day, local_day, expected,
+):
+    from app.services import fx_rate_service
+
+    await _insert_rate(session, "EUR", Decimal("4"), stored_day)
+    rate = await fx_rate_service._resolve_rate(
+        session, "EUR", "USD", date(2025, 6, 15), allow_fetch=False,
+        persist_fetched_rates=False, fetched_rates={local_day: {"EUR": Decimal("2")}},
+    )
+    assert rate == expected
+
+
+async def test_import_fx_cache_filters_currencies_and_normalizes_future_dates(session, clean_db):
+    from app.services import fx_rate_service
+
+    cache = {}
+    with patch.object(
+        fx_rate_service._provider, "fetch_latest",
+        new=AsyncMock(return_value={"EUR": Decimal("2"), "ZZZ": Decimal("9")}),
+    ) as fetch:
+        assert await fx_rate_service._resolve_rate(
+            session, "EUR", "USD", date.today() + timedelta(days=1),
+            persist_fetched_rates=False, fetched_rates=cache,
+        ) == Decimal("0.5")
+        assert await fx_rate_service._resolve_rate(
+            session, "ZZZ", "USD", date.today() + timedelta(days=2),
+            persist_fetched_rates=False, fetched_rates=cache,
+        ) is None
+        assert await fx_rate_service._resolve_rate(
+            session, "USD", "USD", persist_fetched_rates=False, fetched_rates=cache,
+        ) == Decimal("1")
+        fetch.assert_awaited_once()
+    assert cache == {date.today(): {"EUR": Decimal("2")}}
+
+
+async def test_import_fx_cache_does_not_leak_to_next_import(session, clean_db):
+    from app.services import fx_rate_service
+
+    target = date(2025, 6, 15)
+    with patch.object(
+        fx_rate_service._provider, "fetch_historical",
+        new=AsyncMock(side_effect=[RuntimeError("offline"), {"EUR": Decimal("4")}]),
+    ) as fetch:
+        assert await fx_rate_service._resolve_rate(
+            session, "EUR", "USD", target, persist_fetched_rates=False, fetched_rates={},
+        ) is None
+        assert await fx_rate_service._resolve_rate(
+            session, "EUR", "USD", target, persist_fetched_rates=False, fetched_rates={},
+        ) == Decimal("0.25")
+        assert fetch.await_count == 2
