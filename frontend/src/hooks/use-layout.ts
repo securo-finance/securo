@@ -62,9 +62,11 @@ export function useLayout(surface: Surface) {
     uiLayouts
       .get(workspace)
       .then((fresh) => {
+        // A save made while this read was out decides instead, and this
+        // older read no longer says what the server has.
+        if (seq !== latestWrite.get(chain)) return
         confirmed.set(chain, fresh[surface])
-        // A save made while this read was out decides instead.
-        if (seq === latestWrite.get(chain)) put(fresh[surface])
+        put(fresh[surface])
       })
       .catch(() => {
         if (failed && seq === latestWrite.get(chain) && confirmed.has(chain)) put(confirmed.get(chain) ?? null)

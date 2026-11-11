@@ -92,9 +92,10 @@ describe('SpendingDistributionWidget', () => {
     expect(screen.queryByText('Nothing')).not.toBeInTheDocument()
   })
 
-  it('loads nothing for a collection of wallets only', () => {
+  it('loads nothing for a collection of wallets only, and says there is nothing', () => {
     renderWithProviders(<SpendingDistributionWidget scope={{ ...PAST, noAccounts: true }} />)
     expect(api.dashboard.spendingByCategory).not.toHaveBeenCalled()
+    expect(screen.getByText(t('dashboard.noData'))).toBeInTheDocument()
   })
 })
 
@@ -118,6 +119,18 @@ describe('UpcomingWidget', () => {
     const gym = screen.getByText('Gym')
     expect(salary.compareDocumentPosition(gym) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByText(`+${usd(3000)}`)).toBeInTheDocument()
+  })
+
+  it('keeps to the accounts in the active collection', async () => {
+    api.dashboard.projectedTransactions.mockResolvedValue([
+      { recurring_id: 'a', account_id: 'in', description: 'Rent', amount: 900, amount_primary: 900, currency: 'USD', type: 'debit', date: '2026-04-05', category_icon: null, category_color: null },
+      { recurring_id: 'b', account_id: 'out', description: 'Gym', amount: 50, amount_primary: 50, currency: 'USD', type: 'debit', date: '2026-04-06', category_icon: null, category_color: null },
+      { recurring_id: 'c', account_id: null, description: 'Cash', amount: 20, amount_primary: 20, currency: 'USD', type: 'debit', date: '2026-04-07', category_icon: null, category_color: null },
+    ])
+    renderWithProviders(<UpcomingWidget scope={{ ...PAST, activeAccountIds: ['in'] }} />)
+    expect(await screen.findByText('Rent')).toBeInTheDocument()
+    expect(screen.queryByText('Gym')).not.toBeInTheDocument()
+    expect(screen.queryByText('Cash')).not.toBeInTheDocument()
   })
 
   it('says when nothing is due', async () => {

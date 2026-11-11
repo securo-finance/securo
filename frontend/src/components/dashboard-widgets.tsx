@@ -293,7 +293,11 @@ export function UpcomingWidget({ scope }: { scope: DashboardScope }) {
     queryKey: ['dashboard', 'projected-transactions', 'upcoming', from],
     queryFn: () => dashboard.projectedTransactions({ from, to }),
   })
-  const rows = [...(data ?? [])].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5)
+  // Within the active collection: a recurring transaction counts when its account is in it.
+  const scoped = scope.activeAccountIds
+    ? (data ?? []).filter((row) => row.account_id !== null && scope.activeAccountIds!.includes(row.account_id))
+    : (data ?? [])
+  const rows = [...scoped].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5)
 
   return (
     <WidgetCard title={t('widgets.upcoming.title')} action={<CardLink to="/recurring" label={t('widgets.viewAll')} />}>
