@@ -419,3 +419,41 @@ async def test_unreadable_payloads_are_skipped_without_aborting_the_upgrade(
     assert await _external_id(session, good.id) == _new_id(good_raw)
     for row in (*bad_rows, not_a_dict):
         assert await _external_id(session, row.id) == "0"
+
+
+def _variant(**changes) -> dict:
+    raw = _payload()
+    for key, value in changes.items():
+        if value is None:
+            raw.pop(key, None)
+        else:
+            raw[key] = value
+    return raw
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        _variant(booking_date=None),
+        _variant(booking_date=None, transaction_date=None),
+        _variant(credit_debit_indicator="dbit"),
+        _variant(credit_debit_indicator=None),
+        _variant(credit_debit_indicator="CRDT"),
+        _variant(transaction_amount={"currency": "EUR", "amount": "-12.00"}),
+        _variant(transaction_amount={"currency": "EUR", "amount": "12.0"}),
+    ],
+    ids=[
+        "no-booking-date", "value-date-only", "lowercase-indicator", "missing-indicator",
+        "credit", "negative-amount", "short-decimal",
+    ],
+)
+async def test_row_values_are_derived_like_the_provider(raw):
+    """The migration's amount/type/date check agrees with the provider's parse."""
+    parsed = EnableBankingProvider()._build_transaction(ACCOUNT_UID, raw, "posted", "auto")
+    assert parsed is not None
+    row = type(
+        "Row", (), {"amount": parsed.amount, "type": parsed.type, "date": parsed.date},
+    )
+    assert migration._new_id(
+        ACCOUNT_UID, raw, migration._legacy_fingerprint(ACCOUNT_UID, raw), row,
+    ) == parsed.external_id
