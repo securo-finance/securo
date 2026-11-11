@@ -7,6 +7,10 @@ import { uiLayouts, type UiLayouts } from '@/lib/api'
 import { resolveLayout, type Surface } from '@/lib/library'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 
+// Per workspace and surface: the write in flight, and how many were made.
+const writeChains = new Map<string, Promise<unknown>>()
+const latestWrite = new Map<string, number>()
+
 /**
  * How this person arranged a surface in the current workspace, and the means
  * to change it. When they never made one, or it can't be read, it's Securo's
@@ -32,18 +36,27 @@ export function useLayout(surface: Surface) {
       [surface]: next?.map((id) => ({ id })) ?? null,
     }))
 
-  // Optimistic: the page rearranges at once, and goes back if the save fails.
+  // Optimistic: the page rearranges at once. Saves to one surface go out one
+  // after another, so the server ends on the last arrangement made; a save
+  // that fails re-reads what the server has, unless a newer one is coming.
+  const chainKey = `${workspaceId}:${surface}`
   const mutation = useMutation({
-    mutationFn: (next: string[] | null) => (next === null ? uiLayouts.reset(surface) : uiLayouts.save(surface, next)),
+    mutationFn: (next: string[] | null) => {
+      const send = () => (next === null ? uiLayouts.reset(surface) : uiLayouts.save(surface, next))
+      const queued = (writeChains.get(chainKey) ?? Promise.resolve()).catch(() => {}).then(send)
+      writeChains.set(chainKey, queued)
+      return queued
+    },
     onMutate: async (next) => {
       await queryClient.cancelQueries({ queryKey })
-      const previous = queryClient.getQueryData<UiLayouts>(queryKey)
       write(next)
-      return { previous }
+      const seq = (latestWrite.get(chainKey) ?? 0) + 1
+      latestWrite.set(chainKey, seq)
+      return { seq }
     },
     onError: (_error, _next, context) => {
-      queryClient.setQueryData(queryKey, context?.previous)
       toast.error(t('library.saveFailed'))
+      if (context?.seq === latestWrite.get(chainKey)) void queryClient.invalidateQueries({ queryKey })
     },
   })
 

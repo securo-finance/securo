@@ -745,7 +745,10 @@ describe('Dashboard refresh button', () => {
 
     const refetch = vi.spyOn(queryClient, 'refetchQueries')
 
+    // The button waits out the first load, which follows the saved layout.
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
     const button = screen.getByRole('button', { name: 'Refresh' })
+    await waitFor(() => expect(button).toBeEnabled())
     await user.click(button)
 
     expect(refetch).toHaveBeenCalledTimes(1)

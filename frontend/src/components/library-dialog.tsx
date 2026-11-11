@@ -88,7 +88,8 @@ export function LibraryDialog({
 /** Each item of a surface, added or not, with the switch that adds or removes it. */
 function SurfaceItems({ surface }: { surface: Surface }) {
   const { t } = useTranslation()
-  const { ids, save, reset, isCustom } = useLayout(surface)
+  // Until the saved arrangement is in, a change would be made to the default and overwrite it.
+  const { ids, save, reset, isCustom, ready } = useLayout(surface)
   const placed = new Set(ids)
   // The reports page can't be left empty; the dashboard can.
   const lastReport = surface === 'reports' && ids.length === 1
@@ -111,7 +112,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
                   variant="outline"
                   size="sm"
                   className="shrink-0"
-                  disabled={locked}
+                  disabled={locked || !ready}
                   title={locked ? t('library.lastReport') : undefined}
                   aria-label={t(`library.removeFrom.${surface}`, { name: t(entry.titleKey) })}
                   onClick={() => save(ids.filter((id) => id !== entry.id))}
@@ -123,6 +124,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
                 <Button
                   size="sm"
                   className="shrink-0"
+                  disabled={!ready}
                   aria-label={t(`library.addTo.${surface}`, { name: t(entry.titleKey) })}
                   onClick={() => save([...ids, entry.id])}
                 >
@@ -137,7 +139,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
       {lastReport && <p className="px-1 text-xs text-muted-foreground">{t('library.lastReport')}</p>}
       {isCustom && (
         <div className="flex justify-end">
-          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={reset}>
+          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={reset} disabled={!ready}>
             <RotateCcw size={14} className="mr-1" />
             {t('library.restoreDefault')}
           </Button>

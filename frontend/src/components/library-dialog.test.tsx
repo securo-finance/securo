@@ -6,6 +6,7 @@ import { renderWithProviders, t } from '@/test/utils'
 import type { User } from '@/types'
 
 const state = vi.hoisted(() => ({
+  held: null as Promise<void> | null,
   saved: {} as Record<string, { id: string }[] | null>,
   saves: [] as { surface: string; ids: string[] }[],
   user: null as unknown as User,
@@ -14,13 +15,16 @@ const state = vi.hoisted(() => ({
 
 const api = vi.hoisted(() => ({
   uiLayouts: {
-    get: async () => ({ dashboard: null, reports: null, ...state.saved }),
+    get: async () => {
+      if (state.held) await state.held
+      return { dashboard: null, reports: null, ...state.saved }
+    },
     save: async (surface: string, ids: string[]) => {
       state.saves.push({ surface, ids })
     },
     reset: async () => {},
   },
-  auth: { updateMe: vi.fn() },
+  auth: { updateMe: vi.fn(), me: vi.fn() },
   admin: { defaultColors: async () => ({ light: null, dark: null }) },
 }))
 
@@ -46,6 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.saved = {}
   state.saves = []
+  state.held = null
   state.pluginsEnabled = true
   state.user = {
     id: 'u1',
@@ -73,6 +78,18 @@ describe('LibraryDialog', () => {
     await waitFor(() => expect(state.saves.at(-1)).toEqual({ surface: 'dashboard', ids: ['overview', 'goals'] }))
     // The row flips to remove at once.
     expect(await screen.findByRole('button', { name: t('library.removeFrom.dashboard', { name: t('goals.dashboardTitle') }) })).toBeInTheDocument()
+  })
+
+  it("can't change anything before the saved arrangement is in", async () => {
+    let release: () => void = () => {}
+    state.held = new Promise((done) => { release = done })
+    state.saved = { dashboard: [{ id: 'overview' }] }
+    open('widgets')
+    const remove = screen.getByRole('button', { name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }) })
+    expect(remove).toBeDisabled()
+    release()
+    // Once loaded, the saved arrangement shows, and it can be changed.
+    expect(await screen.findByRole('button', { name: t('library.addTo.dashboard', { name: t('goals.dashboardTitle') }) })).toBeEnabled()
   })
 
   it('removes a widget from the dashboard', async () => {
@@ -106,11 +123,35 @@ describe('LibraryDialog', () => {
     await waitFor(() => expect(api.auth.updateMe).toHaveBeenCalledWith({ theme: null }))
   })
 
-  it('puts the theme back when saving fails', async () => {
-    api.auth.updateMe.mockRejectedValue(new Error('offline'))
+  it('shows the pick at once, and goes back to what the server has when saving fails', async () => {
+    let reject: (reason: Error) => void = () => {}
+    api.auth.updateMe.mockReturnValue(new Promise((_, no) => { reject = no }))
+    api.auth.me.mockResolvedValue({ ...state.user, theme: 'ocean' })
     const { user } = open('themes')
+
     await user.click(screen.getByRole('button', { name: t('library.theme.graphite') }))
-    await waitFor(() => expect(state.user.theme).toBeNull())
+    expect(updateUser).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'graphite' }))
+
+    reject(new Error('offline'))
+    await waitFor(() => expect(updateUser).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'ocean' })))
+  })
+
+  it("doesn't let an older save decide the theme after a newer pick", async () => {
+    const pending: ((value: User) => void)[] = []
+    api.auth.updateMe.mockImplementation(
+      (updates: Partial<User>) => new Promise<User>((done) => pending.push(() => done({ ...state.user, ...updates }))),
+    )
+    const { user } = open('themes')
+    await user.click(screen.getByRole('button', { name: t('library.theme.ocean') }))
+    await user.click(screen.getByRole('button', { name: t('library.theme.forest') }))
+
+    // Saves go out one after another: the second waits for the first.
+    await waitFor(() => expect(pending).toHaveLength(1))
+    pending[0](state.user)
+    await waitFor(() => expect(pending).toHaveLength(2))
+    pending[1](state.user)
+    await waitFor(() => expect(api.auth.updateMe).toHaveBeenLastCalledWith({ theme: 'forest' }))
+    expect(updateUser).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'forest' }))
   })
 
   it('points to the plugin catalog only when plugins are on', () => {

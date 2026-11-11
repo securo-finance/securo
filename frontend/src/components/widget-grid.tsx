@@ -28,9 +28,12 @@ export function WidgetGrid({
 }) {
   const { t } = useTranslation()
   const byId = new Map(entries.map((entry) => [entry.id, entry]))
-  const halves = halfWidth(ids, byId)
+  // Outside editing, a widget with nothing to show right now (no goals yet)
+  // isn't there; while editing it still needs a handle.
+  const shown = editing ? ids : ids.filter((id) => byId.has(id) && content[id])
+  const halves = halfWidth(shown, byId)
 
-  if (ids.length === 0) {
+  if (shown.length === 0 && !(editing && ids.length > 0)) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center">
         <LayoutDashboard className="size-8 text-muted-foreground/60" />
@@ -48,14 +51,11 @@ export function WidgetGrid({
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-      {ids.map((id, index) => {
+      {shown.map((id, index) => {
         const entry = byId.get(id)
         if (!entry) return null
         const half = halves.has(id)
         const body = content[id]
-        // A widget can have nothing to show right now (no goals yet); outside
-        // editing it simply isn't there, while editing it still needs a handle.
-        if (!body && !editing) return null
         const title = t(entry.titleKey)
         return (
           <section

@@ -8,6 +8,8 @@ import { admin as adminApi, auth as authApi } from '@/lib/api'
 import { applyThemeVars, DEFAULT_THEME_ID, findTheme, themeVars } from '@/lib/themes'
 import { useAuth } from '@/contexts/auth-context'
 
+const themeWrites: { chain: Promise<unknown>; latest: number } = { chain: Promise.resolve(), latest: 0 }
+
 export const DEFAULT_COLORS_QUERY_KEY = ['admin', 'default-colors']
 
 /**
@@ -32,18 +34,28 @@ export function useAppTheme() {
     applyThemeVars(themeVars(theme, mode, accent))
   }, [theme, mode, accent])
 
+  // Picks are saved one after another, so the server keeps the last one; only
+  // the latest pick decides what the page shows if a save fails.
   const chooseTheme = useCallback(
-    async (id: string) => {
+    (id: string) => {
       if (!user) return
-      const previous = user.theme ?? null
       const next = id === DEFAULT_THEME_ID ? null : id
+      const seq = ++themeWrites.latest
       updateUser({ ...user, theme: next })
-      try {
-        updateUser(await authApi.updateMe({ theme: next }))
-      } catch {
-        updateUser({ ...user, theme: previous })
-        toast.error(t('library.saveFailed'))
-      }
+      themeWrites.chain = themeWrites.chain
+        .catch(() => {})
+        .then(() => authApi.updateMe({ theme: next }))
+        .then(
+          (saved) => {
+            if (seq === themeWrites.latest) updateUser(saved)
+          },
+          () => {
+            if (seq !== themeWrites.latest) return
+            toast.error(t('library.saveFailed'))
+            // Back to what the server has, which a failed save didn't change.
+            authApi.me().then(updateUser).catch(() => {})
+          },
+        )
     },
     [user, updateUser, t],
   )

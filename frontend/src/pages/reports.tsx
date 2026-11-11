@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { loadReportsRange, saveReportsRange, type ReportsRange } from '@/lib/remembered-range'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
@@ -57,6 +57,15 @@ import {
 // recolors every chart without the chart knowing.
 const SLICE_COLORS = Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`)
 const OTHER_SLICE_COLOR = 'var(--chart-muted)'
+// Money in and out keep the theme's colors in the bars and in their legend;
+// projections are a lighter shade of the same color.
+const SERIES_COLORS: Record<string, string> = {
+  income: 'var(--chart-income)',
+  expenses: 'var(--chart-expense)',
+  projectedIncome: 'color-mix(in srgb, var(--chart-income), white 30%)',
+  projectedExpenses: 'color-mix(in srgb, var(--chart-expense), white 30%)',
+  netIncome: 'var(--chart-1)',
+}
 
 /** "Apr 2026" from a YYYY-MM-DD date, in the date locale. */
 function formatShortMonth(isoDate: string, locale: string) {
@@ -365,14 +374,23 @@ export default function ReportsPage() {
     }
   }
 
-  // A report taken out of the page (here or from the library) hands over to the first one left.
+  // The page opens on the first report someone kept, once their list is in
+  // (unless they already picked a tab), and a report taken out of the page
+  // hands over to the first one left.
   const firstShown = shownTabs[0].key
   const activeShown = shownTabs.some((tab) => tab.key === activeTab)
+  const openedOnLayout = useRef(false)
   useEffect(() => {
+    if (!reportsLayout.ready) return
+    if (!openedOnLayout.current) {
+      openedOnLayout.current = true
+      if (activeTab !== firstShown) handleSelectTab(firstShown)
+      return
+    }
     if (!activeShown) handleSelectTab(firstShown)
-    // handleSelectTab is recreated each render; what matters is the active tab leaving the page.
+    // handleSelectTab and activeTab change each render; what matters is the list and whether the active tab is on it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeShown, firstShown])
+  }, [reportsLayout.ready, activeShown, firstShown])
 
   // Year picker (issue #765): one entry per year the workspace's data
   // covers, from this year back to the oldest transaction. Hidden until the
@@ -406,7 +424,7 @@ export default function ReportsPage() {
     setSelectedDate(null)
   }
 
-  const { data, isLoading, isError, error, refetch } = useQuery<ReportResponse>({
+  const { data, isLoading: reportLoading, isError, error, refetch } = useQuery<ReportResponse>({
     queryKey: ['reports', activeTab, rangeKey, months, period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds, apiStart ?? null, apiEnd ?? null],
     queryFn: () =>
       isCashFlow
@@ -417,6 +435,9 @@ export default function ReportsPage() {
     // Only request a custom report with both committed endpoints.
     enabled: currentTab.enabled && reportsLayout.ready && activeShown && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
   })
+
+  // Waiting on the saved list of reports counts as loading, not as an empty report.
+  const isLoading = reportLoading || !reportsLayout.ready
 
   const summary = data?.summary
   const trend = data?.trend ?? []
@@ -483,7 +504,7 @@ export default function ReportsPage() {
 
   const colorMap: Record<string, string> = {}
   for (const b of allBreakdowns) {
-    colorMap[b.key] = b.color
+    colorMap[b.key] = SERIES_COLORS[b.key] ?? b.color
   }
 
   const snapshotTrendPoint = selectedDate
@@ -556,7 +577,7 @@ export default function ReportsPage() {
       .map((b) => ({
         name: t(`reports.${b.key}`, { defaultValue: b.label }),
         value: b.value,
-        color: b.color,
+        color: colorMap[b.key] ?? b.color,
       }))
   })()
 
@@ -873,7 +894,7 @@ export default function ReportsPage() {
         {shownTabs.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => { if (tab.enabled) handleSelectTab(tab.key) }}
+            onClick={() => { if (tab.enabled) { openedOnLayout.current = true; handleSelectTab(tab.key) } }}
             disabled={!tab.enabled}
             className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
               activeTab === tab.key
@@ -966,7 +987,7 @@ export default function ReportsPage() {
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <div
                         className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: b.color }}
+                        style={{ backgroundColor: colorMap[b.key] ?? b.color }}
                       />
                       <p className="text-xs font-medium text-muted-foreground">
                         {t(`reports.${b.key}`, { defaultValue: b.label })}
@@ -1146,7 +1167,7 @@ export default function ReportsPage() {
                         return (
                           <div style={tooltipStyle} className="px-3 py-2">
                             <p className="text-xs font-medium mb-1">{label}</p>
-                            <p className="text-xs" style={{ color: 'var(--chart-1)' }}>
+                            <p className="text-xs font-medium text-foreground">
                               {t('reports.balance', { defaultValue: 'Balance' })}:{' '}
                               {privacyMode ? MASK : formatCurrency(balance, userCurrency, locale)}
                             </p>
@@ -1247,10 +1268,10 @@ export default function ReportsPage() {
                   contentStyle={tooltipStyle}
                 />
                 <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
-                  <Bar dataKey="income" fill="var(--chart-income)" radius={[4, 4, 0, 0]} maxBarSize={20} />
-                  <Bar dataKey="expenses" fill="var(--chart-expense)" radius={[4, 4, 0, 0]} maxBarSize={20} />
-                  <Bar dataKey="projectedIncome" fill="color-mix(in srgb, var(--chart-income), white 30%)" radius={[4, 4, 0, 0]} maxBarSize={20} fillOpacity={0.65} />
-                  <Bar dataKey="projectedExpenses" fill="color-mix(in srgb, var(--chart-expense), white 30%)" radius={[4, 4, 0, 0]} maxBarSize={20} fillOpacity={0.65} />
+                  <Bar dataKey="income" fill={SERIES_COLORS.income} radius={[4, 4, 0, 0]} maxBarSize={20} />
+                  <Bar dataKey="expenses" fill={SERIES_COLORS.expenses} radius={[4, 4, 0, 0]} maxBarSize={20} />
+                  <Bar dataKey="projectedIncome" fill={SERIES_COLORS.projectedIncome} radius={[4, 4, 0, 0]} maxBarSize={20} fillOpacity={0.65} />
+                  <Bar dataKey="projectedExpenses" fill={SERIES_COLORS.projectedExpenses} radius={[4, 4, 0, 0]} maxBarSize={20} fillOpacity={0.65} />
                 <Line
                   type="monotone"
                   dataKey="value"
@@ -1301,7 +1322,7 @@ export default function ReportsPage() {
                     return (
                       <div style={tooltipStyle} className="px-3 py-2">
                         <p className="text-xs font-medium mb-1">{label}</p>
-                        <p className="text-xs" style={{ color: 'var(--chart-1)' }}>
+                        <p className="text-xs font-medium text-foreground">
                           {t(currentTab.labelKey)}:{' '}
                           {privacyMode ? MASK : formatCurrency(value, userCurrency, locale)}
                         </p>

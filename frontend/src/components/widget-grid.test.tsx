@@ -80,4 +80,15 @@ describe('WidgetGrid', () => {
     fireEvent.click(screen.getByRole('button', { name: t('library.addWidget') }))
     expect(onAdd).toHaveBeenCalled()
   })
+
+  it('offers the library when no widget has anything to show', () => {
+    renderGrid({ ids: ['goals'] })
+    expect(screen.getByText(t('library.emptyDashboard'))).toBeInTheDocument()
+  })
+
+  it('still lets an empty widget be edited', () => {
+    renderGrid({ ids: ['goals'], editing: true })
+    expect(screen.queryByText(t('library.emptyDashboard'))).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: title('goals.dashboardTitle') })).toBeInTheDocument()
+  })
 })

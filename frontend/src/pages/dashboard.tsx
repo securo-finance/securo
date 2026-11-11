@@ -288,6 +288,7 @@ export default function DashboardPage() {
   const { data: summary, isLoading: summaryLoading, isFetching: summaryFetching } = useQuery({
     queryKey: ['dashboard', 'summary', selectedMonth, activeAccountIds, activeWalletIds],
     queryFn: () => dashboard.summary(monthParam, undefined, acctIds, walletIds),
+    enabled: shows('overview') || shows('uncategorized'),
   })
 
   const { data: spending, isLoading: spendingLoading } = useQuery({
@@ -316,7 +317,7 @@ export default function DashboardPage() {
       exclude_transfers: true,
       account_ids: acctIds,
     }),
-    enabled: !noAccounts,
+    enabled: !noAccounts && shows('transactions'),
   })
 
   // Same month grid the transactions page renders, scoped to the active
@@ -324,7 +325,7 @@ export default function DashboardPage() {
   const calendarAccountIds = acctIds && acctIds.length > 0 ? acctIds : undefined
   const { data: calendarData, isLoading: calendarLoading } = useQuery({
     queryKey: ['transactions', 'calendar', selectedMonth, activeAccountIds],
-    enabled: txViewMode === 'calendar' && !noAccounts,
+    enabled: txViewMode === 'calendar' && !noAccounts && shows('transactions'),
     queryFn: () => transactions.calendar({
       month: monthStart,
       account_ids: calendarAccountIds,
@@ -346,6 +347,7 @@ export default function DashboardPage() {
   const { data: projectedTxs, isLoading: projectedTxLoading } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', selectedMonth],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
+    enabled: shows('transactions'),
   })
 
   const { data: budgetComparison } = useQuery({
