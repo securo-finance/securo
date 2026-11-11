@@ -1,6 +1,7 @@
 """Migration 109 on real PostgreSQL: which fallback-keyed rows it re-keys."""
 import importlib.util
 import uuid
+from typing import Any, cast
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -232,7 +233,7 @@ async def test_frozen_recipes_match_the_released_ones(name):
     # The provider must still produce what the migration assigns. If this
     # fails, the id recipe changed after v0.16.3 and rows re-keyed by 109 no
     # longer match what a sync computes.
-    assert _txn_fingerprint(ACCOUNT_UID, case["raw"]) == case["v0.16.3"]
+    assert _txn_fingerprint(ACCOUNT_UID, cast(dict, case["raw"])) == case["v0.16.3"]
 
 
 async def test_zero_reference_row_is_rekeyed_from_the_literal_id():
@@ -410,7 +411,8 @@ async def test_unreadable_payloads_are_skipped_without_aborting_the_upgrade(
         row.raw_data = raw
         bad_rows.append(row)
     not_a_dict = _row(account, test_user.id, "0", _payload("0", amount="25.00"))
-    not_a_dict.raw_data = ["not", "a", "dict"]
+    # Deliberately not a dict: the column is JSON, so a list can be stored.
+    not_a_dict.raw_data = cast(Any, ["not", "a", "dict"])
     session.add_all([good, *bad_rows, not_a_dict])
     await session.flush()
 
