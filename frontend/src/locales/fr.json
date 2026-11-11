@@ -1453,6 +1453,17 @@
     "confirmDeleteRecurringDescription": "Le budget récurrent pour « {{name}} » sera définitivement supprimé. Cette définition ne s'appliquera plus aux mois suivants. Les transactions existantes ne sont pas affectées. Cette action est irréversible.",
     "repeatEveryMonth": "Répéter chaque mois",
     "recurringLabel": "Récurrent",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Budgets de {{month}}",
+    "otherCategories": "Autres catégories",
+    "noCategories": "Aucune catégorie",
+    "total": "Budget {{amount}}",
+    "saved": "Budgets enregistrés",
+    "budgetFor": "Budget pour {{category}}",
+    "invalidAmount": "Saisissez un montant valide égal ou supérieur à zéro.",
+    "repeatEveryMonthFor": "Répéter le budget {{category}} chaque mois",
+    "previousMonth": "Mois précédent",
+    "nextMonth": "Mois suivant",
     "suggest": "Suggérer depuis l'historique",
     "suggestTitle": "Suggérer des budgets",
     "suggestDescription": "Limites proposées sur la base de vos dépenses moyennes mensuelles des {{months}} derniers mois.",
@@ -1462,7 +1473,9 @@
     "suggestCreate": "Créer les budgets",
     "suggestCreated": "{{count}} budgets créés",
     "suggestEmpty": "Aucun historique de dépenses sur la période sélectionnée pour suggérer.",
-    "suggestError": "Impossible de charger les suggestions. Réessayez dans un instant."
+    "suggestError": "Impossible de charger les suggestions. Réessayez dans un instant.",
+    "hiddenCategory": "Masquée",
+    "average": "d'habitude {{amount}}"
   },
   "goals": {
     "title": "Objectifs",

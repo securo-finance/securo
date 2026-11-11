@@ -1449,6 +1449,17 @@
     "confirmDeleteRecurringDescription": "The recurring budget for \"{{name}}\" will be permanently deleted. This definition will no longer apply to later months. Existing transactions are not affected. This action cannot be undone.",
     "repeatEveryMonth": "Repeat every month",
     "recurringLabel": "Recurring",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Budgets for {{month}}",
+    "otherCategories": "Other categories",
+    "noCategories": "No categories yet",
+    "total": "Budget {{amount}}",
+    "saved": "Budgets saved",
+    "budgetFor": "Budget for {{category}}",
+    "invalidAmount": "Enter a valid amount of zero or more.",
+    "repeatEveryMonthFor": "Repeat the {{category}} budget every month",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
     "suggest": "Suggest from history",
     "suggestTitle": "Suggest budgets",
     "suggestDescription": "Proposed limits based on your average monthly spending over the last {{months}} months.",
@@ -1458,7 +1469,9 @@
     "suggestCreate": "Create budgets",
     "suggestCreated": "Created {{count}} budgets",
     "suggestEmpty": "No spending history in the selected period to suggest from.",
-    "suggestError": "Could not load suggestions. Try again in a moment."
+    "suggestError": "Could not load suggestions. Try again in a moment.",
+    "hiddenCategory": "Hidden",
+    "average": "usually {{amount}}"
   },
   "goals": {
     "title": "Goals",

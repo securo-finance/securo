@@ -1449,6 +1449,17 @@
     "confirmDeleteRecurringDescription": "A(z) „{{name}}” ismétlődő költségkerete véglegesen törlődik. Ez a beállítás a későbbi hónapokra sem vonatkozik majd. A meglévő tranzakciókat ez nem érinti. Ez a művelet nem vonható vissza.",
     "repeatEveryMonth": "Ismétlés minden hónapban",
     "recurringLabel": "Ismétlődő",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Budgets for {{month}}",
+    "otherCategories": "Other categories",
+    "noCategories": "No categories yet",
+    "total": "Budget {{amount}}",
+    "saved": "Budgets saved",
+    "budgetFor": "Budget for {{category}}",
+    "invalidAmount": "Adjon meg egy érvényes, legalább nulla összeget.",
+    "repeatEveryMonthFor": "Repeat the {{category}} budget every month",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
     "suggest": "Javaslat a múltból",
     "suggestTitle": "Költségkeretek javaslása",
     "suggestDescription": "Javasolt limitek az elmúlt {{months}} hónap átlagos havi kiadásaid alapján.",
@@ -1458,7 +1469,9 @@
     "suggestCreate": "Költségkeretek létrehozása",
     "suggestCreated": "{{count}} költségkeret létrehozva",
     "suggestEmpty": "Nincs kiadási előzmény a kiválasztott időszakban.",
-    "suggestError": "Nem sikerült betölteni a javaslatokat. Próbáld újra egy kicsit később."
+    "suggestError": "Nem sikerült betölteni a javaslatokat. Próbáld újra egy kicsit később.",
+    "hiddenCategory": "Rejtett",
+    "average": "usually {{amount}}"
   },
   "goals": {
     "title": "Célok",

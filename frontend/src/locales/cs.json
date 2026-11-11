@@ -1533,6 +1533,17 @@
     "confirmDeleteRecurringDescription": "Opakovaný rozpočet pro „{{name}}“ bude trvale smazán. Tato definice se už nebude vztahovat na další měsíce. Stávající transakce to neovlivní. Tuto akci nelze vrátit.",
     "repeatEveryMonth": "Opakovat každý měsíc",
     "recurringLabel": "Opakovaný",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Budgets for {{month}}",
+    "otherCategories": "Other categories",
+    "noCategories": "No categories yet",
+    "total": "Budget {{amount}}",
+    "saved": "Budgets saved",
+    "budgetFor": "Budget for {{category}}",
+    "invalidAmount": "Zadejte platnou částku nula nebo vyšší.",
+    "repeatEveryMonthFor": "Repeat the {{category}} budget every month",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
     "suggest": "Navrhnout z historie",
     "suggestTitle": "Navrhnout rozpočty",
     "suggestDescription": "Navržené limity podle vašeho průměrného měsíčního vydání za posledních {{months}} měsíců.",
@@ -1542,7 +1553,9 @@
     "suggestCreate": "Vytvořit rozpočty",
     "suggestCreated": "Vytvořeno {{count}} rozpočtů",
     "suggestEmpty": "Ve vybraném období není historie výdajů.",
-    "suggestError": "Návrhy se nepodařilo načíst. Zkuste to znovu za chvíli."
+    "suggestError": "Návrhy se nepodařilo načíst. Zkuste to znovu za chvíli.",
+    "hiddenCategory": "Skrytá",
+    "average": "usually {{amount}}"
   },
   "goals": {
     "title": "Cíle",
