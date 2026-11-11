@@ -6,6 +6,9 @@ its bill closes, weeks later, so the regular listing stops returning it
 before it posts. The sync re-reads those rows by transaction date. That
 listing also returns rows the user deleted or merged long ago, so it may only
 upgrade pending rows, and it must stay out of the phantom cleanup's evidence.
+
+Rows older than the 90-day window are only re-read by the catch-up, at most
+once every 30 days per connection.
 """
 
 import uuid
@@ -22,21 +25,29 @@ from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
-from app.providers.base import AccountData, BillData, TransactionData
+from app.providers.base import AccountData, BankProvider, BillData, TransactionData
+from app.providers.pluggy import PluggyProvider
 from app.services.connection_service import (
     _PENDING_REREAD_LOOKBACK,
+    PENDING_CATCH_UP_KEY,
     sync_connection,
 )
 
 ACCOUNT_EXT_ID = "card-1"
 
 
-async def _setup(session: AsyncSession, user_id, *, last_sync=True):
+def _stamp(days_ago: int) -> dict:
+    when = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    return {PENDING_CATCH_UP_KEY: when.isoformat()}
+
+
+async def _setup(session: AsyncSession, user_id, *, last_sync=True, settings=None):
+    """By default the catch-up ran a day ago, so only the regular re-read runs."""
     conn = BankConnection(
         id=uuid.uuid4(), user_id=user_id, provider="test",
         external_id=f"ext-{uuid.uuid4().hex[:8]}",
         institution_name="Nubank", credentials={"token": "fake"},
-        status="active",
+        status="active", settings=_stamp(1) if settings is None else settings,
         last_sync_at=datetime.now(timezone.utc) if last_sync else None,
         created_at=datetime.now(timezone.utc),
     )
@@ -86,6 +97,7 @@ def _posted(
 
 def _provider(listed=(), reread=(), bills=()):
     provider = AsyncMock()
+    provider.rereads_by_date = True
     provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
     provider.get_accounts = AsyncMock(return_value=[
         AccountData(external_id=ACCOUNT_EXT_ID, name="Card", type="credit_card",
@@ -537,3 +549,129 @@ async def test_rekeyed_twin_the_reread_also_returns_is_still_a_phantom(
         )
     )).scalar_one()
     assert payments == 1
+
+
+def test_only_pluggy_rereads_by_date():
+    assert PluggyProvider.rereads_by_date.fget(None) is True
+    assert BankProvider.rereads_by_date.fget(None) is False
+
+
+def _provider_without_reread():
+    provider = _provider()
+    provider.rereads_by_date = False
+    return provider
+
+
+@pytest.mark.asyncio
+async def test_provider_without_date_reread_skips_the_pending_query(
+    session: AsyncSession, test_user, test_workspace,
+):
+    conn, account = await _setup(session, test_user.id, settings={})
+    _add_tx(session, test_user.id, account, "old-pending", 30)
+    conn_id = conn.id
+    await session.commit()
+
+    provider = _provider_without_reread()
+    with patch(
+        "app.services.connection_service._unseen_pending_dates",
+        new_callable=AsyncMock,
+    ) as unseen:
+        await _sync(session, conn, test_workspace.id, test_user.id, provider)
+
+    unseen.assert_not_awaited()
+    provider.get_transactions_by_date.assert_not_awaited()
+    connection = await session.get(BankConnection, conn_id)
+    assert PENDING_CATCH_UP_KEY not in (connection.settings or {})
+
+
+@pytest.mark.asyncio
+async def test_catch_up_rereads_rows_older_than_the_window(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A first sync that got the history as PENDING (issue #1180, MeuPluggy
+    backfill) leaves rows past the window that the provider corrects later."""
+    conn, account = await _setup(session, test_user.id, settings={})
+    ancient = _add_tx(session, test_user.id, account, "ancient", 200)
+    recent = _add_tx(session, test_user.id, account, "recent", 30)
+    conn_id = conn.id
+    await session.commit()
+
+    provider = _provider(reread=[_posted("ancient", 200), _posted("recent", 30)])
+    await _sync(session, conn, test_workspace.id, test_user.id, provider)
+
+    # One listing covers both, from the oldest row.
+    provider.get_transactions_by_date.assert_awaited_once()
+    assert provider.get_transactions_by_date.await_args.args[2] == (
+        app_today() - timedelta(days=200) - _PENDING_REREAD_LOOKBACK
+    )
+    await session.refresh(ancient)
+    await session.refresh(recent)
+    assert ancient.status == "posted"
+    assert recent.status == "posted"
+    connection = await session.get(BankConnection, conn_id)
+    stamped = datetime.fromisoformat(connection.settings[PENDING_CATCH_UP_KEY])
+    assert datetime.now(timezone.utc) - stamped < timedelta(minutes=5)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("stamp_days_ago", "rereads"), [(29, False), (31, True)])
+async def test_catch_up_runs_once_per_interval(
+    session: AsyncSession, test_user, test_workspace, stamp_days_ago, rereads,
+):
+    conn, account = await _setup(
+        session, test_user.id, settings=_stamp(stamp_days_ago)
+    )
+    _add_tx(session, test_user.id, account, "ancient", 200)
+    await session.commit()
+
+    provider = _provider()
+    await _sync(session, conn, test_workspace.id, test_user.id, provider)
+
+    assert provider.get_transactions_by_date.await_count == (1 if rereads else 0)
+
+
+@pytest.mark.asyncio
+async def test_failed_catch_up_is_retried_on_the_next_sync(
+    session: AsyncSession, test_user, test_workspace,
+):
+    old_stamp = _stamp(40)
+    conn, account = await _setup(session, test_user.id, settings=dict(old_stamp))
+    ancient = _add_tx(session, test_user.id, account, "ancient", 200)
+    conn_id = conn.id
+    await session.commit()
+
+    provider = _provider()
+    provider.get_transactions_by_date = AsyncMock(side_effect=RuntimeError("Pluggy 500"))
+    await _sync(session, conn, test_workspace.id, test_user.id, provider)
+
+    connection = await session.get(BankConnection, conn_id)
+    assert connection.status == "active"
+    assert connection.settings[PENDING_CATCH_UP_KEY] == old_stamp[PENDING_CATCH_UP_KEY]
+
+    provider.get_transactions_by_date = AsyncMock(return_value=[_posted("ancient", 200)])
+    await _sync(session, conn, test_workspace.id, test_user.id, provider)
+
+    await session.refresh(ancient)
+    assert ancient.status == "posted"
+    connection = await session.get(BankConnection, conn_id)
+    assert connection.settings[PENDING_CATCH_UP_KEY] != old_stamp[PENDING_CATCH_UP_KEY]
+
+
+@pytest.mark.asyncio
+async def test_catch_up_skips_future_and_ignored_rows(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The catch-up only lifts the age limit: future installments and ignored
+    rows still never trigger a re-read."""
+    conn, account = await _setup(session, test_user.id, settings={})
+    _add_tx(session, test_user.id, account, "future-installment", -200)
+    _add_tx(session, test_user.id, account, "ignored", 200, is_ignored=True)
+    conn_id = conn.id
+    await session.commit()
+
+    provider = _provider()
+    await _sync(session, conn, test_workspace.id, test_user.id, provider)
+
+    provider.get_transactions_by_date.assert_not_awaited()
+    connection = await session.get(BankConnection, conn_id)
+    assert PENDING_CATCH_UP_KEY in connection.settings

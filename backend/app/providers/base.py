@@ -292,6 +292,12 @@ class BankProvider(ABC):
         return "oauth"
 
     @property
+    def rereads_by_date(self) -> bool:
+        """Whether ``get_transactions_by_date`` is implemented. The sync skips
+        the pending re-read, and the query behind it, when it is not."""
+        return False
+
+    @property
     def redirect_uri(self) -> str:
         """Provider-specific OAuth redirect URI.
 

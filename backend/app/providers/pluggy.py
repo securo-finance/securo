@@ -457,6 +457,10 @@ class PluggyProvider(BankProvider):
         return "pluggy"
 
     @property
+    def rereads_by_date(self) -> bool:
+        return True
+
+    @property
     def flow_type(self) -> str:
         return "widget"
 

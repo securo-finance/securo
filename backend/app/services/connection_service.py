@@ -2213,27 +2213,52 @@ _PENDING_REREAD_WINDOW = timedelta(days=90)
 # starts this far back so it still returns them; the widest gap seen is 37 days.
 _PENDING_REREAD_LOOKBACK = timedelta(days=45)
 
+# Rows older than the window can still post: a first sync may get the whole
+# history as PENDING and see it corrected later. Once per interval, a
+# connection's re-read also covers them. Some rows stay pending at the provider
+# for good, so this is not done on every sync.
+_PENDING_CATCH_UP_INTERVAL = timedelta(days=30)
+PENDING_CATCH_UP_KEY = "pending_catch_up_at"
+
+
+def _pending_catch_up_due(settings: Optional[dict], now: datetime) -> bool:
+    value = (settings or {}).get(PENDING_CATCH_UP_KEY)
+    if not isinstance(value, str):
+        return True
+    try:
+        last_catch_up = datetime.fromisoformat(value)
+    except ValueError:
+        return True
+    if last_catch_up.tzinfo is None:
+        return True
+    return now - last_catch_up >= _PENDING_CATCH_UP_INTERVAL
+
 
 async def _unseen_pending_dates(
     session: AsyncSession,
     account_id: uuid.UUID,
     seen_external_ids: set[str],
+    *,
+    include_old: bool = False,
 ) -> dict[str, date]:
     """Pending synced rows the provider did not return, by external id.
 
     Future-dated rows are skipped (scheduled installments are pending by
-    design), and so are ignored rows, which sync never changes.
+    design), and so are ignored rows, which sync never changes. Rows older
+    than the window are only included with ``include_old`` (the catch-up).
     """
     today = app_today()
+    conditions = [
+        Transaction.account_id == account_id,
+        Transaction.source == "sync",
+        Transaction.status == "pending",
+        Transaction.is_ignored.is_(False),
+        Transaction.date <= today,
+    ]
+    if not include_old:
+        conditions.append(Transaction.date >= today - _PENDING_REREAD_WINDOW)
     result = await session.execute(
-        select(Transaction.external_id, Transaction.date).where(
-            Transaction.account_id == account_id,
-            Transaction.source == "sync",
-            Transaction.status == "pending",
-            Transaction.is_ignored.is_(False),
-            Transaction.date >= today - _PENDING_REREAD_WINDOW,
-            Transaction.date <= today,
-        )
+        select(Transaction.external_id, Transaction.date).where(*conditions)
     )
     return {
         external_id: tx_date
@@ -2732,6 +2757,15 @@ async def sync_connection(
         live_txn_external_ids: dict[uuid.UUID, set[str]] = {}
         incomplete_fetch_account_ids: set[uuid.UUID] = set()
         promoted_txn_external_ids: dict[uuid.UUID, set[str]] = {}
+        # `is True`: a provider without the property, or a test double, never
+        # re-reads by date.
+        rereads_by_date = getattr(provider, "rereads_by_date", False) is True
+        pending_catch_up = (
+            rereads_by_date
+            and connection.last_sync_at is not None
+            and _pending_catch_up_due(conn_settings, datetime.now(timezone.utc))
+        )
+        pending_catch_up_failed = False
         accounts_data = await provider.get_accounts(credentials)
         # A provider may note what it learned about the accounts in the
         # credentials (Enable Banking caches account details for background
@@ -3199,8 +3233,10 @@ async def sync_connection(
             # The first sync lists everything, so it never needs this.
             seen_ids = live_txn_external_ids[account.id]
             unseen_pending = (
-                await _unseen_pending_dates(session, account.id, seen_ids)
-                if since is not None
+                await _unseen_pending_dates(
+                    session, account.id, seen_ids, include_old=pending_catch_up
+                )
+                if since is not None and rereads_by_date
                 else {}
             )
             reread: list[TransactionData] = []
@@ -3213,6 +3249,7 @@ async def sync_connection(
                         payee_source=payee_source,
                     )
                 except Exception as e:  # noqa: BLE001 - a failed re-read only delays promotion
+                    pending_catch_up_failed = True
                     logger.warning(
                         "Skipping pending re-read for account %s: %s", account.id, e
                     )
@@ -3343,6 +3380,12 @@ async def sync_connection(
                 key: value
                 for key, value in current_settings.items()
                 if key != SYNC_BACKOFF_KEY
+            }
+        # A failed re-read leaves the catch-up due, so the next sync retries it.
+        if pending_catch_up and not pending_catch_up_failed:
+            connection.settings = {
+                **(connection.settings or {}),
+                PENDING_CATCH_UP_KEY: datetime.now(timezone.utc).isoformat(),
             }
         action_required_warnings = getattr(provider, "action_required_warnings", None)
         if isinstance(action_required_warnings, list) and action_required_warnings:
