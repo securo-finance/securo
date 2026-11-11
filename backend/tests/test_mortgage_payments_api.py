@@ -456,6 +456,10 @@ async def test_breakdown_can_be_removed_before_editing_payment(
         test_workspace,
         snapshot_date=date(2026, 5, 31),
     )
+    # Provider-owned amounts stay immutable even after removing a breakdown.
+    # This transition exercises an editable manual payment.
+    payment.source = "manual"
+    await session.commit()
     url = f"/api/mortgage-payments/{payment.id}"
     created = await client.put(
         url,
@@ -498,6 +502,8 @@ async def test_breakdown_can_be_removed_before_editing_payment(
         json={"amount": 233.83},
     )
     assert changed.status_code == 200, changed.text
+    await session.refresh(payment)
+    assert payment.amount == Decimal("233.83")
 
 
 async def _post_breakdown(client: AsyncClient, auth_headers, payment, loan):
