@@ -134,7 +134,8 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`
   }
   const workspaceId = localStorage.getItem(WORKSPACE_STORAGE_KEY)
-  if (workspaceId) {
+  // A request that names its workspace keeps it (a save queued before a switch).
+  if (workspaceId && !config.headers['X-Workspace-Id']) {
     config.headers['X-Workspace-Id'] = workspaceId
   }
   return config
@@ -1834,16 +1835,22 @@ export interface UiLayouts {
   reports: { id: string }[] | null
 }
 
+function workspaceHeader(workspaceId?: string | null) {
+  return workspaceId ? { headers: { 'X-Workspace-Id': workspaceId } } : undefined
+}
+
 export const uiLayouts = {
   get: async (): Promise<UiLayouts> => {
     const { data } = await api.get('/ui/layouts')
     return data
   },
-  save: async (surface: 'dashboard' | 'reports', ids: string[]): Promise<void> => {
-    await api.put(`/ui/layouts/${surface}`, { items: ids.map((id) => ({ id })) })
+  // `workspaceId` pins the write to the workspace it was made in, even if the
+  // person switches before a queued save goes out.
+  save: async (surface: 'dashboard' | 'reports', ids: string[], workspaceId?: string | null): Promise<void> => {
+    await api.put(`/ui/layouts/${surface}`, { items: ids.map((id) => ({ id })) }, workspaceHeader(workspaceId))
   },
-  reset: async (surface: 'dashboard' | 'reports'): Promise<void> => {
-    await api.delete(`/ui/layouts/${surface}`)
+  reset: async (surface: 'dashboard' | 'reports', workspaceId?: string | null): Promise<void> => {
+    await api.delete(`/ui/layouts/${surface}`, workspaceHeader(workspaceId))
   },
 }
 

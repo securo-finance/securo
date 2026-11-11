@@ -42,7 +42,8 @@ export function useLayout(surface: Surface) {
   const chainKey = `${workspaceId}:${surface}`
   const mutation = useMutation({
     mutationFn: (next: string[] | null) => {
-      const send = () => (next === null ? uiLayouts.reset(surface) : uiLayouts.save(surface, next))
+      const send = () =>
+        next === null ? uiLayouts.reset(surface, workspaceId) : uiLayouts.save(surface, next, workspaceId)
       const queued = (writeChains.get(chainKey) ?? Promise.resolve()).catch(() => {}).then(send)
       writeChains.set(chainKey, queued)
       return queued

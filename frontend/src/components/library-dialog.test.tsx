@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   saves: [] as { surface: string; ids: string[] }[],
   user: null as unknown as User,
   pluginsEnabled: true,
+  listeners: new Set<() => void>(),
 }))
 
 const api = vi.hoisted(() => ({
@@ -30,13 +31,22 @@ const api = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => api)
 
+// A reactive signed-in user, so the dialog re-renders with what was saved.
 const updateUser = vi.fn((next: User) => {
   state.user = next
+  state.listeners.forEach((notify) => notify())
 })
 
-vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ user: state.user, updateUser }),
-}))
+vi.mock('@/contexts/auth-context', async () => {
+  const { useSyncExternalStore } = await import('react')
+  const subscribe = (notify: () => void) => {
+    state.listeners.add(notify)
+    return () => state.listeners.delete(notify)
+  }
+  return {
+    useAuth: () => ({ user: useSyncExternalStore(subscribe, () => state.user), updateUser }),
+  }
+})
 
 vi.mock('@/hooks/use-feature-flags', () => ({
   useFeatureFlags: () => ({ pluginsEnabled: state.pluginsEnabled, agentsEnabled: false }),
@@ -132,8 +142,12 @@ describe('LibraryDialog', () => {
     await user.click(screen.getByRole('button', { name: t('library.theme.graphite') }))
     expect(updateUser).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'graphite' }))
 
+    expect(screen.getByRole('button', { name: t('library.theme.graphite') })).toHaveAttribute('aria-pressed', 'true')
+
     reject(new Error('offline'))
-    await waitFor(() => expect(updateUser).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'ocean' })))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: t('library.theme.ocean') })).toHaveAttribute('aria-pressed', 'true'),
+    )
   })
 
   it("doesn't let an older save decide the theme after a newer pick", async () => {
@@ -151,7 +165,10 @@ describe('LibraryDialog', () => {
     await waitFor(() => expect(pending).toHaveLength(2))
     pending[1](state.user)
     await waitFor(() => expect(api.auth.updateMe).toHaveBeenLastCalledWith({ theme: 'forest' }))
-    expect(updateUser).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'forest' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: t('library.theme.forest') })).toHaveAttribute('aria-pressed', 'true'),
+    )
+    expect(screen.getByRole('button', { name: t('library.theme.ocean') })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('points to the plugin catalog only when plugins are on', () => {
