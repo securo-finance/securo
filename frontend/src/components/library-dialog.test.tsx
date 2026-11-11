@@ -163,6 +163,8 @@ describe('LibraryDialog', () => {
     await waitFor(() => expect(pending).toHaveLength(1))
     pending[0](state.user)
     await waitFor(() => expect(pending).toHaveLength(2))
+    // The older save is done, and the newer pick still shows.
+    expect(screen.getByRole('button', { name: t('library.theme.forest') })).toHaveAttribute('aria-pressed', 'true')
     pending[1](state.user)
     await waitFor(() => expect(api.auth.updateMe).toHaveBeenLastCalledWith({ theme: 'forest' }))
     await waitFor(() =>

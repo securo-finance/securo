@@ -11,6 +11,11 @@ import { WorkspaceContext } from '@/contexts/workspace-context'
 const writeChains = new Map<string, Promise<unknown>>()
 const latestWrite = new Map<string, number>()
 
+interface LayoutWrite {
+  next: string[] | null
+  workspace: string | null
+}
+
 /**
  * How this person arranged a surface in the current workspace, and the means
  * to change it. When they never made one, or it can't be read, it's Securo's
@@ -28,42 +33,45 @@ export function useLayout(surface: Surface) {
   const saved = data?.[surface]?.map((item) => item.id) ?? null
   const ids = useMemo(() => resolveLayout(surface, saved), [surface, saved])
 
-  const write = (next: string[] | null) =>
-    queryClient.setQueryData<UiLayouts>(queryKey, (old) => ({
-      dashboard: null,
-      reports: null,
-      ...old,
-      [surface]: next?.map((id) => ({ id })) ?? null,
-    }))
-
   // Optimistic: the page rearranges at once. Saves to one surface go out one
   // after another, so the server ends on the last arrangement made; a save
   // that fails re-reads what the server has, unless a newer one is coming.
-  const chainKey = `${workspaceId}:${surface}`
+  // Each save carries the workspace it was made in, so one that goes out late
+  // (queued, or paused while offline) can't land in another workspace.
   const mutation = useMutation({
-    mutationFn: (next: string[] | null) => {
+    mutationFn: ({ next, workspace }: LayoutWrite) => {
       const send = () =>
-        next === null ? uiLayouts.reset(surface, workspaceId) : uiLayouts.save(surface, next, workspaceId)
-      const queued = (writeChains.get(chainKey) ?? Promise.resolve()).catch(() => {}).then(send)
-      writeChains.set(chainKey, queued)
+        next === null ? uiLayouts.reset(surface, workspace) : uiLayouts.save(surface, next, workspace)
+      const chain = `${workspace}:${surface}`
+      const queued = (writeChains.get(chain) ?? Promise.resolve()).catch(() => {}).then(send)
+      writeChains.set(chain, queued)
       return queued
     },
-    onMutate: async (next) => {
-      await queryClient.cancelQueries({ queryKey })
-      write(next)
-      const seq = (latestWrite.get(chainKey) ?? 0) + 1
-      latestWrite.set(chainKey, seq)
+    onMutate: async ({ next, workspace }) => {
+      const key = ['ui-layouts', workspace]
+      await queryClient.cancelQueries({ queryKey: key })
+      queryClient.setQueryData<UiLayouts>(key, (old) => ({
+        dashboard: null,
+        reports: null,
+        ...old,
+        [surface]: next?.map((id) => ({ id })) ?? null,
+      }))
+      const chain = `${workspace}:${surface}`
+      const seq = (latestWrite.get(chain) ?? 0) + 1
+      latestWrite.set(chain, seq)
       return { seq }
     },
-    onError: (_error, _next, context) => {
+    onError: (_error, { workspace }, context) => {
       toast.error(t('library.saveFailed'))
-      if (context?.seq === latestWrite.get(chainKey)) void queryClient.invalidateQueries({ queryKey })
+      if (context?.seq === latestWrite.get(`${workspace}:${surface}`)) {
+        void queryClient.invalidateQueries({ queryKey: ['ui-layouts', workspace] })
+      }
     },
   })
 
   const { mutate } = mutation
-  const save = useCallback((next: string[]) => mutate(next), [mutate])
-  const reset = useCallback(() => mutate(null), [mutate])
+  const save = useCallback((next: string[]) => mutate({ next, workspace: workspaceId }), [mutate, workspaceId])
+  const reset = useCallback(() => mutate({ next: null, workspace: workspaceId }), [mutate, workspaceId])
 
   return { ids, isCustom: saved !== null, ready: !isPending, save, reset }
 }
