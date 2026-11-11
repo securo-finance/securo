@@ -161,17 +161,25 @@ def _counterparty_identity(raw: dict, party: str) -> str:
     return iban.strip() or _counterparty_name(raw, party)
 
 
-def _txn_fingerprint(account_uid: str, raw: dict) -> str:
+def _txn_fingerprint(account_uid: str, raw: dict, *, legacy: bool = False) -> str:
     """Stable id for a booked transaction.
 
     EB's `entry_reference` is unreliable across providers, so we hash the
     fields most likely to persist across re-fetches of the same booked txn.
     Pending → booked transitions deliberately produce a different id; the
     sync layer's pending↔posted twin matcher handles that.
+
+    ``legacy=True`` rebuilds the id the previous release gave a row without a
+    usable reference: no transaction date, and only the counterparty IBANs.
+    Only the re-key migration uses it, to recognise rows still carrying it.
     """
     amount = raw.get("transaction_amount") or {}
-    creditor_identity = _counterparty_identity(raw, "creditor")
-    debtor_identity = _counterparty_identity(raw, "debtor")
+    if legacy:
+        creditor_identity = _legacy_iban(raw, "creditor")
+        debtor_identity = _legacy_iban(raw, "debtor")
+    else:
+        creditor_identity = _counterparty_identity(raw, "creditor")
+        debtor_identity = _counterparty_identity(raw, "debtor")
     parts = [
         str(account_uid),
         str(raw.get("booking_date") or ""),
@@ -184,8 +192,30 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
         creditor_identity,
         debtor_identity,
     ]
+    if legacy:
+        del parts[3]
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
     return digest[:32]
+
+
+def _legacy_iban(raw: dict, party: str) -> str:
+    account = raw.get(f"{party}_account")
+    iban = account.get("iban") if isinstance(account, dict) else None
+    return iban if isinstance(iban, str) else ""
+
+
+def legacy_fallback_external_id(account_uid: str, raw: dict) -> Optional[str]:
+    """The id the previous release gave an entry without a usable reference.
+
+    None when the entry has a real ``entry_reference`` (those are re-keyed by
+    their own scheme). A reference of "0" was stored as "0" itself.
+    """
+    entry_ref = str(raw.get("entry_reference") or "").strip()
+    if entry_ref == "0":
+        return "0"
+    if entry_ref:
+        return None
+    return _txn_fingerprint(account_uid, raw, legacy=True)
 
 
 def _canonical_amount(amount_obj: Any) -> str:
