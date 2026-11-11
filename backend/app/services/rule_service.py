@@ -1,5 +1,6 @@
 # backend/app/services/rule_service.py
 import uuid
+from collections.abc import Iterable
 from typing import Optional
 
 from sqlalchemy import delete, select
@@ -679,6 +680,36 @@ async def preview_rules_for_transaction(
     return preview
 
 
+def rule_payee_ids(rules: Iterable[Rule]) -> set[uuid.UUID]:
+    """Ids of the payees the rules' `set_payee` actions name."""
+    payee_ids: set[uuid.UUID] = set()
+    for rule in rules:
+        for action in rule.actions or []:
+            if _rule_item_value(action, "op") != "set_payee":
+                continue
+            try:
+                payee_ids.add(uuid.UUID(str(_rule_item_value(action, "value"))))
+            except ValueError:
+                continue
+    return payee_ids
+
+
+async def get_existing_rule_payee_ids(
+    session: AsyncSession, rules: Iterable[Rule],
+) -> set[uuid.UUID]:
+    """The payees the rules' `set_payee` actions name that still exist.
+
+    A rule keeps the payee id in a JSON action with no foreign key behind it,
+    so it can outlive the payee. Writing that id fails the flush and takes the
+    whole import or sync batch with it.
+    """
+    payee_ids = rule_payee_ids(rules)
+    if not payee_ids:
+        return set()
+    result = await session.execute(select(Payee.id).where(Payee.id.in_(payee_ids)))
+    return set(result.scalars().all())
+
+
 async def apply_rules_to_transaction(
     session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
     skip_category_rules: bool = False,
@@ -699,6 +730,7 @@ async def apply_rules_to_transaction(
         .order_by(Rule.priority, Rule.id)
     )
     rules = result.scalars().all()
+    existing_payees = await get_existing_rule_payee_ids(session, rules)
 
     # A row split across categories is categorized: its lines hold the
     # categories and its own category_id stays null.
@@ -724,6 +756,7 @@ async def apply_rules_to_transaction(
                 transaction,
                 category_set,
                 assignable_category_ids=assignable_categories,
+                existing_payee_ids=existing_payees,
             )
 
 
@@ -900,6 +933,7 @@ async def apply_single_rule(
     actions = rule.actions or []
 
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
+    existing_payees = await get_existing_rule_payee_ids(session, [rule])
     count = 0
     for tx in transactions:
         matches = evaluate_conditions(rule.conditions_op, conditions, tx)
@@ -929,6 +963,7 @@ async def apply_single_rule(
             or (tx.category_id is not None and not overwrite_existing_categories),
             skip_description=_has_manual_description(tx),
             assignable_category_ids=assignable_categories,
+            existing_payee_ids=existing_payees,
         )
         after = (
             tx.category_id,
@@ -964,6 +999,7 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
     rules = rules_result.scalars().all()
 
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
+    existing_payees = await get_existing_rule_payee_ids(session, rules)
     count = 0
     for tx in transactions:
         preserve_manual_description = _has_manual_description(tx)
@@ -998,6 +1034,7 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                     category_set,
                     skip_description=preserve_manual_description,
                     assignable_category_ids=assignable_categories,
+                    existing_payee_ids=existing_payees,
                 )
 
         after = (
