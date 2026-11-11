@@ -56,6 +56,8 @@ async def list_accounts(
             # `balance` in the serialized account is the stored column, which
             # for a manual account is only its opening balance.
             "balance": num(r.get("current_balance")),
+            "current_balance": num(r.get("current_balance")),
+            "opening_balance": num(r.get("balance")),
             "balance_primary": num(r.get("balance_primary")),
             "is_closed": bool(r.get("is_closed", False)),
             "institution": r.get("institution_name"),
@@ -138,13 +140,22 @@ def _normalize_currency(currency: str) -> str:
     return normalized
 
 
-def _parse_balance_date(value: str | None):
+def _parse_opening_balance_date(value: str | None):
     if value is None or value == "":
         return None
     try:
         return parse_date(value)
     except ValueError as exc:
-        raise ValueError("balance_date must be an ISO date (YYYY-MM-DD)") from exc
+        raise ValueError(
+            "opening_balance_date must be an ISO date (YYYY-MM-DD)"
+        ) from exc
+
+
+def _finite_decimal(value: float, field: str) -> Decimal:
+    amount = Decimal(str(value))
+    if not amount.is_finite():
+        raise ValueError(f"{field} must be finite")
+    return amount
 
 
 async def _opening_balance_date(
@@ -165,16 +176,20 @@ async def _opening_balance_date(
 async def _account_snapshot(
     session: AsyncSession, account: Account
 ) -> dict[str, Any]:
-    balance_date = await _opening_balance_date(
+    serialized = await account_service.get_account_with_balances(
         session, account.id, account.workspace_id
     )
+    balance_date = serialized.get("balance_date") if serialized else None
     return {
         "id": str(account.id),
         "name": account.name,
         "type": account.type,
         "currency": account.currency,
-        "balance": num(account.balance),
-        "balance_date": balance_date.isoformat() if balance_date else None,
+        "current_balance": num(
+            serialized.get("current_balance") if serialized else account.balance
+        ),
+        "opening_balance": num(account.balance),
+        "opening_balance_date": balance_date.isoformat() if balance_date else None,
     }
 
 
@@ -220,11 +235,11 @@ async def _matching_manual_accounts(
                 "type": "string",
                 "pattern": "^[A-Za-z]{3}$",
             },
-            "balance": {"type": "number"},
-            "balance_date": {"type": "string", "format": "date"},
+            "opening_balance": {"type": "number"},
+            "opening_balance_date": {"type": "string", "format": "date"},
             "apply": _APPLY_FIELD,
         },
-        "required": ["name", "type", "currency", "balance"],
+        "required": ["name", "type", "currency", "opening_balance"],
         "additionalProperties": False,
     },
     is_proposal=True,
@@ -237,20 +252,20 @@ async def propose_create_manual_account(
     name: str,
     type: str,
     currency: str,
-    balance: float,
-    balance_date: str | None = None,
+    opening_balance: float,
+    opening_balance_date: str | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
     try:
         normalized_name = _normalize_account_name(name)
         normalized_type = _normalize_account_type(type)
         normalized_currency = _normalize_currency(currency)
-        normalized_balance = Decimal(str(balance))
-        normalized_date = _parse_balance_date(balance_date)
+        normalized_balance = _finite_decimal(opening_balance, "opening_balance")
+        normalized_date = _parse_opening_balance_date(opening_balance_date)
     except (ValueError, ArithmeticError) as exc:
         return {"error": str(exc)}
     if normalized_balance == 0 and normalized_date is not None:
-        return {"error": "balance_date requires a non-zero balance"}
+        return {"error": "opening_balance_date requires a non-zero opening_balance"}
     effective_date = (
         (normalized_date or app_today())
         if normalized_balance != 0
@@ -270,8 +285,11 @@ async def propose_create_manual_account(
             "name": normalized_name,
             "type": normalized_type,
             "currency": normalized_currency,
-            "balance": num(normalized_balance),
-            "balance_date": effective_date.isoformat() if effective_date else None,
+            "current_balance": num(normalized_balance),
+            "opening_balance": num(normalized_balance),
+            "opening_balance_date": (
+                effective_date.isoformat() if effective_date else None
+            ),
         },
         "existing_accounts": [
             await _account_snapshot(session, account) for account in existing
@@ -325,8 +343,8 @@ async def propose_create_manual_account(
                 "type": "string",
                 "enum": sorted(_MANUAL_ACCOUNT_TYPES),
             },
-            "balance": {"type": "number"},
-            "balance_date": {"type": "string", "format": "date"},
+            "opening_balance": {"type": "number"},
+            "opening_balance_date": {"type": "string", "format": "date"},
             "apply": _APPLY_FIELD,
         },
         "required": ["account_id"],
@@ -342,8 +360,8 @@ async def propose_update_manual_account(
     account_id: str,
     name: str | None = None,
     type: str | None = None,
-    balance: float | None = None,
-    balance_date: str | None = None,
+    opening_balance: float | None = None,
+    opening_balance_date: str | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
@@ -353,6 +371,8 @@ async def propose_update_manual_account(
     account = await account_service.get_account(session, account_uuid, ws_id)
     if account is None:
         return {"error": "account not found"}
+    if account.is_closed:
+        return {"error": "closed accounts cannot be edited"}
     if account.type not in _MANUAL_ACCOUNT_TYPES:
         return {
             "error": (
@@ -371,9 +391,11 @@ async def propose_update_manual_account(
     current_date = await _opening_balance_date(session, account.id, ws_id)
     changes: dict[str, Any] = {}
     try:
-        parsed_date = _parse_balance_date(balance_date)
+        parsed_date = _parse_opening_balance_date(opening_balance_date)
         effective_balance = (
-            Decimal(str(balance)) if balance is not None else account.balance
+            _finite_decimal(opening_balance, "opening_balance")
+            if opening_balance is not None
+            else account.balance
         )
         if name is not None:
             normalized_name = _normalize_account_name(name)
@@ -383,26 +405,34 @@ async def propose_update_manual_account(
             normalized_type = _normalize_account_type(type)
             if normalized_type != account.type:
                 changes["type"] = normalized_type
-        if balance is not None:
-            normalized_balance = Decimal(str(balance))
+        if opening_balance is not None:
+            normalized_balance = _finite_decimal(
+                opening_balance, "opening_balance"
+            )
             if (
                 normalized_balance != account.balance
                 or (current_date is None and parsed_date is not None)
             ):
-                changes["balance"] = num(normalized_balance)
+                changes["opening_balance"] = num(normalized_balance)
         if parsed_date is not None and effective_balance == 0:
             return {
-                "error": "balance_date requires a non-zero balance"
+                "error": (
+                    "opening_balance_date requires a non-zero opening_balance"
+                )
             }
-        if parsed_date is not None and current_date is None and balance is None:
+        if (
+            parsed_date is not None
+            and current_date is None
+            and opening_balance is None
+        ):
             return {
                 "error": (
-                    "balance_date requires an opening balance; "
-                    "provide balance in the same update"
+                    "opening_balance_date requires an opening balance; "
+                    "provide opening_balance in the same update"
                 )
             }
         if parsed_date is not None and parsed_date != current_date:
-            changes["balance_date"] = parsed_date.isoformat()
+            changes["opening_balance_date"] = parsed_date.isoformat()
     except (ValueError, ArithmeticError) as exc:
         return {"error": str(exc)}
 
@@ -443,11 +473,13 @@ async def propose_update_manual_account(
 
     if _can_apply(ctx, apply):
         update_payload: dict[str, Any] = dict(changes)
-        if "balance" in update_payload:
-            update_payload["balance"] = Decimal(str(update_payload["balance"]))
-        if "balance_date" in update_payload:
+        if "opening_balance" in update_payload:
+            update_payload["balance"] = Decimal(
+                str(update_payload.pop("opening_balance"))
+            )
+        if "opening_balance_date" in update_payload:
             update_payload["balance_date"] = parse_date(
-                update_payload["balance_date"]
+                update_payload.pop("opening_balance_date")
             )
         update = AccountUpdate.model_validate(update_payload)
         try:

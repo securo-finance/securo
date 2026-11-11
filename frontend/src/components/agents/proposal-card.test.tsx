@@ -229,15 +229,18 @@ describe('ProposalCard manual account kinds', () => {
             name: 'CommBank',
             type: 'checking',
             currency: 'AUD',
-            balance: 4493.28,
-            balance_date: '2026-11-10',
+            current_balance: 4493.28,
+            opening_balance: 4493.28,
+            opening_balance_date: '2026-11-10',
           },
         }}
       />,
     )
 
     expect(screen.getByText('Add Account')).toBeInTheDocument()
-    expect(screen.getByText(/CommBank · Checking ·/)).toBeInTheDocument()
+    const createSummary = screen.getByText(/CommBank · Checking · Current balance:/)
+    expect(createSummary).toBeInTheDocument()
+    expect(createSummary.textContent).not.toContain('—')
 
     await user.click(screen.getByRole('button', { name: /Apply/ }))
 
@@ -264,16 +267,21 @@ describe('ProposalCard manual account kinds', () => {
             name: 'Ubank',
             type: 'savings',
             currency: 'AUD',
-            balance: 3272.25,
-            balance_date: '2026-11-03',
+            current_balance: 3272.25,
+            opening_balance: 3272.25,
+            opening_balance_date: '2026-11-03',
           },
-          changes: { balance: 3400 },
+          changes: { opening_balance: 3400 },
         }}
       />,
     )
 
     expect(screen.getByText('Edit Account')).toBeInTheDocument()
-    expect(screen.getByText('Ubank → balance: 3272.25 → 3400')).toBeInTheDocument()
+    const updateSummary = screen.getByText(
+      /Ubank\. Current balance: .*3,272.25\. opening_balance: 3272.25 → 3400/,
+    )
+    expect(updateSummary).toBeInTheDocument()
+    expect(updateSummary.textContent).not.toContain('—')
 
     await user.click(screen.getByRole('button', { name: /Apply/ }))
 
@@ -294,10 +302,14 @@ describe('ProposalCard manual account kinds', () => {
             name: 'Legacy',
             type: 'checking',
             currency: 'AUD',
-            balance: 4493.28,
-            balance_date: null,
+            current_balance: 4493.28,
+            opening_balance: 4493.28,
+            opening_balance_date: null,
           },
-          changes: { balance: 4493.28, balance_date: '2026-11-10' },
+          changes: {
+            opening_balance: 4493.28,
+            opening_balance_date: '2026-11-10',
+          },
         }}
       />,
     )
