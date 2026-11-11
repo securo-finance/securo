@@ -29,7 +29,12 @@ export function useLayout(surface: Surface) {
   const workspaceId = useContext(WorkspaceContext)?.current?.id ?? null
   const queryKey = useMemo(() => ['ui-layouts', workspaceId], [workspaceId])
 
-  const { data, isPending } = useQuery({ queryKey, queryFn: uiLayouts.get, staleTime: Infinity, retry: 1 })
+  const { data, isPending } = useQuery({
+    queryKey,
+    queryFn: () => uiLayouts.get(workspaceId),
+    staleTime: Infinity,
+    retry: 1,
+  })
   const saved = data?.[surface]?.map((item) => item.id) ?? null
   const ids = useMemo(() => resolveLayout(surface, saved), [surface, saved])
 
@@ -60,6 +65,13 @@ export function useLayout(surface: Surface) {
       const seq = (latestWrite.get(chain) ?? 0) + 1
       latestWrite.set(chain, seq)
       return { seq }
+    },
+    onSuccess: (_result, { workspace }, context) => {
+      // The last save to land re-reads the server, in case the cache was
+      // replaced meanwhile (a workspace switch resets it).
+      if (context?.seq === latestWrite.get(`${workspace}:${surface}`)) {
+        void queryClient.invalidateQueries({ queryKey: ['ui-layouts', workspace] })
+      }
     },
     onError: (_error, { workspace }, context) => {
       toast.error(t('library.saveFailed'))

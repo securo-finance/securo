@@ -1840,12 +1840,12 @@ function workspaceHeader(workspaceId?: string | null) {
 }
 
 export const uiLayouts = {
-  get: async (): Promise<UiLayouts> => {
-    const { data } = await api.get('/ui/layouts')
+  get: async (workspaceId?: string | null): Promise<UiLayouts> => {
+    const { data } = await api.get('/ui/layouts', workspaceHeader(workspaceId))
     return data
   },
-  // `workspaceId` pins the write to the workspace it was made in, even if the
-  // person switches before a queued save goes out.
+  // `workspaceId` pins a read or a write to one workspace, whatever the active
+  // one is when it goes out (a queued save, another tab switching).
   save: async (surface: 'dashboard' | 'reports', ids: string[], workspaceId?: string | null): Promise<void> => {
     await api.put(`/ui/layouts/${surface}`, { items: ids.map((id) => ({ id })) }, workspaceHeader(workspaceId))
   },

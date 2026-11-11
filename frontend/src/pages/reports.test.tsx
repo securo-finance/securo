@@ -24,8 +24,14 @@ const api = vi.hoisted(() => ({
   // Nobody arranged anything: Securo's default layout. Tests that need one set `layouts.saved`.
   uiLayouts: {
     get: async () => ({ dashboard: null, reports: null, ...layouts.saved }),
-    save: async (surface: string, ids: string[]) => { layouts.saves.push({ surface, ids }) },
-    reset: async () => {},
+    // Like the server: what was saved is what the next read returns.
+    save: async (surface: string, ids: string[]) => {
+      layouts.saves.push({ surface, ids })
+      layouts.saved = { ...layouts.saved, [surface]: ids.map((id) => ({ id })) }
+    },
+    reset: async (surface: string) => {
+      layouts.saved = { ...layouts.saved, [surface]: null }
+    },
   },
 }))
 

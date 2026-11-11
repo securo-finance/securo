@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 
 import { LibraryDialog } from '@/components/library-dialog'
+import { WorkspaceContext } from '@/contexts/workspace-context'
 import { renderWithProviders, t } from '@/test/utils'
 import type { User } from '@/types'
 
 const state = vi.hoisted(() => ({
   held: null as Promise<void> | null,
+  workspaces: [] as (string | null | undefined)[],
   saved: {} as Record<string, { id: string }[] | null>,
   saves: [] as { surface: string; ids: string[] }[],
   user: null as unknown as User,
@@ -16,14 +18,20 @@ const state = vi.hoisted(() => ({
 
 const api = vi.hoisted(() => ({
   uiLayouts: {
-    get: async () => {
+    get: async (workspaceId?: string | null) => {
+      state.workspaces.push(workspaceId)
       if (state.held) await state.held
       return { dashboard: null, reports: null, ...state.saved }
     },
-    save: async (surface: string, ids: string[]) => {
+    // Like the server: what was saved is what the next read returns.
+    save: async (surface: string, ids: string[], workspaceId?: string | null) => {
       state.saves.push({ surface, ids })
+      state.workspaces.push(workspaceId)
+      state.saved = { ...state.saved, [surface]: ids.map((id) => ({ id })) }
     },
-    reset: async () => {},
+    reset: async (surface: string) => {
+      state.saved = { ...state.saved, [surface]: null }
+    },
   },
   auth: { updateMe: vi.fn(), me: vi.fn() },
   admin: { defaultColors: async () => ({ light: null, dark: null }) },
@@ -61,6 +69,7 @@ beforeEach(() => {
   state.saved = {}
   state.saves = []
   state.held = null
+  state.workspaces = []
   state.pluginsEnabled = true
   state.user = {
     id: 'u1',
@@ -100,6 +109,19 @@ describe('LibraryDialog', () => {
     release()
     // Once loaded, the saved arrangement shows, and it can be changed.
     expect(await screen.findByRole('button', { name: t('library.addTo.dashboard', { name: t('goals.dashboardTitle') }) })).toBeEnabled()
+  })
+
+  it('reads and saves the arrangement of the workspace it was opened in', async () => {
+    const workspace = { current: { id: 'ws-a' } } as unknown as NonNullable<React.ContextType<typeof WorkspaceContext>>
+    const { user } = renderWithProviders(
+      <WorkspaceContext.Provider value={workspace}>
+        <LibraryDialog kind="widgets" onKindChange={() => {}} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+    )
+    await user.click(await screen.findByRole('button', { name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }) }))
+    await waitFor(() => expect(state.saves).toHaveLength(1))
+    // Every read and the write named ws-a, whatever the active workspace is when they go out.
+    expect(new Set(state.workspaces)).toEqual(new Set(['ws-a']))
   })
 
   it('removes a widget from the dashboard', async () => {
