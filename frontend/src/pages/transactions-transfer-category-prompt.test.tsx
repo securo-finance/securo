@@ -85,8 +85,8 @@ const transaction: Transaction = {
   transfer_counterpart: { account_id: counterpartAccount.id, account_name: counterpartAccount.name },
   amount_primary: null, fx_rate_used: null, fx_fallback: false, installment_number: null,
   total_installments: null, installment_total_amount: null, installment_purchase_date: null,
-  installment_series_id: null, bill_id: null, effective_bill_date: null, splits: [],
-  is_ignored: false,
+  installment_series_id: null, bill_id: null, effective_bill_date: null,
+  reporting_date_override: null, splits: [], is_ignored: false,
 }
 const counterpart: Transaction = {
   ...transaction, id: 'transaction-2', account_id: counterpartAccount.id,
