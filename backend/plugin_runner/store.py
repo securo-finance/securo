@@ -168,7 +168,8 @@ class Store:
                         raise StoreError(f"the lockfile {request.lockfile} is not in the archive")
                     home = self._home(base, uid)
                     _own(staging, uid)
-                    await self._pip(lockfile, staging / "deps", home, uid, request.plugin_id)
+                    if _has_requirements(lockfile):
+                        await self._pip(lockfile, staging / "deps", home, uid, request.plugin_id)
                 _own(staging, uid)
                 target = base / request.commit
                 if target.exists():
@@ -327,6 +328,15 @@ def _validate(request: InstallRequest) -> list[str]:
         return sorted({egress_token.normalize_host(h) for h in request.hosts})
     except ValueError as exc:
         raise StoreError(str(exc)) from exc
+
+
+def _has_requirements(lockfile: Path) -> bool:
+    """pip refuses a file with nothing to install; a plugin may need nothing."""
+    for line in lockfile.read_text(errors="replace").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line and not line.startswith("-"):
+            return True
+    return False
 
 
 def _inside(root: Path, relative: str) -> Path:

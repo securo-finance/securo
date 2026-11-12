@@ -380,8 +380,19 @@ async def test_lockfile_is_installed_with_hashes_and_wheels_only(store, tmp_path
     assert kwargs["uid"] == 20000
 
 
+async def test_a_lockfile_with_nothing_to_install_skips_pip(store):
+    archive = tarball({"echo_plugin.py": PLUGIN_SOURCE, "requirements.txt": "# nothing needed\n\n"})
+
+    async def never(argv, **kwargs):
+        raise AssertionError("pip must not run")
+
+    with patch("plugin_runner.store.sandbox.run", never):
+        await store.install(request(archive, lockfile="requirements.txt"), archive)
+    assert store.get("acme/echo").commit == COMMIT
+
+
 async def test_a_failed_dependency_install_keeps_the_previous_version(installed):
-    archive = tarball({"echo_plugin.py": "broken", "requirements.txt": "x"})
+    archive = tarball({"echo_plugin.py": "broken", "requirements.txt": "x==1"})
 
     async def failing(argv, **kwargs):
         return sandbox.Result(1, b"", b"ERROR: no matching distribution\n")
