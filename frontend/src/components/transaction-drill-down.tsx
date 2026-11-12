@@ -19,13 +19,27 @@ import { formatCurrency } from '@/lib/format'
 export type DrillDownFilter = {
   title: string
   category_id?: string
+  // Any of several categories (e.g. every category of a group).
+  category_ids?: string[]
   uncategorized?: boolean
+  // With `uncategorized`, also list the viewer's shares of expenses from
+  // other workspaces: their categories live there, so reports count them
+  // as uncategorized here.
+  sharedAsUncategorized?: boolean
   account_id?: string
   // Scope to a set of accounts (e.g. the active collection's accounts).
   account_ids?: string[]
   type?: 'credit' | 'debit'
   from?: string
   to?: string
+  // Leave out the recurring projections, for views that only count what
+  // already happened.
+  realizedOnly?: boolean
+  // Count only the viewer's share of a split expense, as budgets and the
+  // statement do, instead of the full amount that hit the account.
+  ownShare?: boolean
+  // Total the panel as credits minus debits, for rows that show a net amount.
+  netTotal?: boolean
 }
 
 type DisplayItem = {
@@ -72,12 +86,15 @@ export function TransactionDrillDown({
     queryFn: async () => {
       const params = {
         category_id: filter?.category_id,
+        category_ids: filter?.category_ids,
         uncategorized: filter?.uncategorized,
+        shared_as_uncategorized: filter?.sharedAsUncategorized,
         account_id: filter?.account_id,
         account_ids: filter?.account_ids,
         type: filter?.type,
         from: filter?.from,
         to: filter?.to,
+        status: filter?.realizedOnly ? 'posted' : undefined,
         limit: 200,
         user_pnl_only: true,
       }
@@ -100,7 +117,7 @@ export function TransactionDrillDown({
   const { data: projectedTxs, isLoading: projectionsLoading, isError: projectionsError, refetch: refetchProjections } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
-    enabled: !!filter && !!monthParam && !noAccounts,
+    enabled: !!filter && !!monthParam && !noAccounts && !filter.realizedOnly,
   })
 
   const { data: accountingModeData } = useQuery({
@@ -126,14 +143,30 @@ export function TransactionDrillDown({
         ? tx.category_lines?.find((line) => line.category_id === filter?.category_id)
         : undefined
       const parentAmount = Number(tx.amount)
-      const viewerShare = useViewerShare && tx.viewer_share != null ? Number(tx.viewer_share) : null
-      const amount = isPart ? Number(tx.matched_amount) : viewerShare ?? parentAmount
       const parentPrimary = tx.amount_primary != null ? Number(tx.amount_primary) : null
+      // Budgets (useViewerShare): the viewer's group share as the API tags it.
+      const viewerShare = useViewerShare && tx.viewer_share != null ? Number(tx.viewer_share) : null
+      // The statement (ownShare): only the viewer's part of a split expense,
+      // the way the backend counts it: a member in the split keeps their own
+      // share, the owner the amount less everyone else's shares, and anyone
+      // else the full amount.
+      const splits = tx.splits ?? []
+      const ownShare = viewerShare != null || !filter?.ownShare || tx.type !== 'debit'
+        ? null
+        : tx.is_shared
+          ? Number(tx.viewer_share ?? 0)
+          : splits.length > 0 && tx.user_id === user?.id
+            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0))
+            : null
+      const share = viewerShare ?? ownShare
+      // Shares are in the row's own currency, so the primary amount scales
+      // by the same ratio.
+      const amount = isPart ? Number(tx.matched_amount) : share ?? parentAmount
       const amountPrimary = isPart
         ? tx.matched_amount_primary != null ? Number(tx.matched_amount_primary) : null
-        : viewerShare == null ? parentPrimary
-          : viewerShare === 0 ? 0 : parentPrimary != null && parentAmount !== 0
-            ? parentPrimary * Math.abs(viewerShare / parentAmount)
+        : share == null ? parentPrimary
+          : share === 0 ? 0 : parentPrimary != null && parentAmount !== 0
+            ? parentPrimary * Math.abs(share / parentAmount)
             : null
       items.push({
         key: tx.id,
@@ -154,7 +187,8 @@ export function TransactionDrillDown({
       })
     }
 
-    for (const pt of projectedTxs ?? []) {
+    // A disabled query can still hand back what the dashboard cached.
+    for (const pt of filter?.realizedOnly ? [] : projectedTxs ?? []) {
       // Filter projected txs by drill-down criteria
       if (filter?.account_id && pt.account_id !== filter.account_id) continue
       if (filter?.account_ids && (!pt.account_id || !filter.account_ids.includes(pt.account_id))) continue
@@ -167,6 +201,7 @@ export function TransactionDrillDown({
         ? parts.filter((part) => part.category_id === filter.category_id)
         : []
       if (filter?.category_id && !matchedParts.length && String(pt.category_id) !== filter.category_id) continue
+      if (filter?.category_ids && !parts.some((part) => filter.category_ids!.includes(part.category_id)) && !filter.category_ids.includes(String(pt.category_id))) continue
       if (filter?.uncategorized && (pt.category_id != null || parts.length)) continue
       if (filter?.from && pt.date < filter.from) continue
       if (filter?.to && pt.date > filter.to) continue
@@ -240,7 +275,7 @@ export function TransactionDrillDown({
 
     items.sort((a, b) => a.date.localeCompare(b.date))
     return items
-  }, [data, projectedTxs, filter, noAccounts, useViewerShare])
+  }, [data, projectedTxs, filter, noAccounts, useViewerShare, user?.id])
 
   const isOpen = !!filter
   useEffect(() => {
@@ -286,8 +321,9 @@ export function TransactionDrillDown({
   // amount_primary; if it's missing we can't convert, so skip the row
   // instead of adding a raw foreign amount as if it were primary. This
   // matches how get_summary computes monthly_*_primary on the backend.
-  const { absTotal, postedTotal, pendingTotal, projectedTotal } =
+  const { absTotal, netTotal, postedTotal, pendingTotal, projectedTotal } =
     sumDrillDownTotals(displayItems, userCurrency)
+  const shownTotal = filter?.netTotal ? netTotal : absTotal
 
   // Break the total down whenever some of it is money that has not settled,
   // whether it is pending or still only projected. Gating on pending alone
@@ -453,7 +489,7 @@ export function TransactionDrillDown({
                 )}
                 <div className="flex items-center justify-between gap-4 border-t border-border pt-2 mt-2">
                   <span className="text-xs font-medium text-muted-foreground">{t('dashboard.drillDownShownTotal')}</span>
-                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(absTotal, userCurrency, locale))}</span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(shownTotal, userCurrency, locale))}</span>
                 </div>
               </div>
             ) : (
@@ -461,11 +497,11 @@ export function TransactionDrillDown({
                 <span className="text-xs text-muted-foreground">
                   {t('dashboard.drillDownTotal', {
                     count: displayItems.length,
-                    total: mask(formatCurrency(absTotal, userCurrency, locale)),
+                    total: mask(formatCurrency(shownTotal, userCurrency, locale)),
                   })}
                 </span>
                 <span className="text-sm font-bold tabular-nums text-foreground">
-                  {mask(formatCurrency(absTotal, userCurrency, locale))}
+                  {mask(formatCurrency(shownTotal, userCurrency, locale))}
                 </span>
               </div>
             )}

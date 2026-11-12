@@ -2242,7 +2242,21 @@
     "range30d": "30J",
     "customRange": "Plage personnalisée",
     "pickCustomRange": "Choisir une date de début et de fin",
-    "loadError": "Échec du chargement du rapport"
+    "loadError": "Échec du chargement du rapport",
+    "statement": "Relevé",
+    "statementIncomeTotal": "Revenus totaux",
+    "statementExpenseTotal": "Dépenses totales",
+    "statementSettings": "Options du rapport",
+    "statementSortBy": "Trier par",
+    "statementSortDefault": "Par défaut",
+    "statementSortAsc": "Montant (croissant)",
+    "statementSortDesc": "Montant (décroissant)",
+    "statementColumns": "Nombre de colonnes",
+    "statementShowChange": "Afficher la variation en pourcentage",
+    "statementViewTransactions": "Voir les transactions",
+    "statementUncategorizedIncome": "Revenus non catégorisés",
+    "statementUncategorizedExpense": "Dépenses non catégorisées",
+    "statementToggleGroup": "Afficher les catégories de {{name}}"
   },
   "payees": {
     "noPayeeFound": "Aucun bénéficiaire trouvé.",
@@ -3419,7 +3433,8 @@
       "netWorthHint": "Comptes, biens et dettes dans le temps.",
       "incomeExpensesHint": "Entrées et sorties, par catégorie.",
       "cashFlowHint": "Où va votre solde.",
-      "moneyMapHint": "Comment les revenus se répartissent entre dépenses et épargne."
+      "moneyMapHint": "Comment les revenus se répartissent entre dépenses et épargne.",
+      "statementHint": "Revenus et dépenses par catégorie, mois par mois."
     },
     "dragToMove": "Faites glisser pour déplacer {{name}}",
     "widthOf": "Largeur de {{name}}",

@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { CalendarClock, CalendarRange, ChartColumnBig, ChartPie, ChartSpline, CreditCard, FileClock, Gauge, HandCoins, Hourglass, LayoutList, Network, PiggyBank, Receipt, Repeat, Scale, Sparkles, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
+import { CalendarClock, CalendarRange, ChartColumnBig, ChartPie, ChartSpline, CreditCard, FileClock, Gauge, HandCoins, Hourglass, LayoutList, Network, PiggyBank, Receipt, Repeat, Scale, Sparkles, Table2, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
 
 import type { ModuleId } from '@/lib/modules'
 
@@ -72,6 +72,7 @@ export const REPORTS: LibraryEntry[] = [
   { id: 'income_expenses', titleKey: 'reports.incomeExpenses', descriptionKey: 'library.report.incomeExpensesHint', icon: PiggyBank },
   { id: 'cash_flow', titleKey: 'reports.cashFlow', descriptionKey: 'library.report.cashFlowHint', icon: CalendarRange },
   { id: 'money_map', titleKey: 'reports.moneyMap', descriptionKey: 'library.report.moneyMapHint', icon: Network },
+  { id: 'statement', titleKey: 'reports.statement', descriptionKey: 'library.report.statementHint', icon: Table2 },
 ]
 
 export const SURFACE_ENTRIES: Record<Surface, LibraryEntry[]> = {

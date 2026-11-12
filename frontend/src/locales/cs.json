@@ -2378,7 +2378,21 @@
     "range30d": "30D",
     "customRange": "Vlastní rozsah",
     "pickCustomRange": "Vybrat datum začátku a konce",
-    "loadError": "Nepodařilo se načíst přehled"
+    "loadError": "Nepodařilo se načíst přehled",
+    "statement": "Výkaz",
+    "statementIncomeTotal": "Celkové příjmy",
+    "statementExpenseTotal": "Celkové výdaje",
+    "statementSettings": "Možnosti přehledu",
+    "statementSortBy": "Řadit podle",
+    "statementSortDefault": "Výchozí",
+    "statementSortAsc": "Hodnota (od nejmenší)",
+    "statementSortDesc": "Hodnota (od největší)",
+    "statementColumns": "Počet sloupců",
+    "statementShowChange": "Zobrazit procentuální změnu",
+    "statementViewTransactions": "Zobrazit transakce",
+    "statementUncategorizedIncome": "Nezařazené příjmy",
+    "statementUncategorizedExpense": "Nezařazené výdaje",
+    "statementToggleGroup": "Zobrazit kategorie ve skupině {{name}}"
   },
   "payees": {
     "noPayeeFound": "Příjemce nebyl nalezen.",
@@ -3601,7 +3615,8 @@
       "netWorthHint": "Účty, majetek a dluhy v čase.",
       "incomeExpensesHint": "Příjmy a výdaje podle kategorií.",
       "cashFlowHint": "Kam míří váš zůstatek.",
-      "moneyMapHint": "Jak se příjmy dělí mezi výdaje a úspory."
+      "moneyMapHint": "Jak se příjmy dělí mezi výdaje a úspory.",
+      "statementHint": "Příjmy a výdaje podle kategorií, měsíc po měsíci."
     },
     "dragToMove": "Přetažením přesunete {{name}}",
     "widthOf": "Šířka {{name}}",

@@ -2335,7 +2335,21 @@
     "range30d": "30D",
     "customRange": "Zakres niestandardowy",
     "pickCustomRange": "Wybierz datę początkową i końcową",
-    "loadError": "Nie udało się załadować raportu"
+    "loadError": "Nie udało się załadować raportu",
+    "statement": "Zestawienie",
+    "statementIncomeTotal": "Przychody łącznie",
+    "statementExpenseTotal": "Wydatki łącznie",
+    "statementSettings": "Opcje raportu",
+    "statementSortBy": "Sortuj według",
+    "statementSortDefault": "Domyślnie",
+    "statementSortAsc": "Kwota (od najmniejszej)",
+    "statementSortDesc": "Kwota (od największej)",
+    "statementColumns": "Liczba kolumn",
+    "statementShowChange": "Pokaż zmianę procentową",
+    "statementViewTransactions": "Pokaż transakcje",
+    "statementUncategorizedIncome": "Przychody bez kategorii",
+    "statementUncategorizedExpense": "Wydatki bez kategorii",
+    "statementToggleGroup": "Pokaż kategorie w {{name}}"
   },
   "payees": {
     "noPayeeFound": "Nie znaleziono odbiorcy.",
@@ -3551,7 +3565,8 @@
       "netWorthHint": "Konta, aktywa i długi w czasie.",
       "incomeExpensesHint": "Wpływy i wydatki według kategorii.",
       "cashFlowHint": "Dokąd zmierza Twoje saldo.",
-      "moneyMapHint": "Jak przychody dzielą się na wydatki i oszczędności."
+      "moneyMapHint": "Jak przychody dzielą się na wydatki i oszczędności.",
+      "statementHint": "Przychody i wydatki według kategorii, miesiąc po miesiącu."
     },
     "dragToMove": "Przeciągnij, aby przenieść {{name}}",
     "widthOf": "Szerokość {{name}}",

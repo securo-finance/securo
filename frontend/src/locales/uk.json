@@ -2263,7 +2263,21 @@
     "range30d": "30Д",
     "customRange": "Довільний діапазон",
     "pickCustomRange": "Виберіть дату початку та кінця",
-    "loadError": "Не вдалося завантажити звіт"
+    "loadError": "Не вдалося завантажити звіт",
+    "statement": "Звіт за категоріями",
+    "statementIncomeTotal": "Усього доходів",
+    "statementExpenseTotal": "Усього витрат",
+    "statementSettings": "Параметри звіту",
+    "statementSortBy": "Сортувати за",
+    "statementSortDefault": "За замовчуванням",
+    "statementSortAsc": "Сума (за зростанням)",
+    "statementSortDesc": "Сума (за спаданням)",
+    "statementColumns": "Кількість стовпців",
+    "statementShowChange": "Показувати зміну у відсотках",
+    "statementViewTransactions": "Переглянути транзакції",
+    "statementUncategorizedIncome": "Доходи без категорії",
+    "statementUncategorizedExpense": "Витрати без категорії",
+    "statementToggleGroup": "Показати категорії групи {{name}}"
   },
   "payees": {
     "noPayeeFound": "Отримувача не знайдено.",
@@ -3458,7 +3472,8 @@
       "netWorthHint": "Рахунки, активи та борги з часом.",
       "incomeExpensesHint": "Надходження та витрати за категоріями.",
       "cashFlowHint": "Куди рухається ваш баланс.",
-      "moneyMapHint": "Як дохід розподіляється між витратами та заощадженнями."
+      "moneyMapHint": "Як дохід розподіляється між витратами та заощадженнями.",
+      "statementHint": "Доходи та витрати за категоріями, помісячно."
     },
     "dragToMove": "Перетягніть, щоб перемістити {{name}}",
     "widthOf": "Ширина: {{name}}",

@@ -2240,7 +2240,21 @@
     "range30d": "30D",
     "customRange": "Aangepast bereik",
     "pickCustomRange": "Kies een start- en einddatum",
-    "loadError": "Rapport laden mislukt"
+    "loadError": "Rapport laden mislukt",
+    "statement": "Overzicht",
+    "statementIncomeTotal": "Totale inkomsten",
+    "statementExpenseTotal": "Totale uitgaven",
+    "statementSettings": "Rapportopties",
+    "statementSortBy": "Sorteren op",
+    "statementSortDefault": "Standaard",
+    "statementSortAsc": "Bedrag (laagste eerst)",
+    "statementSortDesc": "Bedrag (hoogste eerst)",
+    "statementColumns": "Aantal kolommen",
+    "statementShowChange": "Procentuele verandering tonen",
+    "statementViewTransactions": "Transacties bekijken",
+    "statementUncategorizedIncome": "Inkomsten zonder categorie",
+    "statementUncategorizedExpense": "Uitgaven zonder categorie",
+    "statementToggleGroup": "Categorieën van {{name}} tonen"
   },
   "payees": {
     "noPayeeFound": "Geen begunstigde gevonden.",
@@ -3417,7 +3431,8 @@
       "netWorthHint": "Rekeningen, bezittingen en schulden door de tijd.",
       "incomeExpensesHint": "Geld in en uit, per categorie.",
       "cashFlowHint": "Waar je saldo naartoe gaat.",
-      "moneyMapHint": "Hoe inkomsten verdeeld worden over uitgaven en sparen."
+      "moneyMapHint": "Hoe inkomsten verdeeld worden over uitgaven en sparen.",
+      "statementHint": "Inkomsten en uitgaven per categorie, maand voor maand."
     },
     "dragToMove": "Sleep om {{name}} te verplaatsen",
     "widthOf": "Breedte van {{name}}",

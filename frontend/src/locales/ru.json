@@ -2263,7 +2263,21 @@
     "range30d": "30D",
     "customRange": "Произвольный диапазон",
     "pickCustomRange": "Выберите дату начала и конца",
-    "loadError": "Не удалось загрузить отчёт"
+    "loadError": "Не удалось загрузить отчёт",
+    "statement": "Отчёт по категориям",
+    "statementIncomeTotal": "Всего доходов",
+    "statementExpenseTotal": "Всего расходов",
+    "statementSettings": "Параметры отчёта",
+    "statementSortBy": "Сортировать по",
+    "statementSortDefault": "По умолчанию",
+    "statementSortAsc": "Сумма (по возрастанию)",
+    "statementSortDesc": "Сумма (по убыванию)",
+    "statementColumns": "Количество столбцов",
+    "statementShowChange": "Показывать изменение в процентах",
+    "statementViewTransactions": "Показать транзакции",
+    "statementUncategorizedIncome": "Доходы без категории",
+    "statementUncategorizedExpense": "Расходы без категории",
+    "statementToggleGroup": "Показать категории группы {{name}}"
   },
   "payees": {
     "noPayeeFound": "Получатель не найден.",
@@ -3458,7 +3472,8 @@
       "netWorthHint": "Счета, активы и долги во времени.",
       "incomeExpensesHint": "Поступления и траты по категориям.",
       "cashFlowHint": "Куда движется ваш баланс.",
-      "moneyMapHint": "Как доход распределяется между тратами и сбережениями."
+      "moneyMapHint": "Как доход распределяется между тратами и сбережениями.",
+      "statementHint": "Доходы и расходы по категориям, по месяцам."
     },
     "dragToMove": "Перетащите, чтобы переместить {{name}}",
     "widthOf": "Ширина: {{name}}",

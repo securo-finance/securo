@@ -2238,7 +2238,21 @@
     "range30d": "30 nap",
     "customRange": "Egyéni időszak",
     "pickCustomRange": "Válassz kezdő és záró dátumot",
-    "loadError": "Nem sikerült betölteni a jelentést"
+    "loadError": "Nem sikerült betölteni a jelentést",
+    "statement": "Kimutatás",
+    "statementIncomeTotal": "Összes bevétel",
+    "statementExpenseTotal": "Összes kiadás",
+    "statementSettings": "Jelentés beállításai",
+    "statementSortBy": "Rendezés",
+    "statementSortDefault": "Alapértelmezett",
+    "statementSortAsc": "Érték (legkisebb elöl)",
+    "statementSortDesc": "Érték (legnagyobb elöl)",
+    "statementColumns": "Oszlopok száma",
+    "statementShowChange": "Százalékos változás mutatása",
+    "statementViewTransactions": "Tranzakciók megtekintése",
+    "statementUncategorizedIncome": "Kategorizálatlan bevétel",
+    "statementUncategorizedExpense": "Kategorizálatlan kiadás",
+    "statementToggleGroup": "{{name}} kategóriáinak mutatása"
   },
   "payees": {
     "noPayeeFound": "Nincs ilyen partner.",
@@ -3415,7 +3429,8 @@
       "netWorthHint": "Számlák, eszközök és tartozások az idő során.",
       "incomeExpensesHint": "Bevételek és kiadások kategóriánként.",
       "cashFlowHint": "Merre tart az egyenleged.",
-      "moneyMapHint": "Hogyan oszlik meg a bevétel a kiadások és a megtakarítás között."
+      "moneyMapHint": "Hogyan oszlik meg a bevétel a kiadások és a megtakarítás között.",
+      "statementHint": "Bevételek és kiadások kategóriánként, hónapról hónapra."
     },
     "dragToMove": "Húzd a(z) {{name}} áthelyezéséhez",
     "widthOf": "{{name}} szélessége",
