@@ -47,6 +47,8 @@ from app.services._query_filters import (
     with_category_lines,
 )
 from app.services.recurring_transaction_service import _advance_date
+from app.services import goal_allocation_service
+from app.services.goal_service import _lock_pocket_account
 
 
 async def _ensure_category_in_workspace(
@@ -953,6 +955,11 @@ async def create_transaction(
     if data.splits is not None:
         await split_service.replace_splits(session, transaction, data.splits, user_id)
 
+    if data.goal_allocations is not None:
+        await goal_allocation_service.replace_transaction_allocations(
+            session, workspace_id, user_id, transaction, data.goal_allocations
+        )
+
     # A payment recorded by hand settles an invoice exactly as a synced one
     # does. Someone who reconciles by typing the Pix in should not have to
     # then go and link it: that is the manual work the whole feature exists
@@ -961,7 +968,7 @@ async def create_transaction(
     await reconciliation_service.match_incoming(session, workspace_id, [transaction])
 
     await session.commit()
-    await session.refresh(transaction, ["category", "splits", "category_lines"])
+    await session.refresh(transaction, ["category", "splits", "goal_allocations", "category_lines"])
     return transaction
 
 
@@ -984,6 +991,8 @@ async def create_installment_series(
     "pending". Month-end clamping is handled by the shared recurrence helper.
     """
     base = data.base
+    if base.goal_allocations:
+        raise ValueError("Pocket assignments are not supported for installment series")
     n = data.installments
     # Every installment carries the same split (each has the base amount).
     splits_by_category = bool(base.category_lines and base.category_lines.lines)
@@ -1070,7 +1079,7 @@ async def create_installment_series(
 
     await session.commit()
     for tx in created:
-        await session.refresh(tx, ["category", "splits", "category_lines"])
+        await session.refresh(tx, ["category", "splits", "goal_allocations", "category_lines"])
     return created
 
 
@@ -1195,9 +1204,27 @@ async def create_transfer(
         if credit_tx.amount and Decimal(str(credit_tx.amount)):
             credit_tx.fx_rate_used = debit_tx.amount_primary / Decimal(str(credit_tx.amount))
 
+    if data.from_goal_allocations or data.to_goal_allocations:
+        # Both legs commit together. Lock accounts in stable order so two
+        # opposite concurrent transfers cannot deadlock while reserving pockets.
+        await session.execute(
+            select(Account.id)
+            .where(Account.id.in_([from_account.id, to_account.id]))
+            .order_by(Account.id)
+            .with_for_update(key_share=True)
+        )
+    if data.from_goal_allocations:
+        await goal_allocation_service.replace_transaction_allocations(
+            session, workspace_id, user_id, debit_tx, data.from_goal_allocations
+        )
+    if data.to_goal_allocations:
+        await goal_allocation_service.replace_transaction_allocations(
+            session, workspace_id, user_id, credit_tx, data.to_goal_allocations
+        )
+
     await session.commit()
-    await session.refresh(debit_tx, ["category"])
-    await session.refresh(credit_tx, ["category"])
+    await session.refresh(debit_tx, ["category", "goal_allocations"])
+    await session.refresh(credit_tx, ["category", "goal_allocations"])
     return debit_tx, credit_tx
 
 
@@ -1589,6 +1616,36 @@ async def _resync_installment_series_total(
         row.installment_total_amount = total
 
 
+async def _lock_mutated_transactions(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    rows: list[Transaction],
+    new_account_id: uuid.UUID | None = None,
+) -> list[Transaction]:
+    """Lock accounts first, then edited rows and transfer counterparts in ID order."""
+    transaction_ids = {row.id for row in rows}
+    pair_ids = {row.transfer_pair_id for row in rows if row.transfer_pair_id}
+    query = select(Transaction).where(
+        Transaction.workspace_id == workspace_id,
+        or_(Transaction.id.in_(transaction_ids), Transaction.transfer_pair_id.in_(pair_ids)),
+    )
+    affected = list((await session.scalars(query.execution_options(populate_existing=True))).all())
+    account_ids = {row.account_id for row in affected}
+    if new_account_id:
+        account_ids.add(new_account_id)
+    for account_id in sorted(account_ids, key=str):
+        await _lock_pocket_account(session, workspace_id, account_id)
+    locked = list((await session.scalars(
+        query.order_by(Transaction.id).with_for_update(of=Transaction)
+        .execution_options(populate_existing=True)
+    )).all())
+    if any(row.account_id not in account_ids for row in locked):
+        raise ValueError("Transaction account changed; retry this operation")
+    if any(row.transfer_pair_id and row.transfer_pair_id not in pair_ids for row in locked):
+        raise ValueError("Transaction transfer changed; retry this operation")
+    return locked
+
+
 def _preserve_original_description(tx: Transaction) -> None:
     """Keep the bank text before a user rename overwrites it.
 
@@ -1821,7 +1878,7 @@ async def update_transaction(
     user_id: uuid.UUID,
     data: TransactionUpdate,
 ) -> Optional[Transaction]:
-    transaction = await get_transaction(session, transaction_id, workspace_id, for_update=True)
+    transaction = await get_transaction(session, transaction_id, workspace_id)
     if not transaction:
         return None
 
@@ -1833,9 +1890,12 @@ async def update_transaction(
     # service can validate against the new amount.
     splits_payload = data.splits if "splits" in update_data else None
     update_data.pop("splits", None)
+    goal_allocations_payload = (
+        data.goal_allocations if "goal_allocations" in update_data else None
+    )
+    update_data.pop("goal_allocations", None)
     lines_payload = data.category_lines if "category_lines" in update_data else None
     update_data.pop("category_lines", None)
-    _check_category_lines_update(transaction, update_data, lines_payload)
 
     # Verify the new account belongs to the workspace before touching the
     # row. When changing the account on one side of a transfer pair,
@@ -1873,6 +1933,25 @@ async def update_transaction(
     if "payee_id" in update_data:
         await _ensure_payee_in_workspace(session, workspace_id, update_data["payee_id"])
 
+    rows = [transaction]
+    if apply_to != "this" and _is_installment(transaction):
+        rows = await _get_series_transactions(session, workspace_id, transaction, apply_to)
+    affected = await _lock_mutated_transactions(session, workspace_id, rows, new_account_id)
+    locked_by_id = {row.id: row for row in affected}
+    if transaction_id not in locked_by_id:
+        return None
+    transaction = locked_by_id[transaction_id]
+    rows = [locked_by_id[row.id] for row in rows if row.id in locked_by_id]
+    _check_category_lines_update(transaction, update_data, lines_payload)
+    if new_account_id is not None and transaction.transfer_pair_id:
+        if any(
+            row.id != transaction.id
+            and row.transfer_pair_id == transaction.transfer_pair_id
+            and row.account_id == new_account_id
+            for row in affected
+        ):
+            raise ValueError("Cannot move transfer to the same account as its paired transaction")
+
     # Series scope. "future"/"all" expand the edit to sibling installments;
     # ignored entirely for rows without an installment fingerprint.
     #
@@ -1897,12 +1976,8 @@ async def update_transaction(
             "notes",
         }
     )
-    rows = [transaction]
     scoped_update = None
     if apply_to != "this" and _is_installment(transaction):
-        rows = await _get_series_transactions(
-            session, workspace_id, transaction, apply_to, for_update=True
-        )
         scoped_update = {
             k: v for k, v in update_data.items() if k in installment_scoped_fields
         }
@@ -1999,6 +2074,17 @@ async def update_transaction(
         for row in rows:
             if row.has_category_lines:
                 await category_line_service.validate_existing_lines(session, row)
+    if goal_allocations_payload is not None:
+        await goal_allocation_service.replace_transaction_allocations(
+            session, workspace_id, user_id, transaction, goal_allocations_payload
+        )
+    for row in affected:
+        try:
+            await goal_allocation_service.validate_transaction_allocations(session, workspace_id, row)
+        except ValueError as error:
+            if row.transfer_pair_id and row.id != transaction.id:
+                raise ValueError(f"Pocket assignments on the paired transfer are invalid: {error}") from error
+            raise
 
     # A changed parcel amount makes the stored series total stale, whatever
     # the scope was: "this" reprices one parcel, "future"/"all" reprice
@@ -2008,7 +2094,9 @@ async def update_transaction(
         await _resync_installment_series_total(session, workspace_id, transaction)
 
     await session.commit()
-    await session.refresh(transaction, ["category", "payee_entity", "splits", "category_lines"])
+    await session.refresh(
+        transaction, ["category", "payee_entity", "splits", "goal_allocations", "category_lines"]
+    )
     return transaction
 
 
@@ -2034,8 +2122,16 @@ async def bulk_update_category(
     workspace_id: uuid.UUID,
     transaction_ids: list[uuid.UUID],
     category_id: Optional[uuid.UUID] = None,
+    *,
+    commit: bool = True,
 ) -> int:
     await _ensure_category_in_workspace(session, workspace_id, category_id)
+    transactions = list((await session.scalars(
+        select(Transaction).where(
+            Transaction.id.in_(transaction_ids), Transaction.workspace_id == workspace_id
+        )
+    )).all())
+    locked = await _lock_mutated_transactions(session, workspace_id, transactions)
     # Principal entries keep no category, and a row split across categories
     # keeps its lines; skip both rather than fail the batch.
     target = [
@@ -2044,11 +2140,6 @@ async def bulk_update_category(
         Transaction.source != MORTGAGE_PRINCIPAL_SOURCE,
         Transaction.has_category_lines.is_(False),
     ]
-    # A category change can alter whether an allocated bank payment contributes
-    # to balances, either by entering or leaving an ignored category.
-    await session.execute(
-        select(Transaction.id).where(*target).order_by(Transaction.id).with_for_update()
-    )
     linked_query = (
         select(MortgagePaymentAllocation.id)
         .join(Transaction, Transaction.id == MortgagePaymentAllocation.payment_transaction_id)
@@ -2069,7 +2160,22 @@ async def bulk_update_category(
     result = await session.execute(
         update(Transaction).where(*target).values(category_id=category_id)
     )
-    await session.commit()
+    # Allocation writes take the same row lock first, so the collections
+    # reloaded under it are current; rows without a Pocket need no check.
+    requested = {
+        transaction.id
+        for transaction in transactions
+        if transaction.source != MORTGAGE_PRINCIPAL_SOURCE and not transaction.has_category_lines
+    }
+    for transaction in locked:
+        if transaction.id in requested and transaction.goal_allocations:
+            await goal_allocation_service.validate_transaction_allocations(
+                session, workspace_id, transaction
+            )
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return cast(CursorResult, result).rowcount
 
 
@@ -2368,14 +2474,19 @@ async def toggle_ignore_transaction(
     other field is touched) so the edit dialog can offer ignore as a
     one-click action alongside delete, instead of bundling it into the
     form's Salvar flow."""
-    transaction = await get_transaction(session, transaction_id, workspace_id, for_update=True)
+    transaction = await get_transaction(session, transaction_id, workspace_id)
     if not transaction:
+        return None
+    locked = await _lock_mutated_transactions(session, workspace_id, [transaction])
+    transaction = next((row for row in locked if row.id == transaction_id), None)
+    if transaction is None:
         return None
     if transaction.source == MORTGAGE_PRINCIPAL_SOURCE:
         raise ValueError("Edit the mortgage breakdown on its bank payment instead")
     if await _has_mortgage_breakdown(session, workspace_id, transaction.id):
         raise ValueError("Remove the mortgage breakdown before changing this payment")
     transaction.is_ignored = not transaction.is_ignored
+    await goal_allocation_service.validate_transaction_allocations(session, workspace_id, transaction)
     await session.commit()
     await session.refresh(transaction)
     return transaction
@@ -2411,7 +2522,7 @@ async def delete_transaction(
     may be "future" (this row + all later installments) or "all" (every row
     in the series); otherwise only the single row is removed. Paired transfer
     legs are cascade-deleted as before. Returns False when not found."""
-    transaction = await get_transaction(session, transaction_id, workspace_id, for_update=True)
+    transaction = await get_transaction(session, transaction_id, workspace_id)
     if not transaction:
         return False
 
@@ -2419,35 +2530,16 @@ async def delete_transaction(
     # delete and the row is part of a series.
     rows: list[Transaction] = [transaction]
     if apply_to != "this" and _is_installment(transaction):
-        rows = await _get_series_transactions(
-            session, workspace_id, transaction, apply_to, for_update=True
-        )
+        rows = await _get_series_transactions(session, workspace_id, transaction, apply_to)
     if any(row.source == MORTGAGE_PRINCIPAL_SOURCE for row in rows):
         raise ValueError("Remove the mortgage breakdown on its bank payment instead")
 
     # Clean up attachment files from storage before ORM cascade deletes DB records
     from app.services.attachment_service import cleanup_attachment_files
 
-    tx_ids_to_cleanup: list[uuid.UUID] = []
-    paired_txs: list[Transaction] = []
-    for row in rows:
-        tx_ids_to_cleanup.append(row.id)
-        if row.transfer_pair_id:
-            paired_result = await session.execute(
-                select(Transaction).where(
-                    Transaction.transfer_pair_id == row.transfer_pair_id,
-                    Transaction.id != row.id,
-                )
-            )
-            paired_tx = paired_result.scalar_one_or_none()
-            if paired_tx and paired_tx.id not in tx_ids_to_cleanup:
-                tx_ids_to_cleanup.append(paired_tx.id)
-                paired_txs.append(paired_tx)
-
-    await cleanup_attachment_files(session, tx_ids_to_cleanup)
-
-    for paired_tx in paired_txs:
-        await session.delete(paired_tx)
+    rows = await _lock_mutated_transactions(session, workspace_id, rows)
+    await goal_allocation_service.clear_transactions_allocations(session, workspace_id, rows)
+    await cleanup_attachment_files(session, [row.id for row in rows])
     for row in rows:
         await session.delete(row)
     await session.commit()
@@ -2462,39 +2554,29 @@ async def bulk_delete_transactions(
     from app.services.attachment_service import cleanup_attachment_files
 
     result = await session.execute(
-        select(Transaction.id, Transaction.transfer_pair_id, Transaction.source)
+        select(Transaction)
         .where(
             Transaction.id.in_(transaction_ids),
             Transaction.workspace_id == workspace_id,
         )
     )
-    transactions = result.all()
+    transactions = list(result.scalars().all())
     if not transactions:
         return 0
-    if any(row[2] == MORTGAGE_PRINCIPAL_SOURCE for row in transactions):
+    if any(row.source == MORTGAGE_PRINCIPAL_SOURCE for row in transactions):
         raise ValueError("Remove the mortgage breakdown on its bank payment instead")
 
-    valid_ids = [row[0] for row in transactions]
-    transfer_pair_ids = {row[1] for row in transactions if row[1]}
-
-    paired_ids = []
-    if transfer_pair_ids:
-        paired_result = await session.execute(
-            select(Transaction.id)
-            .where(
-                Transaction.transfer_pair_id.in_(transfer_pair_ids),
-                Transaction.id.notin_(valid_ids),
-                Transaction.workspace_id == workspace_id,
-            )
-        )
-        paired_ids = [row[0] for row in paired_result.all()]
+    rows = await _lock_mutated_transactions(session, workspace_id, transactions)
+    valid_ids = {row.id for row in transactions} & {row.id for row in rows}
+    all_ids = [row.id for row in rows]
+    await goal_allocation_service.clear_transactions_allocations(session, workspace_id, rows)
 
     # Storage files must go before the rows: the DB cascade removes the
     # attachment records, and after that their storage keys are unreachable.
-    await cleanup_attachment_files(session, valid_ids + paired_ids)
+    await cleanup_attachment_files(session, all_ids)
 
     await session.execute(
-        delete(Transaction).where(Transaction.id.in_(valid_ids + paired_ids))
+        delete(Transaction).where(Transaction.id.in_(all_ids))
     )
     await session.commit()
     return len(valid_ids)

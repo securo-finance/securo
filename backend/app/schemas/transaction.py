@@ -15,6 +15,7 @@ from app.schemas.transaction_split import (
     TransactionSplitRead,
     TransactionSplitsInput,
 )
+from app.schemas.goal import GoalAllocationInput, GoalAllocationRead
 
 
 class TransactionBase(BaseModel):
@@ -38,6 +39,7 @@ class TransactionCreate(TransactionBase):
     fx_rate_used: Optional[Decimal] = None
     effective_bill_date: Optional[_Date] = None
     splits: Optional[TransactionSplitsInput] = None
+    goal_allocations: Optional[list[GoalAllocationInput]] = None
     # Split the amount across several categories instead of one
     # `category_id`. Mutually exclusive with `category_id` and `splits`.
     category_lines: Optional[TransactionCategoryLinesInput] = None
@@ -119,6 +121,8 @@ class TransactionUpdate(BaseModel):
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
+    # Omitted keeps existing assignments; an explicit empty list clears them.
+    goal_allocations: Optional[list[GoalAllocationInput]] = None
     # When provided, replaces the category split wholesale; an empty `lines`
     # list undoes it. Required alongside a new `amount` on a split row.
     category_lines: Optional[TransactionCategoryLinesInput] = None
@@ -217,6 +221,7 @@ class TransactionRead(TransactionBase):
     effective_bill_date: Optional[_Date] = None
     recurring_transaction_id: Optional[uuid.UUID] = None
     splits: list[TransactionSplitRead] = []
+    goal_allocations: list[GoalAllocationRead] = []
     # Set when the amount is split across several categories; `category_id`
     # is then null and the categories live in `category_lines`.
     has_category_lines: bool = False
@@ -251,6 +256,19 @@ class TransactionRead(TransactionBase):
         if self.category and self.category.is_ignored:
             self.is_ignored = True
         return self
+
+    @classmethod
+    def for_viewer(cls, transaction, workspace_id: uuid.UUID) -> "TransactionRead":
+        """Serialize a row for the viewing workspace.
+
+        A linked group member may see another user's transaction, but the
+        owner's personal Pocket names and reservation amounts remain private
+        to the source workspace.
+        """
+        item = cls.model_validate(transaction, from_attributes=True)
+        if item.is_shared or transaction.workspace_id != workspace_id:
+            item.goal_allocations = []
+        return item
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -293,6 +311,8 @@ class TransferCreate(BaseModel):
     date: _Date
     description: str
     notes: Optional[str] = None
+    from_goal_allocations: list[GoalAllocationInput] = Field(default_factory=list)
+    to_goal_allocations: list[GoalAllocationInput] = Field(default_factory=list)
 
 
 class LinkTransferRequest(BaseModel):

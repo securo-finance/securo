@@ -215,7 +215,10 @@ async def list_transactions(
         primary_currency=ctx.user.primary_currency,
     )
     primary_currency = ctx.user.primary_currency
-    items = [_tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency) for tx in transactions]
+    items = []
+    for transaction in transactions:
+        item = TransactionRead.for_viewer(transaction, ctx.workspace.id)
+        items.append(_tag_fx_fallback(item, primary_currency))
     await _attach_invoice_links(session, ctx, items)
     await _attach_transfer_counterparts(session, ctx.workspace.id, items)
     summary_out = (

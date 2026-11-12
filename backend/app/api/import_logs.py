@@ -12,7 +12,7 @@ from app.core.workspace_context import (
 from app.models.import_log import ImportLog
 from app.models.transaction import Transaction
 from app.schemas.import_log import ImportLogRead
-from app.services import asset_import_service
+from app.services import asset_import_service, goal_allocation_service
 
 router = APIRouter(prefix="/api/import-logs", tags=["import-logs"])
 
@@ -72,6 +72,25 @@ async def delete_import_log(
         # itself created.
         await asset_import_service.undo_import(session, ctx.workspace.id, log)
         return
+
+    # The bulk delete below bypasses the ORM, so the DB cascade would drop pocket
+    # assignments silently. Clear them first, and refuse if a pocket would go negative.
+    imported = list(
+        (
+            await session.scalars(
+                select(Transaction).where(
+                    Transaction.import_id == log_id,
+                    Transaction.workspace_id == ctx.workspace.id,
+                )
+            )
+        ).all()
+    )
+    try:
+        await goal_allocation_service.clear_transactions_allocations(
+            session, ctx.workspace.id, imported
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     # Clean up attachment files before deleting transactions
     from app.services.attachment_service import cleanup_attachment_files
