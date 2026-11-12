@@ -6,6 +6,7 @@ import type { Account, TransactionCalendarDay, TransactionCalendarItem, Transact
 import { Skeleton } from '@/components/ui/skeleton'
 import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
+import { SplitCategoryIcon } from '@/components/category-lines-display'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { getAccountName } from '@/lib/account-utils'
 import { activityChartData, dayActivity, isCalendarItemInteractive } from '@/lib/calendar-activity'
@@ -14,6 +15,10 @@ import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import {
+  saveCalendarDateBasis,
+  type CalendarDateBasis,
+} from '@/lib/transaction-calendar'
 
 function parseLocalDate(value: string) {
   return new Date(`${value}T00:00:00`)
@@ -62,6 +67,7 @@ function readCalendarMetric(): CalendarMetric {
   return window.localStorage.getItem(CALENDAR_METRIC_STORAGE_KEY) === 'activity' ? 'activity' : 'balance'
 }
 
+
 export function TransactionCalendarView({
   calendar,
   isLoading,
@@ -73,6 +79,8 @@ export function TransactionCalendarView({
   onOpenTransaction,
   accounts,
   userCurrency,
+  dateBasis,
+  onDateBasisChange,
 }: {
   calendar?: TransactionCalendarResponse
   isLoading: boolean
@@ -84,6 +92,8 @@ export function TransactionCalendarView({
   onOpenTransaction: (id: string) => void
   accounts?: Account[]
   userCurrency: string
+  dateBasis: CalendarDateBasis
+  onDateBasisChange: (value: CalendarDateBasis) => void
 }) {
   const [density, setDensity] = useState<CalendarDensity>(readCalendarDensity)
   const [metric, setMetric] = useState<CalendarMetric>(readCalendarMetric)
@@ -105,6 +115,10 @@ export function TransactionCalendarView({
   useEffect(() => {
     window.localStorage.setItem(CALENDAR_METRIC_STORAGE_KEY, metric)
   }, [metric])
+
+  useEffect(() => {
+    saveCalendarDateBasis(dateBasis)
+  }, [dateBasis])
 
   useEffect(() => {
     if (!calendar?.days.length) return
@@ -144,6 +158,7 @@ export function TransactionCalendarView({
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-border sm:px-5">
           <CalendarLegend />
           <div className="flex flex-wrap items-center gap-2">
+            <CalendarDateBasisToggle value={dateBasis} onChange={onDateBasisChange} />
             <CalendarMetricToggle value={metric} onChange={setMetric} />
             <CalendarDensityToggle value={density} onChange={setDensity} />
           </div>
@@ -626,6 +641,28 @@ function SegmentedToggle<T extends string>({
   )
 }
 
+function CalendarDateBasisToggle({
+  value,
+  onChange,
+}: {
+  value: CalendarDateBasis
+  onChange: (value: CalendarDateBasis) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <SegmentedToggle
+      value={value}
+      onChange={onChange}
+      label={t('transactions.date')}
+      options={[
+        { value: 'reporting', label: t('transactions.reportingDate') },
+        { value: 'bank', label: t('transactions.bankDate') },
+      ]}
+    />
+  )
+}
+
+
 function CalendarDensityToggle({ value, onChange }: { value: CalendarDensity; onChange: (value: CalendarDensity) => void }) {
   const { t } = useTranslation()
   return (
@@ -816,7 +853,9 @@ function DayPreviewRow({
           : 'bg-background/45 dark:bg-background/25',
       )}
     >
-      <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="xs" />
+      {item.has_category_lines
+        ? <SplitCategoryIcon size="xs" />
+        : <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="xs" />}
       {showDescription && (
         <span className="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground">
           {previewDescription(item.description)}
@@ -1232,11 +1271,18 @@ function CalendarItemRow({
       )}
     >
       <div className="shrink-0">
-        <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />
+        {item.has_category_lines
+          ? <SplitCategoryIcon size="md" />
+          : <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-semibold text-foreground truncate leading-tight">{item.description}</p>
+          {item.has_category_lines && (
+            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
+              {t('categoryLines.badgeShort')}
+            </span>
+          )}
           {item.kind === 'projected' && item.source === 'recurring' && item.status !== 'pending' && (
             <ProjectedTransactionBadge />
           )}

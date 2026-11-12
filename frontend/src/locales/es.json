@@ -284,6 +284,7 @@
       "only_drafts_deletable": "Una factura emitida nunca se elimina — anúlala.",
       "issued_invoice_immutable": "Una factura emitida no puede cambiar. Anúlala y emite otra.",
       "over_allocation": "Eso es más de lo que esta factura aún debe.",
+      "transaction_over_allocation": "Eso es más de lo que le queda a esta transacción por vincular.",
       "already_allocated": "Esta transacción ya está vinculada a esta factura.",
       "already_settled": "Esta factura ya está totalmente saldada.",
       "currency_mismatch": "La transacción está en otra moneda.",
@@ -327,7 +328,6 @@
       "start_after_invoice": "El acuerdo no puede empezar después de esta factura.",
       "invoice_not_found": "Factura no encontrada.",
       "no_term": "No hay ninguna condición vigente para este período.",
-      "no_author": "Este acuerdo no tiene un autor con el que emitir facturas.",
       "negative_discount": "Un descuento no puede ser negativo.",
       "first_term": "El precio vigente desde el inicio no se puede mover ni eliminar. Cámbialo o añade un nuevo precio a partir de una fecha posterior.",
       "not_receivable": "Solo una factura emitida por ti puede pertenecer a un acuerdo.",
@@ -873,6 +873,7 @@
     "drillDownSettledTotal": "Liquidado · total resumido",
     "drillDownPendingTotal": "Pendiente de liquidación",
     "drillDownShownTotal": "Total mostrado",
+    "drillDownError": "No se pudieron cargar las transacciones. Inténtalo de nuevo.",
     "drillDownEmpty": "No se encontraron transacciones",
     "drillDownClose": "Cerrar",
     "accrualNote": "Las transacciones con tarjeta de crédito se agrupan por la fecha de vencimiento de la factura (modo acumulado).",
@@ -1000,6 +1001,7 @@
     "sortAsc": "Orden ascendente",
     "sortDesc": "Orden descendente",
     "syncedInfo": "Transacción sincronizada con el banco: el importe, la fecha y la cuenta no se pueden editar",
+    "syncedAmountDateError": "No se puede cambiar el importe ni la fecha de una transacción sincronizada",
     "uncategorized": "Sin categorizar",
     "selected": "seleccionado",
     "summaryCount": "{{count}} transacciones",
@@ -1058,7 +1060,7 @@
     "transferSameAccount": "La cuenta origen y destino deben ser diferentes",
     "transferDescription": "Descripción",
     "transferNotes": "Notas",
-    "transferInfo": "Esto es una transferencia — los cambios en descripción, fecha y notas se aplicarán a ambos lados",
+    "transferInfo": "Esto es una transferencia: los cambios en la descripción y las notas se aplican a ambos lados. Los cambios de importe y fecha también se aplican a la contrapartida manual (no sincronizada), nunca a la sincronizada.",
     "transferLinkedTo": "Vinculada a:",
     "transferOpenAccount": "Abrir la cuenta {{account}}",
     "transferTooltip": "Las transferencias están excluidas de los informes y totales del panel",
@@ -1067,6 +1069,11 @@
     "effectiveBillDate": "Fecha efectiva de la factura",
     "effectiveBillDateHint": "manual, anula el ciclo automático",
     "effectiveBillDatePlaceholder": "Vencimiento de la factura (opcional)",
+    "bankDate": "Fecha bancaria",
+    "reportingDate": "Fecha del informe",
+    "reportingDateHint": "Cambia los períodos de informe en toda la aplicación; la fecha bancaria no cambia.",
+    "reportingDatePlaceholder": "Elegir fecha (opcional)",
+    "clearReportingDate": "Restablecer fecha del informe",
     "linkAsTransfer": "Marcar como transferencia",
     "linkTransferTitle": "Marcar como transferencia",
     "linkTransferDescription": "Marcar estas dos transacciones como una sola transferencia entre cuentas. Se excluirán de los informes de gasto e ingreso.",
@@ -1436,6 +1443,9 @@
     "darkMode": "Modo oscuro"
   },
   "budgets": {
+    "spending": "Gastos",
+    "spendingDescription": "Incluye gastos pendientes y previstos.",
+    "spendingError": "No se pudieron cargar los gastos.",
     "title": "Presupuestos",
     "add": "Agregar presupuesto",
     "edit": "Editar presupuesto",
@@ -1452,6 +1462,17 @@
     "confirmDeleteRecurringDescription": "El presupuesto recurrente para \"{{name}}\" se eliminará permanentemente. Esta definición dejará de aplicarse en los meses posteriores. Las transacciones existentes no se ven afectadas. Esta acción no se puede deshacer.",
     "repeatEveryMonth": "Repetir cada mes",
     "recurringLabel": "Recurrente",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Presupuestos de {{month}}",
+    "otherCategories": "Otras categorías",
+    "noCategories": "Aún no hay categorías",
+    "total": "Presupuesto {{amount}}",
+    "saved": "Presupuestos guardados",
+    "budgetFor": "Presupuesto de {{category}}",
+    "invalidAmount": "Introduce un importe válido de cero o más.",
+    "repeatEveryMonthFor": "Repetir el presupuesto de {{category}} cada mes",
+    "previousMonth": "Mes anterior",
+    "nextMonth": "Mes siguiente",
     "suggest": "Sugerir desde el historial",
     "suggestTitle": "Sugerir presupuestos",
     "suggestDescription": "Límites propuestos según tu gasto mensual medio de los últimos {{months}} meses.",
@@ -1461,7 +1482,9 @@
     "suggestCreate": "Crear presupuestos",
     "suggestCreated": "Se crearon {{count}} presupuestos",
     "suggestEmpty": "Sin historial de gastos en el período seleccionado que sugerir.",
-    "suggestError": "No se pudieron cargar las sugerencias. Inténtalo de nuevo en un momento."
+    "suggestError": "No se pudieron cargar las sugerencias. Inténtalo de nuevo en un momento.",
+    "hiddenCategory": "Oculta",
+    "average": "normalmente {{amount}}"
   },
   "goals": {
     "title": "Objetivos",
@@ -1592,6 +1615,21 @@
     "packMissingCategories": "Este paquete necesita categorías predeterminadas que no tienes. Activa \"Crear categorías faltantes\" e inténtalo de nuevo.",
     "packInstalledWithCategories": "{{rules}} reglas instaladas y {{categories}} categorías creadas",
     "createMissingCategories": "Crear también las categorías predeterminadas que necesita el paquete",
+    "removePack": "Quitar paquete",
+    "removePackAria": "Quitar el paquete {{name}}",
+    "removePackTitle": "¿Quitar el paquete {{name}}?",
+    "removePackSummary_one": "Elimina {{count}} regla de este paquete. Las transacciones conservan sus categorías.",
+    "removePackSummary_other": "Elimina {{count}} reglas de este paquete. Las transacciones conservan sus categorías.",
+    "removePackKeeps_one": "{{count}} regla que editaste se queda como tuya:",
+    "removePackKeeps_other": "{{count}} reglas que editaste se quedan como tuyas:",
+    "removePackMore": "y {{count}} más",
+    "removePackConfirm": "Quitar paquete",
+    "removePackChanged": "Las reglas del paquete cambiaron desde esta vista previa. Revísala antes de quitarlo.",
+    "removePackPreviewFailed": "No se pudo cargar lo que haría quitar este paquete.",
+    "packRemoved_one": "{{count}} regla eliminada",
+    "packRemoved_other": "{{count}} reglas eliminadas",
+    "packKeptEdited_one": "{{count}} regla editada conservada",
+    "packKeptEdited_other": "{{count}} reglas editadas conservadas",
     "duplicateName": "Ya existe una regla con este nombre",
     "sectionTitle": "Reglas de categorización",
     "sectionHint": "Cómo categorizar las transacciones.",
@@ -3117,6 +3155,353 @@
       "invoicesHint": "Cómo decidimos qué pago salda qué factura.",
       "recurring": "Reglas de Recurrentes",
       "recurringHint": "Cómo decidimos que un cargo es la cuenta que ya esperabas."
+    }
+  },
+  "categoryLines": {
+    "title": "Dividir por categoría",
+    "start": "Dividir por categoría",
+    "badge": "Dividida · {{count}}",
+    "badgeShort": "Dividida",
+    "byAmount": "Importe",
+    "byPercent": "%",
+    "pickCategory": "Elige una categoría",
+    "partAmount": "Importe de la parte",
+    "partPercent": "Porcentaje de la parte",
+    "removePart": "Quitar parte",
+    "addPart": "Añadir categoría",
+    "allAllocated": "Todo repartido",
+    "remaining": "Faltan {{value}}",
+    "fillRemaining": "Completar",
+    "over": "{{value}} por encima del importe",
+    "needsCategory": "Cada parte necesita una categoría.",
+    "needsValue": "Cada parte necesita un importe mayor que cero.",
+    "hint": "Los informes cuentan cada parte en su categoría.",
+    "importUnresolved": "No encontrada aquí: {{names}}. Se importa sin la división.",
+    "importAmbiguous": "Hay más de una categoría llamada {{names}}. Se importa sin la división.",
+    "undo": "Deshacer división",
+    "partOf": "parte de {{value}}",
+    "bulkSkipped_one": "{{count}} transacción dividida se dejó como estaba",
+    "bulkSkipped_other": "{{count}} transacciones divididas se dejaron como estaban",
+    "errors": {
+      "tooFewLines": "Una división necesita al menos dos categorías.",
+      "duplicateCategory": "Cada categoría solo puede aparecer una vez en la división.",
+      "invalidLines": "Cada parte necesita un valor positivo.",
+      "amountMismatch": "Las partes deben sumar el importe de la transacción.",
+      "percentMismatch": "Los porcentajes deben sumar 100.",
+      "tooSmall": "El importe es demasiado pequeño para dividirlo así.",
+      "ignoredCategory": "Una categoría ignorada no puede recibir parte de una transacción.",
+      "hiddenCategory": "Una categoría oculta no puede recibir parte de una transacción.",
+      "cardCreditTransfer": "Un abono en la tarjeta no puede tener una parte en una categoría de transferencia.",
+      "transfer": "Una transferencia no se puede dividir por categoría.",
+      "ignoredTransaction": "Una transacción ignorada no se puede dividir por categoría.",
+      "notSplittable": "Esta transacción no se puede dividir por categoría.",
+      "noAmount": "Una transacción sin importe no se puede dividir.",
+      "hasGroupSplit": "Quita la división entre personas antes de dividir por categoría.",
+      "hasMortgage": "Quita el desglose de la hipoteca antes de dividir por categoría.",
+      "installments": "Una serie de cuotas aún no se puede dividir por categoría.",
+      "installmentScope": "Una cuota de esta serie está dividida por categoría; edítala por separado.",
+      "categoryAndLines": "Elige una categoría o una división por categoría, no ambas.",
+      "undoFirstCategory": "Deshaz la división antes de elegir una sola categoría.",
+      "amountNeedsLines": "Ajusta las partes junto con el importe.",
+      "undoFirstTransfer": "Deshaz la división antes de vincularla como transferencia.",
+      "undoFirstGroupSplit": "Deshaz la división antes de dividir entre personas.",
+      "undoFirstMortgage": "Deshaz la división antes de añadir el desglose de la hipoteca.",
+      "categoryInUse": "Esta categoría tiene partes de transacciones divididas. Cambia esas divisiones primero.",
+      "destinationInvalid": "Las partes de transacciones divididas no pueden pasar a una categoría ignorada u oculta."
+    }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "hint": "Categorías y reglas hechas por la comunidad. Revisas cada cambio antes de aplicarlo, y nada sale de tu servidor.",
+    "browse": "Ver catálogo",
+    "noneInstalled": "No hay plugins instalados en este espacio de trabajo.",
+    "remove": "Quitar plugin",
+    "removeAria": "Quitar {{name}}",
+    "catalogFailed": "No se pudo cargar el catálogo.",
+    "catalogEmpty": "El catálogo aún no tiene plugins.",
+    "viewSource": "Ver código fuente",
+    "revoked": "Revocado",
+    "unavailable": "No disponible",
+    "needsVersion": "Requiere Securo {{version}}",
+    "updateAvailable": "Actualización disponible",
+    "installed": "Instalado",
+    "install": "Instalar",
+    "update": "Actualizar",
+    "andMore": "y {{count}} más",
+    "planTitle": {
+      "install": "¿Instalar {{name}}?",
+      "update": "¿Actualizar {{name}}?",
+      "remove": "¿Quitar {{name}}?"
+    },
+    "planIntro": "Esto es lo que cambia en este espacio de trabajo:",
+    "planFailed": "No se pudo cargar lo que esto cambiaría.",
+    "planChanged": "Algo cambió desde esta vista previa. Revísala de nuevo.",
+    "privacy": "Este plugin solo añade datos a este espacio de trabajo. No se envía nada a ningún sitio.",
+    "history": "Las transacciones conservan las categorías que ya tienen.",
+    "confirm": {
+      "install": "Instalar",
+      "update": "Actualizar",
+      "remove": "Quitar"
+    },
+    "done": {
+      "install": "{{name}} instalado",
+      "update": "{{name}} actualizado",
+      "remove": "{{name}} quitado"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} grupo",
+      "category_groups_other": "{{count}} grupos",
+      "categories_one": "{{count}} categoría",
+      "categories_other": "{{count}} categorías",
+      "rules_one": "{{count}} regla",
+      "rules_other": "{{count}} reglas"
+    },
+    "plan": {
+      "create": "Añade {{items}}",
+      "update": "Actualiza {{items}}",
+      "delete": "Elimina {{items}}",
+      "keep": "Deja como están {{items}} que editaste:",
+      "release": "Te pasa {{items}}, editados o aún en uso:",
+      "existing": "Omite {{items}} que ya tienes:",
+      "unresolved": "Omite {{items}} cuya categoría no existe:",
+      "defaults_one": "También crea {{count}} categoría predeterminada que usan sus reglas",
+      "defaults_other": "También crea {{count}} categorías predeterminadas que usan sus reglas"
+    },
+    "page": {
+      "section": "Catálogo",
+      "notice": "Securo no revisa los plugins. Antes de aplicar nada ves exactamente qué cambia, y nada sale de tu servidor.",
+      "search": "Buscar plugins",
+      "type": {
+        "data": "Datos",
+        "interface": "Interfaz",
+        "code": "Código"
+      },
+      "status": {
+        "installed": "Instalados",
+        "updates": "Con actualización"
+      },
+      "clear": "Quitar filtros",
+      "trendingHint": "Los que más crecen, en proporción a su tamaño",
+      "newestHint": "Llegaron en los últimos 30 días",
+      "sortBy": "Ordenar por",
+      "sort": {
+        "popular": "Populares",
+        "trending": "Tendencia",
+        "updated": "Actualizados recientemente",
+        "newest": "Más nuevos",
+        "name": "Nombre"
+      },
+      "noResults": "Ningún plugin coincide con estos filtros.",
+      "byOwner": "de {{owner}}",
+      "updated": "Actualizado {{when}}",
+      "count_one": "{{count}} plugin",
+      "count_other": "{{count}} plugins",
+      "stars_one": "{{count}} estrella",
+      "stars_other": "{{count}} estrellas",
+      "authors_one": "{{count}} autor",
+      "authors_other": "{{count}} autores",
+      "clearSearch": "Borrar búsqueda",
+      "facet": {
+        "type": "Tipo",
+        "content": "Contenido",
+        "language": "Idioma",
+        "status": "Estado"
+      },
+      "view": {
+        "all": "Todos",
+        "trending": "Tendencia",
+        "new": "Nuevos"
+      },
+      "any": "Cualquiera",
+      "trendingEmpty": "Ningún plugin ganó estrellas esta semana.",
+      "newEmpty": "Ningún plugin se unió en los últimos 30 días."
+    },
+    "kindName": {
+      "category_groups": "Grupos de categorías",
+      "categories": "Categorías",
+      "rules": "Reglas",
+      "csv_presets": "Plantillas CSV",
+      "fiscal_jurisdictions": "Jurisdicciones fiscales",
+      "invoice_labels": "Etiquetas de factura",
+      "widgets": "Widgets",
+      "reports": "Informes",
+      "dashboard_layouts": "Diseños de panel",
+      "connectors": "Conectores bancarios",
+      "parsers": "Lectores de archivos",
+      "price_providers": "Proveedores de precios",
+      "agent_tools": "Herramientas del agente"
+    },
+    "detail": {
+      "overview": "Resumen",
+      "inside": "Qué incluye",
+      "insideHint": "Todo lo que este plugin añade a un espacio. Al instalarlo ves lo que ya tienes.",
+      "noReadme": "El autor aún no ha escrito un README para este plugin.",
+      "loadFailed": "No se pudieron cargar los detalles del plugin.",
+      "contentsUnavailable": "Esta versión de Securo no puede listar el contenido de este plugin.",
+      "version": "Versión",
+      "license": "Licencia",
+      "requires": "Requiere",
+      "updated": "Actualizado",
+      "languages": "Idiomas",
+      "builtIn": "predeterminada",
+      "when": "Cuando",
+      "previewNote": "Al instalar ves cada cambio antes de aplicar nada, y nada sale de tu servidor.",
+      "notFound": "Este plugin no está en el catálogo.",
+      "type": "Tipo",
+      "added": "Añadido"
+    },
+    "installedFailed": "No se pudieron cargar los plugins instalados.",
+    "planRecordOnly": {
+      "install": "Este espacio ya tiene todo lo que trae. Instalarlo lo registra, para que recibas sus actualizaciones.",
+      "update": "Ningún elemento de este espacio cambia; la versión instalada pasa a {{version}}.",
+      "remove": "No queda ninguno de sus elementos aquí; quitarlo solo lo saca de la lista."
+    }
+  },
+  "library": {
+    "title": "Biblioteca",
+    "subtitle": "Elige qué muestran el panel y los informes, y el aspecto de Securo.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Informes",
+      "themes": "Temas"
+    },
+    "moreHint": {
+      "widgets": "Los plugins pueden añadir más widgets.",
+      "reports": "Los plugins pueden añadir más informes.",
+      "themes": "Los plugins pueden añadir más temas."
+    },
+    "browseCatalog": "Ver plugins",
+    "lastReport": "Mantén al menos un informe.",
+    "removeFrom": {
+      "dashboard": "Quitar {{name}} del panel",
+      "reports": "Quitar {{name}} de los informes"
+    },
+    "addTo": {
+      "dashboard": "Añadir {{name}} al panel",
+      "reports": "Añadir {{name}} a los informes"
+    },
+    "remove": "Quitar",
+    "add": "Añadir",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Océano",
+      "forest": "Bosque",
+      "sunset": "Atardecer",
+      "graphite": "Grafito",
+      "high-contrast": "Alto contraste",
+      "midnight": "Medianoche",
+      "terminal": "Terminal",
+      "nebula": "Nebulosa"
+    },
+    "saveFailed": "No se pudo guardar tu elección. Inténtalo de nuevo.",
+    "appearance": "Apariencia",
+    "emptyDashboard": "Tu panel está vacío",
+    "emptyDashboardHint": "Añade widgets de la biblioteca para elegir qué ves aquí.",
+    "addWidget": "Añadir widget",
+    "nothingToShow": "Nada que mostrar por ahora",
+    "editingDashboard": "Reordena, quita o añade widgets. Los cambios se guardan al momento.",
+    "restoreDefault": "Restaurar predeterminado",
+    "done": "Listo",
+    "customizeDashboard": "Personalizar panel",
+    "manageReports": "Elegir informes",
+    "manageReportsShort": "Gestionar",
+    "widget": {
+      "overview": "Saldo y mes",
+      "overviewHint": "Saldo disponible, ingresos, gastos, patrimonio neto y tasa de ahorro.",
+      "uncategorized": "Sin categoría",
+      "uncategorizedHint": "Transacciones que aún esperan una categoría.",
+      "spendingByCategoryHint": "A dónde fue el dinero del mes, frente a tus presupuestos.",
+      "balanceFlowHint": "Cómo se movió tu saldo este mes, comparado con otros.",
+      "goalsHint": "El progreso de tus metas.",
+      "transactionsHint": "Las transacciones del mes, en lista o calendario."
+    },
+    "report": {
+      "netWorthHint": "Cuentas, bienes y deudas a lo largo del tiempo.",
+      "incomeExpensesHint": "Entradas y salidas, por categoría.",
+      "cashFlowHint": "Hacia dónde va tu saldo.",
+      "moneyMapHint": "Cómo se reparten los ingresos entre gastos y ahorro."
+    },
+    "dragToMove": "Arrastra para mover {{name}}",
+    "widthOf": "Ancho de {{name}}",
+    "widthLabel": "Ancho",
+    "width": {
+      "4": "Un tercio",
+      "6": "Mitad",
+      "8": "Dos tercios",
+      "12": "Ancho completo"
+    },
+    "needs": {
+      "assistant": "Requiere activar los agentes de IA.",
+      "invoices": "Disponible en espacios de trabajo de Negocios."
+    }
+  },
+  "widgets": {
+    "budgets": "Presupuestos",
+    "viewAll": "Ver todo",
+    "spendingPace": {
+      "title": "Gastos del mes",
+      "hint": "Los gastos del mes frente a tus presupuestos, y lo que queda por día.",
+      "noBudget": "Define presupuestos para ver si tus gastos van al ritmo.",
+      "used": "{{percent}}% de los presupuestos usado",
+      "paceMark": "la marca es donde estaría un ritmo constante hoy",
+      "over": "{{amount}} por encima del presupuesto",
+      "perDay": "Gasta hasta {{amount}} al día para no pasarte",
+      "left": "{{amount}} restantes del presupuesto"
+    },
+    "distribution": {
+      "title": "Distribución de gastos",
+      "hint": "A dónde fue el dinero del mes, por categoría.",
+      "total": "Total gastado"
+    },
+    "monthResult": {
+      "title": "Resultado del mes",
+      "hint": "Ingresos menos gastos este mes, comparado con el mes pasado.",
+      "previous": "{{amount}} el mes pasado"
+    },
+    "upcoming": {
+      "title": "Próximos",
+      "hint": "Transacciones recurrentes que vencen en los próximos 30 días.",
+      "none": "Nada vence en los próximos {{days}} días."
+    },
+    "cards": {
+      "title": "Tarjetas de crédito",
+      "hint": "Lo que deben tus tarjetas, y el saldo que queda tras pagarlas.",
+      "none": "Ninguna tarjeta de crédito abierta.",
+      "afterPaying": "{{amount}} quedan tras pagarlas"
+    },
+    "assistant": {
+      "title": "Pregunta a tu agente",
+      "libraryHint": "Envía una pregunta a tu agente predeterminado sin salir del panel.",
+      "hint": "Pregunta lo que quieras sobre tu dinero. La respuesta se abre en el chat.",
+      "placeholder": "Pregunta a tu agente…",
+      "suggestion1": "¿Cuánto gasté este mes?",
+      "suggestion2": "¿Dónde puedo recortar?",
+      "suggestion3": "¿Qué pagos se acercan?",
+      "send": "Enviar",
+      "unavailable": "Activa los agentes de IA para preguntar desde aquí."
+    },
+    "loadFailed": "No se pudo cargar este widget.",
+    "receivables": {
+      "title": "Por cobrar",
+      "hint": "Lo que te deben los clientes, lo atrasado y lo que entró este mes."
+    },
+    "payables": {
+      "title": "Por pagar",
+      "hint": "Lo que debes a proveedores, lo atrasado y lo que pagaste este mes."
+    },
+    "aging": {
+      "title": "Cobros por antigüedad",
+      "hint": "Lo que deben los clientes, según cuánto se ha atrasado."
+    },
+    "invoicesDue": {
+      "title": "Facturas por vencer",
+      "hint": "Las próximas facturas que deben pagar los clientes.",
+      "none": "No hay facturas por vencer.",
+      "noClient": "Sin cliente"
+    },
+    "recurringRevenue": {
+      "title": "Ingresos recurrentes",
+      "hint": "Lo que aportan las facturas recurrentes cada mes, y lo perdido recientemente."
     }
   }
 }

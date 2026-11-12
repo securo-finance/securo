@@ -480,11 +480,14 @@ export default function AssetsPage() {
 
     let iterations = 0
     while (iterations < 10000) {
-      const next = new Date(d)
-      if (formGrowthFrequency === 'daily') next.setDate(next.getDate() + 1)
-      else if (formGrowthFrequency === 'weekly') next.setDate(next.getDate() + 7)
-      else if (formGrowthFrequency === 'monthly') next.setMonth(next.getMonth() + 1)
-      else if (formGrowthFrequency === 'yearly') next.setFullYear(next.getFullYear() + 1)
+      // Same steps as the backend's _next_due_date: monthly clamps the day to
+      // 28 and yearly clamps Feb 29 to Feb 28, so the preview matches what
+      // gets saved.
+      let next: Date
+      if (formGrowthFrequency === 'daily') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+      else if (formGrowthFrequency === 'weekly') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)
+      else if (formGrowthFrequency === 'monthly') next = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), 28))
+      else if (formGrowthFrequency === 'yearly') next = new Date(d.getFullYear() + 1, d.getMonth(), d.getMonth() === 1 ? Math.min(d.getDate(), 28) : d.getDate())
       else break
       if (next > today) break
       if (formGrowthType === 'percentage') {
@@ -1792,7 +1795,8 @@ export default function AssetsPage() {
   )
 }
 
-const PORTFOLIO_COLORS = ['#6366F1', '#F43F5E', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16']
+// The theme's series colors, as every chart uses them.
+const PORTFOLIO_COLORS = Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`)
 
 function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: dateLoc, mask }: {
   data: { assets: { id: string; name: string; type: string; group_id: string | null }[]; trend: Record<string, unknown>[]; total: number }

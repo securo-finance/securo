@@ -9,13 +9,15 @@ from datetime import date
 from decimal import Decimal
 from typing import Iterable, Optional
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, exists, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
+from app.models.transaction_category_line import TransactionCategoryLine
 
 
 def is_confirmed():
@@ -72,28 +74,31 @@ def counts_in_current_balance(as_of: date):
 
 
 def reporting_date_col(accounting_mode: str):
-    """The date column a transaction should be *bucketed by* in period
-    aggregations (dashboard, reports, budgets).
+    """Return the SQL date expression used for period attribution.
 
-    Honors the manual credit-card cycle override (`effective_bill_date`)
-    FIRST — regardless of accounting mode — because that's the whole point
-    of the override: the user hand-corrected which invoice a purchase
-    belongs to (issue #92). When there's no override, fall back to
-    `effective_date` in accrual mode or the raw purchase `date` in cash
-    mode.
-
-    This mirrors the ordering used by the transaction list and the credit
-    card bill view, so a transaction lands in the same month everywhere the
-    user looks. Aggregations that skipped the override summed credit-card
-    spend under the purchase month instead of the invoice month (issue
-    #232).
+    A user-supplied reporting override wins first while the provider `date`
+    remains immutable bank truth. Credit-card bill overrides retain their
+    existing priority over the cash/accrual base date.
     """
     base = (
         Transaction.effective_date
         if accounting_mode == "accrual"
         else Transaction.date
     )
-    return func.coalesce(Transaction.effective_bill_date, base)
+    return func.coalesce(
+        Transaction.reporting_date_override,
+        Transaction.effective_bill_date,
+        base,
+    )
+
+
+def reporting_date_value(transaction: Transaction, accounting_mode: str) -> date:
+    """Python equivalent of :func:`reporting_date_col` for loaded rows."""
+    return (
+        transaction.reporting_date_override
+        or transaction.effective_bill_date
+        or (transaction.effective_date if accounting_mode == "accrual" else transaction.date)
+    )
 
 
 def is_not_ignored():
@@ -120,23 +125,99 @@ def is_not_ignored():
     )
 
 
-def is_transfer():
-    """SQL filter: the row is a transfer rather than income or expense.
+# ---------------------------------------------------------------------------
+# Category parts
+#
+# A transaction split across categories keeps one row and its full amount;
+# `transaction_category_lines` says how much of it belongs to each category.
+# Anything that totals money *by category*, or that drops a category from a
+# total (transfer-like and ignored categories), has to read those lines, or
+# a split row would land as "uncategorized" or be counted whole.
+#
+# Aggregations do that with one LEFT JOIN: a plain row stays one row, a split
+# row becomes one row per line. Every amount summed after the join must then
+# be the line's share (`line_amount`, `line_amount_primary`), and every count
+# must be `count(DISTINCT Transaction.id)`.
+#
+# Balances, bills, net worth and payee totals read the whole row and must
+# never join the lines.
+# ---------------------------------------------------------------------------
 
-    Either both legs were matched (`transfer_pair_id` set), or the row sits
-    in a category flagged `treat_as_transfer` (one-sided movements such as
-    an investment application). Same reading the transactions calendar uses
-    when it marks a day as having a transfer.
-    """
-    return or_(
-        Transaction.transfer_pair_id.is_not(None),
-        Transaction.category_id.in_(
-            select(Category.id).where(Category.treat_as_transfer.is_(True))
-        ),
+CATEGORY_LINE = aliased(TransactionCategoryLine, name="category_line")
+
+
+def with_category_lines(stmt):
+    """Join a statement over `transactions` to its category lines."""
+    return stmt.outerjoin(CATEGORY_LINE, CATEGORY_LINE.transaction_id == Transaction.id)
+
+
+def line_category_id():
+    """The category of a joined part: the line's, or the row's own."""
+    return func.coalesce(CATEGORY_LINE.category_id, Transaction.category_id)
+
+
+def line_amount():
+    """The joined part's amount, with the sign of its transaction."""
+    return case(
+        (CATEGORY_LINE.id.is_(None), Transaction.amount),
+        (Transaction.amount < 0, -CATEGORY_LINE.amount),
+        else_=CATEGORY_LINE.amount,
     )
 
 
-def is_not_transfer():
+def line_amount_primary():
+    """The joined part's `amount_primary` (NULL when the row has none).
+
+    Multiplying before dividing keeps the result exact whenever the part's
+    share is (150 * 100 / 150 is 100, where 150 * (100 / 150) carries a
+    rounded ratio into every total). The `* 1.0` keeps SQLite from dividing
+    two integers.
+    """
+    return case(
+        (CATEGORY_LINE.id.is_(None), Transaction.amount_primary),
+        else_=(Transaction.amount_primary * CATEGORY_LINE.amount * literal_column("1.0"))
+        / func.nullif(func.abs(Transaction.amount), 0),
+    )
+
+
+def line_primary_or_amount():
+    """The joined part in primary currency, falling back to its own amount."""
+    return func.coalesce(line_amount_primary(), line_amount())
+
+
+def any_line_in(category_ids):
+    """SQL filter: some category line of the row is in `category_ids`."""
+    return exists().where(
+        TransactionCategoryLine.transaction_id == Transaction.id,
+        TransactionCategoryLine.category_id.in_(category_ids),
+    )
+
+
+def _transfer_category_ids():
+    return select(Category.id).where(Category.treat_as_transfer.is_(True))
+
+
+def _non_pnl_category_ids():
+    return select(Category.id).where(
+        or_(Category.treat_as_transfer.is_(True), Category.is_ignored.is_(True))
+    )
+
+
+def is_transfer(category_id):
+    """SQL filter: the row (or part) is a transfer rather than income or expense.
+
+    Either both legs were matched (`transfer_pair_id` set), or the category
+    is flagged `treat_as_transfer` (one-sided movements such as an
+    investment application). `category_id` is `line_category_id()` after
+    `with_category_lines`, so a split row is judged part by part.
+    """
+    return or_(
+        Transaction.transfer_pair_id.is_not(None),
+        category_id.in_(_transfer_category_ids()),
+    )
+
+
+def is_not_transfer(category_id):
     """SQL filter: the negation of `is_transfer`, safe for uncategorized rows.
 
     `~is_transfer()` would also drop rows with no category: their
@@ -144,27 +225,38 @@ def is_not_transfer():
     """
     return and_(
         Transaction.transfer_pair_id.is_(None),
-        or_(
-            Transaction.category_id.is_(None),
-            Transaction.category_id.not_in(
-                select(Category.id).where(Category.treat_as_transfer.is_(True))
-            ),
-        ),
+        or_(category_id.is_(None), category_id.not_in(_transfer_category_ids())),
     )
 
 
-def counts_as_pnl():
-    """SQL filter: True when a transaction should contribute to income/expense totals.
+def is_transfer_row():
+    """SQL filter for a transaction *list*: the row is a paired transfer, or
+    its category or any of its category lines is transfer-like. A list shows
+    whole rows, so it cannot join the lines."""
+    return or_(
+        is_transfer(Transaction.category_id),
+        any_line_in(_transfer_category_ids()),
+    )
+
+
+def counts_as_pnl(category_id):
+    """SQL filter: True when a transaction (or one part of a split
+    transaction) should contribute to income/expense totals.
+
+    `category_id` is required on purpose: pass `line_category_id()` after
+    `with_category_lines`, so a split row's transfer-like or ignored parts
+    drop out alone. Passing `Transaction.category_id` is only right where
+    the rows cannot be split (group-split shares, for instance).
 
     Excludes:
       - paired transfers (both legs were matched; already cancel out),
-      - transactions in categories flagged `treat_as_transfer` (one-sided
+      - parts in categories flagged `treat_as_transfer` (one-sided
         movements like investment applications where the counterpart is
         an Asset/Holding, not another Account),
       - transactions flagged `is_ignored=True` (user-marked as not to be reported),
       - transactions flagged `exclude_from_pnl=True` (kept in balance,
         omitted from income and expense calculations),
-      - transactions in categories flagged `is_ignored=True` (user-marked as not to be reported).
+      - parts in categories flagged `is_ignored=True` (user-marked as not to be reported).
 
     Does NOT exclude `source='opening_balance'` — callers that already
     filter those keep doing so; this helper only handles the transfer-like
@@ -181,18 +273,45 @@ def counts_as_pnl():
         # over-recorded expense from when the receiver paid the full
         # parent transaction. So we keep credits, drop debits.
         ~and_(Transaction.source == "settlement", Transaction.type == "debit"),
-        or_(
-            Transaction.category_id.is_(None),
-            Transaction.category_id.not_in(
-                select(Category.id).where(
-                    or_(
-                        Category.treat_as_transfer.is_(True),
-                        Category.is_ignored.is_(True),
-                    )
-                )
-            ),
-        ),
+        or_(category_id.is_(None), category_id.not_in(_non_pnl_category_ids())),
     )
+
+
+def user_pnl_parts(tx: Transaction) -> list[tuple[Optional[uuid.UUID], Optional[Category], Decimal]]:
+    """Python twin of `counts_as_user_pnl` for loops over loaded rows.
+
+    Returns the parts of `tx` that count toward the user's P/L as
+    `(category_id, category, ratio)`, where `ratio` is the part's share of
+    the transaction: one entry with ratio 1 for a plain row, one per counted
+    line for a split row, nothing when the row does not count. The row must
+    have `category` loaded (lines load their category themselves).
+    """
+    if (
+        tx.transfer_pair_id
+        or tx.is_ignored
+        or tx.exclude_from_pnl
+        or tx.source == "settlement"
+    ):
+        return []
+
+    def counts(category: Optional[Category]) -> bool:
+        return not (category and (category.treat_as_transfer or category.is_ignored))
+
+    if not tx.has_category_lines or not tx.category_lines:
+        return [(tx.category_id, tx.category, Decimal("1"))] if counts(tx.category) else []
+    total = abs(Decimal(str(tx.amount)))
+    if not total:
+        return []
+    return [
+        (line.category_id, line.category, Decimal(str(line.amount)) / total)
+        for line in tx.category_lines
+        if counts(line.category)
+    ]
+
+
+def user_pnl_ratio(tx: Transaction) -> Decimal:
+    """Share of `tx` that counts toward the user's P/L (0 to 1)."""
+    return sum((ratio for _, _, ratio in user_pnl_parts(tx)), Decimal("0"))
 
 
 def counts_on_bill(net_payments: bool = False):
@@ -284,7 +403,7 @@ def counts_on_bill(net_payments: bool = False):
     )
 
 
-def counts_as_user_pnl():
+def counts_as_user_pnl(category_id):
     """SQL filter for *user-level* P/L (dashboard, reports, budgets).
 
     Stricter than `counts_as_pnl`: also drops settlement *credits*. Under
@@ -294,8 +413,24 @@ def counts_as_user_pnl():
     track real cash through the account, not user P/L.
     """
     return and_(
-        counts_as_pnl(),
+        counts_as_pnl(category_id),
         Transaction.source != "settlement",
+    )
+
+
+def counts_as_user_pnl_row():
+    """SQL filter for a transaction *list*: the row counts toward the user's
+    P/L, judging a split row by its parts (it counts when any part does).
+    A list shows whole rows, so it cannot join the lines."""
+    return and_(
+        counts_as_user_pnl(Transaction.category_id),
+        or_(
+            Transaction.has_category_lines.is_(False),
+            exists().where(
+                TransactionCategoryLine.transaction_id == Transaction.id,
+                TransactionCategoryLine.category_id.not_in(_non_pnl_category_ids()),
+            ),
+        ),
     )
 
 
@@ -329,10 +464,7 @@ async def owner_split_offset_pnl(
             )
         )
     )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -364,7 +496,7 @@ async def owner_split_offset_pnl(
             date_col < month_end,
             date_col <= app_today(),
             Transaction.status == "posted",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(Transaction.category_id),
         )
         .group_by(Transaction.currency)
     )
@@ -418,10 +550,7 @@ async def owner_split_offset_by_category(
             )
         )
     )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -444,7 +573,7 @@ async def owner_split_offset_by_category(
             date_col < month_end,
             date_col <= app_today(),
             Transaction.status == "posted",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(Transaction.category_id),
         )
         .group_by(Transaction.category_id, Transaction.currency)
     )
@@ -552,10 +681,7 @@ async def viewer_shared_pnl(
         GroupMember.linked_user_id == user_id,
         GroupMember.is_self.is_(False),
     )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -583,7 +709,7 @@ async def viewer_shared_pnl(
             date_col < month_end,
             date_col <= app_today(),
             Transaction.status == "posted",
-            counts_as_pnl(),
+            counts_as_pnl(Transaction.category_id),
         )
         .group_by(Transaction.currency)
     )
@@ -641,10 +767,7 @@ async def viewer_shared_spending_by_category(
         GroupMember.linked_user_id == user_id,
         GroupMember.is_self.is_(False),
     )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -662,7 +785,7 @@ async def viewer_shared_spending_by_category(
             date_col < month_end,
             date_col <= app_today(),
             Transaction.status == "posted",
-            counts_as_pnl(),
+            counts_as_pnl(Transaction.category_id),
         )
         .group_by(Transaction.category_id, Transaction.currency)
     )

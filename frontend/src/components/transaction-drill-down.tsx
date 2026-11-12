@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
 import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
+import { TransactionCategoryIcon } from '@/components/category-lines-display'
+import { isSplitByCategory } from '@/lib/category-lines'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { sumDrillDownTotals } from '@/lib/drill-down-totals'
 import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
@@ -41,16 +43,20 @@ type DisplayItem = {
   isPending: boolean
   attachmentCount: number
   transaction: Transaction | null
+  /** Full amount of a split row when only one of its parts is listed. */
+  partOf: number | null
 }
 
 export function TransactionDrillDown({
   filter,
   onClose,
   onTransactionClick,
+  useViewerShare = false,
 }: {
   filter: DrillDownFilter | null
   onClose: () => void
   onTransactionClick?: (tx: Transaction) => void
+  useViewerShare?: boolean
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -59,11 +65,12 @@ export function TransactionDrillDown({
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const panelRef = useRef<HTMLDivElement>(null)
+  const noAccounts = filter?.account_ids?.length === 0
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['drill-down', filter],
-    queryFn: () =>
-      transactionsApi.list({
+    queryFn: async () => {
+      const params = {
         category_id: filter?.category_id,
         uncategorized: filter?.uncategorized,
         account_id: filter?.account_id,
@@ -73,17 +80,27 @@ export function TransactionDrillDown({
         to: filter?.to,
         limit: 200,
         user_pnl_only: true,
-      }),
-    enabled: !!filter,
+      }
+      const first = await transactionsApi.list({ ...params, page: 1 })
+      const items = [...first.items]
+      for (let page = 2; items.length < first.total; page++) {
+        const next = await transactionsApi.list({ ...params, page })
+        // Never silently present a truncated list and total as complete.
+        if (next.items.length === 0) throw new Error('Incomplete transaction response')
+        items.push(...next.items)
+      }
+      return { ...first, items }
+    },
+    enabled: !!filter && !noAccounts,
   })
 
   // Derive month param from filter.from for projected transactions
   const monthParam = filter?.from ? filter.from.slice(0, 7) + '-01' : undefined
 
-  const { data: projectedTxs } = useQuery({
+  const { data: projectedTxs, isLoading: projectionsLoading, isError: projectionsError, refetch: refetchProjections } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
-    enabled: !!filter && !!monthParam,
+    enabled: !!filter && !!monthParam && !noAccounts,
   })
 
   const { data: accountingModeData } = useQuery({
@@ -92,37 +109,115 @@ export function TransactionDrillDown({
     staleTime: 5 * 60 * 1000,
   })
   const isAccrual = accountingModeData?.mode === 'accrual'
+  const loading = !noAccounts && (isLoading || projectionsLoading)
+  const loadError = !noAccounts && (isError || projectionsError)
 
   // Merge real + projected transactions, filtering projected by drill-down criteria
   const displayItems = useMemo((): DisplayItem[] => {
     const items: DisplayItem[] = []
+    if (noAccounts) return items
 
     for (const tx of data?.items ?? []) {
+      // Category splits and group splits are mutually exclusive in the API.
+      // Keep the category-matched part and its converted amount authoritative;
+      // otherwise apply the viewer's group share for unfiltered Budgets.
+      const isPart = tx.matched_amount != null
+      const matchedLine = isPart
+        ? tx.category_lines?.find((line) => line.category_id === filter?.category_id)
+        : undefined
+      const parentAmount = Number(tx.amount)
+      const viewerShare = useViewerShare && tx.viewer_share != null ? Number(tx.viewer_share) : null
+      const amount = isPart ? Number(tx.matched_amount) : viewerShare ?? parentAmount
+      const parentPrimary = tx.amount_primary != null ? Number(tx.amount_primary) : null
+      const amountPrimary = isPart
+        ? tx.matched_amount_primary != null ? Number(tx.matched_amount_primary) : null
+        : viewerShare == null ? parentPrimary
+          : viewerShare === 0 ? 0 : parentPrimary != null && parentAmount !== 0
+            ? parentPrimary * Math.abs(viewerShare / parentAmount)
+            : null
       items.push({
         key: tx.id,
         description: tx.description,
         date: tx.date,
         type: tx.type as 'debit' | 'credit',
-        amount: Number(tx.amount),
-        amountPrimary: tx.amount_primary != null ? Number(tx.amount_primary) : null,
+        amount,
+        amountPrimary,
         currency: tx.currency,
-        categoryIcon: tx.category?.icon ?? null,
-        categoryName: tx.category?.name ?? null,
-        categoryColor: tx.category?.color ?? null,
+        categoryIcon: (matchedLine?.category ?? tx.category)?.icon ?? null,
+        categoryName: (matchedLine?.category ?? tx.category)?.name ?? null,
+        categoryColor: (matchedLine?.category ?? tx.category)?.color ?? null,
         isProjected: false,
         isPending: tx.status === 'pending',
         attachmentCount: tx.attachment_count ?? 0,
         transaction: tx,
+        partOf: isPart ? Math.abs(Number(tx.amount)) : null,
       })
     }
 
     for (const pt of projectedTxs ?? []) {
       // Filter projected txs by drill-down criteria
+      if (filter?.account_id && pt.account_id !== filter.account_id) continue
+      if (filter?.account_ids && (!pt.account_id || !filter.account_ids.includes(pt.account_id))) continue
       if (filter?.type && pt.type !== filter.type) continue
-      if (filter?.category_id && String(pt.category_id) !== filter.category_id) continue
-      if (filter?.uncategorized && pt.category_id != null) continue
+      // A split template counts in a category through its part there.
+      const parts = pt.has_category_lines ? pt.category_lines ?? [] : []
+      // Every part ignored: the template counts nowhere, so it lists nowhere.
+      if (pt.has_category_lines && !parts.length) continue
+      const matchedParts = filter?.category_id
+        ? parts.filter((part) => part.category_id === filter.category_id)
+        : []
+      if (filter?.category_id && !matchedParts.length && String(pt.category_id) !== filter.category_id) continue
+      if (filter?.uncategorized && (pt.category_id != null || parts.length)) continue
       if (filter?.from && pt.date < filter.from) continue
       if (filter?.to && pt.date > filter.to) continue
+      if (!filter?.category_id && parts.length) {
+        // Income and expense views count only the parts that are income or
+        // expense, as the projected totals do.
+        const counted = parts.filter((part) => !part.treat_as_transfer)
+        const share = counted.reduce((sum, part) => sum + part.amount, 0)
+        if (!share) continue
+        const ratio = pt.amount ? share / Math.abs(pt.amount) : 0
+        items.push({
+          key: `proj-${pt.recurring_id}-${pt.date}`,
+          description: pt.description,
+          date: pt.date,
+          type: pt.type,
+          amount: share,
+          amountPrimary: pt.amount_primary != null ? pt.amount_primary * ratio : null,
+          currency: pt.currency,
+          categoryIcon: null,
+          categoryName: null,
+          categoryColor: null,
+          isProjected: true,
+          isPending: false,
+          attachmentCount: 0,
+          partOf: share !== Math.abs(pt.amount) ? Math.abs(pt.amount) : null,
+          transaction: null,
+        })
+        continue
+      }
+      if (matchedParts.length) {
+        const share = matchedParts.reduce((sum, part) => sum + part.amount, 0)
+        const ratio = pt.amount ? share / Math.abs(pt.amount) : 0
+        items.push({
+          key: `proj-${pt.recurring_id}-${pt.date}`,
+          description: pt.description,
+          date: pt.date,
+          type: pt.type,
+          amount: share,
+          amountPrimary: pt.amount_primary != null ? pt.amount_primary * ratio : null,
+          currency: pt.currency,
+          categoryIcon: matchedParts[0].category_icon,
+          categoryName: matchedParts[0].category_name,
+          categoryColor: matchedParts[0].category_color,
+          isProjected: true,
+          isPending: false,
+          attachmentCount: 0,
+          partOf: Math.abs(pt.amount),
+          transaction: null,
+        })
+        continue
+      }
 
       items.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,
@@ -138,13 +233,22 @@ export function TransactionDrillDown({
         isProjected: true,
         isPending: false,
         attachmentCount: 0,
+        partOf: null,
         transaction: null,
       })
     }
 
     items.sort((a, b) => a.date.localeCompare(b.date))
     return items
-  }, [data, projectedTxs, filter])
+  }, [data, projectedTxs, filter, noAccounts, useViewerShare])
+
+  const isOpen = !!filter
+  useEffect(() => {
+    if (!isOpen) return
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    panelRef.current?.focus()
+    return () => { opener?.focus() }
+  }, [isOpen])
 
   // Close on Escape, unless the key belongs to a dialog opened from the
   // panel (Radix marks the Escape it handled as defaultPrevented).
@@ -203,6 +307,11 @@ export function TransactionDrillDown({
       {/* Panel */}
       <div
         ref={panelRef}
+        role="complementary"
+        aria-label={filter?.title}
+        tabIndex={-1}
+        inert={!filter}
+        aria-hidden={!filter}
         className={`fixed top-0 right-0 h-full w-full max-w-md bg-card shadow-2xl z-50 transform transition-transform duration-200 ease-out flex flex-col ${
           filter ? 'translate-x-0' : 'translate-x-full'
         }`}
@@ -230,7 +339,15 @@ export function TransactionDrillDown({
 
         {/* Transaction list */}
         <div className="flex-1 overflow-auto">
-          {isLoading ? (
+          {loadError ? (
+            <div role="alert" className="p-5 text-center space-y-3">
+              <p className="text-sm text-destructive">{t('dashboard.drillDownError')}</p>
+              <button type="button" className="text-sm text-primary hover:underline" onClick={() => {
+                void refetch()
+                if (monthParam && !noAccounts) void refetchProjections()
+              }}>{t('common.retry')}</button>
+            </div>
+          ) : loading ? (
             <div className="p-5 space-y-3">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="h-12 bg-muted rounded-lg animate-pulse" />
@@ -245,18 +362,22 @@ export function TransactionDrillDown({
               {displayItems.map((item) => (
                 <div
                   key={item.key}
-                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected ? 'cursor-pointer' : ''}`}
+                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''}`}
                   onClick={() => {
                     if (!item.isProjected && item.transaction) {
                       onTransactionClick?.(item.transaction)
                     }
                   }}
                 >
-                  <CategoryIcon
-                    icon={item.categoryIcon}
-                    color={item.categoryColor}
-                    size="lg"
-                  />
+                  {item.transaction && isSplitByCategory(item.transaction) && item.partOf == null ? (
+                    <TransactionCategoryIcon tx={item.transaction} size="lg" />
+                  ) : (
+                    <CategoryIcon
+                      icon={item.categoryIcon}
+                      color={item.categoryColor}
+                      size="lg"
+                    />
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
@@ -280,6 +401,9 @@ export function TransactionDrillDown({
                     <p className="text-xs text-muted-foreground">
                       {new Date(item.date + 'T00:00:00').toLocaleDateString(dateLocale)}
                       {item.categoryName && ` · ${item.categoryName}`}
+                      {item.partOf != null && ` · ${t('categoryLines.partOf', {
+                        value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
+                      })}`}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
@@ -309,7 +433,7 @@ export function TransactionDrillDown({
         </div>
 
         {/* Footer */}
-        {displayItems.length > 0 && (
+        {!loadError && !loading && displayItems.length > 0 && (
           <div className="px-5 py-3 border-t border-border bg-muted/50 shrink-0">
             {hasUnsettledTotal ? (
               <div className="space-y-1">

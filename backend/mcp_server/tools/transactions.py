@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.group import GroupMember
 from app.services import transaction_service
+from app.services._query_filters import reporting_date_value
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
@@ -32,7 +33,14 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_li
         "`list_groups`, and `splits.members[]` shows each "
         "{member_id, member_name, is_self, share_amount, share_type, "
         "share_pct}. So 'is this transaction split?' is just `splits != "
-        "null`; no extra tool call needed."
+        "null`; no extra tool call needed. Separately, `category_lines` is "
+        "non-null when ONE transaction's amount is divided across several "
+        "categories (e.g. a supermarket receipt: 120 groceries + 80 "
+        "household): its `category_id` is then null on purpose, it is NOT "
+        "uncategorized, and each part is {category_id, category_name, "
+        "amount, share_pct}. Reports count each part in its own category. "
+        "Filtering by a category returns a split row when any part matches, "
+        "and `matched_amount` is the part inside that filter."
     ),
     parameters={
         "type": "object",
@@ -164,6 +172,19 @@ async def list_transactions(
         )).scalars().all()
         member_lookup = {m.id: m for m in rows}
 
+    def _category_lines_summary(t: Any) -> list[dict[str, Any]] | None:
+        if not getattr(t, "has_category_lines", False):
+            return None
+        return [
+            {
+                "category_id": str(line.category_id),
+                "category_name": line.category.name if line.category else None,
+                "amount": num(line.amount),
+                "share_pct": num(line.share_pct),
+            }
+            for line in sorted(t.category_lines, key=lambda line: line.position)
+        ]
+
     def _splits_summary(t: Any) -> dict[str, Any] | None:
         splits = getattr(t, "splits", None) or []
         if not splits:
@@ -197,6 +218,10 @@ async def list_transactions(
             "id": str(t.id),
             "date": t.date.isoformat() if t.date else None,
             "effective_date": t.effective_date.isoformat() if getattr(t, "effective_date", None) else None,
+            "reporting_date": reporting_date_value(t, accounting_mode or "cash").isoformat(),
+            "reporting_date_override": (
+                t.reporting_date_override.isoformat() if t.reporting_date_override else None
+            ),
             "description": t.description,
             "amount": num(t.amount),
             "currency": t.currency,
@@ -213,6 +238,8 @@ async def list_transactions(
             "is_transfer": bool(getattr(t, "transfer_pair_id", None)),
             "notes": getattr(t, "notes", None),
             "splits": _splits_summary(t),
+            "category_lines": _category_lines_summary(t),
+            "matched_amount": num(getattr(t, "matched_amount", None)),
         }
         for t in txs
     ]

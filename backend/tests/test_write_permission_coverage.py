@@ -96,6 +96,17 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # touched. Flagged here so a future rate limit or admin floor is a
     # decision rather than an oversight.
     ("POST", "/api/fx-rates/refresh"): "refreshes instance-wide FX rates, no workspace data",
+    # A member's own credentials. Any member may issue one, but its scopes are
+    # capped by their role (a viewer only gets read scopes) and every request
+    # made with it still runs under that role. Revoking is limited to one's
+    # own tokens unless the member is an owner.
+    ("POST", "/api/access-tokens"): "the requester's own token, scopes capped by their role",
+    ("DELETE", "/api/access-tokens/{token_id}"): "the requester's own token, or any as owner",
+    # How a member arranged their own view of the workspace (dashboard
+    # widgets, listed reports), keyed by their user id. Workspace data is
+    # untouched, so a viewer may arrange their view too.
+    ("PUT", "/api/ui/layouts/{surface}"): "the requester's own view of the workspace, no workspace data",
+    ("DELETE", "/api/ui/layouts/{surface}"): "the requester's own view of the workspace, no workspace data",
 }
 
 # These routes establish authentication (or end it), so requiring an existing

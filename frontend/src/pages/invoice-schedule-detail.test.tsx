@@ -23,12 +23,14 @@ const api = vi.hoisted(() => ({
   },
   invoices: { settings: vi.fn(), list: vi.fn() },
   payees: { list: vi.fn() },
+  products: { list: vi.fn() },
 }))
 
 vi.mock('@/lib/api', () => ({
   invoiceSchedules: api.invoiceSchedules,
   invoices: api.invoices,
   payees: api.payees,
+  products: api.products,
 }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
@@ -263,6 +265,28 @@ describe('InvoiceScheduleDetailPage', () => {
       effective_from: '2026-03-05',
       lines: [{ description: 'Retainer', quantity: '1', unit_price: '3200' }],
       discount: '0.00',
+    })
+  })
+
+  it('leaves a term filled from a product without refs inheriting the refs it gains later', async () => {
+    api.products.list.mockResolvedValue([
+      {
+        id: 'design', name: 'Design', description: null, kind: 'service', unit: null, active: true,
+        origin: 'local', external_source: null, external_id: null, custom_fields: null,
+        fiscal_refs: null, prices: [], created_at: '2026-01-01T00:00:00Z', invoice_count: 0,
+      },
+    ])
+    api.invoiceSchedules.addTerm.mockResolvedValue(schedule())
+    const { user } = render()
+    await screen.findByText('Plano Pro')
+    await user.click(screen.getByTestId('schedule-change-price'))
+    await user.click(await screen.findByTestId('invoice-line-pick-product'))
+    await user.click(await screen.findByTestId('product-option-design'))
+    await user.click(screen.getByTestId('term-save'))
+    const [[, payload]] = api.invoiceSchedules.addTerm.mock.calls
+    expect(JSON.parse(JSON.stringify(payload.lines[0]))).toStrictEqual({
+      description: 'Design', quantity: '1', unit: null, unit_price: '3000.00',
+      product_id: 'design', price_id: null,
     })
   })
 })

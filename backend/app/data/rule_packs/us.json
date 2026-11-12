@@ -1,0 +1,472 @@
+{
+  "id": "securo/rules-us",
+  "name": {
+    "en": "United States",
+    "pt-BR": "Estados Unidos"
+  },
+  "description": {
+    "en": "Common merchants and transfer patterns, mapped to the default categories.",
+    "pt-BR": "Estabelecimentos e padrões de transferência comuns, mapeados para as categorias padrão."
+  },
+  "version": "1.0.0",
+  "repository": "https://github.com/securo-finance/securo",
+  "license": "AGPL-3.0-only",
+  "min_securo_version": "0.19.0",
+  "contributes": {
+    "rules": [
+      {
+        "key": "lyft",
+        "name": "Lyft",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "LYFT"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "doordash-grubhub",
+        "name": "DoorDash / Grubhub",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "DOORDASH"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "GRUBHUB"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "food"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "walmart-target-costco",
+        "name": "Walmart / Target / Costco",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "WALMART"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "TARGET"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "COSTCO"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "groceries"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "venmo-zelle-cashapp",
+        "name": "Venmo / Zelle / CashApp",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "VENMO"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "ZELLE"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "CASH APP"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transfers"
+          }
+        ],
+        "priority": 50
+      },
+      {
+        "key": "starbucks-dunkin",
+        "name": "Starbucks / Dunkin",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "STARBUCKS"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "DUNKIN"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "food"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "chevron-shell-exxon-fuel",
+        "name": "Chevron / Shell / Exxon (Fuel)",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "CHEVRON"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "SHELL"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "EXXON"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "whole-foods-trader-joe-s-kroger",
+        "name": "Whole Foods / Trader Joe's / Kroger",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "WHOLE FOODS"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "TRADER JOE"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "KROGER"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "groceries"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "cvs-walgreens",
+        "name": "CVS / Walgreens",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "CVS"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "WALGREENS"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "health"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "t-mobile-at-t-verizon",
+        "name": "T-Mobile / AT&T / Verizon",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "T-MOBILE"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "ATT"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "AT&T"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "VERIZON"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "subscriptions"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "comcast-xfinity",
+        "name": "Comcast / Xfinity",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "COMCAST"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "XFINITY"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "subscriptions"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "home-depot-lowe-s",
+        "name": "Home Depot / Lowe's",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "HOME DEPOT"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "LOWES"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "LOWE'S"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "housing"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "planet-fitness-ymca",
+        "name": "Planet Fitness / YMCA",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "PLANET FITNESS"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "YMCA"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "health"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "chipotle-mcdonald-s-subway",
+        "name": "Chipotle / McDonald's / Subway",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "CHIPOTLE"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "MCDONALD"
+          },
+          {
+            "field": "description",
+            "op": "starts_with",
+            "value": "SUBWAY"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "food"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "paycheck-direct-deposit",
+        "name": "Paycheck / Direct Deposit",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "PAYROLL|DIRECT DEP|ADP|GUSTO"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "salary"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "donations-charity",
+        "name": "Donations / Charity",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "DONATION"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "CHARITY"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "TITHE"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "RED CROSS"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "donations"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "taxes-irs",
+        "name": "Taxes / IRS",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "IRS"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "TAX PAYMENT"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "PROPERTY TAX"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "taxes"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "rent-mortgage",
+        "name": "Rent / Mortgage",
+        "conditions_op": "or",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "RENT PAYMENT"
+          },
+          {
+            "field": "description",
+            "op": "contains",
+            "value": "MORTGAGE"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "housing"
+          }
+        ],
+        "priority": 10
+      }
+    ]
+  }
+}

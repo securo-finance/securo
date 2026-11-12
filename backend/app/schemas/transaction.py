@@ -6,6 +6,10 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.category import CategoryRead
+from app.schemas.transaction_category_line import (
+    TransactionCategoryLineRead,
+    TransactionCategoryLinesInput,
+)
 from app.schemas.transaction_split import (
     TransactionSplitInput,
     TransactionSplitRead,
@@ -34,6 +38,9 @@ class TransactionCreate(TransactionBase):
     fx_rate_used: Optional[Decimal] = None
     effective_bill_date: Optional[_Date] = None
     splits: Optional[TransactionSplitsInput] = None
+    # Split the amount across several categories instead of one
+    # `category_id`. Mutually exclusive with `category_id` and `splits`.
+    category_lines: Optional[TransactionCategoryLinesInput] = None
     # Manual status override. When omitted the transaction is created as
     # "posted" (settled), matching the model default. Pass "pending"
     # (not yet settled) to record an entry that isn't settled yet. Only
@@ -109,9 +116,15 @@ class TransactionUpdate(BaseModel):
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.
     effective_bill_date: Optional[_Date] = None
+    # Optional period-attribution correction. This intentionally does not alter
+    # bank-date/credit-card-cycle behavior without mutating provider truth.
+    reporting_date_override: Optional[_Date] = None
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
+    # When provided, replaces the category split wholesale; an empty `lines`
+    # list undoes it. Required alongside a new `amount` on a split row.
+    category_lines: Optional[TransactionCategoryLinesInput] = None
     # Installment-series scope for edits. "this" (default) only touches the
     # target row; "future" touches it plus all later installments of the
     # same series; "all" touches every row in the series. Ignored when the
@@ -179,7 +192,9 @@ class TransactionRead(TransactionBase):
     #: payment can settle several — a payout net of fees is the
     #: ordinary case, not the exotic one.
     invoice_links: list[TransactionInvoiceLink] = []
-    currency: str = "USD"
+    # A stored transaction always has a currency, so the read model narrows
+    # the optional input field on purpose.
+    currency: str = "USD"  # ty: ignore[invalid-mutable-override]
     source: str
     status: str = "posted"
     payee: Optional[str] = None
@@ -203,8 +218,18 @@ class TransactionRead(TransactionBase):
     installment_series_id: Optional[uuid.UUID] = None
     bill_id: Optional[uuid.UUID] = None
     effective_bill_date: Optional[_Date] = None
+    reporting_date_override: Optional[_Date] = None
     recurring_transaction_id: Optional[uuid.UUID] = None
     splits: list[TransactionSplitRead] = []
+    # Set when the amount is split across several categories; `category_id`
+    # is then null and the categories live in `category_lines`.
+    has_category_lines: bool = False
+    category_lines: list[TransactionCategoryLineRead] = []
+    # Set by the paginated list when it is filtered by category: the part of
+    # a split row that falls in the filtered categories, so a drill-down
+    # total adds up to the report it came from. Null on plain rows.
+    matched_amount: Optional[Decimal] = None
+    matched_amount_primary: Optional[Decimal] = None
     # Shared-transaction view fields. Set per-request when the viewer
     # is a linked member of one of this transaction's splits but not
     # its owner. The viewer sees their share amount instead of the
@@ -304,9 +329,20 @@ class TransferRead(BaseModel):
     transfer_pair_id: uuid.UUID
 
 
+class ImportCategoryLine(BaseModel):
+    """One part of a split read back from a CSV export."""
+
+    category_name: str
+    amount: Decimal = Field(gt=0, decimal_places=2)
+
+
 class TransactionImport(TransactionBase):
     """TransactionBase extended with import-only fields not exposed in read responses."""
     category_name: Optional[str] = None
+    # Set when a CSV carried a split across categories (`split_group` /
+    # `split_index` columns, as the export writes them). The import recreates
+    # the parts; a part whose category is missing imports the row unsplit.
+    category_lines: Optional[list[ImportCategoryLine]] = None
     suggested_category_id: Optional[uuid.UUID] = None
     suggested_category_name: Optional[str] = None
     excluded: bool = False
