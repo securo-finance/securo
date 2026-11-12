@@ -1,19 +1,21 @@
 """The one-click "post today" quick action (issue #1144).
 
-A pending entry is confirmed as posted and dated with the workspace's current
-calendar day from a single request, the same result as saving the edit dialog
-by hand. Proved over HTTP so the route, the write gate, and the not-found path
-are exercised together, not just the service.
+A pending manual entry is confirmed as posted and dated with the workspace's
+current calendar day from a single request. Synchronized dates remain
+provider-owned. Proved over HTTP so the route, the write gate, and the not-found
+path are exercised together, not just the service.
 """
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 
 from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.workspace_service import create_personal_workspace_for_user
@@ -69,6 +71,157 @@ async def test_post_today_does_not_touch_other_fields(
     assert body["description"] == "PENDING CHARGE"
     assert body["type"] == "debit"
     assert body["source"] == "manual"
+
+
+@pytest.mark.parametrize("paired_source", ["sync", "manual"])
+async def test_post_today_preserves_synced_pair_provider_fields(
+    client: AsyncClient,
+    auth_headers,
+    session,
+    test_user,
+    test_workspace,
+    pending_transaction: Transaction,
+    monkeypatch,
+    paired_source,
+):
+    fixed_today = date(2025, 3, 10)
+    monkeypatch.setattr(
+        "app.services.transaction_service.app_today", lambda: fixed_today
+    )
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    paired_account = Account(
+        id=uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name=f"{paired_source} pair",
+        type="checking",
+        balance=Decimal("0"),
+        currency="USD",
+    )
+    pair_id = uuid4()
+    pending_transaction.transfer_pair_id = pair_id
+    paired = Transaction(
+        id=uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=paired_account.id,
+        description="Paired transfer",
+        amount=Decimal("123.45"),
+        currency="USD",
+        date=date(2025, 1, 15),
+        effective_date=date(2025, 2, 20),
+        type="credit",
+        source=paired_source,
+        status="pending",
+        transfer_pair_id=pair_id,
+        amount_primary=Decimal("678.90") if paired_source == "sync" else Decimal("617.25"),
+        fx_rate_used=Decimal("5.5") if paired_source == "sync" else Decimal("5"),
+    )
+    session.add_all(
+        [
+            paired_account,
+            paired,
+            FxRate(
+                base_currency="USD",
+                quote_currency="BRL",
+                date=date(2025, 1, 15),
+                rate=Decimal("5"),
+                source="test",
+            ),
+            FxRate(
+                base_currency="USD",
+                quote_currency="BRL",
+                date=fixed_today,
+                rate=Decimal("6"),
+                source="test",
+            ),
+        ]
+    )
+    await session.commit()
+    protected = (
+        paired.amount,
+        paired.date,
+        paired.amount_primary,
+        paired.fx_rate_used,
+        paired.effective_date,
+    )
+
+    response = await client.post(
+        f"/api/transactions/{pending_transaction.id}/post-today",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    await session.refresh(pending_transaction)
+    await session.refresh(paired)
+
+    assert pending_transaction.status == "posted"
+    assert pending_transaction.date == fixed_today
+    assert paired.status == "posted"
+    if paired_source == "sync":
+        assert (
+            paired.amount,
+            paired.date,
+            paired.amount_primary,
+            paired.fx_rate_used,
+            paired.effective_date,
+        ) == protected
+    else:
+        assert paired.amount == Decimal("123.45")
+        assert paired.amount_primary == Decimal("740.70")
+        assert paired.fx_rate_used == Decimal("6")
+        assert paired.date == fixed_today
+        assert paired.effective_date == fixed_today
+
+
+@pytest.mark.parametrize(
+    "synced_date", [date(2025, 3, 7), date(2025, 3, 10)]
+)
+async def test_post_today_rejects_synced_anchor(
+    client: AsyncClient,
+    auth_headers,
+    session,
+    pending_transaction: Transaction,
+    monkeypatch,
+    synced_date,
+):
+    fixed_today = date(2025, 3, 10)
+    monkeypatch.setattr(
+        "app.services.transaction_service.app_today", lambda: fixed_today
+    )
+    synced = pending_transaction
+    synced.source = "sync"
+    synced.date = synced_date
+    synced.effective_date = date(2025, 2, 20)
+    synced.amount_primary = Decimal("678.90")
+    synced.fx_rate_used = Decimal("5.5")
+    await session.commit()
+    original = (
+        synced.status,
+        synced.date,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+    )
+
+    response = await client.post(
+        f"/api/transactions/{synced.id}/post-today", headers=auth_headers
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Cannot change amount or date on a synchronized transaction"
+    )
+    response = await client.get(
+        f"/api/transactions/{synced.id}", headers=auth_headers
+    )
+    assert response.status_code == 200
+    await session.refresh(synced)
+    assert (
+        synced.status,
+        synced.date,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+    ) == original
 
 
 async def test_a_viewer_cannot_post_today(

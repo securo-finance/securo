@@ -1015,6 +1015,7 @@
     "sortAsc": "Sortuj rosnąco",
     "sortDesc": "Sortuj malejąco",
     "syncedInfo": "Transakcja zsynchronizowana z bankiem: kwoty, daty i konta nie można edytować",
+    "syncedAmountDateError": "Nie można zmienić kwoty ani daty zsynchronizowanej transakcji",
     "uncategorized": "Nieskategoryzowane",
     "selected": "zaznaczono",
     "summaryCount_one": "{{count}} transakcja",
@@ -1091,7 +1092,7 @@
     "transferSameAccount": "Źródło i cel muszą być różne",
     "transferDescription": "Opis",
     "transferNotes": "Notatki",
-    "transferInfo": "To transfer — zmiany opisu, daty i notatek obejmą obie strony",
+    "transferInfo": "To transfer: zmiany opisu i notatek obejmują obie strony. Zmiany kwoty i daty obejmują też ręcznie wprowadzoną (niezsynchronizowaną) transakcję po drugiej stronie, nigdy jednak zsynchronizowaną.",
     "transferLinkedTo": "Powiązana z:",
     "transferOpenAccount": "Otwórz konto {{account}}",
     "transferTooltip": "Transfery są wyłączone z sum w raportach i na pulpicie",
@@ -1501,6 +1502,17 @@
     "confirmDeleteRecurringDescription": "Cykliczny budżet dla „{{name}}” zostanie trwale usunięty. Ta definicja nie będzie już stosowana w kolejnych miesiącach. Istniejące transakcje nie zostaną zmienione. Tej operacji nie można cofnąć.",
     "repeatEveryMonth": "Powtarzaj co miesiąc",
     "recurringLabel": "Cykliczny",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Budżety na {{month}}",
+    "otherCategories": "Inne kategorie",
+    "noCategories": "Brak kategorii",
+    "total": "Budżet {{amount}}",
+    "saved": "Budżety zapisane",
+    "budgetFor": "Budżet dla {{category}}",
+    "invalidAmount": "Wpisz prawidłową kwotę równą zero lub większą.",
+    "repeatEveryMonthFor": "Powtarzaj budżet {{category}} co miesiąc",
+    "previousMonth": "Poprzedni miesiąc",
+    "nextMonth": "Następny miesiąc",
     "suggest": "Sugeruj z historii",
     "suggestTitle": "Sugeruj budżety",
     "suggestDescription": "Proponowane limity na podstawie średnich miesięcznych wydatków z ostatnich {{months}} miesięcy.",
@@ -1510,7 +1522,9 @@
     "suggestCreate": "Utwórz budżety",
     "suggestCreated": "Utworzono {{count}} budżetów",
     "suggestEmpty": "Brak historii wydatków w wybranym okresie.",
-    "suggestError": "Nie udało się wczytać sugestii. Spróbuj ponownie za chwilę."
+    "suggestError": "Nie udało się wczytać sugestii. Spróbuj ponownie za chwilę.",
+    "hiddenCategory": "Ukryta",
+    "average": "zwykle {{amount}}"
   },
   "goals": {
     "title": "Cele",
@@ -3317,6 +3331,315 @@
       "undoFirstMortgage": "Cofnij podział, zanim dodasz rozbicie kredytu.",
       "categoryInUse": "Ta kategoria zawiera części podzielonych transakcji. Najpierw zmień te podziały.",
       "destinationInvalid": "Części podzielonych transakcji nie mogą trafić do ignorowanej ani ukrytej kategorii."
+    }
+  },
+  "plugins": {
+    "title": "Wtyczki",
+    "hint": "Kategorie i reguły tworzone przez społeczność. Sprawdzasz każdą zmianę przed jej zastosowaniem, a nic nie opuszcza Twojego serwera.",
+    "browse": "Przeglądaj katalog",
+    "noneInstalled": "W tym obszarze roboczym nie zainstalowano wtyczek.",
+    "remove": "Usuń wtyczkę",
+    "removeAria": "Usuń {{name}}",
+    "catalogFailed": "Nie udało się wczytać katalogu.",
+    "catalogEmpty": "Katalog nie ma jeszcze wtyczek.",
+    "viewSource": "Zobacz kod źródłowy",
+    "revoked": "Unieważniona",
+    "unavailable": "Niedostępna",
+    "needsVersion": "Wymaga Securo {{version}}",
+    "updateAvailable": "Dostępna aktualizacja",
+    "installed": "Zainstalowana",
+    "install": "Zainstaluj",
+    "update": "Zaktualizuj",
+    "andMore": "i {{count}} więcej",
+    "planTitle": {
+      "install": "Zainstalować {{name}}?",
+      "update": "Zaktualizować {{name}}?",
+      "remove": "Usunąć {{name}}?"
+    },
+    "planIntro": "Oto co zmieni się w tym obszarze roboczym:",
+    "planFailed": "Nie udało się wczytać, co by się zmieniło.",
+    "planChanged": "Coś się zmieniło od tego podglądu. Sprawdź go ponownie.",
+    "privacy": "Ta wtyczka tylko dodaje dane do tego obszaru roboczego. Nic nie jest nigdzie wysyłane.",
+    "history": "Transakcje zachowują swoje obecne kategorie.",
+    "confirm": {
+      "install": "Zainstaluj",
+      "update": "Zaktualizuj",
+      "remove": "Usuń"
+    },
+    "done": {
+      "install": "Zainstalowano {{name}}",
+      "update": "Zaktualizowano {{name}}",
+      "remove": "Usunięto {{name}}"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} grupa",
+      "category_groups_few": "{{count}} grupy",
+      "category_groups_many": "{{count}} grup",
+      "category_groups_other": "{{count}} grup",
+      "categories_one": "{{count}} kategoria",
+      "categories_few": "{{count}} kategorie",
+      "categories_many": "{{count}} kategorii",
+      "categories_other": "{{count}} kategorii",
+      "rules_one": "{{count}} reguła",
+      "rules_few": "{{count}} reguły",
+      "rules_many": "{{count}} reguł",
+      "rules_other": "{{count}} reguł"
+    },
+    "plan": {
+      "create": "Dodaje: {{items}}",
+      "update": "Aktualizuje: {{items}}",
+      "delete": "Usuwa: {{items}}",
+      "keep": "Zostawia bez zmian edytowane przez Ciebie: {{items}}:",
+      "release": "Przekazuje Tobie (edytowane lub wciąż używane): {{items}}:",
+      "existing": "Pomija to, co już masz: {{items}}:",
+      "unresolved": "Pomija reguły bez kategorii: {{items}}:",
+      "defaults_one": "Tworzy też {{count}} domyślną kategorię potrzebną regułom",
+      "defaults_few": "Tworzy też {{count}} domyślne kategorie potrzebne regułom",
+      "defaults_many": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom",
+      "defaults_other": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom"
+    },
+    "page": {
+      "section": "Katalog",
+      "notice": "Wtyczki nie są sprawdzane przez Securo. Zanim cokolwiek zostanie zastosowane, widzisz dokładnie, co się zmieni, a nic nie opuszcza Twojego serwera.",
+      "search": "Szukaj wtyczek",
+      "type": {
+        "data": "Dane",
+        "interface": "Interfejs",
+        "code": "Kod"
+      },
+      "status": {
+        "installed": "Zainstalowane",
+        "updates": "Z aktualizacją"
+      },
+      "clear": "Wyczyść filtry",
+      "trendingHint": "Najszybciej rosnące względem swojej wielkości",
+      "newestHint": "Dodane w ciągu ostatnich 30 dni",
+      "sortBy": "Sortuj według",
+      "sort": {
+        "popular": "Popularne",
+        "trending": "Na fali",
+        "updated": "Ostatnio zaktualizowane",
+        "newest": "Najnowsze",
+        "name": "Nazwa"
+      },
+      "noResults": "Żadna wtyczka nie pasuje do tych filtrów.",
+      "byOwner": "autor: {{owner}}",
+      "updated": "Zaktualizowano {{when}}",
+      "count_one": "{{count}} wtyczka",
+      "count_few": "{{count}} wtyczki",
+      "count_many": "{{count}} wtyczek",
+      "count_other": "{{count}} wtyczek",
+      "stars_one": "{{count}} gwiazdka",
+      "stars_few": "{{count}} gwiazdki",
+      "stars_many": "{{count}} gwiazdek",
+      "stars_other": "{{count}} gwiazdek",
+      "authors_one": "{{count}} autor",
+      "authors_few": "{{count}} autorów",
+      "authors_many": "{{count}} autorów",
+      "authors_other": "{{count}} autorów",
+      "clearSearch": "Wyczyść wyszukiwanie",
+      "facet": {
+        "type": "Typ",
+        "content": "Zawartość",
+        "language": "Język",
+        "status": "Status"
+      },
+      "view": {
+        "all": "Wszystkie",
+        "trending": "Popularne",
+        "new": "Nowe"
+      },
+      "any": "Dowolny",
+      "trendingEmpty": "W tym tygodniu żadna wtyczka nie zdobyła gwiazdek.",
+      "newEmpty": "W ciągu ostatnich 30 dni nie dodano żadnej wtyczki."
+    },
+    "kindName": {
+      "category_groups": "Grupy kategorii",
+      "categories": "Kategorie",
+      "rules": "Reguły",
+      "csv_presets": "Szablony CSV",
+      "fiscal_jurisdictions": "Jurysdykcje podatkowe",
+      "invoice_labels": "Etykiety faktur",
+      "widgets": "Widżety",
+      "reports": "Raporty",
+      "dashboard_layouts": "Układy pulpitu",
+      "connectors": "Połączenia bankowe",
+      "parsers": "Czytniki plików",
+      "price_providers": "Dostawcy cen",
+      "agent_tools": "Narzędzia agenta"
+    },
+    "detail": {
+      "overview": "Przegląd",
+      "inside": "Zawartość",
+      "insideHint": "Wszystko, co ta wtyczka dodaje do przestrzeni. Przy instalacji zobaczysz, co już masz.",
+      "noReadme": "Autor nie napisał jeszcze README dla tej wtyczki.",
+      "loadFailed": "Nie udało się wczytać szczegółów wtyczki.",
+      "contentsUnavailable": "Ta wersja Securo nie potrafi wyświetlić zawartości tej wtyczki.",
+      "version": "Wersja",
+      "license": "Licencja",
+      "requires": "Wymaga",
+      "updated": "Zaktualizowano",
+      "languages": "Języki",
+      "builtIn": "domyślna",
+      "when": "Gdy",
+      "previewNote": "Przed instalacją widzisz każdą zmianę i nic nie opuszcza twojego serwera.",
+      "notFound": "Tej wtyczki nie ma w katalogu.",
+      "type": "Typ",
+      "added": "Dodano"
+    },
+    "installedFailed": "Nie udało się wczytać zainstalowanych wtyczek.",
+    "planRecordOnly": {
+      "install": "Ta przestrzeń ma już wszystko, co wnosi. Instalacja ją zapisuje, aby otrzymywać aktualizacje.",
+      "update": "Żaden element tej przestrzeni się nie zmienia; zainstalowana wersja to teraz {{version}}.",
+      "remove": "Żaden jej element tu nie został; usunięcie tylko zdejmuje ją z listy."
+    }
+  },
+  "library": {
+    "title": "Biblioteka",
+    "subtitle": "Wybierz, co pokazują pulpit i raporty oraz jak wygląda Securo.",
+    "kind": {
+      "widgets": "Widżety",
+      "reports": "Raporty",
+      "themes": "Motywy"
+    },
+    "moreHint": {
+      "widgets": "Wtyczki mogą dodać więcej widżetów.",
+      "reports": "Wtyczki mogą dodać więcej raportów.",
+      "themes": "Wtyczki mogą dodać więcej motywów."
+    },
+    "browseCatalog": "Przeglądaj wtyczki",
+    "lastReport": "Zostaw co najmniej jeden raport.",
+    "removeFrom": {
+      "dashboard": "Usuń {{name}} z pulpitu",
+      "reports": "Usuń {{name}} z raportów"
+    },
+    "addTo": {
+      "dashboard": "Dodaj {{name}} do pulpitu",
+      "reports": "Dodaj {{name}} do raportów"
+    },
+    "remove": "Usuń",
+    "add": "Dodaj",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Ocean",
+      "forest": "Las",
+      "sunset": "Zachód słońca",
+      "graphite": "Grafit",
+      "high-contrast": "Wysoki kontrast",
+      "midnight": "Północ",
+      "terminal": "Terminal",
+      "nebula": "Mgławica"
+    },
+    "saveFailed": "Nie udało się zapisać wyboru. Spróbuj ponownie.",
+    "appearance": "Wygląd",
+    "emptyDashboard": "Twój pulpit jest pusty",
+    "emptyDashboardHint": "Dodaj widżety z biblioteki, aby wybrać, co tu widzisz.",
+    "addWidget": "Dodaj widżet",
+    "nothingToShow": "Na razie nic do pokazania",
+    "editingDashboard": "Zmieniaj kolejność, usuwaj lub dodawaj widżety. Zmiany zapisują się od razu.",
+    "restoreDefault": "Przywróć domyślne",
+    "done": "Gotowe",
+    "customizeDashboard": "Dostosuj pulpit",
+    "manageReports": "Wybierz raporty",
+    "manageReportsShort": "Zarządzaj",
+    "widget": {
+      "overview": "Saldo i miesiąc",
+      "overviewHint": "Dostępne saldo, przychody, wydatki, majątek netto i stopa oszczędności.",
+      "uncategorized": "Bez kategorii",
+      "uncategorizedHint": "Transakcje, które wciąż czekają na kategorię.",
+      "spendingByCategoryHint": "Na co poszły pieniądze w tym miesiącu, w porównaniu z budżetami.",
+      "balanceFlowHint": "Jak zmieniało się saldo w tym miesiącu, w porównaniu z innymi.",
+      "goalsHint": "Postęp Twoich celów.",
+      "transactionsHint": "Transakcje z miesiąca, jako lista lub kalendarz."
+    },
+    "report": {
+      "netWorthHint": "Konta, aktywa i długi w czasie.",
+      "incomeExpensesHint": "Wpływy i wydatki według kategorii.",
+      "cashFlowHint": "Dokąd zmierza Twoje saldo.",
+      "moneyMapHint": "Jak przychody dzielą się na wydatki i oszczędności.",
+      "statementHint": "Przychody i wydatki według kategorii, miesiąc po miesiącu."
+    },
+    "dragToMove": "Przeciągnij, aby przenieść {{name}}",
+    "widthOf": "Szerokość {{name}}",
+    "widthLabel": "Szerokość",
+    "width": {
+      "4": "Jedna trzecia",
+      "6": "Połowa",
+      "8": "Dwie trzecie",
+      "12": "Pełna szerokość"
+    },
+    "needs": {
+      "assistant": "Wymaga włączenia agentów AI.",
+      "invoices": "Dostępne w przestrzeniach typu Firmowy."
+    }
+  },
+  "widgets": {
+    "budgets": "Budżety",
+    "viewAll": "Zobacz wszystko",
+    "spendingPace": {
+      "title": "Wydatki w miesiącu",
+      "hint": "Wydatki miesiąca na tle budżetów i ile zostaje na dzień.",
+      "noBudget": "Ustaw budżety, aby sprawdzać tempo wydatków.",
+      "used": "Wykorzystano {{percent}}% budżetów",
+      "paceMark": "znacznik pokazuje, gdzie byłoby dziś równe tempo",
+      "over": "{{amount}} ponad budżet",
+      "perDay": "Wydawaj do {{amount}} dziennie, aby zmieścić się w budżecie",
+      "left": "Zostało {{amount}} w budżecie"
+    },
+    "distribution": {
+      "title": "Podział wydatków",
+      "hint": "Na co poszły pieniądze w tym miesiącu, według kategorii.",
+      "total": "Wydano łącznie"
+    },
+    "monthResult": {
+      "title": "Wynik miesiąca",
+      "hint": "Przychody minus wydatki w tym miesiącu, w porównaniu z poprzednim.",
+      "previous": "{{amount}} w poprzednim miesiącu"
+    },
+    "upcoming": {
+      "title": "Nadchodzące",
+      "hint": "Transakcje cykliczne w ciągu najbliższych 30 dni.",
+      "none": "Nic do zapłaty w ciągu najbliższych {{days}} dni."
+    },
+    "cards": {
+      "title": "Karty kredytowe",
+      "hint": "Ile są winne Twoje karty i saldo po ich spłacie.",
+      "none": "Brak otwartych kart kredytowych.",
+      "afterPaying": "Po spłacie zostanie {{amount}}"
+    },
+    "assistant": {
+      "title": "Zapytaj agenta",
+      "libraryHint": "Wyślij pytanie do domyślnego agenta bez wychodzenia z pulpitu.",
+      "hint": "Zapytaj o cokolwiek dotyczącego Twoich pieniędzy. Odpowiedź otworzy się w czacie.",
+      "placeholder": "Zapytaj agenta…",
+      "suggestion1": "Ile wydałem w tym miesiącu?",
+      "suggestion2": "Gdzie mogę zaoszczędzić?",
+      "suggestion3": "Jakie rachunki się zbliżają?",
+      "send": "Wyślij",
+      "unavailable": "Włącz agentów AI, aby zadawać pytania stąd."
+    },
+    "loadFailed": "Nie udało się wczytać tego widżetu.",
+    "receivables": {
+      "title": "Należności",
+      "hint": "Ile winni ci są klienci, co jest po terminie i co wpłynęło w tym miesiącu."
+    },
+    "payables": {
+      "title": "Zobowiązania",
+      "hint": "Ile jesteś winien dostawcom, co jest po terminie i co zapłaciłeś w tym miesiącu."
+    },
+    "aging": {
+      "title": "Należności wg wieku",
+      "hint": "Ile winni są klienci, według opóźnienia."
+    },
+    "invoicesDue": {
+      "title": "Faktury do zapłaty",
+      "hint": "Najbliższe faktury, które klienci mają zapłacić.",
+      "none": "Brak faktur z bliskim terminem.",
+      "noClient": "Brak klienta"
+    },
+    "recurringRevenue": {
+      "title": "Przychody cykliczne",
+      "hint": "Ile co miesiąc przynoszą faktury cykliczne i co ostatnio utracono."
     }
   }
 }

@@ -28,16 +28,14 @@ from app.services.rule_service import (
     create_rule,
     delete_rule,
     export_rules,
-    list_rule_packs,
     get_rule,
     get_rules,
     import_rules,
-    install_rule_pack,
     update_rule,
 )
 from app.services.transaction_service import update_transaction
 from app.services.category_service import create_default_categories
-from app.services.rule_packs import built_in_packs
+from app.services.rule_packs import built_in_packs, install_rule_pack, list_rule_packs
 
 
 # ---------------------------------------------------------------------------
@@ -613,6 +611,57 @@ async def test_apply_rules_no_match(session: AsyncSession, test_user, test_works
 
     await apply_rules_to_transaction(session, test_user.id, txn)
     assert txn.category_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("apply", ["to_transaction", "single_rule", "all_rules"])
+async def test_apply_rules_skips_a_payee_deleted_after_the_rule_was_saved(
+    session: AsyncSession, test_user, test_workspace, apply,
+):
+    """The rule keeps the deleted payee's id. Writing it would fail the
+    flush, so the payee action is dropped and the rest of the rule still
+    runs (#1018)."""
+    from app.services.payee_service import delete_payee
+
+    payee = Payee(user_id=test_user.id, name="Gone")
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, name="StaleAcc",
+        type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    session.add_all([payee, account])
+    await session.commit()
+    rule = await create_rule(
+        session,
+        test_workspace.id, test_user.id,
+        RuleCreate(
+            name="Stale payee",
+            conditions=[RuleCondition(field="description", op="contains", value="UBER")],
+            actions=[
+                RuleAction(op="set_payee", value=str(payee.id)),
+                RuleAction(op="append_notes", value="#ride"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    assert await delete_payee(session, payee.id, test_workspace.id) is True
+
+    txn = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
+        description="UBER TRIP", amount=Decimal("25.50"), date=date(2025, 3, 1),
+        type="debit", source="manual", created_at=datetime.now(timezone.utc),
+    )
+    session.add(txn)
+    await session.commit()
+
+    if apply == "to_transaction":
+        await apply_rules_to_transaction(session, test_user.id, txn)
+    elif apply == "single_rule":
+        await apply_single_rule(session, test_workspace.id, rule)
+    else:
+        await apply_all_rules(session, test_workspace.id)
+
+    assert txn.payee_id is None
+    assert txn.notes == "#ride"
 
 
 # ---------------------------------------------------------------------------

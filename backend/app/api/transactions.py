@@ -620,12 +620,16 @@ async def post_transaction_today(
 ):
     """One-click "it cleared today" for a pending transaction.
 
-    Marks the transaction as posted and stamps today's calendar date, resolved
-    in the workspace's timezone, the same as saving the edit dialog by hand.
+    Marks a manual transaction as posted and stamps today's calendar date,
+    resolved in the workspace's timezone. Synchronized rows reject the action
+    because their date remains provider-owned.
     """
-    transaction = await transaction_service.post_transaction_today(
-        session, transaction_id, ctx.workspace.id
-    )
+    try:
+        transaction = await transaction_service.post_transaction_today(
+            session, transaction_id, ctx.workspace.id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency

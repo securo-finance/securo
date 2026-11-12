@@ -141,6 +141,20 @@ def _iso_currency(value: Any, fallback: Optional[str]) -> Optional[str]:
     return fallback
 
 
+def _account_currency(raw_acc: dict) -> str:
+    """The currency an account is stored in, as ``_parse_accounts`` stores it.
+
+    Every read of an account's currency goes through here. ``get_holdings``
+    used to fall back to the raw value, so a loosely formatted account
+    currency (``"usd"``, or a custom-currency URL, which the SimpleFIN spec
+    allows) gave a holding without its own currency a different label from
+    its account. The sync matches the two exactly before deducting the
+    holding from the balance, so the portfolio was counted twice again
+    (issue #343); a URL would also overflow ``assets.currency``.
+    """
+    return _iso_currency(raw_acc.get("currency"), "USD") or "USD"
+
+
 def _ticker(value: Any) -> Optional[str]:
     """Normalize a holding's symbol for the ``assets.ticker`` column.
 
@@ -181,6 +195,42 @@ def _surface_errors(
             entry.get("msg") or entry.get("message"),
         )
     return reauth
+
+
+def _positions_value(raw_acc: dict) -> Decimal:
+    """Market value of the positions SimpleFIN lists inside this account.
+
+    SimpleFIN returns a brokerage as one account whose ``balance`` is the
+    whole portfolio (positions plus cash), with the positions themselves
+    under ``holdings``. The holdings sync stores those as assets, so the
+    account balance would count the same money again (issue #343, the
+    SimpleFIN shape of #843). The provider only reports the portion here;
+    the sync decides whether to subtract it, and only while a live holding
+    is counted for this account (connection_service._auto_invested_deductions).
+
+    Counts a position only when it carries an id and a market value (the
+    same two things get_holdings requires before importing it) and is
+    quoted in the account's currency; a position in another currency cannot
+    be subtracted from this balance, so it is left in. Not clamped to the
+    balance: positions worth more than the balance mean a margin debit, and
+    the negative cash residual is what the reports count as the liability,
+    so net worth still equals the balance the broker reported.
+    """
+    acc_currency = _account_currency(raw_acc)
+    total = Decimal("0")
+    for raw in raw_acc.get("holdings") or []:
+        if not isinstance(raw, dict):
+            continue
+        if not str(raw.get("id") or ""):
+            continue
+        value = _to_decimal(raw.get("market_value"))
+        # NaN would raise on the comparison below; Infinity is not a value.
+        if value is None or not value.is_finite() or value <= 0:
+            continue
+        if (_iso_currency(raw.get("currency"), acc_currency) or acc_currency) != acc_currency:
+            continue
+        total += value
+    return total
 
 
 class SimpleFinProvider(BankProvider):
@@ -432,7 +482,7 @@ class SimpleFinProvider(BankProvider):
         accounts: list[AccountData] = []
         for raw in payload.get("accounts") or []:
             balance = _to_decimal(raw.get("balance")) or Decimal("0")
-            currency = _iso_currency(raw.get("currency"), "USD") or "USD"
+            currency = _account_currency(raw)
             account_id = str(raw.get("id") or "")
             if not account_id:
                 continue
@@ -451,6 +501,7 @@ class SimpleFinProvider(BankProvider):
                     institution_external_id=inst_ext,
                     institution_name=inst_name,
                     institution_logo_url=inst_logo,
+                    auto_invested_balance=_positions_value(raw),
                 )
             )
         return institution_name or "SimpleFIN Connection", accounts
@@ -632,7 +683,7 @@ class SimpleFinProvider(BankProvider):
         self.action_required_warnings.extend(warnings)
         holdings: list[HoldingData] = []
         for raw_acc in payload.get("accounts") or []:
-            acc_currency = raw_acc.get("currency") or "USD"
+            acc_currency = _account_currency(raw_acc)
             acc_id = str(raw_acc.get("id") or "") or None
             acc_name = raw_acc.get("name")
             for raw in raw_acc.get("holdings") or []:

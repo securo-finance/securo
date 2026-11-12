@@ -1034,6 +1034,7 @@
     "sortAsc": "Seřadit vzestupně",
     "sortDesc": "Seřadit sestupně",
     "syncedInfo": "Transakce synchronizovaná z banky: částku, datum a účet nelze upravit",
+    "syncedAmountDateError": "Částku ani datum synchronizované transakce nelze změnit",
     "uncategorized": "Bez kategorie",
     "selected": "vybraných",
     "summaryCount": "{{count}} transakcí",
@@ -1119,7 +1120,7 @@
     "transferSameAccount": "Zdrojový a cílový účet se musí lišit",
     "transferDescription": "Popis",
     "transferNotes": "Poznámka",
-    "transferInfo": "Toto je převod — změny popisu, data a poznámky se projeví na obou stranách",
+    "transferInfo": "Toto je převod: změny popisu a poznámky se projeví na obou stranách. Změny částky a data se přenesou i na ručně zadanou (nesynchronizovanou) protistranu, nikdy však na synchronizovanou.",
     "transferLinkedTo": "Propojeno s:",
     "transferOpenAccount": "Otevřít účet {{account}}",
     "transferTooltip": "Převody jsou vyloučeny ze součtů v reportech a v přehledu",
@@ -1532,6 +1533,17 @@
     "confirmDeleteRecurringDescription": "Opakovaný rozpočet pro „{{name}}“ bude trvale smazán. Tato definice se už nebude vztahovat na další měsíce. Stávající transakce to neovlivní. Tuto akci nelze vrátit.",
     "repeatEveryMonth": "Opakovat každý měsíc",
     "recurringLabel": "Opakovaný",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Budgets for {{month}}",
+    "otherCategories": "Other categories",
+    "noCategories": "No categories yet",
+    "total": "Budget {{amount}}",
+    "saved": "Budgets saved",
+    "budgetFor": "Budget for {{category}}",
+    "invalidAmount": "Zadejte platnou částku nula nebo vyšší.",
+    "repeatEveryMonthFor": "Repeat the {{category}} budget every month",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
     "suggest": "Navrhnout z historie",
     "suggestTitle": "Navrhnout rozpočty",
     "suggestDescription": "Navržené limity podle vašeho průměrného měsíčního vydání za posledních {{months}} měsíců.",
@@ -1541,7 +1553,9 @@
     "suggestCreate": "Vytvořit rozpočty",
     "suggestCreated": "Vytvořeno {{count}} rozpočtů",
     "suggestEmpty": "Ve vybraném období není historie výdajů.",
-    "suggestError": "Návrhy se nepodařilo načíst. Zkuste to znovu za chvíli."
+    "suggestError": "Návrhy se nepodařilo načíst. Zkuste to znovu za chvíli.",
+    "hiddenCategory": "Skrytá",
+    "average": "usually {{amount}}"
   },
   "goals": {
     "title": "Cíle",
@@ -3367,6 +3381,315 @@
       "undoFirstMortgage": "Před přidáním rozpisu hypotéky zrušte rozdělení.",
       "categoryInUse": "Tato kategorie obsahuje části rozdělených transakcí. Nejprve upravte tato rozdělení.",
       "destinationInvalid": "Části rozdělených transakcí nemohou přejít do ignorované ani skryté kategorie."
+    }
+  },
+  "plugins": {
+    "title": "Pluginy",
+    "hint": "Kategorie a pravidla od komunity. Každou změnu si před použitím zkontrolujete a nic neopustí váš server.",
+    "browse": "Procházet katalog",
+    "noneInstalled": "V tomto pracovním prostoru nejsou nainstalované žádné pluginy.",
+    "remove": "Odebrat plugin",
+    "removeAria": "Odebrat {{name}}",
+    "catalogFailed": "Katalog se nepodařilo načíst.",
+    "catalogEmpty": "Katalog zatím neobsahuje žádné pluginy.",
+    "viewSource": "Zobrazit zdrojový kód",
+    "revoked": "Odvoláno",
+    "unavailable": "Nedostupné",
+    "needsVersion": "Vyžaduje Securo {{version}}",
+    "updateAvailable": "Dostupná aktualizace",
+    "installed": "Nainstalováno",
+    "install": "Nainstalovat",
+    "update": "Aktualizovat",
+    "andMore": "a dalších {{count}}",
+    "planTitle": {
+      "install": "Nainstalovat {{name}}?",
+      "update": "Aktualizovat {{name}}?",
+      "remove": "Odebrat {{name}}?"
+    },
+    "planIntro": "Toto se v tomto pracovním prostoru změní:",
+    "planFailed": "Nepodařilo se načíst, co by se změnilo.",
+    "planChanged": "Od tohoto náhledu se něco změnilo. Zkontrolujte ho znovu.",
+    "privacy": "Tento plugin pouze přidává data do tohoto pracovního prostoru. Nic se nikam neodesílá.",
+    "history": "Transakce si ponechají své současné kategorie.",
+    "confirm": {
+      "install": "Nainstalovat",
+      "update": "Aktualizovat",
+      "remove": "Odebrat"
+    },
+    "done": {
+      "install": "{{name}} nainstalováno",
+      "update": "{{name}} aktualizováno",
+      "remove": "{{name}} odebráno"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} skupina",
+      "category_groups_few": "{{count}} skupiny",
+      "category_groups_many": "{{count}} skupin",
+      "category_groups_other": "{{count}} skupin",
+      "categories_one": "{{count}} kategorie",
+      "categories_few": "{{count}} kategorie",
+      "categories_many": "{{count}} kategorií",
+      "categories_other": "{{count}} kategorií",
+      "rules_one": "{{count}} pravidlo",
+      "rules_few": "{{count}} pravidla",
+      "rules_many": "{{count}} pravidel",
+      "rules_other": "{{count}} pravidel"
+    },
+    "plan": {
+      "create": "Přidá: {{items}}",
+      "update": "Aktualizuje: {{items}}",
+      "delete": "Smaže: {{items}}",
+      "keep": "Ponechá beze změny vámi upravené: {{items}}:",
+      "release": "Předá vám (upravené nebo stále používané): {{items}}:",
+      "existing": "Přeskočí, co už máte: {{items}}:",
+      "unresolved": "Přeskočí pravidla bez kategorie: {{items}}:",
+      "defaults_one": "Vytvoří také {{count}} výchozí kategorii pro pravidla",
+      "defaults_few": "Vytvoří také {{count}} výchozí kategorie pro pravidla",
+      "defaults_many": "Vytvoří také {{count}} výchozích kategorií pro pravidla",
+      "defaults_other": "Vytvoří také {{count}} výchozích kategorií pro pravidla"
+    },
+    "page": {
+      "section": "Katalog",
+      "notice": "Pluginy Securo nekontroluje. Než se cokoli použije, uvidíte přesně, co se změní, a nic neopustí váš server.",
+      "search": "Hledat pluginy",
+      "type": {
+        "data": "Data",
+        "interface": "Rozhraní",
+        "code": "Kód"
+      },
+      "status": {
+        "installed": "Nainstalované",
+        "updates": "S aktualizací"
+      },
+      "clear": "Zrušit filtry",
+      "trendingHint": "Nejrychleji rostoucí vzhledem ke své velikosti",
+      "newestHint": "Přidané za posledních 30 dní",
+      "sortBy": "Řadit podle",
+      "sort": {
+        "popular": "Oblíbené",
+        "trending": "Populární",
+        "updated": "Nedávno aktualizované",
+        "newest": "Nejnovější",
+        "name": "Název"
+      },
+      "noResults": "Těmto filtrům neodpovídá žádný plugin.",
+      "byOwner": "od {{owner}}",
+      "updated": "Aktualizováno {{when}}",
+      "count_one": "{{count}} plugin",
+      "count_few": "{{count}} pluginy",
+      "count_many": "{{count}} pluginů",
+      "count_other": "{{count}} pluginů",
+      "stars_one": "{{count}} hvězda",
+      "stars_few": "{{count}} hvězdy",
+      "stars_many": "{{count}} hvězd",
+      "stars_other": "{{count}} hvězd",
+      "authors_one": "{{count}} autor",
+      "authors_few": "{{count}} autoři",
+      "authors_many": "{{count}} autorů",
+      "authors_other": "{{count}} autorů",
+      "clearSearch": "Vymazat hledání",
+      "facet": {
+        "type": "Typ",
+        "content": "Obsah",
+        "language": "Jazyk",
+        "status": "Stav"
+      },
+      "view": {
+        "all": "Vše",
+        "trending": "Populární",
+        "new": "Nové"
+      },
+      "any": "Libovolný",
+      "trendingEmpty": "Tento týden žádný plugin nezískal hvězdy.",
+      "newEmpty": "Za posledních 30 dní nepřibyl žádný plugin."
+    },
+    "kindName": {
+      "category_groups": "Skupiny kategorií",
+      "categories": "Kategorie",
+      "rules": "Pravidla",
+      "csv_presets": "Šablony CSV",
+      "fiscal_jurisdictions": "Daňové jurisdikce",
+      "invoice_labels": "Popisky faktur",
+      "widgets": "Widgety",
+      "reports": "Přehledy",
+      "dashboard_layouts": "Rozvržení nástěnky",
+      "connectors": "Bankovní připojení",
+      "parsers": "Čtečky souborů",
+      "price_providers": "Poskytovatelé cen",
+      "agent_tools": "Nástroje agenta"
+    },
+    "detail": {
+      "overview": "Přehled",
+      "inside": "Co obsahuje",
+      "insideHint": "Vše, co tento plugin přidá do prostoru. Při instalaci uvidíte, co už máte.",
+      "noReadme": "Autor zatím pro tento plugin nenapsal README.",
+      "loadFailed": "Podrobnosti pluginu se nepodařilo načíst.",
+      "contentsUnavailable": "Tato verze Securo neumí vypsat obsah tohoto pluginu.",
+      "version": "Verze",
+      "license": "Licence",
+      "requires": "Vyžaduje",
+      "updated": "Aktualizováno",
+      "languages": "Jazyky",
+      "builtIn": "výchozí",
+      "when": "Když",
+      "previewNote": "Před instalací uvidíte každou změnu a nic neopustí váš server.",
+      "notFound": "Tento plugin není v katalogu.",
+      "type": "Typ",
+      "added": "Přidáno"
+    },
+    "installedFailed": "Nainstalované pluginy se nepodařilo načíst.",
+    "planRecordOnly": {
+      "install": "Tento prostor už má vše, co přináší. Instalace ho zaznamená, abyste dostávali aktualizace.",
+      "update": "Žádné položky v tomto prostoru se nemění; nainstalovaná verze bude {{version}}.",
+      "remove": "Žádná jeho položka tu nezůstala; odebrání ho jen vyřadí ze seznamu."
+    }
+  },
+  "library": {
+    "title": "Knihovna",
+    "subtitle": "Vyberte, co ukazuje přehled a reporty a jak Securo vypadá.",
+    "kind": {
+      "widgets": "Widgety",
+      "reports": "Reporty",
+      "themes": "Motivy"
+    },
+    "moreHint": {
+      "widgets": "Pluginy mohou přidat další widgety.",
+      "reports": "Pluginy mohou přidat další reporty.",
+      "themes": "Pluginy mohou přidat další motivy."
+    },
+    "browseCatalog": "Procházet pluginy",
+    "lastReport": "Ponechte alespoň jeden report.",
+    "removeFrom": {
+      "dashboard": "Odebrat {{name}} z přehledu",
+      "reports": "Odebrat {{name}} z reportů"
+    },
+    "addTo": {
+      "dashboard": "Přidat {{name}} do přehledu",
+      "reports": "Přidat {{name}} do reportů"
+    },
+    "remove": "Odebrat",
+    "add": "Přidat",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Oceán",
+      "forest": "Les",
+      "sunset": "Západ slunce",
+      "graphite": "Grafit",
+      "high-contrast": "Vysoký kontrast",
+      "midnight": "Půlnoc",
+      "terminal": "Terminál",
+      "nebula": "Mlhovina"
+    },
+    "saveFailed": "Volbu se nepodařilo uložit. Zkuste to znovu.",
+    "appearance": "Vzhled",
+    "emptyDashboard": "Váš přehled je prázdný",
+    "emptyDashboardHint": "Přidejte widgety z knihovny a vyberte, co tu uvidíte.",
+    "addWidget": "Přidat widget",
+    "nothingToShow": "Teď není co zobrazit",
+    "editingDashboard": "Měňte pořadí, odebírejte nebo přidávejte widgety. Změny se ukládají hned.",
+    "restoreDefault": "Obnovit výchozí",
+    "done": "Hotovo",
+    "customizeDashboard": "Přizpůsobit přehled",
+    "manageReports": "Vybrat reporty",
+    "manageReportsShort": "Spravovat",
+    "widget": {
+      "overview": "Zůstatek a měsíc",
+      "overviewHint": "Dostupný zůstatek, příjmy, výdaje, čisté jmění a míra úspor.",
+      "uncategorized": "Bez kategorie",
+      "uncategorizedHint": "Transakce, které ještě čekají na kategorii.",
+      "spendingByCategoryHint": "Kam šly peníze za měsíc, v porovnání s rozpočty.",
+      "balanceFlowHint": "Jak se zůstatek vyvíjel tento měsíc, v porovnání s jinými.",
+      "goalsHint": "Postup vašich cílů.",
+      "transactionsHint": "Transakce za měsíc jako seznam nebo kalendář."
+    },
+    "report": {
+      "netWorthHint": "Účty, majetek a dluhy v čase.",
+      "incomeExpensesHint": "Příjmy a výdaje podle kategorií.",
+      "cashFlowHint": "Kam míří váš zůstatek.",
+      "moneyMapHint": "Jak se příjmy dělí mezi výdaje a úspory.",
+      "statementHint": "Příjmy a výdaje podle kategorií, měsíc po měsíci."
+    },
+    "dragToMove": "Přetažením přesunete {{name}}",
+    "widthOf": "Šířka {{name}}",
+    "widthLabel": "Šířka",
+    "width": {
+      "4": "Třetina",
+      "6": "Polovina",
+      "8": "Dvě třetiny",
+      "12": "Celá šířka"
+    },
+    "needs": {
+      "assistant": "Vyžaduje zapnuté AI agenty.",
+      "invoices": "Dostupné v pracovních prostorech typu Firemní."
+    }
+  },
+  "widgets": {
+    "budgets": "Rozpočty",
+    "viewAll": "Zobrazit vše",
+    "spendingPace": {
+      "title": "Výdaje za měsíc",
+      "hint": "Výdaje měsíce oproti rozpočtům a kolik zbývá na den.",
+      "noBudget": "Nastavte rozpočty a uvidíte, zda výdaje drží tempo.",
+      "used": "Využito {{percent}} % rozpočtů",
+      "paceMark": "značka ukazuje, kde by dnes bylo rovnoměrné tempo",
+      "over": "{{amount}} nad rozpočet",
+      "perDay": "Držte se {{amount}} denně, abyste zůstali v rozpočtu",
+      "left": "V rozpočtu zbývá {{amount}}"
+    },
+    "distribution": {
+      "title": "Rozložení výdajů",
+      "hint": "Kam šly peníze za měsíc, podle kategorií.",
+      "total": "Celkem utraceno"
+    },
+    "monthResult": {
+      "title": "Výsledek měsíce",
+      "hint": "Příjmy minus výdaje tento měsíc ve srovnání s minulým.",
+      "previous": "{{amount}} minulý měsíc"
+    },
+    "upcoming": {
+      "title": "Nadcházející",
+      "hint": "Opakované transakce splatné v příštích 30 dnech.",
+      "none": "V příštích {{days}} dnech není nic splatné."
+    },
+    "cards": {
+      "title": "Kreditní karty",
+      "hint": "Kolik dlužíte na kartách a zůstatek po jejich zaplacení.",
+      "none": "Žádné otevřené kreditní karty.",
+      "afterPaying": "Po zaplacení zbude {{amount}}"
+    },
+    "assistant": {
+      "title": "Zeptejte se agenta",
+      "libraryHint": "Pošlete otázku výchozímu agentovi, aniž byste opustili přehled.",
+      "hint": "Zeptejte se na cokoli o svých penězích. Odpověď se otevře v chatu.",
+      "placeholder": "Zeptejte se agenta…",
+      "suggestion1": "Kolik jsem tento měsíc utratil?",
+      "suggestion2": "Kde mohu ušetřit?",
+      "suggestion3": "Jaké platby se blíží?",
+      "send": "Odeslat",
+      "unavailable": "Zapněte AI agenty, abyste se mohli ptát odsud."
+    },
+    "loadFailed": "Tento widget se nepodařilo načíst.",
+    "receivables": {
+      "title": "Pohledávky",
+      "hint": "Co vám dluží klienti, co je po splatnosti a co přišlo tento měsíc."
+    },
+    "payables": {
+      "title": "Závazky",
+      "hint": "Co dlužíte dodavatelům, co je po splatnosti a co jste tento měsíc zaplatili."
+    },
+    "aging": {
+      "title": "Pohledávky podle stáří",
+      "hint": "Co dluží klienti, rozdělené podle zpoždění."
+    },
+    "invoicesDue": {
+      "title": "Brzy splatné faktury",
+      "hint": "Další faktury, které mají klienti zaplatit.",
+      "none": "Žádné faktury před splatností.",
+      "noClient": "Bez klienta"
+    },
+    "recurringRevenue": {
+      "title": "Opakované příjmy",
+      "hint": "Co měsíčně přinášejí opakované faktury a co se nedávno ztratilo."
     }
   }
 }

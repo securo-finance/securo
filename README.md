@@ -67,6 +67,7 @@ Everything beyond the core is off by default, needs a single env flag, and costs
 - **Login & security**: passkeys (Touch ID, Face ID, security keys), TOTP two-factor, and OIDC single sign-on with account linking and provider role sync. [Guide](https://docs.usesecuro.com/features/security/)
 - **Exchange rates**: a free [Open Exchange Rates](https://openexchangerates.org/) key enables automatic currency conversion; without one, cross-currency amounts fall back to 1:1 with a visual warning. [Details](https://docs.usesecuro.com/deployment/docker/)
 - **Timezone**: balances, budgets, and due dates turn over at midnight in your application timezone, set once in Admin Settings, with per-workspace overrides. [Details](https://docs.usesecuro.com/features/workspaces/)
+- **Plugins**: install categories and rules made by the community into a workspace from the plugin catalog, with a preview before anything changes. Only the catalog is downloaded; no workspace data leaves your server. `PLUGINS_ENABLED=true`.
 - **AI Agents**: self-hosted assistants over your data, multi-provider, with tool use and a per-agent knowledge base. [Guide](https://docs.usesecuro.com/features/agents/)
 
 ## AI-Assisted Development
