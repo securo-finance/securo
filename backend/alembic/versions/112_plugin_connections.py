@@ -5,8 +5,8 @@ installed with, so its integrations can be set up without the catalog.
 plugin_connections holds each connection: non-secret settings, the sealed
 secrets, the plugin's sync cursor and the scoped token it acts with.
 
-Revision ID: 110
-Revises: 109
+Revision ID: 112
+Revises: 111
 """
 
 import sqlalchemy as sa
@@ -14,8 +14,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "110"
-down_revision = "109"
+revision = "112"
+down_revision = "111"
 branch_labels = None
 depends_on = None
 
