@@ -3348,5 +3348,152 @@
       "update": "Keine Einträge in diesem Workspace ändern sich; die installierte Version wird {{version}}.",
       "remove": "Keiner seiner Einträge ist mehr hier; Entfernen nimmt es nur von der Liste."
     }
+  },
+  "library": {
+    "title": "Bibliothek",
+    "subtitle": "Wähle, was Dashboard und Berichte zeigen und wie Securo aussieht.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Berichte",
+      "themes": "Themes"
+    },
+    "moreHint": {
+      "widgets": "Plugins können weitere Widgets hinzufügen.",
+      "reports": "Plugins können weitere Berichte hinzufügen.",
+      "themes": "Plugins können weitere Themes hinzufügen."
+    },
+    "browseCatalog": "Plugins durchsuchen",
+    "lastReport": "Behalte mindestens einen Bericht.",
+    "removeFrom": {
+      "dashboard": "{{name}} aus dem Dashboard entfernen",
+      "reports": "{{name}} aus den Berichten entfernen"
+    },
+    "addTo": {
+      "dashboard": "{{name}} zum Dashboard hinzufügen",
+      "reports": "{{name}} zu den Berichten hinzufügen"
+    },
+    "remove": "Entfernen",
+    "add": "Hinzufügen",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Ozean",
+      "forest": "Wald",
+      "sunset": "Abendrot",
+      "graphite": "Graphit",
+      "high-contrast": "Hoher Kontrast",
+      "midnight": "Mitternacht",
+      "terminal": "Terminal",
+      "nebula": "Nebel"
+    },
+    "saveFailed": "Deine Auswahl konnte nicht gespeichert werden. Versuch es noch einmal.",
+    "appearance": "Darstellung",
+    "emptyDashboard": "Dein Dashboard ist leer",
+    "emptyDashboardHint": "Füge Widgets aus der Bibliothek hinzu, um festzulegen, was du hier siehst.",
+    "addWidget": "Widget hinzufügen",
+    "nothingToShow": "Gerade nichts anzuzeigen",
+    "editingDashboard": "Widgets umsortieren, entfernen oder hinzufügen. Änderungen werden sofort gespeichert.",
+    "restoreDefault": "Standard wiederherstellen",
+    "done": "Fertig",
+    "customizeDashboard": "Dashboard anpassen",
+    "manageReports": "Berichte auswählen",
+    "manageReportsShort": "Verwalten",
+    "widget": {
+      "overview": "Saldo und Monat",
+      "overviewHint": "Verfügbarer Saldo, Einnahmen, Ausgaben, Nettovermögen und Sparquote.",
+      "uncategorized": "Ohne Kategorie",
+      "uncategorizedHint": "Transaktionen, die noch auf eine Kategorie warten.",
+      "spendingByCategoryHint": "Wohin das Geld des Monats ging, verglichen mit deinen Budgets.",
+      "balanceFlowHint": "Wie sich dein Saldo diesen Monat entwickelt hat, im Vergleich zu anderen.",
+      "goalsHint": "Der Fortschritt deiner Ziele.",
+      "transactionsHint": "Die Transaktionen des Monats, als Liste oder Kalender."
+    },
+    "report": {
+      "netWorthHint": "Konten, Vermögenswerte und Schulden im Zeitverlauf.",
+      "incomeExpensesHint": "Ein- und Ausgänge nach Kategorie.",
+      "cashFlowHint": "Wohin sich dein Saldo bewegt.",
+      "moneyMapHint": "Wie sich Einnahmen auf Ausgaben und Ersparnisse verteilen."
+    },
+    "dragToMove": "Ziehen, um {{name}} zu verschieben",
+    "widthOf": "Breite von {{name}}",
+    "widthLabel": "Breite",
+    "width": {
+      "4": "Ein Drittel",
+      "6": "Hälfte",
+      "8": "Zwei Drittel",
+      "12": "Volle Breite"
+    },
+    "needs": {
+      "assistant": "Erfordert aktivierte KI-Agenten.",
+      "invoices": "Verfügbar in Arbeitsbereichen vom Typ Geschäftlich."
+    }
+  },
+  "widgets": {
+    "budgets": "Budgets",
+    "viewAll": "Alle anzeigen",
+    "spendingPace": {
+      "title": "Ausgaben im Monat",
+      "hint": "Die Ausgaben des Monats gegenüber deinen Budgets, und was pro Tag bleibt.",
+      "noBudget": "Lege Budgets fest, um zu sehen, ob deine Ausgaben im Takt sind.",
+      "used": "{{percent}} % der Budgets verbraucht",
+      "paceMark": "die Markierung zeigt, wo ein gleichmäßiges Tempo heute wäre",
+      "over": "{{amount}} über dem Budget",
+      "perDay": "Bleib bei {{amount}} pro Tag, um im Budget zu bleiben",
+      "left": "{{amount}} im Budget übrig"
+    },
+    "distribution": {
+      "title": "Ausgabenverteilung",
+      "hint": "Wohin das Geld des Monats ging, nach Kategorie.",
+      "total": "Gesamtausgaben"
+    },
+    "monthResult": {
+      "title": "Monatsergebnis",
+      "hint": "Einnahmen minus Ausgaben in diesem Monat, verglichen mit dem Vormonat.",
+      "previous": "{{amount}} im Vormonat"
+    },
+    "upcoming": {
+      "title": "Demnächst",
+      "hint": "Wiederkehrende Transaktionen in den nächsten 30 Tagen.",
+      "none": "In den nächsten {{days}} Tagen ist nichts fällig."
+    },
+    "cards": {
+      "title": "Kreditkarten",
+      "hint": "Was deine Karten schulden, und der Saldo nach dem Bezahlen.",
+      "none": "Keine offenen Kreditkarten.",
+      "afterPaying": "{{amount}} bleiben nach dem Bezahlen"
+    },
+    "assistant": {
+      "title": "Frag deinen Agenten",
+      "libraryHint": "Schick deinem Standard-Agenten eine Frage, ohne das Dashboard zu verlassen.",
+      "hint": "Frag alles rund um dein Geld. Die Antwort öffnet sich im Chat.",
+      "placeholder": "Frag deinen Agenten…",
+      "suggestion1": "Wie viel habe ich diesen Monat ausgegeben?",
+      "suggestion2": "Wo kann ich sparen?",
+      "suggestion3": "Welche Rechnungen stehen an?",
+      "send": "Senden",
+      "unavailable": "Aktiviere KI-Agenten, um hier Fragen zu stellen."
+    },
+    "loadFailed": "Dieses Widget konnte nicht geladen werden.",
+    "receivables": {
+      "title": "Forderungen",
+      "hint": "Was Kunden Ihnen schulden, was überfällig ist und was diesen Monat eingegangen ist."
+    },
+    "payables": {
+      "title": "Verbindlichkeiten",
+      "hint": "Was Sie Lieferanten schulden, was überfällig ist und was Sie diesen Monat bezahlt haben."
+    },
+    "aging": {
+      "title": "Forderungen nach Alter",
+      "hint": "Was Kunden schulden, nach Verzug aufgeteilt."
+    },
+    "invoicesDue": {
+      "title": "Bald fällige Rechnungen",
+      "hint": "Die nächsten Rechnungen, die Kunden bezahlen müssen.",
+      "none": "Keine fälligen Rechnungen.",
+      "noClient": "Kein Kunde"
+    },
+    "recurringRevenue": {
+      "title": "Wiederkehrende Einnahmen",
+      "hint": "Was wiederkehrende Rechnungen pro Monat einbringen, und was zuletzt verloren ging."
+    }
   }
 }

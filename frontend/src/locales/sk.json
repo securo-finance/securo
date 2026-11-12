@@ -3517,5 +3517,152 @@
       "update": "Žiadne položky v tomto priestore sa nemenia; nainštalovaná verzia bude {{version}}.",
       "remove": "Žiadna jeho položka tu nezostala; odstránenie ho len vyradí zo zoznamu."
     }
+  },
+  "library": {
+    "title": "Knižnica",
+    "subtitle": "Vyberte, čo ukazuje prehľad a reporty a ako Securo vyzerá.",
+    "kind": {
+      "widgets": "Widgety",
+      "reports": "Reporty",
+      "themes": "Motívy"
+    },
+    "moreHint": {
+      "widgets": "Pluginy môžu pridať ďalšie widgety.",
+      "reports": "Pluginy môžu pridať ďalšie reporty.",
+      "themes": "Pluginy môžu pridať ďalšie motívy."
+    },
+    "browseCatalog": "Prehliadať pluginy",
+    "lastReport": "Ponechajte aspoň jeden report.",
+    "removeFrom": {
+      "dashboard": "Odobrať {{name}} z prehľadu",
+      "reports": "Odobrať {{name}} z reportov"
+    },
+    "addTo": {
+      "dashboard": "Pridať {{name}} do prehľadu",
+      "reports": "Pridať {{name}} do reportov"
+    },
+    "remove": "Odobrať",
+    "add": "Pridať",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Oceán",
+      "forest": "Les",
+      "sunset": "Západ slnka",
+      "graphite": "Grafit",
+      "high-contrast": "Vysoký kontrast",
+      "midnight": "Polnoc",
+      "terminal": "Terminál",
+      "nebula": "Hmlovina"
+    },
+    "saveFailed": "Voľbu sa nepodarilo uložiť. Skúste to znova.",
+    "appearance": "Vzhľad",
+    "emptyDashboard": "Váš prehľad je prázdny",
+    "emptyDashboardHint": "Pridajte widgety z knižnice a vyberte, čo tu uvidíte.",
+    "addWidget": "Pridať widget",
+    "nothingToShow": "Teraz nie je čo zobraziť",
+    "editingDashboard": "Meňte poradie, odoberajte alebo pridávajte widgety. Zmeny sa ukladajú hneď.",
+    "restoreDefault": "Obnoviť predvolené",
+    "done": "Hotovo",
+    "customizeDashboard": "Prispôsobiť prehľad",
+    "manageReports": "Vybrať reporty",
+    "manageReportsShort": "Spravovať",
+    "widget": {
+      "overview": "Zostatok a mesiac",
+      "overviewHint": "Dostupný zostatok, príjmy, výdavky, čisté imanie a miera úspor.",
+      "uncategorized": "Bez kategórie",
+      "uncategorizedHint": "Transakcie, ktoré ešte čakajú na kategóriu.",
+      "spendingByCategoryHint": "Kam išli peniaze za mesiac, v porovnaní s rozpočtami.",
+      "balanceFlowHint": "Ako sa zostatok vyvíjal tento mesiac, v porovnaní s inými.",
+      "goalsHint": "Postup vašich cieľov.",
+      "transactionsHint": "Transakcie za mesiac ako zoznam alebo kalendár."
+    },
+    "report": {
+      "netWorthHint": "Účty, majetok a dlhy v čase.",
+      "incomeExpensesHint": "Príjmy a výdavky podľa kategórií.",
+      "cashFlowHint": "Kam smeruje váš zostatok.",
+      "moneyMapHint": "Ako sa príjmy delia medzi výdavky a úspory."
+    },
+    "dragToMove": "Potiahnutím presuniete {{name}}",
+    "widthOf": "Šírka {{name}}",
+    "widthLabel": "Šírka",
+    "width": {
+      "4": "Tretina",
+      "6": "Polovica",
+      "8": "Dve tretiny",
+      "12": "Celá šírka"
+    },
+    "needs": {
+      "assistant": "Vyžaduje zapnutých AI agentov.",
+      "invoices": "Dostupné v pracovných priestoroch typu Firemný."
+    }
+  },
+  "widgets": {
+    "budgets": "Rozpočty",
+    "viewAll": "Zobraziť všetko",
+    "spendingPace": {
+      "title": "Výdavky za mesiac",
+      "hint": "Výdavky mesiaca oproti rozpočtom a koľko zostáva na deň.",
+      "noBudget": "Nastavte rozpočty a uvidíte, či výdavky držia tempo.",
+      "used": "Využité {{percent}} % rozpočtov",
+      "paceMark": "značka ukazuje, kde by dnes bolo rovnomerné tempo",
+      "over": "{{amount}} nad rozpočet",
+      "perDay": "Držte sa {{amount}} denne, aby ste zostali v rozpočte",
+      "left": "V rozpočte zostáva {{amount}}"
+    },
+    "distribution": {
+      "title": "Rozdelenie výdavkov",
+      "hint": "Kam išli peniaze za mesiac, podľa kategórií.",
+      "total": "Spolu minuté"
+    },
+    "monthResult": {
+      "title": "Výsledok mesiaca",
+      "hint": "Príjmy mínus výdavky tento mesiac v porovnaní s minulým.",
+      "previous": "{{amount}} minulý mesiac"
+    },
+    "upcoming": {
+      "title": "Nadchádzajúce",
+      "hint": "Opakované transakcie splatné v nasledujúcich 30 dňoch.",
+      "none": "V nasledujúcich {{days}} dňoch nie je nič splatné."
+    },
+    "cards": {
+      "title": "Kreditné karty",
+      "hint": "Koľko dlžíte na kartách a zostatok po ich zaplatení.",
+      "none": "Žiadne otvorené kreditné karty.",
+      "afterPaying": "Po zaplatení zostane {{amount}}"
+    },
+    "assistant": {
+      "title": "Opýtajte sa agenta",
+      "libraryHint": "Pošlite otázku predvolenému agentovi bez opustenia prehľadu.",
+      "hint": "Opýtajte sa čokoľvek o svojich peniazoch. Odpoveď sa otvorí v chate.",
+      "placeholder": "Opýtajte sa agenta…",
+      "suggestion1": "Koľko som tento mesiac minul?",
+      "suggestion2": "Kde môžem ušetriť?",
+      "suggestion3": "Aké platby sa blížia?",
+      "send": "Odoslať",
+      "unavailable": "Zapnite AI agentov, aby ste sa mohli pýtať odtiaľto."
+    },
+    "loadFailed": "Tento widget sa nepodarilo načítať.",
+    "receivables": {
+      "title": "Pohľadávky",
+      "hint": "Čo vám dlžia klienti, čo je po splatnosti a čo prišlo tento mesiac."
+    },
+    "payables": {
+      "title": "Záväzky",
+      "hint": "Čo dlžíte dodávateľom, čo je po splatnosti a čo ste tento mesiac zaplatili."
+    },
+    "aging": {
+      "title": "Pohľadávky podľa veku",
+      "hint": "Čo dlžia klienti, rozdelené podľa omeškania."
+    },
+    "invoicesDue": {
+      "title": "Čoskoro splatné faktúry",
+      "hint": "Ďalšie faktúry, ktoré majú klienti zaplatiť.",
+      "none": "Žiadne faktúry pred splatnosťou.",
+      "noClient": "Bez klienta"
+    },
+    "recurringRevenue": {
+      "title": "Opakované príjmy",
+      "hint": "Čo mesačne prinášajú opakované faktúry a čo sa nedávno stratilo."
+    }
   }
 }

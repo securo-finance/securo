@@ -3483,5 +3483,152 @@
       "update": "Żaden element tej przestrzeni się nie zmienia; zainstalowana wersja to teraz {{version}}.",
       "remove": "Żaden jej element tu nie został; usunięcie tylko zdejmuje ją z listy."
     }
+  },
+  "library": {
+    "title": "Biblioteka",
+    "subtitle": "Wybierz, co pokazują pulpit i raporty oraz jak wygląda Securo.",
+    "kind": {
+      "widgets": "Widżety",
+      "reports": "Raporty",
+      "themes": "Motywy"
+    },
+    "moreHint": {
+      "widgets": "Wtyczki mogą dodać więcej widżetów.",
+      "reports": "Wtyczki mogą dodać więcej raportów.",
+      "themes": "Wtyczki mogą dodać więcej motywów."
+    },
+    "browseCatalog": "Przeglądaj wtyczki",
+    "lastReport": "Zostaw co najmniej jeden raport.",
+    "removeFrom": {
+      "dashboard": "Usuń {{name}} z pulpitu",
+      "reports": "Usuń {{name}} z raportów"
+    },
+    "addTo": {
+      "dashboard": "Dodaj {{name}} do pulpitu",
+      "reports": "Dodaj {{name}} do raportów"
+    },
+    "remove": "Usuń",
+    "add": "Dodaj",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Ocean",
+      "forest": "Las",
+      "sunset": "Zachód słońca",
+      "graphite": "Grafit",
+      "high-contrast": "Wysoki kontrast",
+      "midnight": "Północ",
+      "terminal": "Terminal",
+      "nebula": "Mgławica"
+    },
+    "saveFailed": "Nie udało się zapisać wyboru. Spróbuj ponownie.",
+    "appearance": "Wygląd",
+    "emptyDashboard": "Twój pulpit jest pusty",
+    "emptyDashboardHint": "Dodaj widżety z biblioteki, aby wybrać, co tu widzisz.",
+    "addWidget": "Dodaj widżet",
+    "nothingToShow": "Na razie nic do pokazania",
+    "editingDashboard": "Zmieniaj kolejność, usuwaj lub dodawaj widżety. Zmiany zapisują się od razu.",
+    "restoreDefault": "Przywróć domyślne",
+    "done": "Gotowe",
+    "customizeDashboard": "Dostosuj pulpit",
+    "manageReports": "Wybierz raporty",
+    "manageReportsShort": "Zarządzaj",
+    "widget": {
+      "overview": "Saldo i miesiąc",
+      "overviewHint": "Dostępne saldo, przychody, wydatki, majątek netto i stopa oszczędności.",
+      "uncategorized": "Bez kategorii",
+      "uncategorizedHint": "Transakcje, które wciąż czekają na kategorię.",
+      "spendingByCategoryHint": "Na co poszły pieniądze w tym miesiącu, w porównaniu z budżetami.",
+      "balanceFlowHint": "Jak zmieniało się saldo w tym miesiącu, w porównaniu z innymi.",
+      "goalsHint": "Postęp Twoich celów.",
+      "transactionsHint": "Transakcje z miesiąca, jako lista lub kalendarz."
+    },
+    "report": {
+      "netWorthHint": "Konta, aktywa i długi w czasie.",
+      "incomeExpensesHint": "Wpływy i wydatki według kategorii.",
+      "cashFlowHint": "Dokąd zmierza Twoje saldo.",
+      "moneyMapHint": "Jak przychody dzielą się na wydatki i oszczędności."
+    },
+    "dragToMove": "Przeciągnij, aby przenieść {{name}}",
+    "widthOf": "Szerokość {{name}}",
+    "widthLabel": "Szerokość",
+    "width": {
+      "4": "Jedna trzecia",
+      "6": "Połowa",
+      "8": "Dwie trzecie",
+      "12": "Pełna szerokość"
+    },
+    "needs": {
+      "assistant": "Wymaga włączenia agentów AI.",
+      "invoices": "Dostępne w przestrzeniach typu Firmowy."
+    }
+  },
+  "widgets": {
+    "budgets": "Budżety",
+    "viewAll": "Zobacz wszystko",
+    "spendingPace": {
+      "title": "Wydatki w miesiącu",
+      "hint": "Wydatki miesiąca na tle budżetów i ile zostaje na dzień.",
+      "noBudget": "Ustaw budżety, aby sprawdzać tempo wydatków.",
+      "used": "Wykorzystano {{percent}}% budżetów",
+      "paceMark": "znacznik pokazuje, gdzie byłoby dziś równe tempo",
+      "over": "{{amount}} ponad budżet",
+      "perDay": "Wydawaj do {{amount}} dziennie, aby zmieścić się w budżecie",
+      "left": "Zostało {{amount}} w budżecie"
+    },
+    "distribution": {
+      "title": "Podział wydatków",
+      "hint": "Na co poszły pieniądze w tym miesiącu, według kategorii.",
+      "total": "Wydano łącznie"
+    },
+    "monthResult": {
+      "title": "Wynik miesiąca",
+      "hint": "Przychody minus wydatki w tym miesiącu, w porównaniu z poprzednim.",
+      "previous": "{{amount}} w poprzednim miesiącu"
+    },
+    "upcoming": {
+      "title": "Nadchodzące",
+      "hint": "Transakcje cykliczne w ciągu najbliższych 30 dni.",
+      "none": "Nic do zapłaty w ciągu najbliższych {{days}} dni."
+    },
+    "cards": {
+      "title": "Karty kredytowe",
+      "hint": "Ile są winne Twoje karty i saldo po ich spłacie.",
+      "none": "Brak otwartych kart kredytowych.",
+      "afterPaying": "Po spłacie zostanie {{amount}}"
+    },
+    "assistant": {
+      "title": "Zapytaj agenta",
+      "libraryHint": "Wyślij pytanie do domyślnego agenta bez wychodzenia z pulpitu.",
+      "hint": "Zapytaj o cokolwiek dotyczącego Twoich pieniędzy. Odpowiedź otworzy się w czacie.",
+      "placeholder": "Zapytaj agenta…",
+      "suggestion1": "Ile wydałem w tym miesiącu?",
+      "suggestion2": "Gdzie mogę zaoszczędzić?",
+      "suggestion3": "Jakie rachunki się zbliżają?",
+      "send": "Wyślij",
+      "unavailable": "Włącz agentów AI, aby zadawać pytania stąd."
+    },
+    "loadFailed": "Nie udało się wczytać tego widżetu.",
+    "receivables": {
+      "title": "Należności",
+      "hint": "Ile winni ci są klienci, co jest po terminie i co wpłynęło w tym miesiącu."
+    },
+    "payables": {
+      "title": "Zobowiązania",
+      "hint": "Ile jesteś winien dostawcom, co jest po terminie i co zapłaciłeś w tym miesiącu."
+    },
+    "aging": {
+      "title": "Należności wg wieku",
+      "hint": "Ile winni są klienci, według opóźnienia."
+    },
+    "invoicesDue": {
+      "title": "Faktury do zapłaty",
+      "hint": "Najbliższe faktury, które klienci mają zapłacić.",
+      "none": "Brak faktur z bliskim terminem.",
+      "noClient": "Brak klienta"
+    },
+    "recurringRevenue": {
+      "title": "Przychody cykliczne",
+      "hint": "Ile co miesiąc przynoszą faktury cykliczne i co ostatnio utracono."
+    }
   }
 }

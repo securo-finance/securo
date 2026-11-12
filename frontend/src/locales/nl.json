@@ -3349,5 +3349,152 @@
       "update": "Er verandert niets aan de items in deze workspace; de geïnstalleerde versie wordt {{version}}.",
       "remove": "Geen van de items staat hier nog; verwijderen haalt het alleen van de lijst."
     }
+  },
+  "library": {
+    "title": "Bibliotheek",
+    "subtitle": "Kies wat het dashboard en de rapporten tonen, en hoe Securo eruitziet.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Rapporten",
+      "themes": "Thema's"
+    },
+    "moreHint": {
+      "widgets": "Plugins kunnen meer widgets toevoegen.",
+      "reports": "Plugins kunnen meer rapporten toevoegen.",
+      "themes": "Plugins kunnen meer thema's toevoegen."
+    },
+    "browseCatalog": "Plugins bekijken",
+    "lastReport": "Houd ten minste één rapport.",
+    "removeFrom": {
+      "dashboard": "{{name}} van het dashboard verwijderen",
+      "reports": "{{name}} uit de rapporten verwijderen"
+    },
+    "addTo": {
+      "dashboard": "{{name}} aan het dashboard toevoegen",
+      "reports": "{{name}} aan de rapporten toevoegen"
+    },
+    "remove": "Verwijderen",
+    "add": "Toevoegen",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Oceaan",
+      "forest": "Bos",
+      "sunset": "Zonsondergang",
+      "graphite": "Grafiet",
+      "high-contrast": "Hoog contrast",
+      "midnight": "Middernacht",
+      "terminal": "Terminal",
+      "nebula": "Nevel"
+    },
+    "saveFailed": "Je keuze kon niet worden opgeslagen. Probeer het opnieuw.",
+    "appearance": "Weergave",
+    "emptyDashboard": "Je dashboard is leeg",
+    "emptyDashboardHint": "Voeg widgets uit de bibliotheek toe om te kiezen wat je hier ziet.",
+    "addWidget": "Widget toevoegen",
+    "nothingToShow": "Nu niets te tonen",
+    "editingDashboard": "Widgets herschikken, verwijderen of toevoegen. Wijzigingen worden direct opgeslagen.",
+    "restoreDefault": "Standaard herstellen",
+    "done": "Klaar",
+    "customizeDashboard": "Dashboard aanpassen",
+    "manageReports": "Rapporten kiezen",
+    "manageReportsShort": "Beheren",
+    "widget": {
+      "overview": "Saldo en maand",
+      "overviewHint": "Beschikbaar saldo, inkomsten, uitgaven, nettovermogen en spaarquote.",
+      "uncategorized": "Zonder categorie",
+      "uncategorizedHint": "Transacties die nog op een categorie wachten.",
+      "spendingByCategoryHint": "Waar het geld van de maand heen ging, tegenover je budgetten.",
+      "balanceFlowHint": "Hoe je saldo deze maand liep, vergeleken met andere.",
+      "goalsHint": "De voortgang van je doelen.",
+      "transactionsHint": "De transacties van de maand, als lijst of kalender."
+    },
+    "report": {
+      "netWorthHint": "Rekeningen, bezittingen en schulden door de tijd.",
+      "incomeExpensesHint": "Geld in en uit, per categorie.",
+      "cashFlowHint": "Waar je saldo naartoe gaat.",
+      "moneyMapHint": "Hoe inkomsten verdeeld worden over uitgaven en sparen."
+    },
+    "dragToMove": "Sleep om {{name}} te verplaatsen",
+    "widthOf": "Breedte van {{name}}",
+    "widthLabel": "Breedte",
+    "width": {
+      "4": "Een derde",
+      "6": "Helft",
+      "8": "Twee derde",
+      "12": "Volledige breedte"
+    },
+    "needs": {
+      "assistant": "Vereist ingeschakelde AI-agents.",
+      "invoices": "Beschikbaar in werkruimtes van het type Zakelijk."
+    }
+  },
+  "widgets": {
+    "budgets": "Budgetten",
+    "viewAll": "Alles bekijken",
+    "spendingPace": {
+      "title": "Uitgaven deze maand",
+      "hint": "De uitgaven van de maand tegenover je budgetten, en wat er per dag over is.",
+      "noBudget": "Stel budgetten in om te zien of je uitgaven het tempo houden.",
+      "used": "{{percent}}% van de budgetten gebruikt",
+      "paceMark": "de markering is waar een gelijkmatig tempo vandaag zou zijn",
+      "over": "{{amount}} boven budget",
+      "perDay": "Houd het bij {{amount}} per dag om binnen budget te blijven",
+      "left": "{{amount}} over in het budget"
+    },
+    "distribution": {
+      "title": "Uitgavenverdeling",
+      "hint": "Waar het geld van de maand naartoe ging, per categorie.",
+      "total": "Totaal uitgegeven"
+    },
+    "monthResult": {
+      "title": "Maandresultaat",
+      "hint": "Inkomsten min uitgaven deze maand, vergeleken met vorige maand.",
+      "previous": "{{amount}} vorige maand"
+    },
+    "upcoming": {
+      "title": "Binnenkort",
+      "hint": "Terugkerende transacties in de komende 30 dagen.",
+      "none": "Niets te betalen in de komende {{days}} dagen."
+    },
+    "cards": {
+      "title": "Creditcards",
+      "hint": "Wat je kaarten schuldig zijn, en het saldo na betaling.",
+      "none": "Geen open creditcards.",
+      "afterPaying": "{{amount}} over na betaling"
+    },
+    "assistant": {
+      "title": "Vraag het je agent",
+      "libraryHint": "Stuur een vraag naar je standaardagent zonder het dashboard te verlaten.",
+      "hint": "Vraag alles over je geld. Het antwoord opent in de chat.",
+      "placeholder": "Vraag het je agent…",
+      "suggestion1": "Hoeveel heb ik deze maand uitgegeven?",
+      "suggestion2": "Waar kan ik op besparen?",
+      "suggestion3": "Welke rekeningen komen eraan?",
+      "send": "Versturen",
+      "unavailable": "Zet AI-agents aan om hier vragen te stellen."
+    },
+    "loadFailed": "Deze widget kon niet worden geladen.",
+    "receivables": {
+      "title": "Te ontvangen",
+      "hint": "Wat klanten je verschuldigd zijn, wat te laat is en wat er deze maand binnenkwam."
+    },
+    "payables": {
+      "title": "Te betalen",
+      "hint": "Wat je leveranciers verschuldigd bent, wat te laat is en wat je deze maand betaalde."
+    },
+    "aging": {
+      "title": "Vorderingen naar ouderdom",
+      "hint": "Wat klanten verschuldigd zijn, verdeeld naar achterstand."
+    },
+    "invoicesDue": {
+      "title": "Binnenkort vervallende facturen",
+      "hint": "De volgende facturen die klanten moeten betalen.",
+      "none": "Geen facturen die vervallen.",
+      "noClient": "Geen klant"
+    },
+    "recurringRevenue": {
+      "title": "Terugkerende omzet",
+      "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."
+    }
   }
 }
