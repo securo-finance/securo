@@ -3473,11 +3473,11 @@
     },
     "loadFailed": "Não foi possível carregar este widget.",
     "receivables": {
-      "title": "A receber",
+      "title": "Contas a receber",
       "hint": "O que os clientes devem, o que está atrasado e o que entrou no mês."
     },
     "payables": {
-      "title": "A pagar",
+      "title": "Contas a pagar",
       "hint": "O que você deve a fornecedores, o que está atrasado e o que foi pago no mês."
     },
     "aging": {
