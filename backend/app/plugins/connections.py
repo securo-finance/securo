@@ -16,6 +16,7 @@ person and workspace that started it.
 from __future__ import annotations
 
 import logging
+import secrets as secrets_module
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -148,7 +149,14 @@ async def create(
     session.add(connection)
     await session.commit()
     await session.refresh(connection)
-    link = await authorize_url(session, connection, user_id=user_id, record=record) if integration.auth == "oauth" else None
+    link = None
+    if integration.auth == "oauth":
+        try:
+            link = await authorize_url(session, connection, user_id=user_id, record=record)
+        except Exception:
+            # Without a sign-in link the connection can't be finished: don't leave it (or its token) behind.
+            await delete(session, connection)
+            raise
     return connection, link
 
 
@@ -323,6 +331,49 @@ async def delete_all(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: 
         await session.delete(connection)
         count += 1
     return count
+
+
+async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manifest: Manifest, *, lang: str) -> None:
+    """After an update the owner agreed to, connections act with the new scopes (not committed).
+
+    Each connection's token gets exactly the manifest's scopes. A plugin that
+    starts declaring scopes gets a token per connection; one that stops has
+    its tokens revoked.
+    """
+    scopes = [s.scope for s in manifest.api_scopes]
+    rows = await session.scalars(
+        select(PluginConnection).where(
+            PluginConnection.workspace_id == workspace_id, PluginConnection.plugin_id == manifest.id
+        )
+    )
+    for connection in rows.all():
+        token = await session.get(AccessToken, connection.access_token_id) if connection.access_token_id else None
+        if token is not None and token.revoked_at is None and scopes:
+            token.scopes = list(scopes)
+            continue
+        try:
+            secrets = vault.unseal(connection.secrets)
+        except vault.SealBroken:
+            continue  # set up again anyway; nothing to hand a token to
+        await _revoke_token(session, connection)
+        secrets.pop(_API_TOKEN, None)
+        connection.access_token_id = None
+        if scopes and connection.created_by is not None:
+            raw = access_token_service.TOKEN_PREFIX + secrets_module.token_urlsafe(32)
+            fresh = AccessToken(
+                workspace_id=workspace_id,
+                user_id=connection.created_by,
+                name=f"{localized(manifest.name, lang)}: {connection.name}"[:100],
+                token_prefix=raw[: len(access_token_service.TOKEN_PREFIX) + 6],
+                token_hash=access_token_service.hash_token(raw),
+                scopes=list(scopes),
+                created_at=_now(),
+            )
+            session.add(fresh)
+            await session.flush()
+            connection.access_token_id = fresh.id
+            secrets[_API_TOKEN] = raw
+        connection.secrets = vault.seal(secrets)
 
 
 async def _revoke_token(session: AsyncSession, connection: PluginConnection) -> None:

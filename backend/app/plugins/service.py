@@ -248,6 +248,8 @@ async def apply(
             session.add(record)
         record.name, record.version, record.commit = manifest.name, manifest.version, target_commit
         record.manifest = manifest.model_dump(mode="json") if manifest.has_code else None
+        if action == "update":
+            await connections.follow_manifest(session, workspace_id, manifest, lang=lang)
     await session.commit()
     if action == "remove" and has_code:
         await _release_code(session, plugin_id)

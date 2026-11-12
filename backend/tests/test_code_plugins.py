@@ -335,6 +335,36 @@ async def test_an_update_lists_new_hosts_and_scopes(session: AsyncSession, ids, 
 
 
 @pytest.mark.asyncio
+async def test_an_update_gives_connections_the_scopes_agreed_to(session: AsyncSession, ids, catalog, plugin_runner):
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    connection, _ = await _connect(session, workspace_id, user_id)
+    old_token = connection.access_token_id
+
+    catalog.publish(V2, lambda m: m.update(version="1.1.0", api_scopes=m["api_scopes"] + [{"scope": "accounts:read", "purpose": "x"}]))
+    await _apply(session, workspace_id, user_id, "update")
+    token = await session.get(AccessToken, old_token, populate_existing=True)
+    assert token is not None and sorted(token.scopes) == ["accounts:read", "transactions:write"]
+
+    # Dropping every scope revokes the token and the plugin no longer gets one.
+    catalog.publish("3" * 40, lambda m: m.update(version="1.2.0", api_scopes=[]))
+    await _apply(session, workspace_id, user_id, "update")
+    await session.refresh(connection)
+    assert connection.access_token_id is None
+    assert "__securo_api_token" not in vault.unseal(connection.secrets)
+    token = await session.get(AccessToken, old_token, populate_existing=True)
+    assert token is not None and token.revoked_at is not None
+
+    # Declaring scopes again mints a fresh token for each connection.
+    catalog.publish("4" * 40, lambda m: m.update(version="1.3.0", api_scopes=[{"scope": "accounts:read", "purpose": "x"}]))
+    await _apply(session, workspace_id, user_id, "update")
+    await session.refresh(connection)
+    fresh = await session.get(AccessToken, connection.access_token_id)
+    assert fresh is not None and fresh.scopes == ["accounts:read"] and fresh.id != old_token
+    assert vault.unseal(connection.secrets)["__securo_api_token"].startswith("sct_")
+
+
+@pytest.mark.asyncio
 async def test_a_workspace_on_an_older_version_is_refused_by_the_runner(
     session: AsyncSession, ids, catalog, plugin_runner
 ):
@@ -459,6 +489,22 @@ async def test_oauth_sign_in(session: AsyncSession, ids, catalog, plugin_runner,
     assert vault.unseal(connection.secrets)["access_token"] == "token-for-c0de"
     await connections.sync(session, connection)
     assert connection.state["key"] == "token-for-c0de"
+
+
+@pytest.mark.asyncio
+async def test_a_sign_in_that_cannot_start_leaves_nothing_behind(session: AsyncSession, ids, catalog, plugin_runner, states, monkeypatch):
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+
+    async def down(*args, **kwargs):
+        raise runner.RunnerUnavailable("the plugin runner can't be reached")
+
+    monkeypatch.setattr(connections, "authorize_url", down)
+    with pytest.raises(runner.RunnerUnavailable):
+        await _connect(session, workspace_id, user_id, "signin", client="abc")
+    assert await session.scalar(select(PluginConnection.id)) is None
+    tokens = (await session.scalars(select(AccessToken))).all()
+    assert all(t.revoked_at is not None for t in tokens)
 
 
 @pytest.mark.asyncio

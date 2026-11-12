@@ -16,6 +16,7 @@ import { plugins as pluginsApi } from '@/lib/api'
 import { useDescribe } from '@/hooks/use-describe-plugin-items'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { localized } from '@/lib/localized-text'
+import { scopeLabel } from '@/lib/plugin-format'
 import type { PluginAction, PluginCodeConsent, PluginItem, PluginPlan } from '@/types'
 
 /** A plugin and what the user asked to do with it. */
@@ -249,9 +250,3 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
   )
 }
 
-/** "transactions:write" as "Read and change transactions", in the UI language. */
-function scopeLabel(scope: string, t: (key: string, options?: Record<string, unknown>) => string): string {
-  const [resource, level] = scope.split(':')
-  const what = t(`plugins.code.resource.${resource}`, { defaultValue: resource })
-  return t(level === 'write' ? 'plugins.code.write' : 'plugins.code.read', { what })
-}

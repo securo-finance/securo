@@ -16,7 +16,7 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { plugins as pluginsApi } from '@/lib/api'
 import { localized } from '@/lib/localized-text'
 import { contributedKinds, pluginLocales, pluginTypes } from '@/lib/plugin-catalog'
-import { compactNumber, languageName, relativeDate } from '@/lib/plugin-format'
+import { compactNumber, languageName, relativeDate, scopeLabel } from '@/lib/plugin-format'
 import { conditionSummary } from '@/lib/rule-summary'
 import { cn } from '@/lib/utils'
 import type { PluginAction, PluginCatalogEntry, PluginContents, PluginRef } from '@/types'
@@ -360,7 +360,7 @@ function Contents({ contents }: { contents: PluginContents }) {
           <li key={scope.scope} className="flex items-start gap-3 px-4 py-2.5">
             <KeyRound size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1">
-              <span className="block font-mono text-xs">{scope.scope}</span>
+              <span className="block text-sm font-medium">{scopeLabel(scope.scope, t)}</span>
               <span className="block text-xs text-muted-foreground">{localized(scope.purpose, lang)}</span>
             </span>
           </li>
