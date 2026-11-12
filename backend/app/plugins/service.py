@@ -13,16 +13,17 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.rule import Rule
 from app.models.workspace import Workspace
+from app.models.plugin_connection import PluginConnection
 from app.models.workspace_plugin import WorkspacePlugin
-from app.plugins import index, sync
-from app.plugins.manifest import Manifest
+from app.plugins import connections, index, runner, sync
+from app.plugins.manifest import Manifest, parse_manifest
 from app.services.category_defaults import DEFAULT_CATEGORIES, DEFAULT_GROUPS
 from app.services.rule_packs import built_in_packs
 
@@ -37,6 +38,10 @@ class PluginNotFound(Exception):
 
 class PluginUnavailable(Exception):
     """The plugin can't be installed or updated here; the message says why."""
+
+
+class PluginForbidden(Exception):
+    """Plugins with code run on the server: only the workspace's owner adds, updates or removes them."""
 
 
 class PluginChanged(Exception):
@@ -62,12 +67,27 @@ class PluginDetails:
 
 
 @dataclass(frozen=True)
+class CodeConsent:
+    """What a plugin with code is allowed to do: what the owner agrees to."""
+
+    network: list[dict[str, Any]]
+    api_scopes: list[dict[str, Any]]
+    integrations: list[dict[str, Any]]
+    new_hosts: list[str]
+    """On an update: hosts the current version couldn't reach."""
+    new_scopes: list[str]
+    connections: int
+    """Connections in this workspace (removed along with the plugin)."""
+
+
+@dataclass(frozen=True)
 class PluginPlan:
     action: Action
     plugin_id: str
     commit: str | None
     """The commit the plan installs; None when removing."""
     sync: sync.SyncPlan
+    code: CodeConsent | None = None
 
 
 async def installed_plugins(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, WorkspacePlugin]:
@@ -138,17 +158,50 @@ def contents(manifest: Manifest) -> dict[str, list[dict[str, Any]]]:
             }
             for rule in manifest.contributes.rules
         ],
+        "integrations": [i.model_dump() for i in manifest.contributes.integrations],
+        "network": [h.model_dump() for h in manifest.network],
+        "api_scopes": [a.model_dump() for a in manifest.api_scopes],
     }
 
 
 async def plan(
     session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, action: Action, *, lang: str
 ) -> PluginPlan:
-    commit, manifest, checksum = await _target(session, workspace_id, plugin_id, action)
+    commit, manifest, checksum, _ = await _target(session, workspace_id, plugin_id, action)
     plan = await sync.plan_sync(
         session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True, fingerprint=checksum
     )
-    return PluginPlan(action, plugin_id, commit, plan)
+    return PluginPlan(action, plugin_id, commit, plan, await _consent(session, workspace_id, plugin_id, manifest))
+
+
+def _installed_manifest(record: WorkspacePlugin | None) -> Manifest | None:
+    return parse_manifest(record.manifest) if record is not None and record.manifest else None
+
+
+async def _consent(
+    session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, manifest: Manifest | None
+) -> CodeConsent | None:
+    record = (await installed_plugins(session, workspace_id)).get(plugin_id)
+    current = _installed_manifest(record)
+    shown = manifest or current  # removing shows what is being taken away
+    if shown is None or not shown.has_code:
+        return None
+    count = await session.scalar(
+        select(func.count()).select_from(PluginConnection).where(
+            PluginConnection.workspace_id == workspace_id,
+            PluginConnection.plugin_id == plugin_id,
+        )
+    )
+    old_hosts = {h.host for h in current.network} if current and manifest else set()
+    old_scopes = {a.scope for a in current.api_scopes} if current and manifest else set()
+    return CodeConsent(
+        network=[h.model_dump() for h in shown.network],
+        api_scopes=[a.model_dump() for a in shown.api_scopes],
+        integrations=[{"key": i.key, "name": i.name, "auth": i.auth} for i in shown.contributes.integrations],
+        new_hosts=sorted({h.host for h in shown.network} - old_hosts) if current and manifest else [],
+        new_scopes=sorted({a.scope for a in shown.api_scopes} - old_scopes) if current and manifest else [],
+        connections=int(count or 0),
+    )
 
 
 async def apply(
@@ -161,11 +214,20 @@ async def apply(
     commit: str | None,
     token: str,
     lang: str,
+    is_owner: bool = False,
 ) -> PluginPlan:
     """Carry out the confirmed plan; `PluginChanged` or `sync.SyncPlanChanged` if it moved."""
-    target_commit, manifest, checksum = await _target(session, workspace_id, plugin_id, action)
+    target_commit, manifest, checksum, entry = await _target(session, workspace_id, plugin_id, action)
     if target_commit != commit:
         raise PluginChanged
+    current = _installed_manifest((await installed_plugins(session, workspace_id)).get(plugin_id))
+    has_code = bool((manifest and manifest.has_code) or (current and current.has_code))
+    if has_code and not is_owner:
+        raise PluginForbidden
+    if manifest is not None and manifest.has_code and entry is not None:
+        # Before anything changes here: if the runner can't take it, nothing does.
+        await _install_code(entry, manifest)
+    consent = await _consent(session, workspace_id, plugin_id, manifest)
     # One plugin change per workspace at a time: two confirmations of the same
     # first install would otherwise both find nothing to lock and both create.
     # Taken after the catalog fetch, so no network wait holds it; the plan is
@@ -177,6 +239,7 @@ async def apply(
     )
     record = (await installed_plugins(session, workspace_id)).get(plugin_id)
     if manifest is None or target_commit is None:  # removing
+        await connections.delete_all(session, workspace_id, plugin_id)
         if record is not None:
             await session.delete(record)
     else:
@@ -184,21 +247,60 @@ async def apply(
             record = WorkspacePlugin(workspace_id=workspace_id, plugin_id=plugin_id, installed_by=user_id)
             session.add(record)
         record.name, record.version, record.commit = manifest.name, manifest.version, target_commit
+        record.manifest = manifest.model_dump(mode="json") if manifest.has_code else None
     await session.commit()
-    return PluginPlan(action, plugin_id, target_commit, result.plan)
+    if action == "remove" and has_code:
+        await _release_code(session, plugin_id)
+    return PluginPlan(action, plugin_id, target_commit, result.plan, consent)
+
+
+async def _install_code(entry: index.IndexEntry, manifest: Manifest) -> None:
+    """Put the pinned commit on the runner, unless it is there already."""
+    if not runner.configured():
+        raise PluginUnavailable("plugins with code need the plugin runner (the `plugins` profile)")
+    assert manifest.runtime is not None
+    try:
+        async with runner.RunnerClient() as client:
+            if any(p.id == entry.id and p.commit == entry.commit for p in await client.installed()):
+                return
+            async with index.http_client() as http:
+                archive, sha256 = await index.fetch_archive(http, entry)
+            await client.install(
+                entry.id,
+                commit=entry.commit,
+                sha256=sha256,
+                archive=archive,
+                entrypoint=manifest.runtime.entrypoint,
+                lockfile=manifest.runtime.lockfile,
+                hosts=[h.host for h in manifest.network],
+            )
+    except (runner.RunnerUnavailable, runner.RunnerRefused) as exc:
+        raise PluginUnavailable(str(exc)) from exc
+
+
+async def _release_code(session: AsyncSession, plugin_id: str) -> None:
+    """Take the plugin off the runner once no workspace has it."""
+    still_used = await session.scalar(select(WorkspacePlugin.id).where(WorkspacePlugin.plugin_id == plugin_id).limit(1))
+    if still_used is not None or not runner.configured():
+        return
+    try:
+        async with runner.RunnerClient() as client:
+            await client.remove(plugin_id)
+    except (runner.RunnerUnavailable, runner.RunnerRefused) as exc:
+        logger.warning("Couldn't remove %s from the plugin runner: %s", plugin_id, exc)
 
 
 async def _target(
     session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, action: Action
-) -> tuple[str | None, Manifest | None, str | None]:
-    """The commit, manifest and manifest checksum the action brings the workspace to."""
+) -> tuple[str | None, Manifest | None, str | None, index.IndexEntry | None]:
+    """The commit, manifest, manifest checksum and catalog entry the action brings the workspace to."""
     if plugin_id in {pack.source for pack in built_in_packs().values()}:
         raise PluginNotFound  # built-in packs are managed from the rules page
     installed = (await installed_plugins(session, workspace_id)).get(plugin_id)
     if action == "remove":
         if installed is None and not await _has_items(session, workspace_id, plugin_id):
             raise PluginNotFound
-        return None, None, None
+        return None, None, None, None
     if action == "install" and installed is not None:
         raise PluginUnavailable("already installed")
     if action == "update" and installed is None:
@@ -219,7 +321,7 @@ async def _target(
         raise PluginUnavailable(f"needs Securo {manifest.min_securo_version} or newer")
     if action == "update" and installed is not None and installed.commit == entry.commit:
         raise PluginUnavailable("already up to date")
-    return entry.commit, manifest, entry.manifest_sha256
+    return entry.commit, manifest, entry.manifest_sha256, entry
 
 
 async def _has_items(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str) -> bool:

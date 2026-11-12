@@ -1,9 +1,11 @@
 """The plugin manifest, `securo-plugin.json`, in its v1 form.
 
-Only what a data plugin needs: identity, a minimum Securo version and what it
-contributes. A plugin that declares code (`runtime`, `network`, `api_scopes`)
-or a contribution this version can't apply is rejected rather than half
-installed.
+Every plugin: identity, a minimum Securo version and what it contributes. A
+plugin with code adds `runtime` (its entrypoint and hashed lockfile),
+`network` (each host it may reach, and why) and, if it reads or writes the
+workspace, `api_scopes` (each scope, and why). Those three are what the
+person installing it consents to. A contribution this version can't apply
+is rejected rather than half installed.
 
 References between items are plain keys: a key names an item of the same
 plugin first, and a built-in default otherwise. A plugin can't point at
@@ -17,6 +19,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
+from app.core.access_token_scopes import ALL_SCOPES
 from app.services.category_defaults import DEFAULT_CATEGORIES, DEFAULT_GROUPS
 from app.services.rule_engine import compile_rule_regex
 
@@ -28,8 +31,15 @@ REPOSITORY_PATTERN = r"^https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
 COLOR_PATTERN = r"^#[0-9A-Fa-f]{6}$"
 #: The longest name a category or group column holds.
 NAME_MAX = 100
-#: Contributions this version can apply.
+#: Contributions applied as data: nothing of the plugin runs.
 DATA_KINDS = frozenset({"category_groups", "categories", "rules"})
+#: Contributions that run the plugin's code, in the plugin runner.
+CODE_KINDS = frozenset({"integrations"})
+ALL_KINDS = DATA_KINDS | CODE_KINDS
+#: A plain host name, optionally with a port; never a wildcard or an address.
+HOST_PATTERN = r"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(:[0-9]{1,5})?$"
+ENTRYPOINT_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$"
+PATH_PATTERN = r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,199}$"
 
 #: Condition fields a plugin rule may use. Account and payee ids are a
 #: workspace's own data, so a plugin can't know them.
@@ -169,16 +179,79 @@ class Category(_Model):
     treat_as_transfer: bool = False
 
 
+class FormField(_Model):
+    """One field of an integration's connection form."""
+
+    key: str = Field(pattern=KEY_PATTERN)
+    label: Text
+    secret: bool = False
+    """Kept in the encrypted store and never shown again."""
+    required: bool = True
+
+
+class Integration(_Model):
+    """A connection to an outside service, run by the plugin's code.
+
+    `credentials`: the person fills in `fields` (an API key, say).
+    `oauth`: the person signs in at the service; the plugin builds the sign-in
+    link and trades the code for a token. `none`: nothing to fill in.
+    With `sync_minutes`, Securo calls the plugin's `sync` on that schedule.
+    """
+
+    key: str = Field(pattern=KEY_PATTERN)
+    name: Text
+    description: Text | None = None
+    auth: Literal["credentials", "oauth", "none"] = "credentials"
+    fields: list[FormField] = Field(default=[], max_length=20)
+    sync_minutes: int | None = Field(default=None, ge=15, le=7 * 24 * 60)
+
+    @model_validator(mode="after")
+    def _unique_fields(self) -> Integration:
+        keys = [f.key for f in self.fields]
+        if len(keys) != len(set(keys)):
+            raise ValueError(f"integration {self.key}: field keys must be unique")
+        return self
+
+
+class Runtime(_Model):
+    entrypoint: str = Field(pattern=ENTRYPOINT_PATTERN, max_length=200)
+    lockfile: str | None = Field(default=None, pattern=PATH_PATTERN)
+    """A requirements file with a hash for every package (`uv export` writes one)."""
+
+    @model_validator(mode="after")
+    def _inside(self) -> Runtime:
+        if self.lockfile is not None and ".." in self.lockfile.split("/"):
+            raise ValueError("the lockfile must be a path inside the plugin")
+        return self
+
+
+class NetworkHost(_Model):
+    host: str = Field(pattern=HOST_PATTERN, max_length=260)
+    purpose: Text
+
+
+class ApiScope(_Model):
+    scope: str
+    purpose: Text
+
+    @model_validator(mode="after")
+    def _known(self) -> ApiScope:
+        if self.scope not in ALL_SCOPES:
+            raise ValueError(f"unknown scope: {self.scope}")
+        return self
+
+
 class Contributes(_Model):
     category_groups: list[CategoryGroup] = []
     categories: list[Category] = []
     rules: list[Rule] = []
+    integrations: list[Integration] = []
 
     @model_validator(mode="after")
     def _well_formed(self) -> Contributes:
-        if not (self.category_groups or self.categories or self.rules):
+        if not (self.category_groups or self.categories or self.rules or self.integrations):
             raise ValueError("contributes nothing")
-        for kind in ("category_groups", "categories", "rules"):
+        for kind in ("category_groups", "categories", "rules", "integrations"):
             keys = [item.key for item in getattr(self, kind)]
             if len(keys) != len(set(keys)):
                 raise ValueError(f"{kind}: keys must be unique")
@@ -207,20 +280,38 @@ class Manifest(_Model):
     license: str = Field(min_length=2, max_length=64)
     min_securo_version: str = Field(pattern=VERSION_PATTERN)
     contributes: Contributes
+    runtime: Runtime | None = None
+    network: list[NetworkHost] = Field(default=[], max_length=100)
+    api_scopes: list[ApiScope] = Field(default=[], max_length=len(ALL_SCOPES))
+
+    @property
+    def has_code(self) -> bool:
+        return self.runtime is not None
+
+    @model_validator(mode="after")
+    def _code_is_declared(self) -> Manifest:
+        if self.contributes.integrations and self.runtime is None:
+            raise ValueError("integrations need a runtime")
+        if self.runtime is None and (self.network or self.api_scopes):
+            raise ValueError("network and api_scopes are only for plugins with a runtime")
+        if self.runtime is not None and not self.contributes.integrations:
+            raise ValueError("a runtime needs something to run: add an integration")
+        hosts = [h.host for h in self.network]
+        scopes = [s.scope for s in self.api_scopes]
+        if len(hosts) != len(set(hosts)) or len(scopes) != len(set(scopes)):
+            raise ValueError("network hosts and api_scopes must be unique")
+        return self
 
     @model_validator(mode="before")
     @classmethod
-    def _only_data(cls, data: Any) -> Any:
+    def _known_kinds(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            code = [field for field in ("runtime", "network", "api_scopes") if field in data]
-            if code:
-                raise ValueError(f"plugins with code aren't supported yet ({', '.join(code)})")
             contributes = data.get("contributes")
             if isinstance(contributes, dict):
                 # An empty list of a kind this version doesn't know contributes
                 # nothing, as the index counts it: drop it rather than refuse.
-                kept = {k: v for k, v in contributes.items() if str(k) in DATA_KINDS or v not in ([], {}, None)}
-                unsupported = {str(kind) for kind in kept} - DATA_KINDS
+                kept = {k: v for k, v in contributes.items() if str(k) in ALL_KINDS or v not in ([], {}, None)}
+                unsupported = {str(kind) for kind in kept} - ALL_KINDS
                 if unsupported:
                     raise ValueError(
                         f"this Securo version can't apply: {', '.join(sorted(unsupported))}"

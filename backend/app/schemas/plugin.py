@@ -1,19 +1,47 @@
+import uuid
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class PluginFieldRead(BaseModel):
+    key: str
+    label: dict[str, str]
+    secret: bool
+    required: bool
+
+
+class PluginIntegrationRead(BaseModel):
+    key: str
+    name: dict[str, str]
+    description: dict[str, str] | None = None
+    auth: Literal["credentials", "oauth", "none"]
+    fields: list[PluginFieldRead] = []
+    sync_minutes: int | None = None
+
+
+class PluginHostRead(BaseModel):
+    host: str
+    purpose: dict[str, str]
+
+
+class PluginScopeRead(BaseModel):
+    scope: str
+    purpose: dict[str, str]
+
+
 class InstalledPluginRead(BaseModel):
     """A catalog plugin installed in this workspace, as recorded here: no catalog needed."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     plugin_id: str
     name: dict[str, str]
     version: str
     commit: str
     installed_at: datetime
+    integrations: list[PluginIntegrationRead] = Field(default=[], description="For plugins with code.")
+    network: list[PluginHostRead] = []
+    api_scopes: list[PluginScopeRead] = []
 
 
 class PluginCatalogRead(BaseModel):
@@ -83,6 +111,9 @@ class PluginContentsRead(BaseModel):
     category_groups: list[PluginGroupRead]
     categories: list[PluginCategoryRead]
     rules: list[PluginRuleRead]
+    integrations: list[PluginIntegrationRead] = []
+    network: list[PluginHostRead] = []
+    api_scopes: list[PluginScopeRead] = []
 
 
 class PluginDetailRead(BaseModel):
@@ -117,9 +148,70 @@ class PluginPlanRead(BaseModel):
     existing: list[PluginItemRead] = Field(description="Already in the workspace by name; left alone.")
     unresolved: list[PluginItemRead]
     default_categories: list[str] = Field(description="Default categories created first for the plugin's rules.")
+    code: "PluginCodeConsentRead | None" = Field(
+        default=None, description="For plugins with code: what the owner agrees to let it do."
+    )
+
+
+class PluginCodeIntegrationRead(BaseModel):
+    key: str
+    name: dict[str, str]
+    auth: Literal["credentials", "oauth", "none"]
+
+
+class PluginCodeConsentRead(BaseModel):
+    network: list[PluginHostRead]
+    api_scopes: list[PluginScopeRead]
+    integrations: list[PluginCodeIntegrationRead]
+    new_hosts: list[str] = Field(description="On an update: hosts the installed version couldn't reach.")
+    new_scopes: list[str]
+    connections: int = Field(description="Connections in this workspace; removed along with the plugin.")
+
+
+class PluginConnectionRead(BaseModel):
+    """A connection made through a plugin. Its secrets are never returned."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    plugin_id: str
+    integration: str
+    name: str
+    status: Literal["pending", "active", "error", "needs_auth"]
+    config: dict[str, Any]
+    secret_fields: list[str] = Field(default=[], description="Secret fields that are set (names only).")
+    sync_minutes: int | None
+    last_sync_at: datetime | None
+    last_error: str | None
+    created_at: datetime
+
+
+class PluginConnectionCreate(BaseModel):
+    plugin_id: str = Field(max_length=120)
+    integration: str = Field(max_length=64)
+    name: str = Field(default="", max_length=100)
+    values: dict[str, Any] = {}
+
+
+class PluginConnectionCreated(BaseModel):
+    connection: PluginConnectionRead
+    authorize_url: str | None = Field(description="For sign-in integrations: send the browser here.")
+
+
+class PluginAuthorizeRead(BaseModel):
+    authorize_url: str
+    redirect_uri: str
+
+
+class PluginOAuthCallback(BaseModel):
+    code: str = Field(min_length=1, max_length=4096)
+    state: str = Field(min_length=1, max_length=256)
 
 
 class PluginApplyRequest(BaseModel):
     action: Literal["install", "update", "remove"]
     commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
     token: str = Field(min_length=64, max_length=64)
+
+
+PluginPlanRead.model_rebuild()

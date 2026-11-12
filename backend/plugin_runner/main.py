@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from plugin_runner import sandbox
 from plugin_runner.config import RunnerSettings
-from plugin_runner.store import InstallRequest, NotInstalled, PluginFailed, Store, StoreError
+from plugin_runner.store import InstallRequest, NotInstalled, OtherCommit, PluginFailed, Store, StoreError
 
 logger = logging.getLogger("plugin_runner")
 
@@ -41,6 +41,9 @@ class CallRequest(BaseModel):
     params: dict[str, Any] = {}
     secrets: dict[str, Any] = {}
     config: dict[str, Any] = {}
+    securo: dict[str, Any] = {}
+    commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    """The commit the caller expects; the call is refused (409) if another is installed."""
     timeout: int | None = Field(default=None, ge=1)
 
 
@@ -97,10 +100,13 @@ def create_app(settings: RunnerSettings | None = None) -> FastAPI:
         try:
             result = await store.call(
                 f"{owner}/{name}", body.method, body.params,
-                secrets=body.secrets, config=body.config, timeout=body.timeout,
+                secrets=body.secrets, config=body.config, securo=body.securo,
+                commit=body.commit, timeout=body.timeout,
             )
         except NotInstalled as exc:
             raise HTTPException(404, str(exc)) from exc
+        except OtherCommit as exc:
+            raise HTTPException(409, str(exc)) from exc
         except PluginFailed as exc:
             return {"ok": False, "error": {"type": exc.kind, "message": exc.message}}
         return {"ok": True, "result": result}

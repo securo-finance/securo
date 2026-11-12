@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.core.config import get_settings
 from app.plugins.manifest import (
+    CODE_KINDS,
     DATA_KINDS,
     ID_PATTERN,
     REPOSITORY_PATTERN,
@@ -42,11 +43,15 @@ _TIMEOUT = 10.0
 _MAX_INDEX_BYTES = 4 << 20
 _MAX_MANIFEST_BYTES = 2 << 20
 _MAX_README_BYTES = 256 << 10
+_MAX_ARCHIVE_BYTES = 20 << 20
 _MANIFEST_CACHE_SIZE = 256
 
-#: Contributions this version can apply. A plugin with anything else is
-#: listed but can't be installed here.
-SUPPORTED_CONTRIBUTIONS = DATA_KINDS
+def supported_contributions() -> frozenset[str]:
+    """What this instance can apply. Plugins with anything else are listed but
+    can't be installed: code needs a plugin runner to run in."""
+    from app.plugins import runner
+
+    return DATA_KINDS | CODE_KINDS if runner.configured() else DATA_KINDS
 
 
 class PluginIndexError(Exception):
@@ -66,6 +71,10 @@ class IndexEntry(BaseModel):
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     readme: str | None = Field(default=None, max_length=512, description="The README copy, relative to the index.")
     readme_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    archive: str | None = Field(
+        default=None, max_length=512, description="The release's source tarball, relative to the index (plugins with code)."
+    )
+    archive_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     name: Text
     description: Text
     version: str = Field(pattern=VERSION_PATTERN)
@@ -88,7 +97,7 @@ class IndexEntry(BaseModel):
     @property
     def supported(self) -> bool:
         """Everything it contributes is something this Securo can apply."""
-        return {kind for kind, count in self.contributes.items() if count} <= SUPPORTED_CONTRIBUTIONS
+        return {kind for kind, count in self.contributes.items() if count} <= supported_contributions()
 
     @property
     def compatible(self) -> bool:
@@ -192,6 +201,16 @@ async def fetch_readme(client: httpx.AsyncClient, entry: IndexEntry) -> str | No
         raise PluginIndexError(f"{entry.id}: the README isn't UTF-8") from exc
     _remember(_readmes, entry.readme_sha256, readme)
     return readme
+
+
+async def fetch_archive(client: httpx.AsyncClient, entry: IndexEntry) -> tuple[bytes, str]:
+    """The source tarball of a plugin with code, and its sha256, checked against the index."""
+    if not entry.archive or not entry.archive_sha256:
+        raise PluginIndexError(f"{entry.id}: the catalog has no copy of its code")
+    body = await _get(client, _on_index_host(entry, entry.archive, "code"), _MAX_ARCHIVE_BYTES)
+    if hashlib.sha256(body).hexdigest() != entry.archive_sha256:
+        raise PluginIndexError(f"{entry.id}: the code doesn't match the catalog's checksum")
+    return body, entry.archive_sha256
 
 
 def securo_version() -> str | None:

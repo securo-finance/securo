@@ -7,7 +7,7 @@ packages, not the current directory, no environment variables for Python. This
 file then adds the plugin's own wheels and source, imports the entrypoint
 (`package.module:attribute`) and reads one request as JSON on stdin:
 
-    {"method": "...", "params": {...}, "secrets": {...}, "config": {...}}
+    {"method": "...", "params": {...}, "secrets": {...}, "config": {...}, "securo": {...}}
 
 It calls `plugin.<method>(params, context)`, sync or async, and writes one JSON
 reply to the original stdout: `{"ok": true, "result": ...}` or
@@ -33,11 +33,17 @@ MESSAGE_LIMIT = 2000
 
 
 class Context:
-    """What a call gets besides its parameters. Read-only."""
+    """What a call gets besides its parameters. Read-only.
 
-    def __init__(self, secrets: dict, config: dict):
+    `secrets` and `config` are the connection's; `securo` holds `api_url`,
+    `workspace_id` and, for plugins that declared `api_scopes`, a `token`
+    limited to those scopes.
+    """
+
+    def __init__(self, secrets: dict, config: dict, securo: dict):
         self.secrets = MappingProxyType(dict(secrets))
         self.config = MappingProxyType(dict(config))
+        self.securo = MappingProxyType(dict(securo))
 
 
 def _load(root: str, entrypoint: str):
@@ -59,7 +65,7 @@ def _run(root: str, entrypoint: str, request: dict):
     handler = getattr(plugin, method, None)
     if not callable(handler):
         raise LookupError(f"the plugin has no method {method!r}")
-    result = handler(request.get("params") or {}, Context(request.get("secrets") or {}, request.get("config") or {}))
+    result = handler(request.get("params") or {}, Context(request.get("secrets") or {}, request.get("config") or {}, request.get("securo") or {}))
     if inspect.isawaitable(result):
         result = asyncio.run(_await(result))
     return result

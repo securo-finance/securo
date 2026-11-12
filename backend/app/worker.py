@@ -60,6 +60,13 @@ celery_app.conf.beat_schedule = {
         # stamped with the 1:1 fallback (or left NULL) once real rates land.
         "schedule": 60 * 60 * 12,
     },
+    "sync-plugin-connections": {
+        "task": "app.tasks.plugin_tasks.sync_plugin_connections",
+        # Each connection keeps its own interval (at least 15 minutes, from
+        # the plugin's manifest); this only checks which are due. Returns at
+        # once while plugins are off.
+        "schedule": 60 * 5,
+    },
 }
 
 celery_app.conf.include = [
@@ -68,6 +75,7 @@ celery_app.conf.include = [
     "app.tasks.invoice_schedule_tasks",
     "app.tasks.asset_tasks",
     "app.tasks.fx_rate_tasks",
+    "app.tasks.plugin_tasks",
     # Optional agents module — registering the import is harmless when
     # AGENTS_ENABLED=false (the task just won't be dispatched).
     "app.agents.tasks.ingest",

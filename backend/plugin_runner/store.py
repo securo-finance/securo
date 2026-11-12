@@ -32,6 +32,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit
 
 from plugin_runner import egress_token, sandbox
 from plugin_runner.config import RunnerSettings
@@ -52,6 +53,10 @@ class StoreError(Exception):
 
 class NotInstalled(StoreError):
     pass
+
+
+class OtherCommit(StoreError):
+    """Another version of the plugin is installed than the caller agreed to."""
 
 
 class PluginFailed(Exception):
@@ -246,21 +251,26 @@ class Store:
         *,
         secrets: dict[str, Any] | None = None,
         config: dict[str, Any] | None = None,
+        securo: dict[str, Any] | None = None,
+        commit: str | None = None,
         timeout: int | None = None,
     ) -> Any:
         plugin = self.get(plugin_id)
+        if commit is not None and commit != plugin.commit:
+            raise OtherCommit(f"{plugin_id} is installed at another version ({plugin.commit[:12]})")
         timeout = min(timeout or self.settings.call_timeout, self.settings.call_timeout)
         base = self._plugin_dir(plugin_id, plugin.uid)
         home = self._home(base, plugin.uid)
+        securo = securo or {}
         request = json.dumps(
-            {"method": method, "params": params, "secrets": secrets or {}, "config": config or {}}
+            {"method": method, "params": params, "secrets": secrets or {}, "config": config or {}, "securo": securo}
         ).encode()
         async with self._calls:
             try:
                 result = await sandbox.run(
                     [sys.executable, "-I", "-S", HOST_SCRIPT, str(base / plugin.commit), plugin.entrypoint],
                     cwd=str(home),
-                    env=self._env(home, plugin_id, plugin.hosts, timeout),
+                    env=self._env(home, plugin_id, plugin.hosts, timeout, api_url=securo.get("api_url")),
                     limits=sandbox.Limits(timeout=timeout, memory_mb=self.settings.memory_mb),
                     uid=plugin.uid,
                     stdin=request,
@@ -280,8 +290,14 @@ class Store:
             raise PluginFailed(str(error.get("type", "Error")), str(error.get("message", "")))
         return reply.get("result")
 
-    def _env(self, home: Path, plugin_id: str, hosts: list[str], ttl: int) -> dict[str, str]:
-        """No inherited environment: only a path, a home and, with hosts, the proxy."""
+    def _env(
+        self, home: Path, plugin_id: str, hosts: list[str], ttl: int, *, api_url: str | None = None
+    ) -> dict[str, str]:
+        """No inherited environment: only a path, a home and, with hosts, the proxy.
+
+        Securo's own API is reached directly over the internal network, not
+        through the proxy (which refuses private addresses).
+        """
         env = {
             "PATH": "/usr/local/bin:/usr/bin:/bin",
             "HOME": str(home),
@@ -292,6 +308,9 @@ class Store:
             token = egress_token.mint(self.settings.egress_secret, plugin_id, hosts, ttl + 30)
             proxy = f"http://plugin:{token}@{self.settings.egress_proxy}"
             env |= {"HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "https_proxy": proxy, "http_proxy": proxy}
+            api_host = urlsplit(api_url).hostname if api_url else None
+            if api_host:
+                env |= {"NO_PROXY": api_host, "no_proxy": api_host}
         return env
 
 

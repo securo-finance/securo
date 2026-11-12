@@ -126,9 +126,17 @@ class RunnerClient:
         *,
         secrets: dict[str, Any] | None = None,
         config: dict[str, Any] | None = None,
+        securo: dict[str, Any] | None = None,
+        commit: str | None = None,
         timeout: int | None = None,
     ) -> Any:
-        body = {"method": method, "params": params or {}, "secrets": secrets or {}, "config": config or {}}
+        """Run `method`; with `commit`, refused (RunnerRefused) unless that version is installed."""
+        body: dict[str, Any] = {
+            "method": method, "params": params or {}, "secrets": secrets or {},
+            "config": config or {}, "securo": securo or {},
+        }
+        if commit is not None:
+            body["commit"] = commit
         if timeout is not None:
             body["timeout"] = timeout
         response = await self._send(
