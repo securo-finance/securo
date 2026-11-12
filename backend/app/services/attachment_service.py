@@ -26,7 +26,28 @@ def sanitize_filename(filename: str) -> str:
     return f"{name}.{ext}" if ext else name
 
 
-def _validate_file(filename: str, content_type: str, size: int) -> None:
+_SERVED_TYPES = {
+    "pdf": "application/pdf",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "heic": "image/heic",
+}
+
+
+def served_content_type(filename: str) -> str:
+    """The type a stored file is served as, from its extension alone.
+
+    Never the type the upload claimed: HTML sent as `invoice.pdf` with
+    `text/html` would otherwise open as a page on the app's origin.
+    """
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    return _SERVED_TYPES.get(ext, "application/octet-stream")
+
+
+def _validate_file(filename: str, size: int) -> None:
     settings = get_settings()
 
     max_bytes = settings.storage_max_file_size_mb * 1024 * 1024
@@ -60,11 +81,10 @@ async def upload_attachment(
     user_id: uuid.UUID,
     transaction_id: uuid.UUID,
     filename: str,
-    content_type: str,
     data: bytes,
 ) -> TransactionAttachment:
     filename = sanitize_filename(filename)
-    _validate_file(filename, content_type, len(data))
+    _validate_file(filename, len(data))
     await _verify_transaction_in_workspace(session, transaction_id, workspace_id)
 
     settings = get_settings()
@@ -84,7 +104,7 @@ async def upload_attachment(
     storage_key = f"{workspace_id}/{transaction_id}/{prefix}_{filename}"
 
     storage = get_storage_provider()
-    stored = await storage.upload(storage_key, data, content_type)
+    stored = await storage.upload(storage_key, data, served_content_type(filename))
 
     attachment = TransactionAttachment(
         workspace_id=workspace_id,
