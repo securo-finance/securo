@@ -48,6 +48,8 @@ JWT_CACHE_REFRESH_BEFORE = 600  # re-mint with 10 min buffer
 
 MAX_VALID_UNTIL_DAYS = 179
 DEFAULT_VALID_UNTIL_DAYS = MAX_VALID_UNTIL_DAYS
+# Reduce "valid until" time slightly in case clocks are misaligned
+VALID_UNTIL_CLOCK_MARGIN = timedelta(minutes=10)
 DEFAULT_PSU_TYPE = "personal"
 # Days of history requested on a fresh fetch, counted inclusively (today is
 # day 1). Many banks cap the window at exactly 90 days.
@@ -669,7 +671,11 @@ class EnableBankingProvider(BankProvider):
         valid_until_days: int,
     ) -> dict:
         valid_until_days = min(valid_until_days, MAX_VALID_UNTIL_DAYS)
-        valid_until_dt = datetime.now(timezone.utc) + timedelta(days=valid_until_days)
+        valid_until_dt = (
+            datetime.now(timezone.utc)
+            + timedelta(days=valid_until_days)
+            - VALID_UNTIL_CLOCK_MARGIN
+        )
         # EB wants RFC3339 with a trailing 'Z' for UTC.
         valid_until = valid_until_dt.replace(microsecond=0).isoformat().replace(
             "+00:00", "Z"
