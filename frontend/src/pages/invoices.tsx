@@ -58,6 +58,7 @@ import {
   displayNumber,
   invoiceErrorKey,
   linesTotal,
+  AGING_BUCKETS,
 } from '@/lib/invoice-utils'
 import type {
   InstallmentInput,
@@ -81,16 +82,6 @@ type Filter = 'all' | 'open' | 'overdue' | 'paid' | 'draft'
 /** The three derived states where money is still expected. `open` in the
  *  filter bar means all of them, which is why it is not a server query. */
 const OUTSTANDING: string[] = ['open', 'partial', 'overdue']
-
-/** Aging buckets, oldest last. The tone runs from quiet to loud with the
- *  age, so the bar reads as a temperature without needing its legend. */
-const BUCKETS = [
-  { key: 'current', tone: 'bg-emerald-500/70' },
-  { key: 'd1_30', tone: 'bg-amber-400/80' },
-  { key: 'd31_60', tone: 'bg-orange-500/80' },
-  { key: 'd61_90', tone: 'bg-rose-500/80' },
-  { key: 'd90_plus', tone: 'bg-rose-700/80' },
-] as const
 
 export default function InvoicesPage() {
   const { t } = useTranslation()
@@ -150,7 +141,7 @@ export default function InvoicesPage() {
 
   const outstanding = Number(summary?.outstanding ?? 0)
   const overdue = Number(summary?.overdue_amount ?? 0)
-  const bucketTotal = BUCKETS.reduce(
+  const bucketTotal = AGING_BUCKETS.reduce(
     (sum, b) => sum + Number(summary?.buckets[b.key] ?? 0),
     0,
   )
@@ -287,7 +278,7 @@ export default function InvoicesPage() {
                   className="flex h-2 w-full overflow-hidden rounded-full bg-muted"
                   data-testid="aging-bar"
                 >
-                  {BUCKETS.map((bucket) => {
+                  {AGING_BUCKETS.map((bucket) => {
                     const amount = Number(summary?.buckets[bucket.key] ?? 0)
                     if (amount <= 0) return null
                     return (
@@ -301,7 +292,7 @@ export default function InvoicesPage() {
                   })}
                 </div>
                 <dl className="mt-3 space-y-1">
-                  {BUCKETS.map((bucket) => {
+                  {AGING_BUCKETS.map((bucket) => {
                     const amount = Number(summary?.buckets[bucket.key] ?? 0)
                     if (amount <= 0) return null
                     return (
