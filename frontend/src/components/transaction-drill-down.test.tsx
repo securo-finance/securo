@@ -51,6 +51,23 @@ describe('TransactionDrillDown', () => {
     vi.resetAllMocks()
   })
 
+  it('preserves the expense share of recurring category splits in the Overview panel', async () => {
+    vi.mocked(dashboard.projectedTransactions).mockResolvedValue([{
+      recurring_id: 'split-bill', account_id: 'account-1', description: 'Split recurring bill',
+      amount: 100, amount_primary: 200, currency: 'EUR', type: 'debit', date: '2026-11-10',
+      category_id: null, has_category_lines: true, category_lines: [
+        { category_id: 'food', category_name: 'Food', category_icon: null, category_color: null, amount: 80, treat_as_transfer: false },
+        { category_id: 'investment', category_name: 'Investment', category_icon: null, category_color: null, amount: 20, treat_as_transfer: true },
+      ],
+    }] as never)
+    renderWithProviders(<TransactionDrillDown filter={{ title: 'Expenses', type: 'debit', from: '2026-11-01', to: '2026-11-30' }} onClose={vi.fn()} />)
+    expect(await screen.findByText('Split recurring bill')).toBeInTheDocument()
+    expect(screen.getByText('-€80.00')).toBeInTheDocument()
+    expect(screen.getAllByText('$160.00').length).toBeGreaterThan(0)
+    expect(screen.queryByText('$200.00')).not.toBeInTheDocument()
+    expect(screen.getByText(/part of €100.00/)).toBeInTheDocument()
+  })
+
   it('closes on a click outside the panel', async () => {
     const { onClose } = renderPanel({ dialogOpen: false })
     await waitForOutsideClickListener()

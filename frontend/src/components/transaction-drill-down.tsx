@@ -65,10 +65,12 @@ export function TransactionDrillDown({
   filter,
   onClose,
   onTransactionClick,
+  useViewerShare = false,
 }: {
   filter: DrillDownFilter | null
   onClose: () => void
   onTransactionClick?: (tx: Transaction) => void
+  useViewerShare?: boolean
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -77,11 +79,12 @@ export function TransactionDrillDown({
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const panelRef = useRef<HTMLDivElement>(null)
+  const noAccounts = filter?.account_ids?.length === 0
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['drill-down', filter],
-    queryFn: () =>
-      transactionsApi.list({
+    queryFn: async () => {
+      const params = {
         category_id: filter?.category_id,
         category_ids: filter?.category_ids,
         uncategorized: filter?.uncategorized,
@@ -94,17 +97,27 @@ export function TransactionDrillDown({
         status: filter?.realizedOnly ? 'posted' : undefined,
         limit: 200,
         user_pnl_only: true,
-      }),
-    enabled: !!filter,
+      }
+      const first = await transactionsApi.list({ ...params, page: 1 })
+      const items = [...first.items]
+      for (let page = 2; items.length < first.total; page++) {
+        const next = await transactionsApi.list({ ...params, page })
+        // Never silently present a truncated list and total as complete.
+        if (next.items.length === 0) throw new Error('Incomplete transaction response')
+        items.push(...next.items)
+      }
+      return { ...first, items }
+    },
+    enabled: !!filter && !noAccounts,
   })
 
   // Derive month param from filter.from for projected transactions
   const monthParam = filter?.from ? filter.from.slice(0, 7) + '-01' : undefined
 
-  const { data: projectedTxs } = useQuery({
+  const { data: projectedTxs, isLoading: projectionsLoading, isError: projectionsError, refetch: refetchProjections } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
-    enabled: !!filter && !!monthParam && !filter.realizedOnly,
+    enabled: !!filter && !!monthParam && !noAccounts && !filter.realizedOnly,
   })
 
   const { data: accountingModeData } = useQuery({
@@ -113,45 +126,55 @@ export function TransactionDrillDown({
     staleTime: 5 * 60 * 1000,
   })
   const isAccrual = accountingModeData?.mode === 'accrual'
+  const loading = !noAccounts && (isLoading || projectionsLoading)
+  const loadError = !noAccounts && (isError || projectionsError)
 
   // Merge real + projected transactions, filtering projected by drill-down criteria
   const displayItems = useMemo((): DisplayItem[] => {
     const items: DisplayItem[] = []
+    if (noAccounts) return items
 
     for (const tx of data?.items ?? []) {
-      // A split row listed under one category counts only its part there,
-      // the same share the report it was opened from counted.
+      // Category splits and group splits are mutually exclusive in the API.
+      // Keep the category-matched part and its converted amount authoritative;
+      // otherwise apply the viewer's group share for unfiltered Budgets.
       const isPart = tx.matched_amount != null
       const matchedLine = isPart
         ? tx.category_lines?.find((line) => line.category_id === filter?.category_id)
         : undefined
-      const amount = Number(tx.amount)
-      const amountPrimary = tx.amount_primary != null ? Number(tx.amount_primary) : null
-      const baseAmount = isPart ? Number(tx.matched_amount) : amount
-      const baseAmountPrimary = isPart
-        ? tx.matched_amount_primary != null ? Number(tx.matched_amount_primary) : null
-        : amountPrimary
-      // A split expense counts only the viewer's part, the way the backend
-      // does it: a member in the split keeps their own share, the owner the
-      // amount less everyone else's shares, and anyone else the full amount.
-      // Shares are in the row's own currency, so the primary amount scales
-      // by the same ratio.
+      const parentAmount = Number(tx.amount)
+      const parentPrimary = tx.amount_primary != null ? Number(tx.amount_primary) : null
+      // Budgets (useViewerShare): the viewer's group share as the API tags it.
+      const viewerShare = useViewerShare && tx.viewer_share != null ? Number(tx.viewer_share) : null
+      // The statement (ownShare): only the viewer's part of a split expense,
+      // the way the backend counts it: a member in the split keeps their own
+      // share, the owner the amount less everyone else's shares, and anyone
+      // else the full amount.
       const splits = tx.splits ?? []
-      const share = !filter?.ownShare || tx.type !== 'debit'
+      const ownShare = viewerShare != null || !filter?.ownShare || tx.type !== 'debit'
         ? null
         : tx.is_shared
           ? Number(tx.viewer_share ?? 0)
           : splits.length > 0 && tx.user_id === user?.id
-            ? amount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0))
+            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0))
             : null
-      const ratio = share != null && amount !== 0 ? share / amount : 1
+      const share = viewerShare ?? ownShare
+      // Shares are in the row's own currency, so the primary amount scales
+      // by the same ratio.
+      const amount = isPart ? Number(tx.matched_amount) : share ?? parentAmount
+      const amountPrimary = isPart
+        ? tx.matched_amount_primary != null ? Number(tx.matched_amount_primary) : null
+        : share == null ? parentPrimary
+          : share === 0 ? 0 : parentPrimary != null && parentAmount !== 0
+            ? parentPrimary * Math.abs(share / parentAmount)
+            : null
       items.push({
         key: tx.id,
         description: tx.description,
         date: tx.date,
         type: tx.type as 'debit' | 'credit',
-        amount: baseAmount * ratio,
-        amountPrimary: baseAmountPrimary != null ? baseAmountPrimary * ratio : null,
+        amount,
+        amountPrimary,
         currency: tx.currency,
         categoryIcon: (matchedLine?.category ?? tx.category)?.icon ?? null,
         categoryName: (matchedLine?.category ?? tx.category)?.name ?? null,
@@ -167,6 +190,8 @@ export function TransactionDrillDown({
     // A disabled query can still hand back what the dashboard cached.
     for (const pt of filter?.realizedOnly ? [] : projectedTxs ?? []) {
       // Filter projected txs by drill-down criteria
+      if (filter?.account_id && pt.account_id !== filter.account_id) continue
+      if (filter?.account_ids && (!pt.account_id || !filter.account_ids.includes(pt.account_id))) continue
       if (filter?.type && pt.type !== filter.type) continue
       // A split template counts in a category through its part there.
       const parts = pt.has_category_lines ? pt.category_lines ?? [] : []
@@ -250,7 +275,15 @@ export function TransactionDrillDown({
 
     items.sort((a, b) => a.date.localeCompare(b.date))
     return items
-  }, [data, projectedTxs, filter, user?.id])
+  }, [data, projectedTxs, filter, noAccounts, useViewerShare, user?.id])
+
+  const isOpen = !!filter
+  useEffect(() => {
+    if (!isOpen) return
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    panelRef.current?.focus()
+    return () => { opener?.focus() }
+  }, [isOpen])
 
   // Close on Escape, unless the key belongs to a dialog opened from the
   // panel (Radix marks the Escape it handled as defaultPrevented).
@@ -310,6 +343,11 @@ export function TransactionDrillDown({
       {/* Panel */}
       <div
         ref={panelRef}
+        role="complementary"
+        aria-label={filter?.title}
+        tabIndex={-1}
+        inert={!filter}
+        aria-hidden={!filter}
         className={`fixed top-0 right-0 h-full w-full max-w-md bg-card shadow-2xl z-50 transform transition-transform duration-200 ease-out flex flex-col ${
           filter ? 'translate-x-0' : 'translate-x-full'
         }`}
@@ -337,7 +375,15 @@ export function TransactionDrillDown({
 
         {/* Transaction list */}
         <div className="flex-1 overflow-auto">
-          {isLoading ? (
+          {loadError ? (
+            <div role="alert" className="p-5 text-center space-y-3">
+              <p className="text-sm text-destructive">{t('dashboard.drillDownError')}</p>
+              <button type="button" className="text-sm text-primary hover:underline" onClick={() => {
+                void refetch()
+                if (monthParam && !noAccounts) void refetchProjections()
+              }}>{t('common.retry')}</button>
+            </div>
+          ) : loading ? (
             <div className="p-5 space-y-3">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="h-12 bg-muted rounded-lg animate-pulse" />
@@ -352,7 +398,7 @@ export function TransactionDrillDown({
               {displayItems.map((item) => (
                 <div
                   key={item.key}
-                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected ? 'cursor-pointer' : ''}`}
+                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''}`}
                   onClick={() => {
                     if (!item.isProjected && item.transaction) {
                       onTransactionClick?.(item.transaction)
@@ -423,7 +469,7 @@ export function TransactionDrillDown({
         </div>
 
         {/* Footer */}
-        {displayItems.length > 0 && (
+        {!loadError && !loading && displayItems.length > 0 && (
           <div className="px-5 py-3 border-t border-border bg-muted/50 shrink-0">
             {hasUnsettledTotal ? (
               <div className="space-y-1">

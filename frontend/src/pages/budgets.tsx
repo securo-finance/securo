@@ -6,8 +6,8 @@ import { toast } from 'sonner'
 import { AlertCircle, CalendarIcon, Repeat, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
-import { monthLabel, shiftMonth } from '@/lib/month-utils'
-import { categories as categoriesApi, categoryGroups as groupsApi, budgets as budgetsApi } from '@/lib/api'
+import { monthLabel, monthRange, shiftMonth } from '@/lib/month-utils'
+import { categories as categoriesApi, categoryGroups as groupsApi, budgets as budgetsApi, dashboard } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,9 +17,12 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import { MonthPicker } from '@/components/ui/monthpicker'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/page-header'
+import { BudgetSpendingProgress } from '@/components/budget-spending-progress'
+import { TransactionDrillDown } from '@/components/transaction-drill-down'
 import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
@@ -59,7 +62,7 @@ function SectionHeader({ title, description, action }: { title: string; descript
 function SpendHistory({ values, labels }: { values: number[]; labels: string[] }) {
   const max = Math.max(...values, 1)
   return (
-    <div className="hidden sm:flex h-6 items-end gap-0.5" aria-hidden>
+    <div className="hidden md:flex md:col-start-2 md:row-start-1 h-6 items-end gap-0.5" aria-hidden>
       {values.map((value, index) => (
         <span
           key={index}
@@ -74,9 +77,11 @@ function SpendHistory({ values, labels }: { values: number[]; labels: string[] }
 
 export default function BudgetsPage() {
   const { t, i18n } = useTranslation()
-  const { mask } = usePrivacyMode()
+  const { mask, privacyMode } = usePrivacyMode()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
+  const { activeAccountIds } = useCollectionFilter()
+  const noAccounts = activeAccountIds !== null && activeAccountIds.length === 0
   const { collapsed: sidebarCollapsed } = useSidebarState()
   const timeZone = useEffectiveTimezone()
   const today = todayInTimezone(timeZone)
@@ -91,6 +96,8 @@ export default function BudgetsPage() {
   const [monthOverride, setMonthOverride] = useState<string | null>(() => validRequestedMonth)
   const selectedMonth = monthOverride ?? today.slice(0, 7)
   const [monthCalOpen, setMonthCalOpen] = useState(false)
+  const [drillDownCategoryId, setDrillDownCategoryId] = useState<string | null>(null)
+  const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null)
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [suggestMonths, setSuggestMonths] = useState(3)
   const [suggestRecurring, setSuggestRecurring] = useState(false)
@@ -118,6 +125,15 @@ export default function BudgetsPage() {
     queryKey: ['budgets', selectedMonth],
     queryFn: () => budgetsApi.list(monthParam),
   })
+  const { data: spending, isPending: spendingPending, isError: spendingError, refetch: refetchSpending } = useQuery({
+    queryKey: ['dashboard', 'spending', selectedMonth, activeAccountIds],
+    queryFn: () => dashboard.spendingByCategory(monthParam, activeAccountIds ?? undefined),
+    enabled: !noAccounts,
+  })
+  const spendingAvailable = noAccounts || (!spendingPending && !spendingError)
+  const spendingByCategory = new Map(
+    (noAccounts ? [] : spending ?? []).map((item) => [item.category_id, item.projected_total]),
+  )
   const { data: budgetSeries } = useQuery({
     queryKey: ['budgets', 'series'],
     queryFn: () => budgetsApi.list(),
@@ -279,6 +295,7 @@ export default function BudgetsPage() {
       <SectionCard>
         <SectionHeader
           title={t('budgets.monthBudgets', { month: monthTitle })}
+          description={t('budgets.spendingDescription')}
           action={canWrite ? (
             <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => { setSuggestEdits({}); setSuggestOpen(true) }}>
               <Sparkles size={13} /> {t('budgets.suggest')}
@@ -286,6 +303,12 @@ export default function BudgetsPage() {
           ) : undefined}
         />
 
+        {spendingError && !noAccounts && (
+          <div role="alert" className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 text-sm text-destructive">
+            <span>{t('budgets.spendingError')}</span>
+            <Button variant="outline" size="sm" onClick={() => { void refetchSpending() }}>{t('common.retry')}</Button>
+          </div>
+        )}
         {budgetsError || categoriesError || groupsError ? (
           <div role="alert" className="flex items-center justify-between gap-3 px-4 sm:px-5 py-4 text-sm text-rose-700 dark:text-rose-300">
             <span className="flex items-center gap-2"><AlertCircle size={16} />{extractApiError(budgetsLoadError ?? categoriesLoadError ?? groupsLoadError, t('common.error'))}</span>
@@ -306,18 +329,44 @@ export default function BudgetsPage() {
                   const values = history ? [...history].reverse().map((rows) => rows.find((row) => row.category_id === category.id)?.actual_amount ?? 0) : []
                   const changed = changedCategories.has(category.id)
                   const recurring = recurringFor(category.id)
+                  const spent = spendingByCategory.get(category.id) ?? 0
+                  // Preview the valid draft limit, just like the live total below.
+                  // No edit is persisted until the user presses Save.
+                  const limit = parsedDraftFor(category.id)
+                  const percentage = limit !== null && limit > 0 ? Math.round(spent / limit * 1000) / 10 : 0
                   return (
-                    <div key={category.id} className="flex items-center gap-3 px-4 sm:px-5 py-2.5">
-                      <CategoryIcon icon={category.icon} color={category.color} size="md" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-foreground">{category.name}</p>
-                        {category.is_hidden && <span className="text-[11px] text-muted-foreground">{t('budgets.hiddenCategory')}</span>}
-                        {suggestion && <p className="text-[11px] text-muted-foreground tabular-nums">{t('budgets.average', { amount: fmt(Number(suggestion.suggested_amount)) })}</p>}
-                        {invalidCategories.has(category.id) && <p id={`budget-error-${category.id}`} role="alert" className="text-[11px] text-destructive">{t('budgets.invalidAmount')}</p>}
+                    <div key={category.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] md:grid-cols-[minmax(0,1fr)_auto_minmax(8rem,12rem)_auto_8rem] items-center gap-x-2 gap-y-2 md:gap-x-3 px-4 sm:px-5 py-2.5">
+                      <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
+                        <CategoryIcon icon={category.icon} color={category.color} size="md" />
+                        <div className="min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.currentTarget.focus()
+                              setDrillDownCategoryId(category.id)
+                            }}
+                            aria-label={t('dashboard.drillDownCategory', { category: category.name, month: monthLabel(selectedMonth, uiLocale) })}
+                            className="max-w-full break-words text-left text-sm font-medium text-foreground hover:text-primary rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          >
+                            {category.name}
+                          </button>
+                          {category.is_hidden && <span className="block text-[11px] text-muted-foreground">{t('budgets.hiddenCategory')}</span>}
+                          {suggestion && <p className="text-[11px] text-muted-foreground tabular-nums">{t('budgets.average', { amount: fmt(Number(suggestion.suggested_amount)) })}</p>}
+                          {invalidCategories.has(category.id) && <p id={`budget-error-${category.id}`} role="alert" className="text-[11px] text-destructive">{t('budgets.invalidAmount')}</p>}
+                        </div>
                       </div>
                       {values.length > 0 && (
                         <SpendHistory values={values} labels={values.map((value, index) => `${historyLabels[index]}: ${fmt(value)}`)} />
                       )}
+                      <div className="col-span-3 row-start-2 min-w-0 pl-11 md:col-span-1 md:col-start-3 md:row-start-1 md:pl-0">
+                        <p className="mb-1 text-xs text-muted-foreground">
+                          {t('budgets.spending')}{' '}
+                          <span className="text-sm font-normal tabular-nums text-foreground break-words">{spendingAvailable ? fmt(spent) : '—'}</span>
+                        </p>
+                        {spendingAvailable && limit !== null && limit > 0 && (
+                          <BudgetSpendingProgress categoryName={category.name} percentage={percentage} budgetAmount={limit} currency={userCurrency} showBudgetLabel={false} />
+                        )}
+                      </div>
                       <button
                         type="button"
                         aria-pressed={recurring}
@@ -325,11 +374,11 @@ export default function BudgetsPage() {
                         title={t('budgets.repeatEveryMonth')}
                         disabled={!canWrite}
                         onClick={() => toggleRecurring(category.id)}
-                        className={`p-1.5 rounded-md transition-colors disabled:opacity-60 ${recurring ? 'text-primary bg-primary/10 hover:bg-primary/15' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted'}`}
+                        className={`col-start-2 row-start-1 md:col-start-4 p-1.5 rounded-md transition-colors disabled:opacity-60 ${recurring ? 'text-primary bg-primary/10 hover:bg-primary/15' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted'}`}
                       >
                         <Repeat size={13} />
                       </button>
-                      <div className={`flex w-32 shrink-0 items-center rounded-lg border bg-card px-2.5 focus-within:ring-2 focus-within:ring-primary ${invalidCategories.has(category.id) ? 'border-destructive' : changed ? 'border-primary/60' : 'border-border'}`}>
+                      <div className={`col-start-3 row-start-1 md:col-start-5 flex w-24 md:w-32 min-w-0 items-center rounded-lg border bg-card px-2.5 focus-within:ring-2 focus-within:ring-primary ${invalidCategories.has(category.id) ? 'border-destructive' : changed ? 'border-primary/60' : 'border-border'}`}>
                         <span className="text-xs text-muted-foreground">{formatCurrency(0, userCurrency, locale).replace(/[\d.,\s]/g, '')}</span>
                         <input
                           type="text"
@@ -338,8 +387,10 @@ export default function BudgetsPage() {
                           aria-invalid={invalidCategories.has(category.id)}
                           aria-describedby={invalidCategories.has(category.id) ? `budget-error-${category.id}` : undefined}
                           placeholder="0"
-                          value={draft}
+                          value={privacyMode && focusedCategoryId !== category.id && draft ? mask(draft) : draft}
                           disabled={!canWrite}
+                          onFocus={() => setFocusedCategoryId(category.id)}
+                          onBlur={() => setFocusedCategoryId(null)}
                           onChange={(event) => setDraft(category.id, event.target.value)}
                           className="h-8 w-full min-w-0 bg-transparent text-right text-sm font-semibold tabular-nums text-foreground outline-none placeholder:text-muted-foreground/50 disabled:opacity-60"
                         />
@@ -441,6 +492,24 @@ export default function BudgetsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Render after the fixed Save bar so its backdrop also covers those controls. */}
+      {drillDownCategoryId !== null && (
+        <TransactionDrillDown
+          useViewerShare={activeAccountIds === null}
+          filter={{
+            title: t('dashboard.drillDownCategory', {
+              category: allCategories.find((category) => category.id === drillDownCategoryId)?.name ?? drillDownCategoryId,
+              month: monthLabel(selectedMonth, uiLocale),
+            }),
+            category_id: drillDownCategoryId,
+            type: 'debit',
+            ...monthRange(selectedMonth),
+            account_ids: activeAccountIds ?? undefined,
+          }}
+          onClose={() => setDrillDownCategoryId(null)}
+        />
       )}
     </div>
   )

@@ -646,6 +646,7 @@ export const transactions = {
     month?: string
     account_id?: string
     account_ids?: string[]
+    date_basis?: 'reporting' | 'bank'
   }): Promise<TransactionCalendarResponse> => {
     const { data } = await api.get('/transactions/calendar', {
       params,

@@ -518,6 +518,66 @@ async def test_update_installment_amount_this_only_resyncs_series_total(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["manual", "sync"])
+@pytest.mark.parametrize("scope", ["this", "future", "all"])
+async def test_unchanged_installment_amount_preserves_series_total(
+    session: AsyncSession, test_user, test_workspace, installment_account, source, scope
+):
+    series_id = uuid.uuid4()
+    rows = [
+        _transaction(
+            installment_account,
+            workspace_id=test_workspace.id,
+            source=source,
+            installment_series_id=series_id,
+            installment_number=i,
+            total_installments=2,
+            installment_total_amount=Decimal("275.00"),
+            installment_purchase_date=date(2026, 1, 15),
+        )
+        for i in (1, 2)
+    ]
+    session.add_all(rows)
+    await session.commit()
+
+    await update_transaction(
+        session, rows[0].id, test_workspace.id, test_user.id,
+        TransactionUpdate(amount=Decimal("100.00"), notes="Updated", apply_to=scope),
+    )
+
+    for row in rows:
+        await session.refresh(row)
+        assert row.amount == Decimal("100.00")
+        assert row.installment_total_amount == Decimal("275.00")
+    assert rows[0].notes == "Updated"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["future", "all"])
+async def test_unchanged_anchor_amount_resyncs_when_sibling_changes(
+    session: AsyncSession, test_user, test_workspace, installment_account, scope
+):
+    series = await create_installment_series(
+        session, test_workspace.id, test_user.id,
+        _series_payload(installment_account, installments=2),
+    )
+    await update_transaction(
+        session, series[1].id, test_workspace.id, test_user.id,
+        TransactionUpdate(amount=Decimal("175.00")),
+    )
+
+    await update_transaction(
+        session, series[0].id, test_workspace.id, test_user.id,
+        TransactionUpdate(amount=Decimal("100.00"), apply_to=scope),
+    )
+
+    for row in series:
+        await session.refresh(row)
+        assert row.amount == Decimal("100.00")
+        assert row.installment_total_amount == Decimal("200.00")
+
+
+@pytest.mark.asyncio
 async def test_update_installment_amount_leaves_synced_total_alone(
     session: AsyncSession, test_user, test_workspace, installment_account
 ):
