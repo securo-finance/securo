@@ -3347,5 +3347,152 @@
       "update": "Ningún elemento de este espacio cambia; la versión instalada pasa a {{version}}.",
       "remove": "No queda ninguno de sus elementos aquí; quitarlo solo lo saca de la lista."
     }
+  },
+  "library": {
+    "title": "Biblioteca",
+    "subtitle": "Elige qué muestran el panel y los informes, y el aspecto de Securo.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Informes",
+      "themes": "Temas"
+    },
+    "moreHint": {
+      "widgets": "Los plugins pueden añadir más widgets.",
+      "reports": "Los plugins pueden añadir más informes.",
+      "themes": "Los plugins pueden añadir más temas."
+    },
+    "browseCatalog": "Ver plugins",
+    "lastReport": "Mantén al menos un informe.",
+    "removeFrom": {
+      "dashboard": "Quitar {{name}} del panel",
+      "reports": "Quitar {{name}} de los informes"
+    },
+    "addTo": {
+      "dashboard": "Añadir {{name}} al panel",
+      "reports": "Añadir {{name}} a los informes"
+    },
+    "remove": "Quitar",
+    "add": "Añadir",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Océano",
+      "forest": "Bosque",
+      "sunset": "Atardecer",
+      "graphite": "Grafito",
+      "high-contrast": "Alto contraste",
+      "midnight": "Medianoche",
+      "terminal": "Terminal",
+      "nebula": "Nebulosa"
+    },
+    "saveFailed": "No se pudo guardar tu elección. Inténtalo de nuevo.",
+    "appearance": "Apariencia",
+    "emptyDashboard": "Tu panel está vacío",
+    "emptyDashboardHint": "Añade widgets de la biblioteca para elegir qué ves aquí.",
+    "addWidget": "Añadir widget",
+    "nothingToShow": "Nada que mostrar por ahora",
+    "editingDashboard": "Reordena, quita o añade widgets. Los cambios se guardan al momento.",
+    "restoreDefault": "Restaurar predeterminado",
+    "done": "Listo",
+    "customizeDashboard": "Personalizar panel",
+    "manageReports": "Elegir informes",
+    "manageReportsShort": "Gestionar",
+    "widget": {
+      "overview": "Saldo y mes",
+      "overviewHint": "Saldo disponible, ingresos, gastos, patrimonio neto y tasa de ahorro.",
+      "uncategorized": "Sin categoría",
+      "uncategorizedHint": "Transacciones que aún esperan una categoría.",
+      "spendingByCategoryHint": "A dónde fue el dinero del mes, frente a tus presupuestos.",
+      "balanceFlowHint": "Cómo se movió tu saldo este mes, comparado con otros.",
+      "goalsHint": "El progreso de tus metas.",
+      "transactionsHint": "Las transacciones del mes, en lista o calendario."
+    },
+    "report": {
+      "netWorthHint": "Cuentas, bienes y deudas a lo largo del tiempo.",
+      "incomeExpensesHint": "Entradas y salidas, por categoría.",
+      "cashFlowHint": "Hacia dónde va tu saldo.",
+      "moneyMapHint": "Cómo se reparten los ingresos entre gastos y ahorro."
+    },
+    "dragToMove": "Arrastra para mover {{name}}",
+    "widthOf": "Ancho de {{name}}",
+    "widthLabel": "Ancho",
+    "width": {
+      "4": "Un tercio",
+      "6": "Mitad",
+      "8": "Dos tercios",
+      "12": "Ancho completo"
+    },
+    "needs": {
+      "assistant": "Requiere activar los agentes de IA.",
+      "invoices": "Disponible en espacios de trabajo de Negocios."
+    }
+  },
+  "widgets": {
+    "budgets": "Presupuestos",
+    "viewAll": "Ver todo",
+    "spendingPace": {
+      "title": "Gastos del mes",
+      "hint": "Los gastos del mes frente a tus presupuestos, y lo que queda por día.",
+      "noBudget": "Define presupuestos para ver si tus gastos van al ritmo.",
+      "used": "{{percent}}% de los presupuestos usado",
+      "paceMark": "la marca es donde estaría un ritmo constante hoy",
+      "over": "{{amount}} por encima del presupuesto",
+      "perDay": "Gasta hasta {{amount}} al día para no pasarte",
+      "left": "{{amount}} restantes del presupuesto"
+    },
+    "distribution": {
+      "title": "Distribución de gastos",
+      "hint": "A dónde fue el dinero del mes, por categoría.",
+      "total": "Total gastado"
+    },
+    "monthResult": {
+      "title": "Resultado del mes",
+      "hint": "Ingresos menos gastos este mes, comparado con el mes pasado.",
+      "previous": "{{amount}} el mes pasado"
+    },
+    "upcoming": {
+      "title": "Próximos",
+      "hint": "Transacciones recurrentes que vencen en los próximos 30 días.",
+      "none": "Nada vence en los próximos {{days}} días."
+    },
+    "cards": {
+      "title": "Tarjetas de crédito",
+      "hint": "Lo que deben tus tarjetas, y el saldo que queda tras pagarlas.",
+      "none": "Ninguna tarjeta de crédito abierta.",
+      "afterPaying": "{{amount}} quedan tras pagarlas"
+    },
+    "assistant": {
+      "title": "Pregunta a tu agente",
+      "libraryHint": "Envía una pregunta a tu agente predeterminado sin salir del panel.",
+      "hint": "Pregunta lo que quieras sobre tu dinero. La respuesta se abre en el chat.",
+      "placeholder": "Pregunta a tu agente…",
+      "suggestion1": "¿Cuánto gasté este mes?",
+      "suggestion2": "¿Dónde puedo recortar?",
+      "suggestion3": "¿Qué pagos se acercan?",
+      "send": "Enviar",
+      "unavailable": "Activa los agentes de IA para preguntar desde aquí."
+    },
+    "loadFailed": "No se pudo cargar este widget.",
+    "receivables": {
+      "title": "Por cobrar",
+      "hint": "Lo que te deben los clientes, lo atrasado y lo que entró este mes."
+    },
+    "payables": {
+      "title": "Por pagar",
+      "hint": "Lo que debes a proveedores, lo atrasado y lo que pagaste este mes."
+    },
+    "aging": {
+      "title": "Cobros por antigüedad",
+      "hint": "Lo que deben los clientes, según cuánto se ha atrasado."
+    },
+    "invoicesDue": {
+      "title": "Facturas por vencer",
+      "hint": "Las próximas facturas que deben pagar los clientes.",
+      "none": "No hay facturas por vencer.",
+      "noClient": "Sin cliente"
+    },
+    "recurringRevenue": {
+      "title": "Ingresos recurrentes",
+      "hint": "Lo que aportan las facturas recurrentes cada mes, y lo perdido recientemente."
+    }
   }
 }
