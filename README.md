@@ -64,6 +64,23 @@ categorize, rename, set payees, and append notes, but cannot ignore a paired
 transfer leg or assign it an ignored category, so both legs remain in account
 balances. The same protection applies when previewing or reapplying rules.
 
+### Reporting dates and bank balances
+
+Synchronized transactions can have a reporting-date override without changing
+the bank's booking date. Clear the override to restore automatic attribution;
+later bank syncs preserve the override.
+
+Reporting periods and transaction-list dates follow the override. Account
+running balances and posted cash-flow balance movements still follow the bank
+date (or the effective movement date in accrual mode). A posted expense
+attributed to a future period appears in that period's cash-flow outflow, but
+is not deducted from the projected balance a second time. Pending card rows
+retain their manually selected bill date for forecast outflow and projected
+balance timing, including in cash mode.
+
+The calendar offers separate reporting-date and bank-date views. Moved rows
+retain their original bank date in the transaction list.
+
 ## Optional capabilities
 
 Everything beyond the core is off by default, needs a single env flag, and costs nothing until you turn it on. Full setup guides live in the [documentation](https://docs.usesecuro.com/):

@@ -6,6 +6,8 @@ export interface User {
   is_verified: boolean
   is_2fa_enabled: boolean
   preferences: UserPreferences
+  /** The theme picked from the library; null is Securo's own look. */
+  theme?: string | null
 }
 
 export interface AdminUser {
@@ -321,6 +323,9 @@ export interface Transaction {
   // available, cycle math otherwise). Setting it forces the tx into the
   // bill whose due_date matches.
   effective_bill_date: string | null
+  // Optional period-attribution override. The bank-provided `date` remains
+  // unchanged; null restores automatic cash/accrual bucketing.
+  reporting_date_override: string | null
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]

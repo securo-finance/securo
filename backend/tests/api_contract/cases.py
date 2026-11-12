@@ -51,6 +51,7 @@ STATIC_PARAMS = {
     "node": reconciliation_policy.MATCH_RECURRING["node"],
     "provider": "pluggy",
     "key": "registration_enabled",
+    "surface": "dashboard",
 }
 
 # Parameters that identify a row, so the unknown_id variant swaps them out.
@@ -63,6 +64,8 @@ _INVOICE_LINES = [{"description": "Consulting", "quantity": 2, "unit_price": "10
 # on purpose answer a domain rule instead (a draft can't be voided, a sole
 # owner can't leave): that answer is the contract, and the baseline pins it.
 BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
+    # Layout items are library ids, which a generated string won't match.
+    ("PUT", "/api/ui/layouts/{surface}"): lambda world: {"items": [{"id": "overview"}, {"id": "goals"}]},
     ("POST", "/api/budgets"): lambda w: {
         "category_id": w["second_category_id"], "amount": 300, "month": "2026-05-01",
     },

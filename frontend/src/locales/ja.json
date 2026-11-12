@@ -871,6 +871,7 @@
     "drillDownSettledTotal": "決済済み · カード請求合計",
     "drillDownPendingTotal": "未決済",
     "drillDownShownTotal": "表示合計",
+    "drillDownError": "取引を読み込めませんでした。もう一度お試しください。",
     "drillDownEmpty": "取引が見つかりません",
     "drillDownClose": "閉じる",
     "accrualNote": "クレジットカードの取引は請求の支払期日ごとにまとめられます(発生基準)。",
@@ -1069,6 +1070,11 @@
     "effectiveBillDate": "実効請求日",
     "effectiveBillDateHint": "手動指定。自動サイクルを上書きします",
     "effectiveBillDatePlaceholder": "請求の支払期日(任意)",
+    "bankDate": "銀行日付",
+    "reportingDate": "レポート日付",
+    "reportingDateHint": "アプリ全体のレポート期間を変更します。銀行日付は変更されません。",
+    "reportingDatePlaceholder": "日付を選択（任意）",
+    "clearReportingDate": "レポート日付をリセット",
     "clearOverride": "上書きをクリア",
     "linkAsTransfer": "振替として紐付け",
     "linkTransferTitle": "振替として紐付け",
@@ -1433,6 +1439,9 @@
     "darkMode": "ダークモード"
   },
   "budgets": {
+    "spending": "支出",
+    "spendingDescription": "保留中および予測支出を含みます。",
+    "spendingError": "支出を読み込めませんでした。",
     "title": "予算",
     "add": "予算を追加",
     "edit": "予算を編集",
@@ -3342,6 +3351,153 @@
       "install": "このワークスペースには既にすべての項目があります。インストールすると記録され、更新を受け取れます。",
       "update": "ワークスペースの項目は変わりません。インストール済みのバージョンが {{version}} になります。",
       "remove": "項目はもう残っていません。削除するとリストから外れるだけです。"
+    }
+  },
+  "library": {
+    "title": "ライブラリ",
+    "subtitle": "ダッシュボードとレポートに表示する内容と、Securoの見た目を選べます。",
+    "kind": {
+      "widgets": "ウィジェット",
+      "reports": "レポート",
+      "themes": "テーマ"
+    },
+    "moreHint": {
+      "widgets": "プラグインでウィジェットを追加できます。",
+      "reports": "プラグインでレポートを追加できます。",
+      "themes": "プラグインでテーマを追加できます。"
+    },
+    "browseCatalog": "プラグインを見る",
+    "lastReport": "レポートを少なくとも1つ残してください。",
+    "removeFrom": {
+      "dashboard": "{{name}}をダッシュボードから外す",
+      "reports": "{{name}}をレポートから外す"
+    },
+    "addTo": {
+      "dashboard": "{{name}}をダッシュボードに追加",
+      "reports": "{{name}}をレポートに追加"
+    },
+    "remove": "外す",
+    "add": "追加",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "オーシャン",
+      "forest": "フォレスト",
+      "sunset": "サンセット",
+      "graphite": "グラファイト",
+      "high-contrast": "ハイコントラスト",
+      "midnight": "ミッドナイト",
+      "terminal": "ターミナル",
+      "nebula": "ネビュラ"
+    },
+    "saveFailed": "選択を保存できませんでした。もう一度お試しください。",
+    "appearance": "外観",
+    "emptyDashboard": "ダッシュボードは空です",
+    "emptyDashboardHint": "ライブラリからウィジェットを追加して、ここに表示する内容を選びましょう。",
+    "addWidget": "ウィジェットを追加",
+    "nothingToShow": "今は表示するものがありません",
+    "editingDashboard": "ウィジェットの並べ替え、削除、追加ができます。変更はすぐに保存されます。",
+    "restoreDefault": "デフォルトに戻す",
+    "done": "完了",
+    "customizeDashboard": "ダッシュボードをカスタマイズ",
+    "manageReports": "レポートを選ぶ",
+    "manageReportsShort": "管理",
+    "widget": {
+      "overview": "残高と今月",
+      "overviewHint": "利用可能残高、収入、支出、純資産、貯蓄率。",
+      "uncategorized": "未分類",
+      "uncategorizedHint": "まだカテゴリが必要な取引。",
+      "spendingByCategoryHint": "今月のお金の使い道と予算の比較。",
+      "balanceFlowHint": "今月の残高の動きを他の月と比較。",
+      "goalsHint": "目標の進捗。",
+      "transactionsHint": "今月の取引をリストまたはカレンダーで。"
+    },
+    "report": {
+      "netWorthHint": "口座、資産、負債の推移。",
+      "incomeExpensesHint": "カテゴリ別の入出金。",
+      "cashFlowHint": "残高の見通し。",
+      "moneyMapHint": "収入が支出と貯蓄にどう分かれるか。"
+    },
+    "dragToMove": "ドラッグして{{name}}を移動",
+    "widthOf": "{{name}}の幅",
+    "widthLabel": "幅",
+    "width": {
+      "4": "3分の1",
+      "6": "半分",
+      "8": "3分の2",
+      "12": "全幅"
+    },
+    "needs": {
+      "assistant": "AIエージェントを有効にする必要があります。",
+      "invoices": "ビジネスワークスペースで利用できます。"
+    }
+  },
+  "widgets": {
+    "budgets": "予算",
+    "viewAll": "すべて表示",
+    "spendingPace": {
+      "title": "今月の支出",
+      "hint": "今月の支出を予算と比べ、1日あたりの残りを表示します。",
+      "noBudget": "予算を設定すると、支出のペースを確認できます。",
+      "used": "予算の{{percent}}%を使用",
+      "paceMark": "目印は今日時点の均等なペースです",
+      "over": "予算を{{amount}}超過",
+      "perDay": "予算内に収めるには1日{{amount}}まで",
+      "left": "予算の残り{{amount}}"
+    },
+    "distribution": {
+      "title": "支出の内訳",
+      "hint": "今月のお金の使い道をカテゴリ別に。",
+      "total": "支出合計"
+    },
+    "monthResult": {
+      "title": "今月の収支",
+      "hint": "今月の収入から支出を引いた額を先月と比較します。",
+      "previous": "先月 {{amount}}"
+    },
+    "upcoming": {
+      "title": "今後の予定",
+      "hint": "今後30日間に予定されている定期取引。",
+      "none": "今後{{days}}日間に予定はありません。"
+    },
+    "cards": {
+      "title": "クレジットカード",
+      "hint": "カードの未払い額と、支払い後に残る残高。",
+      "none": "利用中のクレジットカードはありません。",
+      "afterPaying": "支払い後の残り {{amount}}"
+    },
+    "assistant": {
+      "title": "エージェントに質問",
+      "libraryHint": "ダッシュボードから既定のエージェントに質問を送れます。",
+      "hint": "お金について何でも聞いてください。回答はチャットで開きます。",
+      "placeholder": "エージェントに質問…",
+      "suggestion1": "今月はいくら使った？",
+      "suggestion2": "どこを節約できる？",
+      "suggestion3": "近く支払う請求は？",
+      "send": "送信",
+      "unavailable": "ここから質問するにはAIエージェントを有効にしてください。"
+    },
+    "loadFailed": "このウィジェットを読み込めませんでした。",
+    "receivables": {
+      "title": "売掛金",
+      "hint": "顧客からの未回収額、延滞分、今月の入金。"
+    },
+    "payables": {
+      "title": "買掛金",
+      "hint": "仕入先への未払額、延滞分、今月の支払い。"
+    },
+    "aging": {
+      "title": "売掛金の年齢",
+      "hint": "顧客の未回収額を延滞期間別に表示。"
+    },
+    "invoicesDue": {
+      "title": "まもなく期日の請求書",
+      "hint": "顧客が次に支払う請求書。",
+      "none": "期日が近い請求書はありません。",
+      "noClient": "顧客なし"
+    },
+    "recurringRevenue": {
+      "title": "定期収益",
+      "hint": "定期請求書による毎月の収益と、最近失われた分。"
     }
   }
 }

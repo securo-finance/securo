@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { LayoutItem } from '@/lib/library'
 import { normalizeBudgetComparisonRows } from '@/lib/budget-settings-utils'
 import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
@@ -135,7 +136,8 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`
   }
   const workspaceId = localStorage.getItem(WORKSPACE_STORAGE_KEY)
-  if (workspaceId) {
+  // A request that names its workspace keeps it (a save queued before a switch).
+  if (workspaceId && !config.headers['X-Workspace-Id']) {
     config.headers['X-Workspace-Id'] = workspaceId
   }
   return config
@@ -642,6 +644,7 @@ export const transactions = {
     month?: string
     account_id?: string
     account_ids?: string[]
+    date_basis?: 'reporting' | 'bank'
   }): Promise<TransactionCalendarResponse> => {
     const { data } = await api.get('/transactions/calendar', {
       params,
@@ -1825,6 +1828,32 @@ export const admin = {
   defaultColors: async (): Promise<{ light: string | null; dark: string | null }> => {
     const { data } = await api.get('/admin/default-colors')
     return data
+  },
+}
+
+// How someone arranged the dashboard and the reports in this workspace;
+// null is Securo's default arrangement.
+export interface UiLayouts {
+  dashboard: LayoutItem[] | null
+  reports: LayoutItem[] | null
+}
+
+function workspaceHeader(workspaceId?: string | null) {
+  return workspaceId ? { headers: { 'X-Workspace-Id': workspaceId } } : undefined
+}
+
+export const uiLayouts = {
+  get: async (workspaceId?: string | null): Promise<UiLayouts> => {
+    const { data } = await api.get('/ui/layouts', workspaceHeader(workspaceId))
+    return data
+  },
+  // `workspaceId` pins a read or a write to one workspace, whatever the active
+  // one is when it goes out (a queued save, another tab switching).
+  save: async (surface: 'dashboard' | 'reports', items: LayoutItem[], workspaceId?: string | null): Promise<void> => {
+    await api.put(`/ui/layouts/${surface}`, { items }, workspaceHeader(workspaceId))
+  },
+  reset: async (surface: 'dashboard' | 'reports', workspaceId?: string | null): Promise<void> => {
+    await api.delete(`/ui/layouts/${surface}`, workspaceHeader(workspaceId))
   },
 }
 

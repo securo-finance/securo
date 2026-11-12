@@ -2,7 +2,7 @@ import csv
 import io
 import uuid
 from datetime import date
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -25,6 +25,7 @@ from app.services import transaction_service
 from app.services.category_line_service import csv_export_parts
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
+from app.services._query_filters import reporting_date_value
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -231,6 +232,7 @@ async def transaction_calendar(
     month: Optional[date] = Query(None),
     account_id: Optional[uuid.UUID] = Query(None),
     account_ids: Optional[List[uuid.UUID]] = Query(None),
+    date_basis: Literal["reporting", "bank"] = Query("reporting"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -240,6 +242,7 @@ async def transaction_calendar(
         ctx.user_id,
         month,
         account_ids=_merge_id_filters(account_id, account_ids),
+        date_basis=date_basis,
     )
 
 
@@ -298,7 +301,7 @@ async def export_transactions(
     output = io.StringIO()
     output.write("﻿")  # UTF-8 BOM for Excel
     writer = csv.writer(output)
-    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used", "split_group", "split_index"])
+    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used", "split_group", "split_index", "reporting_date", "reporting_date_override"])
     for tx in transactions:
         # A transaction split across categories leaves one row per part, so
         # a spreadsheet summing `amount` by `category` gets the same figures
@@ -322,6 +325,8 @@ async def export_transactions(
                 str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
                 split_group,
                 split_index,
+                reporting_date_value(tx, accounting_mode).isoformat(),
+                tx.reporting_date_override.isoformat() if tx.reporting_date_override else "",
             ])
 
     output.seek(0)
