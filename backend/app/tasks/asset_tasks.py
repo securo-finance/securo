@@ -45,7 +45,8 @@ def _next_due_date(last_date: date, frequency: str) -> date:
         day = min(last_date.day, 28)  # safe for all months
         return date(year, month, day)
     elif frequency == "yearly":
-        return date(last_date.year + 1, last_date.month, last_date.day)
+        day = min(last_date.day, 28) if last_date.month == 2 else last_date.day
+        return date(last_date.year + 1, last_date.month, day)
     return last_date + timedelta(days=1)
 
 
@@ -96,8 +97,12 @@ async def _apply_growth_rules() -> int:
                         if asset.growth_start_date and today < asset.growth_start_date:
                             continue
 
-                        # Generate all missed periods in a loop
+                        # Generate all missed periods in a loop. A value recorded
+                        # before the growth start accrues nothing until that date,
+                        # matching the backfill in _generate_growth_values.
                         current_date = latest.date
+                        if asset.growth_start_date and current_date < asset.growth_start_date:
+                            current_date = asset.growth_start_date
                         current_amount = float(latest.amount)
                         created = 0
 

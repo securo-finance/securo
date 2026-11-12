@@ -26,6 +26,9 @@ class TransactionCalendarItem(BaseModel):
     transfer_pair_id: Optional[uuid.UUID] = None
     is_transfer: bool = False
     is_ignored: bool = False
+    #: Split across categories: `category_*` are then empty and the UI
+    #: labels the row as split.
+    has_category_lines: bool = False
     #: Kept out of the day's income/expense totals but still moving the
     #: balance, so the row needs its own marker: without one the day card
     #: shows 0/0 while its ending balance jumps, and nothing explains why.

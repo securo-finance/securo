@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -15,6 +15,7 @@ from app.providers.base import (
     ProviderUserActionRequired,
     SessionExpiredError,
 )
+from app.providers.psu import psu_context_from_request, psu_present
 from app.schemas.bank_connection import (
     BankConnectionRead,
     ConnectionSettingsUpdate,
@@ -99,20 +100,24 @@ async def list_provider_institutions(
 @router.post("/oauth/callback", response_model=BankConnectionRead)
 async def oauth_callback(
     data: OAuthCallbackRequest,
+    request: Request,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        connection = await connection_service.handle_oauth_callback(
-            session,
-            ctx.workspace.id,
-            ctx.user_id,
-            data.code,
-            provider_name=data.provider,
-            state=data.state,
-            sync_assets=data.sync_assets,
-            reconnect_connection_id=data.reconnect_connection_id,
-        )
+        # The user just came back from their bank and is waiting for the
+        # first import, so it is made as a user-present request.
+        with psu_present(psu_context_from_request(request)):
+            connection = await connection_service.handle_oauth_callback(
+                session,
+                ctx.workspace.id,
+                ctx.user_id,
+                data.code,
+                provider_name=data.provider,
+                state=data.state,
+                sync_assets=data.sync_assets,
+                reconnect_connection_id=data.reconnect_connection_id,
+            )
         return connection
     except ProviderUserActionRequired as e:
         raise HTTPException(
@@ -163,20 +168,23 @@ async def get_reauth_url(
 @router.post("/{connection_id}/sync")
 async def sync_connection(
     connection_id: uuid.UUID,
+    request: Request,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
         # Manual sync is user-initiated, so ask the provider to pull fresh
-        # data from the bank before we read. Scheduled syncs (Celery) keep
-        # the default behaviour: read whatever the provider already has.
-        connection, merged_count, sync_outcome = await connection_service.sync_connection(
-            session,
-            connection_id,
-            ctx.workspace.id,
-            ctx.user_id,
-            trigger_provider_refresh=True,
-        )
+        # data from the bank before we read, and tell the bank the user is
+        # present. Scheduled syncs (Celery) keep the default behaviour: read
+        # whatever the provider already has, as background requests.
+        with psu_present(psu_context_from_request(request)):
+            connection, merged_count, sync_outcome = await connection_service.sync_connection(
+                session,
+                connection_id,
+                ctx.workspace.id,
+                ctx.user_id,
+                trigger_provider_refresh=True,
+            )
         result = BankConnectionRead.model_validate(connection)
         return {
             **result.model_dump(mode="json"),

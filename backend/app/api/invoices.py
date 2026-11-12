@@ -143,8 +143,11 @@ async def read_summary(
     ctx: WorkspaceContext = Depends(read_ctx),
     session: AsyncSession = Depends(get_async_session),
 ):
+    # The page shows these figures in the reader's currency, so they are
+    # added up in it.
     data = await invoice_service.aging_summary(
-        session, ctx.workspace.id, direction=direction
+        session, ctx.workspace.id, direction=direction,
+        currency=ctx.user.primary_currency,
     )
     data["upcoming"] = [_serialize(inv) for inv in data["upcoming"]]
     return data

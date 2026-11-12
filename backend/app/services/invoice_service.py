@@ -40,7 +40,7 @@ from app.models.transaction import Transaction
 from app.models.workspace import Workspace, WorkspaceTaxId
 # Safe at module level: the attachment service reaches for models and the
 # storage provider, never back into this one.
-from app.services import invoice_attachment_service
+from app.services import fx_rate_service, invoice_attachment_service
 
 ZERO = Decimal("0.00")
 
@@ -517,14 +517,33 @@ async def aging_summary(
     workspace_id: uuid.UUID,
     today: Optional[_date] = None,
     direction: str = DEFAULT_DIRECTION,
+    currency: Optional[str] = None,
 ) -> dict[str, Any]:
     """A receber · vencidas · recebido no mês · próximos vencimentos.
 
     Drafts are excluded from every figure — a document nobody has issued
     is not money anybody owes. Voided and uncollectible invoices are
     excluded for the same reason, one decision later.
+
+    Each invoice is in its own currency, and every figure here is one
+    sum. With `currency` (the reader's), each invoice's amounts are
+    converted into it before they are added: balances at today's rate,
+    money received at the rate of the day it was linked. Only stored
+    rates are read, so a page load does not call the rate provider.
     """
     reference = today or app_today()
+    rates: dict[tuple[str, _date], Decimal] = {}
+
+    async def in_currency(amount: Decimal, source: Optional[str], on: _date) -> Decimal:
+        if currency is None or not source or source == currency:
+            return amount
+        key = (source, on)
+        if key not in rates:
+            rates[key] = await fx_rate_service.get_rate(
+                session, source, currency, on, allow_fetch=False
+            )
+        return (amount * rates[key]).quantize(Decimal("0.01"))
+
     result = await session.execute(
         _base_query(direction).where(
             Invoice.workspace_id == workspace_id,
@@ -545,6 +564,7 @@ async def aging_summary(
         remaining = balance(invoice)
         if remaining <= ZERO:
             continue
+        remaining = await in_currency(remaining, invoice.currency, reference)
         outstanding += remaining
         overdue_days = days_overdue(invoice, reference)
         if overdue_days > 0:
@@ -575,7 +595,9 @@ async def aging_summary(
                 allocated_at = allocated_at.replace(tzinfo=timezone.utc)
             allocated_on = allocated_at.astimezone(reporting_timezone).date()
             if month_start <= allocated_on <= reference:
-                received_this_month += allocation.amount
+                received_this_month += await in_currency(
+                    allocation.amount, invoice.currency, allocated_on
+                )
 
     upcoming.sort(key=lambda i: i.due_date)
     return {
@@ -732,7 +754,7 @@ async def _set_installments(
 async def create_invoice(
     session: AsyncSession,
     workspace_id: uuid.UUID,
-    user_id: uuid.UUID,
+    user_id: Optional[uuid.UUID],
     data: dict[str, Any],
 ) -> Invoice:
     settings = await get_settings(session, workspace_id)
@@ -1107,10 +1129,14 @@ async def allocate(
     await session.refresh(invoice, ["allocations", "deductions"])
 
     result = await session.execute(
-        select(Transaction).where(
+        select(Transaction)
+        .where(
             Transaction.id == transaction_id,
             Transaction.workspace_id == invoice.workspace_id,
         )
+        # Two links of the same payment at once must not both read the
+        # same unspent amount below.
+        .with_for_update()
     )
     transaction = result.scalar_one_or_none()
     if transaction is None:
@@ -1130,18 +1156,44 @@ async def allocate(
     available = balance(invoice)
     if available <= ZERO:
         raise InvoiceError("already_settled", "This invoice is already fully settled")
+    # Before the payment's remainder: relinking a payment that is already
+    # on this invoice is the more precise answer, even when it has nothing
+    # left. The unique constraint below still catches a concurrent insert.
+    if any(a.transaction_id == transaction_id for a in invoice.allocations):
+        raise InvoiceError(
+            "already_allocated", "This transaction is already linked to this invoice"
+        )
 
     # Magnitude, not sign: a receivable is settled by money coming in and
     # a payable by money going out, and the allocation records how much of
     # that movement this document accounts for either way. Defaulting to
     # the smaller of "what is left" and "what moved" is what makes the
     # common case — one payment, one document — a single click.
-    incoming = abs(transaction.amount)
+    #
+    # A payment can never write more than it carried, across every invoice
+    # it settles: what earlier links already took is not there to give.
+    already_spent = (
+        await session.execute(
+            select(func.coalesce(func.sum(InvoiceAllocation.amount), 0)).where(
+                InvoiceAllocation.transaction_id == transaction_id
+            )
+        )
+    ).scalar_one()
+    incoming = max(abs(transaction.amount) - Decimal(already_spent), ZERO)
+    if incoming <= ZERO:
+        raise InvoiceError(
+            "transaction_over_allocation", "Nothing of this transaction is left to link"
+        )
     proposed = Decimal(amount) if amount is not None else min(available, incoming)
     if proposed <= ZERO:
         raise InvoiceError("amount_not_positive", "Allocation amount must be positive")
     if proposed > available:
         raise InvoiceError("over_allocation", f"Only {available} remains on this invoice")
+    if proposed > incoming:
+        raise InvoiceError(
+            "transaction_over_allocation",
+            f"Only {incoming} of this transaction is left to link",
+        )
 
     allocation = InvoiceAllocation(
         invoice_id=invoice.id,

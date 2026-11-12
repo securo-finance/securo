@@ -23,6 +23,10 @@ class AgentSettings(BaseSettings):
 
     # Comma-separated extra MCP servers users can plug in (URL[|name]).
     # Example: "http://my-tools:9000/mcp|my-tools,http://other:9001/mcp"
+    # Each one gets tokens with its own audience, `securo-mcp-extra:<name>`,
+    # never `securo-mcp`: a token the built-in server accepts never leaves
+    # it. A server that checks the audience should expect that value. The
+    # name "securo" is reserved for the built-in server.
     extra_mcp_servers: str = ""
 
     # Shared secret used to mint short-lived JWTs for MCP calls. Distinct
