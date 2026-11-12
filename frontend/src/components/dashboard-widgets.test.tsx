@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 
 import {
+  AgingWidget,
   AssistantWidget,
+  InvoicesDueWidget,
+  InvoiceTotalsWidget,
+  RecurringRevenueWidget,
   CreditCardsWidget,
   MonthResultWidget,
   SpendingDistributionWidget,
@@ -13,12 +17,14 @@ import {
 import { AssistantContext } from '@/contexts/assistant-context'
 import { formatCurrency } from '@/lib/format'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Account, DashboardSummary } from '@/types'
+import type { Account, DashboardSummary, Invoice, InvoiceSummary } from '@/types'
 
 const api = vi.hoisted(() => ({
   dashboard: { summary: vi.fn(), spendingByCategory: vi.fn(), projectedTransactions: vi.fn() },
   budgets: { comparison: vi.fn() },
   accounts: { list: vi.fn() },
+  invoices: { summary: vi.fn() },
+  invoiceSchedules: { summary: vi.fn() },
 }))
 vi.mock('@/lib/api', () => api)
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
@@ -198,5 +204,109 @@ describe('AssistantWidget', () => {
     renderAssistant(false)
     expect(screen.getByText(t('widgets.assistant.unavailable'))).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+})
+
+function invoiceSummary(overrides: Partial<InvoiceSummary> = {}): InvoiceSummary {
+  return {
+    outstanding: '0',
+    overdue_amount: '0',
+    overdue_count: 0,
+    received_this_month: '0',
+    buckets: { current: '0', d1_30: '0', d31_60: '0', d61_90: '0', d90_plus: '0' },
+    upcoming: [],
+    ...overrides,
+  }
+}
+
+describe('InvoiceTotalsWidget', () => {
+  it("shows what clients owe, the late part, and what came in", async () => {
+    api.invoices.summary.mockResolvedValue(invoiceSummary({ outstanding: '1500', overdue_amount: '400', overdue_count: 2, received_this_month: '900' }))
+    renderWithProviders(<InvoiceTotalsWidget direction="receivable" scope={PAST} />)
+    expect(await screen.findByText(usd(1500))).toBeInTheDocument()
+    expect(api.invoices.summary).toHaveBeenCalledWith('receivable')
+    expect(screen.getByText(usd(400))).toBeInTheDocument()
+    expect(screen.getByText(t('invoices.summary.overdueCount', { count: 2 }))).toBeInTheDocument()
+    expect(screen.getByText(t('invoices.summary.receivedThisMonth'))).toBeInTheDocument()
+    expect(screen.getByText(usd(900))).toBeInTheDocument()
+  })
+
+  it('reads the payable side for what is owed to suppliers', async () => {
+    api.invoices.summary.mockResolvedValue(invoiceSummary({ outstanding: '300' }))
+    renderWithProviders(<InvoiceTotalsWidget direction="payable" scope={PAST} />)
+    expect(await screen.findByText(t('invoices.summary.paidThisMonth'))).toBeInTheDocument()
+    expect(screen.getByText(t('widgets.payables.title'))).toBeInTheDocument()
+    expect(screen.getByText(t('invoices.summary.owed'))).toBeInTheDocument()
+    expect(api.invoices.summary).toHaveBeenCalledWith('payable')
+  })
+
+  it("says it couldn't load rather than showing zero", async () => {
+    api.invoices.summary.mockRejectedValue(new Error('offline'))
+    renderWithProviders(<InvoiceTotalsWidget direction="receivable" scope={PAST} />)
+    expect(await screen.findByText(t('widgets.loadFailed'), {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.queryByText(usd(0))).not.toBeInTheDocument()
+  })
+})
+
+describe('AgingWidget', () => {
+  it('splits what is owed by how late it is, leaving out empty buckets', async () => {
+    api.invoices.summary.mockResolvedValue(invoiceSummary({ buckets: { current: '600', d1_30: '0', d31_60: '250', d61_90: '0', d90_plus: '0' } }))
+    renderWithProviders(<AgingWidget scope={PAST} />)
+    expect(await screen.findByText(t('invoices.bucket.current'))).toBeInTheDocument()
+    expect(screen.getByText(usd(600))).toBeInTheDocument()
+    expect(screen.getByText(t('invoices.bucket.d31_60'))).toBeInTheDocument()
+    expect(screen.queryByText(t('invoices.bucket.d1_30'))).not.toBeInTheDocument()
+  })
+
+  it('says when nothing is owed', async () => {
+    api.invoices.summary.mockResolvedValue(invoiceSummary())
+    renderWithProviders(<AgingWidget scope={PAST} />)
+    expect(await screen.findByText(t('invoices.summary.nothingDue'))).toBeInTheDocument()
+  })
+})
+
+describe('InvoicesDueWidget', () => {
+  const invoice = (overrides: Partial<Invoice>) =>
+    ({ id: 'i1', origin: 'issued', number: 7, snapshot: null, external_number: null, payee: { id: 'p', name: 'Acme' }, balance: '1200', currency: 'USD', due_date: '2026-04-20', ...overrides }) as unknown as Invoice
+
+  it('lists the next invoices with their client, number and balance, linked to each', async () => {
+    api.invoices.summary.mockResolvedValue(invoiceSummary({ upcoming: [invoice({}), invoice({ id: 'i2', number: 8, payee: null, balance: '80' })] }))
+    renderWithProviders(<InvoicesDueWidget />)
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(screen.getByText('#7')).toBeInTheDocument()
+    expect(screen.getByText(usd(1200))).toBeInTheDocument()
+    expect(screen.getByText(t('widgets.invoicesDue.noClient'))).toBeInTheDocument()
+    expect(screen.getByText('Acme').closest('a')).toHaveAttribute('href', '/invoices/i1')
+  })
+
+  it('says when nothing is coming due', async () => {
+    api.invoices.summary.mockResolvedValue(invoiceSummary())
+    renderWithProviders(<InvoicesDueWidget />)
+    expect(await screen.findByText(t('widgets.invoicesDue.none'))).toBeInTheDocument()
+  })
+})
+
+describe('RecurringRevenueWidget', () => {
+  const row = (currency: string, monthly: string, overrides = {}) => ({
+    currency, monthly_recurring: monthly, active_count: 1, ended_recently_count: 0, monthly_lost: '0', past_due_count: 0, ...overrides,
+  })
+
+  it("leads with the reader's currency and adds up the agreements", async () => {
+    api.invoiceSchedules.summary.mockResolvedValue({
+      active_count: 3, paused_count: 0, ended_count: 0,
+      by_currency: [row('EUR', '500'), row('USD', '2000', { active_count: 2, monthly_lost: '150', past_due_count: 1 })],
+    })
+    renderWithProviders(<RecurringRevenueWidget scope={PAST} />)
+    const main = await screen.findByText(usd(2000))
+    const other = screen.getByText(`+ ${formatCurrency(500, 'EUR', 'en-US')}`)
+    expect(main.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText(t('invoices.schedules.summary.activeCount', { count: 3 }))).toBeInTheDocument()
+    expect(screen.getByText(usd(150))).toBeInTheDocument()
+  })
+
+  it('says when nothing is recurring', async () => {
+    api.invoiceSchedules.summary.mockResolvedValue({ active_count: 0, paused_count: 0, ended_count: 0, by_currency: [] })
+    renderWithProviders(<RecurringRevenueWidget scope={PAST} />)
+    expect(await screen.findByText(t('invoices.schedules.summary.none'))).toBeInTheDocument()
   })
 })

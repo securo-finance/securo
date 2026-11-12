@@ -3420,6 +3420,10 @@
       "6": "Moitié",
       "8": "Deux tiers",
       "12": "Pleine largeur"
+    },
+    "needs": {
+      "assistant": "Nécessite l'activation des agents IA.",
+      "invoices": "Disponible dans les espaces de travail de type Professionnel."
     }
   },
   "widgets": {
@@ -3467,6 +3471,28 @@
       "send": "Envoyer",
       "unavailable": "Activez les agents IA pour poser des questions d'ici."
     },
-    "loadFailed": "Impossible de charger ce widget."
+    "loadFailed": "Impossible de charger ce widget.",
+    "receivables": {
+      "title": "À encaisser",
+      "hint": "Ce que les clients vous doivent, ce qui est en retard et ce qui est rentré ce mois-ci."
+    },
+    "payables": {
+      "title": "À payer",
+      "hint": "Ce que vous devez aux fournisseurs, ce qui est en retard et ce que vous avez payé ce mois-ci."
+    },
+    "aging": {
+      "title": "Créances par ancienneté",
+      "hint": "Ce que doivent les clients, selon le retard."
+    },
+    "invoicesDue": {
+      "title": "Factures à échéance",
+      "hint": "Les prochaines factures que les clients doivent régler.",
+      "none": "Aucune facture à échéance.",
+      "noClient": "Sans client"
+    },
+    "recurringRevenue": {
+      "title": "Revenus récurrents",
+      "hint": "Ce que rapportent les factures récurrentes chaque mois, et ce qui a été perdu récemment."
+    }
   }
 }

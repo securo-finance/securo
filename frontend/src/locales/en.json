@@ -3416,6 +3416,10 @@
       "6": "Half",
       "8": "Two thirds",
       "12": "Full width"
+    },
+    "needs": {
+      "assistant": "Needs AI agents turned on.",
+      "invoices": "Available in Business workspaces."
     }
   },
   "widgets": {
@@ -3463,6 +3467,28 @@
       "send": "Send",
       "unavailable": "Turn on AI agents to ask questions from here."
     },
-    "loadFailed": "Couldn't load this widget."
+    "loadFailed": "Couldn't load this widget.",
+    "receivables": {
+      "title": "Receivables",
+      "hint": "What clients owe you, what's late, and what came in this month."
+    },
+    "payables": {
+      "title": "Payables",
+      "hint": "What you owe suppliers, what's late, and what you paid this month."
+    },
+    "aging": {
+      "title": "Receivables by age",
+      "hint": "What clients owe, split by how late it is."
+    },
+    "invoicesDue": {
+      "title": "Invoices due soon",
+      "hint": "The next invoices clients have to pay.",
+      "none": "No invoices coming due.",
+      "noClient": "No client"
+    },
+    "recurringRevenue": {
+      "title": "Recurring revenue",
+      "hint": "What recurring invoices bring in each month, and what was lost lately."
+    }
   }
 }

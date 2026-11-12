@@ -3420,6 +3420,10 @@
       "6": "Metà",
       "8": "Due terzi",
       "12": "Larghezza piena"
+    },
+    "needs": {
+      "assistant": "Richiede gli agenti IA attivi.",
+      "invoices": "Disponibile negli spazi di lavoro di tipo Attività."
     }
   },
   "widgets": {
@@ -3467,6 +3471,28 @@
       "send": "Invia",
       "unavailable": "Attiva gli agenti IA per fare domande da qui."
     },
-    "loadFailed": "Impossibile caricare questo widget."
+    "loadFailed": "Impossibile caricare questo widget.",
+    "receivables": {
+      "title": "Crediti",
+      "hint": "Quanto ti devono i clienti, cosa è in ritardo e cosa è entrato questo mese."
+    },
+    "payables": {
+      "title": "Debiti",
+      "hint": "Quanto devi ai fornitori, cosa è in ritardo e cosa hai pagato questo mese."
+    },
+    "aging": {
+      "title": "Crediti per anzianità",
+      "hint": "Quanto devono i clienti, diviso per ritardo."
+    },
+    "invoicesDue": {
+      "title": "Fatture in scadenza",
+      "hint": "Le prossime fatture che i clienti devono pagare.",
+      "none": "Nessuna fattura in scadenza.",
+      "noClient": "Nessun cliente"
+    },
+    "recurringRevenue": {
+      "title": "Entrate ricorrenti",
+      "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
+    }
   }
 }

@@ -3552,6 +3552,10 @@
       "6": "Połowa",
       "8": "Dwie trzecie",
       "12": "Pełna szerokość"
+    },
+    "needs": {
+      "assistant": "Wymaga włączenia agentów AI.",
+      "invoices": "Dostępne w przestrzeniach typu Firmowy."
     }
   },
   "widgets": {
@@ -3599,6 +3603,28 @@
       "send": "Wyślij",
       "unavailable": "Włącz agentów AI, aby zadawać pytania stąd."
     },
-    "loadFailed": "Nie udało się wczytać tego widżetu."
+    "loadFailed": "Nie udało się wczytać tego widżetu.",
+    "receivables": {
+      "title": "Należności",
+      "hint": "Ile winni ci są klienci, co jest po terminie i co wpłynęło w tym miesiącu."
+    },
+    "payables": {
+      "title": "Zobowiązania",
+      "hint": "Ile jesteś winien dostawcom, co jest po terminie i co zapłaciłeś w tym miesiącu."
+    },
+    "aging": {
+      "title": "Należności wg wieku",
+      "hint": "Ile winni są klienci, według opóźnienia."
+    },
+    "invoicesDue": {
+      "title": "Faktury do zapłaty",
+      "hint": "Najbliższe faktury, które klienci mają zapłacić.",
+      "none": "Brak faktur z bliskim terminem.",
+      "noClient": "Brak klienta"
+    },
+    "recurringRevenue": {
+      "title": "Przychody cykliczne",
+      "hint": "Ile co miesiąc przynoszą faktury cykliczne i co ostatnio utracono."
+    }
   }
 }

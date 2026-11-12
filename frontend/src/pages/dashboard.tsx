@@ -64,9 +64,13 @@ import { formatCompactCurrency, formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { WidgetGrid } from '@/components/widget-grid'
 import {
+  AgingWidget,
   AssistantWidget,
   CreditCardsWidget,
+  InvoicesDueWidget,
+  InvoiceTotalsWidget,
   MonthResultWidget,
+  RecurringRevenueWidget,
   SpendingDistributionWidget,
   SpendingPaceWidget,
   UpcomingWidget,
@@ -74,6 +78,7 @@ import {
 } from '@/components/dashboard-widgets'
 import { DASHBOARD_WIDGETS } from '@/lib/library'
 import { useLayout } from '@/hooks/use-layout'
+import { useEntryAvailability } from '@/hooks/use-entry-availability'
 import { useLibrary } from '@/contexts/library-context'
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
@@ -137,6 +142,13 @@ export default function DashboardPage() {
   const dashboardLayout = useLayout('dashboard')
   const { openLibrary } = useLibrary()
   const [editing, setEditing] = useState(false)
+  // A widget this workspace can't run (invoices in a Personal one, the agent
+  // with agents off) isn't drawn, but stays in the saved arrangement.
+  const unavailable = useEntryAvailability()
+  const availableWidgets = DASHBOARD_WIDGETS.filter((entry) => unavailable(entry) === null)
+  const availableIds = new Set(availableWidgets.map((entry) => entry.id))
+  const gridItems = dashboardLayout.items.filter((item) => availableIds.has(item.id))
+  const keptItems = dashboardLayout.items.filter((item) => !availableIds.has(item.id))
   // A widget that isn't on the dashboard doesn't load its data.
   const shows = (id: string) => dashboardLayout.ready && dashboardLayout.ids.includes(id)
 
@@ -770,6 +782,11 @@ export default function DashboardPage() {
     upcoming: <UpcomingWidget scope={widgetScope} />,
     'credit-cards': <CreditCardsWidget scope={widgetScope} />,
     assistant: <AssistantWidget />,
+    receivables: <InvoiceTotalsWidget direction="receivable" scope={widgetScope} />,
+    payables: <InvoiceTotalsWidget direction="payable" scope={widgetScope} />,
+    'receivables-aging': <AgingWidget scope={widgetScope} />,
+    'invoices-due': <InvoicesDueWidget />,
+    'recurring-revenue': <RecurringRevenueWidget scope={widgetScope} />,
     'overview': (
       // A container, so the indicators below lay out by the widget's width, not the screen's.
       <div className="@container bg-card rounded-xl border border-border shadow-sm px-5 pt-5 pb-4">
@@ -1899,11 +1916,11 @@ export default function DashboardPage() {
         </div>
       ) : (
       <WidgetGrid
-        items={dashboardLayout.items}
-        entries={DASHBOARD_WIDGETS}
+        items={gridItems}
+        entries={availableWidgets}
         content={widgetContent}
         editing={editing}
-        onChange={dashboardLayout.save}
+        onChange={(next) => dashboardLayout.save([...next, ...keptItems])}
         onAdd={() => openLibrary('widgets')}
       />
       )}

@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useLayout } from '@/hooks/use-layout'
-import { useAssistant } from '@/contexts/assistant-context'
+import { useEntryAvailability } from '@/hooks/use-entry-availability'
 import { useAppTheme } from '@/hooks/use-app-theme'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { SURFACE_ENTRIES, type LibraryEntry, type LibraryKind, type Surface } from '@/lib/library'
@@ -91,23 +91,29 @@ function SurfaceItems({ surface }: { surface: Surface }) {
   const { t } = useTranslation()
   // Until the saved arrangement is in, a change would be made to the default and overwrite it.
   const { items, ids, save, reset, isCustom, ready } = useLayout(surface)
-  const { available: assistantAvailable } = useAssistant()
+  const unavailable = useEntryAvailability()
   const placed = new Set(ids)
+  // Everything is listed; what can't work in this workspace sits at the end, said why.
+  const entries = [...SURFACE_ENTRIES[surface]].sort((a, b) => Number(unavailable(a) !== null) - Number(unavailable(b) !== null))
   // The reports page can't be left empty; the dashboard can.
   const lastReport = surface === 'reports' && ids.length === 1
 
   return (
     <div className="space-y-2">
       <ul className="divide-y rounded-xl border">
-        {SURFACE_ENTRIES[surface].filter((entry) => !('requires' in entry) || (entry.requires === 'assistant' && assistantAvailable)).map((entry) => {
+        {entries.map((entry) => {
           const isPlaced = placed.has(entry.id)
           const locked = isPlaced && lastReport
+          const reason = unavailable(entry)
           return (
-            <li key={entry.id} className="flex items-center gap-3 px-4 py-3">
-              <EntryIcon entry={entry} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium leading-tight">{t(entry.titleKey)}</p>
-                <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{t(entry.descriptionKey)}</p>
+            <li key={entry.id} className="flex items-center gap-3 px-4 py-3" aria-disabled={reason !== null || undefined}>
+              <div className={cn('flex min-w-0 flex-1 items-center gap-3', reason && 'opacity-60')}>
+                <EntryIcon entry={entry} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium leading-tight">{t(entry.titleKey)}</p>
+                  <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{t(entry.descriptionKey)}</p>
+                  {reason && <p className="mt-1 text-xs font-medium leading-snug text-muted-foreground">{t(reason)}</p>}
+                </div>
               </div>
               {isPlaced ? (
                 <Button
@@ -125,8 +131,10 @@ function SurfaceItems({ surface }: { surface: Surface }) {
               ) : (
                 <Button
                   size="sm"
+                  // A filled button reads as clickable even when faded; an unavailable one is drawn quiet.
+                  variant={reason ? 'outline' : 'default'}
                   className="shrink-0"
-                  disabled={!ready}
+                  disabled={!ready || reason !== null}
                   aria-label={t(`library.addTo.${surface}`, { name: t(entry.titleKey) })}
                   onClick={() => save([...items, { id: entry.id }])}
                 >

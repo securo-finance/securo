@@ -818,6 +818,19 @@ describe('Dashboard arranged from the library', () => {
     expect(api.budgets.comparison).not.toHaveBeenCalled()
   })
 
+  it("leaves out a widget this workspace can't run, and keeps it in the saved arrangement", async () => {
+    // Saved where invoices are shown; this workspace doesn't show them.
+    layouts.saved = { dashboard: [{ id: 'overview' }, { id: 'receivables' }, { id: 'transactions' }] }
+    const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await waitFor(() => expect(regions()).toEqual([t('library.widget.overview'), t('dashboard.periodTransactions')]))
+
+    await user.click(screen.getByRole('button', { name: t('library.customizeDashboard') }))
+    expect(regions()).not.toContain(t('widgets.receivables.title'))
+    await user.click(screen.getByRole('button', { name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }) }))
+    await waitFor(() => expect(layouts.saves.at(-1)?.ids).toEqual(['transactions', 'receivables']))
+  })
+
   it('saves a widget resized while customizing', async () => {
     const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
     await screen.findByText(formatCurrency(500, 'USD', 'en-US'))

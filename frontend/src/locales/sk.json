@@ -3586,6 +3586,10 @@
       "6": "Polovica",
       "8": "Dve tretiny",
       "12": "Celá šírka"
+    },
+    "needs": {
+      "assistant": "Vyžaduje zapnutých AI agentov.",
+      "invoices": "Dostupné v pracovných priestoroch typu Firemný."
     }
   },
   "widgets": {
@@ -3633,6 +3637,28 @@
       "send": "Odoslať",
       "unavailable": "Zapnite AI agentov, aby ste sa mohli pýtať odtiaľto."
     },
-    "loadFailed": "Tento widget sa nepodarilo načítať."
+    "loadFailed": "Tento widget sa nepodarilo načítať.",
+    "receivables": {
+      "title": "Pohľadávky",
+      "hint": "Čo vám dlžia klienti, čo je po splatnosti a čo prišlo tento mesiac."
+    },
+    "payables": {
+      "title": "Záväzky",
+      "hint": "Čo dlžíte dodávateľom, čo je po splatnosti a čo ste tento mesiac zaplatili."
+    },
+    "aging": {
+      "title": "Pohľadávky podľa veku",
+      "hint": "Čo dlžia klienti, rozdelené podľa omeškania."
+    },
+    "invoicesDue": {
+      "title": "Čoskoro splatné faktúry",
+      "hint": "Ďalšie faktúry, ktoré majú klienti zaplatiť.",
+      "none": "Žiadne faktúry pred splatnosťou.",
+      "noClient": "Bez klienta"
+    },
+    "recurringRevenue": {
+      "title": "Opakované príjmy",
+      "hint": "Čo mesačne prinášajú opakované faktúry a čo sa nedávno stratilo."
+    }
   }
 }

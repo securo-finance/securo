@@ -3416,6 +3416,10 @@
       "6": "Fele",
       "8": "Kétharmad",
       "12": "Teljes szélesség"
+    },
+    "needs": {
+      "assistant": "Bekapcsolt AI-ügynököket igényel.",
+      "invoices": "Vállalkozás típusú munkaterületeken érhető el."
     }
   },
   "widgets": {
@@ -3463,6 +3467,28 @@
       "send": "Küldés",
       "unavailable": "Kapcsold be az MI-ügynököket, hogy innen kérdezhess."
     },
-    "loadFailed": "Nem sikerült betölteni ezt a widgetet."
+    "loadFailed": "Nem sikerült betölteni ezt a widgetet.",
+    "receivables": {
+      "title": "Kintlévőségek",
+      "hint": "Amivel az ügyfelek tartoznak, ami késik, és ami ebben a hónapban befolyt."
+    },
+    "payables": {
+      "title": "Tartozások",
+      "hint": "Amivel a beszállítóknak tartozol, ami késik, és amit ebben a hónapban kifizettél."
+    },
+    "aging": {
+      "title": "Kintlévőségek kor szerint",
+      "hint": "Amivel az ügyfelek tartoznak, a késés szerint bontva."
+    },
+    "invoicesDue": {
+      "title": "Hamarosan esedékes számlák",
+      "hint": "A következő számlák, amelyeket az ügyfeleknek fizetniük kell.",
+      "none": "Nincs esedékes számla.",
+      "noClient": "Nincs ügyfél"
+    },
+    "recurringRevenue": {
+      "title": "Ismétlődő bevétel",
+      "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."
+    }
   }
 }

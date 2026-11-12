@@ -1,5 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
-import { CalendarClock, CalendarRange, ChartColumnBig, ChartPie, ChartSpline, CreditCard, Gauge, LayoutList, Network, PiggyBank, Scale, Sparkles, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
+import { CalendarClock, CalendarRange, ChartColumnBig, ChartPie, ChartSpline, CreditCard, FileClock, Gauge, HandCoins, Hourglass, LayoutList, Network, PiggyBank, Receipt, Repeat, Scale, Sparkles, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
+
+import type { ModuleId } from '@/lib/modules'
 
 /**
  * The library: what someone can place on a surface (widgets on the
@@ -31,8 +33,12 @@ export interface WidgetEntry extends LibraryEntry {
   tall?: boolean
   /** Left out of Securo's default arrangement; added from the library. */
   optional?: boolean
-  /** Only offered when this part of Securo is available. */
-  requires?: 'assistant'
+  /**
+   * What it needs to work: AI agents, or a module the workspace shows (which
+   * the server decides from the workspace's type). Without it, the library
+   * still lists it, unavailable, and the dashboard leaves it out.
+   */
+  requires?: 'assistant' | ModuleId
 }
 
 /** One item placed on a surface, as saved. */
@@ -54,6 +60,11 @@ export const DASHBOARD_WIDGETS: WidgetEntry[] = [
   { id: 'upcoming', titleKey: 'widgets.upcoming.title', descriptionKey: 'widgets.upcoming.hint', icon: CalendarClock, span: 4, minSpan: 4, optional: true },
   { id: 'credit-cards', titleKey: 'widgets.cards.title', descriptionKey: 'widgets.cards.hint', icon: CreditCard, span: 4, minSpan: 4, optional: true },
   { id: 'assistant', titleKey: 'widgets.assistant.title', descriptionKey: 'widgets.assistant.libraryHint', icon: Sparkles, span: 6, minSpan: 4, optional: true, requires: 'assistant' },
+  { id: 'receivables', titleKey: 'widgets.receivables.title', descriptionKey: 'widgets.receivables.hint', icon: HandCoins, span: 4, minSpan: 4, optional: true, requires: 'invoices' },
+  { id: 'payables', titleKey: 'widgets.payables.title', descriptionKey: 'widgets.payables.hint', icon: Receipt, span: 4, minSpan: 4, optional: true, requires: 'invoices' },
+  { id: 'receivables-aging', titleKey: 'widgets.aging.title', descriptionKey: 'widgets.aging.hint', icon: Hourglass, span: 4, minSpan: 4, optional: true, requires: 'invoices' },
+  { id: 'invoices-due', titleKey: 'widgets.invoicesDue.title', descriptionKey: 'widgets.invoicesDue.hint', icon: FileClock, span: 6, minSpan: 4, optional: true, requires: 'invoices' },
+  { id: 'recurring-revenue', titleKey: 'widgets.recurringRevenue.title', descriptionKey: 'widgets.recurringRevenue.hint', icon: Repeat, span: 4, minSpan: 4, optional: true, requires: 'invoices' },
 ]
 
 export const REPORTS: LibraryEntry[] = [

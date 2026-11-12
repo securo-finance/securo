@@ -5,7 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 import { ArrowRight, RefreshCw, SendHorizontal, Sparkles } from 'lucide-react'
 
-import { accounts as accountsApi, budgets, dashboard } from '@/lib/api'
+import { accounts as accountsApi, budgets, dashboard, invoiceSchedules, invoices as invoicesApi } from '@/lib/api'
+import { AGING_BUCKETS, displayNumber } from '@/lib/invoice-utils'
 import { sumAccountBalances, getAccountLabel } from '@/lib/account-utils'
 import { formatCurrency } from '@/lib/format'
 import { monthLastDay, shiftMonth } from '@/lib/month-utils'
@@ -17,7 +18,7 @@ import { CategoryIcon } from '@/components/category-icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { DashboardSummary } from '@/types'
+import type { DashboardSummary, InvoiceDirection } from '@/types'
 
 /**
  * What the dashboard is looking at, for widgets that fetch their own data.
@@ -460,6 +461,215 @@ export function AssistantWidget() {
               <SendHorizontal size={14} />
             </Button>
           </form>
+        </div>
+      )}
+    </WidgetCard>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Invoices: only in a workspace that shows them (see `requires` in the library)
+// ---------------------------------------------------------------------------
+
+/**
+ * The invoices page's own summary, under its query key, so both read one
+ * cache and what the page changes shows here. It is the whole workspace's,
+ * in the reader's currency: an invoice isn't tied to an account, so the
+ * collection filter doesn't narrow it.
+ */
+function useInvoiceSummary(direction: InvoiceDirection) {
+  return useQuery({
+    queryKey: ['invoice-summary', direction],
+    queryFn: () => invoicesApi.summary(direction),
+  })
+}
+
+/** What clients owe (or what is owed to suppliers): the total, the late part, and what came in this month. */
+export function InvoiceTotalsWidget({ direction, scope }: { direction: InvoiceDirection; scope: DashboardScope }) {
+  const { t } = useTranslation()
+  const locale = useDisplayLocale()
+  const { mask } = usePrivacyMode()
+  const { data: summary, isLoading, isError, refetch } = useInvoiceSummary(direction)
+  const money = (value: string | number | undefined) => mask(formatCurrency(Number(value ?? 0), scope.currency, locale))
+  const receivable = direction === 'receivable'
+  const overdue = Number(summary?.overdue_amount ?? 0)
+
+  return (
+    <WidgetCard
+      title={t(receivable ? 'widgets.receivables.title' : 'widgets.payables.title')}
+      action={<CardLink to="/invoices" label={t('widgets.viewAll')} />}
+    >
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : isError || !summary ? (
+        <Failed onRetry={() => void refetch()} />
+      ) : (
+        <div className="flex flex-1 flex-col justify-between gap-4">
+          <div>
+            <p className="text-xs text-muted-foreground">{t(receivable ? 'invoices.summary.outstanding' : 'invoices.summary.owed')}</p>
+            <p className="text-2xl font-bold tabular-nums">{money(summary.outstanding)}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-muted-foreground">{t('invoices.summary.overdue')}</p>
+              <p className={cn('text-sm font-semibold tabular-nums', overdue > 0 ? 'text-rose-500' : 'text-foreground')}>{money(overdue)}</p>
+              {summary.overdue_count > 0 && (
+                <p className="text-xs text-muted-foreground">{t('invoices.summary.overdueCount', { count: summary.overdue_count })}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">
+                {t(receivable ? 'invoices.summary.receivedThisMonth' : 'invoices.summary.paidThisMonth')}
+              </p>
+              <p className={cn('text-sm font-semibold tabular-nums', receivable && Number(summary.received_this_month) > 0 && 'text-emerald-600 dark:text-emerald-400')}>
+                {money(summary.received_this_month)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </WidgetCard>
+  )
+}
+
+/** What clients owe, by how late it is. */
+export function AgingWidget({ scope }: { scope: DashboardScope }) {
+  const { t } = useTranslation()
+  const locale = useDisplayLocale()
+  const { mask } = usePrivacyMode()
+  const { data: summary, isLoading, isError, refetch } = useInvoiceSummary('receivable')
+  const amountOf = (key: (typeof AGING_BUCKETS)[number]['key']) => Number(summary?.buckets[key] ?? 0)
+  const total = AGING_BUCKETS.reduce((sum, bucket) => sum + amountOf(bucket.key), 0)
+
+  return (
+    <WidgetCard title={t('widgets.aging.title')} action={<CardLink to="/invoices" label={t('widgets.viewAll')} />}>
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : isError ? (
+        <Failed onRetry={() => void refetch()} />
+      ) : total <= 0 ? (
+        <Empty>{t('invoices.summary.nothingDue')}</Empty>
+      ) : (
+        <div className="flex flex-1 flex-col gap-4">
+          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted" role="img" aria-label={t('widgets.aging.title')}>
+            {AGING_BUCKETS.map((bucket) =>
+              amountOf(bucket.key) > 0 ? (
+                <div key={bucket.key} className={bucket.tone} style={{ width: `${(amountOf(bucket.key) / total) * 100}%` }} />
+              ) : null,
+            )}
+          </div>
+          <dl className="space-y-1.5">
+            {AGING_BUCKETS.map((bucket) =>
+              amountOf(bucket.key) > 0 ? (
+                <div key={bucket.key} className="flex items-center gap-2 text-sm">
+                  <span className={cn('size-2 shrink-0 rounded-full', bucket.tone)} />
+                  <dt className="text-muted-foreground">{t(`invoices.bucket.${bucket.key}`)}</dt>
+                  <dd className="ml-auto font-medium tabular-nums">{mask(formatCurrency(amountOf(bucket.key), scope.currency, locale))}</dd>
+                </div>
+              ) : null,
+            )}
+          </dl>
+        </div>
+      )}
+    </WidgetCard>
+  )
+}
+
+/** The next invoices clients have to pay, soonest first. */
+export function InvoicesDueWidget() {
+  const { t } = useTranslation()
+  const locale = useDisplayLocale()
+  const dateLocale = useDateLocale()
+  const { mask } = usePrivacyMode()
+  const { data: summary, isLoading, isError, refetch } = useInvoiceSummary('receivable')
+  const rows = summary?.upcoming ?? []
+
+  return (
+    <WidgetCard title={t('widgets.invoicesDue.title')} action={<CardLink to="/invoices" label={t('widgets.viewAll')} />}>
+      {isLoading ? (
+        <Skeleton className="h-32 w-full" />
+      ) : isError ? (
+        <Failed onRetry={() => void refetch()} />
+      ) : rows.length === 0 ? (
+        <Empty>{t('widgets.invoicesDue.none')}</Empty>
+      ) : (
+        <ul className="divide-y divide-border">
+          {rows.map((invoice) => {
+            const number = displayNumber(invoice)
+            return (
+              <li key={invoice.id}>
+                <Link to={`/invoices/${invoice.id}`} className="flex items-center gap-3 py-2.5 hover:text-primary">
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    {invoice.payee?.name ?? t('widgets.invoicesDue.noClient')}
+                    {number && <span className="ml-1.5 text-xs text-muted-foreground">#{number}</span>}
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums">{mask(formatCurrency(Number(invoice.balance), invoice.currency, locale))}</span>
+                  <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">
+                    {new Date(`${invoice.due_date}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })}
+                  </span>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </WidgetCard>
+  )
+}
+
+/** What recurring invoices bring in a month, per currency, and what was lost lately. */
+export function RecurringRevenueWidget({ scope }: { scope: DashboardScope }) {
+  const { t } = useTranslation()
+  const locale = useDisplayLocale()
+  const { mask } = usePrivacyMode()
+  const { data: summary, isLoading, isError, refetch } = useQuery({
+    queryKey: ['invoice-schedule-summary'],
+    queryFn: invoiceSchedules.summary,
+  })
+  // The reader's currency first; agreements in others follow.
+  const rows = [...(summary?.by_currency ?? [])]
+    .filter((row) => row.active_count > 0 || Number(row.monthly_lost) > 0)
+    .sort((a, b) => Number(b.currency === scope.currency) - Number(a.currency === scope.currency))
+  const [main, ...others] = rows
+  const pastDue = rows.reduce((sum, row) => sum + row.past_due_count, 0)
+  const money = (value: string, currency: string) => mask(formatCurrency(Number(value), currency, locale))
+
+  return (
+    <WidgetCard title={t('widgets.recurringRevenue.title')} action={<CardLink to="/invoices/schedules" label={t('widgets.viewAll')} />}>
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : isError ? (
+        <Failed onRetry={() => void refetch()} />
+      ) : !main ? (
+        <Empty>{t('invoices.schedules.summary.none')}</Empty>
+      ) : (
+        <div className="flex flex-1 flex-col justify-between gap-4">
+          <div>
+            <p className="text-xs text-muted-foreground">{t('invoices.schedules.summary.monthly')}</p>
+            <p className="text-2xl font-bold tabular-nums">{money(main.monthly_recurring, main.currency)}</p>
+            {others.map((row) => (
+              <p key={row.currency} className="text-sm font-semibold tabular-nums text-muted-foreground">
+                + {money(row.monthly_recurring, row.currency)}
+              </p>
+            ))}
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t('invoices.schedules.summary.activeCount', { count: rows.reduce((sum, row) => sum + row.active_count, 0) })}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-muted-foreground">{t('invoices.schedules.summary.lost')}</p>
+              <p className={cn('text-sm font-semibold tabular-nums', Number(main.monthly_lost) > 0 ? 'text-rose-500' : 'text-foreground')}>
+                {money(main.monthly_lost, main.currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">{t('invoices.schedules.summary.pastDue')}</p>
+              <p className={cn('text-sm font-semibold tabular-nums', pastDue > 0 ? 'text-rose-500' : 'text-foreground')}>
+                {pastDue}
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </WidgetCard>

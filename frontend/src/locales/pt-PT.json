@@ -3420,6 +3420,10 @@
       "6": "Metade",
       "8": "Dois terços",
       "12": "Largura total"
+    },
+    "needs": {
+      "assistant": "Precisa dos agentes de IA ativados.",
+      "invoices": "Disponível em espaços de trabalho de Negócios."
     }
   },
   "widgets": {
@@ -3467,6 +3471,28 @@
       "send": "Enviar",
       "unavailable": "Ative os agentes de IA para perguntar daqui."
     },
-    "loadFailed": "Não foi possível carregar este widget."
+    "loadFailed": "Não foi possível carregar este widget.",
+    "receivables": {
+      "title": "A receber",
+      "hint": "O que os clientes devem, o que está em atraso e o que entrou este mês."
+    },
+    "payables": {
+      "title": "A pagar",
+      "hint": "O que deve a fornecedores, o que está em atraso e o que pagou este mês."
+    },
+    "aging": {
+      "title": "Recebíveis por prazo",
+      "hint": "O que os clientes devem, separado pelo atraso."
+    },
+    "invoicesDue": {
+      "title": "Faturas a vencer",
+      "hint": "As próximas faturas que os clientes têm de pagar.",
+      "none": "Nenhuma fatura a vencer.",
+      "noClient": "Sem cliente"
+    },
+    "recurringRevenue": {
+      "title": "Receita recorrente",
+      "hint": "Quanto as faturas recorrentes trazem por mês, e o que se perdeu recentemente."
+    }
   }
 }

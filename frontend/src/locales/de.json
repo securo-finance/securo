@@ -3417,6 +3417,10 @@
       "6": "Hälfte",
       "8": "Zwei Drittel",
       "12": "Volle Breite"
+    },
+    "needs": {
+      "assistant": "Erfordert aktivierte KI-Agenten.",
+      "invoices": "Verfügbar in Arbeitsbereichen vom Typ Geschäftlich."
     }
   },
   "widgets": {
@@ -3464,6 +3468,28 @@
       "send": "Senden",
       "unavailable": "Aktiviere KI-Agenten, um hier Fragen zu stellen."
     },
-    "loadFailed": "Dieses Widget konnte nicht geladen werden."
+    "loadFailed": "Dieses Widget konnte nicht geladen werden.",
+    "receivables": {
+      "title": "Forderungen",
+      "hint": "Was Kunden Ihnen schulden, was überfällig ist und was diesen Monat eingegangen ist."
+    },
+    "payables": {
+      "title": "Verbindlichkeiten",
+      "hint": "Was Sie Lieferanten schulden, was überfällig ist und was Sie diesen Monat bezahlt haben."
+    },
+    "aging": {
+      "title": "Forderungen nach Alter",
+      "hint": "Was Kunden schulden, nach Verzug aufgeteilt."
+    },
+    "invoicesDue": {
+      "title": "Bald fällige Rechnungen",
+      "hint": "Die nächsten Rechnungen, die Kunden bezahlen müssen.",
+      "none": "Keine fälligen Rechnungen.",
+      "noClient": "Kein Kunde"
+    },
+    "recurringRevenue": {
+      "title": "Wiederkehrende Einnahmen",
+      "hint": "Was wiederkehrende Rechnungen pro Monat einbringen, und was zuletzt verloren ging."
+    }
   }
 }

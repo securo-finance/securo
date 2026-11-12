@@ -3418,6 +3418,10 @@
       "6": "Helft",
       "8": "Twee derde",
       "12": "Volledige breedte"
+    },
+    "needs": {
+      "assistant": "Vereist ingeschakelde AI-agents.",
+      "invoices": "Beschikbaar in werkruimtes van het type Zakelijk."
     }
   },
   "widgets": {
@@ -3465,6 +3469,28 @@
       "send": "Versturen",
       "unavailable": "Zet AI-agents aan om hier vragen te stellen."
     },
-    "loadFailed": "Deze widget kon niet worden geladen."
+    "loadFailed": "Deze widget kon niet worden geladen.",
+    "receivables": {
+      "title": "Te ontvangen",
+      "hint": "Wat klanten je verschuldigd zijn, wat te laat is en wat er deze maand binnenkwam."
+    },
+    "payables": {
+      "title": "Te betalen",
+      "hint": "Wat je leveranciers verschuldigd bent, wat te laat is en wat je deze maand betaalde."
+    },
+    "aging": {
+      "title": "Vorderingen naar ouderdom",
+      "hint": "Wat klanten verschuldigd zijn, verdeeld naar achterstand."
+    },
+    "invoicesDue": {
+      "title": "Binnenkort vervallende facturen",
+      "hint": "De volgende facturen die klanten moeten betalen.",
+      "none": "Geen facturen die vervallen.",
+      "noClient": "Geen klant"
+    },
+    "recurringRevenue": {
+      "title": "Terugkerende omzet",
+      "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."
+    }
   }
 }

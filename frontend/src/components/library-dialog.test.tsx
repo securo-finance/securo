@@ -112,7 +112,7 @@ describe('LibraryDialog', () => {
   })
 
   it('reads and saves the arrangement of the workspace it was opened in', async () => {
-    const workspace = { current: { id: 'ws-a' } } as unknown as NonNullable<React.ContextType<typeof WorkspaceContext>>
+    const workspace = { current: { id: 'ws-a' }, hasModule: () => false } as unknown as NonNullable<React.ContextType<typeof WorkspaceContext>>
     const { user } = renderWithProviders(
       <WorkspaceContext.Provider value={workspace}>
         <LibraryDialog kind="widgets" onKindChange={() => {}} onClose={() => {}} />
@@ -122,6 +122,32 @@ describe('LibraryDialog', () => {
     await waitFor(() => expect(state.saves).toHaveLength(1))
     // Every read and the write named ws-a, whatever the active workspace is when they go out.
     expect(new Set(state.workspaces)).toEqual(new Set(['ws-a']))
+  })
+
+  it("lists what this workspace can't use, unavailable, and says why", async () => {
+    open('widgets')
+    const name = t('widgets.receivables.title')
+    expect(await screen.findByRole('button', { name: t('library.addTo.dashboard', { name }) })).toBeDisabled()
+    const row = screen.getByText(name).closest('li')!
+    expect(row).toHaveAttribute('aria-disabled', 'true')
+    expect(within(row).getByText(t('library.needs.invoices'))).toBeInTheDocument()
+    // The agent widget too, with agents off.
+    expect(screen.getByRole('button', { name: t('library.addTo.dashboard', { name: t('widgets.assistant.title') }) })).toBeDisabled()
+    expect(screen.getByText(t('library.needs.assistant'))).toBeInTheDocument()
+  })
+
+  it('offers the invoice widgets in a workspace that shows invoices', async () => {
+    state.saved = { dashboard: [{ id: 'overview' }] }
+    const workspace = { current: { id: 'ws-b' }, hasModule: (id: string) => id === 'invoices' } as unknown as NonNullable<React.ContextType<typeof WorkspaceContext>>
+    const { user } = renderWithProviders(
+      <WorkspaceContext.Provider value={workspace}>
+        <LibraryDialog kind="widgets" onKindChange={() => {}} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+    )
+    const name = t('widgets.receivables.title')
+    expect(screen.getByText(name).closest('li')).not.toHaveAttribute('aria-disabled')
+    await user.click(await screen.findByRole('button', { name: t('library.addTo.dashboard', { name }) }))
+    await waitFor(() => expect(state.saves.at(-1)?.ids).toEqual(['overview', 'receivables']))
   })
 
   it('removes a widget from the dashboard', async () => {
