@@ -333,7 +333,7 @@ async def _get_or_create_oidc_user(
     except UserAlreadyExists:
         user = (await session.execute(select(User).where(func.lower(User.email) == email))).scalar_one()
 
-    db_session = user_manager.user_db.session
+    db_session = user_manager.db_session
     await db_session.execute(
         sql_update(User)
         .where(User.id == user.id)

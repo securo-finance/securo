@@ -998,6 +998,7 @@
     "sortAsc": "Sort ascending",
     "sortDesc": "Sort descending",
     "syncedInfo": "Bank-synced transaction: amount, date and account can't be edited",
+    "syncedAmountDateError": "The amount or date of a synchronized transaction cannot be changed",
     "uncategorized": "Uncategorized",
     "selected": "selected",
     "summaryCount": "{{count}} transactions",
@@ -1059,7 +1060,7 @@
     "transferSameAccount": "Source and destination must be different",
     "transferDescription": "Description",
     "transferNotes": "Notes",
-    "transferInfo": "This is a transfer — changes to description, date, and notes will apply to both sides",
+    "transferInfo": "This is a transfer: changes to description and notes apply to both sides. Amount and date changes also apply to a manual (non-synchronized) counterpart, never to a synchronized one.",
     "transferLinkedTo": "Linked to:",
     "transferOpenAccount": "Open {{account}}",
     "transferTooltip": "Transfers are excluded from report and dashboard totals",
@@ -1068,6 +1069,11 @@
     "effectiveBillDate": "Effective bill date",
     "effectiveBillDateHint": "manual, overrides the automatic cycle",
     "effectiveBillDatePlaceholder": "Bill due date (optional)",
+    "bankDate": "Bank date",
+    "reportingDate": "Reporting date",
+    "reportingDateHint": "Changes reporting periods across the app; the bank date remains unchanged.",
+    "reportingDatePlaceholder": "Select date (optional)",
+    "clearReportingDate": "Reset reporting date",
     "clearOverride": "Clear override",
     "linkAsTransfer": "Link as transfer",
     "linkTransferTitle": "Link as transfer",
@@ -1448,6 +1454,17 @@
     "confirmDeleteRecurringDescription": "The recurring budget for \"{{name}}\" will be permanently deleted. This definition will no longer apply to later months. Existing transactions are not affected. This action cannot be undone.",
     "repeatEveryMonth": "Repeat every month",
     "recurringLabel": "Recurring",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Budgets for {{month}}",
+    "otherCategories": "Other categories",
+    "noCategories": "No categories yet",
+    "total": "Budget {{amount}}",
+    "saved": "Budgets saved",
+    "budgetFor": "Budget for {{category}}",
+    "invalidAmount": "Enter a valid amount of zero or more.",
+    "repeatEveryMonthFor": "Repeat the {{category}} budget every month",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
     "suggest": "Suggest from history",
     "suggestTitle": "Suggest budgets",
     "suggestDescription": "Proposed limits based on your average monthly spending over the last {{months}} months.",
@@ -1457,7 +1474,9 @@
     "suggestCreate": "Create budgets",
     "suggestCreated": "Created {{count}} budgets",
     "suggestEmpty": "No spending history in the selected period to suggest from.",
-    "suggestError": "Could not load suggestions. Try again in a moment."
+    "suggestError": "Could not load suggestions. Try again in a moment.",
+    "hiddenCategory": "Hidden",
+    "average": "usually {{amount}}"
   },
   "goals": {
     "title": "Goals",
@@ -3328,6 +3347,153 @@
       "install": "This workspace already has everything it brings. Installing records it, so you get its updates.",
       "update": "Nothing changes in this workspace's items; the installed version moves to {{version}}.",
       "remove": "None of its items are left here; removing only takes it off the list."
+    }
+  },
+  "library": {
+    "title": "Library",
+    "subtitle": "Choose what your dashboard and reports show, and how Securo looks.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Reports",
+      "themes": "Themes"
+    },
+    "moreHint": {
+      "widgets": "Plugins can add more widgets.",
+      "reports": "Plugins can add more reports.",
+      "themes": "Plugins can add more themes."
+    },
+    "browseCatalog": "Browse plugins",
+    "lastReport": "Keep at least one report.",
+    "removeFrom": {
+      "dashboard": "Remove {{name}} from the dashboard",
+      "reports": "Remove {{name}} from reports"
+    },
+    "addTo": {
+      "dashboard": "Add {{name}} to the dashboard",
+      "reports": "Add {{name}} to reports"
+    },
+    "remove": "Remove",
+    "add": "Add",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Ocean",
+      "forest": "Forest",
+      "sunset": "Sunset",
+      "graphite": "Graphite",
+      "high-contrast": "High contrast",
+      "midnight": "Midnight",
+      "terminal": "Terminal",
+      "nebula": "Nebula"
+    },
+    "saveFailed": "Couldn't save your choice. Try again.",
+    "appearance": "Appearance",
+    "emptyDashboard": "Your dashboard is empty",
+    "emptyDashboardHint": "Add widgets from the library to choose what you see here.",
+    "addWidget": "Add widget",
+    "nothingToShow": "Nothing to show right now",
+    "editingDashboard": "Reorder, remove or add widgets. Changes are saved as you go.",
+    "restoreDefault": "Restore default",
+    "done": "Done",
+    "customizeDashboard": "Customize dashboard",
+    "manageReports": "Choose reports",
+    "manageReportsShort": "Manage",
+    "widget": {
+      "overview": "Balance and month",
+      "overviewHint": "Available balance, income, expenses, net worth and savings rate.",
+      "uncategorized": "Uncategorized",
+      "uncategorizedHint": "Transactions still waiting for a category.",
+      "spendingByCategoryHint": "Where the month's money went, against your budgets.",
+      "balanceFlowHint": "How your balance moved this month, compared with others.",
+      "goalsHint": "Progress on your goals.",
+      "transactionsHint": "The month's transactions, as a list or a calendar."
+    },
+    "report": {
+      "netWorthHint": "Accounts, assets and debts over time.",
+      "incomeExpensesHint": "Money in and out, by category.",
+      "cashFlowHint": "Where your balance is heading.",
+      "moneyMapHint": "How income flows into spending and savings."
+    },
+    "dragToMove": "Drag to move {{name}}",
+    "widthOf": "Width of {{name}}",
+    "widthLabel": "Width",
+    "width": {
+      "4": "A third",
+      "6": "Half",
+      "8": "Two thirds",
+      "12": "Full width"
+    },
+    "needs": {
+      "assistant": "Needs AI agents turned on.",
+      "invoices": "Available in Business workspaces."
+    }
+  },
+  "widgets": {
+    "budgets": "Budgets",
+    "viewAll": "View all",
+    "spendingPace": {
+      "title": "Month's spending",
+      "hint": "This month's spending against your budgets, and what's left per day.",
+      "noBudget": "Set budgets to see how your spending keeps pace.",
+      "used": "{{percent}}% of budgets used",
+      "paceMark": "the mark is where an even pace would be today",
+      "over": "{{amount}} over budget",
+      "perDay": "Keep to {{amount}} a day to stay within budget",
+      "left": "{{amount}} left in the budget"
+    },
+    "distribution": {
+      "title": "Spending breakdown",
+      "hint": "Where the month's money went, by category.",
+      "total": "Total spent"
+    },
+    "monthResult": {
+      "title": "Month result",
+      "hint": "Income minus spending this month, compared with last month.",
+      "previous": "{{amount}} last month"
+    },
+    "upcoming": {
+      "title": "Upcoming",
+      "hint": "Recurring transactions due in the next 30 days.",
+      "none": "Nothing due in the next {{days}} days."
+    },
+    "cards": {
+      "title": "Credit cards",
+      "hint": "What your cards owe, and the balance left once they're paid.",
+      "none": "No open credit cards.",
+      "afterPaying": "{{amount}} left after paying them"
+    },
+    "assistant": {
+      "title": "Ask your agent",
+      "libraryHint": "Send a question to your default agent without leaving the dashboard.",
+      "hint": "Ask anything about your money. The answer opens in the chat.",
+      "placeholder": "Ask your agent…",
+      "suggestion1": "How much did I spend this month?",
+      "suggestion2": "Where can I cut back?",
+      "suggestion3": "What bills are coming up?",
+      "send": "Send",
+      "unavailable": "Turn on AI agents to ask questions from here."
+    },
+    "loadFailed": "Couldn't load this widget.",
+    "receivables": {
+      "title": "Receivables",
+      "hint": "What clients owe you, what's late, and what came in this month."
+    },
+    "payables": {
+      "title": "Payables",
+      "hint": "What you owe suppliers, what's late, and what you paid this month."
+    },
+    "aging": {
+      "title": "Receivables by age",
+      "hint": "What clients owe, split by how late it is."
+    },
+    "invoicesDue": {
+      "title": "Invoices due soon",
+      "hint": "The next invoices clients have to pay.",
+      "none": "No invoices coming due.",
+      "noClient": "No client"
+    },
+    "recurringRevenue": {
+      "title": "Recurring revenue",
+      "hint": "What recurring invoices bring in each month, and what was lost lately."
     }
   }
 }

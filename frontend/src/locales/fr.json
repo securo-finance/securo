@@ -1000,6 +1000,7 @@
     "sortAsc": "Trier par ordre croissant",
     "sortDesc": "Trier par ordre décroissant",
     "syncedInfo": "Transaction synchronisée depuis la banque : le montant, la date et le compte ne peuvent pas être modifiés",
+    "syncedAmountDateError": "Le montant ou la date d'une transaction synchronisée ne peuvent pas être modifiés",
     "uncategorized": "Non catégorisée",
     "selected": "sélectionnée(s)",
     "summaryCount": "{{count}} transactions",
@@ -1061,7 +1062,7 @@
     "transferSameAccount": "La source et la destination doivent être différentes",
     "transferDescription": "Description",
     "transferNotes": "Notes",
-    "transferInfo": "Il s'agit d'un virement — les modifications de la description, de la date et des notes s'appliqueront aux deux côtés",
+    "transferInfo": "Il s'agit d'un virement : les modifications de la description et des notes s'appliquent aux deux côtés. Les changements de montant et de date s'appliquent aussi à la contrepartie saisie manuellement (non synchronisée), jamais à une contrepartie synchronisée.",
     "transferLinkedTo": "Liée à :",
     "transferOpenAccount": "Ouvrir le compte {{account}}",
     "transferTooltip": "Les virements sont exclus des totaux des rapports et du tableau de bord",
@@ -1070,6 +1071,11 @@
     "effectiveBillDate": "Date de facture effective",
     "effectiveBillDateHint": "manuelle, remplace le cycle automatique",
     "effectiveBillDatePlaceholder": "Date d'échéance de la facture (optionnel)",
+    "bankDate": "Date bancaire",
+    "reportingDate": "Date de déclaration",
+    "reportingDateHint": "Modifie les périodes de déclaration dans toute l’application ; la date bancaire reste inchangée.",
+    "reportingDatePlaceholder": "Date (facultative)",
+    "clearReportingDate": "Réinitialiser la date de déclaration",
     "clearOverride": "Effacer le remplacement",
     "linkAsTransfer": "Lier comme virement",
     "linkTransferTitle": "Lier comme virement",
@@ -1452,6 +1458,17 @@
     "confirmDeleteRecurringDescription": "Le budget récurrent pour « {{name}} » sera définitivement supprimé. Cette définition ne s'appliquera plus aux mois suivants. Les transactions existantes ne sont pas affectées. Cette action est irréversible.",
     "repeatEveryMonth": "Répéter chaque mois",
     "recurringLabel": "Récurrent",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Budgets de {{month}}",
+    "otherCategories": "Autres catégories",
+    "noCategories": "Aucune catégorie",
+    "total": "Budget {{amount}}",
+    "saved": "Budgets enregistrés",
+    "budgetFor": "Budget pour {{category}}",
+    "invalidAmount": "Saisissez un montant valide égal ou supérieur à zéro.",
+    "repeatEveryMonthFor": "Répéter le budget {{category}} chaque mois",
+    "previousMonth": "Mois précédent",
+    "nextMonth": "Mois suivant",
     "suggest": "Suggérer depuis l'historique",
     "suggestTitle": "Suggérer des budgets",
     "suggestDescription": "Limites proposées sur la base de vos dépenses moyennes mensuelles des {{months}} derniers mois.",
@@ -1461,7 +1478,9 @@
     "suggestCreate": "Créer les budgets",
     "suggestCreated": "{{count}} budgets créés",
     "suggestEmpty": "Aucun historique de dépenses sur la période sélectionnée pour suggérer.",
-    "suggestError": "Impossible de charger les suggestions. Réessayez dans un instant."
+    "suggestError": "Impossible de charger les suggestions. Réessayez dans un instant.",
+    "hiddenCategory": "Masquée",
+    "average": "d'habitude {{amount}}"
   },
   "goals": {
     "title": "Objectifs",
@@ -3332,6 +3351,153 @@
       "install": "Cet espace a déjà tout ce qu'il apporte. L'installer l'enregistre, pour recevoir ses mises à jour.",
       "update": "Aucun élément de cet espace ne change ; la version installée passe à {{version}}.",
       "remove": "Aucun de ses éléments n'est resté ici ; le retirer l'enlève seulement de la liste."
+    }
+  },
+  "library": {
+    "title": "Bibliothèque",
+    "subtitle": "Choisissez ce qu'affichent le tableau de bord et les rapports, et l'apparence de Securo.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Rapports",
+      "themes": "Thèmes"
+    },
+    "moreHint": {
+      "widgets": "Des plugins peuvent ajouter d'autres widgets.",
+      "reports": "Des plugins peuvent ajouter d'autres rapports.",
+      "themes": "Des plugins peuvent ajouter d'autres thèmes."
+    },
+    "browseCatalog": "Parcourir les plugins",
+    "lastReport": "Gardez au moins un rapport.",
+    "removeFrom": {
+      "dashboard": "Retirer {{name}} du tableau de bord",
+      "reports": "Retirer {{name}} des rapports"
+    },
+    "addTo": {
+      "dashboard": "Ajouter {{name}} au tableau de bord",
+      "reports": "Ajouter {{name}} aux rapports"
+    },
+    "remove": "Retirer",
+    "add": "Ajouter",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Océan",
+      "forest": "Forêt",
+      "sunset": "Coucher de soleil",
+      "graphite": "Graphite",
+      "high-contrast": "Contraste élevé",
+      "midnight": "Minuit",
+      "terminal": "Terminal",
+      "nebula": "Nébuleuse"
+    },
+    "saveFailed": "Impossible d'enregistrer votre choix. Réessayez.",
+    "appearance": "Apparence",
+    "emptyDashboard": "Votre tableau de bord est vide",
+    "emptyDashboardHint": "Ajoutez des widgets depuis la bibliothèque pour choisir ce qui s'affiche ici.",
+    "addWidget": "Ajouter un widget",
+    "nothingToShow": "Rien à afficher pour le moment",
+    "editingDashboard": "Réorganisez, retirez ou ajoutez des widgets. Les changements sont enregistrés au fur et à mesure.",
+    "restoreDefault": "Rétablir par défaut",
+    "done": "Terminé",
+    "customizeDashboard": "Personnaliser le tableau de bord",
+    "manageReports": "Choisir les rapports",
+    "manageReportsShort": "Gérer",
+    "widget": {
+      "overview": "Solde et mois",
+      "overviewHint": "Solde disponible, revenus, dépenses, valeur nette et taux d'épargne.",
+      "uncategorized": "Sans catégorie",
+      "uncategorizedHint": "Transactions qui attendent encore une catégorie.",
+      "spendingByCategoryHint": "Où est passé l'argent du mois, par rapport à vos budgets.",
+      "balanceFlowHint": "Comment votre solde a évolué ce mois-ci, comparé à d'autres.",
+      "goalsHint": "La progression de vos objectifs.",
+      "transactionsHint": "Les transactions du mois, en liste ou en calendrier."
+    },
+    "report": {
+      "netWorthHint": "Comptes, biens et dettes dans le temps.",
+      "incomeExpensesHint": "Entrées et sorties, par catégorie.",
+      "cashFlowHint": "Où va votre solde.",
+      "moneyMapHint": "Comment les revenus se répartissent entre dépenses et épargne."
+    },
+    "dragToMove": "Faites glisser pour déplacer {{name}}",
+    "widthOf": "Largeur de {{name}}",
+    "widthLabel": "Largeur",
+    "width": {
+      "4": "Un tiers",
+      "6": "Moitié",
+      "8": "Deux tiers",
+      "12": "Pleine largeur"
+    },
+    "needs": {
+      "assistant": "Nécessite l'activation des agents IA.",
+      "invoices": "Disponible dans les espaces de travail de type Professionnel."
+    }
+  },
+  "widgets": {
+    "budgets": "Budgets",
+    "viewAll": "Tout voir",
+    "spendingPace": {
+      "title": "Dépenses du mois",
+      "hint": "Les dépenses du mois face à vos budgets, et ce qui reste par jour.",
+      "noBudget": "Définissez des budgets pour suivre le rythme de vos dépenses.",
+      "used": "{{percent}} % des budgets utilisés",
+      "paceMark": "le repère indique un rythme régulier à ce jour",
+      "over": "{{amount}} au-dessus du budget",
+      "perDay": "Limitez-vous à {{amount}} par jour pour rester dans le budget",
+      "left": "{{amount}} restants dans le budget"
+    },
+    "distribution": {
+      "title": "Répartition des dépenses",
+      "hint": "Où est passé l'argent du mois, par catégorie.",
+      "total": "Total dépensé"
+    },
+    "monthResult": {
+      "title": "Résultat du mois",
+      "hint": "Revenus moins dépenses ce mois-ci, comparé au mois dernier.",
+      "previous": "{{amount}} le mois dernier"
+    },
+    "upcoming": {
+      "title": "À venir",
+      "hint": "Transactions récurrentes dues dans les 30 prochains jours.",
+      "none": "Rien à payer dans les {{days}} prochains jours."
+    },
+    "cards": {
+      "title": "Cartes de crédit",
+      "hint": "Ce que doivent vos cartes, et le solde restant une fois payées.",
+      "none": "Aucune carte de crédit ouverte.",
+      "afterPaying": "{{amount}} restants après paiement"
+    },
+    "assistant": {
+      "title": "Demandez à votre agent",
+      "libraryHint": "Envoyez une question à votre agent par défaut sans quitter le tableau de bord.",
+      "hint": "Posez n'importe quelle question sur votre argent. La réponse s'ouvre dans le chat.",
+      "placeholder": "Demandez à votre agent…",
+      "suggestion1": "Combien ai-je dépensé ce mois-ci ?",
+      "suggestion2": "Où puis-je réduire ?",
+      "suggestion3": "Quelles factures arrivent ?",
+      "send": "Envoyer",
+      "unavailable": "Activez les agents IA pour poser des questions d'ici."
+    },
+    "loadFailed": "Impossible de charger ce widget.",
+    "receivables": {
+      "title": "À encaisser",
+      "hint": "Ce que les clients vous doivent, ce qui est en retard et ce qui est rentré ce mois-ci."
+    },
+    "payables": {
+      "title": "À payer",
+      "hint": "Ce que vous devez aux fournisseurs, ce qui est en retard et ce que vous avez payé ce mois-ci."
+    },
+    "aging": {
+      "title": "Créances par ancienneté",
+      "hint": "Ce que doivent les clients, selon le retard."
+    },
+    "invoicesDue": {
+      "title": "Factures à échéance",
+      "hint": "Les prochaines factures que les clients doivent régler.",
+      "none": "Aucune facture à échéance.",
+      "noClient": "Sans client"
+    },
+    "recurringRevenue": {
+      "title": "Revenus récurrents",
+      "hint": "Ce que rapportent les factures récurrentes chaque mois, et ce qui a été perdu récemment."
     }
   }
 }

@@ -257,19 +257,22 @@ def _sync_assets_enabled(settings: Optional[dict]) -> bool:
     return (settings or {}).get("sync_assets", True) is not False
 
 
-def _account_balance(acc_data: AccountData, deducted: set[str]) -> Decimal:
+def _account_balance(acc_data: AccountData, deducted: dict[str, Decimal]) -> Decimal:
     """Balance to store for a synced account.
 
     Some banks auto-apply idle cash to an investment and the provider reports
-    that money both inside the account balance and as a holding (issue #843).
-    The invested portion leaves the account balance only for the accounts in
-    ``deducted`` (see ``_auto_invested_deductions``); every other account
+    that money both inside the account balance and as a holding (issue #843);
+    a SimpleFIN brokerage reports its whole portfolio as the balance and the
+    positions as holdings (issue #343). The invested portion leaves the
+    account balance only for the accounts in ``deducted``, by the amount
+    recorded there (see ``_auto_invested_deductions``); every other account
     keeps the full reported balance so the money is never dropped from net
     worth.
     """
-    if acc_data.external_id not in deducted or acc_data.auto_invested_balance <= 0:
+    amount = deducted.get(acc_data.external_id)
+    if not amount or acc_data.auto_invested_balance <= 0:
         return acc_data.balance
-    return acc_data.balance - acc_data.auto_invested_balance
+    return acc_data.balance - amount
 
 
 async def _fetch_holdings(
@@ -428,12 +431,23 @@ def _mirrors_auto_invested(holding: _CountedHolding, acc: AccountData) -> bool:
 
 def _auto_invested_deductions(
     accounts_data: list[AccountData], counted: list[_CountedHolding]
-) -> set[str]:
-    """External ids of the accounts whose auto-invested portion is deducted.
+) -> dict[str, Decimal]:
+    """Amount deducted from each account's balance, by account external id.
 
     The deduction is per account: an account loses its auto-invested portion
     only when a counted holding is attributed to that same account, never
     because some other account of the connection has one.
+
+    With attributed holdings the amount is what stays counted for the
+    account (in its currency), capped at the reported portion. A holding the
+    user archived or sold is not counted, so its share stays in the balance
+    instead of vanishing from net worth; and the cash residual plus the
+    counted holdings add up to exactly the balance the provider reported.
+
+    Only positive, finite values are summed, the same rule the providers
+    apply to the reported portion. A negative position (a short, a written
+    option) then stays inside the cash residual, which is where the net
+    worth report counts it: the report leaves non-positive assets out.
 
     Holdings without an owning account (Pluggy's investments payload carries
     the item but no account id, so this is the normal case there) cannot say
@@ -452,15 +466,28 @@ def _auto_invested_deductions(
     the money twice but never drops it.
     """
     candidates = [acc for acc in accounts_data if acc.auto_invested_balance > 0]
-    owners = {h.account_external_id for h in counted}
-    deducted = {acc.external_id for acc in candidates if acc.external_id in owners}
+    deducted: dict[str, Decimal] = {}
+    for acc in candidates:
+        attributed = sum(
+            (
+                h.value
+                for h in counted
+                if h.account_external_id == acc.external_id
+                and h.currency == acc.currency
+                and h.value.is_finite()
+                and h.value > 0
+            ),
+            Decimal(0),
+        )
+        if attributed > 0:
+            deducted[acc.external_id] = min(attributed, acc.auto_invested_balance)
     if len(candidates) == 1:
         only = candidates[0]
-        if any(
+        if only.external_id not in deducted and any(
             h.account_external_id is None and _mirrors_auto_invested(h, only)
             for h in counted
         ):
-            deducted.add(only.external_id)
+            deducted[only.external_id] = only.auto_invested_balance
     return deducted
 
 
@@ -469,14 +496,14 @@ async def _resolve_auto_invested_deductions(
     connection: BankConnection,
     holdings: Optional[list[HoldingData]],
     accounts_data: list[AccountData],
-) -> set[str]:
-    """Accounts whose auto-invested portion leaves the stored balance.
+) -> dict[str, Decimal]:
+    """Amount each account's stored balance loses to counted holdings.
 
     Skips the database lookup when no account reports an auto-invested
     portion, which is every connection but the affected ones.
     """
     if not any(acc.auto_invested_balance > 0 for acc in accounts_data):
-        return set()
+        return {}
     counted = await _counted_holdings(session, connection, holdings, accounts_data)
     return _auto_invested_deductions(accounts_data, counted)
 

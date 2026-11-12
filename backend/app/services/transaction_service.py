@@ -674,8 +674,6 @@ async def get_transactions(
             if running_account is not None:
                 balances = await get_running_balances(
                     session, running_account,
-                    filtered_ids=select(base_query.subquery().c.id),
-                    order_col=default_order_col,
                     date_from=from_date,
                     row_ids=[tx.id for tx in transactions],
                     primary_currency=primary_currency,
@@ -697,10 +695,10 @@ async def _running_balance_account(
 ) -> Optional[Account]:
     """The account whose running balance the list can carry, if any (#1202).
 
-    A running balance only means something on one account's full ledger read
-    newest first: a filter would skip rows the balance moved by, another order
-    would show values out of sequence. A card's balance is the bill cycle, which
-    the account page walks itself. Anything else gets no value, not an error.
+    A running balance is exposed on one account's unfiltered ledger in its
+    default display order. Reporting overrides can reorder rows, but each
+    balance stays anchored to the bank-date ledger. A card's balance is the
+    bill cycle, which the account page walks itself.
     """
     if narrowed or not default_order or len(set(account_ids)) != 1:
         return None
@@ -1572,6 +1570,9 @@ async def _resync_installment_series_total(
     installment tooltip. Only series carrying a series id are recomputed:
     for provider-synced rows the total is the bank's own figure and must
     stay as reported.
+
+    Call only after an actual parcel amount change; an unchanged-amount save
+    must preserve the stored total even when a synced row retains a series id.
     """
     if tx.installment_series_id is None:
         return
@@ -1614,6 +1615,15 @@ async def _apply_update_to_row(
     paths behave identically (FX restamp, bill re-link, transfer cascade,
     splits replacement).
     """
+    # Preflight already rejected amount/date changes. Drop equal provider values
+    # so an idempotent form save cannot restamp FX or cascade to the manual leg.
+    if tx.source == "sync" and ({"amount", "currency", "date"} & update_data.keys()):
+        update_data = {
+            key: value
+            for key, value in update_data.items()
+            if key not in {"amount", "currency", "date"} or value != getattr(tx, key)
+        }
+
     has_fx_override = "amount_primary" in update_data or "fx_rate_used" in update_data
     override_amount_primary = update_data.get("amount_primary")
     override_fx_rate = update_data.get("fx_rate_used")
@@ -1670,8 +1680,9 @@ async def _apply_update_to_row(
 
     # Cascade changes to paired transfer transaction
     cascade_fields = {"amount", "date", "description", "notes"}
+    requested_cascade_fields = cascade_fields & update_data.keys()
     should_cascade_category = apply_to_transfer_pair and "category_id" in update_data
-    if tx.transfer_pair_id and ((cascade_fields & update_data.keys()) or should_cascade_category):
+    if tx.transfer_pair_id and (requested_cascade_fields or should_cascade_category):
         paired = await session.execute(
             select(Transaction).where(
                 Transaction.transfer_pair_id == tx.transfer_pair_id,
@@ -1680,6 +1691,8 @@ async def _apply_update_to_row(
         )
         paired_tx = paired.scalar_one_or_none()
         if paired_tx:
+            if paired_tx.source == "sync":
+                requested_cascade_fields -= {"amount", "date"}
             if should_cascade_category:
                 paired_tx.category_id = tx.category_id
             # When the user typed both amounts, neither is a conversion of the
@@ -1687,7 +1700,9 @@ async def _apply_update_to_row(
             # on the other account untouched. Re-converting here would throw
             # away the number the user entered (issue #529).
             keeps_own_amount = tx.transfer_amount_explicit or paired_tx.transfer_amount_explicit
-            for key in cascade_fields & update_data.keys():
+            paired_amount_changed = False
+            paired_date_changed = False
+            for key in requested_cascade_fields:
                 if key == "description" and not description_changed:
                     continue
                 if key == "amount" and paired_tx.currency != tx.currency:
@@ -1697,19 +1712,24 @@ async def _apply_update_to_row(
                         session, Decimal(str(tx.amount)),
                         tx.currency, paired_tx.currency, tx.date,
                     )
+                    paired_amount_changed = converted != paired_tx.amount
                     paired_tx.amount = converted
-                elif key != "amount":
+                elif key == "amount":
+                    paired_amount_changed = update_data[key] != paired_tx.amount
+                    paired_tx.amount = update_data[key]
+                else:
                     if (
                         key == "description"
                         and update_data[key] != paired_tx.description
                     ):
                         _preserve_original_description(paired_tx)
                         paired_tx.description_is_rule_managed = False
+                    if key == "date":
+                        paired_date_changed = update_data[key] != paired_tx.date
                     setattr(paired_tx, key, update_data[key])
-                else:
-                    paired_tx.amount = update_data[key]
-            await stamp_primary_amount(session, user_id, paired_tx)
-            if "date" in update_data:
+            if paired_amount_changed or paired_date_changed:
+                await stamp_primary_amount(session, user_id, paired_tx)
+            if paired_date_changed:
                 paired_account = await session.get(Account, paired_tx.account_id)
                 apply_effective_date(paired_tx, paired_account)
 
@@ -1822,6 +1842,7 @@ async def update_transaction(
     # row. When changing the account on one side of a transfer pair,
     # refuse to collide with the paired transaction's account (a transfer
     # must have two distinct accounts).
+    new_account = None
     new_account_id = update_data.get("account_id")
     if new_account_id is not None and new_account_id != transaction.account_id:
         account_result = await session.execute(
@@ -1835,7 +1856,8 @@ async def update_transaction(
                 ),
             )
         )
-        if account_result.scalar_one_or_none() is None:
+        new_account = account_result.scalar_one_or_none()
+        if new_account is None:
             raise ValueError("Account not found")
 
         if transaction.transfer_pair_id:
@@ -1848,6 +1870,7 @@ async def update_transaction(
             paired_tx = paired_result.scalar_one_or_none()
             if paired_tx and paired_tx.account_id == new_account_id:
                 raise ValueError("Cannot move transfer to the same account as its paired transaction")
+
 
     if "category_id" in update_data:
         await _ensure_category_in_workspace(session, workspace_id, update_data["category_id"])
@@ -1888,10 +1911,19 @@ async def update_transaction(
             k: v for k, v in update_data.items() if k in installment_scoped_fields
         }
 
-    # The user can remove the breakdown first, edit the payment, then enter
-    # the corrected split. Principal entries are owned by their breakdown.
+    # Validate every scoped row before any mutation, including unsplitting.
+    # Mortgage principal entries remain owned by their payment breakdown.
     for row in rows:
         row_update = update_data if row.id == transaction.id else scoped_update or {}
+        if row.source == "sync":
+            for field in ("amount", "date"):
+                if (
+                    field in row_update
+                    and row_update[field] != getattr(row, field)
+                ):
+                    raise ValueError(
+                        "Cannot change amount or date on a synchronized transaction"
+                    )
         changed = {
             field
             for field in (*_LEDGER_FIELDS, "category_id", "exclude_from_pnl")
@@ -1929,13 +1961,7 @@ async def update_transaction(
                     "An installment in this series is split across categories; edit it on its own"
                 )
 
-    # Undoing a split happens before the column updates, so a category sent
-    # in the same request wins over the one the split hands back.
-    unsplitting = lines_payload is not None and not lines_payload.lines
-    if unsplitting:
-        for row in rows:
-            await category_line_service.replace_lines(session, row, lines_payload)
-
+    prepared_rows = []
     for row in rows:
         # The edited transaction itself reflects the full form payload; the
         # sibling installments only receive the whitelisted fields (and keep
@@ -1950,6 +1976,43 @@ async def update_transaction(
             assert scoped_update is not None
             row_update = scoped_update
             row_splits = None
+        prepared_rows.append((row, row_update, row_splits))
+
+    account_cache = {new_account.id: new_account} if new_account is not None else {}
+    for row, row_update, _ in prepared_rows:
+        reporting_override = row_update.get(
+            "reporting_date_override", row.reporting_date_override
+        )
+        if reporting_override is None:
+            continue
+        target_account_id = row_update.get("account_id", row.account_id)
+        effective_account = account_cache.get(target_account_id)
+        if effective_account is None:
+            effective_account = await session.get(Account, target_account_id)
+            if effective_account is not None:
+                account_cache[target_account_id] = effective_account
+        if (
+            row.source != "sync"
+            or effective_account is None
+            or effective_account.type == "credit_card"
+        ):
+            raise ValueError(
+                "Reporting date override is only supported for synchronized "
+                "non-credit-card transactions"
+            )
+
+    # Undoing a split happens before the column updates, so a category sent
+    # in the same request wins over the one the split hands back.
+    unsplitting = lines_payload is not None and not lines_payload.lines
+    if unsplitting:
+        for row in rows:
+            await category_line_service.replace_lines(session, row, lines_payload)
+
+    amount_changed = any(
+        "amount" in row_update and row_update["amount"] != row.amount
+        for row, row_update, _ in prepared_rows
+    )
+    for row, row_update, row_splits in prepared_rows:
         await _apply_update_to_row(
             session,
             user_id,
@@ -1975,7 +2038,7 @@ async def update_transaction(
     # A changed parcel amount makes the stored series total stale, whatever
     # the scope was: "this" reprices one parcel, "future"/"all" reprice
     # several. Recompute from the rows themselves so the two always agree.
-    if "amount" in update_data and _is_installment(transaction):
+    if amount_changed and _is_installment(transaction):
         await session.flush()
         await _resync_installment_series_total(session, workspace_id, transaction)
 
@@ -2287,17 +2350,19 @@ async def post_transaction_today(
 ) -> Optional[Transaction]:
     """Mark a transaction as posted and stamp it with today's calendar date.
 
-    The one-click "it cleared today" action for a pending entry: confirms the
-    status and moves the purchase date to the workspace's current day, the same
-    as saving the edit dialog with status "posted" and date "today". The
-    effective date and the FX restamp follow the date change, and a transfer
-    pair leg carries the same change to its partner, so the row ends up exactly
-    where the manual edit would have left it. No other field is touched, and the
-    transaction must belong to the given workspace.
+    The one-click "it cleared today" action for a pending manual entry confirms
+    the status and moves the purchase date to the workspace's current day. A
+    manual transfer counterpart follows the date change. A synchronized
+    counterpart only follows the status change because its date and FX values
+    remain provider-owned. Calling the action on a synchronized anchor is
+    rejected. No other field is touched, and the transaction must belong to
+    the given workspace.
     """
     transaction = await get_transaction(session, transaction_id, workspace_id)
     if not transaction:
         return None
+    if transaction.source == "sync":
+        raise ValueError("Cannot change amount or date on a synchronized transaction")
 
     today = app_today()
     transaction.status = "posted"
@@ -2318,10 +2383,11 @@ async def post_transaction_today(
         paired = paired_result.scalar_one_or_none()
         if paired:
             paired.status = "posted"
-            paired.date = today
-            paired_account = await session.get(Account, paired.account_id)
-            apply_effective_date(paired, paired_account)
-            await stamp_primary_amount(session, paired.user_id, paired)
+            if paired.source != "sync":
+                paired.date = today
+                paired_account = await session.get(Account, paired.account_id)
+                apply_effective_date(paired, paired_account)
+                await stamp_primary_amount(session, paired.user_id, paired)
 
     await session.commit()
     await session.refresh(transaction)
