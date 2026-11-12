@@ -27,8 +27,8 @@ the next sync; this migration does not repair duplicates that already exist.
 
 Idempotent: a re-keyed row no longer carries the old id. Safe to re-run.
 
-Revision ID: 109
-Revises: 108
+Revision ID: 110
+Revises: 109
 """
 import hashlib
 from collections import defaultdict
@@ -39,8 +39,8 @@ from typing import Any, Optional
 from alembic import op
 from sqlalchemy import text
 
-revision = "109"
-down_revision = "108"
+revision = "110"
+down_revision = "109"
 branch_labels = None
 depends_on = None
 

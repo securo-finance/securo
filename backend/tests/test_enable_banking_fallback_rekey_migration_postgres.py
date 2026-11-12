@@ -1,4 +1,4 @@
-"""Migration 109 on real PostgreSQL: which fallback-keyed rows it re-keys."""
+"""Migration 110 on real PostgreSQL: which fallback-keyed rows it re-keys."""
 import importlib.util
 import uuid
 from typing import Any, cast
@@ -21,7 +21,7 @@ _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
     / "alembic"
     / "versions"
-    / "109_rekey_enable_banking_fallback_ids.py"
+    / "110_rekey_enable_banking_fallback_ids.py"
 )
 _SPEC = importlib.util.spec_from_file_location("eb_fallback_rekey_migration", _MIGRATION_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
@@ -231,7 +231,7 @@ async def test_frozen_recipes_match_the_released_ones(name):
     assert migration._legacy_fingerprint(ACCOUNT_UID, case["raw"]) == case["v0.16.2"]
     assert migration._current_fingerprint(ACCOUNT_UID, case["raw"]) == case["v0.16.3"]
     # The provider must still produce what the migration assigns. If this
-    # fails, the id recipe changed after v0.16.3 and rows re-keyed by 109 no
+    # fails, the id recipe changed after v0.16.3 and rows re-keyed by 110 no
     # longer match what a sync computes.
     assert _txn_fingerprint(ACCOUNT_UID, cast(dict, case["raw"])) == case["v0.16.3"]
 
