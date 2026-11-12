@@ -1570,6 +1570,9 @@ async def _resync_installment_series_total(
     installment tooltip. Only series carrying a series id are recomputed:
     for provider-synced rows the total is the bank's own figure and must
     stay as reported.
+
+    Call only after an actual parcel amount change; an unchanged-amount save
+    must preserve the stored total even when a synced row retains a series id.
     """
     if tx.installment_series_id is None:
         return
@@ -2005,6 +2008,10 @@ async def update_transaction(
         for row in rows:
             await category_line_service.replace_lines(session, row, lines_payload)
 
+    amount_changed = any(
+        "amount" in row_update and row_update["amount"] != row.amount
+        for row, row_update, _ in prepared_rows
+    )
     for row, row_update, row_splits in prepared_rows:
         await _apply_update_to_row(
             session,
@@ -2031,7 +2038,7 @@ async def update_transaction(
     # A changed parcel amount makes the stored series total stale, whatever
     # the scope was: "this" reprices one parcel, "future"/"all" reprice
     # several. Recompute from the rows themselves so the two always agree.
-    if "amount" in update_data and _is_installment(transaction):
+    if amount_changed and _is_installment(transaction):
         await session.flush()
         await _resync_installment_series_total(session, workspace_id, transaction)
 

@@ -1417,7 +1417,8 @@ async def get_cash_flow_report(
 
     Respects the global ``credit_card_accounting_mode`` setting. A manual
     ``reporting_date_override`` wins in either mode; otherwise cash uses the
-    provider date and accrual uses the credit-card effective date. Balance
+    provider date and accrual uses the credit-card effective date. Pending rows
+    retain their manually selected bill date for forecast timing. Posted balance
     reconstruction keeps the mode's original movement date, not the override.
     """
     from app.services.dashboard_service import _balance_at, _get_recurring_projections
@@ -1475,7 +1476,7 @@ async def get_cash_flow_report(
             bucket["outflow"] += amount
 
     balance_date_col = Transaction.effective_date if accrual else Transaction.date
-    # Invoice attribution affects general reports, not cash-flow timing.
+    # Posted invoice attribution does not change cash-flow movement timing.
     flow_date_col = func.coalesce(Transaction.reporting_date_override, balance_date_col)
 
     # Reporting buckets follow the user override. Balance reconstruction
@@ -1520,13 +1521,24 @@ async def get_cash_flow_report(
 
     # 2. Pending rows are forecast rows. They never enter the past/actual
     # section, including pending credit-card purchases in accrual mode.
-    # Use the mode's movement date unless a reporting override is set.
+    # A manual bill date retains its existing forecast timing in either mode;
+    # reporting overrides only move attribution, not the projected movement.
     # Pending rows whose forecast date is already past still belong to the
     # payable position today, so carry them into the forward projected walk
     # instead of silently dropping them.
+    forecast_balance_date_col = case(
+        (
+            Transaction.status == "pending",
+            func.coalesce(Transaction.effective_bill_date, balance_date_col),
+        ),
+        else_=balance_date_col,
+    )
+    forecast_report_date_col = func.coalesce(
+        Transaction.reporting_date_override, forecast_balance_date_col,
+    )
     pending_current_delta = 0.0
     pending_by_id: dict[uuid.UUID, Transaction] = {}
-    for range_date_col in (flow_date_col, balance_date_col):
+    for range_date_col in (forecast_report_date_col, forecast_balance_date_col):
         rows = await _get_forecast_transactions(
             session, workspace_id, date.min, end + timedelta(days=1), account_ids,
             range_date_col=range_date_col,
@@ -1537,7 +1549,7 @@ async def get_cash_flow_report(
         pnl_ratio = user_pnl_ratio(tx)
         if tx.status != "pending" or not pnl_ratio:
             continue
-        balance_date = tx.effective_date if accrual else tx.date
+        balance_date = tx.effective_bill_date or (tx.effective_date if accrual else tx.date)
         report_date = tx.reporting_date_override or balance_date
         if tx.amount_primary is not None:
             amount_primary = abs(float(tx.amount_primary))

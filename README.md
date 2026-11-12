@@ -66,11 +66,12 @@ the bank's booking date. Clear the override to restore automatic attribution;
 later bank syncs preserve the override.
 
 Reporting periods and transaction-list dates follow the override. Account
-running balances and cash-flow balance movements still follow the bank date
-(or the effective movement date in accrual mode). A posted expense attributed
-to a future period appears in that period's cash-flow outflow, but is not
-deducted from the projected balance a second time. A manual card bill-date
-override alone does not change cash-mode cash-flow buckets.
+running balances and posted cash-flow balance movements still follow the bank
+date (or the effective movement date in accrual mode). A posted expense
+attributed to a future period appears in that period's cash-flow outflow, but
+is not deducted from the projected balance a second time. Pending card rows
+retain their manually selected bill date for forecast outflow and projected
+balance timing, including in cash mode.
 
 The calendar offers separate reporting-date and bank-date views. Moved rows
 retain their original bank date in the transaction list.

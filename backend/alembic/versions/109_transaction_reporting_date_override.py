@@ -1,7 +1,7 @@
 """add transaction reporting date override
 
-Revision ID: 108
-Revises: 107
+Revision ID: 109
+Revises: 108
 Create Date: 2026-09-08
 """
 
@@ -10,8 +10,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "108"
-down_revision: Union[str, None] = "107"
+revision: str = "109"
+down_revision: Union[str, None] = "108"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
