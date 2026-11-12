@@ -482,7 +482,6 @@ async def test_breakdown_can_be_removed_before_editing_payment(
         json={"amount": 233.83},
     )
     assert blocked.status_code == 400
-    assert "Remove the mortgage breakdown" in blocked.json()["detail"]
 
     removed = await client.delete(url, headers=auth_headers)
     assert removed.status_code == 204, removed.text

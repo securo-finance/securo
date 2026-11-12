@@ -26,7 +26,6 @@ from app.schemas.account import (
     CreditCardBillRead,
 )
 from app.services import account_service
-from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.fx_rate_service import _resolve_rate
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -144,7 +143,7 @@ async def get_account_running_balance(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Daily balance matching the transaction list's `running_balance` (#1202).
+    """Daily account balance on immutable bank dates (#1202).
 
     Missing bounds default like the summary's: month start to today.
     """
@@ -159,11 +158,10 @@ async def get_account_running_balance(
             detail=f"Range is too wide (max {_MAX_RUNNING_BALANCE_YEARS} years)",
         )
 
-    accounting_mode = await get_credit_card_accounting_mode(session)
     try:
         series = await account_service.get_account_running_balance(
             session, account_id, ctx.workspace.id, ctx.user.primary_currency,
-            date_from, date_to, accounting_mode=accounting_mode,
+            date_from, date_to,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

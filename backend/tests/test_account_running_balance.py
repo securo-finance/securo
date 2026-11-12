@@ -125,6 +125,96 @@ async def test_running_balance_is_continuous_across_pages(
 
 
 @pytest.mark.asyncio
+async def test_running_balance_uses_bank_date_when_reporting_override_leaves_window(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+):
+    account = await _make_account(session, test_user.id)
+    await _add_txn(
+        session, test_user.id, account, "1000", "credit", date(2026, 1, 15),
+        source="opening_balance",
+    )
+    await _add_txn(
+        session, test_user.id, account, "60", "debit", date(2026, 2, 10),
+        source="sync",
+        reporting_date_override=date(2026, 1, 31),
+    )
+
+    response = await _series(
+        client,
+        auth_headers,
+        account.id,
+        **{"from": "2026-02-01", "to": "2026-02-28"},
+    )
+    assert response.status_code == 200, response.text
+    series = {point["date"]: point["balance"] for point in response.json()}
+
+    assert series["2026-02-09"] == 1000
+    assert series["2026-02-10"] == 940
+    assert series["2026-02-28"] == 940
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connected", [False, True])
+@pytest.mark.parametrize("page_size", [1, 100])
+async def test_running_balance_walks_bank_ledger_across_reporting_boundaries(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+    test_account, connected, page_size,
+):
+    account = test_account if connected else await _make_account(session, test_user.id)
+    await _add_txn(
+        session, test_user.id, account, "1000", "credit", date(2026, 1, 15),
+        source="opening_balance",
+    )
+    moved_in = await _add_txn(
+        session, test_user.id, account, "60", "debit", date(2026, 1, 25),
+        source="sync", reporting_date_override=date(2026, 2, 5),
+    )
+    moved_out = await _add_txn(
+        session, test_user.id, account, "40", "debit", date(2026, 2, 10),
+        source="sync", reporting_date_override=date(2026, 1, 31),
+    )
+    reordered = await _add_txn(
+        session, test_user.id, account, "30", "credit", date(2026, 2, 15),
+        source="sync", reporting_date_override=date(2026, 2, 22),
+    )
+    latest = await _add_txn(
+        session, test_user.id, account, "20", "credit", date(2026, 2, 20),
+    )
+    moved_back = await _add_txn(
+        session, test_user.id, account, "10", "debit", date(2026, 3, 3),
+        source="sync", reporting_date_override=date(2026, 2, 25),
+    )
+    if connected:
+        # The provider snapshot already contains every historical movement.
+        account.balance = Decimal("940")
+        await session.commit()
+
+    items = []
+    for page in range(1, (4 + page_size - 1) // page_size + 1):
+        items.extend(await _list(
+            client, auth_headers, account_id=str(account.id), page=page,
+            limit=page_size, **{"from": "2026-02-01", "to": "2026-02-28"},
+        ))
+
+    assert [tx["id"] for tx in items] == [
+        str(moved_back.id), str(reordered.id), str(latest.id), str(moved_in.id),
+    ]
+    assert str(moved_out.id) not in {tx["id"] for tx in items}
+    assert [tx["running_balance"] for tx in items] == [940, 930, 950, 940]
+
+    response = await _series(
+        client, auth_headers, account.id,
+        **{"from": "2026-01-25", "to": "2026-03-03"},
+    )
+    assert response.status_code == 200, response.text
+    series = {point["date"]: point["balance"] for point in response.json()}
+    assert series["2026-02-01"] == 940
+    assert series["2026-02-10"] == 900
+    for tx in items:
+        assert tx["running_balance"] == series[tx["date"]]
+
+
+@pytest.mark.asyncio
 async def test_running_balance_breaks_same_date_ties_like_the_list(
     client: AsyncClient, auth_headers, session: AsyncSession, test_user,
 ):

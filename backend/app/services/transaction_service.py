@@ -674,8 +674,6 @@ async def get_transactions(
             if running_account is not None:
                 balances = await get_running_balances(
                     session, running_account,
-                    filtered_ids=select(base_query.subquery().c.id),
-                    order_col=default_order_col,
                     date_from=from_date,
                     row_ids=[tx.id for tx in transactions],
                     primary_currency=primary_currency,
@@ -697,10 +695,10 @@ async def _running_balance_account(
 ) -> Optional[Account]:
     """The account whose running balance the list can carry, if any (#1202).
 
-    A running balance only means something on one account's full ledger read
-    newest first: a filter would skip rows the balance moved by, another order
-    would show values out of sequence. A card's balance is the bill cycle, which
-    the account page walks itself. Anything else gets no value, not an error.
+    A running balance is exposed on one account's unfiltered ledger in its
+    default display order. Reporting overrides can reorder rows, but each
+    balance stays anchored to the bank-date ledger. A card's balance is the
+    bill cycle, which the account page walks itself.
     """
     if narrowed or not default_order or len(set(account_ids)) != 1:
         return None
@@ -1572,6 +1570,9 @@ async def _resync_installment_series_total(
     installment tooltip. Only series carrying a series id are recomputed:
     for provider-synced rows the total is the bank's own figure and must
     stay as reported.
+
+    Call only after an actual parcel amount change; an unchanged-amount save
+    must preserve the stored total even when a synced row retains a series id.
     """
     if tx.installment_series_id is None:
         return
@@ -1841,6 +1842,7 @@ async def update_transaction(
     # row. When changing the account on one side of a transfer pair,
     # refuse to collide with the paired transaction's account (a transfer
     # must have two distinct accounts).
+    new_account = None
     new_account_id = update_data.get("account_id")
     if new_account_id is not None and new_account_id != transaction.account_id:
         account_result = await session.execute(
@@ -1854,7 +1856,8 @@ async def update_transaction(
                 ),
             )
         )
-        if account_result.scalar_one_or_none() is None:
+        new_account = account_result.scalar_one_or_none()
+        if new_account is None:
             raise ValueError("Account not found")
 
         if transaction.transfer_pair_id:
@@ -1867,6 +1870,7 @@ async def update_transaction(
             paired_tx = paired_result.scalar_one_or_none()
             if paired_tx and paired_tx.account_id == new_account_id:
                 raise ValueError("Cannot move transfer to the same account as its paired transaction")
+
 
     if "category_id" in update_data:
         await _ensure_category_in_workspace(session, workspace_id, update_data["category_id"])
@@ -1957,13 +1961,7 @@ async def update_transaction(
                     "An installment in this series is split across categories; edit it on its own"
                 )
 
-    # Undoing a split happens before the column updates, so a category sent
-    # in the same request wins over the one the split hands back.
-    unsplitting = lines_payload is not None and not lines_payload.lines
-    if unsplitting:
-        for row in rows:
-            await category_line_service.replace_lines(session, row, lines_payload)
-
+    prepared_rows = []
     for row in rows:
         # The edited transaction itself reflects the full form payload; the
         # sibling installments only receive the whitelisted fields (and keep
@@ -1978,6 +1976,43 @@ async def update_transaction(
             assert scoped_update is not None
             row_update = scoped_update
             row_splits = None
+        prepared_rows.append((row, row_update, row_splits))
+
+    account_cache = {new_account.id: new_account} if new_account is not None else {}
+    for row, row_update, _ in prepared_rows:
+        reporting_override = row_update.get(
+            "reporting_date_override", row.reporting_date_override
+        )
+        if reporting_override is None:
+            continue
+        target_account_id = row_update.get("account_id", row.account_id)
+        effective_account = account_cache.get(target_account_id)
+        if effective_account is None:
+            effective_account = await session.get(Account, target_account_id)
+            if effective_account is not None:
+                account_cache[target_account_id] = effective_account
+        if (
+            row.source != "sync"
+            or effective_account is None
+            or effective_account.type == "credit_card"
+        ):
+            raise ValueError(
+                "Reporting date override is only supported for synchronized "
+                "non-credit-card transactions"
+            )
+
+    # Undoing a split happens before the column updates, so a category sent
+    # in the same request wins over the one the split hands back.
+    unsplitting = lines_payload is not None and not lines_payload.lines
+    if unsplitting:
+        for row in rows:
+            await category_line_service.replace_lines(session, row, lines_payload)
+
+    amount_changed = any(
+        "amount" in row_update and row_update["amount"] != row.amount
+        for row, row_update, _ in prepared_rows
+    )
+    for row, row_update, row_splits in prepared_rows:
         await _apply_update_to_row(
             session,
             user_id,
@@ -2003,7 +2038,7 @@ async def update_transaction(
     # A changed parcel amount makes the stored series total stale, whatever
     # the scope was: "this" reprices one parcel, "future"/"all" reprice
     # several. Recompute from the rows themselves so the two always agree.
-    if "amount" in update_data and _is_installment(transaction):
+    if amount_changed and _is_installment(transaction):
         await session.flush()
         await _resync_installment_series_total(session, workspace_id, transaction)
 
