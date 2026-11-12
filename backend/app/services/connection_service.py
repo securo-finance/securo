@@ -1920,12 +1920,14 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
 
     A Spanish bank returned a transfer as "TRANSFERENCIA A FAVOR DE ...
     CONCEPTO <concept>" with no reference, then as "TRASPASO: <concept>" with
-    one. The two texts share too few words for the description
-    match, but every other field of the payload is the same. So the payloads
-    have to agree on everything but the reference and the remittance text,
-    and nearly every word of the shorter remittance text has to appear in the
-    longer one: a bank that rewords an entry keeps the concept the payer
-    typed, while two purchases at different shops differ in the merchant.
+    one. The two texts share too few words for the description match, but
+    every other field of the payload is the same. So the payloads have to
+    agree on everything but the reference and the remittance text, and the
+    two texts have to end in the same words, covering at least 80% of the
+    shorter one: a bank that rewords an entry swaps the label in front and
+    keeps the concept the payer typed at the end. Shared words elsewhere are
+    not enough, since "CARD PAYMENT AT SHOP ALPHA" and "CARD PAYMENT AT SHOP
+    BETA" are two purchases when no creditor field tells them apart.
     """
     def rest(raw: dict) -> dict:
         return {
@@ -1935,12 +1937,16 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
 
     if rest(held) != rest(booked):
         return False
-    held_words = set(normalize_words(_eb_remittance(held)))
-    booked_words = set(normalize_words(_eb_remittance(booked)))
+    held_words = normalize_words(_eb_remittance(held))
+    booked_words = normalize_words(_eb_remittance(booked))
     if not held_words or not booked_words:
         return False
-    shorter = min(len(held_words), len(booked_words))
-    return len(held_words & booked_words) / shorter >= 0.8
+    shared_tail = 0
+    for held_word, booked_word in zip(reversed(held_words), reversed(booked_words)):
+        if held_word != booked_word:
+            break
+        shared_tail += 1
+    return shared_tail / min(len(held_words), len(booked_words)) >= 0.8
 
 
 def _eb_entry_date(raw: dict) -> Optional[date]:

@@ -1795,19 +1795,26 @@ async def test_sync_connection_enable_banking_late_reference_with_reworded_remit
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("held_remittance", "held_value_date"),
+    ("held_remittance", "booked_remittance", "held_value_date"),
     [
-        (_TRANSFER_FIRST_REMITTANCE, "2026-11-10"),
-        ("TRANSFERENCIA A FAVOR DE Cuenta Ahorro CONCEPTO alquiler noviembre", "2026-11-11"),
+        (_TRANSFER_FIRST_REMITTANCE, _TRANSFER_REWORDED_REMITTANCE, "2026-11-10"),
+        (
+            "TRANSFERENCIA A FAVOR DE Cuenta Ahorro CONCEPTO alquiler noviembre",
+            _TRANSFER_REWORDED_REMITTANCE,
+            "2026-11-11",
+        ),
+        ("CARD PAYMENT AT SHOP ALPHA", "CARD PAYMENT AT SHOP BETA", "2026-11-11"),
     ],
-    ids=["other-value-date", "other-concept"],
+    ids=["other-value-date", "other-concept", "other-merchant"],
 )
 async def test_sync_connection_enable_banking_reworded_remittance_needs_same_entry(
-    session: AsyncSession, test_user, test_workspace, held_remittance, held_value_date,
+    session: AsyncSession, test_user, test_workspace,
+    held_remittance, booked_remittance, held_value_date,
 ):
     """A held row whose payload differs in another field, or whose text names
-    another concept, is a different transfer of the same amount, so it keeps
-    its id."""
+    another concept or merchant, is a different entry of the same amount, so
+    it keeps its id. The payloads carry no creditor, so only the text tells
+    the two card purchases apart."""
     conn, account = await _eb_account(session, test_user.id, test_workspace.id)
     account_id = account.id
     held, _ = await _hold_reworded_entry(
@@ -1815,7 +1822,7 @@ async def test_sync_connection_enable_banking_reworded_remittance_needs_same_ent
         _eb_reworded_payload(None, held_remittance, value_date=held_value_date),
     )
 
-    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", _TRANSFER_REWORDED_REMITTANCE))
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", booked_remittance))
     await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
 
     rows = await _account_rows(session, account_id)
