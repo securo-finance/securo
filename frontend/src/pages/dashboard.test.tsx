@@ -66,8 +66,10 @@ vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences } }),
 }))
 
+const collectionFilter = vi.hoisted(() => ({ activeAccountIds: null as string[] | null, activeWalletIds: null as string[] | null }))
+
 vi.mock('@/contexts/collection-filter-context', () => ({
-  useCollectionFilter: () => ({ activeAccountIds: null, activeWalletIds: null }),
+  useCollectionFilter: () => collectionFilter,
 }))
 
 function account(overrides: Partial<Account>): Account {
@@ -151,6 +153,8 @@ beforeEach(() => {
   layouts.saved = {}
   layouts.saves = []
   preferences.currency_display = 'USD'
+  collectionFilter.activeAccountIds = null
+  collectionFilter.activeWalletIds = null
   api.dashboard.summary.mockResolvedValue(summary)
   api.dashboard.spendingByCategory.mockResolvedValue([])
   api.dashboard.balanceHistory.mockResolvedValue({
@@ -789,6 +793,33 @@ describe('Dashboard refresh button', () => {
     )
     expect(screen.getByTestId('location-search')).toHaveTextContent('comparison_month=2026-02')
   })
+})
+
+
+it('keeps a wallet-only Expenses drill-down empty instead of querying all accounts', async () => {
+  collectionFilter.activeAccountIds = []
+  collectionFilter.activeWalletIds = ['wallet-1']
+  const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+  await user.click(await screen.findByRole('button', { name: /Expenses/ }))
+  const panel = screen.getByRole('complementary')
+  expect(await within(panel).findByText(t('dashboard.drillDownEmpty'))).toBeInTheDocument()
+  expect(api.transactions.list.mock.calls.some(([params]) => params?.user_pnl_only === true)).toBe(false)
+})
+
+
+it('identifies each category in its spending progress bar accessible name', async () => {
+  api.dashboard.spendingByCategory.mockResolvedValue([
+    { category_id: 'rent', category_name: 'Rent', projected_total: 450, total: 450 },
+    { category_id: 'food', category_name: 'Groceries', projected_total: 200, total: 200 },
+  ])
+  api.budgets.comparison.mockResolvedValue([
+    { category_id: 'rent', budget_amount: 900, percentage_used: 50, projected_prev_month_amount: 0 },
+    { category_id: 'food', budget_amount: 500, percentage_used: 40, projected_prev_month_amount: 0 },
+  ])
+  renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+
+  expect(await screen.findByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Rent` })).toHaveAttribute('aria-valuenow', '50')
+  expect(screen.getByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Groceries` })).toHaveAttribute('aria-valuenow', '40')
 })
 
 describe('Dashboard arranged from the library', () => {

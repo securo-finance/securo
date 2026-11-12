@@ -871,6 +871,7 @@
     "drillDownSettledTotal": "Gebucht · Zusammenfassungssumme",
     "drillDownPendingTotal": "Ausstehende Abrechnung",
     "drillDownShownTotal": "Angezeigte Summe",
+    "drillDownError": "Transaktionen konnten nicht geladen werden. Bitte erneut versuchen.",
     "drillDownEmpty": "Keine Transaktionen gefunden",
     "drillDownClose": "Schließen",
     "accrualNote": "Kreditkartentransaktionen werden nach dem Fälligkeitsdatum der Abrechnung gruppiert (Soll-Modus).",
@@ -1439,6 +1440,9 @@
     "darkMode": "Dunkler Modus"
   },
   "budgets": {
+    "spending": "Ausgaben",
+    "spendingDescription": "Enthält ausstehende und prognostizierte Ausgaben.",
+    "spendingError": "Ausgaben konnten nicht geladen werden.",
     "title": "Budgets",
     "add": "Budget hinzufügen",
     "edit": "Budget bearbeiten",

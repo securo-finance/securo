@@ -871,6 +871,7 @@
     "drillDownSettledTotal": "決済済み · カード請求合計",
     "drillDownPendingTotal": "未決済",
     "drillDownShownTotal": "表示合計",
+    "drillDownError": "取引を読み込めませんでした。もう一度お試しください。",
     "drillDownEmpty": "取引が見つかりません",
     "drillDownClose": "閉じる",
     "accrualNote": "クレジットカードの取引は請求の支払期日ごとにまとめられます(発生基準)。",
@@ -1438,6 +1439,9 @@
     "darkMode": "ダークモード"
   },
   "budgets": {
+    "spending": "支出",
+    "spendingDescription": "保留中および予測支出を含みます。",
+    "spendingError": "支出を読み込めませんでした。",
     "title": "予算",
     "add": "予算を追加",
     "edit": "予算を編集",

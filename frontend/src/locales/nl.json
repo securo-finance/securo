@@ -871,6 +871,7 @@
     "drillDownSettledTotal": "Geboekt · samenvattingstotaal",
     "drillDownPendingTotal": "In afwachting van afrekening",
     "drillDownShownTotal": "Weergegeven totaal",
+    "drillDownError": "Transacties konden niet worden geladen. Probeer het opnieuw.",
     "drillDownEmpty": "Geen transacties gevonden",
     "drillDownClose": "Sluiten",
     "accrualNote": "Creditcardtransacties worden gegroepeerd op vervaldatum van de factuur (toerekeningsmodus).",
@@ -1440,6 +1441,9 @@
     "darkMode": "Donkere modus"
   },
   "budgets": {
+    "spending": "Uitgaven",
+    "spendingDescription": "Inclusief openstaande en verwachte uitgaven.",
+    "spendingError": "Uitgaven konden niet worden geladen.",
     "title": "Budgetten",
     "add": "Budget toevoegen",
     "edit": "Budget bewerken",

@@ -873,6 +873,7 @@
     "drillDownSettledTotal": "Regolato · totale riepilogativo",
     "drillDownPendingTotal": "In attesa di regolamento",
     "drillDownShownTotal": "Totale mostrato",
+    "drillDownError": "Impossibile caricare le transazioni. Riprova.",
     "drillDownEmpty": "Nessuna transazione trovata",
     "drillDownClose": "Chiudi",
     "accrualNote": "Le transazioni con carta di credito sono raggruppate per scadenza dell'estratto conto (modalità per competenza).",
@@ -1442,6 +1443,9 @@
     "darkMode": "Modalità scura"
   },
   "budgets": {
+    "spending": "Spese",
+    "spendingDescription": "Include le spese in sospeso e previste.",
+    "spendingError": "Impossibile caricare le spese.",
     "title": "Budget",
     "add": "Aggiungi budget",
     "edit": "Modifica budget",

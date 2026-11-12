@@ -44,6 +44,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
+import { BudgetSpendingProgress } from '@/components/budget-spending-progress'
 import { CategoryIcon } from '@/components/category-icon'
 import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory, projectedSplitSource } from '@/lib/category-lines'
@@ -1083,9 +1084,6 @@ export default function DashboardPage() {
                 {mergedCategories.map((item) => {
                   const hasBudget = item.budget_amount != null && item.budget_amount > 0
                   const pct = item.percentage_used
-                  const barColor = hasBudget
-                    ? pct! > 100 ? 'bg-rose-500' : pct! >= 80 ? 'bg-amber-400' : 'bg-emerald-500'
-                    : 'bg-muted-foreground/20'
 
                   return (
                     <div
@@ -1115,18 +1113,7 @@ export default function DashboardPage() {
                             </div>
                           </div>
                           {hasBudget && (
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-1.5 bg-muted/60 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all ${barColor}`}
-                                  style={{ width: `${Math.min(pct!, 100)}%` }}
-                                />
-                              </div>
-                              <span className={`text-[11px] tabular-nums font-medium shrink-0 ${pct! > 100 ? 'text-rose-500' : pct! >= 80 ? 'text-amber-500' : 'text-muted-foreground'
-                                }`}>
-                                {mask(t('dashboard.ofBudget', { budget: formatCurrency(item.budget_amount!, userCurrency, locale) }))}
-                              </span>
-                            </div>
+                            <BudgetSpendingProgress categoryName={item.category_name} percentage={pct!} budgetAmount={item.budget_amount!} currency={userCurrency} />
                           )}
                         </div>
                       </div>
@@ -1939,7 +1926,7 @@ export default function DashboardPage() {
               // Keep drill-downs consistent with the collection-scoped cards
               // they open from (e.g. "Categorize now").
               account_ids:
-                drillDown.account_ids ?? (acctIds && acctIds.length > 0 ? acctIds : undefined),
+                drillDown.account_ids ?? acctIds,
             }
             : null
         }

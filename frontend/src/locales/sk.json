@@ -883,6 +883,7 @@
     "drillDownSettledTotal": "Zúčtované · súhrnná suma",
     "drillDownPendingTotal": "Čaká na zúčtovanie",
     "drillDownShownTotal": "Zobrazená suma",
+    "drillDownError": "Transakcie sa nepodarilo načítať. Skúste to znova.",
     "drillDownEmpty": "Nenašli sa žiadne transakcie",
     "drillDownClose": "Zavrieť",
     "accrualNote": "Transakcie kreditnou kartou sú zoskupené podľa dátumu splatnosti výpisu (akruálny režim).",
@@ -1506,6 +1507,9 @@
     "darkMode": "Tmavý režim"
   },
   "budgets": {
+    "spending": "Výdavky",
+    "spendingDescription": "Zahŕňa čakajúce a predpokladané výdavky.",
+    "spendingError": "Výdavky sa nepodarilo načítať.",
     "title": "Rozpočty",
     "add": "Pridať rozpočet",
     "edit": "Upraviť rozpočet",
