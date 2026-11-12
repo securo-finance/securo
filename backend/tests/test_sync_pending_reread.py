@@ -14,6 +14,7 @@ once every 30 days per connection.
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -411,6 +412,7 @@ async def test_failed_reread_leaves_the_sync_intact(
     assert await _by_external_id(session, "fresh") is not None
     assert (await _by_external_id(session, "old-pending")).status == "pending"
     connection = await session.get(BankConnection, conn_id)
+    assert connection is not None
     assert connection is not None and connection.status == "active"
 
 
@@ -552,8 +554,8 @@ async def test_rekeyed_twin_the_reread_also_returns_is_still_a_phantom(
 
 
 def test_only_pluggy_rereads_by_date():
-    assert PluggyProvider.rereads_by_date.fget(None) is True
-    assert BankProvider.rereads_by_date.fget(None) is False
+    assert PluggyProvider.rereads_by_date.fget(cast(PluggyProvider, None)) is True
+    assert BankProvider.rereads_by_date.fget(cast(BankProvider, None)) is False
 
 
 def _provider_without_reread():
@@ -581,6 +583,7 @@ async def test_provider_without_date_reread_skips_the_pending_query(
     unseen.assert_not_awaited()
     provider.get_transactions_by_date.assert_not_awaited()
     connection = await session.get(BankConnection, conn_id)
+    assert connection is not None
     assert PENDING_CATCH_UP_KEY not in (connection.settings or {})
 
 
@@ -609,7 +612,8 @@ async def test_catch_up_rereads_rows_older_than_the_window(
     assert ancient.status == "posted"
     assert recent.status == "posted"
     connection = await session.get(BankConnection, conn_id)
-    stamped = datetime.fromisoformat(connection.settings[PENDING_CATCH_UP_KEY])
+    assert connection is not None
+    stamped = datetime.fromisoformat((connection.settings or {})[PENDING_CATCH_UP_KEY])
     assert datetime.now(timezone.utc) - stamped < timedelta(minutes=5)
 
 
@@ -645,8 +649,9 @@ async def test_failed_catch_up_is_retried_on_the_next_sync(
     await _sync(session, conn, test_workspace.id, test_user.id, provider)
 
     connection = await session.get(BankConnection, conn_id)
+    assert connection is not None
     assert connection.status == "active"
-    assert connection.settings[PENDING_CATCH_UP_KEY] == old_stamp[PENDING_CATCH_UP_KEY]
+    assert (connection.settings or {})[PENDING_CATCH_UP_KEY] == old_stamp[PENDING_CATCH_UP_KEY]
 
     provider.get_transactions_by_date = AsyncMock(return_value=[_posted("ancient", 200)])
     await _sync(session, conn, test_workspace.id, test_user.id, provider)
@@ -654,7 +659,8 @@ async def test_failed_catch_up_is_retried_on_the_next_sync(
     await session.refresh(ancient)
     assert ancient.status == "posted"
     connection = await session.get(BankConnection, conn_id)
-    assert connection.settings[PENDING_CATCH_UP_KEY] != old_stamp[PENDING_CATCH_UP_KEY]
+    assert connection is not None
+    assert (connection.settings or {})[PENDING_CATCH_UP_KEY] != old_stamp[PENDING_CATCH_UP_KEY]
 
 
 @pytest.mark.asyncio
@@ -674,4 +680,5 @@ async def test_catch_up_skips_future_and_ignored_rows(
 
     provider.get_transactions_by_date.assert_not_awaited()
     connection = await session.get(BankConnection, conn_id)
-    assert PENDING_CATCH_UP_KEY in connection.settings
+    assert connection is not None
+    assert PENDING_CATCH_UP_KEY in (connection.settings or {})
