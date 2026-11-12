@@ -279,6 +279,13 @@ describe('InvoicesDueWidget', () => {
     expect(screen.getByText('Acme').closest('a')).toHaveAttribute('href', '/invoices/i1')
   })
 
+  it('dates an invoice in installments by its next unpaid one', async () => {
+    api.invoices.summary.mockResolvedValue(invoiceSummary({ upcoming: [invoice({ due_date: '2026-04-01', next_due_date: '2026-05-01' })] }))
+    renderWithProviders(<InvoicesDueWidget />)
+    const row = (await screen.findByText('Acme')).closest('a')!
+    expect(row).toHaveTextContent(new Date('2026-05-01T00:00:00').toLocaleDateString('en-US', { day: '2-digit', month: 'short' }))
+  })
+
   it('says when nothing is coming due', async () => {
     api.invoices.summary.mockResolvedValue(invoiceSummary())
     renderWithProviders(<InvoicesDueWidget />)
@@ -294,7 +301,7 @@ describe('RecurringRevenueWidget', () => {
   it("leads with the reader's currency and adds up the agreements", async () => {
     api.invoiceSchedules.summary.mockResolvedValue({
       active_count: 3, paused_count: 0, ended_count: 0,
-      by_currency: [row('EUR', '500'), row('USD', '2000', { active_count: 2, monthly_lost: '150', past_due_count: 1 })],
+      by_currency: [row('EUR', '500', { monthly_lost: '40' }), row('USD', '2000', { active_count: 2, monthly_lost: '150', past_due_count: 1 })],
     })
     renderWithProviders(<RecurringRevenueWidget scope={PAST} />)
     const main = await screen.findByText(usd(2000))
@@ -302,6 +309,8 @@ describe('RecurringRevenueWidget', () => {
     expect(main.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByText(t('invoices.schedules.summary.activeCount', { count: 3 }))).toBeInTheDocument()
     expect(screen.getByText(usd(150))).toBeInTheDocument()
+    // Losses in every currency, not just the reader's.
+    expect(screen.getByText(formatCurrency(40, 'EUR', 'en-US'))).toBeInTheDocument()
   })
 
   it('says when nothing is recurring', async () => {

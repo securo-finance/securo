@@ -605,7 +605,8 @@ export function InvoicesDueWidget() {
                   </span>
                   <span className="text-sm font-semibold tabular-nums">{mask(formatCurrency(Number(invoice.balance), invoice.currency, locale))}</span>
                   <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">
-                    {new Date(`${invoice.due_date}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })}
+                    {/* An invoice in installments is due on its next unpaid one. */}
+                    {new Date(`${invoice.next_due_date ?? invoice.due_date}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })}
                   </span>
                 </Link>
               </li>
@@ -659,9 +660,13 @@ export function RecurringRevenueWidget({ scope }: { scope: DashboardScope }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-muted-foreground">{t('invoices.schedules.summary.lost')}</p>
-              <p className={cn('text-sm font-semibold tabular-nums', Number(main.monthly_lost) > 0 ? 'text-rose-500' : 'text-foreground')}>
-                {money(main.monthly_lost, main.currency)}
-              </p>
+              {rows
+                .filter((row) => row === main || Number(row.monthly_lost) > 0)
+                .map((row) => (
+                  <p key={row.currency} className={cn('text-sm font-semibold tabular-nums', Number(row.monthly_lost) > 0 ? 'text-rose-500' : 'text-foreground')}>
+                    {money(row.monthly_lost, row.currency)}
+                  </p>
+                ))}
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('invoices.schedules.summary.pastDue')}</p>
