@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
@@ -20,7 +20,7 @@ from app.schemas.forecast import (
     RecurringDetectionResponse,
     SubscriptionStatusEnum,
 )
-from app.services._query_filters import counts_as_pnl
+from app.services._query_filters import counts_as_pnl, line_amount, line_category_id, with_category_lines
 from app.services.fx_rate_service import convert_or_none
 
 # Common subscription & utility indicators
@@ -136,8 +136,23 @@ def compute_next_occurrence(
     return last_date + timedelta(days=max(1, int(round(avg_interval))))
 
 
+def pnl_transaction_amounts(workspace_id: uuid.UUID):
+    """One reportable amount per transaction, excluding only non-P/L category parts."""
+    return (
+        with_category_lines(
+            select(
+                Transaction.id.label("transaction_id"),
+                func.sum(line_amount()).label("amount"),
+            ).select_from(Transaction)
+        )
+        .where(Transaction.workspace_id == workspace_id, counts_as_pnl(line_category_id()))
+        .group_by(Transaction.id)
+        .subquery()
+    )
+
+
 async def amount_in_currency(
-    session: AsyncSession, tx: Transaction, currency: str
+    session: AsyncSession, tx: Transaction, currency: str, amount: Optional[Decimal] = None
 ) -> Optional[Decimal]:
     """A transaction's magnitude in ``currency``, or None when no rate exists.
 
@@ -148,7 +163,7 @@ async def amount_in_currency(
     """
     converted, _ = await convert_or_none(
         session,
-        abs(Decimal(str(tx.amount))),
+        abs(Decimal(str(tx.amount))) if amount is None else abs(amount),
         tx.currency,
         currency,
         tx.date,
@@ -184,12 +199,13 @@ async def detect_recurring_patterns(
     # Same exclusions the reports use (transfers, ignored rows, settlement
     # debits), plus opening balances: one per account, so accounts created a
     # month apart would otherwise look like a monthly bill.
+    reportable = pnl_transaction_amounts(workspace_id)
     query = (
-        select(Transaction)
+        select(Transaction, reportable.c.amount)
+        .join(reportable, reportable.c.transaction_id == Transaction.id)
         .where(
             and_(
                 Transaction.workspace_id == workspace_id,
-                counts_as_pnl(),
                 Transaction.source != "opening_balance",
                 Transaction.date >= start_date,
                 Transaction.date <= today,
@@ -199,7 +215,9 @@ async def detect_recurring_patterns(
         .order_by(Transaction.date.asc())
     )
     result = await session.execute(query)
-    transactions = list(result.scalars().all())
+    rows = result.all()
+    transactions = [tx for tx, _ in rows]
+    reportable_amounts = {tx.id: Decimal(str(amount)) for tx, amount in rows}
 
     # Cluster transactions by (normalized_name, direction)
     clusters: dict[tuple[str, FlowDirectionEnum], list[Transaction]] = {}
@@ -244,7 +262,7 @@ async def detect_recurring_patterns(
 
         amounts: list[Decimal] = []
         for tx in sorted_txs:
-            amount = await amount_in_currency(session, tx, base_currency)
+            amount = await amount_in_currency(session, tx, base_currency, reportable_amounts[tx.id])
             if amount is None:
                 unconverted_currencies.add(tx.currency)
             else:

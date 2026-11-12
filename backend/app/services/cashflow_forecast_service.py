@@ -22,7 +22,6 @@ from app.schemas.forecast import (
 )
 from app.core.config import get_settings
 from app.services import account_service, recurring_detector_service
-from app.services._query_filters import counts_as_pnl
 from app.services.fx_rate_service import convert_or_none
 from app.services.recurring_transaction_service import get_occurrences_in_range
 
@@ -294,12 +293,13 @@ async def generate_cashflow_forecast(
     daily_discretionary_burn = Decimal("0.00")
     if include_discretionary_burn:
         hist_start = today - timedelta(days=_BURN_WINDOW_DAYS)
+        reportable = recurring_detector_service.pnl_transaction_amounts(workspace_id)
         hist_query = (
-            select(Transaction)
+            select(Transaction, reportable.c.amount)
+            .join(reportable, reportable.c.transaction_id == Transaction.id)
             .where(
                 and_(
                     Transaction.workspace_id == workspace_id,
-                    counts_as_pnl(),
                     Transaction.source != "opening_balance",
                     Transaction.date >= hist_start,
                     Transaction.date < today,
@@ -309,7 +309,7 @@ async def generate_cashflow_forecast(
             )
         )
         hist_result = await session.execute(hist_query)
-        hist_txs = list(hist_result.scalars().all())
+        hist_txs = hist_result.all()
 
         # Filter out recurring items from discretionary calculation
         detected_outflow_keys = {
@@ -318,13 +318,15 @@ async def generate_cashflow_forecast(
             if item.direction == FlowDirectionEnum.OUTFLOW
         }
         burn_total = Decimal("0.00")
-        for t in hist_txs:
+        for t, pnl_amount in hist_txs:
             if t.recurring_transaction_id in manual_recurring_ids:
                 continue
             name_key = recurring_detector_service.normalize_merchant_name(t.payee or t.description).lower()
             if name_key in detected_outflow_keys:
                 continue
-            amount = await recurring_detector_service.amount_in_currency(session, t, base_currency)
+            amount = await recurring_detector_service.amount_in_currency(
+                session, t, base_currency, Decimal(str(pnl_amount))
+            )
             if amount is None:
                 unconverted_currencies.add(t.currency)
                 continue
