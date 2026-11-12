@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
     # FX Rates
     openexchangerates_app_id: str = ""
-    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR,GEL"  # comma-separated list
+    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,PEN,UYU,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR,GEL"  # comma-separated list
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage
@@ -152,6 +152,8 @@ class Settings(BaseSettings):
     # number of trusted reverse proxies in front of the backend (usually 1) to
     # derive the client IP from X-Forwarded-For instead, trusting only that
     # many hops from the right; a chain shorter than expected is not trusted.
+    # The same IP is the Psu-Ip-Address of user-triggered Enable Banking syncs
+    # (app.providers.psu), which only sends it when it is a public address.
     trusted_proxy_hops: int = 0
 
     # Logo size for market-priced asset icons. The logo URL is built from
@@ -167,6 +169,14 @@ class Settings(BaseSettings):
     # Set TESOURO_DIRETO_ENABLED=false to fully disable (e.g. to avoid the
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
+
+    # Data plugins (categories and rules) from the plugin catalog. Gated by
+    # PLUGINS_ENABLED, off by default: while off nothing is fetched and no
+    # plugin can be installed. The built-in rule packs don't depend on it.
+    # The catalog is a static index, fetched only when someone opens it,
+    # never in the background; manifests come from the same host, checked
+    # against the index's sha256. Point it at a mirror to host your own.
+    plugins_index_url: str = "https://plugins.usesecuro.com/v1/index.json"
 
     @property
     def oidc_login_available(self) -> bool:

@@ -22,6 +22,7 @@ from app.models.transaction import Transaction
 from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
+from app.services.category_line_service import csv_export_parts
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
 
@@ -168,6 +169,7 @@ async def list_transactions(
     bill_id: Optional[uuid.UUID] = Query(None, description="Filter by credit-card bill (issue #92); takes precedence over from/to"),
     group_id: Optional[uuid.UUID] = Query(None, description="Filter to transactions split through this group; widens visibility for linked members"),
     unbilled_only: bool = Query(False, description="Cycle-math fallback only: exclude txs already linked to any bill (used for in-progress CC cycles)"),
+    statement_view: bool = Query(False, description="Filter credit-card statement-cycle transactions by purchase date, independent of accounting mode"),
     q: Optional[str] = Query(None),
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
@@ -203,6 +205,7 @@ async def list_transactions(
         bill_id=bill_id,
         group_id=group_id,
         unbilled_only=unbilled_only,
+        statement_view=statement_view,
         sort_by=sort_by,
         sort_dir=sort_dir,
         min_amount=min_amount,
@@ -295,24 +298,31 @@ async def export_transactions(
     output = io.StringIO()
     output.write("﻿")  # UTF-8 BOM for Excel
     writer = csv.writer(output)
-    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used"])
+    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used", "split_group", "split_index"])
     for tx in transactions:
-        writer.writerow([
-            tx.date.isoformat(),
-            tx.description,
-            str(tx.amount),
-            tx.type,
-            tx.currency,
-            tx.category.name if tx.category else "",
-            tx.account.name if tx.account else "",
-            tx.payee or "",
-            getattr(tx, "payee_name", "") or "",
-            tx.notes or "",
-            tx.status,
-            tx.source,
-            str(tx.amount_primary) if tx.amount_primary is not None else "",
-            str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
-        ])
+        # A transaction split across categories leaves one row per part, so
+        # a spreadsheet summing `amount` by `category` gets the same figures
+        # as the reports. `split_group` (the transaction id) and
+        # `split_index` let an import put the parts back together.
+        for amount, amount_primary, category, split_group, split_index in csv_export_parts(tx):
+            writer.writerow([
+                tx.date.isoformat(),
+                tx.description,
+                str(amount),
+                tx.type,
+                tx.currency,
+                category.name if category else "",
+                tx.account.name if tx.account else "",
+                tx.payee or "",
+                getattr(tx, "payee_name", "") or "",
+                tx.notes or "",
+                tx.status,
+                tx.source,
+                str(amount_primary) if amount_primary is not None else "",
+                str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
+                split_group,
+                split_index,
+            ])
 
     output.seek(0)
     today = app_today().isoformat()
@@ -329,13 +339,18 @@ async def bulk_categorize(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    # Counted before the update: split rows are left alone, and the client
+    # says how many, whatever page it is showing by the time this returns.
+    skipped_split = await transaction_service.count_split_rows(
+        session, ctx.workspace.id, data.transaction_ids
+    )
     try:
         count = await transaction_service.bulk_update_category(
             session, ctx.workspace.id, data.transaction_ids, data.category_id
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    return {"updated": count}
+    return {"updated": count, "skipped_split": skipped_split}
 
 
 @router.patch("/bulk-add-tags")
@@ -603,12 +618,16 @@ async def post_transaction_today(
 ):
     """One-click "it cleared today" for a pending transaction.
 
-    Marks the transaction as posted and stamps today's calendar date, resolved
-    in the workspace's timezone, the same as saving the edit dialog by hand.
+    Marks a manual transaction as posted and stamps today's calendar date,
+    resolved in the workspace's timezone. Synchronized rows reject the action
+    because their date remains provider-owned.
     """
-    transaction = await transaction_service.post_transaction_today(
-        session, transaction_id, ctx.workspace.id
-    )
+    try:
+        transaction = await transaction_service.post_transaction_today(
+            session, transaction_id, ctx.workspace.id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency

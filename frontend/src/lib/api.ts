@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { normalizeBudgetComparisonRows } from '@/lib/budget-settings-utils'
 import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
 import type { NumberFormat, DateFormat } from '@/lib/format'
@@ -61,6 +62,13 @@ import type {
   RuleAction,
   RuleConditionNode,
   RuleExportPayload,
+  RulePack,
+  RulePackRemoval,
+  InstalledPlugin,
+  PluginAction,
+  PluginCatalogEntry,
+  PluginPlan,
+  PluginDetail,
   RuleImportResponse,
   RulePreviewResponse,
   ImportLog,
@@ -609,6 +617,7 @@ export const transactions = {
     bill_id?: string
     group_id?: string
     unbilled_only?: boolean
+    statement_view?: boolean
     q?: string
     page?: number
     limit?: number
@@ -693,7 +702,7 @@ export const transactions = {
     const { data } = await api.post('/transactions/transfer', transfer)
     return data
   },
-  bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number }> => {
+  bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number; skipped_split?: number }> => {
     const { data } = await api.patch('/transactions/bulk-categorize', {
       transaction_ids: transactionIds,
       category_id: categoryId,
@@ -1177,8 +1186,17 @@ export const rules = {
     const { data } = await api.post('/rules/import', { payload, overwrite })
     return data
   },
-  packs: async (): Promise<{ code: string; name: string; flag: string; rule_count: number; installed: boolean }[]> => {
+  packs: async (): Promise<RulePack[]> => {
     const { data } = await api.get('/rules/packs')
+    return data
+  },
+  packRemoval: async (packCode: string): Promise<RulePackRemoval> => {
+    const { data } = await api.get(`/rules/packs/${packCode}/removal`)
+    return data
+  },
+  /** `token` is the preview's; the server answers 409 if the plan changed since. */
+  removePack: async (packCode: string, token: string): Promise<RulePackRemoval> => {
+    const { data } = await api.delete(`/rules/packs/${packCode}`, { params: { token } })
     return data
   },
   installPack: async (
@@ -1337,7 +1355,7 @@ export const budgets = {
     const { data } = await api.post('/budgets', budget)
     return data
   },
-  update: async (id: string, budget: { amount?: number }): Promise<Budget> => {
+  update: async (id: string, budget: { amount?: number; effective_month?: string }): Promise<Budget> => {
     const { data } = await api.patch(`/budgets/${id}`, budget)
     return data
   },
@@ -1346,7 +1364,7 @@ export const budgets = {
   },
   comparison: async (month?: string): Promise<BudgetVsActual[]> => {
     const { data } = await api.get('/budgets/comparison', { params: { month } })
-    return data
+    return normalizeBudgetComparisonRows(data)
   },
   suggestions: async (month: string, months: number): Promise<BudgetSuggestionResponse> => {
     const { data } = await api.get('/budgets/suggestions', { params: { month, months } })
@@ -1842,12 +1860,44 @@ export const search = {
 
 // App-level feature flags (whether optional modules like agents are mounted)
 export interface AppInfo {
-  features: { agents: boolean; tesouro_direto?: boolean }
+  features: { agents: boolean; tesouro_direto?: boolean; plugins?: boolean }
 }
 
 export const info = {
   get: async (): Promise<AppInfo> => {
     const { data } = await api.get('/info')
+    return data
+  },
+}
+
+// Data plugins -- only reachable when info.features.plugins === true.
+export const plugins = {
+  /** Installed in this workspace; reads the database only, never the catalog. */
+  installed: async (): Promise<InstalledPlugin[]> => {
+    const { data } = await api.get('/plugins')
+    return data
+  },
+  /** The catalog: fetched from the index now, so only call it when the user asks. */
+  catalog: async (): Promise<PluginCatalogEntry[]> => {
+    const { data } = await api.get('/plugins/catalog')
+    return data
+  },
+  /** One plugin with its README and contents: fetched from the catalog when it's opened. */
+  details: async (pluginId: string): Promise<PluginDetail> => {
+    const { data } = await api.get(`/plugins/${pluginId}`)
+    return data
+  },
+  plan: async (pluginId: string, action: PluginAction): Promise<PluginPlan> => {
+    const { data } = await api.get(`/plugins/${pluginId}/plan`, { params: { action } })
+    return data
+  },
+  /** Applies the plan the user saw; the server answers 409 if it changed since. */
+  apply: async (pluginId: string, plan: PluginPlan): Promise<PluginPlan> => {
+    const { data } = await api.post(`/plugins/${pluginId}/apply`, {
+      action: plan.action,
+      commit: plan.commit,
+      token: plan.token,
+    })
     return data
   },
 }
