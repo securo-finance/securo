@@ -1650,6 +1650,7 @@ export default function AccountDetailPage() {
                       canWrite={canWrite}
                       highlighted={false}
                       locale={locale}
+                      dateLocale={dateLocale}
                       userCurrency={userCurrency}
                       onSelect={() => {}}
                       showPayee

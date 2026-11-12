@@ -1628,6 +1628,7 @@ export default function TransactionsPage() {
                     highlighted={tx.id === highlightId}
                     highlightedRowRef={tx.id === highlightId ? highlightedRowRef : undefined}
                     locale={locale}
+                    dateLocale={dateLocale}
                     userCurrency={userCurrency}
                     onSelect={toggleSelect}
                     onClick={(t) => {
