@@ -3350,7 +3350,8 @@
       "notFound": "Este plugin no está en el catálogo.",
       "type": "Tipo",
       "added": "Añadido",
-      "connections": "Conexiones"
+      "connections": "Conexiones",
+      "codeNote": "Instalar muestra a qué puede acceder y qué puede cambiar antes de que se ejecute nada."
     },
     "installedFailed": "No se pudieron cargar los plugins instalados.",
     "planRecordOnly": {
@@ -3388,6 +3389,11 @@
         "assets": "patrimonio",
         "reports": "informes",
         "invoices": "facturas"
+      },
+      "intro": {
+        "install": "Este plugin no trae datos. Revisa lo que puede hacer su código:",
+        "update": "Revisa lo que puede hacer la nueva versión:",
+        "remove": "Su código deja de ejecutarse en este espacio de trabajo."
       }
     },
     "connections": {
@@ -3400,7 +3406,8 @@
         "pending": "En espera",
         "active": "Conectada",
         "error": "Con error",
-        "needs_auth": "Requiere iniciar sesión"
+        "needs_auth": "Requiere iniciar sesión",
+        "keysRefused": "Clave rechazada"
       },
       "lastSync": "sincronizada {{when}}",
       "neverSynced": "aún sin sincronizar",

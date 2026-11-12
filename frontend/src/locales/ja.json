@@ -3346,7 +3346,8 @@
       "notFound": "このプラグインはカタログにありません。",
       "type": "種類",
       "added": "追加日",
-      "connections": "接続"
+      "connections": "接続",
+      "codeNote": "インストールすると、何かが実行される前に、接続先と変更できる内容が表示されます。"
     },
     "installedFailed": "インストール済みのプラグインを読み込めませんでした。",
     "planRecordOnly": {
@@ -3384,6 +3385,11 @@
         "assets": "資産",
         "reports": "レポート",
         "invoices": "請求書"
+      },
+      "intro": {
+        "install": "このプラグインはデータを追加しません。コードにできることを確認してください：",
+        "update": "新しいバージョンにできることを確認してください：",
+        "remove": "このワークスペースでのコードの実行が止まります。"
       }
     },
     "connections": {
@@ -3396,7 +3402,8 @@
         "pending": "待機中",
         "active": "接続済み",
         "error": "失敗",
-        "needs_auth": "サインインが必要"
+        "needs_auth": "サインインが必要",
+        "keysRefused": "キーが拒否されました"
       },
       "lastSync": "{{when}}に同期",
       "neverSynced": "未同期",

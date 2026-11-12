@@ -3346,7 +3346,8 @@
       "notFound": "Ez a bővítmény nincs a katalógusban.",
       "type": "Típus",
       "added": "Hozzáadva",
-      "connections": "Kapcsolatok"
+      "connections": "Kapcsolatok",
+      "codeNote": "A telepítés megmutatja, mit érhet el és mit módosíthat, mielőtt bármi futna."
     },
     "installedFailed": "Nem sikerült betölteni a telepített bővítményeket.",
     "planRecordOnly": {
@@ -3384,6 +3385,11 @@
         "assets": "vagyon",
         "reports": "jelentések",
         "invoices": "számlák (kimenő)"
+      },
+      "intro": {
+        "install": "Ez a bővítmény nem hoz adatot. Nézd át, mit tehet a kódja:",
+        "update": "Nézd át, mit tehet az új verzió:",
+        "remove": "A kódja ebben a munkaterületben többé nem fut."
       }
     },
     "connections": {
@@ -3396,7 +3402,8 @@
         "pending": "Várakozik",
         "active": "Kapcsolódva",
         "error": "Sikertelen",
-        "needs_auth": "Bejelentkezés szükséges"
+        "needs_auth": "Bejelentkezés szükséges",
+        "keysRefused": "Kulcs elutasítva"
       },
       "lastSync": "szinkronizálva: {{when}}",
       "neverSynced": "még nincs szinkronizálva",

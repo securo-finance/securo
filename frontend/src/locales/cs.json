@@ -3532,7 +3532,8 @@
       "notFound": "Tento plugin není v katalogu.",
       "type": "Typ",
       "added": "Přidáno",
-      "connections": "Připojení"
+      "connections": "Připojení",
+      "codeNote": "Instalace ukáže, k čemu se může připojit a co může měnit, ještě než se cokoli spustí."
     },
     "installedFailed": "Nainstalované pluginy se nepodařilo načíst.",
     "planRecordOnly": {
@@ -3570,6 +3571,11 @@
         "assets": "majetek",
         "reports": "přehledy",
         "invoices": "faktury"
+      },
+      "intro": {
+        "install": "Tento plugin nepřináší data. Zkontrolujte, co smí dělat jeho kód:",
+        "update": "Zkontrolujte, co smí dělat nová verze:",
+        "remove": "Jeho kód v tomto pracovním prostoru přestane běžet."
       }
     },
     "connections": {
@@ -3582,7 +3588,8 @@
         "pending": "Čeká",
         "active": "Připojeno",
         "error": "Chyba",
-        "needs_auth": "Nutné přihlášení"
+        "needs_auth": "Nutné přihlášení",
+        "keysRefused": "Klíč odmítnut"
       },
       "lastSync": "synchronizováno {{when}}",
       "neverSynced": "zatím nesynchronizováno",

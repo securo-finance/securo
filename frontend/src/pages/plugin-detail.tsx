@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { plugins as pluginsApi } from '@/lib/api'
 import { localized } from '@/lib/localized-text'
-import { contributedKinds, pluginLocales } from '@/lib/plugin-catalog'
+import { contributedKinds, pluginLocales, pluginTypes } from '@/lib/plugin-catalog'
 import { compactNumber, languageName, relativeDate } from '@/lib/plugin-format'
 import { conditionSummary } from '@/lib/rule-summary'
 import { cn } from '@/lib/utils'
@@ -112,7 +112,7 @@ export default function PluginDetailPage() {
       <Facts plugin={plugin} />
       <p className="flex gap-2 text-xs leading-relaxed text-muted-foreground">
         <ShieldCheck size={14} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-        {t('plugins.detail.previewNote')}
+        {pluginTypes(plugin).includes('code') ? t('plugins.detail.codeNote') : t('plugins.detail.previewNote')}
       </p>
     </>
   )

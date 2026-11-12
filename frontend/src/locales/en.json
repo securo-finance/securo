@@ -3346,7 +3346,8 @@
       "notFound": "This plugin isn't in the catalog.",
       "type": "Type",
       "added": "Added",
-      "connections": "Connections"
+      "connections": "Connections",
+      "codeNote": "Installing shows what it may reach and change before anything runs."
     },
     "installedFailed": "Couldn't load the installed plugins.",
     "planRecordOnly": {
@@ -3384,6 +3385,11 @@
         "assets": "assets",
         "reports": "reports",
         "invoices": "invoices"
+      },
+      "intro": {
+        "install": "This plugin brings no data. Review what its code may do:",
+        "update": "Review what the new version may do:",
+        "remove": "Its code stops running in this workspace."
       }
     },
     "connections": {
@@ -3396,7 +3402,8 @@
         "pending": "Waiting",
         "active": "Connected",
         "error": "Failed",
-        "needs_auth": "Sign in needed"
+        "needs_auth": "Sign in needed",
+        "keysRefused": "Key refused"
       },
       "lastSync": "synced {{when}}",
       "neverSynced": "not synced yet",

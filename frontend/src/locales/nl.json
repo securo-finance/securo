@@ -3348,7 +3348,8 @@
       "notFound": "Deze plugin staat niet in de catalogus.",
       "type": "Type",
       "added": "Toegevoegd",
-      "connections": "Koppelingen"
+      "connections": "Koppelingen",
+      "codeNote": "Installeren toont wat de plugin mag bereiken en wijzigen voordat er iets draait."
     },
     "installedFailed": "De geïnstalleerde plugins konden niet worden geladen.",
     "planRecordOnly": {
@@ -3386,6 +3387,11 @@
         "assets": "bezittingen",
         "reports": "rapporten",
         "invoices": "facturen"
+      },
+      "intro": {
+        "install": "Deze plugin brengt geen gegevens mee. Bekijk wat de code mag doen:",
+        "update": "Bekijk wat de nieuwe versie mag doen:",
+        "remove": "De code draait niet meer in deze werkruimte."
       }
     },
     "connections": {
@@ -3398,7 +3404,8 @@
         "pending": "Wacht",
         "active": "Gekoppeld",
         "error": "Mislukt",
-        "needs_auth": "Inloggen nodig"
+        "needs_auth": "Inloggen nodig",
+        "keysRefused": "Sleutel geweigerd"
       },
       "lastSync": "gesynchroniseerd {{when}}",
       "neverSynced": "nog niet gesynchroniseerd",

@@ -106,7 +106,9 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
                 ? t('common.loading')
                 : changes
                   ? t('plugins.planIntro')
-                  : t(`plugins.planRecordOnly.${target.action}`, { version: shown.version ?? '' })}
+                  : shown.code
+                    ? t(`plugins.code.intro.${target.action}`)
+                    : t(`plugins.planRecordOnly.${target.action}`, { version: shown.version ?? '' })}
           </DialogDescription>
         </DialogHeader>
 

@@ -3347,7 +3347,8 @@
       "notFound": "Dieses Plugin ist nicht im Katalog.",
       "type": "Typ",
       "added": "Hinzugefügt",
-      "connections": "Verbindungen"
+      "connections": "Verbindungen",
+      "codeNote": "Die Installation zeigt, was es erreichen und ändern darf, bevor etwas läuft."
     },
     "installedFailed": "Die installierten Plugins konnten nicht geladen werden.",
     "planRecordOnly": {
@@ -3385,6 +3386,11 @@
         "assets": "Vermögenswerte",
         "reports": "Berichte",
         "invoices": "Rechnungen"
+      },
+      "intro": {
+        "install": "Dieses Plugin bringt keine Daten. Prüfe, was sein Code tun darf:",
+        "update": "Prüfe, was die neue Version tun darf:",
+        "remove": "Sein Code läuft in diesem Arbeitsbereich nicht mehr."
       }
     },
     "connections": {
@@ -3397,7 +3403,8 @@
         "pending": "Wartet",
         "active": "Verbunden",
         "error": "Fehlgeschlagen",
-        "needs_auth": "Anmeldung nötig"
+        "needs_auth": "Anmeldung nötig",
+        "keysRefused": "Schlüssel abgelehnt"
       },
       "lastSync": "synchronisiert {{when}}",
       "neverSynced": "noch nicht synchronisiert",

@@ -48,6 +48,8 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['plugin-connections'],
     queryFn: pluginsApi.connections,
+    // A new connection syncs in the background: follow it until it settles.
+    refetchInterval: (query) => (query.state.data?.some((c) => c.status === 'pending') ? 3000 : false),
   })
   const connections = (data ?? []).filter((c) => c.plugin_id === plugin.plugin_id)
   const integrations = new Map(plugin.integrations.map((i) => [i.key, i]))
@@ -103,6 +105,10 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
         <ul className="divide-y rounded-xl border bg-card">
           {connections.map((connection) => {
             const integration = integrations.get(connection.integration)
+            // Sign-in integrations sign in again; for keys, "needs auth" means the key was refused.
+            const signIn = connection.status === 'needs_auth' && integration?.auth === 'oauth'
+            const statusKey =
+              connection.status === 'needs_auth' && integration?.auth !== 'oauth' ? 'keysRefused' : connection.status
             const busy =
               (syncMutation.isPending && syncMutation.variables === connection.id) ||
               (authorizeMutation.isPending && authorizeMutation.variables === connection.id)
@@ -112,7 +118,7 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="truncate text-sm font-medium">{connection.name}</p>
                     <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', STATUS_STYLE[connection.status])}>
-                      {t(`plugins.connections.status.${connection.status}`)}
+                      {t(`plugins.connections.status.${statusKey}`)}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -128,7 +134,7 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
                 </div>
                 {canWrite && (
                   <div className="flex items-center gap-1">
-                    {connection.status === 'needs_auth' ? (
+                    {signIn ? (
                       <Button size="sm" variant="outline" disabled={busy} onClick={() => authorizeMutation.mutate(connection.id)}>
                         <LogIn size={14} className="mr-1" />
                         {t('plugins.connections.signIn')}

@@ -3516,7 +3516,8 @@
       "notFound": "Tento plugin nie je v katalógu.",
       "type": "Typ",
       "added": "Pridané",
-      "connections": "Pripojenia"
+      "connections": "Pripojenia",
+      "codeNote": "Inštalácia ukáže, k čomu sa môže pripojiť a čo môže meniť, ešte predtým, ako sa čokoľvek spustí."
     },
     "installedFailed": "Nainštalované pluginy sa nepodarilo načítať.",
     "planRecordOnly": {
@@ -3554,6 +3555,11 @@
         "assets": "majetok",
         "reports": "prehľady",
         "invoices": "faktúry"
+      },
+      "intro": {
+        "install": "Tento plugin neprináša údaje. Skontrolujte, čo smie robiť jeho kód:",
+        "update": "Skontrolujte, čo smie robiť nová verzia:",
+        "remove": "Jeho kód v tomto pracovnom priestore prestane bežať."
       }
     },
     "connections": {
@@ -3566,7 +3572,8 @@
         "pending": "Čaká",
         "active": "Pripojené",
         "error": "Chyba",
-        "needs_auth": "Potrebné prihlásenie"
+        "needs_auth": "Potrebné prihlásenie",
+        "keysRefused": "Kľúč odmietnutý"
       },
       "lastSync": "synchronizované {{when}}",
       "neverSynced": "zatiaľ nesynchronizované",

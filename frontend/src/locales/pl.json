@@ -3482,7 +3482,8 @@
       "notFound": "Tej wtyczki nie ma w katalogu.",
       "type": "Typ",
       "added": "Dodano",
-      "connections": "Połączenia"
+      "connections": "Połączenia",
+      "codeNote": "Instalacja pokazuje, z czym wtyczka może się łączyć i co może zmieniać, zanim cokolwiek się uruchomi."
     },
     "installedFailed": "Nie udało się wczytać zainstalowanych wtyczek.",
     "planRecordOnly": {
@@ -3520,6 +3521,11 @@
         "assets": "majątek",
         "reports": "raporty",
         "invoices": "faktury"
+      },
+      "intro": {
+        "install": "Ta wtyczka nie dodaje danych. Sprawdź, co może robić jej kod:",
+        "update": "Sprawdź, co może robić nowa wersja:",
+        "remove": "Jej kod przestaje działać w tym obszarze roboczym."
       }
     },
     "connections": {
@@ -3532,7 +3538,8 @@
         "pending": "Oczekuje",
         "active": "Połączono",
         "error": "Błąd",
-        "needs_auth": "Wymaga logowania"
+        "needs_auth": "Wymaga logowania",
+        "keysRefused": "Klucz odrzucony"
       },
       "lastSync": "zsynchronizowano {{when}}",
       "neverSynced": "jeszcze nie zsynchronizowano",
