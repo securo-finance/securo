@@ -59,6 +59,11 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Bank sync via providers (Pluggy, Enable Banking, SimpleFIN, extensible)
 - AI Agents (optional): self-hosted LLM chat with tool-use over your data
 
+Transfer creation evaluates active rules independently for both legs. Rules can
+categorize, rename, set payees, and append notes, but cannot ignore a paired
+transfer leg or assign it an ignored category, so both legs remain in account
+balances. The same protection applies when previewing or reapplying rules.
+
 ## Optional capabilities
 
 Everything beyond the core is off by default, needs a single env flag, and costs nothing until you turn it on. Full setup guides live in the [documentation](https://docs.usesecuro.com/):

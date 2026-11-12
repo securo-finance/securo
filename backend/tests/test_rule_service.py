@@ -31,6 +31,7 @@ from app.services.rule_service import (
     get_rule,
     get_rules,
     import_rules,
+    preview_rules_for_transaction,
     update_rule,
 )
 from app.services.transaction_service import update_transaction
@@ -663,6 +664,92 @@ async def test_apply_rules_skips_a_payee_deleted_after_the_rule_was_saved(
     assert txn.payee_id is None
     assert txn.notes == "#ride"
 
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("apply", ["to_transaction", "single_rule", "all_rules", "preview"])
+@pytest.mark.parametrize("source", ["manual", "sync", "transfer"])
+async def test_rules_skip_unsafe_transfer_actions_but_allow_later_categorization(
+    session: AsyncSession, test_user, test_workspace, test_account, test_categories,
+    apply, source,
+):
+    ignored_category, safe_category = test_categories[:2]
+    ignored_category.is_ignored = True
+    payee = Payee(user_id=test_user.id, workspace_id=test_workspace.id, name="Transfer payee")
+    session.add(payee)
+    await session.commit()
+
+    unsafe_rule = await create_rule(
+        session, test_workspace.id, test_user.id,
+        RuleCreate(
+            name="Unsafe transfer actions",
+            conditions=[RuleCondition(field="description", op="contains", value="TRANSFER")],
+            actions=[
+                RuleAction(op="ignore", value=True),
+                RuleAction(op="set_category", value=str(ignored_category.id)),
+                RuleAction(op="set_description", value="Normalized transfer"),
+                RuleAction(op="set_payee", value=str(payee.id)),
+                RuleAction(op="append_notes", value="#reviewed"),
+            ],
+            priority=10,
+            apply_to_existing=False,
+        ),
+    )
+    safe_rule = await create_rule(
+        session, test_workspace.id, test_user.id,
+        RuleCreate(
+            name="Later safe category",
+            conditions=[RuleCondition(field="description", op="equals", value="Normalized transfer")],
+            actions=[RuleAction(op="set_category", value=str(safe_category.id))],
+            priority=20,
+            apply_to_existing=False,
+        ),
+    )
+    paired, ordinary = [
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=test_account.id, description="TRANSFER",
+            amount=Decimal("25.50"), date=date(2025, 3, 1), type="debit",
+            source=source, transfer_pair_id=uuid.uuid4() if is_paired else None,
+            is_ignored=False,
+        )
+        for is_paired in (True, False)
+    ]
+    session.add_all([paired, ordinary])
+    await session.commit()
+
+    if apply == "to_transaction":
+        for txn in (paired, ordinary):
+            await apply_rules_to_transaction(session, test_user.id, txn)
+    elif apply == "single_rule":
+        await apply_single_rule(session, test_workspace.id, unsafe_rule)
+        assert paired.category_id is None
+        assert paired.is_ignored is False
+        assert ordinary.category_id == ignored_category.id
+        await apply_single_rule(session, test_workspace.id, safe_rule)
+    elif apply == "all_rules":
+        await apply_all_rules(session, test_workspace.id)
+    else:
+        previews = []
+        for txn in (paired, ordinary):
+            preview = await preview_rules_for_transaction(session, test_user.id, txn)
+            assert preview.transfer_pair_id == txn.transfer_pair_id
+            assert txn.category_id is None
+            assert txn.is_ignored is False
+            assert txn.description == "TRANSFER"
+            assert txn.payee_id is None
+            assert txn.notes is None
+            previews.append(preview)
+        paired, ordinary = previews
+
+    assert paired.category_id == safe_category.id
+    assert paired.is_ignored is False
+    assert ordinary.category_id == ignored_category.id
+    assert ordinary.is_ignored is True
+    for txn in (paired, ordinary):
+        assert txn.description == "Normalized transfer"
+        assert txn.payee_id == payee.id
+        assert txn.notes == "#reviewed"
 
 # ---------------------------------------------------------------------------
 # apply_all_rules
