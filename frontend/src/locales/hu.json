@@ -3348,5 +3348,152 @@
       "update": "A munkaterület elemei nem változnak; a telepített verzió {{version}} lesz.",
       "remove": "Egyetlen eleme sem maradt itt; az eltávolítás csak a listáról veszi le."
     }
+  },
+  "library": {
+    "title": "Könyvtár",
+    "subtitle": "Válaszd ki, mit mutasson az irányítópult és a jelentések, és hogyan nézzen ki a Securo.",
+    "kind": {
+      "widgets": "Widgetek",
+      "reports": "Jelentések",
+      "themes": "Témák"
+    },
+    "moreHint": {
+      "widgets": "Bővítmények további widgeteket adhatnak hozzá.",
+      "reports": "Bővítmények további jelentéseket adhatnak hozzá.",
+      "themes": "Bővítmények további témákat adhatnak hozzá."
+    },
+    "browseCatalog": "Bővítmények böngészése",
+    "lastReport": "Legalább egy jelentést tarts meg.",
+    "removeFrom": {
+      "dashboard": "{{name}} eltávolítása az irányítópultról",
+      "reports": "{{name}} eltávolítása a jelentésekből"
+    },
+    "addTo": {
+      "dashboard": "{{name}} hozzáadása az irányítópulthoz",
+      "reports": "{{name}} hozzáadása a jelentésekhez"
+    },
+    "remove": "Eltávolítás",
+    "add": "Hozzáadás",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Óceán",
+      "forest": "Erdő",
+      "sunset": "Naplemente",
+      "graphite": "Grafit",
+      "high-contrast": "Magas kontraszt",
+      "midnight": "Éjfél",
+      "terminal": "Terminál",
+      "nebula": "Köd"
+    },
+    "saveFailed": "Nem sikerült menteni a választást. Próbáld újra.",
+    "appearance": "Megjelenés",
+    "emptyDashboard": "Az irányítópultod üres",
+    "emptyDashboardHint": "Adj hozzá widgeteket a könyvtárból, hogy eldöntsd, mit látsz itt.",
+    "addWidget": "Widget hozzáadása",
+    "nothingToShow": "Most nincs mit mutatni",
+    "editingDashboard": "Rendezd át, távolítsd el vagy add hozzá a widgeteket. A változások azonnal mentődnek.",
+    "restoreDefault": "Alapértelmezés visszaállítása",
+    "done": "Kész",
+    "customizeDashboard": "Irányítópult testreszabása",
+    "manageReports": "Jelentések kiválasztása",
+    "manageReportsShort": "Kezelés",
+    "widget": {
+      "overview": "Egyenleg és hónap",
+      "overviewHint": "Elérhető egyenleg, bevételek, kiadások, nettó vagyon és megtakarítási ráta.",
+      "uncategorized": "Kategória nélkül",
+      "uncategorizedHint": "Tranzakciók, amelyek még kategóriára várnak.",
+      "spendingByCategoryHint": "Hová ment a hónap pénze, a költségvetésekhez képest.",
+      "balanceFlowHint": "Hogyan alakult az egyenleg ebben a hónapban, más hónapokhoz képest.",
+      "goalsHint": "A céljaid előrehaladása.",
+      "transactionsHint": "A hónap tranzakciói listában vagy naptárban."
+    },
+    "report": {
+      "netWorthHint": "Számlák, eszközök és tartozások az idő során.",
+      "incomeExpensesHint": "Bevételek és kiadások kategóriánként.",
+      "cashFlowHint": "Merre tart az egyenleged.",
+      "moneyMapHint": "Hogyan oszlik meg a bevétel a kiadások és a megtakarítás között."
+    },
+    "dragToMove": "Húzd a(z) {{name}} áthelyezéséhez",
+    "widthOf": "{{name}} szélessége",
+    "widthLabel": "Szélesség",
+    "width": {
+      "4": "Egyharmad",
+      "6": "Fele",
+      "8": "Kétharmad",
+      "12": "Teljes szélesség"
+    },
+    "needs": {
+      "assistant": "Bekapcsolt AI-ügynököket igényel.",
+      "invoices": "Vállalkozás típusú munkaterületeken érhető el."
+    }
+  },
+  "widgets": {
+    "budgets": "Költségvetések",
+    "viewAll": "Összes",
+    "spendingPace": {
+      "title": "Havi kiadások",
+      "hint": "A hónap kiadásai a költségvetésekhez képest, és mennyi marad naponta.",
+      "noBudget": "Állíts be költségvetéseket, hogy lásd, tartják-e a kiadások a tempót.",
+      "used": "A költségvetések {{percent}}%-a elfogyott",
+      "paceMark": "a jelölés azt mutatja, hol tartana ma az egyenletes tempó",
+      "over": "{{amount}} a költségvetés felett",
+      "perDay": "Napi {{amount}} alatt maradva tartod a költségvetést",
+      "left": "{{amount}} maradt a költségvetésben"
+    },
+    "distribution": {
+      "title": "Kiadások megoszlása",
+      "hint": "Hová ment a hónap pénze, kategóriánként.",
+      "total": "Összes kiadás"
+    },
+    "monthResult": {
+      "title": "Havi eredmény",
+      "hint": "Bevételek mínusz kiadások ebben a hónapban, az előzőhöz képest.",
+      "previous": "{{amount}} az előző hónapban"
+    },
+    "upcoming": {
+      "title": "Közelgő",
+      "hint": "Ismétlődő tranzakciók a következő 30 napban.",
+      "none": "A következő {{days}} napban nincs esedékes tétel."
+    },
+    "cards": {
+      "title": "Hitelkártyák",
+      "hint": "Mennyivel tartoznak a kártyáid, és mennyi marad a kifizetésük után.",
+      "none": "Nincs nyitott hitelkártya.",
+      "afterPaying": "Kifizetés után {{amount}} marad"
+    },
+    "assistant": {
+      "title": "Kérdezd az ügynöködet",
+      "libraryHint": "Küldj kérdést az alapértelmezett ügynöködnek az irányítópult elhagyása nélkül.",
+      "hint": "Kérdezz bármit a pénzedről. A válasz a csevegésben nyílik meg.",
+      "placeholder": "Kérdezd az ügynöködet…",
+      "suggestion1": "Mennyit költöttem ebben a hónapban?",
+      "suggestion2": "Hol spórolhatok?",
+      "suggestion3": "Milyen számlák jönnek?",
+      "send": "Küldés",
+      "unavailable": "Kapcsold be az MI-ügynököket, hogy innen kérdezhess."
+    },
+    "loadFailed": "Nem sikerült betölteni ezt a widgetet.",
+    "receivables": {
+      "title": "Kintlévőségek",
+      "hint": "Amivel az ügyfelek tartoznak, ami késik, és ami ebben a hónapban befolyt."
+    },
+    "payables": {
+      "title": "Tartozások",
+      "hint": "Amivel a beszállítóknak tartozol, ami késik, és amit ebben a hónapban kifizettél."
+    },
+    "aging": {
+      "title": "Kintlévőségek kor szerint",
+      "hint": "Amivel az ügyfelek tartoznak, a késés szerint bontva."
+    },
+    "invoicesDue": {
+      "title": "Hamarosan esedékes számlák",
+      "hint": "A következő számlák, amelyeket az ügyfeleknek fizetniük kell.",
+      "none": "Nincs esedékes számla.",
+      "noClient": "Nincs ügyfél"
+    },
+    "recurringRevenue": {
+      "title": "Ismétlődő bevétel",
+      "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."
+    }
   }
 }

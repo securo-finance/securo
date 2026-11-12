@@ -43,6 +43,7 @@
   "DELETE /api/rules/{rule_id}": 401,
   "DELETE /api/transactions/{transaction_id}": 401,
   "DELETE /api/transactions/{transaction_id}/attachments/{attachment_id}": 401,
+  "DELETE /api/ui/layouts/{surface}": 401,
   "DELETE /api/users/{id}": 401,
   "DELETE /api/workspaces/{workspace_id}/members/{member_user_id}": 401,
   "GET /api/access-tokens": 401,
@@ -113,6 +114,8 @@
   "GET /api/fiscal/jurisdictions": 200,
   "GET /api/fiscal/product-fields": 401,
   "GET /api/fiscal/tax-id-kinds": 401,
+  "GET /api/forecast/cashflow": 401,
+  "GET /api/forecast/recurring": 401,
   "GET /api/fx-rates/status": 401,
   "GET /api/goals": 401,
   "GET /api/goals/summary": 401,
@@ -183,6 +186,7 @@
   "GET /api/transactions/{transaction_id}/attachments/{attachment_id}": 401,
   "GET /api/transactions/{transaction_id}/transfer-candidates": 401,
   "GET /api/transactions/{transaction_id}/transfer-pair": 401,
+  "GET /api/ui/layouts": 401,
   "GET /api/users/directory": 401,
   "GET /api/users/lookup": 401,
   "GET /api/users/me": 401,
@@ -341,7 +345,8 @@
   "POST /api/workspaces/{workspace_id}/members": 401,
   "PUT /api/agents/{agent_id}/tools": 401,
   "PUT /api/mortgage-payments/{payment_id}": 401,
-  "PUT /api/reconciliation/rules/{node}/order": 401
+  "PUT /api/reconciliation/rules/{node}/order": 401,
+  "PUT /api/ui/layouts/{surface}": 401
  },
  "empty": {
   "PATCH /api/admin/settings/{key}": 422,
@@ -415,7 +420,8 @@
   "POST /api/workspaces": 422,
   "POST /api/workspaces/{workspace_id}/members": 422,
   "PUT /api/mortgage-payments/{payment_id}": 422,
-  "PUT /api/reconciliation/rules/{node}/order": 422
+  "PUT /api/reconciliation/rules/{node}/order": 422,
+  "PUT /api/ui/layouts/{surface}": 422
  },
  "ok": {
   "DELETE /api/access-tokens/{token_id}": 404,
@@ -461,6 +467,7 @@
   "DELETE /api/rules/{rule_id}": 204,
   "DELETE /api/transactions/{transaction_id}": 204,
   "DELETE /api/transactions/{transaction_id}/attachments/{attachment_id}": 204,
+  "DELETE /api/ui/layouts/{surface}": 204,
   "DELETE /api/users/{id}": 403,
   "DELETE /api/workspaces/{workspace_id}/members/{member_user_id}": 400,
   "GET /api/access-tokens": 200,
@@ -530,6 +537,8 @@
   "GET /api/fiscal/jurisdictions": 200,
   "GET /api/fiscal/product-fields": 200,
   "GET /api/fiscal/tax-id-kinds": 200,
+  "GET /api/forecast/cashflow": 200,
+  "GET /api/forecast/recurring": 200,
   "GET /api/fx-rates/status": 200,
   "GET /api/goals": 200,
   "GET /api/goals/summary": 200,
@@ -599,6 +608,7 @@
   "GET /api/transactions/{transaction_id}/attachments/{attachment_id}": 200,
   "GET /api/transactions/{transaction_id}/transfer-candidates": 200,
   "GET /api/transactions/{transaction_id}/transfer-pair": 200,
+  "GET /api/ui/layouts": 200,
   "GET /api/users/directory": 200,
   "GET /api/users/lookup": 404,
   "GET /api/users/me": 200,
@@ -757,7 +767,8 @@
   "POST /api/workspaces/{workspace_id}/members": 400,
   "PUT /api/agents/{agent_id}/tools": 200,
   "PUT /api/mortgage-payments/{payment_id}": 404,
-  "PUT /api/reconciliation/rules/{node}/order": 400
+  "PUT /api/reconciliation/rules/{node}/order": 400,
+  "PUT /api/ui/layouts/{surface}": 200
  },
  "unknown_id": {
   "DELETE /api/access-tokens/{token_id}": 404,
@@ -972,6 +983,7 @@
   "DELETE /api/rules/{rule_id}": 403,
   "DELETE /api/transactions/{transaction_id}": 403,
   "DELETE /api/transactions/{transaction_id}/attachments/{attachment_id}": 403,
+  "DELETE /api/ui/layouts/{surface}": 204,
   "DELETE /api/users/{id}": 403,
   "DELETE /api/workspaces/{workspace_id}/members/{member_user_id}": 403,
   "PATCH /api/accounts/{account_id}": 403,
@@ -1121,6 +1133,7 @@
   "POST /api/workspaces/{workspace_id}/members": 403,
   "PUT /api/agents/{agent_id}/tools": 403,
   "PUT /api/mortgage-payments/{payment_id}": 403,
-  "PUT /api/reconciliation/rules/{node}/order": 403
+  "PUT /api/reconciliation/rules/{node}/order": 403,
+  "PUT /api/ui/layouts/{surface}": 200
  }
 }
