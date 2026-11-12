@@ -294,6 +294,12 @@ class BankProvider(ABC):
         return "oauth"
 
     @property
+    def rereads_by_date(self) -> bool:
+        """Whether ``get_transactions_by_date`` is implemented. The sync skips
+        the pending re-read, and the query behind it, when it is not."""
+        return False
+
+    @property
     def redirect_uri(self) -> str:
         """Provider-specific OAuth redirect URI.
 
@@ -366,6 +372,20 @@ class BankProvider(ABC):
     ) -> list[TransactionData]:
         """Fetch transactions for an account."""
         ...
+
+    async def get_transactions_by_date(
+        self, credentials: dict, account_external_id: str,
+        date_from: date, payee_source: str = "auto",
+    ) -> list[TransactionData]:
+        """Fetch every transaction dated on or after ``date_from``.
+
+        Providers whose ``get_transactions`` filters on something other than
+        the transaction date (Pluggy filters on ingestion time) override this
+        so the sync layer can re-read pending rows the incremental listing no
+        longer returns. The default returns nothing, which leaves the sync of
+        every other provider as it was.
+        """
+        return []
 
     @abstractmethod
     async def refresh_credentials(self, credentials: dict) -> dict:
