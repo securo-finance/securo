@@ -3199,7 +3199,7 @@
   },
   "plugins": {
     "title": "Bővítmények",
-    "hint": "A közösség által készített kategóriák és szabályok. Minden változást átnézel, mielőtt érvénybe lép, és semmi sem hagyja el a szerveredet.",
+    "hint": "A közösség által készített kategóriák, szabályok és integrációk. Minden változást átnézhetsz, mielőtt életbe lép.",
     "browse": "Katalógus böngészése",
     "noneInstalled": "Ebben a munkaterületben nincs telepített bővítmény.",
     "remove": "Bővítmény eltávolítása",
@@ -3316,7 +3316,8 @@
       "connectors": "Banki kapcsolatok",
       "parsers": "Fájlolvasók",
       "price_providers": "Árszolgáltatók",
-      "agent_tools": "Ügynökeszközök"
+      "agent_tools": "Ügynökeszközök",
+      "integrations": "Integrációk"
     },
     "detail": {
       "overview": "Áttekintés",
@@ -3335,13 +3336,90 @@
       "previewNote": "Telepítés előtt minden változást látsz, és semmi sem hagyja el a szerveredet.",
       "notFound": "Ez a bővítmény nincs a katalógusban.",
       "type": "Típus",
-      "added": "Hozzáadva"
+      "added": "Hozzáadva",
+      "connections": "Kapcsolatok"
     },
     "installedFailed": "Nem sikerült betölteni a telepített bővítményeket.",
     "planRecordOnly": {
       "install": "Ebben a munkaterületben már minden megvan, amit hoz. A telepítés nyilvántartja, így megkapod a frissítéseit.",
       "update": "A munkaterület elemei nem változnak; a telepített verzió {{version}} lesz.",
       "remove": "Egyetlen eleme sem maradt itt; az eltávolítás csak a listáról veszi le."
+    },
+    "code": {
+      "runsCode": "Ez a bővítmény kódot futtat a szervereden, elkülönítve a Securótól és az adataidtól. A Securo nem ellenőrzi a bővítményeket: csak megbízható kódot telepíts.",
+      "network": "Elér",
+      "noNetwork": "Semmit: semmilyen adat nem hagyja el a szervered.",
+      "access": "Ebben a munkaterületben használja",
+      "noAccess": "Semmit: nem olvashatja és nem módosíthatja az adataidat.",
+      "new": "új",
+      "read": "Olvasás: {{what}}",
+      "write": "Olvasás és módosítás: {{what}}",
+      "ownerOnly": "Kódot futtató bővítményt csak a munkaterület tulajdonosa adhat hozzá, frissíthet vagy távolíthat el.",
+      "removeConnections": "A kapcsolatai ebben a munkaterületben ({{count}}) törlődnek a mentett kulcsokkal és hozzáférésekkel együtt.",
+      "removeNothing": "A bővítmény kódja lekerül a szerveredről, amint egyetlen munkaterület sem használja.",
+      "auth": {
+        "credentials": "Kulcs vagy jelszó",
+        "oauth": "Bejelentkezés",
+        "none": "Nincs beállítás"
+      },
+      "resource": {
+        "accounts": "számlák",
+        "connections": "banki kapcsolatok",
+        "transactions": "tranzakciók",
+        "categories": "kategóriák",
+        "payees": "kedvezményezettek",
+        "rules": "szabályok",
+        "budgets": "költségvetések",
+        "goals": "célok",
+        "recurring": "ismétlődő tranzakciók",
+        "assets": "vagyon",
+        "reports": "jelentések",
+        "invoices": "számlák (kimenő)"
+      }
+    },
+    "connections": {
+      "title": "Kapcsolatok",
+      "hint": "Minden kapcsolat ezt a munkaterületet köti egy fiókhoz a szolgáltatásnál. A kulcsokat titkosítva tároljuk, és csak ennek a bővítménynek küldjük el.",
+      "add": "Kapcsolat hozzáadása",
+      "loadFailed": "Nem sikerült betölteni a kapcsolatokat.",
+      "none": "Még nincs kapcsolat.",
+      "status": {
+        "pending": "Várakozik",
+        "active": "Kapcsolódva",
+        "error": "Sikertelen",
+        "needs_auth": "Bejelentkezés szükséges"
+      },
+      "lastSync": "szinkronizálva: {{when}}",
+      "neverSynced": "még nincs szinkronizálva",
+      "signIn": "Bejelentkezés",
+      "syncNow": "Szinkronizálás most",
+      "remove": "Kapcsolat eltávolítása",
+      "removeAria": "{{name}} eltávolítása",
+      "synced": "{{name}} szinkronizálva",
+      "syncFailed": "A szinkronizálás sikertelen.",
+      "addTitle": "{{name}} csatlakoztatása",
+      "addHint": "Add meg, amit a szolgáltatástól kaptál. A kapcsolatot bármikor eltávolíthatod.",
+      "integration": "Kapcsolódás módja",
+      "name": "Név",
+      "optional": "nem kötelező",
+      "secretNote": "A titkos mezőket titkosítva tároljuk, és soha többé nem jelennek meg.",
+      "redirectHint": "Bejelentkezés előtt regisztráld ezt a visszatérési címet a szolgáltatásnál:",
+      "copy": "Másolás",
+      "copied": "Másolva",
+      "continueSignIn": "Tovább a bejelentkezéshez",
+      "connect": "Csatlakoztatás",
+      "added": "{{name}} csatlakoztatva",
+      "removeTitle": "Eltávolítod: {{name}}?",
+      "removeHint": "A mentett kulcsok és a munkaterülethez való hozzáférés törlődik. Amit már behozott, megmarad.",
+      "removed": "{{name}} eltávolítva"
+    },
+    "oauth": {
+      "title": "Bejelentkezés befejezése",
+      "wait": "A Securo menti a kapcsolatot. Ez egy pillanat.",
+      "connected": "{{name}} csatlakoztatva",
+      "failed": "Nem sikerült befejezni a bejelentkezést. Próbáld újra.",
+      "missing": "A szolgáltatás nem küldte vissza a bejelentkezést. Próbáld újra.",
+      "serviceError": "A szolgáltatás hibát jelzett: {{message}}"
     }
   },
   "library": {

@@ -3355,7 +3355,7 @@
   },
   "plugins": {
     "title": "Pluginy",
-    "hint": "Kategórie a pravidlá od komunity. Každú zmenu si pred použitím skontrolujete a nič neopustí váš server.",
+    "hint": "Kategórie, pravidlá a integrácie od komunity. Každú zmenu si pred použitím skontrolujete.",
     "browse": "Prehliadať katalóg",
     "noneInstalled": "V tomto pracovnom priestore nie sú nainštalované žiadne pluginy.",
     "remove": "Odstrániť plugin",
@@ -3486,7 +3486,8 @@
       "connectors": "Bankové pripojenia",
       "parsers": "Čítačky súborov",
       "price_providers": "Poskytovatelia cien",
-      "agent_tools": "Nástroje agenta"
+      "agent_tools": "Nástroje agenta",
+      "integrations": "Integrácie"
     },
     "detail": {
       "overview": "Prehľad",
@@ -3505,13 +3506,90 @@
       "previewNote": "Pred inštaláciou uvidíte každú zmenu a nič neopustí váš server.",
       "notFound": "Tento plugin nie je v katalógu.",
       "type": "Typ",
-      "added": "Pridané"
+      "added": "Pridané",
+      "connections": "Pripojenia"
     },
     "installedFailed": "Nainštalované pluginy sa nepodarilo načítať.",
     "planRecordOnly": {
       "install": "Tento priestor už má všetko, čo prináša. Inštalácia ho zaznamená, aby ste dostávali aktualizácie.",
       "update": "Žiadne položky v tomto priestore sa nemenia; nainštalovaná verzia bude {{version}}.",
       "remove": "Žiadna jeho položka tu nezostala; odstránenie ho len vyradí zo zoznamu."
+    },
+    "code": {
+      "runsCode": "Tento plugin spúšťa kód na vašom serveri, oddelený od Securo a vašich údajov. Securo pluginy nekontroluje: inštalujte len kód, ktorému dôverujete.",
+      "network": "Pripája sa k",
+      "noNetwork": "Ničomu: žiadne údaje neopúšťajú váš server.",
+      "access": "Používa v tomto pracovnom priestore",
+      "noAccess": "Nič: nemôže čítať ani meniť vaše údaje.",
+      "new": "nové",
+      "read": "Čítanie: {{what}}",
+      "write": "Čítanie a zmeny: {{what}}",
+      "ownerOnly": "Plugin, ktorý spúšťa kód, môže pridať, aktualizovať alebo odstrániť len vlastník pracovného priestoru.",
+      "removeConnections": "Jeho pripojenia v tomto pracovnom priestore ({{count}}) sa odstránia aj s uloženými kľúčmi a prístupmi.",
+      "removeNothing": "Kód pluginu sa z vášho servera odstráni, keď ho žiadny pracovný priestor nepoužíva.",
+      "auth": {
+        "credentials": "Kľúč alebo heslo",
+        "oauth": "Prihlásenie",
+        "none": "Bez nastavenia"
+      },
+      "resource": {
+        "accounts": "účty",
+        "connections": "bankové pripojenia",
+        "transactions": "transakcie",
+        "categories": "kategórie",
+        "payees": "príjemcovia",
+        "rules": "pravidlá",
+        "budgets": "rozpočty",
+        "goals": "ciele",
+        "recurring": "opakované transakcie",
+        "assets": "majetok",
+        "reports": "prehľady",
+        "invoices": "faktúry"
+      }
+    },
+    "connections": {
+      "title": "Pripojenia",
+      "hint": "Každé pripojenie prepája tento pracovný priestor s účtom v službe. Kľúče sa ukladajú šifrovane a posielajú sa len tomuto pluginu.",
+      "add": "Pridať pripojenie",
+      "loadFailed": "Pripojenia sa nepodarilo načítať.",
+      "none": "Zatiaľ žiadne pripojenia.",
+      "status": {
+        "pending": "Čaká",
+        "active": "Pripojené",
+        "error": "Chyba",
+        "needs_auth": "Potrebné prihlásenie"
+      },
+      "lastSync": "synchronizované {{when}}",
+      "neverSynced": "zatiaľ nesynchronizované",
+      "signIn": "Prihlásiť sa",
+      "syncNow": "Synchronizovať",
+      "remove": "Odstrániť pripojenie",
+      "removeAria": "Odstrániť {{name}}",
+      "synced": "{{name}}: synchronizované",
+      "syncFailed": "Synchronizácia zlyhala.",
+      "addTitle": "Pripojiť {{name}}",
+      "addHint": "Vyplňte údaje od služby. Pripojenie môžete kedykoľvek odstrániť.",
+      "integration": "Pripojiť cez",
+      "name": "Názov",
+      "optional": "nepovinné",
+      "secretNote": "Tajné polia sa ukladajú šifrovane a už sa nikdy nezobrazia.",
+      "redirectHint": "Pred prihlásením zaregistrujte v službe túto návratovú adresu:",
+      "copy": "Kopírovať",
+      "copied": "Skopírované",
+      "continueSignIn": "Pokračovať na prihlásenie",
+      "connect": "Pripojiť",
+      "added": "{{name}}: pripojené",
+      "removeTitle": "Odstrániť {{name}}?",
+      "removeHint": "Uložené kľúče a prístup k tomuto pracovnému priestoru sa vymažú. Čo už bolo načítané, zostane.",
+      "removed": "{{name}}: odstránené"
+    },
+    "oauth": {
+      "title": "Dokončuje sa prihlásenie",
+      "wait": "Securo ukladá pripojenie. Chvíľu to potrvá.",
+      "connected": "{{name}}: pripojené",
+      "failed": "Prihlásenie sa nepodarilo dokončiť. Skúste to znova.",
+      "missing": "Služba prihlásenie nevrátila. Skúste to znova.",
+      "serviceError": "Služba nahlásila chybu: {{message}}"
     }
   },
   "library": {

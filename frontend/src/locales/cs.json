@@ -3371,7 +3371,7 @@
   },
   "plugins": {
     "title": "Pluginy",
-    "hint": "Kategorie a pravidla od komunity. Každou změnu si před použitím zkontrolujete a nic neopustí váš server.",
+    "hint": "Kategorie, pravidla a integrace od komunity. Každou změnu si před použitím zkontrolujete.",
     "browse": "Procházet katalog",
     "noneInstalled": "V tomto pracovním prostoru nejsou nainstalované žádné pluginy.",
     "remove": "Odebrat plugin",
@@ -3502,7 +3502,8 @@
       "connectors": "Bankovní připojení",
       "parsers": "Čtečky souborů",
       "price_providers": "Poskytovatelé cen",
-      "agent_tools": "Nástroje agenta"
+      "agent_tools": "Nástroje agenta",
+      "integrations": "Integrace"
     },
     "detail": {
       "overview": "Přehled",
@@ -3521,13 +3522,90 @@
       "previewNote": "Před instalací uvidíte každou změnu a nic neopustí váš server.",
       "notFound": "Tento plugin není v katalogu.",
       "type": "Typ",
-      "added": "Přidáno"
+      "added": "Přidáno",
+      "connections": "Připojení"
     },
     "installedFailed": "Nainstalované pluginy se nepodařilo načíst.",
     "planRecordOnly": {
       "install": "Tento prostor už má vše, co přináší. Instalace ho zaznamená, abyste dostávali aktualizace.",
       "update": "Žádné položky v tomto prostoru se nemění; nainstalovaná verze bude {{version}}.",
       "remove": "Žádná jeho položka tu nezůstala; odebrání ho jen vyřadí ze seznamu."
+    },
+    "code": {
+      "runsCode": "Tento plugin spouští kód na vašem serveru, oddělený od Securo a vašich dat. Securo pluginy nekontroluje: instalujte jen kód, kterému důvěřujete.",
+      "network": "Připojuje se k",
+      "noNetwork": "Ničemu: žádná data neopouštějí váš server.",
+      "access": "Používá v tomto pracovním prostoru",
+      "noAccess": "Nic: nemůže číst ani měnit vaše data.",
+      "new": "nové",
+      "read": "Čtení: {{what}}",
+      "write": "Čtení a změny: {{what}}",
+      "ownerOnly": "Plugin, který spouští kód, může přidat, aktualizovat nebo odebrat jen vlastník pracovního prostoru.",
+      "removeConnections": "Jeho připojení v tomto pracovním prostoru ({{count}}) budou odebrána i s uloženými klíči a přístupy.",
+      "removeNothing": "Kód pluginu se z vašeho serveru odstraní, jakmile ho žádný pracovní prostor nepoužívá.",
+      "auth": {
+        "credentials": "Klíč nebo heslo",
+        "oauth": "Přihlášení",
+        "none": "Bez nastavení"
+      },
+      "resource": {
+        "accounts": "účty",
+        "connections": "bankovní připojení",
+        "transactions": "transakce",
+        "categories": "kategorie",
+        "payees": "příjemci",
+        "rules": "pravidla",
+        "budgets": "rozpočty",
+        "goals": "cíle",
+        "recurring": "opakované transakce",
+        "assets": "majetek",
+        "reports": "přehledy",
+        "invoices": "faktury"
+      }
+    },
+    "connections": {
+      "title": "Připojení",
+      "hint": "Každé připojení propojuje tento pracovní prostor s účtem ve službě. Klíče se ukládají šifrovaně a posílají se jen tomuto pluginu.",
+      "add": "Přidat připojení",
+      "loadFailed": "Připojení se nepodařilo načíst.",
+      "none": "Zatím žádná připojení.",
+      "status": {
+        "pending": "Čeká",
+        "active": "Připojeno",
+        "error": "Chyba",
+        "needs_auth": "Nutné přihlášení"
+      },
+      "lastSync": "synchronizováno {{when}}",
+      "neverSynced": "zatím nesynchronizováno",
+      "signIn": "Přihlásit se",
+      "syncNow": "Synchronizovat",
+      "remove": "Odebrat připojení",
+      "removeAria": "Odebrat {{name}}",
+      "synced": "{{name}}: synchronizováno",
+      "syncFailed": "Synchronizace selhala.",
+      "addTitle": "Připojit {{name}}",
+      "addHint": "Vyplňte údaje od služby. Připojení můžete kdykoli odebrat.",
+      "integration": "Připojit přes",
+      "name": "Název",
+      "optional": "nepovinné",
+      "secretNote": "Tajná pole se ukládají šifrovaně a už se nikdy nezobrazí.",
+      "redirectHint": "Před přihlášením zaregistrujte ve službě tuto návratovou adresu:",
+      "copy": "Kopírovat",
+      "copied": "Zkopírováno",
+      "continueSignIn": "Pokračovat k přihlášení",
+      "connect": "Připojit",
+      "added": "{{name}}: připojeno",
+      "removeTitle": "Odebrat {{name}}?",
+      "removeHint": "Uložené klíče a přístup k tomuto pracovnímu prostoru budou smazány. Co už bylo načteno, zůstane.",
+      "removed": "{{name}}: odebráno"
+    },
+    "oauth": {
+      "title": "Dokončování přihlášení",
+      "wait": "Securo ukládá připojení. Chvíli to potrvá.",
+      "connected": "{{name}}: připojeno",
+      "failed": "Přihlášení se nepodařilo dokončit. Zkuste to znovu.",
+      "missing": "Služba přihlášení nevrátila. Zkuste to znovu.",
+      "serviceError": "Služba nahlásila chybu: {{message}}"
     }
   },
   "library": {

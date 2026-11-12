@@ -116,6 +116,9 @@ def _installed_read(record) -> InstalledPluginRead:
         integrations=[i.model_dump() for i in manifest.contributes.integrations] if manifest else [],
         network=[h.model_dump() for h in manifest.network] if manifest else [],
         api_scopes=[a.model_dump() for a in manifest.api_scopes] if manifest else [],
+        redirect_uri=connections.redirect_uri()
+        if manifest and any(i.auth == "oauth" for i in manifest.contributes.integrations)
+        else None,
     )
 
 

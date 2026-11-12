@@ -16,6 +16,7 @@ export const KIND_TYPE: Record<string, PluginType> = {
   reports: 'interface',
   dashboard_layouts: 'interface',
   connectors: 'code',
+  integrations: 'code',
   parsers: 'code',
   price_providers: 'code',
   agent_tools: 'code',

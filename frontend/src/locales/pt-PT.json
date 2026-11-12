@@ -3203,7 +3203,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Categorias e regras feitas pela comunidade. Revê cada alteração antes de ser aplicada, e nada sai do seu servidor.",
+    "hint": "Categorias, regras e integrações feitas pela comunidade. Revê cada alteração antes de ser aplicada.",
     "browse": "Ver catálogo",
     "noneInstalled": "Nenhum plugin instalado neste espaço de trabalho.",
     "remove": "Remover plugin",
@@ -3320,7 +3320,8 @@
       "connectors": "Conectores bancários",
       "parsers": "Leitores de ficheiros",
       "price_providers": "Fornecedores de preços",
-      "agent_tools": "Ferramentas do agente"
+      "agent_tools": "Ferramentas do agente",
+      "integrations": "Integrações"
     },
     "detail": {
       "overview": "Visão geral",
@@ -3339,13 +3340,90 @@
       "previewNote": "Ao instalar, vê cada alteração antes de algo ser aplicado, e nada sai do seu servidor.",
       "notFound": "Este plugin não está no catálogo.",
       "type": "Tipo",
-      "added": "Adicionado"
+      "added": "Adicionado",
+      "connections": "Ligações"
     },
     "installedFailed": "Não foi possível carregar os plugins instalados.",
     "planRecordOnly": {
       "install": "Este espaço já tem tudo o que ele traz. Instalar regista o plugin, para receber as atualizações.",
       "update": "Nenhum item deste espaço muda; a versão instalada passa a ser {{version}}.",
       "remove": "Nenhum item dele ficou aqui; remover apenas tira o plugin da lista."
+    },
+    "code": {
+      "runsCode": "Este plugin executa código no seu servidor, isolado do Securo e dos seus dados. Os plugins não são revistos pelo Securo: instale apenas código em que confia.",
+      "network": "Acede a",
+      "noNetwork": "Nada: nenhum dado sai do seu servidor.",
+      "access": "Utiliza neste espaço de trabalho",
+      "noAccess": "Nada: não lê nem altera os seus dados.",
+      "new": "novo",
+      "read": "Ler {{what}}",
+      "write": "Ler e alterar {{what}}",
+      "ownerOnly": "Só o proprietário do espaço de trabalho pode adicionar, atualizar ou remover um plugin que executa código.",
+      "removeConnections": "As ligações dele neste espaço de trabalho ({{count}}) são removidas, juntamente com as chaves guardadas e os acessos.",
+      "removeNothing": "O código do plugin sai do seu servidor quando nenhum espaço de trabalho o usar.",
+      "auth": {
+        "credentials": "Chave ou palavra-passe",
+        "oauth": "Iniciar sessão",
+        "none": "Sem configuração"
+      },
+      "resource": {
+        "accounts": "contas",
+        "connections": "ligações bancárias",
+        "transactions": "transações",
+        "categories": "categorias",
+        "payees": "beneficiários",
+        "rules": "regras",
+        "budgets": "orçamentos",
+        "goals": "objetivos",
+        "recurring": "transações recorrentes",
+        "assets": "património",
+        "reports": "relatórios",
+        "invoices": "faturas"
+      }
+    },
+    "connections": {
+      "title": "Ligações",
+      "hint": "Cada ligação associa este espaço de trabalho a uma conta no serviço. As chaves são guardadas cifradas e só são enviadas a este plugin.",
+      "add": "Adicionar ligação",
+      "loadFailed": "Não foi possível carregar as ligações.",
+      "none": "Ainda não há ligações.",
+      "status": {
+        "pending": "A aguardar",
+        "active": "Ligada",
+        "error": "Com erro",
+        "needs_auth": "Requer início de sessão"
+      },
+      "lastSync": "sincronizada {{when}}",
+      "neverSynced": "ainda não sincronizada",
+      "signIn": "Iniciar sessão",
+      "syncNow": "Sincronizar agora",
+      "remove": "Remover ligação",
+      "removeAria": "Remover {{name}}",
+      "synced": "{{name}} sincronizada",
+      "syncFailed": "A sincronização falhou.",
+      "addTitle": "Ligar {{name}}",
+      "addHint": "Preencha com o que o serviço lhe deu. Pode remover a ligação a qualquer momento.",
+      "integration": "Ligar com",
+      "name": "Nome",
+      "optional": "opcional",
+      "secretNote": "Os campos secretos são guardados cifrados e nunca voltam a ser mostrados.",
+      "redirectHint": "Registe este endereço de retorno no serviço antes de iniciar sessão:",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "continueSignIn": "Continuar para o início de sessão",
+      "connect": "Ligar",
+      "added": "{{name}} ligada",
+      "removeTitle": "Remover {{name}}?",
+      "removeHint": "As chaves guardadas e o acesso a este espaço de trabalho são apagados. O que já trouxe mantém-se.",
+      "removed": "{{name}} removida"
+    },
+    "oauth": {
+      "title": "A concluir o início de sessão",
+      "wait": "O Securo está a guardar a ligação. Demora um instante.",
+      "connected": "{{name}} ligada",
+      "failed": "Não foi possível concluir o início de sessão. Tente novamente.",
+      "missing": "O serviço não devolveu o início de sessão. Tente novamente.",
+      "serviceError": "O serviço indicou um erro: {{message}}"
     }
   },
   "library": {

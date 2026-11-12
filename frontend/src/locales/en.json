@@ -3199,7 +3199,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Categories and rules made by the community. You review every change before it's applied, and nothing leaves your server.",
+    "hint": "Categories, rules and integrations made by the community. You review every change before it's applied.",
     "browse": "Browse catalog",
     "noneInstalled": "No plugins installed in this workspace.",
     "remove": "Remove plugin",
@@ -3316,7 +3316,8 @@
       "connectors": "Bank connectors",
       "parsers": "File parsers",
       "price_providers": "Price providers",
-      "agent_tools": "Agent tools"
+      "agent_tools": "Agent tools",
+      "integrations": "Integrations"
     },
     "detail": {
       "overview": "Overview",
@@ -3335,13 +3336,90 @@
       "previewNote": "Installing shows every change before anything is applied, and nothing leaves your server.",
       "notFound": "This plugin isn't in the catalog.",
       "type": "Type",
-      "added": "Added"
+      "added": "Added",
+      "connections": "Connections"
     },
     "installedFailed": "Couldn't load the installed plugins.",
     "planRecordOnly": {
       "install": "This workspace already has everything it brings. Installing records it, so you get its updates.",
       "update": "Nothing changes in this workspace's items; the installed version moves to {{version}}.",
       "remove": "None of its items are left here; removing only takes it off the list."
+    },
+    "code": {
+      "runsCode": "This plugin runs code on your server, isolated from Securo and your data. Plugins aren't reviewed by Securo: only install code you trust.",
+      "network": "Reaches",
+      "noNetwork": "Nothing: no data leaves your server.",
+      "access": "Uses in this workspace",
+      "noAccess": "Nothing: it can't read or change your data.",
+      "new": "new",
+      "read": "Read {{what}}",
+      "write": "Read and change {{what}}",
+      "ownerOnly": "Only the workspace owner can add, update or remove a plugin that runs code.",
+      "removeConnections": "Its connections in this workspace ({{count}}) are removed, along with their saved keys and access.",
+      "removeNothing": "The plugin's code is removed from your server once no workspace uses it.",
+      "auth": {
+        "credentials": "Key or password",
+        "oauth": "Sign in",
+        "none": "No setup"
+      },
+      "resource": {
+        "accounts": "accounts",
+        "connections": "bank connections",
+        "transactions": "transactions",
+        "categories": "categories",
+        "payees": "payees",
+        "rules": "rules",
+        "budgets": "budgets",
+        "goals": "goals",
+        "recurring": "recurring transactions",
+        "assets": "assets",
+        "reports": "reports",
+        "invoices": "invoices"
+      }
+    },
+    "connections": {
+      "title": "Connections",
+      "hint": "Each connection links this workspace to an account on the service. Keys are stored encrypted and only sent to this plugin.",
+      "add": "Add connection",
+      "loadFailed": "Couldn't load the connections.",
+      "none": "No connections yet.",
+      "status": {
+        "pending": "Waiting",
+        "active": "Connected",
+        "error": "Failed",
+        "needs_auth": "Sign in needed"
+      },
+      "lastSync": "synced {{when}}",
+      "neverSynced": "not synced yet",
+      "signIn": "Sign in",
+      "syncNow": "Sync now",
+      "remove": "Remove connection",
+      "removeAria": "Remove {{name}}",
+      "synced": "{{name}} synced",
+      "syncFailed": "The sync failed.",
+      "addTitle": "Connect {{name}}",
+      "addHint": "Fill in what the service gave you. You can remove the connection at any time.",
+      "integration": "Connect with",
+      "name": "Name",
+      "optional": "optional",
+      "secretNote": "Secret fields are stored encrypted and never shown again.",
+      "redirectHint": "Register this return address with the service before signing in:",
+      "copy": "Copy",
+      "copied": "Copied",
+      "continueSignIn": "Continue to sign in",
+      "connect": "Connect",
+      "added": "{{name}} connected",
+      "removeTitle": "Remove {{name}}?",
+      "removeHint": "Its saved keys and its access to this workspace are deleted. What it already brought in stays.",
+      "removed": "{{name}} removed"
+    },
+    "oauth": {
+      "title": "Finishing the sign in",
+      "wait": "Securo is saving the connection. This takes a moment.",
+      "connected": "{{name}} connected",
+      "failed": "The sign in couldn't be finished. Try again.",
+      "missing": "The service didn't send the sign in back. Try again.",
+      "serviceError": "The service reported an error: {{message}}"
     }
   },
   "library": {

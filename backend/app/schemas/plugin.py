@@ -42,6 +42,9 @@ class InstalledPluginRead(BaseModel):
     integrations: list[PluginIntegrationRead] = Field(default=[], description="For plugins with code.")
     network: list[PluginHostRead] = []
     api_scopes: list[PluginScopeRead] = []
+    redirect_uri: str | None = Field(
+        default=None, description="For sign-in integrations: the address to register with the service."
+    )
 
 
 class PluginCatalogRead(BaseModel):
