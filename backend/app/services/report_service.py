@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.asset import ASSET_PRICE_DECIMALS, Asset
 from app.models.asset_value import AssetValue
@@ -633,15 +634,11 @@ async def get_income_expenses_report(
     # paid by a friend show up as the viewer's expense in their P/L
     # picture, just like in /transactions and the dashboard. Group by
     # currency so we can FX-convert each bucket to primary correctly.
-    from app.models.group import GroupMember
     from app.models.transaction_split import TransactionSplit
 
     # Exclude is_self memberships — the owner's own self-member must
     # not surface their in-Pessoal transactions in Trabalho's report.
-    viewer_member_ids = select(GroupMember.id).where(
-        GroupMember.linked_user_id == user_id,
-        GroupMember.is_self.is_(False),
-    )
+    viewer_member_ids = invited_group_member_ids(user_id)
     shared_result = await session.execute(
         select(
             label_expr,
@@ -665,6 +662,7 @@ async def get_income_expenses_report(
             TransactionSplit.group_member_id.in_(viewer_member_ids),
             Transaction.user_id != user_id,
             Transaction.workspace_id != workspace_id,
+            in_bound_workspace(Transaction.workspace_id),
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",

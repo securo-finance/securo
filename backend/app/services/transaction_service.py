@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
+from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.account import Account
@@ -219,7 +220,12 @@ async def get_transactions(
             .where(TransactionSplit.group_member_id.in_(member_ids_subq))
             .distinct()
         )
-        base_query = base_query.where(Transaction.id.in_(tx_ids_subq))
+        # A group can hold splits of expenses from other workspaces; a token
+        # bound to one workspace still reads only that workspace's.
+        base_query = base_query.where(
+            Transaction.id.in_(tx_ids_subq),
+            in_bound_workspace(Transaction.workspace_id),
+        )
     else:
         # Default scope: transactions in this workspace PLUS cross-workspace
         # shares the viewer participates in. The union surfaces the
@@ -238,16 +244,14 @@ async def get_transactions(
         # someone else's workspace. Without this exclusion, the owner's
         # own transactions get double-projected when they switch into
         # a different workspace.
-        viewer_member_ids = select(GroupMember.id).where(
-            GroupMember.linked_user_id == user_id,
-            GroupMember.is_self.is_(False),
-        )
+        viewer_member_ids = invited_group_member_ids(user_id)
         shared_tx_ids = (
             select(TransactionSplit.transaction_id)
             .join(Transaction, Transaction.id == TransactionSplit.transaction_id)
             .where(
                 TransactionSplit.group_member_id.in_(viewer_member_ids),
                 Transaction.workspace_id != workspace_id,
+                in_bound_workspace(Transaction.workspace_id),
             )
             .distinct()
         )

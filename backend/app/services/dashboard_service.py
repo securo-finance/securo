@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
@@ -592,13 +593,9 @@ async def get_summary(
     # Gated under a collection filter — those parent transactions live in
     # other users'/workspaces' accounts, outside the filtered account set.
     if not filtered:
-        from app.models.group import GroupMember
         from app.models.transaction_split import TransactionSplit
 
-        viewer_member_ids = select(GroupMember.id).where(
-            GroupMember.linked_user_id == user_id,
-            GroupMember.is_self.is_(False),
-        )
+        viewer_member_ids = invited_group_member_ids(user_id)
         shared_currency_rows = await session.execute(
             select(
                 Transaction.currency,
@@ -619,6 +616,7 @@ async def get_summary(
             .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
             .where(
                 TransactionSplit.group_member_id.in_(viewer_member_ids),
+                in_bound_workspace(Transaction.workspace_id),
                 Transaction.user_id != user_id,
                 Transaction.source != "opening_balance",
                 report_date >= month_start,
@@ -743,10 +741,15 @@ async def _compute_pending_shares_net(
         )
     )
     owned_ids = {row[0] for row in owned_q.all()}
+    # Bound to one workspace (an access token), only groups that live in it
+    # count, like the shared expenses above.
     linked_q = await session.execute(
-        select(GroupMember.group_id, GroupMember.id).where(
+        select(GroupMember.group_id, GroupMember.id)
+        .join(Group, Group.id == GroupMember.group_id)
+        .where(
             GroupMember.linked_user_id == user_id,
             GroupMember.is_self.is_(False),
+            in_bound_workspace(Group.workspace_id),
         )
     )
     linked_rows = list(linked_q.all())
