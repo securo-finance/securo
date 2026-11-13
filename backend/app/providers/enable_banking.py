@@ -23,7 +23,7 @@ import httpx
 from jose import jwt
 
 from app.agents.services.crypto import decrypt, encrypt
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -406,7 +406,8 @@ class EnableBankingProvider(BankProvider):
     _cached_private_key: Optional[str] = None
     _credential_key: tuple[str, str, str] | None = None
 
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
+        super().__init__(settings)
         # The connected ASPSP's `required_psu_headers`, from the credentials
         # of the connection being synced. None while unknown.
         self._required_psu_headers: Optional[list[str]] = None

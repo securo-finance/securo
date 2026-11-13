@@ -477,3 +477,21 @@ async def test_rate_provider_errors_do_not_expose_app_id(session, clean_db):
         with pytest.raises(ValueError, match="Exchange-rate provider request failed") as error:
             await provider.fetch_latest()
     assert "private-app-id" not in str(error.value)
+
+
+@pytest.mark.parametrize("name", ["pluggy", "enable_banking", "simplefin"])
+def test_every_bank_provider_is_built_with_the_resolved_settings(name):
+    # get_provider passes the resolved settings to the constructor; a
+    # provider with its own __init__ must accept and keep them.
+    from app.providers import get_provider
+
+    settings = get_settings().model_copy(deep=True)
+    settings.pluggy_client_id = "client-id"
+    settings.pluggy_client_secret = SecretStr("client-secret")
+    settings.enable_banking_app_id = "app-id"
+    settings.enable_banking_private_key = SecretStr("private-key")
+    settings.enable_banking_private_key_file = ""
+    settings.simplefin_enabled = True
+
+    provider = get_provider(name, settings=settings)
+    assert provider.settings is settings
