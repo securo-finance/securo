@@ -289,7 +289,7 @@ def _slash_date_order(raw_dates) -> tuple[bool, bool]:
     """
     saw_day_first = saw_month_first = False
     for value in raw_dates:
-        match = re.match(r"^(\d{1,2})/(\d{1,2})/\d{2,4}$", value.strip())
+        match = re.match(r"^(\d{1,2})/(\d{1,2})/\d{2,4}(?:[ T]|$)", value.strip())
         if not match:
             continue
         first, second = int(match.group(1)), int(match.group(2))
@@ -793,12 +793,14 @@ def parse_csv(
             for k, v in row.items()
         }
 
-        # Parse date
+        # Parse date. Bank exports like Revolut's add a time ("2024-01-16 09:12:40"),
+        # which the date-only formats would reject.
         date_str = row[date_col].strip()
+        date_part = re.split(r"[ T]", date_str, maxsplit=1)[0]
         txn_date = None
         for fmt in date_formats:
             try:
-                txn_date = datetime.strptime(date_str, fmt).date()
+                txn_date = datetime.strptime(date_part, fmt).date()
                 break
             except ValueError:
                 continue

@@ -74,6 +74,24 @@ class TestParseCsv:
         assert transactions[1].date == date(2026, 2, 15)
         assert transactions[1].type == "credit"
 
+    def test_parse_csv_date_with_time(self):
+        """Bank exports such as Revolut's put a time after the date."""
+        csv_content = (
+            "date,description,amount\n"
+            "2024-01-16 09:12:40,Tesco,-23.45\n"
+            "2024-01-17T08:00:01,Top-Up,500.00\n"
+        )
+        transactions, failed = parse_csv(csv_content.encode("utf-8"))
+
+        assert failed == []
+        assert [t.date for t in transactions] == [date(2024, 1, 16), date(2024, 1, 17)]
+
+        csv_content = "date,description,amount\n01/15/2024 13:45,A,-1\n02/03/2024 09:00,B,-2\n"
+        transactions, failed = parse_csv(csv_content.encode("utf-8"))
+
+        assert failed == []
+        assert [t.date for t in transactions] == [date(2024, 1, 15), date(2024, 2, 3)]
+
     def test_parse_csv_invalid_columns(self):
         """CSV with unrecognized column names should raise ValueError with found and expected columns."""
         csv_content = (
