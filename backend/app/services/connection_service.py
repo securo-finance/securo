@@ -45,7 +45,7 @@ from app.providers.base import (
 from app.services import oauth_state
 from app.services import admin_service
 from app.services import category_line_service, reconciliation_service, recurring_match_service
-from app.services.text_similarity import token_overlap
+from app.services.text_similarity import normalize_words, token_overlap
 from app.services.account_service import (
     _provider_to_internal_balance,
     sync_opening_balance_for_connected_account,
@@ -1910,6 +1910,45 @@ def _eb_same_merchant(held: dict, booked: dict) -> bool:
     return shared
 
 
+#: Payload fields a bank may rewrite when it fills in a late entry_reference.
+_EB_LATE_REF_REWRITTEN = frozenset({"entry_reference", "remittance_information"})
+
+
+def _eb_reworded_entry(held: dict, booked: dict) -> bool:
+    """Whether `booked` is `held` with a reference filled in and its
+    remittance text reworded.
+
+    A Spanish bank returned a transfer as "TRANSFERENCIA A FAVOR DE ...
+    CONCEPTO <concept>" with no reference, then as "TRASPASO: <concept>" with
+    one. The two texts share too few words for the description match, but
+    every other field of the payload is the same. So the payloads have to
+    agree on everything but the reference and the remittance text, and the
+    two texts have to end in the same words, covering at least 80% of the
+    shorter one: a bank that rewords an entry swaps the label in front and
+    keeps the concept the payer typed at the end. Shared words elsewhere are
+    not enough, since "CARD PAYMENT AT SHOP ALPHA" and "CARD PAYMENT AT SHOP
+    BETA" are two purchases when no creditor field tells them apart.
+    """
+    def rest(raw: dict) -> dict:
+        return {
+            key: value for key, value in raw.items()
+            if key not in _EB_LATE_REF_REWRITTEN and value is not None
+        }
+
+    if rest(held) != rest(booked):
+        return False
+    held_words = normalize_words(_eb_remittance(held))
+    booked_words = normalize_words(_eb_remittance(booked))
+    if not held_words or not booked_words:
+        return False
+    shared_tail = 0
+    for held_word, booked_word in zip(reversed(held_words), reversed(booked_words)):
+        if held_word != booked_word:
+            break
+        shared_tail += 1
+    return shared_tail / min(len(held_words), len(booked_words)) >= 0.8
+
+
 def _eb_entry_date(raw: dict) -> Optional[date]:
     """The date an Enable Banking payload gives its entry, read the way the
     provider reads it: the booking date, else the value date, else the
@@ -2131,7 +2170,9 @@ async def _find_synced_duplicate(
     # the currency, date, status and description, no row holding the reference
     # itself competes, and it is the single candidate: two identical purchases
     # on one day are ambiguous, and picking one would hang its category and
-    # notes on the other.
+    # notes on the other. Some banks also reword the remittance text when they
+    # fill in the reference; such a row matches when the rest of its payload is
+    # unchanged (`_eb_reworded_entry`).
     #
     # A row that took over the pending hold it settled (Path 6) keeps the
     # hold's date, up to `_EB_HOLD_SETTLE_DAYS` before the booking. It is
@@ -2180,10 +2221,13 @@ async def _find_synced_duplicate(
                 and candidate.currency == txn_data.currency
                 and candidate.date == txn_data.date
                 and candidate.status == txn_data.status
-                and token_overlap(
-                    candidate.original_description or candidate.description,
-                    txn_data.description,
-                ) >= 0.9
+                and (
+                    token_overlap(
+                        candidate.original_description or candidate.description,
+                        txn_data.description,
+                    ) >= 0.9
+                    or _eb_reworded_entry(candidate.raw_data, raw)
+                )
             ):
                 late_ref_matches.append(candidate)
         if len(rekey_matches) == 1:
