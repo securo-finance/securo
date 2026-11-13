@@ -428,6 +428,9 @@ def _validate(request: InstallRequest) -> list[str]:
         raise StoreError(str(exc)) from exc
 
 
+_PIP_COMMENT = re.compile(r"(^|\s+)#.*$")
+
+
 def _check_lockfile(lockfile: Path) -> None:
     """Pinned packages and their hashes only.
 
@@ -437,7 +440,8 @@ def _check_lockfile(lockfile: Path) -> None:
     direct URL or path references.
     """
     for number, raw in enumerate(lockfile.read_text(errors="replace").splitlines(), 1):
-        line = raw.split("#", 1)[0].strip().rstrip("\\").strip()
+        # A comment the way pip reads one: `#` at the start or after whitespace only.
+        line = _PIP_COMMENT.sub("", raw).strip().rstrip("\\").strip()
         if not line:
             continue
         for token in line.split():
@@ -450,7 +454,7 @@ def _check_lockfile(lockfile: Path) -> None:
 def _has_requirements(lockfile: Path) -> bool:
     """pip refuses a file with nothing to install; a plugin may need nothing."""
     for line in lockfile.read_text(errors="replace").splitlines():
-        line = line.split("#", 1)[0].strip()
+        line = _PIP_COMMENT.sub("", line).strip()
         if line and not line.startswith("-"):
             return True
     return False

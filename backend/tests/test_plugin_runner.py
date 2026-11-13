@@ -574,7 +574,8 @@ def test_host_script_is_standard_library_only():
 @pytest.mark.parametrize(
     "line",
     ["--no-binary :all:", "-r other.txt", "-c constraints.txt", "-e .", "--index-url https://evil.example/simple",
-     "pkg @ https://evil.example/pkg.whl --hash=sha256:" + "0" * 64, "./local.whl"],
+     "pkg @ https://evil.example/pkg.whl --hash=sha256:" + "0" * 64, "./local.whl",
+     "six==1.17.0#x --no-binary :all:"],
 )
 async def test_a_lockfile_can_only_pin_hashed_packages(store, line):
     archive = tarball({"echo_plugin.py": PLUGIN_SOURCE, "requirements.txt": "six==1.17.0 --hash=sha256:" + "0" * 64 + "\n" + line + "\n"})
@@ -599,6 +600,18 @@ def test_unpack_stops_counting_members_early(tmp_path, monkeypatch):
     import plugin_runner.store as store_module
 
     monkeypatch.setattr(store_module, "MEMBER_LIMIT", 5)
+    read = []
+    real_next = tarfile.TarFile.next
+
+    def counting_next(self):
+        member = real_next(self)
+        read.append(member)
+        return member
+
+    monkeypatch.setattr(tarfile.TarFile, "next", counting_next)
+    monkeypatch.setattr(tarfile.TarFile, "getmembers", lambda self: pytest.fail("reads every header first"))
     archive = tarball({f"f{i}.py": "x" for i in range(20)}, top=None)
     with pytest.raises(StoreError, match="too many files"):
         unpack(archive, tmp_path / "out")
+    # Opening reads the first header; then one past the limit, never all 20.
+    assert len(read) == 7
