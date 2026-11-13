@@ -168,15 +168,21 @@ def catalog(monkeypatch) -> Catalog:
     return fake
 
 
+RUNNER_TOKEN = "runner-token-for-tests-0123456789abcdef"
+EGRESS_SECRET = "egress-secret-for-tests-0123456789abcdef"
+
+
 @pytest.fixture
 def plugin_runner(monkeypatch, tmp_path):
     """The real runner app, in process; the backend's client talks to it."""
-    app = create_app(RunnerSettings(token="t", egress_secret="e", data_dir=tmp_path / "runner", call_timeout=20))
+    app = create_app(
+        RunnerSettings(token=RUNNER_TOKEN, egress_secret=EGRESS_SECRET, data_dir=tmp_path / "runner", call_timeout=20)
+    )
     transport = httpx.ASGITransport(app=app)
 
     class Client(runner.RunnerClient):
         def __init__(self, transport_=None):  # noqa: D401 - same shape as the real one
-            self._client = httpx.AsyncClient(base_url="http://runner", headers={"Authorization": "Bearer t"}, transport=transport)
+            self._client = httpx.AsyncClient(base_url="http://runner", headers={"Authorization": f"Bearer {RUNNER_TOKEN}"}, transport=transport)
 
     monkeypatch.setattr(runner, "RunnerClient", Client)
     monkeypatch.setattr(runner, "configured", lambda: True)

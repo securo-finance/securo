@@ -26,6 +26,7 @@ import socket
 import time
 from collections.abc import Awaitable, Callable
 
+from plugin_runner.config import secret_problem
 from plugin_runner.egress_token import EgressPass, InvalidPass, verify
 
 logger = logging.getLogger("plugin_runner.egress")
@@ -58,8 +59,9 @@ def is_public(address: str) -> bool:
 
 class EgressProxy:
     def __init__(self, secret: str, *, resolver: Resolver = resolve, allow_private: bool = False):
-        if not secret:
-            raise ValueError("PLUGINS_EGRESS_SECRET is not set")
+        problem = secret_problem("PLUGINS_EGRESS_SECRET", secret)
+        if problem:
+            raise ValueError(problem)
         self.secret = secret
         self.resolver = resolver
         # Only tests turn this on, to tunnel to a server on localhost.

@@ -57,7 +57,7 @@ x-backend-env: &backend-env
   # Plugins with code run in the plugins-runner container below, started only
   # with `--profile plugins`. Blank PLUGINS_RUNNER_URL: no plugin with code.
   PLUGINS_RUNNER_URL: ${PLUGINS_RUNNER_URL:-}
-  PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-dev-plugins-runner-token-change-in-production}
+  PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-}
   STORAGE_LOCAL_PATH: /app/data/attachments
   AGENTS_KNOWLEDGE_STORAGE_PATH: /app/data/agent_knowledge
   # Agents/LLM feature, opt-in. Off by default so existing users pay
@@ -215,8 +215,10 @@ services:
       - "${AGENTS_MCP_EXTERNAL_HOST_PORT:-127.0.0.1:8765}:8765"
 
   # Optional: plugins with code. Only start under the `plugins` profile
-  # (`docker compose --profile plugins up`, with PLUGINS_ENABLED=true and
-  # PLUGINS_RUNNER_URL=http://plugins-runner:8090). Same image as the backend,
+  # (`docker compose --profile plugins up`, with PLUGINS_ENABLED=true,
+  # PLUGINS_RUNNER_URL=http://plugins-runner:8090, and PLUGINS_RUNNER_TOKEN and
+  # PLUGINS_EGRESS_SECRET set to long random values: there is no default, since
+  # plugin code runs next to the runner's API). Same image as the backend,
   # but none of its environment: no SECRET_KEY, no database, no provider keys.
   # The runner sits only on the internal `plugins` network, so it can't reach
   # the database, Redis or the internet; each plugin runs as its own user and
@@ -226,8 +228,8 @@ services:
     profiles: [plugins]
     command: uvicorn --factory plugin_runner.main:create_app --host 0.0.0.0 --port 8090
     environment:
-      PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-dev-plugins-runner-token-change-in-production}
-      PLUGINS_EGRESS_SECRET: ${PLUGINS_EGRESS_SECRET:-dev-plugins-egress-secret-change-in-production}
+      PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-}
+      PLUGINS_EGRESS_SECRET: ${PLUGINS_EGRESS_SECRET:-}
       PLUGINS_EGRESS_PROXY: plugins-egress:3128
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
@@ -257,7 +259,7 @@ services:
     profiles: [plugins]
     command: python -m plugin_runner.egress
     environment:
-      PLUGINS_EGRESS_SECRET: ${PLUGINS_EGRESS_SECRET:-dev-plugins-egress-secret-change-in-production}
+      PLUGINS_EGRESS_SECRET: ${PLUGINS_EGRESS_SECRET:-}
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - ./backend/plugin_runner:/app/plugin_runner:ro
