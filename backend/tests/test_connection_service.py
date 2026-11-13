@@ -220,7 +220,7 @@ def test_merge_sync_metadata_preserves_a_rule_managed_description():
         account_id=uuid.uuid4(),
         external_id="provider-id",
         description="iFood",
-        original_description="Compra a Vista sem Juros MasterCard",
+        original_description="iFood",
         amount=Decimal("118.90"),
         date=date(2026, 11, 6),
         type="debit",
