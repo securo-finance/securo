@@ -2825,7 +2825,13 @@
         "deleteBudget": "{{category}}: {{month}} के लिए {{amount}}",
         "deleteRecurringBudget": "{{category}}: {{month}} से हर महीने {{amount}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "कोई बदलाव नहीं"
       }
     },
     "conversation": {

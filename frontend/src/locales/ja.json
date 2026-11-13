@@ -2825,7 +2825,13 @@
         "deleteBudget": "{{category}}: {{month}}の予算{{amount}}",
         "deleteRecurringBudget": "{{category}}: {{month}}から毎月{{amount}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "「{{name}}」"
+        "createCategoryGroup": "「{{name}}」",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}。{{currentBalance}}。{{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "変更なし"
       }
     },
     "conversation": {

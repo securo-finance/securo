@@ -2827,7 +2827,13 @@
         "deleteBudget": "{{category}}: {{amount}} voor {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} per maand vanaf {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Geen wijzigingen"
       }
     },
     "conversation": {
