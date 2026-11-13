@@ -63,6 +63,7 @@ describe('sumDrillDownTotals', () => {
       row({ amount: 2500, amountPrimary: null, currency: 'BRL' }),
     ], 'USD')).toEqual({
       absTotal: 0,
+      netTotal: 0,
       postedTotal: 0,
       pendingTotal: 0,
       projectedTotal: 0,
@@ -76,9 +77,17 @@ describe('sumDrillDownTotals', () => {
     ], 'USD')).toMatchObject({ absTotal: 200, postedTotal: 200 })
   })
 
+  it('nets credits against debits', () => {
+    expect(sumDrillDownTotals([
+      row({ amount: 513.48, type: 'debit' }),
+      row({ amount: 120, type: 'credit' }),
+    ], 'USD')).toMatchObject({ absTotal: 633.48, netTotal: -393.48 })
+  })
+
   it('returns zeroes for an empty panel', () => {
     expect(sumDrillDownTotals([], 'USD')).toEqual({
       absTotal: 0,
+      netTotal: 0,
       postedTotal: 0,
       pendingTotal: 0,
       projectedTotal: 0,

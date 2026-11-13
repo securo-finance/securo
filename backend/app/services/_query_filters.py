@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.app_clock import app_today
+from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
@@ -74,28 +75,31 @@ def counts_in_current_balance(as_of: date):
 
 
 def reporting_date_col(accounting_mode: str):
-    """The date column a transaction should be *bucketed by* in period
-    aggregations (dashboard, reports, budgets).
+    """Return the SQL date expression used for period attribution.
 
-    Honors the manual credit-card cycle override (`effective_bill_date`)
-    FIRST — regardless of accounting mode — because that's the whole point
-    of the override: the user hand-corrected which invoice a purchase
-    belongs to (issue #92). When there's no override, fall back to
-    `effective_date` in accrual mode or the raw purchase `date` in cash
-    mode.
-
-    This mirrors the ordering used by the transaction list and the credit
-    card bill view, so a transaction lands in the same month everywhere the
-    user looks. Aggregations that skipped the override summed credit-card
-    spend under the purchase month instead of the invoice month (issue
-    #232).
+    A user-supplied reporting override wins first while the provider `date`
+    remains immutable bank truth. Credit-card bill overrides retain their
+    existing priority over the cash/accrual base date.
     """
     base = (
         Transaction.effective_date
         if accounting_mode == "accrual"
         else Transaction.date
     )
-    return func.coalesce(Transaction.effective_bill_date, base)
+    return func.coalesce(
+        Transaction.reporting_date_override,
+        Transaction.effective_bill_date,
+        base,
+    )
+
+
+def reporting_date_value(transaction: Transaction, accounting_mode: str) -> date:
+    """Python equivalent of :func:`reporting_date_col` for loaded rows."""
+    return (
+        transaction.reporting_date_override
+        or transaction.effective_bill_date
+        or (transaction.effective_date if accounting_mode == "accrual" else transaction.date)
+    )
 
 
 def is_not_ignored():
@@ -461,10 +465,7 @@ async def owner_split_offset_pnl(
             )
         )
     )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -550,10 +551,7 @@ async def owner_split_offset_by_category(
             )
         )
     )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -673,21 +671,14 @@ async def viewer_shared_pnl(
     are taken in raw nominal terms (only safe when all shares are
     same-currency, e.g., during single-currency tests).
     """
-    from app.models.group import GroupMember
     from app.models.transaction_split import TransactionSplit
 
     # Cross-workspace Splitwise projection: include only invitations
     # (linked_user_id matches but is_self is False). Self-memberships
     # represent the user in their own group and are already counted via
     # the workspace-scoped Transaction filter at the caller.
-    member_ids = select(GroupMember.id).where(
-        GroupMember.linked_user_id == user_id,
-        GroupMember.is_self.is_(False),
-    )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    member_ids = invited_group_member_ids(user_id)
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -708,6 +699,7 @@ async def viewer_shared_pnl(
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .where(
             TransactionSplit.group_member_id.in_(member_ids),
+            in_bound_workspace(Transaction.workspace_id),
             # Avoid double-counting if the viewer also owns the parent.
             Transaction.user_id != user_id,
             Transaction.source != "opening_balance",
@@ -756,27 +748,24 @@ async def viewer_shared_spending_by_category(
     month_end: date,
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
+    exclude_workspace_id: Optional[uuid.UUID] = None,
 ) -> dict:
     """Return {category_id (uuid|None): total_share_expense_float} for
     transactions where the viewer participates via a group split.
 
+    `exclude_workspace_id` leaves out transactions of that workspace, for
+    callers that already count them there.
+
     With `primary_currency`, totals are FX-converted; otherwise raw
     nominal sums (single-currency only)."""
-    from app.models.group import GroupMember
     from app.models.transaction_split import TransactionSplit
 
     # Cross-workspace Splitwise projection: include only invitations
     # (linked_user_id matches but is_self is False). Self-memberships
     # represent the user in their own group and are already counted via
     # the workspace-scoped Transaction filter at the caller.
-    member_ids = select(GroupMember.id).where(
-        GroupMember.linked_user_id == user_id,
-        GroupMember.is_self.is_(False),
-    )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    member_ids = invited_group_member_ids(user_id)
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -787,6 +776,7 @@ async def viewer_shared_spending_by_category(
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .where(
             TransactionSplit.group_member_id.in_(member_ids),
+            in_bound_workspace(Transaction.workspace_id),
             Transaction.user_id != user_id,
             Transaction.type == "debit",
             Transaction.source != "opening_balance",
@@ -795,6 +785,11 @@ async def viewer_shared_spending_by_category(
             date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_pnl(Transaction.category_id),
+            *(
+                [Transaction.workspace_id != exclude_workspace_id]
+                if exclude_workspace_id is not None
+                else []
+            ),
         )
         .group_by(Transaction.category_id, Transaction.currency)
     )

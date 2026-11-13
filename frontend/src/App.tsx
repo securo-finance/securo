@@ -12,6 +12,7 @@ import { useCrossTabRefresh } from '@/hooks/use-cross-tab-refresh'
 import { ProtectedRoute } from '@/components/protected-route'
 import { AdminRoute } from '@/components/admin-route'
 import { AgentsRoute } from '@/components/agents-route'
+import { PluginsRoute } from '@/components/plugins-route'
 import { ModuleRoute } from '@/components/module-route'
 import { AppLayout } from '@/components/app-layout'
 
@@ -36,6 +37,8 @@ const GroupsPage = lazy(() => import('@/pages/groups'))
 const GroupDetailPage = lazy(() => import('@/pages/group-detail'))
 const AdminSettingsPage = lazy(() => import('@/pages/admin/settings'))
 const AgentsListPage = lazy(() => import('@/pages/agents-list'))
+const PluginsPage = lazy(() => import('@/pages/plugins'))
+const PluginDetailPage = lazy(() => import('@/pages/plugin-detail'))
 const AgentDetailPage = lazy(() => import('@/pages/agent-detail'))
 const AgentConnectionsPage = lazy(() => import('@/pages/agent-connections'))
 const InvoicesPage = lazy(() => import('@/pages/invoices'))
@@ -46,6 +49,7 @@ const InvoiceDetailPage = lazy(() => import('@/pages/invoice-detail'))
 const SharedInvoicePage = lazy(() => import('@/pages/shared-invoice'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace-settings'))
 const OAuthCallbackPage = lazy(() => import('@/pages/oauth-callback'))
+const PluginOAuthCallbackPage = lazy(() => import('@/pages/plugin-oauth-callback'))
 const OIDCCallbackPage = lazy(() => import('@/pages/oidc-callback'))
 
 const queryClient = new QueryClient({
@@ -133,6 +137,9 @@ function App() {
                   <Route path="/invoices/products" element={<ModuleRoute module="invoices"><ProductsPage /></ModuleRoute>} />
                   <Route path="/invoices/:id" element={<ModuleRoute module="invoices"><InvoiceDetailPage /></ModuleRoute>} />
                   <Route path="/workspace/settings" element={<WorkspaceSettingsPage />} />
+                  <Route path="/plugins" element={<PluginsRoute><PluginsPage /></PluginsRoute>} />
+                  <Route path="/plugins/oauth/callback" element={<PluginsRoute><PluginOAuthCallbackPage /></PluginsRoute>} />
+                  <Route path="/plugins/:owner/:name" element={<PluginsRoute><PluginDetailPage /></PluginsRoute>} />
                   <Route path="/admin" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
                   <Route path="/agents" element={<AgentsRoute><AgentsListPage /></AgentsRoute>} />
                   <Route path="/agents/connections" element={<AgentsRoute><AgentConnectionsPage /></AgentsRoute>} />

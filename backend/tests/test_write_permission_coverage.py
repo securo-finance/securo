@@ -103,6 +103,11 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # own tokens unless the member is an owner.
     ("POST", "/api/access-tokens"): "the requester's own token, scopes capped by their role",
     ("DELETE", "/api/access-tokens/{token_id}"): "the requester's own token, or any as owner",
+    # How a member arranged their own view of the workspace (dashboard
+    # widgets, listed reports), keyed by their user id. Workspace data is
+    # untouched, so a viewer may arrange their view too.
+    ("PUT", "/api/ui/layouts/{surface}"): "the requester's own view of the workspace, no workspace data",
+    ("DELETE", "/api/ui/layouts/{surface}"): "the requester's own view of the workspace, no workspace data",
 }
 
 # These routes establish authentication (or end it), so requiring an existing

@@ -377,8 +377,10 @@ async def test_delete_cascades_to_paired_transaction(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("new_amount", ["450.00", None], ids=["amount-change", "amount-omitted"])
 async def test_update_cascades_to_paired_transaction(
-    client: AsyncClient, auth_headers, test_account: Account, second_account: Account
+    client: AsyncClient, auth_headers, test_account: Account, second_account: Account,
+    new_amount,
 ):
     # Create transfer
     response = await client.post(
@@ -397,11 +399,14 @@ async def test_update_cascades_to_paired_transaction(
     debit_id = data["debit"]["id"]
     credit_id = data["credit"]["id"]
 
-    # Update debit description and date
+    # Update description and date, optionally changing the amount.
     new_date = "2025-06-15"
+    payload = {"description": "Updated description", "date": new_date}
+    if new_amount is not None:
+        payload["amount"] = new_amount
     update_response = await client.patch(
         f"/api/transactions/{debit_id}",
-        json={"description": "Updated description", "date": new_date},
+        json=payload,
         headers=auth_headers,
     )
     assert update_response.status_code == 200
@@ -414,6 +419,7 @@ async def test_update_cascades_to_paired_transaction(
     credit_data = credit_response.json()
     assert credit_data["description"] == "Updated description"
     assert credit_data["date"] == new_date
+    assert Decimal(str(credit_data["amount"])) == Decimal(new_amount or "300.00")
 
 
 @pytest.mark.asyncio

@@ -59,6 +59,23 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Bank sync via providers (Pluggy, Enable Banking, SimpleFIN, extensible)
 - AI Agents (optional): self-hosted LLM chat with tool-use over your data
 
+### Reporting dates and bank balances
+
+Synchronized transactions can have a reporting-date override without changing
+the bank's booking date. Clear the override to restore automatic attribution;
+later bank syncs preserve the override.
+
+Reporting periods and transaction-list dates follow the override. Account
+running balances and posted cash-flow balance movements still follow the bank
+date (or the effective movement date in accrual mode). A posted expense
+attributed to a future period appears in that period's cash-flow outflow, but
+is not deducted from the projected balance a second time. Pending card rows
+retain their manually selected bill date for forecast outflow and projected
+balance timing, including in cash mode.
+
+The calendar offers separate reporting-date and bank-date views. Moved rows
+retain their original bank date in the transaction list.
+
 ## Optional capabilities
 
 Everything beyond the core is off by default, needs a single env flag, and costs nothing until you turn it on. Full setup guides live in the [documentation](https://docs.usesecuro.com/):
@@ -67,6 +84,7 @@ Everything beyond the core is off by default, needs a single env flag, and costs
 - **Login & security**: passkeys (Touch ID, Face ID, security keys), TOTP two-factor, and OIDC single sign-on with account linking and provider role sync. [Guide](https://docs.usesecuro.com/features/security/)
 - **Exchange rates**: a free [Open Exchange Rates](https://openexchangerates.org/) key, set in `.env` or under **Admin Settings → Providers**, enables automatic currency conversion; without one, cross-currency amounts fall back to 1:1 with a visual warning. [Details](https://docs.usesecuro.com/deployment/docker/)
 - **Timezone**: balances, budgets, and due dates turn over at midnight in your application timezone, set once in Admin Settings, with per-workspace overrides. [Details](https://docs.usesecuro.com/features/workspaces/)
+- **Plugins**: install categories and rules made by the community into a workspace from the plugin catalog, with a preview before anything changes. Only the catalog is downloaded; no workspace data leaves your server. `PLUGINS_ENABLED=true`.
 - **AI Agents**: self-hosted assistants over your data, multi-provider, with tool use and a per-agent knowledge base. [Guide](https://docs.usesecuro.com/features/agents/)
 
 ## AI-Assisted Development

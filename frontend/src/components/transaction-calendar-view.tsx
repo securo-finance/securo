@@ -15,6 +15,10 @@ import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import {
+  saveCalendarDateBasis,
+  type CalendarDateBasis,
+} from '@/lib/transaction-calendar'
 
 function parseLocalDate(value: string) {
   return new Date(`${value}T00:00:00`)
@@ -63,6 +67,7 @@ function readCalendarMetric(): CalendarMetric {
   return window.localStorage.getItem(CALENDAR_METRIC_STORAGE_KEY) === 'activity' ? 'activity' : 'balance'
 }
 
+
 export function TransactionCalendarView({
   calendar,
   isLoading,
@@ -74,6 +79,8 @@ export function TransactionCalendarView({
   onOpenTransaction,
   accounts,
   userCurrency,
+  dateBasis,
+  onDateBasisChange,
 }: {
   calendar?: TransactionCalendarResponse
   isLoading: boolean
@@ -85,6 +92,8 @@ export function TransactionCalendarView({
   onOpenTransaction: (id: string) => void
   accounts?: Account[]
   userCurrency: string
+  dateBasis: CalendarDateBasis
+  onDateBasisChange: (value: CalendarDateBasis) => void
 }) {
   const [density, setDensity] = useState<CalendarDensity>(readCalendarDensity)
   const [metric, setMetric] = useState<CalendarMetric>(readCalendarMetric)
@@ -106,6 +115,10 @@ export function TransactionCalendarView({
   useEffect(() => {
     window.localStorage.setItem(CALENDAR_METRIC_STORAGE_KEY, metric)
   }, [metric])
+
+  useEffect(() => {
+    saveCalendarDateBasis(dateBasis)
+  }, [dateBasis])
 
   useEffect(() => {
     if (!calendar?.days.length) return
@@ -145,6 +158,7 @@ export function TransactionCalendarView({
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-border sm:px-5">
           <CalendarLegend />
           <div className="flex flex-wrap items-center gap-2">
+            <CalendarDateBasisToggle value={dateBasis} onChange={onDateBasisChange} />
             <CalendarMetricToggle value={metric} onChange={setMetric} />
             <CalendarDensityToggle value={density} onChange={setDensity} />
           </div>
@@ -626,6 +640,28 @@ function SegmentedToggle<T extends string>({
     </div>
   )
 }
+
+function CalendarDateBasisToggle({
+  value,
+  onChange,
+}: {
+  value: CalendarDateBasis
+  onChange: (value: CalendarDateBasis) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <SegmentedToggle
+      value={value}
+      onChange={onChange}
+      label={t('transactions.date')}
+      options={[
+        { value: 'reporting', label: t('transactions.reportingDate') },
+        { value: 'bank', label: t('transactions.bankDate') },
+      ]}
+    />
+  )
+}
+
 
 function CalendarDensityToggle({ value, onChange }: { value: CalendarDensity; onChange: (value: CalendarDensity) => void }) {
   const { t } = useTranslation()

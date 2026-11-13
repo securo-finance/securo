@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useTheme } from 'next-themes'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { admin as adminApi, currencies as currenciesApi } from '@/lib/api'
 import { resolveDisplayLocale, resolveDateLocale, type NumberFormat, type DateFormat } from '@/lib/format'
@@ -31,7 +30,7 @@ import {
 import { PageHeader } from '@/components/page-header'
 import { TimezoneSettings } from '@/components/timezone-settings'
 import { ProviderSettings } from '@/components/provider-settings'
-import { setThemeBasedOnSystem } from '@/lib/theme-utils'
+import { DEFAULT_COLORS_QUERY_KEY } from '@/hooks/use-app-theme'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays } from 'lucide-react'
 import type { AdminUser } from '@/types'
@@ -40,7 +39,6 @@ export default function AdminSettingsPage() {
   const { t, i18n } = useTranslation()
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
-  const { resolvedTheme } = useTheme()
 
   const [search, setSearch] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -249,7 +247,8 @@ export default function AdminSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] })
-      setThemeBasedOnSystem(localLight, localDark, resolvedTheme)
+      // The page re-reads the accent colors and keeps each person's theme on top.
+      queryClient.invalidateQueries({ queryKey: DEFAULT_COLORS_QUERY_KEY })
       toast.success(t('admin.settings.updated'))
     },
     onError: () => {

@@ -281,6 +281,25 @@ _QIF_FALLBACK_DATE_FORMATS = [
 ]
 
 
+def _slash_date_order(raw_dates) -> tuple[bool, bool]:
+    """Return (saw_day_first, saw_month_first) for the slash dates in a file.
+
+    A component > 12 can only be a day, so one such date shows the order of
+    every ambiguous date in the same file.
+    """
+    saw_day_first = saw_month_first = False
+    for value in raw_dates:
+        match = re.match(r"^(\d{1,2})/(\d{1,2})/\d{2,4}$", value.strip())
+        if not match:
+            continue
+        first, second = int(match.group(1)), int(match.group(2))
+        if first > 12 >= second:
+            saw_day_first = True
+        if second > 12 >= first:
+            saw_month_first = True
+    return saw_day_first, saw_month_first
+
+
 def _qif_date_formats(date_format: str | None, raw_dates: list[str]) -> list[str]:
     """Decide the strptime formats for a QIF file's dates, once per file.
 
@@ -294,16 +313,7 @@ def _qif_date_formats(date_format: str | None, raw_dates: list[str]) -> list[str
         fmt = DATE_FORMAT_MAP[date_format]
         return [fmt, fmt.replace('%Y', '%y')]
 
-    saw_day_first = saw_month_first = False
-    for value in raw_dates:
-        match = re.match(r"^(\d{1,2})/(\d{1,2})/\d{2,4}$", value)
-        if not match:
-            continue
-        first, second = int(match.group(1)), int(match.group(2))
-        if first > 12 >= second:
-            saw_day_first = True
-        if second > 12 >= first:
-            saw_month_first = True
+    saw_day_first, saw_month_first = _slash_date_order(raw_dates)
 
     if saw_day_first and not saw_month_first:
         return ['%d/%m/%Y', '%d/%m/%y'] + _QIF_FALLBACK_DATE_FORMATS
@@ -745,6 +755,16 @@ def parse_csv(
         date_formats = [DATE_FORMAT_MAP[date_format]]
     else:
         date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%m/%d/%Y', '%d.%m.%Y']
+        # Pick the slash order once per file, as for QIF: trying each row on
+        # its own reads MM/DD dates with a day <= 12 as DD/MM.
+        saw_day_first, saw_month_first = _slash_date_order(
+            v
+            for r in csv.DictReader(io.StringIO(text), dialect=dialect)
+            for k, v in r.items()
+            if k is not None and v is not None and k.lower().strip() == date_col
+        )
+        if saw_month_first and not saw_day_first:
+            date_formats = ['%Y-%m-%d', '%m/%d/%Y', '%d-%m-%Y', '%d/%m/%Y', '%d.%m.%Y']
 
     # Decide the decimal separator once per file from every amount cell, so
     # "25,000" next to "1,500.50" reads as twenty-five thousand rather than
