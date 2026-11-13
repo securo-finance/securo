@@ -244,6 +244,66 @@ def test_merge_sync_metadata_preserves_a_rule_managed_description():
     assert tx.description_is_rule_managed is True
 
 
+def test_merge_sync_metadata_preserves_legacy_descriptions_without_provenance():
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        account_id=uuid.uuid4(),
+        external_id="provider-id",
+        description="Jantar da Letícia",
+        original_description=None,
+        amount=Decimal("118.90"),
+        date=date(2026, 11, 6),
+        type="debit",
+        source="sync",
+        status="pending",
+        description_is_rule_managed=False,
+    )
+    txn_data = TransactionData(
+        external_id="provider-id",
+        description="IFD*LETICIA ALVES DE O",
+        amount=Decimal("118.90"),
+        date=date(2026, 11, 6),
+        type="debit",
+        status="pending",
+    )
+
+    _merge_sync_metadata(tx, txn_data)
+
+    assert tx.description == "Jantar da Letícia"
+    assert tx.original_description == "IFD*LETICIA ALVES DE O"
+
+
+def test_merge_sync_metadata_does_not_store_an_empty_provider_description():
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        account_id=uuid.uuid4(),
+        external_id="provider-id",
+        description="Manual description",
+        original_description=None,
+        amount=Decimal("5"),
+        date=date(2026, 6, 27),
+        type="debit",
+        source="sync",
+        status="pending",
+    )
+
+    _merge_sync_metadata(
+        tx,
+        TransactionData(
+            external_id="provider-id",
+            description="   ",
+            amount=Decimal("5"),
+            date=date(2026, 6, 27),
+            type="debit",
+        ),
+    )
+
+    assert tx.description == "Manual description"
+    assert tx.original_description is None
+
+
 def test_merge_sync_metadata_ignores_empty_or_unchanged_descriptions():
     tx = Transaction(
         id=uuid.uuid4(),
