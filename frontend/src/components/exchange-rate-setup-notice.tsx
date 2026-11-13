@@ -4,20 +4,19 @@ import { Info } from 'lucide-react'
 
 const SETUP_PATH = '/admin#provider-exchangeRates'
 
-export function ExchangeRateSetupBanner({ isAdmin }: { isAdmin: boolean }) {
+/**
+ * What a reader can do about missing exchange rates: an admin gets a link
+ * to the settings, anyone else is told who can fix it. Placed inside the
+ * Assets page's single exchange-rate warning.
+ */
+export function ExchangeRateSetupAction({ isAdmin }: { isAdmin: boolean }) {
   const { t } = useTranslation()
-  return (
-    <div role="status" className="flex flex-wrap items-start gap-2.5 rounded-lg border border-amber-300/70 bg-amber-50/70 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-100">
-      <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-      <p className="min-w-0 flex-1">{t('assets.exchangeRateSetupWarning')}</p>
-      {isAdmin ? (
-        <Link to={SETUP_PATH} className="shrink-0 font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          {t('assets.exchangeRateSetupLink')}
-        </Link>
-      ) : (
-        <span className="text-amber-800 dark:text-amber-200">{t('assets.exchangeRateSetupContactAdmin')}</span>
-      )}
-    </div>
+  return isAdmin ? (
+    <Link to={SETUP_PATH} className="shrink-0 font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      {t('assets.exchangeRateSetupLink')}
+    </Link>
+  ) : (
+    <span>{t('assets.exchangeRateSetupContactAdmin')}</span>
   )
 }
 

@@ -53,7 +53,7 @@ import {
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
-import { ExchangeRateSetupBanner, ExchangeRateSetupIcon } from '@/components/exchange-rate-setup-notice'
+import { ExchangeRateSetupAction, ExchangeRateSetupIcon } from '@/components/exchange-rate-setup-notice'
 import { needsConversion, useExchangeRatesNeedSetup } from '@/hooks/use-exchange-rates-need-setup'
 import { PropertyEquitySummary } from '@/components/property-equity-summary'
 import { LOAN_COLLATERAL_TYPES } from '@/lib/property-equity'
@@ -1173,13 +1173,21 @@ export default function AssetsPage() {
         />
       ) : (
       <>
-      {exchangeRatesNeedSetup && <ExchangeRateSetupBanner isAdmin={Boolean(user?.is_superuser)} />}
       {/* Assets that have no resolvable FX rate are left out of the totals
-          below; explain that so the numbers do not look wrong (issue #574). */}
-      {unconvertedCurrencies.length > 0 && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-          <span>{t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })}</span>
+          below; explain that so the numbers do not look wrong (issue #574).
+          One warning only: when no rate provider is configured, the same
+          box says so and offers the way to set it up. */}
+      {(unconvertedCurrencies.length > 0 || exchangeRatesNeedSetup) && (
+        <div role="status" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+            <span>
+              {unconvertedCurrencies.length > 0
+                ? t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })
+                : t('assets.exchangeRateSetupWarning')}
+            </span>
+            {exchangeRatesNeedSetup && <ExchangeRateSetupAction isAdmin={Boolean(user?.is_superuser)} />}
+          </div>
         </div>
       )}
 

@@ -62,8 +62,8 @@ describe('Assets exchange rate setup warning', () => {
   it('links an admin to exchange rate settings when a valued asset needs conversion', async () => {
     renderWithProviders(<AssetsPage />)
 
-    const warning = (await screen.findByText(t('assets.exchangeRateSetupWarning'))).closest('[role="status"]')!
-    expect(within(warning as HTMLElement).getByRole('link', { name: t('assets.exchangeRateSetupLink') }))
+    const warning = (await screen.findByText(t('assets.fxRateMissing', { currencies: 'EUR' }))).closest('[role="status"]')!
+    expect(await within(warning as HTMLElement).findByRole('link', { name: t('assets.exchangeRateSetupLink') }))
       .toHaveAttribute('href', '/admin#provider-exchangeRates')
     expect(screen.getByRole('button', { name: t('assets.exchangeRateSetupAction', { from: 'EUR', to: 'USD' }) }))
       .toBeVisible()
@@ -93,9 +93,28 @@ describe('Assets exchange rate setup warning', () => {
     auth.isSuperuser = false
     renderWithProviders(<AssetsPage />)
 
-    const warning = (await screen.findByText(t('assets.exchangeRateSetupWarning'))).closest('[role="status"]')!
-    expect(within(warning as HTMLElement).getByText(t('assets.exchangeRateSetupContactAdmin'))).toBeVisible()
+    const warning = (await screen.findByText(t('assets.fxRateMissing', { currencies: 'EUR' }))).closest('[role="status"]')!
+    expect(await within(warning as HTMLElement).findByText(t('assets.exchangeRateSetupContactAdmin'))).toBeVisible()
     expect(within(warning as HTMLElement).queryByRole('link')).not.toBeInTheDocument()
     await waitFor(() => expect(api.fxRates.status).toHaveBeenCalledTimes(1))
+  })
+
+  it('shows a single exchange-rate warning when rates are missing and no provider is configured', async () => {
+    renderWithProviders(<AssetsPage />)
+
+    await screen.findByText(t('assets.fxRateMissing', { currencies: 'EUR' }))
+    expect(screen.queryByText(t('assets.exchangeRateSetupWarning'))).not.toBeInTheDocument()
+    expect(await screen.findAllByRole('link', { name: t('assets.exchangeRateSetupLink') })).toHaveLength(1)
+    expect(screen.queryByText(t('assets.exchangeRateSetupWarning'))).not.toBeInTheDocument()
+  })
+
+  it('explains the missing provider when converted values exist but no provider is configured', async () => {
+    api.assets.list.mockResolvedValue([{ ...asset('EUR'), current_value_primary: 108 }])
+    renderWithProviders(<AssetsPage />)
+
+    const warning = (await screen.findByText(t('assets.exchangeRateSetupWarning'))).closest('[role="status"]')!
+    expect(within(warning as HTMLElement).getByRole('link', { name: t('assets.exchangeRateSetupLink') }))
+      .toHaveAttribute('href', '/admin#provider-exchangeRates')
+    expect(screen.queryByText(t('assets.fxRateMissing', { currencies: 'EUR' }))).not.toBeInTheDocument()
   })
 })
