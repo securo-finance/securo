@@ -1581,7 +1581,18 @@
     "autoGenerate": "取引を自動生成",
     "autoGenerateHelp": "この支払いの期日が来るたびに取引を作成します。オフにすると、実際の請求(銀行同期など)を待ち、それまでは予定として表示するだけになります。",
     "fxEstimate": "最新の為替レートによる推定({{rate}})。最終金額は変わる場合があります。",
-    "confirmDeleteDescription": "定期取引の定義「{{description}}」を完全に削除します。既存の取引は残りますが、定期の紐付けが失われます。この操作は取り消せません。"
+    "confirmDeleteDescription": "定期取引の定義「{{description}}」を完全に削除します。既存の取引は残りますが、定期の紐付けが失われます。この操作は取り消せません。",
+    "priceHistory": "価格履歴",
+    "viewPriceHistory": "価格履歴を表示",
+    "priceChangesTitle": "最近の価格変更 (過去30日間)",
+    "priceChangesEmpty": "安定した価格変更は検出されませんでした",
+    "priceChangeBadge": "価格が変更されました",
+    "priceChangeIncrease": "価格が上昇しました",
+    "priceChangeDecrease": "価格が下落しました",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "{{days}} 日間の間隔を経て",
+    "priceChangeInsufficient": "Securoが安定した価格変更を報告するには、リンクされた確定取引が最低 3 件必要です。"
   },
   "rules": {
     "searchPlaceholder": "ルールを検索...",

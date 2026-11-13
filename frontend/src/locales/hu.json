@@ -1581,7 +1581,18 @@
     "autoGenerate": "Tranzakciók automatikus létrehozása",
     "autoGenerateHelp": "Minden esedékességkor létrejön egy tranzakció. Kapcsold ki, ha inkább megvárnád a tényleges terhelést (pl. banki szinkronizálásból) – addig csak közelgő tételként jelenik meg.",
     "fxEstimate": "Becslés a legutóbbi árfolyam ({{rate}}) alapján. A végleges összeg eltérhet.",
-    "confirmDeleteDescription": "Az ismétlődő tétel („{{description}}”) véglegesen törlődik. A meglévő tranzakciók megmaradnak, de elveszítik az ismétlődő kapcsolatukat. Ez a művelet nem vonható vissza."
+    "confirmDeleteDescription": "Az ismétlődő tétel („{{description}}”) véglegesen törlődik. A meglévő tranzakciók megmaradnak, de elveszítik az ismétlődő kapcsolatukat. Ez a művelet nem vonható vissza.",
+    "priceHistory": "Price history",
+    "viewPriceHistory": "View price history",
+    "priceChangesTitle": "Recent price changes (elmúlt 30 nap)",
+    "priceChangesEmpty": "No stable price changes detected",
+    "priceChangeBadge": "Price changed",
+    "priceChangeIncrease": "Price increased",
+    "priceChangeDecrease": "Price decreased",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "After a {{days}}-day gap",
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
   },
   "rules": {
     "searchPlaceholder": "Szabályok keresése...",

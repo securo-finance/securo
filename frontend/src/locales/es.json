@@ -1585,7 +1585,18 @@
     "autoGenerate": "Generar transacciones automáticamente",
     "autoGenerateHelp": "Crea una transacción cada vez que vence esta factura. Desactívalo para esperar el cargo real (por ejemplo, de la sincronización bancaria) y mostrarla solo como próxima hasta entonces.",
     "fxEstimate": "Estimación basada en el último tipo de cambio ({{rate}}). El importe final puede cambiar.",
-    "confirmDeleteDescription": "La definición recurrente \"{{description}}\" se eliminará permanentemente. Las transacciones existentes permanecerán, pero perderán su vínculo recurrente. Esta acción no se puede deshacer."
+    "confirmDeleteDescription": "La definición recurrente \"{{description}}\" se eliminará permanentemente. Las transacciones existentes permanecerán, pero perderán su vínculo recurrente. Esta acción no se puede deshacer.",
+    "priceHistory": "Historial de precios",
+    "viewPriceHistory": "Ver historial de precios",
+    "priceChangesTitle": "Cambios recientes de precio (últimos 30 días)",
+    "priceChangesEmpty": "No se detectaron cambios de precio estables",
+    "priceChangeBadge": "Precio cambiado",
+    "priceChangeIncrease": "El precio aumentó",
+    "priceChangeDecrease": "El precio disminuyó",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Después de un intervalo de {{days}} días",
+    "priceChangeInsufficient": "Se necesitan al menos 3 cargos publicados y vinculados antes de que Securo informe un cambio de precio estable."
   },
   "rules": {
     "searchPlaceholder": "Buscar reglas...",

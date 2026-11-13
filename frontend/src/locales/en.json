@@ -1581,7 +1581,18 @@
     "autoGenerate": "Generate transactions automatically",
     "autoGenerateHelp": "Create a transaction each time this bill is due. Turn off to wait for the real charge (e.g. from bank sync) and only show it as upcoming until then.",
     "fxEstimate": "Estimate based on latest exchange rate ({{rate}}). Final amount may change.",
-    "confirmDeleteDescription": "The recurring definition \"{{description}}\" will be permanently deleted. Existing transactions will remain but lose their recurring link. This action cannot be undone."
+    "confirmDeleteDescription": "The recurring definition \"{{description}}\" will be permanently deleted. Existing transactions will remain but lose their recurring link. This action cannot be undone.",
+    "priceHistory": "Price history",
+    "viewPriceHistory": "View price history",
+    "priceChangesTitle": "Recent price changes (last 30 days)",
+    "priceChangesEmpty": "No stable price changes detected",
+    "priceChangeBadge": "Price changed",
+    "priceChangeIncrease": "Price increased",
+    "priceChangeDecrease": "Price decreased",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "After a {{days}}-day gap",
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
   },
   "rules": {
     "searchPlaceholder": "Search rules...",

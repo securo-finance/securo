@@ -1585,7 +1585,18 @@
     "autoGenerate": "Genera transazioni automaticamente",
     "autoGenerateHelp": "Crea una transazione ogni volta che questa spesa è in scadenza. Disattiva per attendere l'addebito reale (ad es. dalla sincronizzazione bancaria) e mostrarla solo come in arrivo fino ad allora.",
     "fxEstimate": "Stima basata sull'ultimo tasso di cambio ({{rate}}). L'importo finale può variare.",
-    "confirmDeleteDescription": "La definizione ricorrente \"{{description}}\" verrà eliminata definitivamente. Le transazioni esistenti rimarranno, ma perderanno il collegamento ricorrente. Questa azione non può essere annullata."
+    "confirmDeleteDescription": "La definizione ricorrente \"{{description}}\" verrà eliminata definitivamente. Le transazioni esistenti rimarranno, ma perderanno il collegamento ricorrente. Questa azione non può essere annullata.",
+    "priceHistory": "Cronologia prezzi",
+    "viewPriceHistory": "Vedi cronologia prezzi",
+    "priceChangesTitle": "Variazioni recenti dei prezzi (ultimi 30 giorni)",
+    "priceChangesEmpty": "Nessuna variazione di prezzo stabile rilevata",
+    "priceChangeBadge": "Prezzo cambiato",
+    "priceChangeIncrease": "Il prezzo è aumentato",
+    "priceChangeDecrease": "Il prezzo è diminuito",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Dopo un intervallo di {{days}} giorni",
+    "priceChangeInsufficient": "Sono necessari almeno 3 addebiti pubblicati e collegati prima che Securo segnali una variazione di prezzo stabile."
   },
   "rules": {
     "searchPlaceholder": "Cerca regole...",

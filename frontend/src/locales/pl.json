@@ -1643,7 +1643,18 @@
     "autoGenerate": "Automatycznie generuj transakcje",
     "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
     "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić.",
-    "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć."
+    "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć.",
+    "priceHistory": "Historia cen",
+    "viewPriceHistory": "Zobacz historię cen",
+    "priceChangesTitle": "Ostatnie zmiany cen (ostatnie 30 dni)",
+    "priceChangesEmpty": "Nie wykryto stabilnych zmian cen",
+    "priceChangeBadge": "Cena zmieniona",
+    "priceChangeIncrease": "Cena wzrosła",
+    "priceChangeDecrease": "Cena spadła",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Po przerwie wynoszącej {{days}} dni",
+    "priceChangeInsufficient": "Przed zgłoszeniem stabilnej zmiany ceny przez Securo potrzebne są co najmniej 3 powiązane zaksięgowane obciążenia."
   },
   "rules": {
     "searchPlaceholder": "Szukaj reguł...",

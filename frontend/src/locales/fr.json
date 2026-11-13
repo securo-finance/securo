@@ -1585,7 +1585,18 @@
     "autoGenerate": "Générer les transactions automatiquement",
     "autoGenerateHelp": "Créer une transaction à chaque échéance de cette facture. Désactivez pour attendre le prélèvement réel (ex. via la synchronisation bancaire) et l'afficher uniquement comme à venir jusque-là.",
     "fxEstimate": "Estimation basée sur le dernier taux de change ({{rate}}). Le montant final peut varier.",
-    "confirmDeleteDescription": "La définition récurrente « {{description}} » sera définitivement supprimée. Les transactions existantes resteront, mais perdront leur lien récurrent. Cette action est irréversible."
+    "confirmDeleteDescription": "La définition récurrente « {{description}} » sera définitivement supprimée. Les transactions existantes resteront, mais perdront leur lien récurrent. Cette action est irréversible.",
+    "priceHistory": "Historique des prix",
+    "viewPriceHistory": "Voir l'historique des prix",
+    "priceChangesTitle": "Variations de prix récentes (30 derniers jours)",
+    "priceChangesEmpty": "Aucune variation de prix stable détectée",
+    "priceChangeBadge": "Prix modifié",
+    "priceChangeIncrease": "Le prix a augmenté",
+    "priceChangeDecrease": "Le prix a diminué",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Après un intervalle de {{days}} jours",
+    "priceChangeInsufficient": "Au moins 3 frais publiés et liés sont nécessaires avant que Securo ne signale une variation de prix stable."
   },
   "rules": {
     "searchPlaceholder": "Rechercher des règles...",
