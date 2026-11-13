@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core import redis as redis_store
 from app.models.access_token import AccessToken
 from app.models.plugin_connection import PluginConnection
 from app.models.workspace_plugin import WorkspacePlugin
@@ -196,7 +197,11 @@ def _securo(connection: PluginConnection, secrets: dict[str, Any]) -> dict[str, 
 async def _call(
     session: AsyncSession, connection: PluginConnection, method: str, params: dict[str, Any], record: WorkspacePlugin | None = None
 ) -> tuple[Any, dict[str, Any]]:
-    """Call the connection's plugin; returns the result and the opened secrets."""
+    """Call the connection's plugin; returns the result and the opened secrets.
+
+    A plugin's error message never carries one of its secrets back out: any
+    secret value in it is masked before it is stored or shown.
+    """
     if record is None:
         record, _ = await _installed(session, connection.workspace_id, connection.plugin_id)
     try:
@@ -204,17 +209,57 @@ async def _call(
     except vault.SealBroken as exc:
         raise PluginConnectionError("its secrets can't be read anymore; set it up again") from exc
     plugin_secrets = {k: v for k, v in secrets.items() if not k.startswith("__securo_")}
-    async with runner.RunnerClient() as client:
-        result = await client.call(
-            connection.plugin_id,
-            method,
-            params,
-            secrets=plugin_secrets,
-            config=dict(connection.config or {}),
-            securo=_securo(connection, secrets),
-            commit=record.commit,
-        )
+
+    async def run() -> Any:
+        async with runner.RunnerClient() as client:
+            return await client.call(
+                connection.plugin_id,
+                method,
+                params,
+                secrets=plugin_secrets,
+                config=dict(connection.config or {}),
+                securo=_securo(connection, secrets),
+                commit=record.commit,
+            )
+
+    try:
+        try:
+            result = await run()
+        except runner.RunnerRefused as exc:
+            # The runner lost this commit (a new volume, a race with a removal):
+            # put it back from the catalog when the catalog still pins it, once.
+            if exc.status != 404 or not await _reinstall(record):
+                raise
+            result = await run()
+    except runner.PluginCallFailed as exc:
+        raise runner.PluginCallFailed(exc.kind, mask(exc.message, secrets)) from None
     return result, secrets
+
+
+def mask(message: str, secrets: dict[str, Any]) -> str:
+    """`message` without any of the secret values (or NUL bytes, which Postgres refuses)."""
+    for value in sorted((str(v) for v in secrets.values() if v), key=len, reverse=True):
+        if len(value) >= 4:
+            message = message.replace(value, "***")
+    return message.replace("\x00", "")
+
+
+async def _reinstall(record: WorkspacePlugin) -> bool:
+    from app.plugins import index, service
+
+    if not record.manifest:
+        return False
+    try:
+        async with index.http_client() as http:
+            entry = next((e for e in await index.fetch_index(http) if e.id == record.plugin_id), None)
+        if entry is None or entry.commit != record.commit:
+            return False  # the catalog moved on: the owner has to update
+        await service.install_on_runner(entry, parse_manifest(record.manifest))
+        logger.info("Reinstalled %s at %s on the plugin runner", record.plugin_id, record.commit)
+        return True
+    except (index.PluginIndexError, runner.RunnerUnavailable, runner.RunnerRefused) as exc:
+        logger.warning("Couldn't reinstall %s on the plugin runner: %s", record.plugin_id, exc)
+        return False
 
 
 async def authorize_url(
@@ -270,30 +315,54 @@ def _keep(connection: PluginConnection, result: Any, secrets: dict[str, Any]) ->
 
 
 async def sync(session: AsyncSession, connection: PluginConnection) -> PluginConnection:
-    """Run the plugin's `sync` once and record how it went."""
-    params = {
-        "state": dict(connection.state or {}),
-        "last_sync_at": connection.last_sync_at.isoformat() if connection.last_sync_at else None,
-    }
+    """Run the plugin's `sync` once and record how it went.
+
+    One sync per connection at a time (the schedule, "sync now" and the first
+    sync can meet): a second one returns the connection as it is.
+    """
+    lock = f"plugin-sync:{connection.id}"
+    if not await _acquire(lock):
+        return connection
     try:
-        result, secrets = await _call(session, connection, "sync", params)
-    except runner.PluginCallFailed as exc:
-        _failed(connection, f"{exc.kind}: {exc.message}", needs_auth=exc.kind in ("NeedsAuth", "AuthError"))
-    except (runner.RunnerUnavailable, runner.RunnerRefused, PluginConnectionError) as exc:
-        _failed(connection, str(exc), needs_auth=False)
-    else:
-        _keep(connection, result, secrets)
-        connection.status = "active"
-        connection.last_error = None
-        connection.failures = 0
-        connection.last_sync_at = _now()
-    await session.commit()
-    return connection
+        params = {
+            "state": dict(connection.state or {}),
+            "last_sync_at": connection.last_sync_at.isoformat() if connection.last_sync_at else None,
+        }
+        try:
+            result, secrets = await _call(session, connection, "sync", params)
+        except runner.PluginCallFailed as exc:
+            _failed(connection, f"{exc.kind}: {exc.message}", needs_auth=exc.kind in ("NeedsAuth", "AuthError"))
+        except (runner.RunnerUnavailable, runner.RunnerRefused, PluginConnectionError) as exc:
+            _failed(connection, str(exc), needs_auth=False)
+        else:
+            _keep(connection, result, secrets)
+            connection.status = "active"
+            connection.last_error = None
+            connection.failures = 0
+            connection.last_sync_at = _now()
+        await session.commit()
+        return connection
+    finally:
+        await _release(lock)
+
+
+#: Longest a sync can hold its lock, should the process die mid-sync.
+_LOCK_SECONDS = 15 * 60
+
+
+async def _acquire(key: str) -> bool:
+    redis = await redis_store.get_redis()
+    return bool(await redis.set(key, "1", nx=True, ex=_LOCK_SECONDS))
+
+
+async def _release(key: str) -> None:
+    redis = await redis_store.get_redis()
+    await redis.delete(key)
 
 
 def _failed(connection: PluginConnection, message: str, *, needs_auth: bool) -> None:
     connection.status = "needs_auth" if needs_auth else "error"
-    connection.last_error = message[:500]
+    connection.last_error = message.replace("\x00", "")[:500]
     connection.failures = (connection.failures or 0) + 1
     # Counts as an attempt, so the schedule backs off instead of retrying at once.
     connection.last_sync_at = _now()

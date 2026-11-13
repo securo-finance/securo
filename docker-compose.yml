@@ -240,6 +240,11 @@ services:
     cap_drop: [ALL]
     cap_add: [SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
     security_opt: ["no-new-privileges:true"]
+    # An init reaps what killed plugin processes leave behind (the runner isn't PID 1).
+    init: true
+    # Caps for everything plugins start together (each call also has its own limits).
+    pids_limit: 512
+    mem_limit: ${PLUGINS_RUNNER_MEMORY:-2g}
     restart: unless-stopped
 
   # The plugins' only way out: a CONNECT proxy that checks each plugin's signed

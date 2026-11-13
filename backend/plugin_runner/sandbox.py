@@ -32,6 +32,8 @@ class Limits:
     timeout: int
     memory_mb: int
     open_files: int = 256
+    processes: int = 128
+    """Per user: also stops a fork bomb from starving the container."""
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,9 @@ def _prepare(limits: Limits, uid: int | None):
         (resource.RLIMIT_NOFILE, (limits.open_files, limits.open_files)),
         (resource.RLIMIT_CORE, (0, 0)),
     ]
+    if uid is not None:
+        # Counted per user, so only for a plugin's own user (never the runner's or a developer's).
+        wanted.append((resource.RLIMIT_NPROC, (limits.processes, limits.processes)))
 
     def apply() -> None:  # pragma: no cover - runs in the child
         if uid is not None:
@@ -135,6 +140,33 @@ async def _read(pipe: asyncio.StreamReader | None, limit: int, *, strict: bool) 
             continue  # keep draining, so the plugin isn't stuck on a full pipe
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+def kill_user(uid: int) -> int:
+    """Kill every process of a plugin's user, including any that left the call's group.
+
+    Only inside the container (as root), and never for root itself.
+    """
+    if not isolated() or uid == 0 or not os.path.isdir("/proc"):
+        return 0
+    killed = 0
+    for _ in range(3):  # a process may fork while the first pass runs
+        found = 0
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/status") as status:
+                    line = next(row for row in status if row.startswith("Uid:"))
+                if int(line.split()[1]) == uid:
+                    os.kill(int(entry), signal.SIGKILL)
+                    found += 1
+            except (OSError, StopIteration, ValueError):
+                continue
+        killed += found
+        if not found:
+            break
+    return killed
 
 
 def _kill(pid: int) -> None:

@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import stat
 import tarfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -279,7 +280,7 @@ async def test_install_records_the_plugin(installed, tmp_path):
     assert plugin.commit == COMMIT
     assert plugin.hosts == ["api.example.com:443"]
     assert plugin.uid == 20000
-    assert (tmp_path / "data" / "plugins" / "acme__echo" / COMMIT / "echo_plugin.py").is_file()
+    assert (tmp_path / "data" / "plugins" / "acme__echo" / "commits" / COMMIT / "echo_plugin.py").is_file()
 
 
 async def test_install_refuses_a_wrong_checksum_and_bad_metadata(store):
@@ -299,14 +300,51 @@ async def test_install_refuses_a_wrong_checksum_and_bad_metadata(store):
     assert store.installed() == []
 
 
-async def test_update_replaces_the_commit_and_keeps_the_user(installed, tmp_path):
+async def test_commits_live_side_by_side_under_one_user(installed, tmp_path):
+    """Each workspace runs the commit its owner agreed to, so an update keeps the other one."""
     archive = tarball({"echo_plugin.py": PLUGIN_SOURCE + "\n# v2\n"})
     await installed.install(request(archive, commit="b" * 40, hosts=[]), archive)
-    plugin = installed.get("acme/echo")
-    assert (plugin.commit, plugin.uid, plugin.hosts) == ("b" * 40, 20000, [])
+    old, new = installed.get("acme/echo", COMMIT), installed.get("acme/echo", "b" * 40)
+    assert (old.uid, new.uid) == (20000, 20000)
+    assert (old.hosts, new.hosts) == (["api.example.com:443"], [])
+    assert installed.get("acme/echo").commit == "b" * 40  # the latest, when no commit is named
+    commits = tmp_path / "data" / "plugins" / "acme__echo" / "commits"
+    assert sorted(p.name for p in commits.iterdir()) == [COMMIT, "b" * 40]
+    assert await installed.call("acme/echo", "later", {}, commit=COMMIT) == "async ok"
+
+    await installed.remove("acme/echo", COMMIT)
+    assert [p.commit for p in installed.installed()] == ["b" * 40]
+    assert not (commits / COMMIT).exists()
+    with pytest.raises(StoreError):
+        await installed.call("acme/echo", "later", {}, commit=COMMIT)
+
+
+async def test_a_swapped_home_folder_is_refused(installed, tmp_path):
+    """A plugin owns its home only; a link put in its place is never followed."""
+    home = tmp_path / "data" / "plugins" / "acme__echo" / "home"
+    home.rmdir()
+    home.symlink_to(tmp_path / "data")
+    with pytest.raises(StoreError, match="tampered"):
+        await installed.call("acme/echo", "later", {})
+
+
+async def test_a_registry_user_below_the_plugin_range_is_refused(installed, tmp_path):
+    registry_path = tmp_path / "data" / "registry.json"
+    registry = json.loads(registry_path.read_text())
+    registry["plugins"]["acme/echo"]["uid"] = 0
+    registry_path.write_text(json.dumps(registry))
+    with pytest.raises(StoreError, match="invalid user"):
+        await installed.call("acme/echo", "later", {})
+
+
+async def test_runner_folders_are_closed_to_plugins(installed, tmp_path):
     base = tmp_path / "data" / "plugins" / "acme__echo"
-    assert not (base / COMMIT).exists()
-    assert (base / ("b" * 40)).is_dir()
+    assert stat.S_IMODE((tmp_path / "data").stat().st_mode) == 0o711
+    assert stat.S_IMODE(base.stat().st_mode) == 0o711
+    assert stat.S_IMODE((base / "home").stat().st_mode) == 0o700
+    assert stat.S_IMODE((tmp_path / "data" / "registry.json").stat().st_mode) == 0o600
+    source = base / "commits" / COMMIT / "echo_plugin.py"
+    assert stat.S_IMODE(source.stat().st_mode) == 0o644
 
 
 async def test_call_passes_params_secrets_and_config(installed):
@@ -367,7 +405,7 @@ async def test_lockfile_is_installed_with_hashes_and_wheels_only(store, tmp_path
 
     async def fake_run(argv, **kwargs):
         calls.append((argv, kwargs))
-        Path(argv[argv.index("--target") + 1]).mkdir(parents=True)
+        Path(argv[argv.index("--target") + 1]).mkdir(parents=True, exist_ok=True)
         return sandbox.Result(0, b"", b"")
 
     with patch("plugin_runner.store.sandbox.run", fake_run):
@@ -377,7 +415,7 @@ async def test_lockfile_is_installed_with_hashes_and_wheels_only(store, tmp_path
         assert flag in argv
     granted = egress_token.verify(SECRET, kwargs["env"]["HTTPS_PROXY"].removeprefix("http://plugin:").split("@")[0])
     assert granted.hosts == {"pypi.org:443", "files.pythonhosted.org:443"}
-    assert kwargs["uid"] == 20000
+    assert kwargs["uid"] == 19999  # the installer user, never the plugin's
 
 
 async def test_a_lockfile_with_nothing_to_install_skips_pip(store):

@@ -23,6 +23,7 @@ import ipaddress
 import logging
 import os
 import socket
+import time
 from collections.abc import Awaitable, Callable
 
 from plugin_runner.egress_token import EgressPass, InvalidPass, verify
@@ -42,10 +43,16 @@ async def resolve(host: str, port: int) -> list[str]:
     return list(dict.fromkeys(str(info[4][0]) for info in infos))
 
 
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+
+
 def is_public(address: str) -> bool:
     ip = ipaddress.ip_address(address)
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        elif ip in _NAT64:  # a NAT64 address stands for an IPv4 one, which may be private
+            ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
     return ip.is_global and not ip.is_multicast
 
 
@@ -67,18 +74,23 @@ class EgressProxy:
             upstream = await self._open(head, writer)
             if upstream is None:
                 return
-            up_reader, up_writer = upstream
+            up_reader, up_writer, expires = upstream
             writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             await writer.drain()
-            await asyncio.gather(
-                _pipe(reader, up_writer), _pipe(up_reader, writer), return_exceptions=True
-            )
+            # A tunnel never outlives its pass: the call it was issued for is over by then.
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(_pipe(reader, up_writer), _pipe(up_reader, writer), return_exceptions=True),
+                    max(expires - time.time(), 0),
+                )
+            except TimeoutError:
+                up_writer.close()
         finally:
             writer.close()
 
     async def _open(
         self, head: bytes, writer: asyncio.StreamWriter
-    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter] | None:
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter, float] | None:
         lines = head.decode("latin-1").split("\r\n")
         parts = lines[0].split(" ")
         if len(parts) != 3 or parts[0] != "CONNECT":
@@ -117,7 +129,7 @@ class EgressProxy:
             await _refuse(writer, 502, "Could not connect")
             return None
         logger.info("egress allowed: %s -> %s:%s", granted.plugin, host, port)
-        return upstream
+        return upstream[0], upstream[1], float(granted.expires)
 
     def _pass(self, header_lines: list[str]) -> EgressPass | None:
         for line in header_lines:

@@ -75,7 +75,9 @@ def verify(secret: str, token: str, *, now: float | None = None) -> EgressPass:
     if not secret:
         raise InvalidPass("the egress secret is not set")
     body, _, signature = token.partition(".")
-    if not body or not signature or not hmac.compare_digest(signature, _sign(secret, body)):
+    if not body.isascii() or not signature.isascii():
+        raise InvalidPass("malformed pass")
+    if not body or not signature or not hmac.compare_digest(signature.encode(), _sign(secret, body).encode()):
         raise InvalidPass("bad signature")
     try:
         payload = json.loads(_unb64(body))

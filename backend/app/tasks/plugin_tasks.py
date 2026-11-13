@@ -39,9 +39,18 @@ async def sync_due(session: AsyncSession) -> int:
         )
     )
     ran = 0
-    for connection in [c for c in rows.all() if connections.due(c)]:
-        await connections.sync(session, connection)
-        ran += 1
+    due = [c.id for c in rows.all() if connections.due(c)]
+    for connection_id in due:
+        # One connection failing (or removed meanwhile) never stops the others.
+        try:
+            connection = await session.get(PluginConnection, connection_id, populate_existing=True)
+            if connection is None or not connections.due(connection):
+                continue
+            await connections.sync(session, connection)
+            ran += 1
+        except Exception:
+            logger.exception("Plugin connection %s failed to sync", connection_id)
+            await session.rollback()
     return ran
 
 

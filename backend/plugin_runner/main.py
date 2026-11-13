@@ -18,12 +18,12 @@ import json
 import logging
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, ValidationError
 
 from plugin_runner import sandbox
 from plugin_runner.config import RunnerSettings
-from plugin_runner.store import InstallRequest, NotInstalled, OtherCommit, PluginFailed, Store, StoreError
+from plugin_runner.store import InstallRequest, NotInstalled, PluginFailed, Store, StoreError
 
 logger = logging.getLogger("plugin_runner")
 
@@ -43,7 +43,7 @@ class CallRequest(BaseModel):
     config: dict[str, Any] = {}
     securo: dict[str, Any] = {}
     commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
-    """The commit the caller expects; the call is refused (409) if another is installed."""
+    """The commit the caller agreed to; 404 if that commit isn't installed. Latest when omitted."""
     timeout: int | None = Field(default=None, ge=1)
 
 
@@ -105,16 +105,18 @@ def create_app(settings: RunnerSettings | None = None) -> FastAPI:
             )
         except NotInstalled as exc:
             raise HTTPException(404, str(exc)) from exc
-        except OtherCommit as exc:
-            raise HTTPException(409, str(exc)) from exc
+        except StoreError as exc:
+            raise HTTPException(422, str(exc)) from exc
         except PluginFailed as exc:
             return {"ok": False, "error": {"type": exc.kind, "message": exc.message}}
         return {"ok": True, "result": result}
 
     @app.delete("/plugins/{owner}/{name}", dependencies=guarded, status_code=204)
-    async def remove(owner: str, name: str) -> None:
+    async def remove(
+        owner: str, name: str, commit: Annotated[str | None, Query(pattern=r"^[0-9a-f]{40}$")] = None
+    ) -> None:
         try:
-            await store.remove(f"{owner}/{name}")
+            await store.remove(f"{owner}/{name}", commit)
         except NotInstalled as exc:
             raise HTTPException(404, str(exc)) from exc
 

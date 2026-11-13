@@ -48,6 +48,8 @@ class Plugin:
     def sync(self, params, context):
         if context.config.get("account") == "broken":
             raise RuntimeError("the service is down")
+        if context.config.get("account") == "leaky":
+            raise RuntimeError("GET https://api.ledger.example/v1?key=" + context.secrets["api_key"] + " failed")
         if context.config.get("account") == "expired":
             raise type("NeedsAuth", (Exception,), {})("sign in again")
         seen = params["state"].get("runs", 0)
@@ -195,6 +197,25 @@ def states(monkeypatch) -> dict:
     monkeypatch.setattr(oauth_state, "store_state", put)
     monkeypatch.setattr(oauth_state, "consume_state", take)
     return store
+
+
+@pytest.fixture(autouse=True)
+def sync_locks(monkeypatch) -> set:
+    """The per-connection sync lock, in memory instead of Redis."""
+    held: set[str] = set()
+
+    async def acquire(key):
+        if key in held:
+            return False
+        held.add(key)
+        return True
+
+    async def release(key):
+        held.discard(key)
+
+    monkeypatch.setattr(connections, "_acquire", acquire)
+    monkeypatch.setattr(connections, "_release", release)
+    return held
 
 
 @pytest.fixture
@@ -377,7 +398,7 @@ async def test_a_workspace_on_an_older_version_is_refused_by_the_runner(
     record.commit = V2  # as if this workspace had agreed to another version
     await session.commit()
     await connections.sync(session, connection)
-    assert connection.status == "error" and "another version" in (connection.last_error or "")
+    assert connection.status == "error" and "not installed" in (connection.last_error or "")
 
 
 @pytest.mark.asyncio
@@ -588,3 +609,143 @@ def test_scoped_tokens_reach_invoices():
     assert "invoices:write" in ALL_SCOPES
     assert required_scope("POST", "/api/invoices/{invoice_id}/payments") == "invoices:write"
     assert required_scope("GET", "/api/invoice-schedules") == "invoices:read"
+
+
+# --- Hardening found in review ------------------------------------------------------
+
+
+async def _runner_commits(plugin_runner) -> list[str]:
+    async with plugin_runner() as client:
+        return sorted(p.commit for p in await client.installed())
+
+
+async def _second_workspace(session, user_id) -> uuid.UUID:
+    from app.models.workspace import Workspace, WorkspaceMember
+
+    other = uuid.uuid4()
+    session.add(Workspace(id=other, name="Other", kind="personal", default_currency="USD", locale="en"))
+    await session.flush()
+    session.add(WorkspaceMember(id=uuid.uuid4(), workspace_id=other, user_id=user_id, role="owner"))
+    await session.commit()
+    return other
+
+
+@pytest.mark.asyncio
+async def test_a_stale_preview_installs_no_code(session: AsyncSession, ids, catalog, plugin_runner):
+    from app.plugins.sync import SyncPlanChanged
+
+    workspace_id, user_id = ids
+    plan = await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
+    with pytest.raises(SyncPlanChanged):
+        await service.apply(
+            session, workspace_id, user_id, PLUGIN, "install",
+            commit=plan.commit, token="0" * 64, lang="en", is_owner=True,
+        )
+    assert await _runner_commits(plugin_runner) == []
+
+
+@pytest.mark.asyncio
+async def test_an_update_keeps_the_old_commit_while_another_workspace_runs_it(
+    session: AsyncSession, ids, catalog, plugin_runner
+):
+    workspace_id, user_id = ids
+    other = await _second_workspace(session, user_id)
+    await _apply(session, workspace_id, user_id)
+    await _apply(session, other, user_id)
+    kept, _ = await _connect(session, other, user_id)
+
+    catalog.publish(V2, lambda m: m.update(version="1.1.0"))
+    await _apply(session, workspace_id, user_id, "update")
+    assert await _runner_commits(plugin_runner) == [V1, V2]
+    await connections.sync(session, kept)
+    assert kept.status == "active"  # the other workspace still runs what its owner agreed to
+
+    await _apply(session, other, user_id, "update")
+    assert await _runner_commits(plugin_runner) == [V2]
+
+
+@pytest.mark.asyncio
+async def test_a_lost_commit_is_reinstalled_from_the_catalog(session: AsyncSession, ids, catalog, plugin_runner):
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    connection, _ = await _connect(session, workspace_id, user_id)
+    async with plugin_runner() as client:
+        await client.remove(PLUGIN)  # as if the runner's volume were new
+    await connections.sync(session, connection)
+    assert connection.status == "active"
+    assert await _runner_commits(plugin_runner) == [V1]
+
+
+@pytest.mark.asyncio
+async def test_an_update_to_a_version_without_code_drops_connections(
+    session: AsyncSession, ids, catalog, plugin_runner
+):
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    connection, _ = await _connect(session, workspace_id, user_id)
+    token_id = connection.access_token_id
+
+    def data_only(m):
+        for key in ("runtime", "network", "api_scopes"):
+            m.pop(key)
+        m["version"] = "2.0.0"
+        m["contributes"] = {"rules": [{
+            "key": "r", "name": "R", "conditions_op": "or",
+            "conditions": [{"field": "description", "op": "contains", "value": "LEDGER"}],
+            "actions": [{"op": "ignore"}],
+        }]}
+
+    catalog.publish(V2, data_only)
+    await _apply(session, workspace_id, user_id, "update")
+    assert await session.scalar(select(PluginConnection.id)) is None
+    token = await session.get(AccessToken, token_id, populate_existing=True)
+    assert token is not None and token.revoked_at is not None
+    assert await _runner_commits(plugin_runner) == []
+
+
+@pytest.mark.asyncio
+async def test_secrets_never_come_back_in_error_messages(session: AsyncSession, ids, catalog, plugin_runner):
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    connection, _ = await _connect(session, workspace_id, user_id, api_key="sk_live_SECRET", account="leaky")
+    await connections.sync(session, connection)
+    assert connection.status == "error"
+    assert "sk_live_SECRET" not in (connection.last_error or "")
+    assert "key=***" in (connection.last_error or "")
+
+
+@pytest.mark.asyncio
+async def test_a_connection_syncs_once_at_a_time(session: AsyncSession, ids, catalog, plugin_runner, sync_locks):
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    connection, _ = await _connect(session, workspace_id, user_id)
+    sync_locks.add(f"plugin-sync:{connection.id}")  # another sync is running
+    await connections.sync(session, connection)
+    assert connection.state == {} and connection.last_sync_at is None
+    sync_locks.clear()
+    await connections.sync(session, connection)
+    assert connection.state["runs"] == 1
+
+
+@pytest.mark.asyncio
+async def test_one_failing_connection_does_not_stop_the_schedule(
+    session: AsyncSession, ids, catalog, plugin_runner, monkeypatch
+):
+    from app.tasks.plugin_tasks import sync_due
+
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    first, _ = await _connect(session, workspace_id, user_id)
+    second, _ = await _connect(session, workspace_id, user_id)
+    first_id, second_id = first.id, second.id
+    real_sync = connections.sync
+
+    async def flaky(session_, connection):
+        if connection.id == first_id:
+            raise RuntimeError("database hiccup")
+        return await real_sync(session_, connection)
+
+    monkeypatch.setattr(connections, "sync", flaky)
+    assert await sync_due(session) == 1
+    refreshed = await session.get(PluginConnection, second_id, populate_existing=True)
+    assert refreshed is not None and refreshed.state["runs"] == 1

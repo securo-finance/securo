@@ -1,23 +1,30 @@
 """Installed plugins on the runner's volume, and calling them.
 
-    <data dir>/registry.json            what is installed, at which commit, as which user
-    <data dir>/plugins/<owner>__<name>/
-        <commit>/                      the plugin's source, as released
-        <commit>/deps/                 the wheels its lockfile pins
-        home/                          the only place the plugin may write
+    <data dir>/registry.json                 root only: what is installed, as which user
+    <data dir>/plugins/                      root, 0711
+        <owner>__<name>/                     root, 0711: a plugin passes through, can't list or write
+            commits/<commit>/                root, read-only to the plugin: its source and deps/
+            home/                            the plugin's own (0700): the only place it may write
+            .install/<random>/               root, 0711: where a commit is put together
+
+Nothing the plugin can write is ever walked, chmod-ed or chown-ed by the
+runner, which runs as root: the plugin owns only `home/`, created once and
+checked with lstat before every call. Its code and wheels belong to root, so
+a plugin can't rewrite them after the checksum and the owner's consent.
 
 The backend hands over the archive it downloaded and checked against the
 catalog; the runner checks the sha256 again, unpacks it without following
 links or leaving the target, and installs the lockfile with pip: hashes
 required, wheels only (no sdist, so nothing of the plugin's runs while
-installing), no dependencies beyond the list, through the egress proxy with a
-pass for the package index only. The new commit replaces the old one only
-once all of that worked.
+installing), no dependencies beyond the list, as a separate installer user,
+through the egress proxy with a pass for the package index only.
+
+Several commits of a plugin can be installed at once: each workspace runs the
+commit its owner agreed to, and a commit is removed when no workspace uses it.
 """
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
 import io
 import json
@@ -25,11 +32,12 @@ import logging
 import os
 import re
 import shutil
+import stat
 import sys
 import tarfile
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
@@ -53,10 +61,6 @@ class StoreError(Exception):
 
 class NotInstalled(StoreError):
     pass
-
-
-class OtherCommit(StoreError):
-    """Another version of the plugin is installed than the caller agreed to."""
 
 
 class PluginFailed(Exception):
@@ -92,6 +96,15 @@ def _slug(plugin_id: str) -> str:
     return plugin_id.replace("/", "__")
 
 
+def _mkdir_root(path: Path, mode: int = 0o711) -> None:
+    """A folder owned by the runner, never by a plugin."""
+    path.mkdir(parents=True, exist_ok=True)
+    info = os.lstat(path)
+    if not stat.S_ISDIR(info.st_mode) or (sandbox.isolated() and info.st_uid != 0):
+        raise StoreError(f"{path.name} is not a folder of the runner")
+    os.chmod(path, mode)
+
+
 class Store:
     def __init__(self, settings: RunnerSettings):
         self.settings = settings
@@ -100,51 +113,81 @@ class Store:
         self.registry_path = self.root / "registry.json"
         self._calls = asyncio.Semaphore(settings.max_calls)
         self._locks: dict[str, asyncio.Lock] = {}
+        self._call_locks: dict[str, asyncio.Lock] = {}
         self._registry_lock = asyncio.Lock()
+
+    @property
+    def installer_uid(self) -> int:
+        """Runs pip; no plugin code ever runs as this user."""
+        return self.settings.first_uid - 1
 
     # Registry ------------------------------------------------------------
 
     def _read_registry(self) -> dict[str, Any]:
         try:
-            return json.loads(self.registry_path.read_text())
+            registry = json.loads(self.registry_path.read_text())
         except FileNotFoundError:
-            return {"next_uid": self.settings.first_uid, "plugins": {}}
+            registry = {}
+        registry.setdefault("next_uid", self.settings.first_uid)
+        registry.setdefault("plugins", {})
+        return registry
 
     def _write_registry(self, registry: dict[str, Any]) -> None:
-        self._prepare_root()
+        _mkdir_root(self.root)
         tmp = self.registry_path.with_suffix(f".{uuid.uuid4().hex}.tmp")
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as out:
             out.write(json.dumps(registry, indent=2, sort_keys=True))
         os.replace(tmp, self.registry_path)
 
-    def _prepare_root(self) -> None:
-        """Plugins may pass through the data folders to reach their own, but not list or read them."""
-        for folder in (self.root, self.plugins_dir):
-            folder.mkdir(parents=True, exist_ok=True)
-            os.chmod(folder, 0o711)
-
-    def _plugin_dir(self, plugin_id: str, uid: int) -> Path:
-        """The plugin's folder: its own, and closed to every other plugin."""
-        self._prepare_root()
-        base = self.plugins_dir / _slug(plugin_id)
-        base.mkdir(exist_ok=True)
-        os.chmod(base, 0o700)
-        if sandbox.isolated():
-            os.chown(base, uid, uid)
-        return base
+    def _entries(self, plugin_id: str, entry: dict[str, Any]) -> list[Installed]:
+        uid = int(entry["uid"])
+        if uid < self.settings.first_uid:
+            raise StoreError(f"{plugin_id} has an invalid user in the registry")
+        return [
+            Installed(plugin_id, commit, c["entrypoint"], list(c["hosts"]), uid, float(c["installed_at"]))
+            for commit, c in entry.get("commits", {}).items()
+        ]
 
     def installed(self) -> list[Installed]:
-        return [Installed(**entry) for entry in self._read_registry()["plugins"].values()]
+        registry = self._read_registry()
+        return [i for pid, entry in registry["plugins"].items() for i in self._entries(pid, entry)]
 
-    def get(self, plugin_id: str) -> Installed:
+    def get(self, plugin_id: str, commit: str | None = None) -> Installed:
         entry = self._read_registry()["plugins"].get(plugin_id)
-        if entry is None:
-            raise NotInstalled(f"{plugin_id} is not installed")
-        return Installed(**entry)
+        found = self._entries(plugin_id, entry) if entry else []
+        if commit is not None:
+            found = [i for i in found if i.commit == commit]
+        if not found:
+            at = f" at {commit[:12]}" if commit else ""
+            raise NotInstalled(f"{plugin_id} is not installed{at}")
+        return max(found, key=lambda i: i.installed_at)
 
     def _lock(self, plugin_id: str) -> asyncio.Lock:
         return self._locks.setdefault(plugin_id, asyncio.Lock())
+
+    # Folders --------------------------------------------------------------
+
+    def _base(self, plugin_id: str) -> Path:
+        _mkdir_root(self.root)
+        _mkdir_root(self.plugins_dir)
+        base = self.plugins_dir / _slug(plugin_id)
+        _mkdir_root(base)
+        _mkdir_root(base / "commits")
+        return base
+
+    def _home(self, base: Path, uid: int) -> Path:
+        """The plugin's only writable folder. Created once; refused if it isn't a plain folder of its own."""
+        home = base / "home"
+        if not os.path.lexists(home):
+            # The parent is root's, so nothing can swap `home` between these calls.
+            os.mkdir(home, 0o700)
+            if sandbox.isolated():
+                os.chown(home, uid, uid, follow_symlinks=False)
+        info = os.lstat(home)
+        if not stat.S_ISDIR(info.st_mode) or (sandbox.isolated() and info.st_uid != uid):
+            raise StoreError("the plugin's home folder was tampered with")
+        return home
 
     # Install and remove ---------------------------------------------------
 
@@ -157,50 +200,62 @@ class Store:
 
         async with self._lock(request.plugin_id):
             uid = await self._uid(request.plugin_id)
-            base = self._plugin_dir(request.plugin_id, uid)
-            staging = base / f".staging-{uuid.uuid4().hex}"
+            base = self._base(request.plugin_id)
+            _mkdir_root(base / ".install")
+            staging = base / ".install" / uuid.uuid4().hex
             try:
-                staging.mkdir(parents=True)
+                _mkdir_root(staging, 0o755)
                 await asyncio.to_thread(unpack, archive, staging)
                 if request.lockfile:
                     lockfile = _inside(staging, request.lockfile)
-                    if not lockfile.is_file():
+                    if not lockfile.is_file() or lockfile.is_symlink():
                         raise StoreError(f"the lockfile {request.lockfile} is not in the archive")
-                    home = self._home(base, uid)
-                    _own(staging, uid)
                     if _has_requirements(lockfile):
-                        await self._pip(lockfile, staging / "deps", home, uid, request.plugin_id)
-                _own(staging, uid)
-                target = base / request.commit
-                if target.exists():
+                        await self._pip(lockfile, staging, request.plugin_id)
+                await asyncio.to_thread(_seal, staging)
+                target = base / "commits" / request.commit
+                if os.path.lexists(target):
                     await asyncio.to_thread(shutil.rmtree, target)
                 staging.rename(target)
             finally:
-                if staging.exists():
+                if os.path.lexists(staging):
                     await asyncio.to_thread(shutil.rmtree, staging, True)
+            self._home(base, uid)
 
-            installed = Installed(
-                request.plugin_id, request.commit, request.entrypoint, hosts, uid, time.time()
-            )
+            installed = Installed(request.plugin_id, request.commit, request.entrypoint, hosts, uid, time.time())
             async with self._registry_lock:
                 registry = self._read_registry()
-                previous = registry["plugins"].get(request.plugin_id)
-                registry["plugins"][request.plugin_id] = asdict(installed)
+                entry = registry["plugins"].setdefault(request.plugin_id, {"uid": uid, "commits": {}})
+                entry["uid"] = uid
+                entry.setdefault("commits", {})[request.commit] = {
+                    "entrypoint": request.entrypoint,
+                    "hosts": hosts,
+                    "installed_at": installed.installed_at,
+                }
                 self._write_registry(registry)
-            if previous and previous["commit"] != request.commit:
-                await asyncio.to_thread(shutil.rmtree, base / previous["commit"], True)
             logger.info("installed %s at %s", request.plugin_id, request.commit)
             return installed
 
-    async def remove(self, plugin_id: str) -> None:
-        async with self._lock(plugin_id):
+    async def remove(self, plugin_id: str, commit: str | None = None) -> None:
+        """One commit, or with none given the plugin and its home."""
+        async with self._lock(plugin_id), self._call_lock(plugin_id):
             async with self._registry_lock:
                 registry = self._read_registry()
-                if registry["plugins"].pop(plugin_id, None) is None:
+                entry = registry["plugins"].get(plugin_id)
+                commits = entry.get("commits", {}) if entry else {}
+                if not entry or (commit is not None and commit not in commits):
                     raise NotInstalled(f"{plugin_id} is not installed")
+                if commit is not None:
+                    commits.pop(commit)
+                gone = commit is None or not commits
+                if gone:
+                    registry["plugins"].pop(plugin_id)
                 self._write_registry(registry)
-            await asyncio.to_thread(shutil.rmtree, self.plugins_dir / _slug(plugin_id), True)
-            logger.info("removed %s", plugin_id)
+            base = self.plugins_dir / _slug(plugin_id)
+            # rmtree unlinks symlinks instead of following them, so `home` is safe to drop.
+            target = base if gone else base / "commits" / str(commit)
+            await asyncio.to_thread(shutil.rmtree, target, True)
+            logger.info("removed %s%s", plugin_id, "" if gone else f" at {commit}")
 
     async def _uid(self, plugin_id: str) -> int:
         """The plugin's own user, kept for good: a reinstall gets the same one."""
@@ -208,41 +263,48 @@ class Store:
             registry = self._read_registry()
             uids = registry.setdefault("uids", {})
             if plugin_id not in uids:
-                uids[plugin_id] = registry["next_uid"]
-                registry["next_uid"] += 1
+                uids[plugin_id] = max(int(registry["next_uid"]), self.settings.first_uid)
+                registry["next_uid"] = uids[plugin_id] + 1
                 self._write_registry(registry)
-            return uids[plugin_id]
+            return int(uids[plugin_id])
 
-    def _home(self, base: Path, uid: int) -> Path:
-        home = base / "home"
-        home.mkdir(exist_ok=True)
-        os.chmod(home, 0o700)
-        _own(home, uid)
-        return home
-
-    async def _pip(self, lockfile: Path, target: Path, home: Path, uid: int, plugin_id: str) -> None:
+    async def _pip(self, lockfile: Path, staging: Path, plugin_id: str) -> None:
+        """Wheels into `staging/deps`, written by the installer user, then handed to root."""
+        work = staging / ".pip"
+        deps = staging / "deps"
+        for folder in (work, deps):
+            os.mkdir(folder, 0o700)
+            if sandbox.isolated():
+                os.chown(folder, self.installer_uid, self.installer_uid, follow_symlinks=False)
         argv = [
             sys.executable, "-I", "-m", "pip", "install",
             "--isolated", "--no-input", "--disable-pip-version-check", "--no-cache-dir",
             "--require-hashes", "--only-binary=:all:", "--no-deps",
             "--index-url", self.settings.package_index,
-            "--target", str(target),
+            "--target", str(deps),
             "-r", str(lockfile),
         ]
-        env = self._env(home, plugin_id, list(self.settings.package_hosts), self.settings.install_timeout)
-        result = await sandbox.run(
-            argv,
-            cwd=str(lockfile.parent),
-            env=env,
-            limits=sandbox.Limits(timeout=self.settings.install_timeout, memory_mb=max(self.settings.memory_mb, 1024)),
-            uid=uid,
-        )
+        env = self._env(work, plugin_id, list(self.settings.package_hosts), self.settings.install_timeout)
+        try:
+            result = await sandbox.run(
+                argv,
+                cwd=str(work),
+                env=env,
+                limits=sandbox.Limits(timeout=self.settings.install_timeout, memory_mb=max(self.settings.memory_mb, 1024)),
+                uid=self.installer_uid,
+            )
+        finally:
+            sandbox.kill_user(self.installer_uid)
+        shutil.rmtree(work, True)
         if result.returncode != 0:
             tail = result.stderr.decode(errors="replace").strip().splitlines()[-5:]
             logger.warning("pip failed for %s: %s", plugin_id, "\n".join(tail))
             raise StoreError("installing the plugin's dependencies failed: " + (tail[-1] if tail else "pip error"))
 
     # Calls ------------------------------------------------------------------
+
+    def _call_lock(self, plugin_id: str) -> asyncio.Lock:
+        return self._call_locks.setdefault(plugin_id, asyncio.Lock())
 
     async def call(
         self,
@@ -256,20 +318,20 @@ class Store:
         commit: str | None = None,
         timeout: int | None = None,
     ) -> Any:
-        plugin = self.get(plugin_id)
-        if commit is not None and commit != plugin.commit:
-            raise OtherCommit(f"{plugin_id} is installed at another version ({plugin.commit[:12]})")
+        plugin = self.get(plugin_id, commit)
         timeout = min(timeout or self.settings.call_timeout, self.settings.call_timeout)
-        base = self._plugin_dir(plugin_id, plugin.uid)
-        home = self._home(base, plugin.uid)
         securo = securo or {}
         request = json.dumps(
             {"method": method, "params": params, "secrets": secrets or {}, "config": config or {}, "securo": securo}
         ).encode()
-        async with self._calls:
+        # One call of a plugin at a time: afterwards every process of its user
+        # is killed, so nothing it started outlives the call.
+        async with self._calls, self._call_lock(plugin_id):
+            base = self._base(plugin_id)
+            home = self._home(base, plugin.uid)
             try:
                 result = await sandbox.run(
-                    [sys.executable, "-I", "-S", HOST_SCRIPT, str(base / plugin.commit), plugin.entrypoint],
+                    [sys.executable, "-I", "-S", HOST_SCRIPT, str(base / "commits" / plugin.commit), plugin.entrypoint],
                     cwd=str(home),
                     env=self._env(home, plugin_id, plugin.hosts, timeout, api_url=securo.get("api_url")),
                     limits=sandbox.Limits(timeout=timeout, memory_mb=self.settings.memory_mb),
@@ -280,6 +342,8 @@ class Store:
                 raise PluginFailed("Timeout", str(exc)) from exc
             except sandbox.SandboxError as exc:
                 raise PluginFailed("SandboxError", str(exc)) from exc
+            finally:
+                sandbox.kill_user(plugin.uid)
         if result.stderr:
             logger.info("%s.%s: %s", plugin_id, method, result.stderr.decode(errors="replace")[-2000:])
         try:
@@ -346,14 +410,28 @@ def _inside(root: Path, relative: str) -> Path:
     return root.joinpath(*path.parts)
 
 
-def _own(path: Path, uid: int) -> None:
-    if not sandbox.isolated():
-        return
-    for dirpath, dirnames, filenames in os.walk(path):
-        os.chown(dirpath, uid, uid)
-        for name in dirnames + filenames:
-            with contextlib.suppress(FileNotFoundError):
-                os.lchown(os.path.join(dirpath, name), uid, uid)
+def _seal(folder: Path) -> None:
+    """Hand a staged commit to root, read-only for everyone else.
+
+    Only the installer user (pip) wrote in it, and no plugin process could
+    reach it; links are dropped rather than followed all the same.
+    """
+    for dirpath, dirnames, filenames in os.walk(folder, followlinks=False):
+        for name in list(dirnames) + filenames:
+            path = os.path.join(dirpath, name)
+            info = os.lstat(path)
+            if stat.S_ISLNK(info.st_mode) or not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+                os.unlink(path)
+                if name in dirnames:
+                    dirnames.remove(name)
+                continue
+            if sandbox.isolated():
+                os.lchown(path, 0, 0)
+            executable = stat.S_ISDIR(info.st_mode) or info.st_mode & 0o111
+            os.chmod(path, 0o755 if executable else 0o644)
+        if sandbox.isolated():
+            os.lchown(dirpath, 0, 0)
+        os.chmod(dirpath, 0o755)
 
 
 def unpack(archive: bytes, target: Path) -> None:

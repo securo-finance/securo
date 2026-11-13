@@ -220,76 +220,104 @@ async def apply(
     target_commit, manifest, checksum, entry = await _target(session, workspace_id, plugin_id, action)
     if target_commit != commit:
         raise PluginChanged
-    current = _installed_manifest((await installed_plugins(session, workspace_id)).get(plugin_id))
+    previous = (await installed_plugins(session, workspace_id)).get(plugin_id)
+    previous_commit = previous.commit if previous is not None else None
+    current = _installed_manifest(previous)
     has_code = bool((manifest and manifest.has_code) or (current and current.has_code))
     if has_code and not is_owner:
         raise PluginForbidden
-    if manifest is not None and manifest.has_code and entry is not None:
-        # Before anything changes here: if the runner can't take it, nothing does.
-        await _install_code(entry, manifest)
-    consent = await _consent(session, workspace_id, plugin_id, manifest)
-    # One plugin change per workspace at a time: two confirmations of the same
-    # first install would otherwise both find nothing to lock and both create.
-    # Taken after the catalog fetch, so no network wait holds it; the plan is
-    # worked out again under it, and the second one no longer matches its token.
-    await session.execute(select(Workspace.id).where(Workspace.id == workspace_id).with_for_update())
-    result = await sync.apply_sync(
-        session, workspace_id, user_id, plugin_id, manifest, token,
-        lang=lang, create_default_categories=True, fingerprint=checksum,
+    # The code goes on the runner before anything changes here, so check the
+    # confirmation first: a stale preview mustn't install anything.
+    preview = await sync.plan_sync(
+        session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True, fingerprint=checksum
     )
-    record = (await installed_plugins(session, workspace_id)).get(plugin_id)
-    if manifest is None or target_commit is None:  # removing
-        await connections.delete_all(session, workspace_id, plugin_id)
-        if record is not None:
-            await session.delete(record)
-    else:
-        if record is None:
-            record = WorkspacePlugin(workspace_id=workspace_id, plugin_id=plugin_id, installed_by=user_id)
-            session.add(record)
-        record.name, record.version, record.commit = manifest.name, manifest.version, target_commit
-        record.manifest = manifest.model_dump(mode="json") if manifest.has_code else None
-        if action == "update":
-            await connections.follow_manifest(session, workspace_id, manifest, lang=lang)
-    await session.commit()
-    if action == "remove" and has_code:
-        await _release_code(session, plugin_id)
+    if preview.token != token:
+        raise sync.SyncPlanChanged
+    installed_now = False
+    if manifest is not None and manifest.has_code and entry is not None:
+        # If the runner can't take it, nothing changes here.
+        installed_now = await _install_code(entry, manifest)
+    try:
+        consent = await _consent(session, workspace_id, plugin_id, manifest)
+        # One plugin change per workspace at a time: two confirmations of the same
+        # first install would otherwise both find nothing to lock and both create.
+        # Taken after the catalog fetch, so no network wait holds it; the plan is
+        # worked out again under it, and the second one no longer matches its token.
+        await session.execute(select(Workspace.id).where(Workspace.id == workspace_id).with_for_update())
+        result = await sync.apply_sync(
+            session, workspace_id, user_id, plugin_id, manifest, token,
+            lang=lang, create_default_categories=True, fingerprint=checksum,
+        )
+        record = (await installed_plugins(session, workspace_id)).get(plugin_id)
+        drops_code = current is not None and current.has_code and not (manifest and manifest.has_code)
+        if drops_code:
+            # A version without code (or removing): its connections and their tokens go too.
+            await connections.delete_all(session, workspace_id, plugin_id)
+        if manifest is None or target_commit is None:  # removing
+            if record is not None:
+                await session.delete(record)
+        else:
+            if record is None:
+                record = WorkspacePlugin(workspace_id=workspace_id, plugin_id=plugin_id, installed_by=user_id)
+                session.add(record)
+            record.name, record.version, record.commit = manifest.name, manifest.version, target_commit
+            record.manifest = manifest.model_dump(mode="json") if manifest.has_code else None
+            if action == "update" and manifest.has_code:
+                await connections.follow_manifest(session, workspace_id, manifest, lang=lang)
+        await session.commit()
+    except BaseException:
+        if installed_now and target_commit is not None:
+            await session.rollback()
+            await _release_code(session, plugin_id, target_commit)
+        raise
+    if current is not None and current.has_code and previous_commit and previous_commit != target_commit:
+        await _release_code(session, plugin_id, previous_commit)
     return PluginPlan(action, plugin_id, target_commit, result.plan, consent)
 
 
-async def _install_code(entry: index.IndexEntry, manifest: Manifest) -> None:
-    """Put the pinned commit on the runner, unless it is there already."""
+async def _install_code(entry: index.IndexEntry, manifest: Manifest) -> bool:
+    """Put the pinned commit on the runner; False when it was there already."""
     if not runner.configured():
         raise PluginUnavailable("plugins with code need the plugin runner (the `plugins` profile)")
-    assert manifest.runtime is not None
     try:
-        async with runner.RunnerClient() as client:
-            if any(p.id == entry.id and p.commit == entry.commit for p in await client.installed()):
-                return
-            async with index.http_client() as http:
-                archive, sha256 = await index.fetch_archive(http, entry)
-            await client.install(
-                entry.id,
-                commit=entry.commit,
-                sha256=sha256,
-                archive=archive,
-                entrypoint=manifest.runtime.entrypoint,
-                lockfile=manifest.runtime.lockfile,
-                hosts=[h.host for h in manifest.network],
-            )
+        return await install_on_runner(entry, manifest)
     except (runner.RunnerUnavailable, runner.RunnerRefused) as exc:
         raise PluginUnavailable(str(exc)) from exc
 
 
-async def _release_code(session: AsyncSession, plugin_id: str) -> None:
-    """Take the plugin off the runner once no workspace has it."""
-    still_used = await session.scalar(select(WorkspacePlugin.id).where(WorkspacePlugin.plugin_id == plugin_id).limit(1))
+async def install_on_runner(entry: index.IndexEntry, manifest: Manifest) -> bool:
+    assert manifest.runtime is not None
+    async with runner.RunnerClient() as client:
+        if any(p.id == entry.id and p.commit == entry.commit for p in await client.installed()):
+            return False
+        async with index.http_client() as http:
+            archive, sha256 = await index.fetch_archive(http, entry)
+        await client.install(
+            entry.id,
+            commit=entry.commit,
+            sha256=sha256,
+            archive=archive,
+            entrypoint=manifest.runtime.entrypoint,
+            lockfile=manifest.runtime.lockfile,
+            hosts=[h.host for h in manifest.network],
+        )
+    return True
+
+
+async def _release_code(session: AsyncSession, plugin_id: str, commit: str) -> None:
+    """Take a commit off the runner once no workspace runs it."""
+    still_used = await session.scalar(
+        select(WorkspacePlugin.id)
+        .where(WorkspacePlugin.plugin_id == plugin_id, WorkspacePlugin.commit == commit)
+        .limit(1)
+    )
     if still_used is not None or not runner.configured():
         return
     try:
         async with runner.RunnerClient() as client:
-            await client.remove(plugin_id)
+            await client.remove(plugin_id, commit)
     except (runner.RunnerUnavailable, runner.RunnerRefused) as exc:
-        logger.warning("Couldn't remove %s from the plugin runner: %s", plugin_id, exc)
+        logger.warning("Couldn't remove %s at %s from the plugin runner: %s", plugin_id, commit, exc)
 
 
 async def _target(

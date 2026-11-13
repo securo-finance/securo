@@ -28,6 +28,10 @@ class RunnerUnavailable(Exception):
 class RunnerRefused(Exception):
     """The runner refused the request; the message says why."""
 
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.status = status
+
 
 class PluginCallFailed(Exception):
     """The plugin ran and reported an error, crashed or timed out."""
@@ -86,7 +90,7 @@ class RunnerClient:
                 detail = response.json().get("detail")
             except ValueError:
                 detail = None
-            raise RunnerRefused(str(detail or f"runner error {response.status_code}"))
+            raise RunnerRefused(str(detail or f"runner error {response.status_code}"), response.status_code)
         return response
 
     async def health(self) -> dict[str, Any]:
@@ -130,7 +134,7 @@ class RunnerClient:
         commit: str | None = None,
         timeout: int | None = None,
     ) -> Any:
-        """Run `method`; with `commit`, refused (RunnerRefused) unless that version is installed."""
+        """Run `method` at `commit` (the latest installed when omitted); RunnerRefused 404 if it isn't there."""
         body: dict[str, Any] = {
             "method": method, "params": params or {}, "secrets": secrets or {},
             "config": config or {}, "securo": securo or {},
@@ -151,5 +155,6 @@ class RunnerClient:
             raise PluginCallFailed(str(error.get("type", "Error")), str(error.get("message", "")))
         return reply.get("result")
 
-    async def remove(self, plugin_id: str) -> None:
-        await self._send("DELETE", _path(plugin_id))
+    async def remove(self, plugin_id: str, commit: str | None = None) -> None:
+        """One commit, or with none the plugin and its files altogether."""
+        await self._send("DELETE", _path(plugin_id), params={"commit": commit} if commit else None)
