@@ -2887,7 +2887,13 @@
         "deleteBudget": "{{category}}: {{amount}} на {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} ежемесячно с {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "«{{name}}»"
+        "createCategoryGroup": "«{{name}}»",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Нет изменений"
       }
     },
     "conversation": {

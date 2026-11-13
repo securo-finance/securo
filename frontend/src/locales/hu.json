@@ -2862,7 +2862,13 @@
         "deleteBudget": "{{category}}: {{amount}} – {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} havonta, {{month}} kezdettel",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "„{{name}}”"
+        "createCategoryGroup": "„{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Nincs változás"
       }
     },
     "conversation": {
