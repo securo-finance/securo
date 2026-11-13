@@ -168,6 +168,39 @@ function kindTitle(kind: ProposalKind, t: ReturnType<typeof useTranslation>['t']
   return t(`agents.proposal.kind.${kind}`)
 }
 
+function accountTypeLabel(
+  accountType: unknown,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  const type = String(accountType ?? '')
+  return t(`accounts.type${type.charAt(0).toUpperCase()}${type.slice(1)}`)
+}
+
+function manualAccountFieldLabel(
+  field: string,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (field === 'name') return t('accounts.accountName')
+  if (field === 'type') return t('accounts.accountType')
+  if (field === 'opening_balance') return t('accounts.openingBalanceDescription')
+  if (field === 'opening_balance_date') return t('accounts.balanceDate')
+  return field
+}
+
+function manualAccountChangeValue(
+  field: string,
+  value: unknown,
+  currency: unknown,
+  dateLocale: string,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (value == null) return '∅'
+  if (field === 'opening_balance') return fmt(value, currency)
+  if (field === 'opening_balance_date') return formatDate(String(value), dateLocale)
+  if (field === 'type') return accountTypeLabel(value, t)
+  return String(value)
+}
+
 function renderSummary(
   kind: ProposalKind,
   d: ProposalData,
@@ -193,10 +226,25 @@ function renderSummary(
         month: String(p.month ?? '?'),
       })
     case 'create_manual_account': {
-      const accountType = String(p.type ?? '?')
-      const typeLabel = t(`accounts.type${accountType.charAt(0).toUpperCase()}${accountType.slice(1)}`)
-      const datePart = p.opening_balance_date ? ` on ${String(p.opening_balance_date)}` : ''
-      return `${String(p.name ?? '?')} · ${typeLabel} · Current balance: ${fmt(p.current_balance ?? p.opening_balance, p.currency)}. Opening balance: ${fmt(p.opening_balance, p.currency)}${datePart}`
+      const balanceDate = p.opening_balance_date
+        ? ` · ${t('agents.proposal.summary.manualAccountDate', {
+            label: t('accounts.balanceDate'),
+            date: formatDate(String(p.opening_balance_date), dateLocale),
+          })}`
+        : ''
+      return t('agents.proposal.summary.createManualAccount', {
+        name: String(p.name ?? '?'),
+        type: accountTypeLabel(p.type, t),
+        currentBalance: t('agents.proposal.summary.manualAccountMoney', {
+          label: t('accounts.currentBalance'),
+          amount: fmt(p.current_balance ?? p.opening_balance, p.currency),
+        }),
+        openingBalance: t('agents.proposal.summary.manualAccountMoney', {
+          label: t('accounts.openingBalanceDescription'),
+          amount: fmt(p.opening_balance, p.currency),
+        }),
+        balanceDate,
+      })
         + (d.name_collision ? `. ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
     }
     case 'create_payee_rule':
@@ -282,18 +330,21 @@ function renderSummary(
     }
     case 'update_manual_account': {
       const changes = (d.changes || {}) as Record<string, unknown>
-      const parts: string[] = []
-      if (changes.opening_balance !== undefined) {
-        parts.push(`opening_balance: ${String(tgt.opening_balance ?? '?')} → ${String(changes.opening_balance)}`)
-      }
-      if (changes.opening_balance_date !== undefined) {
-        parts.push(`opening_balance_date: ${String(tgt.opening_balance_date ?? '?')} → ${String(changes.opening_balance_date)}`)
-      }
-      for (const [key, value] of Object.entries(changes)) {
-        if (key === 'opening_balance' || key === 'opening_balance_date') continue
-        parts.push(`${key}: ${String(tgt[key] ?? '?')} → ${String(value ?? '?')}`)
-      }
-      return `${String(tgt.name ?? '?')}. Current balance: ${fmt(tgt.current_balance, tgt.currency)}. ${parts.join('. ') || 'No changes'}`
+      const changedFields = Object.entries(changes).map(([field, value]) => (
+        t('agents.proposal.summary.manualAccountChange', {
+          field: manualAccountFieldLabel(field, t),
+          before: manualAccountChangeValue(field, tgt[field], tgt.currency, dateLocale, t),
+          after: manualAccountChangeValue(field, value, tgt.currency, dateLocale, t),
+        })
+      ))
+      return t('agents.proposal.summary.updateManualAccount', {
+        name: String(tgt.name ?? '?'),
+        currentBalance: t('agents.proposal.summary.manualAccountMoney', {
+          label: t('accounts.currentBalance'),
+          amount: fmt(tgt.current_balance, tgt.currency),
+        }),
+        changes: changedFields.join('. ') || t('agents.proposal.summary.manualAccountNoChanges'),
+      })
         + (d.name_collision ? `. ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
     }
     case 'delete_budget':

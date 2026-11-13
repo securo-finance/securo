@@ -1,7 +1,7 @@
-import { screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createTestQueryClient, renderWithProviders } from '@/test/utils'
+import { createTestQueryClient, i18n, renderWithProviders } from '@/test/utils'
 import { isProposalData } from '@/lib/agent-proposals'
 import { toast } from 'sonner'
 
@@ -41,6 +41,10 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/hooks/use-display-locale', () => ({ useDateLocale: () => 'en-GB' }))
 
 import { ProposalCard } from './proposal-card'
+
+afterEach(async () => {
+  await i18n.changeLanguage('en')
+})
 
 const debitLeg = {
   id: 'tx-debit',
@@ -277,17 +281,49 @@ describe('ProposalCard manual account kinds', () => {
     )
 
     expect(screen.getByText('Edit Account')).toBeInTheDocument()
-    const updateSummary = screen.getByText(
-      /Ubank\. Current balance: .*3,272.25\. opening_balance: 3272.25 → 3400/,
-    )
+    const updateSummary = screen.getByText(/Ubank\. Current balance: .*3,272\.25\. Opening balance:/)
     expect(updateSummary).toBeInTheDocument()
     expect(updateSummary.textContent).not.toContain('—')
+    expect(updateSummary.textContent).not.toContain('opening_balance')
+    expect(updateSummary.textContent).toContain('3,400.00')
 
     await user.click(screen.getByRole('button', { name: /Apply/ }))
 
     await waitFor(() =>
       expect(updateAccount).toHaveBeenCalledWith('account-2', { balance: 3400 }),
     )
+  })
+
+  it('localizes and formats the proposed account changes', async () => {
+    renderWithProviders(
+      <ProposalCard
+        toolCallId="call-update-account-localized"
+        data={{
+          kind: 'update_manual_account',
+          target: {
+            id: 'account-4',
+            name: 'Ubank',
+            type: 'savings',
+            currency: 'AUD',
+            current_balance: 3272.25,
+            opening_balance: 3272.25,
+            opening_balance_date: '2026-11-03',
+          },
+          changes: { opening_balance: 3400 },
+        }}
+      />,
+    )
+
+    const summary = screen.getByText(/Ubank\. Current balance:/)
+    expect(summary.textContent).toContain('Opening balance:')
+    expect(summary.textContent).toContain('3,272.25')
+    expect(summary.textContent).toContain('3,400.00')
+    expect(summary.textContent).not.toContain('opening_balance')
+
+    await act(async () => {
+      await i18n.changeLanguage('pt-BR')
+    })
+    expect(screen.getByText(/Ubank\. Saldo atual:/).textContent).toContain('Saldo inicial:')
   })
 
   it('keeps an opening-less legacy account balance when applying a date', async () => {
