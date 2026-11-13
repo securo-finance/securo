@@ -324,6 +324,8 @@ async def sync(session: AsyncSession, connection: PluginConnection) -> PluginCon
     if not await _acquire(lock):
         return connection
     try:
+        # Read again under the lock: another sync may have moved the cursor or the secrets.
+        await session.refresh(connection)
         params = {
             "state": dict(connection.state or {}),
             "last_sync_at": connection.last_sync_at.isoformat() if connection.last_sync_at else None,
@@ -420,11 +422,13 @@ async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manife
         if token is not None and token.revoked_at is None and scopes:
             token.scopes = list(scopes)
             continue
+        # Revoked before anything else, so a token never outlives the scopes it was for.
+        await _revoke_token(session, connection)
+        connection.access_token_id = None
         try:
             secrets = vault.unseal(connection.secrets)
         except vault.SealBroken:
             continue  # set up again anyway; nothing to hand a token to
-        await _revoke_token(session, connection)
         secrets.pop(_API_TOKEN, None)
         connection.access_token_id = None
         if scopes and connection.created_by is not None:

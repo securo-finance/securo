@@ -244,6 +244,11 @@ async def apply(
         # Taken after the catalog fetch, so no network wait holds it; the plan is
         # worked out again under it, and the second one no longer matches its token.
         await session.execute(select(Workspace.id).where(Workspace.id == workspace_id).with_for_update())
+        # What was read before the lock decided the owner check and what to
+        # release afterwards: if another change landed meanwhile, start over.
+        locked = (await installed_plugins(session, workspace_id)).get(plugin_id)
+        if (locked.commit if locked is not None else None) != previous_commit:
+            raise PluginChanged
         result = await sync.apply_sync(
             session, workspace_id, user_id, plugin_id, manifest, token,
             lang=lang, create_default_categories=True, fingerprint=checksum,

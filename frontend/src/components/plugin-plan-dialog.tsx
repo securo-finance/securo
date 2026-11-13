@@ -113,6 +113,9 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
           </DialogDescription>
         </DialogHeader>
 
+        {/* Long consent lists scroll; the buttons below always stay in reach. */}
+        <div className="-mx-1 max-h-[55vh] space-y-4 overflow-y-auto px-1">
+
         {lines.length > 0 && (
           <ul className="space-y-2 text-sm">
             {lines.map((line) => (
@@ -145,6 +148,8 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
         {code && !allowed && (
           <p className="text-xs text-muted-foreground">{t('plugins.code.ownerOnly')}</p>
         )}
+
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={pending}>

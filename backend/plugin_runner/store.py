@@ -115,6 +115,9 @@ class Store:
         self._locks: dict[str, asyncio.Lock] = {}
         self._call_locks: dict[str, asyncio.Lock] = {}
         self._registry_lock = asyncio.Lock()
+        # pip runs as one installer user, and each run ends by killing that
+        # user's processes: two at once would kill each other.
+        self._pip_lock = asyncio.Lock()
 
     @property
     def installer_uid(self) -> int:
@@ -285,8 +288,17 @@ class Store:
             "-r", str(lockfile),
         ]
         env = self._env(work, plugin_id, list(self.settings.package_hosts), self.settings.install_timeout)
+        async with self._pip_lock:
+            result = await self._run_pip(argv, work, env)
+        shutil.rmtree(work, True)
+        if result.returncode != 0:
+            tail = result.stderr.decode(errors="replace").strip().splitlines()[-5:]
+            logger.warning("pip failed for %s: %s", plugin_id, "\n".join(tail))
+            raise StoreError("installing the plugin's dependencies failed: " + (tail[-1] if tail else "pip error"))
+
+    async def _run_pip(self, argv: list[str], work: Path, env: dict[str, str]) -> sandbox.Result:
         try:
-            result = await sandbox.run(
+            return await sandbox.run(
                 argv,
                 cwd=str(work),
                 env=env,
@@ -295,11 +307,6 @@ class Store:
             )
         finally:
             sandbox.kill_user(self.installer_uid)
-        shutil.rmtree(work, True)
-        if result.returncode != 0:
-            tail = result.stderr.decode(errors="replace").strip().splitlines()[-5:]
-            logger.warning("pip failed for %s: %s", plugin_id, "\n".join(tail))
-            raise StoreError("installing the plugin's dependencies failed: " + (tail[-1] if tail else "pip error"))
 
     # Calls ------------------------------------------------------------------
 
@@ -324,26 +331,50 @@ class Store:
         request = json.dumps(
             {"method": method, "params": params, "secrets": secrets or {}, "config": config or {}, "securo": securo}
         ).encode()
-        # One call of a plugin at a time: afterwards every process of its user
-        # is killed, so nothing it started outlives the call.
-        async with self._calls, self._call_lock(plugin_id):
-            base = self._base(plugin_id)
-            home = self._home(base, plugin.uid)
-            try:
-                result = await sandbox.run(
-                    [sys.executable, "-I", "-S", HOST_SCRIPT, str(base / "commits" / plugin.commit), plugin.entrypoint],
-                    cwd=str(home),
-                    env=self._env(home, plugin_id, plugin.hosts, timeout, api_url=securo.get("api_url")),
-                    limits=sandbox.Limits(timeout=timeout, memory_mb=self.settings.memory_mb),
-                    uid=plugin.uid,
-                    stdin=request,
-                )
-            except sandbox.CallTimeout as exc:
-                raise PluginFailed("Timeout", str(exc)) from exc
-            except sandbox.SandboxError as exc:
-                raise PluginFailed("SandboxError", str(exc)) from exc
-            finally:
-                sandbox.kill_user(plugin.uid)
+        # The deadline counts from now, waiting included: the caller gives up
+        # after `timeout`, so a call that waited too long must not start late.
+        deadline = time.monotonic() + timeout
+        try:
+            await asyncio.wait_for(self._admit(plugin_id), timeout)
+        except TimeoutError as exc:
+            raise PluginFailed("Timeout", f"waited {timeout}s for the plugin to be free") from exc
+        try:
+            remaining = max(int(deadline - time.monotonic()), 1)
+            return await self._run_call(plugin_id, plugin, method, request, securo, remaining)
+        finally:
+            self._call_lock(plugin_id).release()
+            self._calls.release()
+
+    async def _admit(self, plugin_id: str) -> None:
+        """A slot, then the plugin: one call of a plugin at a time."""
+        await self._calls.acquire()
+        try:
+            await self._call_lock(plugin_id).acquire()
+        except BaseException:
+            self._calls.release()
+            raise
+
+    async def _run_call(
+        self, plugin_id: str, plugin: Installed, method: str, request: bytes, securo: dict[str, Any], timeout: int
+    ) -> Any:
+        # Afterwards every process of its user is killed, so nothing it started outlives the call.
+        base = self._base(plugin_id)
+        home = self._home(base, plugin.uid)
+        try:
+            result = await sandbox.run(
+                [sys.executable, "-I", "-S", HOST_SCRIPT, str(base / "commits" / plugin.commit), plugin.entrypoint],
+                cwd=str(home),
+                env=self._env(home, plugin_id, plugin.hosts, timeout, api_url=securo.get("api_url")),
+                limits=sandbox.Limits(timeout=timeout, memory_mb=self.settings.memory_mb),
+                uid=plugin.uid,
+                stdin=request,
+            )
+        except sandbox.CallTimeout as exc:
+            raise PluginFailed("Timeout", str(exc)) from exc
+        except sandbox.SandboxError as exc:
+            raise PluginFailed("SandboxError", str(exc)) from exc
+        finally:
+            sandbox.kill_user(plugin.uid)
         if result.stderr:
             logger.info("%s.%s: %s", plugin_id, method, result.stderr.decode(errors="replace")[-2000:])
         try:

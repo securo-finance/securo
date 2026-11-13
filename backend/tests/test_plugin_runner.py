@@ -193,13 +193,37 @@ async def test_proxy_tunnels_to_a_declared_host():
         writer.close()
 
 
-async def test_proxy_refuses_undeclared_hosts_missing_passes_and_private_addresses():
+async def test_proxy_refuses_an_undeclared_host_before_resolving_or_connecting(monkeypatch):
+    """A public host the plugin didn't declare: refused on the pass alone, nothing is opened."""
+    looked_up, opened = [], []
+
+    async def resolver(host, port):
+        looked_up.append(host)
+        return ["93.184.216.34"]
+
+    async def never_open(*args, **kwargs):
+        opened.append(args)
+        raise AssertionError("no upstream connection may be attempted")
+
+    real_open = asyncio.open_connection
+    monkeypatch.setattr(asyncio, "open_connection", never_open)
+    proxy = EgressProxy(SECRET, resolver=resolver, allow_private=False)
+    server = await asyncio.start_server(proxy.handle, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    token = egress_token.mint(SECRET, "acme/echo", ["api.example.com"], ttl=60)
+    async with server:
+        reader, writer = await real_open("127.0.0.1", port)
+        writer.write(f"CONNECT evil.example.com:443 HTTP/1.1\r\nProxy-Authorization: Basic {base64.b64encode(f'plugin:{token}'.encode()).decode()}\r\n\r\n".encode())
+        await writer.drain()
+        assert (await reader.readuntil(b"\r\n\r\n")).startswith(b"HTTP/1.1 403")
+        writer.close()
+    assert looked_up == [] and opened == []
+
+
+async def test_proxy_refuses_missing_passes_and_private_addresses():
     token = egress_token.mint(SECRET, "acme/echo", ["api.example.com"], ttl=60)
     proxy, port = await _proxy(["10.1.2.3"], allow_private=False)
     async with proxy:
-        status, _, writer = await _connect(port, "evil.example.com:443", token)
-        assert status.startswith(b"HTTP/1.1 403")
-        writer.close()
         status, _, writer = await _connect(port, "api.example.com:443", None)
         assert status.startswith(b"HTTP/1.1 407")
         writer.close()

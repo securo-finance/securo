@@ -8,6 +8,13 @@ import axios from 'axios'
 import { plugins as pluginsApi } from '@/lib/api'
 import { pluginPath } from '@/lib/plugin-format'
 
+/**
+ * States already sent from this page load. StrictMode mounts twice, and the
+ * state is single use, so it is sent once; kept in memory rather than in
+ * storage, so a reload after a crash still finishes the sign-in.
+ */
+const submitted = new Set<string>()
+
 /** Where a service sends the browser back after signing in to a plugin's integration. */
 export default function PluginOAuthCallbackPage() {
   const { t } = useTranslation()
@@ -24,10 +31,8 @@ export default function PluginOAuthCallbackPage() {
       navigate('/plugins', { replace: true })
       return
     }
-    // The state is single use: a second mount (StrictMode) must not send it again.
-    const submitKey = `plugin-oauth:${state}`
-    if (sessionStorage.getItem(submitKey)) return
-    sessionStorage.setItem(submitKey, '1')
+    if (submitted.has(state)) return
+    submitted.add(state)
     ;(async () => {
       try {
         const connection = await pluginsApi.oauthCallback(code, state)
@@ -35,7 +40,7 @@ export default function PluginOAuthCallbackPage() {
         toast.success(t('plugins.oauth.connected', { name: connection.name }))
         navigate(`${pluginPath(connection.plugin_id)}?tab=connections`, { replace: true })
       } catch (err) {
-        sessionStorage.removeItem(submitKey)
+        submitted.delete(state)
         const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null
         toast.error(typeof detail === 'string' ? detail : t('plugins.oauth.failed'))
         navigate('/plugins', { replace: true })

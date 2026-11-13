@@ -110,10 +110,14 @@ async def run(
     except TimeoutError as exc:
         raise CallTimeout(f"timed out after {limits.timeout}s") from exc
     finally:
-        # Also takes down whatever the plugin left behind in its group.
+        # Also takes down whatever the plugin left behind in its group, and
+        # anything of its user that left the group and could hold the pipes.
         _kill(process.pid)
+        if uid is not None:
+            kill_user(uid)
         if process.returncode is None:
-            await process.wait()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(process.wait(), 5)
     return Result(process.returncode or 0, stdout, stderr)
 
 
