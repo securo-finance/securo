@@ -7,7 +7,8 @@
     DELETE /plugins/{owner}/{name}         remove
 
 Every route but /health needs `Authorization: Bearer $PLUGINS_RUNNER_TOKEN`.
-The runner refuses to start without that token or the egress secret.
+The runner refuses to start without that token or the egress secret, or with
+a short or placeholder value for either.
 
 Run with `uvicorn --factory plugin_runner.main:create_app --host 0.0.0.0 --port 8090`.
 """
@@ -22,7 +23,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from pydantic import BaseModel, Field, ValidationError
 
 from plugin_runner import sandbox
-from plugin_runner.config import RunnerSettings
+from plugin_runner.config import RunnerSettings, secret_problem
 from plugin_runner.store import InstallRequest, NotInstalled, PluginFailed, Store, StoreError
 
 logger = logging.getLogger("plugin_runner")
@@ -51,8 +52,10 @@ def create_app(settings: RunnerSettings | None = None) -> FastAPI:
     if settings is None:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
         settings = RunnerSettings()
-    if not settings.token or not settings.egress_secret:
-        raise RuntimeError("PLUGINS_RUNNER_TOKEN and PLUGINS_EGRESS_SECRET must both be set")
+    for name, value in (("PLUGINS_RUNNER_TOKEN", settings.token), ("PLUGINS_EGRESS_SECRET", settings.egress_secret)):
+        problem = secret_problem(name, value)
+        if problem:
+            raise RuntimeError(problem)
     store = Store(settings)
     if not sandbox.isolated():
         logger.warning("not running as root: plugins share the runner's user (fine for development only)")

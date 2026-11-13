@@ -23,8 +23,8 @@ from plugin_runner.egress import EgressProxy, is_public
 from plugin_runner.main import create_app
 from plugin_runner.store import InstallRequest, PluginFailed, Store, StoreError, unpack
 
-SECRET = "egress-secret-for-tests"
-TOKEN = "runner-token-for-tests"
+SECRET = "egress-secret-for-tests-0123456789abcdef"
+TOKEN = "runner-token-for-tests-0123456789abcdef"
 COMMIT = "a" * 40
 
 PLUGIN_SOURCE = '''
@@ -474,6 +474,30 @@ def test_runner_refuses_to_start_without_secrets(tmp_path):
         create_app(settings(tmp_path, token=""))
     with pytest.raises(RuntimeError):
         create_app(settings(tmp_path, egress_secret=""))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"token": "short-token"},
+        {"egress_secret": "short-secret"},
+        # The values the development compose file used to fall back to.
+        {"token": "dev-plugins-runner-token-change-in-production"},
+        {"egress_secret": "dev-plugins-egress-secret-change-in-production"},
+    ],
+)
+def test_runner_refuses_a_guessable_token_or_secret(tmp_path, overrides):
+    # Plugin code runs in the runner's container and can reach its API: a
+    # guessable token would let one plugin install code under another's name.
+    with pytest.raises(RuntimeError):
+        create_app(settings(tmp_path, **overrides))
+
+
+def test_egress_refuses_a_guessable_secret():
+    with pytest.raises(ValueError):
+        EgressProxy("short-secret")
+    with pytest.raises(ValueError):
+        EgressProxy("dev-plugins-egress-secret-change-in-production")
 
 
 async def test_runner_api(tmp_path):

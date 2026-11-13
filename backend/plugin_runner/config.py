@@ -10,6 +10,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+#: Shortest runner token and egress secret accepted. Plugin code runs next to
+#: the runner's API, so a guessable token would let a plugin install code
+#: under another plugin's name and receive that plugin's secrets.
+MIN_SECRET_LENGTH = 32
+
+
+def secret_problem(name: str, value: str) -> str | None:
+    """Why `value` can't be used as `name`, or None when it can."""
+    if not value:
+        return f"{name} must be set"
+    if len(value) < MIN_SECRET_LENGTH:
+        return f"{name} must be at least {MIN_SECRET_LENGTH} characters (e.g. `openssl rand -hex 32`)"
+    if "change-in-production" in value:
+        return f"{name} is a placeholder; set it to a long random value (e.g. `openssl rand -hex 32`)"
+    return None
+
+
 def _int(name: str, default: int) -> int:
     return int(os.environ.get(name) or default)
 
