@@ -156,6 +156,9 @@ async def update_provider_settings(
         if not isinstance(body, dict) or set(body) != {"values"} or not isinstance(body["values"], dict):
             raise ValueError("Invalid provider settings")
         return await provider_settings.update_provider(session, provider, body["values"])
+    except provider_settings.SecretStorageUnavailable as exc:
+        # Fixed server-side text, never the submitted values.
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid provider settings") from None
 

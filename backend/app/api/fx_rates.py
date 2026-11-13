@@ -26,7 +26,15 @@ async def refresh_rates(
             detail="Exchange rates are not configured. Ask an administrator to configure Open Exchange Rates in Settings.",
         )
     today = app_today()
-    count = await sync_rates(session, today)
+    try:
+        count = await sync_rates(session, today)
+    except ValueError:
+        # The provider rejected the request (often a wrong app ID). The
+        # original error is not returned: it may describe the credential.
+        raise HTTPException(
+            status_code=502,
+            detail="Exchange rates could not be fetched. Check the Open Exchange Rates app ID in Settings.",
+        ) from None
     return {"synced": True, "rates_count": count, "date": today.isoformat()}
 
 

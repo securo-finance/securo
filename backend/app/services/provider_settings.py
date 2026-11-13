@@ -17,6 +17,10 @@ from app.providers.credentials import (
 )
 
 
+class SecretStorageUnavailable(ValueError):
+    """SECRET_KEY is too weak to encrypt saved credentials."""
+
+
 def can_store_secrets() -> bool:
     # Both published development defaults are shorter than 32 characters.
     return len(get_settings().secret_key.get_secret_value().strip()) >= 32
@@ -99,7 +103,7 @@ async def update_provider(session: AsyncSession, provider: str, values: dict) ->
             raise ValueError("Credentials must be nonempty strings of at most 16000 characters")
     if any(key in SECRET_FIELDS and value is not None for key, value in values.items()):
         if not can_store_secrets():
-            raise ValueError(
+            raise SecretStorageUnavailable(
                 "Set a unique SECRET_KEY of at least 32 characters before saving credentials"
             )
     for key, value in values.items():

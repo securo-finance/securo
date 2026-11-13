@@ -38,8 +38,9 @@ async def test_default_master_key_cannot_store_provider_secrets(
         headers=admin_auth_headers,
         json={"values": {"pluggy_client_id": "test-id", "pluggy_client_secret": "test-secret"}},
     )
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Invalid provider settings"
+    assert response.status_code == 409
+    assert "SECRET_KEY" in response.json()["detail"]
+    assert "test-secret" not in response.text
     assert await session.get(AppSetting, "pluggy_client_id") is None
     assert await session.get(AppSetting, "pluggy_client_secret") is None
     status = await client.get("/api/admin/provider-settings", headers=admin_auth_headers)
@@ -290,6 +291,20 @@ async def test_unconfigured_fx_refresh_is_explicit(client, auth_headers, monkeyp
     response = await client.post("/api/fx-rates/refresh", headers=auth_headers)
     assert response.status_code == 503
     assert "not configured" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_rejected_fx_app_id_gives_a_readable_error(client, auth_headers, monkeypatch):
+    monkeypatch.setattr(get_settings(), "openexchangerates_app_id", "wrong-app-id")
+
+    async def provider_refused(*_args, **_kwargs):
+        raise ValueError("Exchange-rate provider request failed")
+
+    monkeypatch.setattr("app.api.fx_rates.sync_rates", provider_refused)
+    response = await client.post("/api/fx-rates/refresh", headers=auth_headers)
+    assert response.status_code == 502
+    assert "could not be fetched" in response.json()["detail"]
+    assert "wrong-app-id" not in response.text
 
 
 @pytest.mark.asyncio
