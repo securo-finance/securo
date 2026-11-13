@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import get_settings
 from app.core.feature_flags import feature_flag
+from app.core.redis import close_redis
 from app.models.plugin_connection import PluginConnection
 from app.plugins import connections, runner
 from app.worker import celery_app
@@ -61,6 +62,8 @@ async def _sync_due() -> int:
             return await sync_due(session)
     finally:
         await engine.dispose()
+        # Each task runs in its own event loop: don't leave a client bound to this one.
+        await close_redis()
 
 
 async def _sync_one(connection_id: str) -> None:
@@ -72,6 +75,7 @@ async def _sync_one(connection_id: str) -> None:
                 await connections.sync(session, connection)
     finally:
         await engine.dispose()
+        await close_redis()
 
 
 @celery_app.task(name="app.tasks.plugin_tasks.sync_plugin_connections")

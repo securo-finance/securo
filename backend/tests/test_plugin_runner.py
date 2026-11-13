@@ -569,3 +569,36 @@ def test_host_script_is_standard_library_only():
     imports = {line.split()[1].split(".")[0] for line in source.splitlines() if line.startswith(("import ", "from "))}
     assert imports <= {"__future__", "asyncio", "importlib", "inspect", "json", "os", "re", "sys", "types"}
     assert os.access(Path(__file__).parents[1] / "plugin_runner" / "host.py", os.R_OK)
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["--no-binary :all:", "-r other.txt", "-c constraints.txt", "-e .", "--index-url https://evil.example/simple",
+     "pkg @ https://evil.example/pkg.whl --hash=sha256:" + "0" * 64, "./local.whl"],
+)
+async def test_a_lockfile_can_only_pin_hashed_packages(store, line):
+    archive = tarball({"echo_plugin.py": PLUGIN_SOURCE, "requirements.txt": "six==1.17.0 --hash=sha256:" + "0" * 64 + "\n" + line + "\n"})
+
+    async def never(argv, **kwargs):
+        raise AssertionError("pip must not run")
+
+    with patch("plugin_runner.store.sandbox.run", never):
+        with pytest.raises(StoreError, match="lockfile"):
+            await store.install(request(archive, lockfile="requirements.txt"), archive)
+
+
+def test_a_lockfile_with_multiline_hashes_is_accepted(tmp_path):
+    from plugin_runner.store import _check_lockfile
+
+    lockfile = tmp_path / "requirements.txt"
+    lockfile.write_text("# via uv export\nsix==1.17.0 \\\n    --hash=sha256:" + "a" * 64 + " \\\n    --hash=sha256:" + "b" * 64 + "\n")
+    _check_lockfile(lockfile)
+
+
+def test_unpack_stops_counting_members_early(tmp_path, monkeypatch):
+    import plugin_runner.store as store_module
+
+    monkeypatch.setattr(store_module, "MEMBER_LIMIT", 5)
+    archive = tarball({f"f{i}.py": "x" for i in range(20)}, top=None)
+    with pytest.raises(StoreError, match="too many files"):
+        unpack(archive, tmp_path / "out")

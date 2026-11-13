@@ -3427,7 +3427,8 @@
       "added": "{{name}} csatlakoztatva",
       "removeTitle": "Eltávolítod: {{name}}?",
       "removeHint": "A mentett kulcsok és a munkaterülethez való hozzáférés törlődik. Amit már behozott, megmarad.",
-      "removed": "{{name}} eltávolítva"
+      "removed": "{{name}} eltávolítva",
+      "copyFailed": "Nem sikerült másolni. Jelöld ki a címet, és másold kézzel."
     },
     "oauth": {
       "title": "Bejelentkezés befejezése",

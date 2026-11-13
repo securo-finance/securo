@@ -3613,7 +3613,8 @@
       "added": "{{name}}: připojeno",
       "removeTitle": "Odebrat {{name}}?",
       "removeHint": "Uložené klíče a přístup k tomuto pracovnímu prostoru budou smazány. Co už bylo načteno, zůstane.",
-      "removed": "{{name}}: odebráno"
+      "removed": "{{name}}: odebráno",
+      "copyFailed": "Kopírování se nezdařilo. Označte adresu a zkopírujte ji ručně."
     },
     "oauth": {
       "title": "Dokončování přihlášení",

@@ -3431,7 +3431,8 @@
       "added": "{{name}} ligada",
       "removeTitle": "Remover {{name}}?",
       "removeHint": "As chaves guardadas e o acesso a este espaço de trabalho são apagados. O que já trouxe mantém-se.",
-      "removed": "{{name}} removida"
+      "removed": "{{name}} removida",
+      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie-o manualmente."
     },
     "oauth": {
       "title": "A concluir o início de sessão",

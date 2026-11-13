@@ -146,8 +146,14 @@ describe('PluginConnections', () => {
   })
 
   it('adds a connection from the integration form, secrets as passwords', async () => {
-    api.plugins.connections.mockResolvedValue([])
-    api.plugins.connect.mockResolvedValue({ connection: { ...CONNECTION, status: 'pending' }, authorize_url: null })
+    const created = { ...CONNECTION, id: 'c2', name: 'Ledger (API key)', status: 'pending' as const, last_error: null }
+    // Like the server: once created, the connection is in the list.
+    let saved: PluginConnection[] = []
+    api.plugins.connections.mockImplementation(async () => saved)
+    api.plugins.connect.mockImplementation(async () => {
+      saved = [created]
+      return { connection: created, authorize_url: null }
+    })
     const { user } = renderWithProviders(
       <WorkspaceContext.Provider value={workspace(true)}>
         <PluginConnections plugin={PLUGIN} />
@@ -165,6 +171,23 @@ describe('PluginConnections', () => {
         plugin_id: 'acme/ledger', integration: 'keys', name: '', values: { api_key: 'sk_live_1' },
       }),
     )
+    // The dialog closes and the new connection shows, waiting for its first sync.
+    await waitFor(() => expect(screen.queryByLabelText('API key')).not.toBeInTheDocument())
+    expect(await screen.findByText(t('plugins.connections.status.pending'))).toBeInTheDocument()
+    expect(screen.getAllByText('Ledger (API key)').length).toBeGreaterThan(0)
+  })
+
+  it('tells an update that drops the code what goes with it', async () => {
+    api.plugins.plan.mockResolvedValue({
+      ...PLAN, action: 'update', code: { ...PLAN.code!, connections: 2, drops_code: true },
+    })
+    renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginPlanDialog target={{ id: 'acme/ledger', name: 'Ledger', action: 'update' }} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+    )
+    expect(await screen.findByText(t('plugins.code.removeConnections', { count: 2 }))).toBeInTheDocument()
+    expect(screen.queryByText('api.ledger.example')).not.toBeInTheDocument()
   })
 
   it('hides the actions from viewers', async () => {

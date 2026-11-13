@@ -3431,7 +3431,8 @@
       "added": "{{name}} conectada",
       "removeTitle": "Remover {{name}}?",
       "removeHint": "As chaves salvas e o acesso dela a este workspace são apagados. O que ela já trouxe continua.",
-      "removed": "{{name}} removida"
+      "removed": "{{name}} removida",
+      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie manualmente."
     },
     "oauth": {
       "title": "Concluindo o login",

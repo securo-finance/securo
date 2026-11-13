@@ -231,7 +231,9 @@ services:
       PLUGINS_EGRESS_PROXY: plugins-egress:3128
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
-      - ./backend:/app:ro
+      # Only the runner's own code, never the whole backend folder: a plugin
+      # could read backend/.env or secrets from it.
+      - ./backend/plugin_runner:/app/plugin_runner:ro
       - plugins:/var/lib/securo-plugins
     networks: [plugins]
     read_only: true
@@ -258,7 +260,7 @@ services:
       PLUGINS_EGRESS_SECRET: ${PLUGINS_EGRESS_SECRET:-dev-plugins-egress-secret-change-in-production}
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
-      - ./backend:/app:ro
+      - ./backend/plugin_runner:/app/plugin_runner:ro
     networks: [default, plugins]
     read_only: true
     cap_drop: [ALL]

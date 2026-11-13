@@ -3427,7 +3427,8 @@
       "added": "{{name}} connected",
       "removeTitle": "Remove {{name}}?",
       "removeHint": "Its saved keys and its access to this workspace are deleted. What it already brought in stays.",
-      "removed": "{{name}} removed"
+      "removed": "{{name}} removed",
+      "copyFailed": "Couldn't copy. Select the address and copy it by hand."
     },
     "oauth": {
       "title": "Finishing the sign in",

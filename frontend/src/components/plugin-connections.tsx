@@ -281,16 +281,22 @@ function AddConnectionDialog({
             <div className="space-y-1.5 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
               <p>{t('plugins.connections.redirectHint')}</p>
               <div className="flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate font-mono text-foreground">{redirectUri}</code>
+                <code className="min-w-0 flex-1 select-all break-all font-mono text-foreground">{redirectUri}</code>
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
                   className="h-7 w-7 p-0"
                   aria-label={t('plugins.connections.copy')}
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(redirectUri)
-                    toast.success(t('plugins.connections.copied'))
+                  onClick={async () => {
+                    try {
+                      if (!navigator.clipboard) throw new Error('no clipboard')
+                      await navigator.clipboard.writeText(redirectUri)
+                      toast.success(t('plugins.connections.copied'))
+                    } catch {
+                      // Some browsers refuse (no HTTPS, no permission): the address stays selectable.
+                      toast.error(t('plugins.connections.copyFailed'))
+                    }
                   }}
                 >
                   <Copy size={13} />

@@ -3429,7 +3429,8 @@
       "added": "{{name}} gekoppeld",
       "removeTitle": "{{name}} verwijderen?",
       "removeHint": "De opgeslagen sleutels en de toegang tot deze werkruimte worden gewist. Wat al is binnengehaald, blijft.",
-      "removed": "{{name}} verwijderd"
+      "removed": "{{name}} verwijderd",
+      "copyFailed": "Kopiëren lukte niet. Selecteer het adres en kopieer het zelf."
     },
     "oauth": {
       "title": "Inloggen afronden",

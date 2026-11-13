@@ -3597,7 +3597,8 @@
       "added": "{{name}}: pripojené",
       "removeTitle": "Odstrániť {{name}}?",
       "removeHint": "Uložené kľúče a prístup k tomuto pracovnému priestoru sa vymažú. Čo už bolo načítané, zostane.",
-      "removed": "{{name}}: odstránené"
+      "removed": "{{name}}: odstránené",
+      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne."
     },
     "oauth": {
       "title": "Dokončuje sa prihlásenie",

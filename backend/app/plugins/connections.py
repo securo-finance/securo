@@ -188,6 +188,7 @@ def _securo(connection: PluginConnection, secrets: dict[str, Any]) -> dict[str, 
         "api_url": get_settings().plugins_api_url,
         "workspace_id": str(connection.workspace_id),
         "connection_id": str(connection.id),
+        "integration": connection.integration,
     }
     if secrets.get(_API_TOKEN):
         context["token"] = secrets[_API_TOKEN]
@@ -237,8 +238,21 @@ async def _call(
 
 
 def mask(message: str, secrets: dict[str, Any]) -> str:
-    """`message` without any of the secret values (or NUL bytes, which Postgres refuses)."""
-    for value in sorted((str(v) for v in secrets.values() if v), key=len, reverse=True):
+    """`message` without any of the secret values, however nested (or NUL bytes, which Postgres refuses)."""
+    values: list[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            for item in value.values():
+                collect(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                collect(item)
+        elif value is not None and not isinstance(value, bool):
+            values.append(str(value))
+
+    collect(secrets)
+    for value in sorted(values, key=len, reverse=True):
         if len(value) >= 4:
             message = message.replace(value, "***")
     return message.replace("\x00", "")
@@ -417,7 +431,15 @@ async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manife
             PluginConnection.workspace_id == workspace_id, PluginConnection.plugin_id == manifest.id
         )
     )
+    integrations = {i.key: i for i in manifest.contributes.integrations}
     for connection in rows.all():
+        integration = integrations.get(connection.integration)
+        if integration is None:
+            # The new version dropped this integration: nothing can run it anymore.
+            await _revoke_token(session, connection)
+            await session.delete(connection)
+            continue
+        connection.sync_minutes = integration.sync_minutes
         token = await session.get(AccessToken, connection.access_token_id) if connection.access_token_id else None
         if token is not None and token.revoked_at is None and scopes:
             token.scopes = list(scopes)

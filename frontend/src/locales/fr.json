@@ -3431,7 +3431,8 @@
       "added": "{{name}} connectée",
       "removeTitle": "Retirer {{name}} ?",
       "removeHint": "Ses clés enregistrées et son accès à cet espace de travail sont supprimés. Ce qu'elle a déjà importé reste.",
-      "removed": "{{name}} retirée"
+      "removed": "{{name}} retirée",
+      "copyFailed": "Impossible de copier. Sélectionnez l'adresse et copiez-la à la main."
     },
     "oauth": {
       "title": "Finalisation de la connexion",

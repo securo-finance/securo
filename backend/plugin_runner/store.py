@@ -213,13 +213,16 @@ class Store:
                     lockfile = _inside(staging, request.lockfile)
                     if not lockfile.is_file() or lockfile.is_symlink():
                         raise StoreError(f"the lockfile {request.lockfile} is not in the archive")
+                    _check_lockfile(lockfile)
                     if _has_requirements(lockfile):
                         await self._pip(lockfile, staging, request.plugin_id)
                 await asyncio.to_thread(_seal, staging)
                 target = base / "commits" / request.commit
-                if os.path.lexists(target):
-                    await asyncio.to_thread(shutil.rmtree, target)
-                staging.rename(target)
+                # Swapped while no call of this plugin runs from the folder.
+                async with self._call_lock(request.plugin_id):
+                    if os.path.lexists(target):
+                        await asyncio.to_thread(shutil.rmtree, target)
+                    staging.rename(target)
             finally:
                 if os.path.lexists(staging):
                     await asyncio.to_thread(shutil.rmtree, staging, True)
@@ -425,6 +428,25 @@ def _validate(request: InstallRequest) -> list[str]:
         raise StoreError(str(exc)) from exc
 
 
+def _check_lockfile(lockfile: Path) -> None:
+    """Pinned packages and their hashes only.
+
+    pip reads options from a requirements file too: `--no-binary` would
+    re-enable source builds (code running at install), `-r`/`-c`/`-e` or an
+    index option would pull from elsewhere. Only `--hash` is allowed, and no
+    direct URL or path references.
+    """
+    for number, raw in enumerate(lockfile.read_text(errors="replace").splitlines(), 1):
+        line = raw.split("#", 1)[0].strip().rstrip("\\").strip()
+        if not line:
+            continue
+        for token in line.split():
+            if token.startswith("-") and not token.startswith("--hash="):
+                raise StoreError(f"the lockfile may only pin packages with hashes (line {number}: {token})")
+        if "://" in line or " @ " in line or line.startswith((".", "/")):
+            raise StoreError(f"the lockfile may only pin packages from the index (line {number})")
+
+
 def _has_requirements(lockfile: Path) -> bool:
     """pip refuses a file with nothing to install; a plugin may need nothing."""
     for line in lockfile.read_text(errors="replace").splitlines():
@@ -476,9 +498,12 @@ def unpack(archive: bytes, target: Path) -> None:
     except tarfile.TarError as exc:
         raise StoreError("the archive is not a tarball") from exc
     with tar:
-        members = tar.getmembers()
-        if len(members) > MEMBER_LIMIT:
-            raise StoreError("the archive has too many files")
+        members = []
+        # Counted while reading, not after: a small gzip can hold millions of headers.
+        while (member := tar.next()) is not None:
+            members.append(member)
+            if len(members) > MEMBER_LIMIT:
+                raise StoreError("the archive has too many files")
         tops = {PurePosixPath(m.name).parts[0] for m in members if PurePosixPath(m.name).parts}
         strip = len(tops) == 1 and all(m.isdir() for m in members if m.name.rstrip("/") in tops)
         total = 0

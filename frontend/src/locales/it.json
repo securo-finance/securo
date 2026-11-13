@@ -3431,7 +3431,8 @@
       "added": "{{name}} connessa",
       "removeTitle": "Rimuovere {{name}}?",
       "removeHint": "Le chiavi salvate e l'accesso a questo spazio di lavoro vengono eliminati. Ciò che ha già importato resta.",
-      "removed": "{{name}} rimossa"
+      "removed": "{{name}} rimossa",
+      "copyFailed": "Impossibile copiare. Seleziona l'indirizzo e copialo a mano."
     },
     "oauth": {
       "title": "Completamento dell'accesso",

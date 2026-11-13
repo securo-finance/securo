@@ -3563,7 +3563,8 @@
       "added": "Połączono: {{name}}",
       "removeTitle": "Usunąć {{name}}?",
       "removeHint": "Zapisane klucze i dostęp do tego obszaru roboczego zostaną usunięte. To, co już zostało pobrane, zostaje.",
-      "removed": "Usunięto: {{name}}"
+      "removed": "Usunięto: {{name}}",
+      "copyFailed": "Nie udało się skopiować. Zaznacz adres i skopiuj go ręcznie."
     },
     "oauth": {
       "title": "Kończenie logowania",

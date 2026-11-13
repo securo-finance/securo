@@ -60,6 +60,7 @@ class Plugin:
                 "token": bool(context.securo.get("token")),
                 "token_in_secrets": any(k.startswith("__securo") for k in context.secrets),
                 "workspace": context.securo.get("workspace_id"),
+                "integration": context.securo.get("integration"),
             },
             "secrets": {"refreshed": "yes"},
         }
@@ -465,6 +466,7 @@ async def test_sync_runs_the_plugin_and_keeps_its_cursor(session: AsyncSession, 
     assert connection.status == "active" and connection.last_sync_at is not None
     assert connection.state == {
         "runs": 1, "key": "sk_live_1", "token": True, "token_in_secrets": False, "workspace": str(workspace_id),
+        "integration": "keys",
     }
     assert vault.unseal(connection.secrets)["refreshed"] == "yes"
     await connections.sync(session, connection)
@@ -749,3 +751,71 @@ async def test_one_failing_connection_does_not_stop_the_schedule(
     assert await sync_due(session) == 1
     refreshed = await session.get(PluginConnection, second_id, populate_existing=True)
     assert refreshed is not None and refreshed.state["runs"] == 1
+
+
+
+def test_masking_reaches_nested_secrets():
+    secrets = {"oauth": {"access_token": "token-1234", "scopes": ["read"]}, "api_key": "sk_9999"}
+    assert connections.mask("Bearer token-1234 with sk_9999\x00", secrets) == "Bearer *** with ***"
+
+
+@pytest.mark.asyncio
+async def test_an_update_carries_new_intervals_and_drops_removed_integrations(
+    session: AsyncSession, ids, catalog, plugin_runner, states
+):
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    keys, _ = await _connect(session, workspace_id, user_id)
+    signin, _ = await _connect(session, workspace_id, user_id, "signin", client="abc")
+    signin_id, signin_token = signin.id, signin.access_token_id
+
+    def v2(m):
+        m["version"] = "1.1.0"
+        m["contributes"]["integrations"] = [dict(m["contributes"]["integrations"][0], sync_minutes=None)]
+
+    catalog.publish(V2, v2)
+    await _apply(session, workspace_id, user_id, "update")
+    await session.refresh(keys)
+    assert keys.sync_minutes is None
+    assert await session.get(PluginConnection, signin_id, populate_existing=True) is None
+    token = await session.get(AccessToken, signin_token, populate_existing=True)
+    assert token is not None and token.revoked_at is not None
+
+
+@pytest.mark.asyncio
+async def test_a_connection_added_after_the_preview_is_never_deleted(session: AsyncSession, ids, catalog, plugin_runner):
+    from app.plugins.sync import SyncPlanChanged
+
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    plan = await service.plan(session, workspace_id, PLUGIN, "remove", lang="en")
+    late, _ = await _connect(session, workspace_id, user_id)
+    with pytest.raises(SyncPlanChanged):
+        await service.apply(
+            session, workspace_id, user_id, PLUGIN, "remove",
+            commit=plan.commit, token=plan.sync.token, lang="en", is_owner=True,
+        )
+    assert await session.get(PluginConnection, late.id, populate_existing=True) is not None
+
+
+@pytest.mark.asyncio
+async def test_the_preview_says_an_update_without_code_drops_connections(
+    session: AsyncSession, ids, catalog, plugin_runner
+):
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    await _connect(session, workspace_id, user_id)
+
+    def data_only(m):
+        for key in ("runtime", "network", "api_scopes"):
+            m.pop(key)
+        m["version"] = "2.0.0"
+        m["contributes"] = {"rules": [{
+            "key": "r", "name": "R", "conditions_op": "or",
+            "conditions": [{"field": "description", "op": "contains", "value": "LEDGER"}],
+            "actions": [{"op": "ignore"}],
+        }]}
+
+    catalog.publish(V2, data_only)
+    plan = await service.plan(session, workspace_id, PLUGIN, "update", lang="en")
+    assert plan.code is not None and plan.code.drops_code and plan.code.connections == 1

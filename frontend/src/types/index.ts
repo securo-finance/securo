@@ -726,6 +726,8 @@ export interface PluginCodeConsent {
   new_scopes: string[]
   /** Connections in this workspace, removed along with the plugin. */
   connections: number
+  /** An update to a version without code: its connections go, as on removal. */
+  drops_code?: boolean
 }
 
 export interface PluginCatalogEntry {

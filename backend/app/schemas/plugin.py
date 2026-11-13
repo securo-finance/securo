@@ -169,6 +169,7 @@ class PluginCodeConsentRead(BaseModel):
     new_hosts: list[str] = Field(description="On an update: hosts the installed version couldn't reach.")
     new_scopes: list[str]
     connections: int = Field(description="Connections in this workspace; removed along with the plugin.")
+    drops_code: bool = Field(default=False, description="An update to a version without code: connections go too.")
 
 
 class PluginConnectionRead(BaseModel):

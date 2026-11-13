@@ -181,7 +181,8 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
   const { t, i18n } = useTranslation()
   const lang = i18n.language
 
-  if (action === 'remove') {
+  // Removing, or updating to a version without code: say what is taken away.
+  if (action === 'remove' || code.drops_code) {
     return (
       <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
         <ShieldCheck size={14} className="mt-0.5 shrink-0" />

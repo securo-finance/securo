@@ -8,6 +8,7 @@ the catalog unreachable.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from dataclasses import dataclass
@@ -78,6 +79,8 @@ class CodeConsent:
     new_scopes: list[str]
     connections: int
     """Connections in this workspace (removed along with the plugin)."""
+    drops_code: bool = False
+    """An update to a version without code: its connections go, as on removal."""
 
 
 @dataclass(frozen=True)
@@ -168,10 +171,33 @@ async def plan(
     session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, action: Action, *, lang: str
 ) -> PluginPlan:
     commit, manifest, checksum, _ = await _target(session, workspace_id, plugin_id, action)
+    fingerprint = await _fingerprint(session, workspace_id, plugin_id, checksum)
     plan = await sync.plan_sync(
-        session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True, fingerprint=checksum
+        session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True, fingerprint=fingerprint
     )
     return PluginPlan(action, plugin_id, commit, plan, await _consent(session, workspace_id, plugin_id, manifest))
+
+
+async def _fingerprint(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, checksum: str | None) -> str | None:
+    """The manifest's checksum, plus the connections a removal or update would touch.
+
+    Bound into the confirmation token, so a connection added after the
+    preview is never deleted by confirming it.
+    """
+    ids = sorted(
+        str(i)
+        for i in (
+            await session.scalars(
+                select(PluginConnection.id).where(
+                    PluginConnection.workspace_id == workspace_id, PluginConnection.plugin_id == plugin_id
+                )
+            )
+        ).all()
+    )
+    if not ids:
+        return checksum
+    digest = hashlib.sha256(",".join(ids).encode()).hexdigest()
+    return f"{checksum or ''}|{digest}"
 
 
 def _installed_manifest(record: WorkspacePlugin | None) -> Manifest | None:
@@ -183,7 +209,9 @@ async def _consent(
 ) -> CodeConsent | None:
     record = (await installed_plugins(session, workspace_id)).get(plugin_id)
     current = _installed_manifest(record)
-    shown = manifest or current  # removing shows what is being taken away
+    drops_code = bool(current and current.has_code and manifest is not None and not manifest.has_code)
+    # Removing, or updating to a version without code, shows what is taken away.
+    shown = current if drops_code else (manifest or current)
     if shown is None or not shown.has_code:
         return None
     count = await session.scalar(
@@ -201,6 +229,7 @@ async def _consent(
         new_hosts=sorted({h.host for h in shown.network} - old_hosts) if current and manifest else [],
         new_scopes=sorted({a.scope for a in shown.api_scopes} - old_scopes) if current and manifest else [],
         connections=int(count or 0),
+        drops_code=drops_code,
     )
 
 
@@ -228,8 +257,9 @@ async def apply(
         raise PluginForbidden
     # The code goes on the runner before anything changes here, so check the
     # confirmation first: a stale preview mustn't install anything.
+    fingerprint = await _fingerprint(session, workspace_id, plugin_id, checksum)
     preview = await sync.plan_sync(
-        session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True, fingerprint=checksum
+        session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True, fingerprint=fingerprint
     )
     if preview.token != token:
         raise sync.SyncPlanChanged
@@ -251,7 +281,8 @@ async def apply(
             raise PluginChanged
         result = await sync.apply_sync(
             session, workspace_id, user_id, plugin_id, manifest, token,
-            lang=lang, create_default_categories=True, fingerprint=checksum,
+            lang=lang, create_default_categories=True,
+            fingerprint=await _fingerprint(session, workspace_id, plugin_id, checksum),
         )
         record = (await installed_plugins(session, workspace_id)).get(plugin_id)
         drops_code = current is not None and current.has_code and not (manifest and manifest.has_code)

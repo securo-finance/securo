@@ -3428,7 +3428,8 @@
       "added": "{{name}} verbunden",
       "removeTitle": "{{name}} entfernen?",
       "removeHint": "Die gespeicherten Schlüssel und der Zugriff auf diesen Arbeitsbereich werden gelöscht. Was bereits übernommen wurde, bleibt.",
-      "removed": "{{name}} entfernt"
+      "removed": "{{name}} entfernt",
+      "copyFailed": "Kopieren nicht möglich. Markiere die Adresse und kopiere sie von Hand."
     },
     "oauth": {
       "title": "Anmeldung wird abgeschlossen",
