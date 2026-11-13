@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.app_clock import app_today
+from app.core.shared_scope import invited_group_member_ids
 from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
@@ -670,17 +671,13 @@ async def viewer_shared_pnl(
     are taken in raw nominal terms (only safe when all shares are
     same-currency, e.g., during single-currency tests).
     """
-    from app.models.group import GroupMember
     from app.models.transaction_split import TransactionSplit
 
     # Cross-workspace Splitwise projection: include only invitations
     # (linked_user_id matches but is_self is False). Self-memberships
     # represent the user in their own group and are already counted via
     # the workspace-scoped Transaction filter at the caller.
-    member_ids = select(GroupMember.id).where(
-        GroupMember.linked_user_id == user_id,
-        GroupMember.is_self.is_(False),
-    )
+    member_ids = invited_group_member_ids(user_id)
     date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
@@ -760,17 +757,13 @@ async def viewer_shared_spending_by_category(
 
     With `primary_currency`, totals are FX-converted; otherwise raw
     nominal sums (single-currency only)."""
-    from app.models.group import GroupMember
     from app.models.transaction_split import TransactionSplit
 
     # Cross-workspace Splitwise projection: include only invitations
     # (linked_user_id matches but is_self is False). Self-memberships
     # represent the user in their own group and are already counted via
     # the workspace-scoped Transaction filter at the caller.
-    member_ids = select(GroupMember.id).where(
-        GroupMember.linked_user_id == user_id,
-        GroupMember.is_self.is_(False),
-    )
+    member_ids = invited_group_member_ids(user_id)
     date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(

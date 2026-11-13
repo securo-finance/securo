@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
+from app.core.shared_scope import invited_group_member_ids
 from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.account import Account
@@ -238,10 +239,7 @@ async def get_transactions(
         # someone else's workspace. Without this exclusion, the owner's
         # own transactions get double-projected when they switch into
         # a different workspace.
-        viewer_member_ids = select(GroupMember.id).where(
-            GroupMember.linked_user_id == user_id,
-            GroupMember.is_self.is_(False),
-        )
+        viewer_member_ids = invited_group_member_ids(user_id)
         shared_tx_ids = (
             select(TransactionSplit.transaction_id)
             .join(Transaction, Transaction.id == TransactionSplit.transaction_id)

@@ -329,3 +329,65 @@ async def test_root_path_is_stripped_only_on_a_segment_boundary(auth_headers: di
     async with AsyncClient(transport=transport, base_url="http://test") as prefixed:
         resp = await prefixed.get("/api/categories", headers=_bearer(token))
         assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_token_does_not_see_shares_from_other_workspaces(client: AsyncClient, auth_headers: dict):
+    """A signed-in member sees their share of a group expense that lives in
+    someone else's workspace. A token is bound to its own workspace, so it
+    doesn't: a plugin or script holding it reads only that workspace's rows."""
+    friend_email = "token-share-friend@example.com"
+    resp = await client.post("/api/auth/register", json={"email": friend_email, "password": "friendpassword12"})
+    assert resp.status_code in (200, 201), resp.text
+    login = await client.post("/api/auth/login", data={"username": friend_email, "password": "friendpassword12"})
+    friend_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    account = (
+        await client.post(
+            "/api/accounts",
+            headers=auth_headers,
+            json={"name": "Wallet", "type": "checking", "balance": 0, "currency": "USD"},
+        )
+    ).json()
+    group = (
+        await client.post(
+            "/api/groups", headers=auth_headers, json={"name": "Trip", "kind": "social", "default_currency": "USD"}
+        )
+    ).json()
+    me = (
+        await client.post(f"/api/groups/{group['id']}/members", headers=auth_headers, json={"name": "Me", "is_self": True})
+    ).json()
+    friend = (
+        await client.post(
+            f"/api/groups/{group['id']}/members", headers=auth_headers, json={"name": "Friend", "email": friend_email}
+        )
+    ).json()
+    resp = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": account["id"],
+            "description": "Concert Tickets",
+            "amount": 90,
+            "date": "2026-04-28",
+            "type": "debit",
+            "currency": "USD",
+            "splits": {"share_type": "equal", "splits": [{"group_member_id": me["id"]}, {"group_member_id": friend["id"]}]},
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    # Signed in, the friend sees the owner's expense in their own workspace.
+    session_items = (await client.get("/api/transactions", headers=friend_headers)).json()["items"]
+    assert [t["description"] for t in session_items] == ["Concert Tickets"]
+
+    token = (await _create(client, friend_headers, ["transactions:read", "reports:read"]))["token"]
+    token_resp = await client.get("/api/transactions", headers=_bearer(token))
+    assert token_resp.status_code == 200
+    assert token_resp.json()["items"] == []
+
+    period = {"month": "2026-04-01"}
+    by_session = (await client.get("/api/dashboard/summary", headers=friend_headers, params=period)).json()
+    by_token = (await client.get("/api/dashboard/summary", headers=_bearer(token), params=period)).json()
+    assert by_session["monthly_expenses"] == 45.0
+    assert by_token["monthly_expenses"] == 0.0

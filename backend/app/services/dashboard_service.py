@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.shared_scope import invited_group_member_ids, other_workspace_shares_hidden
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
@@ -592,13 +593,9 @@ async def get_summary(
     # Gated under a collection filter — those parent transactions live in
     # other users'/workspaces' accounts, outside the filtered account set.
     if not filtered:
-        from app.models.group import GroupMember
         from app.models.transaction_split import TransactionSplit
 
-        viewer_member_ids = select(GroupMember.id).where(
-            GroupMember.linked_user_id == user_id,
-            GroupMember.is_self.is_(False),
-        )
+        viewer_member_ids = invited_group_member_ids(user_id)
         shared_currency_rows = await session.execute(
             select(
                 Transaction.currency,
@@ -749,7 +746,9 @@ async def _compute_pending_shares_net(
             GroupMember.is_self.is_(False),
         )
     )
-    linked_rows = list(linked_q.all())
+    # Bound to one workspace (an access token), groups other workspaces
+    # invited the user to stay out, like their shared expenses.
+    linked_rows = [] if other_workspace_shares_hidden() else list(linked_q.all())
     linked_ids = {row.group_id for row in linked_rows} - owned_ids
     member_id_for_group = {row.group_id: row.id for row in linked_rows}
 
