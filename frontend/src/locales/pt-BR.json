@@ -3226,7 +3226,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Categorias e regras feitas pela comunidade. Você revisa cada mudança antes de aplicar, e nada sai do seu servidor.",
+    "hint": "Categorias, regras e integrações feitas pela comunidade. Você revisa cada mudança antes de aplicar.",
     "browse": "Ver catálogo",
     "noneInstalled": "Nenhum plugin instalado neste workspace.",
     "remove": "Remover plugin",
@@ -3343,7 +3343,8 @@
       "connectors": "Conectores bancários",
       "parsers": "Leitores de arquivo",
       "price_providers": "Provedores de preço",
-      "agent_tools": "Ferramentas do agente"
+      "agent_tools": "Ferramentas do agente",
+      "integrations": "Integrações"
     },
     "detail": {
       "overview": "Visão geral",
@@ -3362,13 +3363,98 @@
       "previewNote": "Ao instalar, você vê cada mudança antes de qualquer coisa ser aplicada, e nada sai do seu servidor.",
       "notFound": "Este plugin não está no catálogo.",
       "type": "Tipo",
-      "added": "Adicionado"
+      "added": "Adicionado",
+      "connections": "Conexões",
+      "codeNote": "Instalar mostra o que ele pode acessar e alterar antes de qualquer coisa rodar."
     },
     "installedFailed": "Não foi possível carregar os plugins instalados.",
     "planRecordOnly": {
       "install": "Este workspace já tem tudo o que ele traz. Instalar registra o plugin, para você receber as atualizações.",
       "update": "Nenhum item deste workspace muda; a versão instalada passa a ser {{version}}.",
       "remove": "Nenhum item dele ficou aqui; remover só tira o plugin da lista."
+    },
+    "code": {
+      "runsCode": "Este plugin roda código no seu servidor, isolado do Securo e dos seus dados. Os plugins não são revisados pelo Securo: instale só código em que você confia.",
+      "network": "Acessa",
+      "noNetwork": "Nada: nenhum dado sai do seu servidor.",
+      "access": "Usa neste workspace",
+      "noAccess": "Nada: ele não lê nem altera seus dados.",
+      "new": "novo",
+      "read": "Ler {{what}}",
+      "write": "Ler e alterar {{what}}",
+      "ownerOnly": "Só o dono do workspace pode adicionar, atualizar ou remover um plugin que roda código.",
+      "removeConnections": "As conexões dele neste workspace ({{count}}) são removidas, junto com as chaves salvas e os acessos.",
+      "removeNothing": "O código do plugin sai do seu servidor quando nenhum workspace o usar mais.",
+      "auth": {
+        "credentials": "Chave ou senha",
+        "oauth": "Login",
+        "none": "Sem configuração"
+      },
+      "resource": {
+        "accounts": "contas",
+        "connections": "conexões bancárias",
+        "transactions": "transações",
+        "categories": "categorias",
+        "payees": "favorecidos",
+        "rules": "regras",
+        "budgets": "orçamentos",
+        "goals": "metas",
+        "recurring": "transações recorrentes",
+        "assets": "patrimônio",
+        "reports": "relatórios",
+        "invoices": "cobranças"
+      },
+      "intro": {
+        "install": "Este plugin não traz dados. Veja o que o código dele pode fazer:",
+        "update": "Veja o que a nova versão pode fazer:",
+        "remove": "O código dele deixa de rodar neste workspace."
+      }
+    },
+    "connections": {
+      "title": "Conexões",
+      "hint": "Cada conexão liga este workspace a uma conta no serviço. As chaves ficam criptografadas e só vão para este plugin.",
+      "add": "Adicionar conexão",
+      "loadFailed": "Não foi possível carregar as conexões.",
+      "none": "Nenhuma conexão ainda.",
+      "status": {
+        "pending": "Aguardando",
+        "active": "Conectada",
+        "error": "Com erro",
+        "needs_auth": "Precisa de login",
+        "keysRefused": "Chave recusada"
+      },
+      "lastSync": "sincronizada {{when}}",
+      "neverSynced": "ainda não sincronizada",
+      "signIn": "Fazer login",
+      "syncNow": "Sincronizar agora",
+      "remove": "Remover conexão",
+      "removeAria": "Remover {{name}}",
+      "synced": "{{name}} sincronizada",
+      "syncFailed": "A sincronização falhou.",
+      "addTitle": "Conectar {{name}}",
+      "addHint": "Preencha com o que o serviço te deu. Você pode remover a conexão quando quiser.",
+      "integration": "Conectar com",
+      "name": "Nome",
+      "optional": "opcional",
+      "secretNote": "Campos secretos ficam criptografados e nunca são mostrados de novo.",
+      "redirectHint": "Cadastre este endereço de retorno no serviço antes de fazer login:",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "continueSignIn": "Continuar para o login",
+      "connect": "Conectar",
+      "added": "{{name}} conectada",
+      "removeTitle": "Remover {{name}}?",
+      "removeHint": "As chaves salvas e o acesso dela a este workspace são apagados. O que ela já trouxe continua.",
+      "removed": "{{name}} removida",
+      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie manualmente."
+    },
+    "oauth": {
+      "title": "Concluindo o login",
+      "wait": "O Securo está salvando a conexão. Leva só um instante.",
+      "connected": "{{name}} conectada",
+      "failed": "Não foi possível concluir o login. Tente de novo.",
+      "missing": "O serviço não devolveu o login. Tente de novo.",
+      "serviceError": "O serviço informou um erro: {{message}}"
     }
   },
   "library": {

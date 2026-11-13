@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
+import { Globe, KeyRound, RefreshCw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -14,7 +14,10 @@ import {
 } from '@/components/ui/dialog'
 import { plugins as pluginsApi } from '@/lib/api'
 import { useDescribe } from '@/hooks/use-describe-plugin-items'
-import type { PluginAction, PluginItem, PluginPlan } from '@/types'
+import { useWorkspace } from '@/contexts/workspace-context'
+import { localized } from '@/lib/localized-text'
+import { scopeLabel } from '@/lib/plugin-format'
+import type { PluginAction, PluginCodeConsent, PluginItem, PluginPlan } from '@/types'
 
 /** A plugin and what the user asked to do with it. */
 export interface PluginTarget {
@@ -31,6 +34,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
   const { t } = useTranslation()
   const describe = useDescribe()
   const queryClient = useQueryClient()
+  const { canManage } = useWorkspace()
 
   const { data: plan, isFetching, isError, refetch } = useQuery({
     queryKey: ['plugins', 'plan', target.id, target.action],
@@ -44,7 +48,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
     mutationFn: (confirmed: PluginPlan) => pluginsApi.apply(target.id, confirmed),
     onSuccess: () => {
       // Both group keys are in use across pages; refresh every view of what changed.
-      for (const key of ['plugins', 'categories', 'category-groups', 'categoryGroups', 'rules']) {
+      for (const key of ['plugins', 'plugin-connections', 'categories', 'category-groups', 'categoryGroups', 'rules']) {
         queryClient.invalidateQueries({ queryKey: [key] })
       }
       toast.success(t(`plugins.done.${target.action}`, { name: target.name }))
@@ -52,7 +56,9 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
     },
     onError: (error: unknown) => {
       const err = error as { response?: { status?: number } }
-      if (err?.response?.status === 409) {
+      if (err?.response?.status === 403) {
+        toast.error(t('plugins.code.ownerOnly'))
+      } else if (err?.response?.status === 409) {
         // The plugin or the workspace changed since this plan: show the current one.
         toast.error(t('plugins.planChanged'))
         void refetch()
@@ -72,7 +78,10 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
     : false
   // A plan that touches no item still records something: the installed version
   // moves, or an installation whose items are all gone is taken off the list.
-  const confirmable = shown !== undefined && !isFetching
+  const code = shown?.code ?? null
+  // Code runs on the server: only the owner adds, updates or removes it.
+  const allowed = !code || canManage
+  const confirmable = shown !== undefined && !isFetching && allowed
 
   const lines: { key: string; items: PluginItem[]; names: boolean }[] = shown
     ? [
@@ -98,9 +107,14 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
                 ? t('common.loading')
                 : changes
                   ? t('plugins.planIntro')
-                  : t(`plugins.planRecordOnly.${target.action}`, { version: shown.version ?? '' })}
+                  : shown.code
+                    ? t(`plugins.code.intro.${target.action}`)
+                    : t(`plugins.planRecordOnly.${target.action}`, { version: shown.version ?? '' })}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Long consent lists scroll; the buttons below always stay in reach. */}
+        <div className="-mx-1 max-h-[55vh] space-y-4 overflow-y-auto px-1">
 
         {lines.length > 0 && (
           <ul className="space-y-2 text-sm">
@@ -122,12 +136,20 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
           </ul>
         )}
 
-        {shown && (
+        {code && <CodeConsent code={code} action={target.action} />}
+
+        {shown && !code && (
           <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
             <ShieldCheck size={14} className="mt-0.5 shrink-0" />
             <span>{target.action === 'remove' ? t('plugins.history') : t('plugins.privacy')}</span>
           </div>
         )}
+
+        {code && !allowed && (
+          <p className="text-xs text-muted-foreground">{t('plugins.code.ownerOnly')}</p>
+        )}
+
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={pending}>
@@ -153,3 +175,84 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
     </Dialog>
   )
 }
+
+/** What a plugin with code may do, shown before the owner agrees to it. */
+function CodeConsent({ code, action }: { code: PluginCodeConsent; action: PluginAction }) {
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
+
+  // Removing, or updating to a version without code: say what is taken away.
+  if (action === 'remove' || code.drops_code) {
+    return (
+      <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+        <ShieldCheck size={14} className="mt-0.5 shrink-0" />
+        <span>
+          {code.connections > 0
+            ? t('plugins.code.removeConnections', { count: code.connections })
+            : t('plugins.code.removeNothing')}
+        </span>
+      </div>
+    )
+  }
+
+  const isNew = (value: string, list: string[]) =>
+    list.includes(value) && (
+      <span className="ml-1.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+        {t('plugins.code.new')}
+      </span>
+    )
+
+  return (
+    <div className="space-y-3 text-sm">
+      <div className="flex items-start gap-2 rounded-lg border border-amber-300/70 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-200">
+        <ShieldAlert size={14} className="mt-0.5 shrink-0" />
+        <span>{t('plugins.code.runsCode')}</span>
+      </div>
+
+      <section className="space-y-1.5">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <Globe size={12} />
+          {t('plugins.code.network')}
+        </h3>
+        {code.network.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t('plugins.code.noNetwork')}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {code.network.map((host) => (
+              <li key={host.host}>
+                <p className="font-mono text-xs">
+                  {host.host}
+                  {isNew(host.host, code.new_hosts)}
+                </p>
+                <p className="text-xs text-muted-foreground">{localized(host.purpose, lang)}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="space-y-1.5">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <KeyRound size={12} />
+          {t('plugins.code.access')}
+        </h3>
+        {code.api_scopes.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t('plugins.code.noAccess')}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {code.api_scopes.map((scope) => (
+              <li key={scope.scope}>
+                <p className="text-xs font-medium">
+                  {scopeLabel(scope.scope, t)}
+                  {isNew(scope.scope, code.new_scopes)}
+                </p>
+                <p className="text-xs text-muted-foreground">{localized(scope.purpose, lang)}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  )
+}
+

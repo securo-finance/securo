@@ -652,12 +652,82 @@ export type LocalizedText = Record<string, string>
 export type PluginAction = 'install' | 'update' | 'remove'
 export type PluginItemKind = 'category_groups' | 'categories' | 'rules'
 
+/** One field of an integration's connection form. */
+export interface PluginField {
+  key: string
+  label: LocalizedText
+  /** Kept encrypted and never shown again. */
+  secret: boolean
+  required: boolean
+}
+
+/** A connection to an outside service that a plugin with code offers. */
+export interface PluginIntegration {
+  key: string
+  name: LocalizedText
+  description?: LocalizedText | null
+  auth: 'credentials' | 'oauth' | 'none'
+  fields: PluginField[]
+  /** How often Securo asks the plugin to sync; null for never. */
+  sync_minutes: number | null
+}
+
+/** A host a plugin with code may reach, and why. */
+export interface PluginHost {
+  host: string
+  purpose: LocalizedText
+}
+
+/** What a plugin with code may read or change in the workspace, and why. */
+export interface PluginScope {
+  scope: string
+  purpose: LocalizedText
+}
+
 export interface InstalledPlugin {
   plugin_id: string
   name: LocalizedText
   version: string
   commit: string
   installed_at: string
+  /** For plugins with code. */
+  integrations: PluginIntegration[]
+  network: PluginHost[]
+  api_scopes: PluginScope[]
+  /** For sign-in integrations: the address to register with the service. */
+  redirect_uri: string | null
+}
+
+export type PluginConnectionStatus = 'pending' | 'active' | 'error' | 'needs_auth'
+
+/** A connection made through a plugin. Its secrets never come back. */
+export interface PluginConnection {
+  id: string
+  plugin_id: string
+  integration: string
+  name: string
+  status: PluginConnectionStatus
+  config: Record<string, string>
+  /** Secret fields that are set, by key. */
+  secret_fields: string[]
+  sync_minutes: number | null
+  last_sync_at: string | null
+  last_error: string | null
+  created_at: string
+}
+
+/** What the owner agrees to when adding, updating or removing a plugin with code. */
+export interface PluginCodeConsent {
+  network: PluginHost[]
+  api_scopes: PluginScope[]
+  integrations: { key: string; name: LocalizedText; auth: PluginIntegration['auth'] }[]
+  /** On an update: hosts and scopes the installed version didn't have. */
+  new_hosts: string[]
+  new_scopes: string[]
+  /** Connections in this workspace, removed along with the plugin. */
+  connections: number
+  /** An update to a version without code: its connections go, as on removal. */
+  drops_code?: boolean
 }
 
 export interface PluginCatalogEntry {
@@ -716,6 +786,9 @@ export interface PluginContents {
     conditions: RuleConditionNode[]
     actions: { op: string; value?: string | boolean | null; category: PluginRef | null }[]
   }[]
+  integrations?: PluginIntegration[]
+  network?: PluginHost[]
+  api_scopes?: PluginScope[]
 }
 
 /** One plugin opened from the catalog. */
@@ -751,6 +824,8 @@ export interface PluginPlan {
   existing: PluginItem[]
   unresolved: PluginItem[]
   default_categories: string[]
+  /** For plugins with code: what the owner agrees to. */
+  code?: PluginCodeConsent | null
 }
 
 export interface RuleExportPayload {

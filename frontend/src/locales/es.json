@@ -3226,7 +3226,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Categorías y reglas hechas por la comunidad. Revisas cada cambio antes de aplicarlo, y nada sale de tu servidor.",
+    "hint": "Categorías, reglas e integraciones hechas por la comunidad. Revisas cada cambio antes de aplicarlo.",
     "browse": "Ver catálogo",
     "noneInstalled": "No hay plugins instalados en este espacio de trabajo.",
     "remove": "Quitar plugin",
@@ -3343,7 +3343,8 @@
       "connectors": "Conectores bancarios",
       "parsers": "Lectores de archivos",
       "price_providers": "Proveedores de precios",
-      "agent_tools": "Herramientas del agente"
+      "agent_tools": "Herramientas del agente",
+      "integrations": "Integraciones"
     },
     "detail": {
       "overview": "Resumen",
@@ -3362,13 +3363,98 @@
       "previewNote": "Al instalar ves cada cambio antes de aplicar nada, y nada sale de tu servidor.",
       "notFound": "Este plugin no está en el catálogo.",
       "type": "Tipo",
-      "added": "Añadido"
+      "added": "Añadido",
+      "connections": "Conexiones",
+      "codeNote": "Instalar muestra a qué puede acceder y qué puede cambiar antes de que se ejecute nada."
     },
     "installedFailed": "No se pudieron cargar los plugins instalados.",
     "planRecordOnly": {
       "install": "Este espacio ya tiene todo lo que trae. Instalarlo lo registra, para que recibas sus actualizaciones.",
       "update": "Ningún elemento de este espacio cambia; la versión instalada pasa a {{version}}.",
       "remove": "No queda ninguno de sus elementos aquí; quitarlo solo lo saca de la lista."
+    },
+    "code": {
+      "runsCode": "Este plugin ejecuta código en tu servidor, aislado de Securo y de tus datos. Securo no revisa los plugins: instala solo código en el que confíes.",
+      "network": "Accede a",
+      "noNetwork": "Nada: ningún dato sale de tu servidor.",
+      "access": "Usa en este espacio de trabajo",
+      "noAccess": "Nada: no puede leer ni cambiar tus datos.",
+      "new": "nuevo",
+      "read": "Leer {{what}}",
+      "write": "Leer y cambiar {{what}}",
+      "ownerOnly": "Solo el propietario del espacio de trabajo puede añadir, actualizar o quitar un plugin que ejecuta código.",
+      "removeConnections": "Se eliminan sus conexiones en este espacio de trabajo ({{count}}), junto con sus claves guardadas y sus accesos.",
+      "removeNothing": "El código del plugin se borra de tu servidor cuando ningún espacio de trabajo lo usa.",
+      "auth": {
+        "credentials": "Clave o contraseña",
+        "oauth": "Iniciar sesión",
+        "none": "Sin configuración"
+      },
+      "resource": {
+        "accounts": "cuentas",
+        "connections": "conexiones bancarias",
+        "transactions": "transacciones",
+        "categories": "categorías",
+        "payees": "beneficiarios",
+        "rules": "reglas",
+        "budgets": "presupuestos",
+        "goals": "metas",
+        "recurring": "transacciones recurrentes",
+        "assets": "patrimonio",
+        "reports": "informes",
+        "invoices": "facturas"
+      },
+      "intro": {
+        "install": "Este plugin no trae datos. Revisa lo que puede hacer su código:",
+        "update": "Revisa lo que puede hacer la nueva versión:",
+        "remove": "Su código deja de ejecutarse en este espacio de trabajo."
+      }
+    },
+    "connections": {
+      "title": "Conexiones",
+      "hint": "Cada conexión une este espacio de trabajo a una cuenta del servicio. Las claves se guardan cifradas y solo se envían a este plugin.",
+      "add": "Añadir conexión",
+      "loadFailed": "No se pudieron cargar las conexiones.",
+      "none": "Aún no hay conexiones.",
+      "status": {
+        "pending": "En espera",
+        "active": "Conectada",
+        "error": "Con error",
+        "needs_auth": "Requiere iniciar sesión",
+        "keysRefused": "Clave rechazada"
+      },
+      "lastSync": "sincronizada {{when}}",
+      "neverSynced": "aún sin sincronizar",
+      "signIn": "Iniciar sesión",
+      "syncNow": "Sincronizar ahora",
+      "remove": "Quitar conexión",
+      "removeAria": "Quitar {{name}}",
+      "synced": "{{name}} sincronizada",
+      "syncFailed": "La sincronización falló.",
+      "addTitle": "Conectar {{name}}",
+      "addHint": "Completa con lo que te dio el servicio. Puedes quitar la conexión cuando quieras.",
+      "integration": "Conectar con",
+      "name": "Nombre",
+      "optional": "opcional",
+      "secretNote": "Los campos secretos se guardan cifrados y no se vuelven a mostrar.",
+      "redirectHint": "Registra esta dirección de retorno en el servicio antes de iniciar sesión:",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "continueSignIn": "Continuar al inicio de sesión",
+      "connect": "Conectar",
+      "added": "{{name}} conectada",
+      "removeTitle": "¿Quitar {{name}}?",
+      "removeHint": "Se borran sus claves guardadas y su acceso a este espacio de trabajo. Lo que ya trajo se queda.",
+      "removed": "{{name}} quitada",
+      "copyFailed": "No se pudo copiar. Selecciona la dirección y cópiala a mano."
+    },
+    "oauth": {
+      "title": "Terminando el inicio de sesión",
+      "wait": "Securo está guardando la conexión. Tarda un momento.",
+      "connected": "{{name}} conectada",
+      "failed": "No se pudo terminar el inicio de sesión. Inténtalo de nuevo.",
+      "missing": "El servicio no devolvió el inicio de sesión. Inténtalo de nuevo.",
+      "serviceError": "El servicio informó un error: {{message}}"
     }
   },
   "library": {

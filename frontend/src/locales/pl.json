@@ -3344,7 +3344,7 @@
   },
   "plugins": {
     "title": "Wtyczki",
-    "hint": "Kategorie i reguły tworzone przez społeczność. Sprawdzasz każdą zmianę przed jej zastosowaniem, a nic nie opuszcza Twojego serwera.",
+    "hint": "Kategorie, reguły i integracje tworzone przez społeczność. Każdą zmianę sprawdzasz przed zastosowaniem.",
     "browse": "Przeglądaj katalog",
     "noneInstalled": "W tym obszarze roboczym nie zainstalowano wtyczek.",
     "remove": "Usuń wtyczkę",
@@ -3475,7 +3475,8 @@
       "connectors": "Połączenia bankowe",
       "parsers": "Czytniki plików",
       "price_providers": "Dostawcy cen",
-      "agent_tools": "Narzędzia agenta"
+      "agent_tools": "Narzędzia agenta",
+      "integrations": "Integracje"
     },
     "detail": {
       "overview": "Przegląd",
@@ -3494,13 +3495,98 @@
       "previewNote": "Przed instalacją widzisz każdą zmianę i nic nie opuszcza twojego serwera.",
       "notFound": "Tej wtyczki nie ma w katalogu.",
       "type": "Typ",
-      "added": "Dodano"
+      "added": "Dodano",
+      "connections": "Połączenia",
+      "codeNote": "Instalacja pokazuje, z czym wtyczka może się łączyć i co może zmieniać, zanim cokolwiek się uruchomi."
     },
     "installedFailed": "Nie udało się wczytać zainstalowanych wtyczek.",
     "planRecordOnly": {
       "install": "Ta przestrzeń ma już wszystko, co wnosi. Instalacja ją zapisuje, aby otrzymywać aktualizacje.",
       "update": "Żaden element tej przestrzeni się nie zmienia; zainstalowana wersja to teraz {{version}}.",
       "remove": "Żaden jej element tu nie został; usunięcie tylko zdejmuje ją z listy."
+    },
+    "code": {
+      "runsCode": "Ta wtyczka uruchamia kod na Twoim serwerze, odizolowany od Securo i Twoich danych. Securo nie weryfikuje wtyczek: instaluj tylko kod, któremu ufasz.",
+      "network": "Łączy się z",
+      "noNetwork": "Niczym: żadne dane nie opuszczają Twojego serwera.",
+      "access": "Używa w tym obszarze roboczym",
+      "noAccess": "Niczego: nie może czytać ani zmieniać Twoich danych.",
+      "new": "nowe",
+      "read": "Odczyt: {{what}}",
+      "write": "Odczyt i zmiana: {{what}}",
+      "ownerOnly": "Tylko właściciel obszaru roboczego może dodać, zaktualizować lub usunąć wtyczkę uruchamiającą kod.",
+      "removeConnections": "Jej połączenia w tym obszarze roboczym ({{count}}) zostaną usunięte razem z zapisanymi kluczami i dostępem.",
+      "removeNothing": "Kod wtyczki zostanie usunięty z serwera, gdy żaden obszar roboczy nie będzie jej używał.",
+      "auth": {
+        "credentials": "Klucz lub hasło",
+        "oauth": "Logowanie",
+        "none": "Bez konfiguracji"
+      },
+      "resource": {
+        "accounts": "konta",
+        "connections": "połączenia bankowe",
+        "transactions": "transakcje",
+        "categories": "kategorie",
+        "payees": "odbiorcy",
+        "rules": "reguły",
+        "budgets": "budżety",
+        "goals": "cele",
+        "recurring": "transakcje cykliczne",
+        "assets": "majątek",
+        "reports": "raporty",
+        "invoices": "faktury"
+      },
+      "intro": {
+        "install": "Ta wtyczka nie dodaje danych. Sprawdź, co może robić jej kod:",
+        "update": "Sprawdź, co może robić nowa wersja:",
+        "remove": "Jej kod przestaje działać w tym obszarze roboczym."
+      }
+    },
+    "connections": {
+      "title": "Połączenia",
+      "hint": "Każde połączenie łączy ten obszar roboczy z kontem w usłudze. Klucze są przechowywane w postaci zaszyfrowanej i wysyłane tylko do tej wtyczki.",
+      "add": "Dodaj połączenie",
+      "loadFailed": "Nie udało się wczytać połączeń.",
+      "none": "Brak połączeń.",
+      "status": {
+        "pending": "Oczekuje",
+        "active": "Połączono",
+        "error": "Błąd",
+        "needs_auth": "Wymaga logowania",
+        "keysRefused": "Klucz odrzucony"
+      },
+      "lastSync": "zsynchronizowano {{when}}",
+      "neverSynced": "jeszcze nie zsynchronizowano",
+      "signIn": "Zaloguj się",
+      "syncNow": "Synchronizuj teraz",
+      "remove": "Usuń połączenie",
+      "removeAria": "Usuń {{name}}",
+      "synced": "Zsynchronizowano: {{name}}",
+      "syncFailed": "Synchronizacja nie powiodła się.",
+      "addTitle": "Połącz: {{name}}",
+      "addHint": "Wpisz dane otrzymane od usługi. Połączenie możesz usunąć w każdej chwili.",
+      "integration": "Połącz przez",
+      "name": "Nazwa",
+      "optional": "opcjonalnie",
+      "secretNote": "Pola tajne są przechowywane w postaci zaszyfrowanej i nigdy więcej nie są pokazywane.",
+      "redirectHint": "Przed zalogowaniem zarejestruj w usłudze ten adres powrotu:",
+      "copy": "Kopiuj",
+      "copied": "Skopiowano",
+      "continueSignIn": "Przejdź do logowania",
+      "connect": "Połącz",
+      "added": "Połączono: {{name}}",
+      "removeTitle": "Usunąć {{name}}?",
+      "removeHint": "Zapisane klucze i dostęp do tego obszaru roboczego zostaną usunięte. To, co już zostało pobrane, zostaje.",
+      "removed": "Usunięto: {{name}}",
+      "copyFailed": "Nie udało się skopiować. Zaznacz adres i skopiuj go ręcznie."
+    },
+    "oauth": {
+      "title": "Kończenie logowania",
+      "wait": "Securo zapisuje połączenie. To chwilę potrwa.",
+      "connected": "Połączono: {{name}}",
+      "failed": "Nie udało się dokończyć logowania. Spróbuj ponownie.",
+      "missing": "Usługa nie zwróciła logowania. Spróbuj ponownie.",
+      "serviceError": "Usługa zgłosiła błąd: {{message}}"
     }
   },
   "library": {

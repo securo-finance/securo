@@ -3226,7 +3226,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Des catégories et des règles créées par la communauté. Vous vérifiez chaque modification avant qu'elle soit appliquée, et rien ne quitte votre serveur.",
+    "hint": "Catégories, règles et intégrations créées par la communauté. Vous vérifiez chaque modification avant qu'elle soit appliquée.",
     "browse": "Parcourir le catalogue",
     "noneInstalled": "Aucun plugin installé dans cet espace de travail.",
     "remove": "Retirer le plugin",
@@ -3343,7 +3343,8 @@
       "connectors": "Connecteurs bancaires",
       "parsers": "Lecteurs de fichiers",
       "price_providers": "Fournisseurs de prix",
-      "agent_tools": "Outils de l'agent"
+      "agent_tools": "Outils de l'agent",
+      "integrations": "Intégrations"
     },
     "detail": {
       "overview": "Aperçu",
@@ -3362,13 +3363,98 @@
       "previewNote": "L'installation montre chaque changement avant toute application, et rien ne quitte votre serveur.",
       "notFound": "Ce plugin n'est pas dans le catalogue.",
       "type": "Type",
-      "added": "Ajouté"
+      "added": "Ajouté",
+      "connections": "Connexions",
+      "codeNote": "L'installation montre ce à quoi il peut accéder et ce qu'il peut modifier avant toute exécution."
     },
     "installedFailed": "Impossible de charger les plugins installés.",
     "planRecordOnly": {
       "install": "Cet espace a déjà tout ce qu'il apporte. L'installer l'enregistre, pour recevoir ses mises à jour.",
       "update": "Aucun élément de cet espace ne change ; la version installée passe à {{version}}.",
       "remove": "Aucun de ses éléments n'est resté ici ; le retirer l'enlève seulement de la liste."
+    },
+    "code": {
+      "runsCode": "Ce plugin exécute du code sur votre serveur, isolé de Securo et de vos données. Les plugins ne sont pas vérifiés par Securo : n'installez que du code en lequel vous avez confiance.",
+      "network": "Accède à",
+      "noNetwork": "Rien : aucune donnée ne quitte votre serveur.",
+      "access": "Utilise dans cet espace de travail",
+      "noAccess": "Rien : il ne peut ni lire ni modifier vos données.",
+      "new": "nouveau",
+      "read": "Lire {{what}}",
+      "write": "Lire et modifier {{what}}",
+      "ownerOnly": "Seul le propriétaire de l'espace de travail peut ajouter, mettre à jour ou retirer un plugin qui exécute du code.",
+      "removeConnections": "Ses connexions dans cet espace de travail ({{count}}) sont supprimées, avec leurs clés enregistrées et leurs accès.",
+      "removeNothing": "Le code du plugin est retiré de votre serveur dès qu'aucun espace de travail ne l'utilise.",
+      "auth": {
+        "credentials": "Clé ou mot de passe",
+        "oauth": "Connexion",
+        "none": "Aucune configuration"
+      },
+      "resource": {
+        "accounts": "les comptes",
+        "connections": "les connexions bancaires",
+        "transactions": "les transactions",
+        "categories": "les catégories",
+        "payees": "les bénéficiaires",
+        "rules": "les règles",
+        "budgets": "les budgets",
+        "goals": "les objectifs",
+        "recurring": "les transactions récurrentes",
+        "assets": "le patrimoine",
+        "reports": "les rapports",
+        "invoices": "les factures"
+      },
+      "intro": {
+        "install": "Ce plugin n'apporte pas de données. Vérifiez ce que son code peut faire :",
+        "update": "Vérifiez ce que la nouvelle version peut faire :",
+        "remove": "Son code cesse de s'exécuter dans cet espace de travail."
+      }
+    },
+    "connections": {
+      "title": "Connexions",
+      "hint": "Chaque connexion relie cet espace de travail à un compte du service. Les clés sont stockées chiffrées et envoyées uniquement à ce plugin.",
+      "add": "Ajouter une connexion",
+      "loadFailed": "Impossible de charger les connexions.",
+      "none": "Aucune connexion pour l'instant.",
+      "status": {
+        "pending": "En attente",
+        "active": "Connectée",
+        "error": "En échec",
+        "needs_auth": "Connexion requise",
+        "keysRefused": "Clé refusée"
+      },
+      "lastSync": "synchronisée {{when}}",
+      "neverSynced": "pas encore synchronisée",
+      "signIn": "Se connecter",
+      "syncNow": "Synchroniser",
+      "remove": "Retirer la connexion",
+      "removeAria": "Retirer {{name}}",
+      "synced": "{{name}} synchronisée",
+      "syncFailed": "La synchronisation a échoué.",
+      "addTitle": "Connecter {{name}}",
+      "addHint": "Renseignez ce que le service vous a fourni. Vous pouvez retirer la connexion à tout moment.",
+      "integration": "Se connecter avec",
+      "name": "Nom",
+      "optional": "facultatif",
+      "secretNote": "Les champs secrets sont stockés chiffrés et ne sont plus jamais affichés.",
+      "redirectHint": "Enregistrez cette adresse de retour auprès du service avant de vous connecter :",
+      "copy": "Copier",
+      "copied": "Copié",
+      "continueSignIn": "Continuer vers la connexion",
+      "connect": "Connecter",
+      "added": "{{name}} connectée",
+      "removeTitle": "Retirer {{name}} ?",
+      "removeHint": "Ses clés enregistrées et son accès à cet espace de travail sont supprimés. Ce qu'elle a déjà importé reste.",
+      "removed": "{{name}} retirée",
+      "copyFailed": "Impossible de copier. Sélectionnez l'adresse et copiez-la à la main."
+    },
+    "oauth": {
+      "title": "Finalisation de la connexion",
+      "wait": "Securo enregistre la connexion. Cela prend un instant.",
+      "connected": "{{name}} connectée",
+      "failed": "Impossible de finaliser la connexion. Réessayez.",
+      "missing": "Le service n'a pas renvoyé la connexion. Réessayez.",
+      "serviceError": "Le service a signalé une erreur : {{message}}"
     }
   },
   "library": {

@@ -35,3 +35,10 @@ export function compactNumber(value: number, lang: string): string {
 export function pluginPath(id: string): string {
   return `/plugins/${id}`
 }
+
+/** "transactions:write" as "Read and change transactions", in the UI language. */
+export function scopeLabel(scope: string, t: (key: string, options?: Record<string, unknown>) => string): string {
+  const [resource, level] = scope.split(':')
+  const what = t(`plugins.code.resource.${resource}`, { defaultValue: resource })
+  return t(level === 'write' ? 'plugins.code.write' : 'plugins.code.read', { what })
+}

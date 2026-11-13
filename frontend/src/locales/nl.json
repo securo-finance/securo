@@ -3224,7 +3224,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Categorieën en regels gemaakt door de community. Je bekijkt elke wijziging voordat die wordt toegepast, en niets verlaat je server.",
+    "hint": "Categorieën, regels en integraties gemaakt door de community. Je bekijkt elke wijziging voordat die wordt toegepast.",
     "browse": "Catalogus bekijken",
     "noneInstalled": "Geen plugins geïnstalleerd in deze workspace.",
     "remove": "Plugin verwijderen",
@@ -3341,7 +3341,8 @@
       "connectors": "Bankkoppelingen",
       "parsers": "Bestandslezers",
       "price_providers": "Prijsaanbieders",
-      "agent_tools": "Agenttools"
+      "agent_tools": "Agenttools",
+      "integrations": "Integraties"
     },
     "detail": {
       "overview": "Overzicht",
@@ -3360,13 +3361,98 @@
       "previewNote": "Bij installatie zie je elke wijziging voordat er iets wordt toegepast, en niets verlaat je server.",
       "notFound": "Deze plugin staat niet in de catalogus.",
       "type": "Type",
-      "added": "Toegevoegd"
+      "added": "Toegevoegd",
+      "connections": "Koppelingen",
+      "codeNote": "Installeren toont wat de plugin mag bereiken en wijzigen voordat er iets draait."
     },
     "installedFailed": "De geïnstalleerde plugins konden niet worden geladen.",
     "planRecordOnly": {
       "install": "Deze workspace heeft al alles wat de plugin meebrengt. Installeren legt het vast, zodat je updates krijgt.",
       "update": "Er verandert niets aan de items in deze workspace; de geïnstalleerde versie wordt {{version}}.",
       "remove": "Geen van de items staat hier nog; verwijderen haalt het alleen van de lijst."
+    },
+    "code": {
+      "runsCode": "Deze plugin voert code uit op je server, afgeschermd van Securo en je gegevens. Plugins worden niet door Securo gecontroleerd: installeer alleen code die je vertrouwt.",
+      "network": "Bereikt",
+      "noNetwork": "Niets: er verlaten geen gegevens je server.",
+      "access": "Gebruikt in deze werkruimte",
+      "noAccess": "Niets: de plugin kan je gegevens niet lezen of wijzigen.",
+      "new": "nieuw",
+      "read": "{{what}} lezen",
+      "write": "{{what}} lezen en wijzigen",
+      "ownerOnly": "Alleen de eigenaar van de werkruimte kan een plugin die code uitvoert toevoegen, bijwerken of verwijderen.",
+      "removeConnections": "De koppelingen in deze werkruimte ({{count}}) worden verwijderd, samen met de opgeslagen sleutels en toegang.",
+      "removeNothing": "De code van de plugin wordt van je server verwijderd zodra geen werkruimte hem nog gebruikt.",
+      "auth": {
+        "credentials": "Sleutel of wachtwoord",
+        "oauth": "Inloggen",
+        "none": "Geen instellingen"
+      },
+      "resource": {
+        "accounts": "rekeningen",
+        "connections": "bankkoppelingen",
+        "transactions": "transacties",
+        "categories": "categorieën",
+        "payees": "begunstigden",
+        "rules": "regels",
+        "budgets": "budgetten",
+        "goals": "doelen",
+        "recurring": "terugkerende transacties",
+        "assets": "bezittingen",
+        "reports": "rapporten",
+        "invoices": "facturen"
+      },
+      "intro": {
+        "install": "Deze plugin brengt geen gegevens mee. Bekijk wat de code mag doen:",
+        "update": "Bekijk wat de nieuwe versie mag doen:",
+        "remove": "De code draait niet meer in deze werkruimte."
+      }
+    },
+    "connections": {
+      "title": "Koppelingen",
+      "hint": "Elke koppeling verbindt deze werkruimte met een account bij de dienst. Sleutels worden versleuteld opgeslagen en alleen naar deze plugin gestuurd.",
+      "add": "Koppeling toevoegen",
+      "loadFailed": "De koppelingen konden niet worden geladen.",
+      "none": "Nog geen koppelingen.",
+      "status": {
+        "pending": "Wacht",
+        "active": "Gekoppeld",
+        "error": "Mislukt",
+        "needs_auth": "Inloggen nodig",
+        "keysRefused": "Sleutel geweigerd"
+      },
+      "lastSync": "gesynchroniseerd {{when}}",
+      "neverSynced": "nog niet gesynchroniseerd",
+      "signIn": "Inloggen",
+      "syncNow": "Nu synchroniseren",
+      "remove": "Koppeling verwijderen",
+      "removeAria": "{{name}} verwijderen",
+      "synced": "{{name}} gesynchroniseerd",
+      "syncFailed": "De synchronisatie is mislukt.",
+      "addTitle": "{{name}} koppelen",
+      "addHint": "Vul in wat de dienst je gaf. Je kunt de koppeling altijd verwijderen.",
+      "integration": "Koppelen met",
+      "name": "Naam",
+      "optional": "optioneel",
+      "secretNote": "Geheime velden worden versleuteld opgeslagen en nooit meer getoond.",
+      "redirectHint": "Registreer dit terugkeeradres bij de dienst voordat je inlogt:",
+      "copy": "Kopiëren",
+      "copied": "Gekopieerd",
+      "continueSignIn": "Doorgaan naar inloggen",
+      "connect": "Koppelen",
+      "added": "{{name}} gekoppeld",
+      "removeTitle": "{{name}} verwijderen?",
+      "removeHint": "De opgeslagen sleutels en de toegang tot deze werkruimte worden gewist. Wat al is binnengehaald, blijft.",
+      "removed": "{{name}} verwijderd",
+      "copyFailed": "Kopiëren lukte niet. Selecteer het adres en kopieer het zelf."
+    },
+    "oauth": {
+      "title": "Inloggen afronden",
+      "wait": "Securo slaat de koppeling op. Dit duurt even.",
+      "connected": "{{name}} gekoppeld",
+      "failed": "Het inloggen kon niet worden afgerond. Probeer het opnieuw.",
+      "missing": "De dienst gaf het inloggen niet terug. Probeer het opnieuw.",
+      "serviceError": "De dienst meldde een fout: {{message}}"
     }
   },
   "library": {

@@ -177,6 +177,14 @@ class Settings(BaseSettings):
     # never in the background; manifests come from the same host, checked
     # against the index's sha256. Point it at a mirror to host your own.
     plugins_index_url: str = "https://plugins.usesecuro.com/v1/index.json"
+    # Plugins with code run in the `securo-plugins` runner (Compose profile
+    # `plugins`), never in this process. Blank URL: no runner, so no plugin
+    # with code can be installed. The token is shared with the runner only.
+    plugins_runner_url: str = ""
+    plugins_runner_token: str = ""
+    # How a plugin's code reaches this API, over the internal network. Only
+    # plugins that declared `api_scopes` get a token to use it.
+    plugins_api_url: str = "http://backend:8000/api"
 
     @property
     def oidc_login_available(self) -> bool:

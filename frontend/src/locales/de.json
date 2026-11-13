@@ -3223,7 +3223,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Kategorien und Regeln aus der Community. Du prüfst jede Änderung, bevor sie angewendet wird, und nichts verlässt deinen Server.",
+    "hint": "Kategorien, Regeln und Integrationen aus der Community. Du prüfst jede Änderung, bevor sie angewendet wird.",
     "browse": "Katalog durchsuchen",
     "noneInstalled": "In diesem Workspace sind keine Plugins installiert.",
     "remove": "Plugin entfernen",
@@ -3340,7 +3340,8 @@
       "connectors": "Bankverbindungen",
       "parsers": "Dateileser",
       "price_providers": "Preisanbieter",
-      "agent_tools": "Agent-Werkzeuge"
+      "agent_tools": "Agent-Werkzeuge",
+      "integrations": "Integrationen"
     },
     "detail": {
       "overview": "Übersicht",
@@ -3359,13 +3360,98 @@
       "previewNote": "Vor der Installation sehen Sie jede Änderung, und nichts verlässt Ihren Server.",
       "notFound": "Dieses Plugin ist nicht im Katalog.",
       "type": "Typ",
-      "added": "Hinzugefügt"
+      "added": "Hinzugefügt",
+      "connections": "Verbindungen",
+      "codeNote": "Die Installation zeigt, was es erreichen und ändern darf, bevor etwas läuft."
     },
     "installedFailed": "Die installierten Plugins konnten nicht geladen werden.",
     "planRecordOnly": {
       "install": "Dieser Workspace hat bereits alles, was das Plugin mitbringt. Die Installation vermerkt es, damit du Updates bekommst.",
       "update": "Keine Einträge in diesem Workspace ändern sich; die installierte Version wird {{version}}.",
       "remove": "Keiner seiner Einträge ist mehr hier; Entfernen nimmt es nur von der Liste."
+    },
+    "code": {
+      "runsCode": "Dieses Plugin führt Code auf deinem Server aus, isoliert von Securo und deinen Daten. Plugins werden von Securo nicht geprüft: Installiere nur Code, dem du vertraust.",
+      "network": "Erreicht",
+      "noNetwork": "Nichts: Keine Daten verlassen deinen Server.",
+      "access": "Nutzt in diesem Arbeitsbereich",
+      "noAccess": "Nichts: Es kann deine Daten weder lesen noch ändern.",
+      "new": "neu",
+      "read": "{{what}} lesen",
+      "write": "{{what}} lesen und ändern",
+      "ownerOnly": "Nur der Eigentümer des Arbeitsbereichs kann ein Plugin, das Code ausführt, hinzufügen, aktualisieren oder entfernen.",
+      "removeConnections": "Seine Verbindungen in diesem Arbeitsbereich ({{count}}) werden entfernt, samt gespeicherter Schlüssel und Zugriffe.",
+      "removeNothing": "Der Code des Plugins wird von deinem Server entfernt, sobald ihn kein Arbeitsbereich mehr nutzt.",
+      "auth": {
+        "credentials": "Schlüssel oder Passwort",
+        "oauth": "Anmelden",
+        "none": "Keine Einrichtung"
+      },
+      "resource": {
+        "accounts": "Konten",
+        "connections": "Bankverbindungen",
+        "transactions": "Buchungen",
+        "categories": "Kategorien",
+        "payees": "Empfänger",
+        "rules": "Regeln",
+        "budgets": "Budgets",
+        "goals": "Ziele",
+        "recurring": "wiederkehrende Buchungen",
+        "assets": "Vermögenswerte",
+        "reports": "Berichte",
+        "invoices": "Rechnungen"
+      },
+      "intro": {
+        "install": "Dieses Plugin bringt keine Daten. Prüfe, was sein Code tun darf:",
+        "update": "Prüfe, was die neue Version tun darf:",
+        "remove": "Sein Code läuft in diesem Arbeitsbereich nicht mehr."
+      }
+    },
+    "connections": {
+      "title": "Verbindungen",
+      "hint": "Jede Verbindung verknüpft diesen Arbeitsbereich mit einem Konto beim Dienst. Schlüssel werden verschlüsselt gespeichert und nur an dieses Plugin gesendet.",
+      "add": "Verbindung hinzufügen",
+      "loadFailed": "Die Verbindungen konnten nicht geladen werden.",
+      "none": "Noch keine Verbindungen.",
+      "status": {
+        "pending": "Wartet",
+        "active": "Verbunden",
+        "error": "Fehlgeschlagen",
+        "needs_auth": "Anmeldung nötig",
+        "keysRefused": "Schlüssel abgelehnt"
+      },
+      "lastSync": "synchronisiert {{when}}",
+      "neverSynced": "noch nicht synchronisiert",
+      "signIn": "Anmelden",
+      "syncNow": "Jetzt synchronisieren",
+      "remove": "Verbindung entfernen",
+      "removeAria": "{{name}} entfernen",
+      "synced": "{{name}} synchronisiert",
+      "syncFailed": "Die Synchronisierung ist fehlgeschlagen.",
+      "addTitle": "{{name}} verbinden",
+      "addHint": "Trage ein, was dir der Dienst gegeben hat. Du kannst die Verbindung jederzeit entfernen.",
+      "integration": "Verbinden über",
+      "name": "Name",
+      "optional": "optional",
+      "secretNote": "Geheime Felder werden verschlüsselt gespeichert und nie wieder angezeigt.",
+      "redirectHint": "Registriere diese Rücksprungadresse beim Dienst, bevor du dich anmeldest:",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "continueSignIn": "Weiter zur Anmeldung",
+      "connect": "Verbinden",
+      "added": "{{name}} verbunden",
+      "removeTitle": "{{name}} entfernen?",
+      "removeHint": "Die gespeicherten Schlüssel und der Zugriff auf diesen Arbeitsbereich werden gelöscht. Was bereits übernommen wurde, bleibt.",
+      "removed": "{{name}} entfernt",
+      "copyFailed": "Kopieren nicht möglich. Markiere die Adresse und kopiere sie von Hand."
+    },
+    "oauth": {
+      "title": "Anmeldung wird abgeschlossen",
+      "wait": "Securo speichert die Verbindung. Das dauert einen Moment.",
+      "connected": "{{name}} verbunden",
+      "failed": "Die Anmeldung konnte nicht abgeschlossen werden. Versuche es erneut.",
+      "missing": "Der Dienst hat die Anmeldung nicht zurückgegeben. Versuche es erneut.",
+      "serviceError": "Der Dienst meldete einen Fehler: {{message}}"
     }
   },
   "library": {

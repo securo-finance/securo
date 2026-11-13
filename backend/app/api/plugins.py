@@ -1,21 +1,31 @@
-"""Data plugins from the catalog, installed per workspace.
+"""Plugins from the catalog, installed per workspace, and their connections.
 
 All of it answers 404 while PLUGINS_ENABLED is off. Reading the catalog
-or a plan only needs to see the workspace; applying needs write access.
+or a plan only needs to see the workspace; applying needs write access,
+and for a plugin with code, the owner. Connections need write access.
 Access tokens can't reach these routes.
 """
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.core.feature_flags import feature_flag
 from app.core.workspace_context import WorkspaceContext, current_workspace, current_writable_workspace
-from app.plugins import service
+from app.plugins import connections, runner, service
 from app.plugins.index import PluginIndexError
+from app.plugins.manifest import parse_manifest
+from app.services.access_token_service import AccessTokenError
 from app.plugins.sync import SyncPlanChanged
 from app.schemas.plugin import (
     InstalledPluginRead,
     PluginApplyRequest,
+    PluginAuthorizeRead,
+    PluginConnectionCreate,
+    PluginConnectionCreated,
+    PluginConnectionRead,
+    PluginOAuthCallback,
     PluginCatalogRead,
     PluginDetailRead,
     PluginItemRead,
@@ -39,7 +49,7 @@ def _lang(ctx: WorkspaceContext) -> str:
 def _catalog_read(item: service.CatalogItem) -> PluginCatalogRead:
     entry = item.entry
     return PluginCatalogRead(
-        **entry.model_dump(exclude={"manifest", "manifest_sha256", "readme", "readme_sha256"}),
+        **entry.model_dump(exclude={"manifest", "manifest_sha256", "readme", "readme_sha256", "archive", "archive_sha256"}),
         owner=entry.owner,
         compatible=entry.compatible,
         supported=entry.supported,
@@ -59,6 +69,7 @@ def _plan_read(plan: service.PluginPlan) -> PluginPlanRead:
         commit=plan.commit,
         token=plan.sync.token,
         default_categories=list(plan.sync.default_categories),
+        code=plan.code.__dict__ if plan.code else None,
         **{b: items(b) for b in ("create", "update", "delete", "keep", "release", "existing", "unresolved")},
     )
 
@@ -68,6 +79,11 @@ async def _guarded(call):
         return await call
     except service.PluginNotFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plugin not found")
+    except service.PluginForbidden:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the workspace owner can add, update or remove a plugin with code",
+        )
     except service.PluginUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Plugin unavailable: {exc}")
     except (service.PluginChanged, SyncPlanChanged):
@@ -86,7 +102,138 @@ async def list_installed(
 ):
     """Plugins installed in this workspace. Reads only the database, never the catalog."""
     installed = await service.installed_plugins(session, ctx.workspace.id)
-    return sorted(installed.values(), key=lambda p: p.plugin_id)
+    return [_installed_read(p) for p in sorted(installed.values(), key=lambda p: p.plugin_id)]
+
+
+def _installed_read(record) -> InstalledPluginRead:
+    manifest = parse_manifest(record.manifest) if record.manifest else None
+    return InstalledPluginRead(
+        plugin_id=record.plugin_id,
+        name=record.name,
+        version=record.version,
+        commit=record.commit,
+        installed_at=record.installed_at,
+        integrations=[i.model_dump() for i in manifest.contributes.integrations] if manifest else [],
+        network=[h.model_dump() for h in manifest.network] if manifest else [],
+        api_scopes=[a.model_dump() for a in manifest.api_scopes] if manifest else [],
+        redirect_uri=connections.redirect_uri()
+        if manifest and any(i.auth == "oauth" for i in manifest.contributes.integrations)
+        else None,
+    )
+
+
+# Connections ---------------------------------------------------------------
+
+
+def _connection_read(connection) -> PluginConnectionRead:
+    try:
+        secret_fields = sorted(k for k in connections.vault.unseal(connection.secrets) if not k.startswith("__securo_"))
+    except connections.vault.SealBroken:
+        secret_fields = []
+    return PluginConnectionRead.model_validate(connection).model_copy(update={"secret_fields": secret_fields})
+
+
+async def _connection_guarded(call):
+    try:
+        return await call
+    except connections.ConnectionNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+    except (connections.PluginConnectionError, AccessTokenError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
+    except runner.PluginCallFailed as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"The plugin failed: {exc.message}")
+    except (runner.RunnerUnavailable, runner.RunnerRefused) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Plugin runner: {exc}")
+
+
+@router.get("/connections", response_model=list[PluginConnectionRead])
+async def list_connections(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    return [_connection_read(c) for c in await connections.list_connections(session, ctx.workspace.id)]
+
+
+@router.post("/connections", response_model=PluginConnectionCreated, status_code=status.HTTP_201_CREATED)
+async def create_connection(
+    body: PluginConnectionCreate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Set up a connection. Sign-in integrations come back with the link to open."""
+    connection, link = await _connection_guarded(
+        connections.create(
+            session,
+            workspace_id=ctx.workspace.id,
+            user_id=ctx.user_id,
+            can_write=ctx.can_write,
+            plugin_id=body.plugin_id,
+            integration_key=body.integration,
+            name=body.name,
+            values=body.values,
+            lang=_lang(ctx),
+        )
+    )
+    if link is None:
+        _queue_sync(connection.id)
+    return PluginConnectionCreated(connection=_connection_read(connection), authorize_url=link)
+
+
+@router.post("/connections/{connection_id}/authorize", response_model=PluginAuthorizeRead)
+async def authorize_connection(
+    connection_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """A fresh sign-in link, to finish or redo the sign-in."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    link = await _connection_guarded(connections.authorize_url(session, connection, user_id=ctx.user_id))
+    return PluginAuthorizeRead(authorize_url=link, redirect_uri=connections.redirect_uri())
+
+
+@router.post("/oauth/callback", response_model=PluginConnectionRead)
+async def oauth_callback(
+    body: PluginOAuthCallback,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The service sent the browser back: the plugin trades the code for a token."""
+    connection = await _connection_guarded(
+        connections.finish_oauth(session, workspace_id=ctx.workspace.id, user_id=ctx.user_id, code=body.code, state=body.state)
+    )
+    _queue_sync(connection.id)
+    return _connection_read(connection)
+
+
+@router.post("/connections/{connection_id}/sync", response_model=PluginConnectionRead)
+async def sync_connection(
+    connection_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Sync now, and wait for it (the plugin's timeout bounds the wait)."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    return _connection_read(await connections.sync(session, connection))
+
+
+@router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_connection(
+    connection_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Remove the connection, its secrets and its access token."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    await connections.delete(session, connection)
+
+
+def _queue_sync(connection_id: uuid.UUID) -> None:
+    from app.tasks.plugin_tasks import sync_plugin_connection
+
+    try:
+        sync_plugin_connection.delay(str(connection_id))
+    except Exception:  # noqa: BLE001 - the schedule picks it up anyway
+        pass
 
 
 @router.get("/catalog", response_model=list[PluginCatalogRead])
@@ -136,7 +283,7 @@ async def apply_plan(
     plan = await _guarded(
         service.apply(
             session, ctx.workspace.id, ctx.user_id, f"{owner}/{name}", body.action,
-            commit=body.commit, token=body.token, lang=_lang(ctx),
+            commit=body.commit, token=body.token, lang=_lang(ctx), is_owner=ctx.is_owner,
         )
     )
     return _plan_read(plan)

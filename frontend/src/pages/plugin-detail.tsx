@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, ExternalLink, RefreshCw, ShieldCheck, Star } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, KeyRound, Plug, RefreshCw, ShieldCheck, Star } from 'lucide-react'
 
 import { CategoryIcon } from '@/components/category-icon'
 import { PluginAvatar } from '@/components/plugin-avatar'
+import { PluginConnections } from '@/components/plugin-connections'
 import { PluginStatus, PluginTypes } from '@/components/plugin-meta'
 import { PluginPlanDialog, type PluginTarget } from '@/components/plugin-plan-dialog'
 import { PluginReadme } from '@/components/plugin-readme'
@@ -14,13 +15,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { plugins as pluginsApi } from '@/lib/api'
 import { localized } from '@/lib/localized-text'
-import { contributedKinds, pluginLocales } from '@/lib/plugin-catalog'
-import { compactNumber, languageName, relativeDate } from '@/lib/plugin-format'
+import { contributedKinds, pluginLocales, pluginTypes } from '@/lib/plugin-catalog'
+import { compactNumber, languageName, relativeDate, scopeLabel } from '@/lib/plugin-format'
 import { conditionSummary } from '@/lib/rule-summary'
 import { cn } from '@/lib/utils'
 import type { PluginAction, PluginCatalogEntry, PluginContents, PluginRef } from '@/types'
 
-type Tab = 'overview' | 'inside'
+type Tab = 'overview' | 'inside' | 'connections'
 
 const ACTION_LABEL: Record<string, string> = {
   set_category: 'rules.setCategory',
@@ -33,10 +34,11 @@ const ACTION_LABEL: Record<string, string> = {
 export default function PluginDetailPage() {
   const { owner = '', name = '' } = useParams()
   const id = `${owner}/${name}`
+  const [searchParams] = useSearchParams()
   const { t, i18n } = useTranslation()
   const lang = i18n.language
   const { canWrite } = useWorkspace()
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>(searchParams.get('tab') === 'connections' ? 'connections' : 'overview')
   const [target, setTarget] = useState<PluginTarget | null>(null)
 
   // Fetched only now, because the user opened this plugin.
@@ -47,12 +49,27 @@ export default function PluginDetailPage() {
     retry: 1,
   })
 
+  // From the database: connections stay manageable even when the catalog isn't reachable.
+  const { data: installedList } = useQuery({ queryKey: ['plugins', 'installed'], queryFn: pluginsApi.installed })
+  const installed = installedList?.find((p) => p.plugin_id === id)
+  const connectable = Boolean(installed?.integrations.length)
+
   const back = (
     <Link to="/plugins" className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
       <ArrowLeft size={14} />
       {t('plugins.title')}
     </Link>
   )
+
+  if (!data && installed && connectable && isError && !isFetching) {
+    return (
+      <div className="pb-12">
+        {back}
+        <h1 className="mb-6 text-2xl font-semibold tracking-tight">{localized(installed.name, lang)}</h1>
+        <PluginConnections plugin={installed} />
+      </div>
+    )
+  }
 
   if (!data) {
     const notFound = (error as { response?: { status?: number } } | null)?.response?.status === 404
@@ -95,7 +112,7 @@ export default function PluginDetailPage() {
       <Facts plugin={plugin} />
       <p className="flex gap-2 text-xs leading-relaxed text-muted-foreground">
         <ShieldCheck size={14} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-        {t('plugins.detail.previewNote')}
+        {pluginTypes(plugin).includes('code') ? t('plugins.detail.codeNote') : t('plugins.detail.previewNote')}
       </p>
     </>
   )
@@ -133,7 +150,7 @@ export default function PluginDetailPage() {
 
         <div className="min-w-0">
           <div role="tablist" className="mb-6 flex gap-6 border-b">
-            {(['overview', 'inside'] as const).map((value) => (
+            {(connectable ? (['overview', 'inside', 'connections'] as const) : (['overview', 'inside'] as const)).map((value) => (
               <button
                 key={value}
                 type="button"
@@ -153,7 +170,9 @@ export default function PluginDetailPage() {
             ))}
           </div>
 
-          {tab === 'overview' ? (
+          {tab === 'connections' && installed ? (
+            <PluginConnections plugin={installed} />
+          ) : tab === 'overview' ? (
             data.readme ? (
               <PluginReadme markdown={data.readme} base={`${plugin.repository}/blob/${plugin.commit}/`} />
             ) : (
@@ -313,6 +332,37 @@ function Contents({ contents }: { contents: PluginContents }) {
                 </span>
               ))}
             </div>
+          </li>
+        ))}
+      </ContentSection>
+      <ContentSection title={t('plugins.kindName.integrations')} count={contents.integrations?.length ?? 0}>
+        {(contents.integrations ?? []).map((integration) => (
+          <li key={integration.key} className="flex items-center gap-3 px-4 py-2.5">
+            <Plug size={15} className="shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">{localized(integration.name, lang)}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{t(`plugins.code.auth.${integration.auth}`)}</span>
+          </li>
+        ))}
+      </ContentSection>
+      <ContentSection title={t('plugins.code.network')} count={contents.network?.length ?? 0}>
+        {(contents.network ?? []).map((host) => (
+          <li key={host.host} className="flex items-start gap-3 px-4 py-2.5">
+            <Globe size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1">
+              <span className="block font-mono text-xs">{host.host}</span>
+              <span className="block text-xs text-muted-foreground">{localized(host.purpose, lang)}</span>
+            </span>
+          </li>
+        ))}
+      </ContentSection>
+      <ContentSection title={t('plugins.code.access')} count={contents.api_scopes?.length ?? 0}>
+        {(contents.api_scopes ?? []).map((scope) => (
+          <li key={scope.scope} className="flex items-start gap-3 px-4 py-2.5">
+            <KeyRound size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium">{scopeLabel(scope.scope, t)}</span>
+              <span className="block text-xs text-muted-foreground">{localized(scope.purpose, lang)}</span>
+            </span>
           </li>
         ))}
       </ContentSection>
