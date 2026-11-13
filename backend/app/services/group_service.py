@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.shared_scope import other_workspace_shares_hidden
+from app.core.shared_scope import bound_workspace_id
 from app.models.group import Group, GroupMember
 from app.models.user import User
 from app.schemas.group import (
@@ -94,7 +94,7 @@ def _visible_predicate(workspace_id: uuid.UUID, user_id: uuid.UUID):
         )
         .distinct()
     )
-    if other_workspace_shares_hidden():
+    if bound_workspace_id() is not None:
         return Group.workspace_id == workspace_id
     return or_(Group.workspace_id == workspace_id, Group.id.in_(member_groups))
 

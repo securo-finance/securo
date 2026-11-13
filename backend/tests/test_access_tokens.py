@@ -391,3 +391,70 @@ async def test_token_does_not_see_shares_from_other_workspaces(client: AsyncClie
     by_token = (await client.get("/api/dashboard/summary", headers=_bearer(token), params=period)).json()
     assert by_session["monthly_expenses"] == 45.0
     assert by_token["monthly_expenses"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_token_keeps_shares_of_expenses_in_its_own_workspace(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_workspace
+):
+    """In a workspace with two members, an expense the owner split with the
+    other member is part of that workspace: the member's token sees their
+    share and the debt to the owner exactly as their session does."""
+    member_email = "token-share-member@example.com"
+    resp = await client.post("/api/auth/register", json={"email": member_email, "password": "memberpassword12"})
+    assert resp.status_code in (200, 201), resp.text
+    member_id = uuid.UUID(resp.json()["id"])
+    session.add(WorkspaceMember(id=uuid.uuid4(), workspace_id=test_workspace.id, user_id=member_id, role="editor"))
+    await session.commit()
+    login = await client.post("/api/auth/login", data={"username": member_email, "password": "memberpassword12"})
+    member_headers = {"Authorization": f"Bearer {login.json()['access_token']}", "X-Workspace-Id": str(test_workspace.id)}
+
+    owner_headers = {**auth_headers, "X-Workspace-Id": str(test_workspace.id)}
+    account = (
+        await client.post(
+            "/api/accounts",
+            headers=owner_headers,
+            json={"name": "Wallet", "type": "checking", "balance": 0, "currency": "USD"},
+        )
+    ).json()
+    group = (
+        await client.post(
+            "/api/groups", headers=owner_headers, json={"name": "House", "kind": "social", "default_currency": "USD"}
+        )
+    ).json()
+    me = (
+        await client.post(f"/api/groups/{group['id']}/members", headers=owner_headers, json={"name": "Me", "is_self": True})
+    ).json()
+    member = (
+        await client.post(
+            f"/api/groups/{group['id']}/members", headers=owner_headers, json={"name": "Member", "email": member_email}
+        )
+    ).json()
+    resp = await client.post(
+        "/api/transactions",
+        headers=owner_headers,
+        json={
+            "account_id": account["id"],
+            "description": "Groceries",
+            "amount": 90,
+            "date": "2026-04-28",
+            "type": "debit",
+            "currency": "USD",
+            "splits": {"share_type": "equal", "splits": [{"group_member_id": me["id"]}, {"group_member_id": member["id"]}]},
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    token = (await _create(client, member_headers, ["transactions:read", "reports:read"]))["token"]
+    period = {"month": "2026-04-01"}
+    by_session = (await client.get("/api/dashboard/summary", headers=member_headers, params=period)).json()
+    by_token = (await client.get("/api/dashboard/summary", headers=_bearer(token), params=period)).json()
+    # The member's share is in their numbers; the token must match the
+    # session's own figures, whatever the dashboard adds up to.
+    assert by_session["monthly_expenses"] > 0
+    for field in ("monthly_expenses", "monthly_expenses_primary", "pending_shares_net"):
+        assert by_token[field] == by_session[field], field
+
+    session_list = (await client.get("/api/transactions", headers=member_headers)).json()["items"]
+    token_list = (await client.get("/api/transactions", headers=_bearer(token))).json()["items"]
+    assert [t["id"] for t in token_list] == [t["id"] for t in session_list]

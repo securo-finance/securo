@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
-from app.core.shared_scope import invited_group_member_ids
+from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.asset import ASSET_PRICE_DECIMALS, Asset
 from app.models.asset_value import AssetValue
@@ -662,6 +662,7 @@ async def get_income_expenses_report(
             TransactionSplit.group_member_id.in_(viewer_member_ids),
             Transaction.user_id != user_id,
             Transaction.workspace_id != workspace_id,
+            in_bound_workspace(Transaction.workspace_id),
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",

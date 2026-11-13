@@ -100,7 +100,7 @@ async def current_workspace(
     ctx = await resolve_workspace(x_workspace_id, user, session)
     with (
         use_resolved_timezone(workspace_timezone(ctx.workspace.timezone)),
-        bound_to_workspace(access_token is not None),
+        bound_to_workspace(ctx.workspace.id if access_token is not None else None),
     ):
         yield ctx
 

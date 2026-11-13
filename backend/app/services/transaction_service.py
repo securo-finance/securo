@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
-from app.core.shared_scope import invited_group_member_ids
+from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.account import Account
@@ -246,6 +246,7 @@ async def get_transactions(
             .where(
                 TransactionSplit.group_member_id.in_(viewer_member_ids),
                 Transaction.workspace_id != workspace_id,
+                in_bound_workspace(Transaction.workspace_id),
             )
             .distinct()
         )

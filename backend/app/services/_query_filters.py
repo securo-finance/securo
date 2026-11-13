@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.app_clock import app_today
-from app.core.shared_scope import invited_group_member_ids
+from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
@@ -699,6 +699,7 @@ async def viewer_shared_pnl(
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .where(
             TransactionSplit.group_member_id.in_(member_ids),
+            in_bound_workspace(Transaction.workspace_id),
             # Avoid double-counting if the viewer also owns the parent.
             Transaction.user_id != user_id,
             Transaction.source != "opening_balance",
@@ -775,6 +776,7 @@ async def viewer_shared_spending_by_category(
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .where(
             TransactionSplit.group_member_id.in_(member_ids),
+            in_bound_workspace(Transaction.workspace_id),
             Transaction.user_id != user_id,
             Transaction.type == "debit",
             Transaction.source != "opening_balance",
