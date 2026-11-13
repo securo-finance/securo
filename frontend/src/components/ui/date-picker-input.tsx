@@ -3,6 +3,7 @@ import { format } from 'date-fns'
 import { CalendarIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
+import { useToday } from '@/hooks/use-today'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
@@ -29,6 +30,7 @@ function DatePickerInput({
   const [open, setOpen] = useState(false)
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const dateLocale = useDateLocale()
+  const today = useToday()
 
   const selectedDate = value ? new Date(value + 'T00:00:00') : undefined
   const displayText = selectedDate
@@ -56,7 +58,7 @@ function DatePickerInput({
           mode="single"
           locale={dateFnsLocale}
           selected={selectedDate}
-          defaultMonth={selectedDate ?? new Date()}
+          defaultMonth={selectedDate ?? today}
           onSelect={(date) => {
             if (!date) return
             onChange(format(date, 'yyyy-MM-dd'))
