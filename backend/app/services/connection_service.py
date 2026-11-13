@@ -1846,8 +1846,23 @@ def _merge_sync_metadata(
             merged = {**transaction.raw_data, **txn_data.raw_data}
             if merged != transaction.raw_data:
                 transaction.raw_data = merged
-    if transaction.original_description is None:
-        transaction.original_description = txn_data.description
+    provider_description = (txn_data.description or "").strip()
+    if provider_description and transaction.source == "sync":
+        previous_original = transaction.original_description
+        if previous_original is None:
+            # Migration 071 left provenance NULL for older rows. Without knowing
+            # whether the visible text was user-edited, preserve it and store
+            # the provider text only as provenance.
+            transaction.original_description = provider_description
+        elif provider_description != previous_original:
+            if (
+                not transaction.description_is_rule_managed
+                and transaction.description == previous_original
+            ):
+                transaction.description = provider_description
+            transaction.original_description = provider_description
+    elif provider_description and transaction.original_description is None:
+        transaction.original_description = provider_description
     if txn_data.payee and not transaction.payee:
         transaction.payee = txn_data.payee
 
