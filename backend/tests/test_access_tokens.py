@@ -458,3 +458,64 @@ async def test_token_keeps_shares_of_expenses_in_its_own_workspace(
     session_list = (await client.get("/api/transactions", headers=member_headers)).json()["items"]
     token_list = (await client.get("/api/transactions", headers=_bearer(token))).json()["items"]
     assert [t["id"] for t in token_list] == [t["id"] for t in session_list]
+
+
+@pytest.mark.asyncio
+async def test_token_group_filter_stays_in_its_workspace(client: AsyncClient, auth_headers: dict):
+    """A group can hold an invited member's expense from their own workspace.
+    Filtering by that group, the owner's session sees it; the owner's token,
+    bound to the group's workspace, sees only that workspace's expenses."""
+    friend_email = "token-group-friend@example.com"
+    resp = await client.post("/api/auth/register", json={"email": friend_email, "password": "friendpassword12"})
+    assert resp.status_code in (200, 201), resp.text
+    login = await client.post("/api/auth/login", data={"username": friend_email, "password": "friendpassword12"})
+    friend_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    group = (
+        await client.post(
+            "/api/groups", headers=auth_headers, json={"name": "Trip", "kind": "social", "default_currency": "USD"}
+        )
+    ).json()
+    me = (
+        await client.post(f"/api/groups/{group['id']}/members", headers=auth_headers, json={"name": "Me", "is_self": True})
+    ).json()
+    friend = (
+        await client.post(
+            f"/api/groups/{group['id']}/members", headers=auth_headers, json={"name": "Friend", "email": friend_email}
+        )
+    ).json()
+    splits = {"share_type": "equal", "splits": [{"group_member_id": me["id"]}, {"group_member_id": friend["id"]}]}
+
+    async def expense(headers: dict, description: str) -> None:
+        account = (
+            await client.post(
+                "/api/accounts",
+                headers=headers,
+                json={"name": f"{description} wallet", "type": "checking", "balance": 0, "currency": "USD"},
+            )
+        ).json()
+        resp = await client.post(
+            "/api/transactions",
+            headers=headers,
+            json={
+                "account_id": account["id"],
+                "description": description,
+                "amount": 60,
+                "date": "2026-04-28",
+                "type": "debit",
+                "currency": "USD",
+                "splits": splits,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+
+    await expense(auth_headers, "Hotel")  # in the group's workspace
+    await expense(friend_headers, "Dinner")  # in the friend's own workspace
+
+    params = {"group_id": group["id"]}
+    by_session = (await client.get("/api/transactions", headers=auth_headers, params=params)).json()["items"]
+    assert sorted(t["description"] for t in by_session) == ["Dinner", "Hotel"]
+
+    token = (await _create(client, auth_headers, ["transactions:read"]))["token"]
+    by_token = (await client.get("/api/transactions", headers=_bearer(token), params=params)).json()["items"]
+    assert [t["description"] for t in by_token] == ["Hotel"]

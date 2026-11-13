@@ -220,7 +220,12 @@ async def get_transactions(
             .where(TransactionSplit.group_member_id.in_(member_ids_subq))
             .distinct()
         )
-        base_query = base_query.where(Transaction.id.in_(tx_ids_subq))
+        # A group can hold splits of expenses from other workspaces; a token
+        # bound to one workspace still reads only that workspace's.
+        base_query = base_query.where(
+            Transaction.id.in_(tx_ids_subq),
+            in_bound_workspace(Transaction.workspace_id),
+        )
     else:
         # Default scope: transactions in this workspace PLUS cross-workspace
         # shares the viewer participates in. The union surfaces the
