@@ -261,6 +261,67 @@ def test_ignore_action_sets_flag():
     apply_rule_actions(actions, tx, category_already_set=False)
     assert tx.is_ignored is True
 
+
+@pytest.mark.parametrize("source", ["manual", "sync", "transfer"])
+@pytest.mark.parametrize("paired", [False, True])
+def test_ignore_only_skips_paired_transfers_and_keeps_safe_actions(source, paired):
+    category_id = uuid.uuid4()
+    payee_id = uuid.uuid4()
+    tx = make_tx(
+        source=source,
+        transfer_pair_id=uuid.uuid4() if paired else None,
+        is_ignored=False,
+    )
+
+    category_set = apply_rule_actions(
+        [
+            {"op": "ignore"},
+            {"op": "set_description", "value": "Normalized transfer"},
+            {"op": "set_payee", "value": str(payee_id)},
+            {"op": "append_notes", "value": "#reviewed"},
+            {"op": "set_category", "value": str(category_id)},
+        ],
+        tx,
+        category_already_set=False,
+    )
+
+    assert tx.is_ignored is (not paired)
+    assert tx.description == "Normalized transfer"
+    assert tx.payee_id == payee_id
+    assert tx.notes == "#reviewed"
+    assert tx.category_id == category_id
+    assert category_set is True
+
+
+def test_skipping_transfer_ignore_does_not_repair_an_existing_ignored_flag():
+    tx = make_tx(transfer_pair_id=uuid.uuid4(), is_ignored=True)
+
+    apply_rule_actions([{"op": "ignore"}], tx, category_already_set=False)
+
+    assert tx.is_ignored is True
+
+
+@pytest.mark.parametrize("paired", [False, True])
+def test_ignored_category_only_skips_paired_transfers_and_allows_later_safe_action(paired):
+    ignored_category_id = uuid.uuid4()
+    safe_category_id = uuid.uuid4()
+    tx = make_tx(transfer_pair_id=uuid.uuid4() if paired else None)
+
+    category_set = apply_rule_actions(
+        [
+            {"op": "set_category", "value": str(ignored_category_id)},
+            {"op": "append_notes", "value": "#reviewed"},
+            {"op": "set_category", "value": str(safe_category_id)},
+        ],
+        tx,
+        category_already_set=False,
+        ignored_category_ids={ignored_category_id},
+    )
+
+    assert tx.category_id == (safe_category_id if paired else ignored_category_id)
+    assert tx.notes == "#reviewed"
+    assert category_set is True
+
 def test_set_description_preserves_first_original_and_is_idempotent():
     tx = make_tx(description="|fd*f|ood Club", original_description=None)
 

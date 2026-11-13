@@ -91,6 +91,205 @@ async def test_create_same_currency_transfer(
     assert data["debit"]["transfer_pair_id"] == data["credit"]["transfer_pair_id"]
 
 
+@pytest_asyncio.fixture
+async def manual_transfer_accounts(client: AsyncClient, auth_headers):
+    accounts = []
+    for name, balance in (("Transfer source", "2000.00"), ("Transfer destination", "700.00")):
+        response = await client.post(
+            "/api/accounts",
+            json={"name": name, "type": "checking", "balance": balance, "currency": "BRL"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 201
+        account = response.json()
+        assert account["connection_id"] is None
+        detail = await client.get(f"/api/accounts/{account['id']}", headers=auth_headers)
+        assert detail.status_code == 200
+        accounts.append(detail.json())
+    return accounts
+
+
+async def _assert_transfer_persisted_and_balanced(client, auth_headers, data, accounts, categories):
+    assert data["transfer_pair_id"]
+    before = [Decimal(str(account["current_balance"])) for account in accounts]
+    after = []
+    for index, leg_type in enumerate(("debit", "credit")):
+        leg = data[leg_type]
+        response = await client.get(f"/api/transactions/{leg['id']}", headers=auth_headers)
+        assert response.status_code == 200
+        for transaction in (leg, response.json()):
+            assert transaction["category_id"] == str(categories[index].id)
+            assert transaction["is_ignored"] is False
+            assert transaction["transfer_pair_id"] == data["transfer_pair_id"]
+            assert transaction["type"] == leg_type
+            assert transaction["account_id"] == accounts[index]["id"]
+            assert Decimal(str(transaction["amount"])) == Decimal("500.00")
+            assert transaction["currency"] == "BRL"
+        account_response = await client.get(
+            f"/api/accounts/{accounts[index]['id']}", headers=auth_headers
+        )
+        assert account_response.status_code == 200
+        after.append(Decimal(str(account_response.json()["current_balance"])))
+    assert after[0] == before[0] - Decimal("500.00")
+    assert after[1] == before[1] + Decimal("500.00")
+    assert sum(after) == sum(before)
+
+
+@pytest.mark.asyncio
+async def test_create_transfer_applies_rules_to_both_legs(
+    client: AsyncClient,
+    auth_headers,
+    manual_transfer_accounts,
+    test_categories,
+    session: AsyncSession,
+    test_user: User,
+):
+    from app.services.workspace_service import create_workspace
+
+    foreign_workspace = await create_workspace(
+        session, name="Other rules", creator=test_user, self_membership=True, seed_defaults=False
+    )
+    foreign_headers = {**auth_headers, "X-Workspace-Id": str(foreign_workspace.id)}
+    for name, headers, active in (
+        ("Inactive transfer rule", auth_headers, False),
+        ("Foreign transfer rule", foreign_headers, True),
+    ):
+        rule_response = await client.post(
+            "/api/rules",
+            json={
+                "name": name,
+                "conditions": [{"field": "description", "op": "contains", "value": "RULED CARD"}],
+                "actions": [
+                    {"op": "set_description", "value": "Wrong workspace or inactive"},
+                    {"op": "append_notes", "value": "#wrong"},
+                ],
+                "priority": 1,
+                "is_active": active,
+            },
+            headers=headers,
+        )
+        assert rule_response.status_code == 201
+
+    for leg_type, category in zip(("debit", "credit"), test_categories[:2]):
+        rule_response = await client.post(
+            "/api/rules",
+            json={
+                "name": f"Transfer {leg_type} category",
+                "conditions_op": "and",
+                "conditions": [
+                    {"field": "description", "op": "contains", "value": "RULED CARD PAYMENT"},
+                    {"field": "type", "op": "equals", "value": leg_type},
+                ],
+                "actions": [
+                    {"op": "set_category", "value": str(category.id)},
+                    {"op": "set_description", "value": f"Categorized {leg_type}"},
+                    {"op": "append_notes", "value": f"#safe-{leg_type}"},
+                ],
+                "priority": 5,
+                "is_active": True,
+            },
+            headers=auth_headers,
+        )
+        assert rule_response.status_code == 201
+
+    response = await client.post(
+        "/api/transactions/transfer",
+        json={
+            "from_account_id": manual_transfer_accounts[0]["id"],
+            "to_account_id": manual_transfer_accounts[1]["id"],
+            "amount": "500.00",
+            "date": date.today().isoformat(),
+            "description": "RULED CARD PAYMENT 1234",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    await _assert_transfer_persisted_and_balanced(
+        client, auth_headers, data, manual_transfer_accounts, test_categories
+    )
+    for leg_type in ("debit", "credit"):
+        persisted = await client.get(
+            f"/api/transactions/{data[leg_type]['id']}", headers=auth_headers
+        )
+        for transaction in (data[leg_type], persisted.json()):
+            assert transaction["description"] == f"Categorized {leg_type}"
+            assert transaction["notes"] == f"#safe-{leg_type}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target_leg", ["debit", "credit"])
+@pytest.mark.parametrize("unsafe_action", ["ignore", "ignored-category"])
+async def test_create_transfer_skips_one_sided_unsafe_rule_actions(
+    client: AsyncClient,
+    auth_headers,
+    manual_transfer_accounts,
+    test_categories,
+    target_leg,
+    unsafe_action,
+):
+    if unsafe_action == "ignored-category":
+        category_response = await client.post(
+            "/api/categories",
+            json={"name": "Ignored transfer target", "is_ignored": True},
+            headers=auth_headers,
+        )
+        assert category_response.status_code == 201
+        action = {"op": "set_category", "value": category_response.json()["id"]}
+    else:
+        action = {"op": "ignore", "value": True}
+
+    rules = [
+        {
+            "name": "Unsafe transfer target with safe notes",
+            "conditions": [{"field": "type", "op": "equals", "value": target_leg}],
+            "actions": [action, {"op": "append_notes", "value": "#safe-after-unsafe"}],
+            "priority": 1,
+        },
+    ]
+    for leg_type, category in zip(("debit", "credit"), test_categories[:2]):
+        rules.append({
+            "name": f"Later safe {leg_type} category",
+            "conditions": [{"field": "type", "op": "equals", "value": leg_type}],
+            "actions": [{"op": "set_category", "value": str(category.id)}],
+            "priority": 10,
+        })
+    for rule in rules:
+        rule_response = await client.post(
+            "/api/rules",
+            json={**rule, "conditions_op": "and", "is_active": True},
+            headers=auth_headers,
+        )
+        assert rule_response.status_code == 201
+
+    response = await client.post(
+        "/api/transactions/transfer",
+        json={
+            "from_account_id": manual_transfer_accounts[0]["id"],
+            "to_account_id": manual_transfer_accounts[1]["id"],
+            "amount": "500.00",
+            "date": "2020-01-15",
+            "description": "Transfer protected from unsafe rules",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    await _assert_transfer_persisted_and_balanced(
+        client, auth_headers, data, manual_transfer_accounts, test_categories
+    )
+    for leg_type in ("debit", "credit"):
+        persisted = await client.get(
+            f"/api/transactions/{data[leg_type]['id']}", headers=auth_headers
+        )
+        for transaction in (data[leg_type], persisted.json()):
+            assert transaction["description"] == "Transfer protected from unsafe rules"
+            if leg_type == target_leg:
+                assert transaction["notes"] == "#safe-after-unsafe"
+            else:
+                assert not transaction["notes"]
+
+
 @pytest.mark.asyncio
 async def test_create_cross_currency_transfer(
     client: AsyncClient, auth_headers, test_account: Account, usd_account: Account

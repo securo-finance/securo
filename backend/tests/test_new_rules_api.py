@@ -1450,3 +1450,69 @@ async def test_preview_rule_skips_a_hidden_category_like_the_save_path(
         await client.get(f"/api/transactions/{item['id']}", headers=auth_headers)
     ).json()
     assert txn["category_id"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["manual", "sync"])
+@pytest.mark.parametrize("action", ["ignore", "ignored_category", "mixed_safe"])
+async def test_preview_rule_preserves_transfer_safety_when_loading_fresh_rows(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_categories, test_transactions, source, action,
+):
+    ignored_category, safe_category = test_categories[:2]
+    ignored_category.is_ignored = True
+    txn = test_transactions[4]  # NETFLIX starts uncategorized.
+    txn.transfer_pair_id = uuid.uuid4()
+    txn.source = source
+    txn.is_ignored = False
+    transaction_id = str(txn.id)
+    await session.commit()
+    # Force preview's load_only projection to supply the pair identity itself.
+    session.expunge(txn)
+
+    actions = []
+    if action in ("ignore", "mixed_safe"):
+        actions.append({"op": "ignore", "value": True})
+    if action in ("ignored_category", "mixed_safe"):
+        actions.append({"op": "set_category", "value": str(ignored_category.id)})
+    if action == "mixed_safe":
+        actions.extend([
+            {"op": "append_notes", "value": "#reviewed"},
+            {"op": "set_category", "value": str(safe_category.id)},
+        ])
+    body = {
+        "conditions": [{"field": "description", "op": "equals", "value": "NETFLIX"}],
+        "actions": actions,
+    }
+    response = await client.post("/api/rules/preview", json=body, headers=auth_headers)
+    assert response.status_code == 200
+    preview = response.json()
+    expected_change = action == "mixed_safe"
+    expected_category = str(safe_category.id) if expected_change else None
+    assert preview["matched"] == 1
+    assert preview["will_change"] == int(expected_change)
+    item = preview["sample"][0]
+    assert item["id"] == transaction_id
+    assert item["will_change"] is expected_change
+    assert item["current_category_id"] is None
+    assert item["new_category_id"] == expected_category
+
+    untouched = (
+        await client.get(f"/api/transactions/{transaction_id}", headers=auth_headers)
+    ).json()
+    assert untouched["category_id"] is None
+    assert untouched["is_ignored"] is False
+    assert untouched["notes"] is None
+
+    saved = await client.post(
+        "/api/rules",
+        json={**body, "name": "Transfer-safe preview", "apply_to_existing": True},
+        headers=auth_headers,
+    )
+    assert saved.status_code == 201
+    applied = (
+        await client.get(f"/api/transactions/{transaction_id}", headers=auth_headers)
+    ).json()
+    assert applied["category_id"] == expected_category
+    assert applied["is_ignored"] is False
+    assert applied["notes"] == ("#reviewed" if expected_change else None)
