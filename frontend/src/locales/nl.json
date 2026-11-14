@@ -3347,7 +3347,8 @@
       "defaults_one": "Maakt ook {{count}} standaardcategorie die de regels nodig hebben",
       "defaults_other": "Maakt ook {{count}} standaardcategorieën die de regels nodig hebben",
       "themes": "Voegt thema's toe aan de bibliotheek: {{names}}",
-      "themesRemove": "Haalt deze thema's uit de bibliotheek: {{names}}"
+      "themesRemove": "Haalt deze thema's uit de bibliotheek: {{names}}",
+      "themeInUse": "Je gebruikt {{name}}: je gaat terug naar het thema van Securo."
     },
     "page": {
       "section": "Catalogus",

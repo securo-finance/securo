@@ -3345,7 +3345,8 @@
       "defaults_one": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz",
       "defaults_other": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz",
       "themes": "Témákat ad a könyvtárhoz: {{names}}",
-      "themesRemove": "Eltávolítja ezeket a témákat a könyvtárból: {{names}}"
+      "themesRemove": "Eltávolítja ezeket a témákat a könyvtárból: {{names}}",
+      "themeInUse": "A(z) {{name}} témát használod: visszaállsz a Securo saját témájára."
     },
     "page": {
       "section": "Katalógus",

@@ -3346,7 +3346,8 @@
       "defaults_one": "Erstellt außerdem {{count}} Standardkategorie, die seine Regeln brauchen",
       "defaults_other": "Erstellt außerdem {{count}} Standardkategorien, die seine Regeln brauchen",
       "themes": "Fügt der Bibliothek Themes hinzu: {{names}}",
-      "themesRemove": "Entfernt diese Themes aus der Bibliothek: {{names}}"
+      "themesRemove": "Entfernt diese Themes aus der Bibliothek: {{names}}",
+      "themeInUse": "Du nutzt {{name}}: Du kehrst zum Securo-Theme zurück."
     },
     "page": {
       "section": "Katalog",

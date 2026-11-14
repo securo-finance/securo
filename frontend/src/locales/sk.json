@@ -3509,7 +3509,8 @@
       "defaults_many": "Vytvorí aj {{count}} predvolených kategórií pre pravidlá",
       "defaults_other": "Vytvorí aj {{count}} predvolených kategórií pre pravidlá",
       "themes": "Pridá do knižnice motívy: {{names}}",
-      "themesRemove": "Odoberie z knižnice tieto motívy: {{names}}"
+      "themesRemove": "Odoberie z knižnice tieto motívy: {{names}}",
+      "themeInUse": "Používate motív {{name}}: vrátite sa k motívu Securo."
     },
     "page": {
       "section": "Katalóg",

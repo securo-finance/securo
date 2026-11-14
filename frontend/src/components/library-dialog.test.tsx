@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   user: null as unknown as User,
   pluginsEnabled: true,
   installed: [] as unknown[],
+  mode: 'light' as 'light' | 'dark',
   listeners: new Set<() => void>(),
 }))
 
@@ -63,7 +64,7 @@ vi.mock('@/hooks/use-feature-flags', () => ({
 }))
 
 vi.mock('next-themes', () => ({
-  useTheme: () => ({ resolvedTheme: 'light' }),
+  useTheme: () => ({ resolvedTheme: state.mode }),
 }))
 
 beforeEach(() => {
@@ -209,8 +210,40 @@ describe('LibraryDialog', () => {
       expect(api.auth.updateMe).toHaveBeenCalledWith({ theme: 'plugin:securo-finance/plugin-neon:synthwave' }),
     )
     await waitFor(() => expect(document.documentElement.style.getPropertyValue('--app-font')).toContain('monospace'))
-    expect(document.documentElement.style.getPropertyValue('--border')).not.toContain('url')
     state.installed = []
+  })
+
+  it("applies a plugin theme's dark colors, never a value that isn't a color", async () => {
+    state.mode = 'dark'
+    state.user = { ...state.user, theme: 'plugin:securo-finance/plugin-neon:synthwave' }
+    state.installed = [
+      {
+        plugin_id: 'securo-finance/plugin-neon',
+        name: { en: 'Neon themes' },
+        version: '1.0.0',
+        commit: 'a'.repeat(40),
+        installed_at: '2026-11-14T00:00:00Z',
+        integrations: [],
+        network: [],
+        api_scopes: [],
+        redirect_uri: null,
+        themes: [
+          {
+            key: 'synthwave',
+            name: { en: 'Synthwave' },
+            light: {},
+            dark: { background: '#0D0221', border: 'url(https://evil.example/x)' },
+          },
+        ],
+      },
+    ]
+    open('themes')
+    const root = document.documentElement.style
+    await waitFor(() => expect(root.getPropertyValue('--background')).toBe('#0D0221'))
+    expect(root.getPropertyValue('--border')).toBe('')
+    state.installed = []
+    state.mode = 'light'
+    state.user = { ...state.user, theme: null }
   })
 
   it("saves Securo's own theme as no theme", async () => {

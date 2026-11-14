@@ -53,6 +53,14 @@ READABLE_PAIRS = (
     ("primary-foreground", "primary"),
 )
 MIN_CONTRAST = 4.5
+#: Securo's own colors (frontend SECURO_COLORS and index.css), which a
+#: theme's unset tokens keep: contrast is checked against these too.
+DEFAULT_THEME_COLORS = {
+    "light": {"background": "#F8F9FB", "foreground": "#0F172A", "card": "#FFFFFF", "primary": "#6366F1",
+              "primary-foreground": "#FFFFFF", "muted-foreground": "#64748B"},
+    "dark": {"background": "#0C0D12", "foreground": "#F0F0F5", "card": "#16171F", "primary": "#818CF8",
+             "primary-foreground": "#FFFFFF", "muted-foreground": "#8A8F9E"},
+}
 #: A plain host name, optionally with a port; never a wildcard or an address.
 HOST_PATTERN = r"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(:[0-9]{1,5})?$"
 ENTRYPOINT_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$"
@@ -306,9 +314,13 @@ class Theme(_Model):
     def _readable(self) -> Theme:
         if not (self.light or self.dark):
             raise ValueError(f"theme {self.key}: colors nothing")
-        for mode, colors in (("light", self.light), ("dark", self.dark)):
+        for mode, own in (("light", self.light), ("dark", self.dark)):
+            if not own:
+                continue  # that mode keeps Securo's look
+            colors = {**DEFAULT_THEME_COLORS[mode], **own}
             for text, background in READABLE_PAIRS:
-                if text in colors and background in colors:
+                # A pair the theme leaves alone is Securo's own, already readable.
+                if text in own or background in own:
                     ratio = contrast_ratio(colors[text], colors[background])
                     if ratio < MIN_CONTRAST:
                         raise ValueError(

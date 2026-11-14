@@ -9,7 +9,7 @@ import { pluginTheme, type Theme } from '@/lib/themes'
  * Read from what was installed, never the catalog; nothing while plugins are off.
  */
 export function usePluginThemes(): { themes: Theme[]; loading: boolean } {
-  const { pluginsEnabled } = useFeatureFlags()
+  const { pluginsEnabled, isLoading: flagsLoading } = useFeatureFlags()
   const { data, isLoading } = useQuery({
     queryKey: ['plugins', 'installed'],
     // Read only when fetching: with plugins off the API is never touched.
@@ -18,5 +18,6 @@ export function usePluginThemes(): { themes: Theme[]; loading: boolean } {
     staleTime: 5 * 60 * 1000,
   })
   const themes = (data ?? []).flatMap((plugin) => (plugin.themes ?? []).map((theme) => pluginTheme(plugin, theme)))
-  return { themes, loading: pluginsEnabled && isLoading }
+  // Still loading until the flags say whether there are plugins at all.
+  return { themes, loading: flagsLoading || (pluginsEnabled && isLoading) }
 }

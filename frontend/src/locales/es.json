@@ -3349,7 +3349,8 @@
       "defaults_one": "También crea {{count}} categoría predeterminada que usan sus reglas",
       "defaults_other": "También crea {{count}} categorías predeterminadas que usan sus reglas",
       "themes": "Añade temas a la biblioteca: {{names}}",
-      "themesRemove": "Quita estos temas de la biblioteca: {{names}}"
+      "themesRemove": "Quita estos temas de la biblioteca: {{names}}",
+      "themeInUse": "Estás usando {{name}}: volverás al tema de Securo."
     },
     "page": {
       "section": "Catálogo",

@@ -21,6 +21,9 @@ const api = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => api)
 
+const auth = vi.hoisted(() => ({ user: { theme: null as string | null }, updateUser: vi.fn() }))
+vi.mock('@/contexts/auth-context', () => ({ useAuth: () => auth }))
+
 const PLAN: PluginPlan = {
   action: 'install',
   plugin_id: 'acme/ledger',
@@ -129,6 +132,24 @@ describe('PluginPlanDialog with code', () => {
       </WorkspaceContext.Provider>,
     )
     expect(await screen.findByText(t('plugins.code.noNetwork'))).toBeInTheDocument()
+  })
+})
+
+describe('PluginPlanDialog with themes', () => {
+  it('warns whoever uses a theme that leaves the library', async () => {
+    auth.user = { theme: 'plugin:acme/ledger:matrix' }
+    api.plugins.plan.mockResolvedValue({
+      ...PLAN, action: 'remove', commit: null, code: null,
+      themes: { added: [], removed: [{ key: 'matrix', name: { en: 'Matrix' } }] },
+    })
+    renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginPlanDialog target={{ id: 'acme/ledger', name: 'Ledger', action: 'remove' }} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+    )
+    expect(await screen.findByText(t('plugins.plan.themesRemove', { names: 'Matrix' }))).toBeInTheDocument()
+    expect(screen.getByText(t('plugins.plan.themeInUse', { name: 'Matrix' }))).toBeInTheDocument()
+    auth.user = { theme: null }
   })
 })
 

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, KeyRound, Plug, RefreshCw, ShieldCheck, Star } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, KeyRound, Plug, RefreshCw, ShieldCheck, Star, Trash2 } from 'lucide-react'
 
 import { CategoryIcon } from '@/components/category-icon'
 import { PluginAvatar } from '@/components/plugin-avatar'
@@ -215,6 +215,13 @@ function Actions({ plugin, canWrite, onAction }: { plugin: PluginCatalogEntry; c
       )}
       {installable && !plugin.installed_version && (
         <Button className="w-full" onClick={() => onAction('install')}>{t('plugins.install')}</Button>
+      )}
+      {canWrite && plugin.installed_version && (
+        // Always offered to an installed plugin, revoked or not: removing never needs the catalog.
+        <Button variant="outline" className="w-full text-destructive hover:text-destructive" onClick={() => onAction('remove')}>
+          <Trash2 size={14} className="mr-1.5" />
+          {t('plugins.remove')}
+        </Button>
       )}
       {plugin.revoked && plugin.revoked_reason && (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{plugin.revoked_reason}</p>

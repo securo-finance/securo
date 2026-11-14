@@ -3349,7 +3349,8 @@
       "defaults_one": "Crée aussi {{count}} catégorie par défaut utilisée par ses règles",
       "defaults_other": "Crée aussi {{count}} catégories par défaut utilisées par ses règles",
       "themes": "Ajoute des thèmes à la bibliothèque : {{names}}",
-      "themesRemove": "Retire ces thèmes de la bibliothèque : {{names}}"
+      "themesRemove": "Retire ces thèmes de la bibliothèque : {{names}}",
+      "themeInUse": "Vous utilisez {{name}} : vous reviendrez au thème de Securo."
     },
     "page": {
       "section": "Catalogue",

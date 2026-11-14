@@ -3345,7 +3345,8 @@
       "defaults_one": "ルール用のデフォルトカテゴリも {{count}} 件作成します",
       "defaults_other": "ルール用のデフォルトカテゴリも {{count}} 件作成します",
       "themes": "ライブラリにテーマを追加します：{{names}}",
-      "themesRemove": "これらのテーマをライブラリから外します：{{names}}"
+      "themesRemove": "これらのテーマをライブラリから外します：{{names}}",
+      "themeInUse": "{{name}} を使用中です。Securo のテーマに戻ります。"
     },
     "page": {
       "section": "カタログ",

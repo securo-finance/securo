@@ -3345,7 +3345,8 @@
       "defaults_one": "Also creates {{count}} default category its rules need",
       "defaults_other": "Also creates {{count}} default categories its rules need",
       "themes": "Adds themes to the library: {{names}}",
-      "themesRemove": "Takes these themes out of the library: {{names}}"
+      "themesRemove": "Takes these themes out of the library: {{names}}",
+      "themeInUse": "You're using {{name}}: you'll go back to Securo's own theme."
     },
     "page": {
       "section": "Catalog",

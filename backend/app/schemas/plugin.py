@@ -165,14 +165,21 @@ class PluginPlanRead(BaseModel):
     code: "PluginCodeConsentRead | None" = Field(
         default=None, description="For plugins with code: what the owner agrees to let it do."
     )
-    themes: list["PluginThemeNameRead"] | None = Field(
-        default=None, description="Themes it adds to the library (or takes away, removing)."
+    themes: "PluginThemeChangesRead | None" = Field(
+        default=None, description="Themes the action adds to the library and takes out of it."
     )
 
 
 class PluginThemeNameRead(BaseModel):
     key: str
     name: dict[str, str]
+
+
+class PluginThemeChangesRead(BaseModel):
+    added: list[PluginThemeNameRead] = []
+    removed: list[PluginThemeNameRead] = Field(
+        default=[], description="Members using one of these go back to Securo's own theme."
+    )
 
 
 class PluginCodeIntegrationRead(BaseModel):

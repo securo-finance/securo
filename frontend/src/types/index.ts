@@ -839,8 +839,8 @@ export interface PluginPlan {
   default_categories: string[]
   /** For plugins with code: what the owner agrees to. */
   code?: PluginCodeConsent | null
-  /** Themes it adds to the library (or takes away, removing). */
-  themes?: { key: string; name: LocalizedText }[] | null
+  /** Themes it adds to the library and takes out of it (members using one go back to Securo's own). */
+  themes?: { added: { key: string; name: LocalizedText }[]; removed: { key: string; name: LocalizedText }[] } | null
 }
 
 export interface RuleExportPayload {

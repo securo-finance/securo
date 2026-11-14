@@ -91,8 +91,8 @@ class PluginPlan:
     """The commit the plan installs; None when removing."""
     sync: sync.SyncPlan
     code: CodeConsent | None = None
-    themes: list[dict[str, Any]] | None = None
-    """Themes the plugin adds to (or, removing, takes from) the library."""
+    themes: dict[str, list[dict[str, Any]]] | None = None
+    """Themes the action adds to the library (`added`) and takes out of it (`removed`)."""
 
 
 async def installed_plugins(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, WorkspacePlugin]:
@@ -187,11 +187,54 @@ async def plan(
 
 async def _themes(
     session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, manifest: Manifest | None
-) -> list[dict[str, Any]] | None:
-    shown = manifest or _installed_manifest((await installed_plugins(session, workspace_id)).get(plugin_id))
-    if shown is None or not shown.contributes.themes:
+) -> dict[str, list[dict[str, Any]]] | None:
+    """Themes the action adds to the library and takes out of it."""
+    current = _installed_manifest((await installed_plugins(session, workspace_id)).get(plugin_id))
+    before = {t.key: t for t in current.contributes.themes} if current else {}
+    after = {t.key: t for t in manifest.contributes.themes} if manifest else {}
+    added = [{"key": k, "name": t.name} for k, t in after.items() if k not in before]
+    removed = [{"key": k, "name": t.name} for k, t in before.items() if k not in after]
+    if not added and not removed:
         return None
-    return [{"key": t.key, "name": t.name} for t in shown.contributes.themes]
+    return {"added": added, "removed": removed}
+
+
+def theme_id(plugin_id: str, key: str) -> str:
+    """How the library names a plugin's theme, as saved in `users.theme`."""
+    return f"plugin:{plugin_id}:{key}"
+
+
+async def _release_themes(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, keys: set[str]) -> None:
+    """Members using a theme that leaves the library go back to Securo's own (not committed).
+
+    Unless the same plugin is still installed in another workspace of theirs,
+    where the theme keeps showing.
+    """
+    if not keys:
+        return
+    from app.models.user import User
+    from app.models.workspace import WorkspaceMember
+
+    ids = {theme_id(plugin_id, key) for key in keys}
+    # Ids first, then rows by id: users.id and workspace_members.user_id
+    # use different column types, so they're compared as values, not joined.
+    member_ids = list((await session.scalars(
+        select(WorkspaceMember.user_id).where(WorkspaceMember.workspace_id == workspace_id)
+    )).all())
+    users = (await session.scalars(select(User).where(User.id.in_(member_ids), User.theme.in_(ids)))).all()
+    for user in users:
+        theirs = list((await session.scalars(
+            select(WorkspaceMember.workspace_id).where(
+                WorkspaceMember.user_id == user.id, WorkspaceMember.workspace_id != workspace_id
+            )
+        )).all())
+        elsewhere = await session.scalar(
+            select(WorkspacePlugin.id)
+            .where(WorkspacePlugin.plugin_id == plugin_id, WorkspacePlugin.workspace_id.in_(theirs))
+            .limit(1)
+        ) if theirs else None
+        if elsewhere is None:
+            user.theme = None
 
 
 async def _fingerprint(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, checksum: str | None) -> str | None:
@@ -301,6 +344,10 @@ async def apply(
             fingerprint=await _fingerprint(session, workspace_id, plugin_id, checksum),
         )
         record = (await installed_plugins(session, workspace_id)).get(plugin_id)
+        gone_themes = {t.key for t in current.contributes.themes} - (
+            {t.key for t in manifest.contributes.themes} if manifest else set()
+        ) if current else set()
+        await _release_themes(session, workspace_id, plugin_id, gone_themes)
         drops_code = current is not None and current.has_code and not (manifest and manifest.has_code)
         if drops_code:
             # A version without code (or removing): its connections and their tokens go too.

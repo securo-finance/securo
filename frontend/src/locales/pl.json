@@ -3475,7 +3475,8 @@
       "defaults_many": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom",
       "defaults_other": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom",
       "themes": "Dodaje motywy do biblioteki: {{names}}",
-      "themesRemove": "Usuwa te motywy z biblioteki: {{names}}"
+      "themesRemove": "Usuwa te motywy z biblioteki: {{names}}",
+      "themeInUse": "Używasz motywu {{name}}: wrócisz do motywu Securo."
     },
     "page": {
       "section": "Katalog",
