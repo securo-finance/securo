@@ -6,10 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 	&& rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json .npmrc ./
-RUN npm ci
+# The stamp lets scripts/dev-start.sh tell when node_modules is out of date.
+RUN npm ci && sha256sum package-lock.json | cut -d ' ' -f 1 > node_modules/.package-lock.sha256
 
 COPY . .
 
 EXPOSE 5173
 
-CMD ["npm", "run", "dev"]
+CMD ["sh", "scripts/dev-start.sh"]
