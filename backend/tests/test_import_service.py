@@ -714,6 +714,18 @@ class TestParseQif:
         assert transactions[0].date == date(2026, 1, 15)
 
 
+    def test_parse_qif_apostrophe_space_padded_year(self):
+        """Quicken writes 2000-2009 dates with a space-padded year."""
+        qif_content = (
+            "D3/ 1' 8\n"
+            "T-100.00\n"
+            "PTest\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert failed_rows == []
+        assert transactions[0].date == date(2008, 3, 1)
+
 class TestParseCamt:
     """Tests for the parse_camt function (ISO 20022 XML)."""
 
