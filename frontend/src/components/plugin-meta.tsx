@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowUpCircle, Ban, Check, CircleSlash } from 'lucide-react'
 
 import { TYPE_ICON } from '@/lib/plugin-format'
-import { pluginTypes } from '@/lib/plugin-catalog'
+import { onlyFor, pluginTypes } from '@/lib/plugin-catalog'
 import { cn } from '@/lib/utils'
 import type { PluginCatalogEntry } from '@/types'
 
@@ -48,6 +48,15 @@ export function PluginStatus({ entry, className }: { entry: PluginCatalogEntry; 
     )
   }
   if (blocked) return reason
+  const only = onlyFor(entry)
+  if (!entry.fits_workspace && only) {
+    return (
+      <span className={cn(PILL, 'bg-muted text-muted-foreground', className)}>
+        <CircleSlash />
+        {t(only === 'business' ? 'plugins.onlyForBusiness' : 'plugins.onlyForPersonal')}
+      </span>
+    )
+  }
   return null
 }
 

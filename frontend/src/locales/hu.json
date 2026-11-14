@@ -3386,7 +3386,8 @@
         "type": "Típus",
         "content": "Tartalom",
         "language": "Nyelv",
-        "status": "Állapot"
+        "status": "Állapot",
+        "workspace": "Munkaterület"
       },
       "view": {
         "all": "Összes",
@@ -3433,7 +3434,9 @@
       "type": "Típus",
       "added": "Hozzáadva",
       "connections": "Kapcsolatok",
-      "codeNote": "A telepítés megmutatja, mit érhet el és mit módosíthat, mielőtt bármi futna."
+      "codeNote": "A telepítés megmutatja, mit érhet el és mit módosíthat, mielőtt bármi futna.",
+      "workspaces": "Munkaterületek",
+      "anyWorkspace": "Személyes és üzleti"
     },
     "installedFailed": "Nem sikerült betölteni a telepített bővítményeket.",
     "planRecordOnly": {
@@ -3523,7 +3526,9 @@
       "failed": "Nem sikerült befejezni a bejelentkezést. Próbáld újra.",
       "missing": "A szolgáltatás nem küldte vissza a bejelentkezést. Próbáld újra.",
       "serviceError": "A szolgáltatás hibát jelzett: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Csak üzleti munkaterületek",
+    "onlyForPersonal": "Csak személyes munkaterületek"
   },
   "library": {
     "title": "Könyvtár",

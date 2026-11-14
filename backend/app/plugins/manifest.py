@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from app.core.access_token_scopes import ALL_SCOPES
+from app.models.workspace import WORKSPACE_KINDS, WorkspaceKind
 from app.services.category_defaults import DEFAULT_CATEGORIES, DEFAULT_GROUPS
 from app.services.rule_engine import compile_rule_regex
 
@@ -361,6 +362,10 @@ class Contributes(_Model):
         return self
 
 
+def _every_workspace_kind() -> list[WorkspaceKind]:
+    return [cast(WorkspaceKind, kind) for kind in WORKSPACE_KINDS]
+
+
 class Manifest(_Model):
     id: str = Field(pattern=ID_PATTERN)
     name: Text
@@ -373,6 +378,8 @@ class Manifest(_Model):
     runtime: Runtime | None = None
     network: list[NetworkHost] = Field(default=[], max_length=100)
     api_scopes: list[ApiScope] = Field(default=[], max_length=len(ALL_SCOPES))
+    #: The workspace types it's meant for: personal, business, or both when left out.
+    workspaces: list[WorkspaceKind] = Field(default_factory=lambda: _every_workspace_kind(), min_length=1)
 
     @property
     def has_code(self) -> bool:
@@ -386,6 +393,8 @@ class Manifest(_Model):
             raise ValueError("network and api_scopes are only for plugins with a runtime")
         if self.runtime is not None and not self.contributes.integrations:
             raise ValueError("a runtime needs something to run: add an integration")
+        if len(self.workspaces) != len(set(self.workspaces)):
+            raise ValueError("workspaces must be unique")
         hosts = [h.host for h in self.network]
         scopes = [s.scope for s in self.api_scopes]
         if len(hosts) != len(set(hosts)) or len(scopes) != len(set(scopes)):

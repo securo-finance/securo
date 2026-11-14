@@ -24,6 +24,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.models.workspace import WORKSPACE_KINDS
 from app.core.config import get_settings
 from app.plugins.manifest import (
     CODE_KINDS,
@@ -91,6 +92,9 @@ class IndexEntry(BaseModel):
     updated_at: datetime | None = None
     revoked: bool = False
     revoked_reason: str | None = Field(default=None, max_length=500)
+    workspaces: list[str] = Field(
+        default_factory=lambda: list(WORKSPACE_KINDS), description="The workspace types it's meant for."
+    )
 
     @property
     def owner(self) -> str:
@@ -104,6 +108,10 @@ class IndexEntry(BaseModel):
     @property
     def compatible(self) -> bool:
         return is_compatible(self.min_securo_version)
+
+    def fits(self, workspace_kind: str) -> bool:
+        """It's meant for workspaces of this type."""
+        return workspace_kind in self.workspaces
 
 
 def http_client() -> httpx.AsyncClient:

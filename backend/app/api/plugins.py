@@ -53,6 +53,7 @@ def _catalog_read(item: service.CatalogItem) -> PluginCatalogRead:
         owner=entry.owner,
         compatible=entry.compatible,
         supported=entry.supported,
+        fits_workspace=item.fits_workspace,
         installed_version=item.installed.version if item.installed else None,
         update_available=item.update_available,
     )

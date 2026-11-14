@@ -3386,7 +3386,8 @@
         "type": "種類",
         "content": "内容",
         "language": "言語",
-        "status": "状態"
+        "status": "状態",
+        "workspace": "ワークスペース"
       },
       "view": {
         "all": "すべて",
@@ -3433,7 +3434,9 @@
       "type": "種類",
       "added": "追加日",
       "connections": "接続",
-      "codeNote": "インストールすると、何かが実行される前に、接続先と変更できる内容が表示されます。"
+      "codeNote": "インストールすると、何かが実行される前に、接続先と変更できる内容が表示されます。",
+      "workspaces": "ワークスペース",
+      "anyWorkspace": "個人用とビジネス用"
     },
     "installedFailed": "インストール済みのプラグインを読み込めませんでした。",
     "planRecordOnly": {
@@ -3523,7 +3526,9 @@
       "failed": "サインインを完了できませんでした。もう一度お試しください。",
       "missing": "サービスからサインインの結果が返されませんでした。もう一度お試しください。",
       "serviceError": "サービスがエラーを返しました：{{message}}"
-    }
+    },
+    "onlyForBusiness": "ビジネス用ワークスペースのみ",
+    "onlyForPersonal": "個人用ワークスペースのみ"
   },
   "library": {
     "title": "ライブラリ",

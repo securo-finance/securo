@@ -3572,7 +3572,8 @@
         "type": "Typ",
         "content": "Obsah",
         "language": "Jazyk",
-        "status": "Stav"
+        "status": "Stav",
+        "workspace": "Pracovní prostor"
       },
       "view": {
         "all": "Vše",
@@ -3619,7 +3620,9 @@
       "type": "Typ",
       "added": "Přidáno",
       "connections": "Připojení",
-      "codeNote": "Instalace ukáže, k čemu se může připojit a co může měnit, ještě než se cokoli spustí."
+      "codeNote": "Instalace ukáže, k čemu se může připojit a co může měnit, ještě než se cokoli spustí.",
+      "workspaces": "Pracovní prostory",
+      "anyWorkspace": "Osobní i firemní"
     },
     "installedFailed": "Nainstalované pluginy se nepodařilo načíst.",
     "planRecordOnly": {
@@ -3709,7 +3712,9 @@
       "failed": "Přihlášení se nepodařilo dokončit. Zkuste to znovu.",
       "missing": "Služba přihlášení nevrátila. Zkuste to znovu.",
       "serviceError": "Služba nahlásila chybu: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Pouze firemní pracovní prostory",
+    "onlyForPersonal": "Pouze osobní pracovní prostory"
   },
   "library": {
     "title": "Knihovna",
