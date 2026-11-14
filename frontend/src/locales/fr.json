@@ -3294,7 +3294,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Catégories, règles et intégrations créées par la communauté. Vous vérifiez chaque modification avant qu'elle soit appliquée.",
+    "hint": "Catégories, règles, thèmes et intégrations créés par la communauté. Vous vérifiez chaque modification avant qu'elle soit appliquée.",
     "browse": "Parcourir le catalogue",
     "noneInstalled": "Aucun plugin installé dans cet espace de travail.",
     "remove": "Retirer le plugin",
@@ -3347,7 +3347,9 @@
       "existing": "Ignore {{items}} que vous avez déjà :",
       "unresolved": "Ignore {{items}} dont la catégorie n'existe pas :",
       "defaults_one": "Crée aussi {{count}} catégorie par défaut utilisée par ses règles",
-      "defaults_other": "Crée aussi {{count}} catégories par défaut utilisées par ses règles"
+      "defaults_other": "Crée aussi {{count}} catégories par défaut utilisées par ses règles",
+      "themes": "Ajoute des thèmes à la bibliothèque : {{names}}",
+      "themesRemove": "Retire ces thèmes de la bibliothèque : {{names}}"
     },
     "page": {
       "section": "Catalogue",
@@ -3412,7 +3414,8 @@
       "parsers": "Lecteurs de fichiers",
       "price_providers": "Fournisseurs de prix",
       "agent_tools": "Outils de l'agent",
-      "integrations": "Intégrations"
+      "integrations": "Intégrations",
+      "themes": "Thèmes"
     },
     "detail": {
       "overview": "Aperçu",
@@ -3602,7 +3605,8 @@
     "needs": {
       "assistant": "Nécessite l'activation des agents IA.",
       "invoices": "Disponible dans les espaces de travail de type Professionnel."
-    }
+    },
+    "fromPlugin": "De {{name}}"
   },
   "widgets": {
     "budgets": "Budgets",

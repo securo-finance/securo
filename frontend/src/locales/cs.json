@@ -3462,7 +3462,7 @@
   },
   "plugins": {
     "title": "Pluginy",
-    "hint": "Kategorie, pravidla a integrace od komunity. Každou změnu si před použitím zkontrolujete.",
+    "hint": "Kategorie, pravidla, motivy a integrace od komunity. Každou změnu si před použitím zkontrolujete.",
     "browse": "Procházet katalog",
     "noneInstalled": "V tomto pracovním prostoru nejsou nainstalované žádné pluginy.",
     "remove": "Odebrat plugin",
@@ -3523,7 +3523,9 @@
       "defaults_one": "Vytvoří také {{count}} výchozí kategorii pro pravidla",
       "defaults_few": "Vytvoří také {{count}} výchozí kategorie pro pravidla",
       "defaults_many": "Vytvoří také {{count}} výchozích kategorií pro pravidla",
-      "defaults_other": "Vytvoří také {{count}} výchozích kategorií pro pravidla"
+      "defaults_other": "Vytvoří také {{count}} výchozích kategorií pro pravidla",
+      "themes": "Přidá do knihovny motivy: {{names}}",
+      "themesRemove": "Odebere z knihovny tyto motivy: {{names}}"
     },
     "page": {
       "section": "Katalog",
@@ -3594,7 +3596,8 @@
       "parsers": "Čtečky souborů",
       "price_providers": "Poskytovatelé cen",
       "agent_tools": "Nástroje agenta",
-      "integrations": "Integrace"
+      "integrations": "Integrace",
+      "themes": "Motivy"
     },
     "detail": {
       "overview": "Přehled",
@@ -3784,7 +3787,8 @@
     "needs": {
       "assistant": "Vyžaduje zapnuté AI agenty.",
       "invoices": "Dostupné v pracovních prostorech typu Firemní."
-    }
+    },
+    "fromPlugin": "Z: {{name}}"
   },
   "widgets": {
     "budgets": "Rozpočty",

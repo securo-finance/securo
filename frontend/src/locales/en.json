@@ -3290,7 +3290,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Categories, rules and integrations made by the community. You review every change before it's applied.",
+    "hint": "Categories, rules, themes and integrations made by the community. You review every change before it's applied.",
     "browse": "Browse catalog",
     "noneInstalled": "No plugins installed in this workspace.",
     "remove": "Remove plugin",
@@ -3343,7 +3343,9 @@
       "existing": "Skips {{items}} you already have:",
       "unresolved": "Skips {{items}} whose category is missing:",
       "defaults_one": "Also creates {{count}} default category its rules need",
-      "defaults_other": "Also creates {{count}} default categories its rules need"
+      "defaults_other": "Also creates {{count}} default categories its rules need",
+      "themes": "Adds themes to the library: {{names}}",
+      "themesRemove": "Takes these themes out of the library: {{names}}"
     },
     "page": {
       "section": "Catalog",
@@ -3408,7 +3410,8 @@
       "parsers": "File parsers",
       "price_providers": "Price providers",
       "agent_tools": "Agent tools",
-      "integrations": "Integrations"
+      "integrations": "Integrations",
+      "themes": "Themes"
     },
     "detail": {
       "overview": "Overview",
@@ -3598,7 +3601,8 @@
     "needs": {
       "assistant": "Needs AI agents turned on.",
       "invoices": "Available in Business workspaces."
-    }
+    },
+    "fromPlugin": "From {{name}}"
   },
   "widgets": {
     "budgets": "Budgets",

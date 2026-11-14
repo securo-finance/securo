@@ -3290,7 +3290,7 @@
   },
   "plugins": {
     "title": "Bővítmények",
-    "hint": "A közösség által készített kategóriák, szabályok és integrációk. Minden változást átnézhetsz, mielőtt életbe lép.",
+    "hint": "A közösség által készített kategóriák, szabályok, témák és integrációk. Minden változást átnézhetsz, mielőtt életbe lép.",
     "browse": "Katalógus böngészése",
     "noneInstalled": "Ebben a munkaterületben nincs telepített bővítmény.",
     "remove": "Bővítmény eltávolítása",
@@ -3343,7 +3343,9 @@
       "existing": "Kihagyja, ami már megvan: {{items}}:",
       "unresolved": "Kihagyja a kategória nélküli szabályokat: {{items}}:",
       "defaults_one": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz",
-      "defaults_other": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz"
+      "defaults_other": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz",
+      "themes": "Témákat ad a könyvtárhoz: {{names}}",
+      "themesRemove": "Eltávolítja ezeket a témákat a könyvtárból: {{names}}"
     },
     "page": {
       "section": "Katalógus",
@@ -3408,7 +3410,8 @@
       "parsers": "Fájlolvasók",
       "price_providers": "Árszolgáltatók",
       "agent_tools": "Ügynökeszközök",
-      "integrations": "Integrációk"
+      "integrations": "Integrációk",
+      "themes": "Témák"
     },
     "detail": {
       "overview": "Áttekintés",
@@ -3598,7 +3601,8 @@
     "needs": {
       "assistant": "Bekapcsolt AI-ügynököket igényel.",
       "invoices": "Vállalkozás típusú munkaterületeken érhető el."
-    }
+    },
+    "fromPlugin": "Forrás: {{name}}"
   },
   "widgets": {
     "budgets": "Költségvetések",

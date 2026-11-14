@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { useTheme } from 'next-themes'
 import { ArrowRight, Check, Minus, Plus, RotateCcw } from 'lucide-react'
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -11,7 +10,8 @@ import { useEntryAvailability } from '@/hooks/use-entry-availability'
 import { useAppTheme } from '@/hooks/use-app-theme'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { SURFACE_ENTRIES, type LibraryEntry, type LibraryKind, type Surface } from '@/lib/library'
-import { BUILT_IN_THEMES, DEFAULT_THEME_ID, SECURO_COLORS, type AccentColors, type Theme, type ThemeColors } from '@/lib/themes'
+import { ThemePreview } from '@/components/theme-preview'
+import { localized } from '@/lib/localized-text'
 import { cn } from '@/lib/utils'
 
 const KINDS: LibraryKind[] = ['widgets', 'reports', 'themes']
@@ -169,11 +169,11 @@ function EntryIcon({ entry }: { entry: LibraryEntry }) {
 }
 
 function Themes() {
-  const { t } = useTranslation()
-  const { themeId, chooseTheme, accent } = useAppTheme()
+  const { t, i18n } = useTranslation()
+  const { themeId, chooseTheme, accent, themes } = useAppTheme()
   return (
     <div role="group" aria-label={t('library.kind.themes')} className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {BUILT_IN_THEMES.map((theme) => {
+      {themes.map((theme) => {
         const selected = theme.id === themeId
         return (
           <button
@@ -188,7 +188,16 @@ function Themes() {
           >
             <ThemePreview theme={theme} accent={accent} />
             <span className="mt-2 flex items-center justify-between gap-2 px-1">
-              <span className="truncate text-sm font-medium">{t(`library.theme.${theme.id}`)}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">
+                  {theme.name ? localized(theme.name, i18n.language) : t(`library.theme.${theme.id}`)}
+                </span>
+                {theme.plugin && (
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {t('library.fromPlugin', { name: localized(theme.plugin.name, i18n.language) })}
+                  </span>
+                )}
+              </span>
               {selected && <Check size={14} className="shrink-0 text-primary" />}
             </span>
           </button>
@@ -198,46 +207,3 @@ function Themes() {
   )
 }
 
-/**
- * A miniature of the app in a theme, in the current light or dark mode:
- * the page, a card with text, the primary color and the first chart series.
- * Tokens a theme doesn't set show Securo's own.
- */
-function ThemePreview({ theme, accent }: { theme: Theme; accent?: AccentColors }) {
-  const { resolvedTheme } = useTheme()
-  const mode = resolvedTheme === 'dark' ? 'dark' : 'light'
-  const own = SECURO_COLORS[mode]
-  const colors: ThemeColors = {
-    ...own,
-    ...(theme.id === DEFAULT_THEME_ID && accent?.[mode] ? { primary: accent[mode]! } : {}),
-    ...theme[mode],
-  }
-  const pick = (token: keyof ThemeColors) => colors[token]
-  const radius = `${(theme.radius ?? 0.625) * 0.6}rem`
-  return (
-    <span
-      aria-hidden
-      className="flex h-20 gap-1.5 overflow-hidden rounded-lg border p-1.5"
-      style={{ background: pick('background'), borderColor: pick('border') }}
-    >
-      <span className="w-3 shrink-0 rounded-sm" style={{ background: pick('card') }} />
-      <span
-        className="flex flex-1 flex-col justify-between border p-1.5"
-        style={{ background: pick('card'), borderColor: pick('border'), borderRadius: radius }}
-      >
-        <span className="space-y-1">
-          <span className="block h-1.5 w-3/5 rounded-full" style={{ background: pick('foreground') }} />
-          <span className="block h-1.5 w-2/5 rounded-full" style={{ background: pick('muted-foreground') }} />
-        </span>
-        <span className="flex items-end justify-between">
-          <span className="h-3 w-8" style={{ background: pick('primary'), borderRadius: radius }} />
-          <span className="flex items-end gap-0.5">
-            {[0.5, 0.8, 0.65, 1].map((h, i) => (
-              <span key={i} className="w-1.5 rounded-sm" style={{ height: `${h * 18}px`, background: pick('chart-1'), opacity: 0.5 + i * 0.15 }} />
-            ))}
-          </span>
-        </span>
-      </span>
-    </span>
-  )
-}

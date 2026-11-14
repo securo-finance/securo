@@ -3290,7 +3290,7 @@
   },
   "plugins": {
     "title": "プラグイン",
-    "hint": "コミュニティが作ったカテゴリ、ルール、連携。適用前にすべての変更を確認できます。",
+    "hint": "コミュニティが作ったカテゴリ、ルール、テーマ、連携。適用前にすべての変更を確認できます。",
     "browse": "カタログを見る",
     "noneInstalled": "このワークスペースにインストールされたプラグインはありません。",
     "remove": "プラグインを削除",
@@ -3343,7 +3343,9 @@
       "existing": "既にあるためスキップ: {{items}}:",
       "unresolved": "カテゴリがないためスキップ: {{items}}:",
       "defaults_one": "ルール用のデフォルトカテゴリも {{count}} 件作成します",
-      "defaults_other": "ルール用のデフォルトカテゴリも {{count}} 件作成します"
+      "defaults_other": "ルール用のデフォルトカテゴリも {{count}} 件作成します",
+      "themes": "ライブラリにテーマを追加します：{{names}}",
+      "themesRemove": "これらのテーマをライブラリから外します：{{names}}"
     },
     "page": {
       "section": "カタログ",
@@ -3408,7 +3410,8 @@
       "parsers": "ファイルリーダー",
       "price_providers": "価格プロバイダー",
       "agent_tools": "エージェントツール",
-      "integrations": "連携"
+      "integrations": "連携",
+      "themes": "テーマ"
     },
     "detail": {
       "overview": "概要",
@@ -3598,7 +3601,8 @@
     "needs": {
       "assistant": "AIエージェントを有効にする必要があります。",
       "invoices": "ビジネスワークスペースで利用できます。"
-    }
+    },
+    "fromPlugin": "{{name}} より"
   },
   "widgets": {
     "budgets": "予算",

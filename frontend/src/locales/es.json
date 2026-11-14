@@ -3294,7 +3294,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Categorías, reglas e integraciones hechas por la comunidad. Revisas cada cambio antes de aplicarlo.",
+    "hint": "Categorías, reglas, temas e integraciones hechos por la comunidad. Revisas cada cambio antes de aplicarlo.",
     "browse": "Ver catálogo",
     "noneInstalled": "No hay plugins instalados en este espacio de trabajo.",
     "remove": "Quitar plugin",
@@ -3347,7 +3347,9 @@
       "existing": "Omite {{items}} que ya tienes:",
       "unresolved": "Omite {{items}} cuya categoría no existe:",
       "defaults_one": "También crea {{count}} categoría predeterminada que usan sus reglas",
-      "defaults_other": "También crea {{count}} categorías predeterminadas que usan sus reglas"
+      "defaults_other": "También crea {{count}} categorías predeterminadas que usan sus reglas",
+      "themes": "Añade temas a la biblioteca: {{names}}",
+      "themesRemove": "Quita estos temas de la biblioteca: {{names}}"
     },
     "page": {
       "section": "Catálogo",
@@ -3412,7 +3414,8 @@
       "parsers": "Lectores de archivos",
       "price_providers": "Proveedores de precios",
       "agent_tools": "Herramientas del agente",
-      "integrations": "Integraciones"
+      "integrations": "Integraciones",
+      "themes": "Temas"
     },
     "detail": {
       "overview": "Resumen",
@@ -3602,7 +3605,8 @@
     "needs": {
       "assistant": "Requiere activar los agentes de IA.",
       "invoices": "Disponible en espacios de trabajo de Negocios."
-    }
+    },
+    "fromPlugin": "De {{name}}"
   },
   "widgets": {
     "budgets": "Presupuestos",

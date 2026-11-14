@@ -3294,7 +3294,7 @@
   },
   "plugins": {
     "title": "Plugin",
-    "hint": "Categorie, regole e integrazioni create dalla community. Controlli ogni modifica prima che venga applicata.",
+    "hint": "Categorie, regole, temi e integrazioni create dalla community. Controlli ogni modifica prima che venga applicata.",
     "browse": "Sfoglia il catalogo",
     "noneInstalled": "Nessun plugin installato in questo spazio di lavoro.",
     "remove": "Rimuovi plugin",
@@ -3347,7 +3347,9 @@
       "existing": "Salta {{items}} che hai già:",
       "unresolved": "Salta {{items}} la cui categoria non esiste:",
       "defaults_one": "Crea anche {{count}} categoria predefinita usata dalle regole",
-      "defaults_other": "Crea anche {{count}} categorie predefinite usate dalle regole"
+      "defaults_other": "Crea anche {{count}} categorie predefinite usate dalle regole",
+      "themes": "Aggiunge temi alla libreria: {{names}}",
+      "themesRemove": "Toglie questi temi dalla libreria: {{names}}"
     },
     "page": {
       "section": "Catalogo",
@@ -3412,7 +3414,8 @@
       "parsers": "Lettori di file",
       "price_providers": "Fornitori di prezzi",
       "agent_tools": "Strumenti dell'agente",
-      "integrations": "Integrazioni"
+      "integrations": "Integrazioni",
+      "themes": "Temi"
     },
     "detail": {
       "overview": "Panoramica",
@@ -3602,7 +3605,8 @@
     "needs": {
       "assistant": "Richiede gli agenti IA attivi.",
       "invoices": "Disponibile negli spazi di lavoro di tipo Attività."
-    }
+    },
+    "fromPlugin": "Da {{name}}"
   },
   "widgets": {
     "budgets": "Budget",

@@ -31,7 +31,7 @@ const NAMES_SHOWN = 5
 
 /** The preview of installing, updating or removing a plugin, and its confirmation. */
 export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; onClose: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const describe = useDescribe()
   const queryClient = useQueryClient()
   const { canManage } = useWorkspace()
@@ -73,8 +73,9 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
   // that plan is exactly what the server would refuse, so it isn't shown.
   const failed = isError && !isFetching
   const shown = !failed ? plan : undefined
+  const themeNames = (shown?.themes ?? []).map((theme) => localized(theme.name, i18n.language))
   const changes = shown
-    ? shown.create.length + shown.update.length + shown.delete.length + shown.release.length > 0
+    ? shown.create.length + shown.update.length + shown.delete.length + shown.release.length + themeNames.length > 0
     : false
   // A plan that touches no item still records something: the installed version
   // moves, or an installation whose items are all gone is taken off the list.
@@ -115,6 +116,12 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
 
         {/* Long consent lists scroll; the buttons below always stay in reach. */}
         <div className="-mx-1 max-h-[55vh] space-y-4 overflow-y-auto px-1">
+
+        {themeNames.length > 0 && (
+          <p className="text-sm">
+            {t(target.action === 'remove' ? 'plugins.plan.themesRemove' : 'plugins.plan.themes', { names: themeNames.join(', ') })}
+          </p>
+        )}
 
         {lines.length > 0 && (
           <ul className="space-y-2 text-sm">

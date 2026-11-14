@@ -3292,7 +3292,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Categorieën, regels en integraties gemaakt door de community. Je bekijkt elke wijziging voordat die wordt toegepast.",
+    "hint": "Categorieën, regels, thema's en integraties gemaakt door de community. Je bekijkt elke wijziging voordat die wordt toegepast.",
     "browse": "Catalogus bekijken",
     "noneInstalled": "Geen plugins geïnstalleerd in deze workspace.",
     "remove": "Plugin verwijderen",
@@ -3345,7 +3345,9 @@
       "existing": "Slaat {{items}} over die je al hebt:",
       "unresolved": "Slaat {{items}} over waarvan de categorie ontbreekt:",
       "defaults_one": "Maakt ook {{count}} standaardcategorie die de regels nodig hebben",
-      "defaults_other": "Maakt ook {{count}} standaardcategorieën die de regels nodig hebben"
+      "defaults_other": "Maakt ook {{count}} standaardcategorieën die de regels nodig hebben",
+      "themes": "Voegt thema's toe aan de bibliotheek: {{names}}",
+      "themesRemove": "Haalt deze thema's uit de bibliotheek: {{names}}"
     },
     "page": {
       "section": "Catalogus",
@@ -3410,7 +3412,8 @@
       "parsers": "Bestandslezers",
       "price_providers": "Prijsaanbieders",
       "agent_tools": "Agenttools",
-      "integrations": "Integraties"
+      "integrations": "Integraties",
+      "themes": "Thema's"
     },
     "detail": {
       "overview": "Overzicht",
@@ -3600,7 +3603,8 @@
     "needs": {
       "assistant": "Vereist ingeschakelde AI-agents.",
       "invoices": "Beschikbaar in werkruimtes van het type Zakelijk."
-    }
+    },
+    "fromPlugin": "Van {{name}}"
   },
   "widgets": {
     "budgets": "Budgetten",

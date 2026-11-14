@@ -3291,7 +3291,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Kategorien, Regeln und Integrationen aus der Community. Du prüfst jede Änderung, bevor sie angewendet wird.",
+    "hint": "Kategorien, Regeln, Themes und Integrationen aus der Community. Du prüfst jede Änderung, bevor sie angewendet wird.",
     "browse": "Katalog durchsuchen",
     "noneInstalled": "In diesem Workspace sind keine Plugins installiert.",
     "remove": "Plugin entfernen",
@@ -3344,7 +3344,9 @@
       "existing": "Überspringt {{items}}, die du schon hast:",
       "unresolved": "Überspringt {{items}}, deren Kategorie fehlt:",
       "defaults_one": "Erstellt außerdem {{count}} Standardkategorie, die seine Regeln brauchen",
-      "defaults_other": "Erstellt außerdem {{count}} Standardkategorien, die seine Regeln brauchen"
+      "defaults_other": "Erstellt außerdem {{count}} Standardkategorien, die seine Regeln brauchen",
+      "themes": "Fügt der Bibliothek Themes hinzu: {{names}}",
+      "themesRemove": "Entfernt diese Themes aus der Bibliothek: {{names}}"
     },
     "page": {
       "section": "Katalog",
@@ -3409,7 +3411,8 @@
       "parsers": "Dateileser",
       "price_providers": "Preisanbieter",
       "agent_tools": "Agent-Werkzeuge",
-      "integrations": "Integrationen"
+      "integrations": "Integrationen",
+      "themes": "Themes"
     },
     "detail": {
       "overview": "Übersicht",
@@ -3599,7 +3602,8 @@
     "needs": {
       "assistant": "Erfordert aktivierte KI-Agenten.",
       "invoices": "Verfügbar in Arbeitsbereichen vom Typ Geschäftlich."
-    }
+    },
+    "fromPlugin": "Von {{name}}"
   },
   "widgets": {
     "budgets": "Budgets",

@@ -91,6 +91,8 @@ class PluginPlan:
     """The commit the plan installs; None when removing."""
     sync: sync.SyncPlan
     code: CodeConsent | None = None
+    themes: list[dict[str, Any]] | None = None
+    """Themes the plugin adds to (or, removing, takes from) the library."""
 
 
 async def installed_plugins(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, WorkspacePlugin]:
@@ -162,6 +164,7 @@ def contents(manifest: Manifest) -> dict[str, list[dict[str, Any]]]:
             for rule in manifest.contributes.rules
         ],
         "integrations": [i.model_dump() for i in manifest.contributes.integrations],
+        "themes": [t.model_dump() for t in manifest.contributes.themes],
         "network": [h.model_dump() for h in manifest.network],
         "api_scopes": [a.model_dump() for a in manifest.api_scopes],
     }
@@ -175,7 +178,20 @@ async def plan(
     plan = await sync.plan_sync(
         session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True, fingerprint=fingerprint
     )
-    return PluginPlan(action, plugin_id, commit, plan, await _consent(session, workspace_id, plugin_id, manifest))
+    return PluginPlan(
+        action, plugin_id, commit, plan,
+        await _consent(session, workspace_id, plugin_id, manifest),
+        await _themes(session, workspace_id, plugin_id, manifest),
+    )
+
+
+async def _themes(
+    session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, manifest: Manifest | None
+) -> list[dict[str, Any]] | None:
+    shown = manifest or _installed_manifest((await installed_plugins(session, workspace_id)).get(plugin_id))
+    if shown is None or not shown.contributes.themes:
+        return None
+    return [{"key": t.key, "name": t.name} for t in shown.contributes.themes]
 
 
 async def _fingerprint(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, checksum: str | None) -> str | None:
@@ -297,7 +313,9 @@ async def apply(
                 record = WorkspacePlugin(workspace_id=workspace_id, plugin_id=plugin_id, installed_by=user_id)
                 session.add(record)
             record.name, record.version, record.commit = manifest.name, manifest.version, target_commit
-            record.manifest = manifest.model_dump(mode="json") if manifest.has_code else None
+            # Kept for every plugin: connections need the integrations, the
+            # library the themes, and neither should depend on the catalog.
+            record.manifest = manifest.model_dump(mode="json")
             if action == "update" and manifest.has_code:
                 await connections.follow_manifest(session, workspace_id, manifest, lang=lang)
         await session.commit()
@@ -308,7 +326,7 @@ async def apply(
         raise
     if current is not None and current.has_code and previous_commit and previous_commit != target_commit:
         await _release_code(session, plugin_id, previous_commit)
-    return PluginPlan(action, plugin_id, target_commit, result.plan, consent)
+    return PluginPlan(action, plugin_id, target_commit, result.plan, consent, None)
 
 
 async def _install_code(entry: index.IndexEntry, manifest: Manifest) -> bool:

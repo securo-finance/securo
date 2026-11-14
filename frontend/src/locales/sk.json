@@ -3446,7 +3446,7 @@
   },
   "plugins": {
     "title": "Pluginy",
-    "hint": "Kategórie, pravidlá a integrácie od komunity. Každú zmenu si pred použitím skontrolujete.",
+    "hint": "Kategórie, pravidlá, motívy a integrácie od komunity. Každú zmenu si pred použitím skontrolujete.",
     "browse": "Prehliadať katalóg",
     "noneInstalled": "V tomto pracovnom priestore nie sú nainštalované žiadne pluginy.",
     "remove": "Odstrániť plugin",
@@ -3507,7 +3507,9 @@
       "defaults_one": "Vytvorí aj {{count}} predvolenú kategóriu pre pravidlá",
       "defaults_few": "Vytvorí aj {{count}} predvolené kategórie pre pravidlá",
       "defaults_many": "Vytvorí aj {{count}} predvolených kategórií pre pravidlá",
-      "defaults_other": "Vytvorí aj {{count}} predvolených kategórií pre pravidlá"
+      "defaults_other": "Vytvorí aj {{count}} predvolených kategórií pre pravidlá",
+      "themes": "Pridá do knižnice motívy: {{names}}",
+      "themesRemove": "Odoberie z knižnice tieto motívy: {{names}}"
     },
     "page": {
       "section": "Katalóg",
@@ -3578,7 +3580,8 @@
       "parsers": "Čítačky súborov",
       "price_providers": "Poskytovatelia cien",
       "agent_tools": "Nástroje agenta",
-      "integrations": "Integrácie"
+      "integrations": "Integrácie",
+      "themes": "Motívy"
     },
     "detail": {
       "overview": "Prehľad",
@@ -3768,7 +3771,8 @@
     "needs": {
       "assistant": "Vyžaduje zapnutých AI agentov.",
       "invoices": "Dostupné v pracovných priestoroch typu Firemný."
-    }
+    },
+    "fromPlugin": "Z: {{name}}"
   },
   "widgets": {
     "budgets": "Rozpočty",

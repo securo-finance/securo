@@ -3412,7 +3412,7 @@
   },
   "plugins": {
     "title": "Wtyczki",
-    "hint": "Kategorie, reguły i integracje tworzone przez społeczność. Każdą zmianę sprawdzasz przed zastosowaniem.",
+    "hint": "Kategorie, reguły, motywy i integracje tworzone przez społeczność. Każdą zmianę sprawdzasz przed zastosowaniem.",
     "browse": "Przeglądaj katalog",
     "noneInstalled": "W tym obszarze roboczym nie zainstalowano wtyczek.",
     "remove": "Usuń wtyczkę",
@@ -3473,7 +3473,9 @@
       "defaults_one": "Tworzy też {{count}} domyślną kategorię potrzebną regułom",
       "defaults_few": "Tworzy też {{count}} domyślne kategorie potrzebne regułom",
       "defaults_many": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom",
-      "defaults_other": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom"
+      "defaults_other": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom",
+      "themes": "Dodaje motywy do biblioteki: {{names}}",
+      "themesRemove": "Usuwa te motywy z biblioteki: {{names}}"
     },
     "page": {
       "section": "Katalog",
@@ -3544,7 +3546,8 @@
       "parsers": "Czytniki plików",
       "price_providers": "Dostawcy cen",
       "agent_tools": "Narzędzia agenta",
-      "integrations": "Integracje"
+      "integrations": "Integracje",
+      "themes": "Motywy"
     },
     "detail": {
       "overview": "Przegląd",
@@ -3734,7 +3737,8 @@
     "needs": {
       "assistant": "Wymaga włączenia agentów AI.",
       "invoices": "Dostępne w przestrzeniach typu Firmowy."
-    }
+    },
+    "fromPlugin": "Z: {{name}}"
   },
   "widgets": {
     "budgets": "Budżety",
