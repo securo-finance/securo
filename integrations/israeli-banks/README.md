@@ -37,10 +37,12 @@ returns midnight Israel time as a UTC instant).
 
 ## Notes
 
-- One browser runs at a time.
-- Isracard is behind Cloudflare. The container uses the classic headless shell
-  with a regular user agent and waits for Cloudflare's browser check before the
-  library logs in.
+- One browser runs at a time, for QR logins and card reads alike. A card read
+  that arrives while someone is scanning a Leumi QR waits for that login to
+  finish.
+- Isracard is behind Cloudflare. The container runs its regular Chrome in
+  headless mode with a regular user agent and `navigator.webdriver` hidden,
+  and waits for Cloudflare's browser check before the library logs in.
 - These are websites, not APIs: when a company changes its login page, the
   library needs an update. Max and Isracard may also ask for an SMS code on a
   new device, which a headless login cannot answer.

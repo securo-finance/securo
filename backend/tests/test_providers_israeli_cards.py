@@ -166,6 +166,35 @@ def test_transaction_ids_are_stable_and_unique():
     assert first == again and len(first) == len(set(first))
 
 
+def _charge(**overrides):
+    base = {"date": "2026-03-10", "processedDate": "2026-04-02", "amount": -30, "currency": "ILS",
+            "originalAmount": -30, "originalCurrency": "ILS", "description": "Shop",
+            "memo": "", "identifier": None, "status": "posted", "installments": None}
+    return {**base, **overrides}
+
+
+def test_placeholder_identifiers_are_not_treated_as_charge_ids():
+    # Max builds the id from the deal's ARN; an installment without one comes
+    # back as "undefined_1". Two unrelated purchases must not share an id.
+    january = _charge(date="2026-01-10", description="Furniture", amount=-200, originalAmount=-200,
+                      identifier="undefined_1", installments={"number": 1, "total": 3})
+    february = _charge(date="2026-02-10", description="Laptop", amount=-500, originalAmount=-500,
+                       identifier="undefined_1", installments={"number": 1, "total": 3})
+    first = MaxProvider.build_transactions({"currency": "ILS", "txns": [january]})
+    second = MaxProvider.build_transactions({"currency": "ILS", "txns": [february]})
+    assert first[0].external_id != second[0].external_id
+    assert first[0].raw_data["identifier"] is None
+
+
+def test_unconverted_foreign_charge_leaves_the_bank_amount_unset():
+    # Not converted yet: the shekel amount is 0, which is not a real conversion.
+    txn = IsracardProvider.build_transactions({"currency": "ILS", "txns": [
+        _charge(amount=0, originalAmount=-10, originalCurrency="USD", description="Online store"),
+    ]})[0]
+    assert (txn.currency, txn.amount, txn.type) == ("USD", Decimal("10"), "debit")
+    assert txn.amount_in_account_currency is None
+
+
 def test_since_filters_older_charges():
     txns = IsracardProvider.build_transactions(CARD, since=date(2026, 3, 1))
     assert all(t.date >= date(2026, 3, 1) for t in txns)

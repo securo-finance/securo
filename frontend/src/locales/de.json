@@ -1366,9 +1366,9 @@
     },
     "credentialsConnect": {
       "title": "{{name}} verbinden",
-      "reconnectTitle": "{{name}}-Anmeldung aktualisieren",
-      "description": "Gib die Anmeldedaten ein, die du auf der {{name}}-Website verwendest. Securo liest damit deine Karten.",
-      "storageNote": "Verschlüsselt auf deinem Server gespeichert und nur zum Lesen deiner {{name}}-Karten verwendet.",
+      "reconnectTitle": "Anmeldung für {{name}} aktualisieren",
+      "description": "Gib die Anmeldedaten ein, die du auf der Website von {{name}} verwendest. Securo liest damit deine Karten.",
+      "storageNote": "Verschlüsselt auf deinem Server gespeichert und nur zum Lesen deiner Karten von {{name}} verwendet.",
       "reading": "Anmeldung und Lesen deiner Karten, das kann ein bis zwei Minuten dauern…",
       "connect": "Verbinden",
       "connecting": "Verbinde…",

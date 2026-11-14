@@ -328,6 +328,16 @@ class BankProvider(ABC):
         """
         raise NotImplementedError(f"{self.name} does not support QR login")
 
+    async def complete_qr_session(self, session_id: str, client_user_id: str) -> "ConnectionData":
+        """Import the accounts of a QR login once the user has scanned it.
+
+        Only QR providers implement this; they use it instead of
+        ``handle_oauth_callback``. ``client_user_id`` is the user completing
+        the connection, and a provider must refuse a session started by
+        anyone else.
+        """
+        raise NotImplementedError(f"{self.name} does not support QR login")
+
     async def list_institutions(
         self, country: Optional[str] = None
     ) -> "InstitutionListData":

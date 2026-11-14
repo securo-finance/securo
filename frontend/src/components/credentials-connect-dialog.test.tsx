@@ -1,15 +1,13 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { Toaster } from 'sonner'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { renderWithProviders, t } from '@/test/utils'
 
 const api = vi.hoisted(() => ({
   handleCallback: vi.fn(),
   sync: vi.fn(),
-  toastSuccess: vi.fn(),
-  toastError: vi.fn(),
 }))
 vi.mock('@/lib/api', () => ({ connections: { handleCallback: api.handleCallback, sync: api.sync } }))
-vi.mock('sonner', () => ({ toast: { success: api.toastSuccess, error: api.toastError } }))
 
 import { CredentialsConnectDialog } from './credentials-connect-dialog'
 
@@ -31,7 +29,10 @@ beforeEach(() => {
 it('sends the typed login once and closes', async () => {
   const onClose = vi.fn()
   renderWithProviders(
-    <CredentialsConnectDialog open onClose={onClose} provider="isracard" displayName="Isracard" fields={FIELDS} />,
+    <>
+      <CredentialsConnectDialog open onClose={onClose} provider="isracard" displayName="Isracard" fields={FIELDS} />
+      <Toaster />
+    </>,
   )
   const connect = screen.getByRole('button', { name: t('accounts.credentialsConnect.connect') })
   expect(connect).toBeDisabled()
@@ -47,15 +48,18 @@ it('sends the typed login once and closes', async () => {
     undefined,
   )
   expect(api.sync).not.toHaveBeenCalled()
-  expect(api.toastSuccess).toHaveBeenCalledWith(t('accounts.connected'))
+  expect(await screen.findByText(t('accounts.connected'))).toBeInTheDocument()
 })
 
 it('re-syncs after updating the login of an existing connection', async () => {
   const onClose = vi.fn()
   renderWithProviders(
-    <CredentialsConnectDialog
+    <>
+      <CredentialsConnectDialog
       open onClose={onClose} provider="isracard" displayName="Isracard" fields={FIELDS} reconnectConnectionId="conn-1"
-    />,
+    />
+      <Toaster />
+    </>,
   )
   fill()
   fireEvent.click(screen.getByRole('button', { name: t('accounts.credentialsConnect.reconnect') }))
@@ -74,10 +78,13 @@ it('shows the backend message when the login is refused', async () => {
   )
   const onClose = vi.fn()
   renderWithProviders(
-    <CredentialsConnectDialog open onClose={onClose} provider="isracard" displayName="Isracard" fields={FIELDS} />,
+    <>
+      <CredentialsConnectDialog open onClose={onClose} provider="isracard" displayName="Isracard" fields={FIELDS} />
+      <Toaster />
+    </>,
   )
   fill()
   fireEvent.click(screen.getByRole('button', { name: t('accounts.credentialsConnect.connect') }))
-  await waitFor(() => expect(api.toastError).toHaveBeenCalledWith('Isracard rejected the login details.'))
+  expect(await screen.findByText('Isracard rejected the login details.')).toBeInTheDocument()
   expect(onClose).not.toHaveBeenCalled()
 })

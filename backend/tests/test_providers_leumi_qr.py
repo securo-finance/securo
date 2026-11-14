@@ -71,6 +71,9 @@ def _sidecar(result_status: int = 200, sessions_status: int = 201, seen: list | 
                 return httpx.Response(sessions_status, json={"error": "busy"})
             return httpx.Response(201, json={"id": SESSION})
         if request.url.path == f"/sessions/{SESSION}/result":
+            # The service hands a result only to the user who started the session.
+            if request.url.params.get("user_id") != "user-1":
+                return httpx.Response(404, json={"error": "not found"})
             if result_status != 200:
                 return httpx.Response(result_status, json={"error": "gone"})
             return httpx.Response(200, json=RESULT)
@@ -120,9 +123,10 @@ async def test_qr_session_is_only_visible_to_its_user():
 @pytest.mark.asyncio
 async def test_callback_builds_accounts_without_storing_full_numbers():
     with _patched(_sidecar()):
-        conn = await LeumiQrProvider().handle_oauth_callback(SESSION)
+        conn = await LeumiQrProvider().complete_qr_session(SESSION, "user-1")
     assert conn.institution_name == "Bank Leumi"
     assert conn.credentials["session_id"] == SESSION
+    assert conn.credentials["user_id"] == "user-1"
     by_currency = {a.currency: a for a in conn.accounts if a.type == "checking"}
     assert by_currency["ILS"].balance == Decimal("1000.5")
     assert by_currency["ILS"].masked_number == "5678"
@@ -139,10 +143,23 @@ async def test_callback_builds_accounts_without_storing_full_numbers():
 @pytest.mark.asyncio
 async def test_reconnect_keeps_the_same_connection_identity():
     with _patched(_sidecar()):
-        first = await LeumiQrProvider().handle_oauth_callback(SESSION)
-        again = await LeumiQrProvider().handle_oauth_callback(SESSION)
+        first = await LeumiQrProvider().complete_qr_session(SESSION, "user-1")
+        again = await LeumiQrProvider().complete_qr_session(SESSION, "user-1")
     assert first.external_id == again.external_id
     assert [a.external_id for a in first.accounts] == [a.external_id for a in again.accounts]
+
+
+@pytest.mark.asyncio
+async def test_another_users_session_cannot_be_imported():
+    with _patched(_sidecar()):
+        with pytest.raises(SessionExpiredError):
+            await LeumiQrProvider().complete_qr_session(SESSION, "user-2")
+
+
+@pytest.mark.asyncio
+async def test_qr_provider_has_no_plain_oauth_callback():
+    with pytest.raises(NotImplementedError):
+        await LeumiQrProvider().handle_oauth_callback(SESSION)
 
 
 def test_transactions_skip_pending_and_sign_amounts():
@@ -175,9 +192,9 @@ def test_since_filters_older_rows():
 async def test_transactions_are_read_per_account_and_currency():
     provider = LeumiQrProvider()
     with _patched(_sidecar()):
-        accounts = await provider.get_accounts({"session_id": SESSION})
+        accounts = await provider.get_accounts({"session_id": SESSION, "user_id": "user-1"})
         usd = next(a for a in accounts if a.currency == "USD")
-        txns = await provider.get_transactions({"session_id": SESSION}, usd.external_id)
+        txns = await provider.get_transactions({"session_id": SESSION, "user_id": "user-1"}, usd.external_id)
     assert len(txns) == 1
     assert txns[0].currency == "USD" and txns[0].amount == Decimal("150")
 
@@ -188,20 +205,22 @@ async def test_expired_or_unfinished_session_asks_for_a_new_scan(status_code):
     provider = LeumiQrProvider()
     with _patched(_sidecar(result_status=status_code)):
         with pytest.raises(SessionExpiredError):
-            await provider.get_accounts({"session_id": SESSION})
-        assert await provider.trigger_refresh({"session_id": SESSION}) == "needs_user_action"
+            await provider.get_accounts({"session_id": SESSION, "user_id": "user-1"})
+        assert await provider.trigger_refresh({"session_id": SESSION, "user_id": "user-1"}) == "needs_user_action"
 
 
 @pytest.mark.asyncio
 async def test_live_session_skips_refresh():
     with _patched(_sidecar()):
-        assert await LeumiQrProvider().trigger_refresh({"session_id": SESSION}) == "skipped"
+        assert await LeumiQrProvider().trigger_refresh({"session_id": SESSION, "user_id": "user-1"}) == "skipped"
 
 
 @pytest.mark.asyncio
-async def test_missing_session_id_is_expired():
+@pytest.mark.parametrize("credentials", [{}, {"session_id": SESSION}])
+async def test_missing_session_or_user_is_expired(credentials):
+    # Connections made before sessions were bound to their user need a new scan.
     with pytest.raises(SessionExpiredError):
-        await LeumiQrProvider().get_accounts({})
+        await LeumiQrProvider().get_accounts(credentials)
 
 
 # ----- API: polling a QR session ------------------------------------------------

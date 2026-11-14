@@ -1368,7 +1368,12 @@ async def handle_oauth_callback(
         raise ValueError("OAuth callback missing provider")
 
     provider = get_provider(provider_name)
-    connection_data = await provider.handle_oauth_callback(code)
+    if provider.flow_type == "qr":
+        # A QR session belongs to the user who started it; the provider
+        # checks that against the user completing the connection.
+        connection_data = await provider.complete_qr_session(code, str(user_id))
+    else:
+        connection_data = await provider.handle_oauth_callback(code)
 
     if existing_reconnect:
         existing_reconnect.external_id = connection_data.external_id

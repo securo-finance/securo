@@ -1,5 +1,6 @@
 import { screen, waitFor } from '@testing-library/react'
 import { AxiosError, AxiosHeaders } from 'axios'
+import { Toaster } from 'sonner'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { renderWithProviders, t } from '@/test/utils'
 
@@ -8,8 +9,6 @@ const api = vi.hoisted(() => ({
   getQrSession: vi.fn(),
   handleCallback: vi.fn(),
   sync: vi.fn(),
-  toastSuccess: vi.fn(),
-  toastError: vi.fn(),
 }))
 vi.mock('@/lib/api', () => ({
   connections: {
@@ -19,7 +18,6 @@ vi.mock('@/lib/api', () => ({
     sync: api.sync,
   },
 }))
-vi.mock('sonner', () => ({ toast: { success: api.toastSuccess, error: api.toastError } }))
 
 import { QrConnectDialog } from './qr-connect-dialog'
 
@@ -37,7 +35,12 @@ it('shows the QR, then imports once the scan is done', async () => {
     .mockResolvedValueOnce({ status: 'waiting_for_scan', qr: 'iVBORw0KGgo=', error: null })
     .mockResolvedValue({ status: 'ready', qr: null, error: null })
   const onClose = vi.fn()
-  renderWithProviders(<QrConnectDialog open onClose={onClose} provider="leumi" />)
+  renderWithProviders(
+    <>
+      <QrConnectDialog open onClose={onClose} provider="leumi" />
+      <Toaster />
+    </>,
+  )
 
   const img = await screen.findByRole('img', { name: t('accounts.qrConnect.qrAlt') })
   expect(img.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo=')
@@ -47,19 +50,22 @@ it('shows the QR, then imports once the scan is done', async () => {
   expect(api.getConnectToken).toHaveBeenCalledWith('leumi')
   expect(api.handleCallback).toHaveBeenCalledWith(SESSION, 'leumi', undefined, undefined, undefined)
   expect(api.sync).not.toHaveBeenCalled()
-  expect(api.toastSuccess).toHaveBeenCalledWith(t('accounts.connected'))
+  expect(await screen.findByText(t('accounts.connected'))).toBeInTheDocument()
 })
 
 it('re-syncs the existing connection after a reconnect scan', async () => {
   api.getQrSession.mockResolvedValue({ status: 'ready', qr: null, error: null })
   const onClose = vi.fn()
   renderWithProviders(
-    <QrConnectDialog open onClose={onClose} provider="leumi" reconnectConnectionId="conn-1" />,
+    <>
+      <QrConnectDialog open onClose={onClose} provider="leumi" reconnectConnectionId="conn-1" />
+      <Toaster />
+    </>,
   )
   await waitFor(() => expect(onClose).toHaveBeenCalled())
   expect(api.handleCallback).toHaveBeenCalledWith(SESSION, 'leumi', undefined, undefined, 'conn-1')
   expect(api.sync).toHaveBeenCalledWith('conn-1')
-  expect(api.toastSuccess).toHaveBeenCalledWith(t('accounts.reconnected'))
+  expect(await screen.findByText(t('accounts.reconnected'))).toBeInTheDocument()
 })
 
 it('offers to start again when the code expires', async () => {
@@ -69,7 +75,12 @@ it('offers to start again when the code expires', async () => {
       status: 410, statusText: 'Gone', headers: {}, config, data: { detail: 'expired' },
     }),
   )
-  renderWithProviders(<QrConnectDialog open onClose={vi.fn()} provider="leumi" />)
+  renderWithProviders(
+    <>
+      <QrConnectDialog open onClose={vi.fn()} provider="leumi" />
+      <Toaster />
+    </>,
+  )
   expect(await screen.findByText(t('accounts.qrConnect.expired'))).toBeTruthy()
   expect(screen.getByRole('button', { name: t('accounts.qrConnect.retry') })).toBeTruthy()
   expect(api.handleCallback).not.toHaveBeenCalled()
@@ -77,7 +88,12 @@ it('offers to start again when the code expires', async () => {
 
 it('shows the bank error and does not import', async () => {
   api.getQrSession.mockResolvedValue({ status: 'error', qr: null, error: 'TIMEOUT: QR was not scanned in time' })
-  renderWithProviders(<QrConnectDialog open onClose={vi.fn()} provider="leumi" />)
+  renderWithProviders(
+    <>
+      <QrConnectDialog open onClose={vi.fn()} provider="leumi" />
+      <Toaster />
+    </>,
+  )
   expect(await screen.findByRole('alert')).toHaveTextContent('QR was not scanned in time')
   expect(api.handleCallback).not.toHaveBeenCalled()
 })

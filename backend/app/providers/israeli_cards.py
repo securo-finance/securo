@@ -27,8 +27,9 @@ from app.providers.base import (
 )
 from app.providers.credential_crypto import seal, unseal
 
-# A read logs in, opens every card and pages through the history.
-_READ_TIMEOUT = 300.0
+# A read logs in, opens every card and pages through the history, and may
+# first wait for a Leumi QR login in progress (the service runs one browser).
+_READ_TIMEOUT = 600.0
 
 
 def _hash(*parts: str, length: int = 24) -> str:
@@ -196,8 +197,12 @@ class IsraeliCardProvider(BankProvider):
             memo = (raw.get("memo") or "").strip()
             installments = raw.get("installments") or {}
             # The company's identifier is unique per charge (and per installment);
-            # rows without one fall back to their content plus a counter.
+            # rows without one fall back to their content plus a counter. Max
+            # builds it from the deal's ARN, so an installment without one comes
+            # back as "undefined_<n>": shared by unrelated charges, not an id.
             identifier = raw.get("identifier")
+            if identifier is not None and str(identifier).split("_")[0] in ("", "undefined", "null"):
+                identifier = None
             key = (
                 f"id|{identifier}|{installments.get('number') or ''}"
                 if identifier
@@ -220,8 +225,10 @@ class IsraeliCardProvider(BankProvider):
                     external_id="card-" + _hash(key, str(seen[key])),
                     description=(f"{description} | {memo}" if memo else description)[:500],
                     amount=(original_amount if foreign and original_amount is not None else amount).copy_abs(),
+                    # Zero means the company has not converted the charge yet:
+                    # leave it unset so local FX applies, not a zero expense.
                     amount_in_account_currency=(
-                        amount.copy_abs() if foreign and charged_in_account_currency else None
+                        amount.copy_abs() if foreign and charged_in_account_currency and amount else None
                     ),
                     currency=original_currency if foreign else (raw.get("currency") or "ILS"),
                     date=txn_date,

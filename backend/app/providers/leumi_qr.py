@@ -124,7 +124,13 @@ class LeumiQrProvider(BankProvider):
         return {"status": body.get("status"), "qr": body.get("qr"), "error": body.get("error")}
 
     async def handle_oauth_callback(self, code: str) -> ConnectionData:
-        result = await self._result({"session_id": code})
+        raise NotImplementedError(
+            "Bank Leumi connects by QR code: use complete_qr_session with the user"
+        )
+
+    async def complete_qr_session(self, session_id: str, client_user_id: str) -> ConnectionData:
+        credentials = {"session_id": session_id, "user_id": client_user_id}
+        result = await self._result(credentials)
         accounts = [self._build_account(raw) for raw in result.get("accounts", [])]
         if not accounts:
             raise ValueError("Leumi returned no accounts")
@@ -136,7 +142,7 @@ class LeumiQrProvider(BankProvider):
         return ConnectionData(
             external_id="leumi-" + _hash(*primary),
             institution_name="Bank Leumi",
-            credentials={"session_id": code, "scraped_at": result.get("scraped_at")},
+            credentials={**credentials, "scraped_at": result.get("scraped_at")},
             accounts=accounts,
         )
 
@@ -149,10 +155,13 @@ class LeumiQrProvider(BankProvider):
 
     async def _result(self, credentials: dict) -> dict:
         session_id = (credentials or {}).get("session_id")
-        if not session_id:
+        user_id = (credentials or {}).get("user_id")
+        # The service only hands a result to the user who started the
+        # session, so a connection without one needs a fresh scan.
+        if not session_id or not user_id:
             raise SessionExpiredError(_EXPIRED_MESSAGE)
         async with self._client() as client:
-            resp = await client.get(f"/sessions/{session_id}/result")
+            resp = await client.get(f"/sessions/{session_id}/result", params={"user_id": user_id})
         if resp.status_code in (404, 409):
             raise SessionExpiredError(_EXPIRED_MESSAGE)
         resp.raise_for_status()

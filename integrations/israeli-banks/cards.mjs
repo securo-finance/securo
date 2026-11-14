@@ -44,12 +44,14 @@ export async function scrapeCard({ company, credentials, startDate, executablePa
   // Opt-in for troubleshooting only: a screenshot of the last screen when a
   // login fails. It can show account details, so leave it off in production.
   const debugDir = process.env.SCRAPE_DEBUG_DIR;
-  // Isracard sits behind Cloudflare, which stops the default (new) headless
-  // Chrome and announces it via "HeadlessChrome" in the user agent. The
-  // classic headless shell with a regular user agent gets through, so the
-  // browser is launched here and handed to the library, which closes it.
+  // Isracard sits behind Cloudflare, which turns away a browser that announces
+  // itself as "HeadlessChrome" or exposes navigator.webdriver. This is the
+  // image's regular Chrome in headless mode, with a regular user agent and
+  // webdriver hidden (below), plus a warm-up visit that lets Cloudflare's
+  // browser check finish. The browser is launched here and handed to the
+  // library, which closes it.
   const browser = await puppeteer.launch({
-    headless: 'shell',
+    headless: true,
     executablePath,
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'],
   });

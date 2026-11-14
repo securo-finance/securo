@@ -4,8 +4,8 @@
 // "log in with the app" page; the result is kept in memory for a limited time.
 //   POST   /sessions                 {user_id, start_date}  -> {id}
 //   GET    /sessions/:id?user_id=    -> {status, qr, error}   (qr = base64 PNG while waiting)
-//   GET    /sessions/:id/result      -> {scraped_at, accounts}
-//   DELETE /sessions/:id
+//   GET    /sessions/:id/result?user_id=  -> {scraped_at, accounts}
+//   DELETE /sessions/:id?user_id=
 //
 // Credit cards (Max, Isracard), credentials sent by the backend per request:
 //   POST   /scrape   {company, credentials, start_date} -> {scraped_at, accounts}
@@ -52,9 +52,26 @@ function send(res, code, body) {
 }
 
 async function readJson(req) {
-  let raw = '';
-  for await (const chunk of req) { raw += chunk; if (raw.length > 20_000) throw new Error('body too large'); }
+  // Collect bytes and decode once: decoding chunk by chunk would split a
+  // multibyte character (a Hebrew letter in a password) across two chunks.
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 20_000) throw new Error('body too large');
+    chunks.push(chunk);
+  }
+  const raw = Buffer.concat(chunks).toString('utf8');
   return raw ? JSON.parse(raw) : {};
+}
+
+// One browser at a time, for QR logins and card reads alike: each needs about
+// 1 GB while it runs. A job holds the slot until its browser has closed.
+let browserQueue = Promise.resolve();
+function withBrowser(job) {
+  const run = browserQueue.then(job);
+  browserQueue = run.catch(() => {});
+  return run;
 }
 
 function startSession(userId, startDateStr) {
@@ -71,12 +88,17 @@ function startSession(userId, startDateStr) {
   sessions.set(id, s);
   const startDate = startDateStr ? new Date(`${startDateStr}T00:00:00+02:00`)
     : new Date(Date.now() - DEFAULT_HISTORY_DAYS * 86400000);
-  runLeumiQr({
-    startDate,
-    loginTimeoutMs: LOGIN_TIMEOUT_MS,
-    executablePath,
-    isCancelled: () => s.cancelled,
-    hooks: { onQr: (png) => { s.qr = png; }, onStatus: (st) => { s.status = st; } },
+  // Waits here while another browser runs, including the user's own previous
+  // session, which closes its browser as soon as it sees it was cancelled.
+  withBrowser(() => {
+    if (s.cancelled) throw new Error('CANCELLED: replaced by a new session');
+    return runLeumiQr({
+      startDate,
+      loginTimeoutMs: LOGIN_TIMEOUT_MS,
+      executablePath,
+      isCancelled: () => s.cancelled,
+      hooks: { onQr: (png) => { s.qr = png; }, onStatus: (st) => { s.status = st; } },
+    });
   }).then((accounts) => {
     s.result = { scraped_at: new Date().toISOString(), accounts };
     s.status = 'ready';
@@ -91,7 +113,6 @@ function startSession(userId, startDateStr) {
 // --- credit cards ------------------------------------------------------------
 
 const scrapeCache = new Map(); // key -> {at, promise}
-let scrapeQueue = Promise.resolve(); // one browser at a time
 
 function scrapeKey(company, credentials, startDate) {
   const fields = CARD_COMPANIES[company]?.fields || [];
@@ -105,9 +126,8 @@ function cachedScrape(company, credentials, startDateStr) {
   if (hit && Date.now() - hit.at < SCRAPE_CACHE_MS) return hit.promise;
   const startDate = startDateStr ? new Date(`${startDateStr}T00:00:00+02:00`)
     : new Date(Date.now() - DEFAULT_HISTORY_DAYS * 86400000);
-  const run = scrapeQueue.then(() => scrapeCard({ company, credentials, startDate, executablePath }))
+  const run = withBrowser(() => scrapeCard({ company, credentials, startDate, executablePath }))
     .then((accounts) => ({ scraped_at: new Date().toISOString(), accounts }));
-  scrapeQueue = run.catch(() => {});
   scrapeCache.set(key, { at: Date.now(), promise: run });
   // A failed login is not cached: the user may fix the password and retry.
   run.catch(() => scrapeCache.delete(key));
@@ -148,12 +168,13 @@ http.createServer(async (req, res) => {
     }
     const s = id && sessions.get(id);
     if (!s) return send(res, 404, { error: 'session not found or expired' });
+    // A session, its QR and its result belong to the user who started it.
+    if (url.searchParams.get('user_id') !== s.userId) return send(res, 404, { error: 'session not found or expired' });
     if (req.method === 'DELETE') { s.cancelled = true; sessions.delete(id); return send(res, 204, {}); }
     if (isResult) {
       if (s.status !== 'ready') return send(res, 409, { error: `session is ${s.status}` });
       return send(res, 200, s.result);
     }
-    if (url.searchParams.get('user_id') !== s.userId) return send(res, 404, { error: 'session not found or expired' });
     return send(res, 200, { status: s.status, qr: s.qr, error: s.error });
   } catch (err) {
     return send(res, 500, { error: String(err.message || err).slice(0, 200) });
