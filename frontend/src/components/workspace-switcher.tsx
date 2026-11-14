@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { useTranslation } from 'react-i18next'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -47,6 +48,7 @@ import {
   Sparkles,
   Fingerprint,
   Palette,
+  Puzzle,
 } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { useLibrary } from '@/contexts/library-context'
@@ -118,6 +120,7 @@ export function WorkspaceSwitcher({
   const { t, i18n } = useTranslation()
   const { openLibrary } = useLibrary()
   const navigate = useNavigate()
+  const { pluginsEnabled } = useFeatureFlags()
   const { current, workspaces, switchWorkspace, refresh } = useWorkspace()
   const { user, logout } = useAuth()
   const [createOpen, setCreateOpen] = useState(false)
@@ -291,6 +294,16 @@ export function WorkspaceSwitcher({
             >
               <Sparkles size={14} />
               {t('nav.aiAgents')}
+            </DropdownMenuItem>
+          )}
+
+          {pluginsEnabled && (
+            <DropdownMenuItem
+              onClick={() => navigate('/plugins')}
+              className="flex items-center gap-2"
+            >
+              <Puzzle size={14} />
+              {t('plugins.title')}
             </DropdownMenuItem>
           )}
 
