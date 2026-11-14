@@ -1855,6 +1855,80 @@ async def test_sync_connection_enable_banking_reworded_remittance_ambiguous_is_n
     assert {row.external_id for row in rows} == {"fp-a", "fp-b", refetched.external_id}
 
 
+_ALPHA = "ALPHA COFFEE SHOP NEW YORK"
+_BETA = "BETA COFFEE SHOP NEW YORK"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("beta_first", [False, True], ids=["alpha_first", "beta_first"])
+async def test_sync_connection_enable_banking_reworded_remittance_yields_to_exact_twin(
+    session: AsyncSession, test_user, test_workspace, beta_first,
+):
+    """The fetch returns the held ALPHA purchase with its reference beside a
+    BETA purchase that agrees on every other field and ends in the same words.
+    ALPHA's description match wins in either order, so the held row never
+    takes BETA's identity."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    _, held_id = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(None, _ALPHA),
+    )
+
+    alpha = _eb_txn(_eb_reworded_payload("2026-11-11.1", _ALPHA))
+    beta = _eb_txn(_eb_reworded_payload("2026-11-11.2", _BETA))
+    fetched = [beta, alpha] if beta_first else [alpha, beta]
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, fetched)
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {alpha.external_id, beta.external_id}
+    assert next(row for row in rows if row.id == held_id).external_id == alpha.external_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cut_short", ["incomplete", "truncated"])
+async def test_sync_connection_enable_banking_reworded_remittance_needs_complete_fetch(
+    session: AsyncSession, test_user, test_workspace, cut_short,
+):
+    """A fetch cut short may have dropped the held row's own referenced copy,
+    so it matches no reworded remittance text."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    held, _ = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(None, _TRANSFER_FIRST_REMITTANCE),
+    )
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", _TRANSFER_REWORDED_REMITTANCE))
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, [refetched], **{cut_short: True},
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {held.external_id, refetched.external_id}
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_reworded_remittance_deleted_entry_gap(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Known gap: when the bank deletes the held ALPHA purchase and returns a
+    BETA purchase that agrees on every other field and ends in the same
+    words, nothing tells it from a reworded ALPHA, so the held row takes it."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    _, held_id = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(None, _ALPHA),
+    )
+
+    beta = _eb_txn(_eb_reworded_payload("2026-11-11.2", _BETA))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [beta])
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.external_id) for row in rows] == [(held_id, beta.external_id)]
+
+
 def _paypal_payload(
     entry_ref: str,
     transaction_date: str,
