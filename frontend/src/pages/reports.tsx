@@ -772,7 +772,7 @@ export default function ReportsPage() {
                   >
                     <span
                       className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${
-                        cashFlowBaseline ? 'translate-x-3' : 'translate-x-0.5'
+                        cashFlowBaseline ? 'translate-x-3 rtl:-translate-x-3' : 'translate-x-0.5 rtl:-translate-x-0.5'
                       }`}
                     />
                   </span>
@@ -835,7 +835,7 @@ export default function ReportsPage() {
                           : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                       }`}
                     >
-                      <CalendarDays className="mr-1 inline h-3.5 w-3.5" />
+                      <CalendarDays className="me-1 inline h-3.5 w-3.5" />
                       {activeYear !== undefined ? activeYear : t('reports.year')}
                     </button>
                   </PopoverTrigger>
@@ -846,7 +846,7 @@ export default function ReportsPage() {
                           key={year}
                           type="button"
                           onClick={() => handleYearPick(year)}
-                          className={`block w-full px-3 py-1.5 text-left text-xs font-semibold transition-colors ${
+                          className={`block w-full px-3 py-1.5 text-start text-xs font-semibold transition-colors ${
                             activeYear === year
                               ? 'bg-primary text-primary-foreground'
                               : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -929,19 +929,19 @@ export default function ReportsPage() {
           >
             {t(tab.labelKey)}
             {!tab.enabled && (
-              <span className="ml-1.5 text-[10px] text-muted-foreground/50">
+              <span className="ms-1.5 text-[10px] text-muted-foreground/50">
                 {t('reports.comingSoon')}
               </span>
             )}
             {activeTab === tab.key && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+              <span className="absolute bottom-0 start-0 end-0 h-0.5 bg-primary rounded-full" />
             )}
           </button>
         ))}
         <Button
           variant="ghost"
           size="sm"
-          className="ml-auto mb-1 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
+          className="ms-auto mb-1 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
           aria-label={t('library.manageReports')}
           title={t('library.manageReports')}
           onClick={() => openLibrary('reports')}
@@ -1052,7 +1052,7 @@ export default function ReportsPage() {
                           label is not already naming the day it crosses zero.
                           Two dates side by side read as one fact, not two. */}
                       {!runwayDate || alreadyNegative ? (
-                        <span className="ml-1.5 text-xs font-medium text-muted-foreground">
+                        <span className="ms-1.5 text-xs font-medium text-muted-foreground">
                           {formatDay(lowestBalanceDate)}
                         </span>
                       ) : null}
@@ -1582,7 +1582,7 @@ export default function ReportsPage() {
                                     <p className="text-xs font-semibold text-foreground mb-2">
                                       {t('reports.composition')}
                                     </p>
-                                    <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto pr-2">
+                                    <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto pe-2">
                                       {compositionDetail.map((d, i) => {
                                         const pct = donutTotal > 0 ? ((d.value / donutTotal) * 100).toFixed(1) : '0'
                                         return (

@@ -146,7 +146,7 @@ export function OnboardingTour({ onComplete }: Props) {
             <Button variant="ghost" size="sm" onClick={onComplete} className="text-muted-foreground">
               {t('onboarding.skip')}
             </Button>
-            <div className="ml-auto flex gap-2">
+            <div className="ms-auto flex gap-2">
               {current > 0 && (
                 <Button variant="outline" size="sm" onClick={back}>
                   {t('onboarding.back')}

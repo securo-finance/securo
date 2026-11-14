@@ -909,7 +909,7 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
           </Button>
           {failed ? (
             <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
-              <RefreshCw size={14} className="mr-1" />
+              <RefreshCw size={14} className="me-1" />
               {t('common.retry')}
             </Button>
           ) : (
@@ -918,7 +918,7 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
               onClick={() => plan && removeMutation.mutate(plan.token)}
               disabled={pending || !confirmable}
             >
-              <Trash2 size={14} className="mr-1" />
+              <Trash2 size={14} className="me-1" />
               {t('rules.removePackConfirm')}
             </Button>
           )}

@@ -80,7 +80,7 @@ export function WidgetGrid({
           <p className="mt-1 text-xs text-muted-foreground">{t('library.emptyDashboardHint')}</p>
         </div>
         <Button size="sm" onClick={onAdd}>
-          <Plus size={14} className="mr-1" />
+          <Plus size={14} className="me-1" />
           {t('library.addWidget')}
         </Button>
       </div>
@@ -287,7 +287,7 @@ function SortableWidget({
           tabIndex={-1}
           aria-hidden
           onPointerDown={startResize}
-          className="group absolute -right-3 top-1/2 z-10 hidden h-16 w-4 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center lg:flex"
+          className="group absolute -end-3 top-1/2 z-10 hidden h-16 w-4 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center lg:flex"
         >
           <span className="h-10 w-1.5 rounded-full bg-primary/40 transition-colors group-hover:bg-primary group-active:bg-primary" />
         </button>

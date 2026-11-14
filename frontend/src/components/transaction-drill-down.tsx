@@ -348,13 +348,13 @@ export function TransactionDrillDown({
         tabIndex={-1}
         inert={!filter}
         aria-hidden={!filter}
-        className={`fixed top-0 right-0 h-full w-full max-w-md bg-card shadow-2xl z-50 transform transition-transform duration-200 ease-out flex flex-col ${
-          filter ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed top-0 end-0 h-full w-full max-w-md bg-card shadow-2xl z-50 transform transition-transform duration-200 ease-out flex flex-col ${
+          filter ? 'translate-x-0' : 'translate-x-full rtl:-translate-x-full'
         }`}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <h2 className="text-sm font-semibold text-foreground truncate pr-4">
+          <h2 className="text-sm font-semibold text-foreground truncate pe-4">
             {filter?.title}
           </h2>
           <button
@@ -442,7 +442,7 @@ export function TransactionDrillDown({
                       })}`}
                     </p>
                   </div>
-                  <div className="text-right shrink-0">
+                  <div className="text-end shrink-0">
                     <span
                       className={`text-sm font-semibold tabular-nums ${
                         item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'

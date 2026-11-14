@@ -76,7 +76,7 @@ export function MobileTransactionRow({
   return (
     <div
       ref={highlighted ? highlightedRowRef : undefined}
-      className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 transition-colors ${
+      className={`flex items-center gap-3 ps-3 pe-3 py-3 border-b border-border last:border-0 transition-colors ${
         selected ? 'bg-primary/5' : 'bg-card'
       } ${highlighted ? 'securo-highlight-flash' : ''} ${
         virtual ? 'opacity-80' : ''
@@ -194,7 +194,7 @@ export function MobileTransactionRow({
       </div>
 
       {/* Amount */}
-      <div className="shrink-0 text-right">
+      <div className="shrink-0 text-end">
         <span className={`text-sm font-bold tabular-nums ${amountColor}`}>
           {mask(
             `${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '\u2212'}${formatCurrency(

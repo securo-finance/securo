@@ -161,7 +161,7 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
           <div className="grid gap-2">
             <Label>
               {t('agents.connections.baseUrl')}
-              {!meta.needsBaseUrl && <span className="text-xs text-muted-foreground ml-1">({t('agents.connections.optional')})</span>}
+              {!meta.needsBaseUrl && <span className="text-xs text-muted-foreground ms-1">({t('agents.connections.optional')})</span>}
             </Label>
             <Input
               value={baseUrl}
@@ -182,7 +182,7 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
           <div className="grid gap-2">
             <Label>
               {t('agents.connections.apiKey')}
-              {!meta.needsKey && <span className="text-xs text-muted-foreground ml-1">({t('agents.connections.optional')})</span>}
+              {!meta.needsKey && <span className="text-xs text-muted-foreground ms-1">({t('agents.connections.optional')})</span>}
             </Label>
             <Input
               type="password"

@@ -164,7 +164,7 @@ export function WorkspaceSwitcher({
         <DropdownMenuTrigger asChild>
           <button
             className={cn(
-              'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm hover:bg-sidebar-accent transition-colors text-left',
+              'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm hover:bg-sidebar-accent transition-colors text-start',
               collapsed && 'lg:justify-center lg:px-2',
             )}
             aria-label={current.name}
@@ -181,7 +181,7 @@ export function WorkspaceSwitcher({
               <p className="text-[10px] text-sidebar-muted/70 truncate">
                 {user.email}
                 {roleLabel && (
-                  <span className="ml-1 uppercase tracking-wide">· {roleLabel}</span>
+                  <span className="ms-1 uppercase tracking-wide">· {roleLabel}</span>
                 )}
               </p>
             </div>
@@ -213,7 +213,7 @@ export function WorkspaceSwitcher({
                     <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                       {w.role && ROLE_LABEL_KEY[w.role] && t(ROLE_LABEL_KEY[w.role])}
                     </span>
-                    {isActive && <Check size={12} className="text-primary ml-1" />}
+                    {isActive && <Check size={12} className="text-primary ms-1" />}
                   </DropdownMenuItem>
                 )
               })}
@@ -450,6 +450,13 @@ export function WorkspaceSwitcher({
                   <span className="flex-1">日本語</span>
                   {currentLang === 'ja' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => i18n.changeLanguage('he')}
+                  className="flex items-center gap-2"
+                >
+                  <span className="flex-1">עברית</span>
+                  {currentLang === 'he' && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
@@ -504,7 +511,7 @@ export function WorkspaceSwitcher({
                       type="button"
                       onClick={() => setNewKind(kind)}
                       aria-pressed={isSelected}
-                      className={`flex items-center gap-2.5 rounded-lg border p-3 text-left transition-colors ${
+                      className={`flex items-center gap-2.5 rounded-lg border p-3 text-start transition-colors ${
                         isSelected
                           ? 'border-primary bg-primary/5'
                           : 'border-input hover:bg-muted/40'

@@ -131,7 +131,7 @@ function ConditionRow({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="relative grid min-w-0 grid-cols-2 gap-2 pr-7 sm:flex sm:items-center sm:pr-0">
+    <div className="relative grid min-w-0 grid-cols-2 gap-2 pe-7 sm:flex sm:items-center sm:pe-0">
       <select
         className={`${SELECT_CLASS} w-full sm:w-32 sm:shrink-0`}
         value={condition.field}
@@ -201,7 +201,7 @@ function ConditionRow({
       )}
       <button
         type="button"
-        className="absolute right-0 top-1 shrink-0 p-1 text-muted-foreground transition-colors hover:text-rose-500 sm:static"
+        className="absolute end-0 top-1 shrink-0 p-1 text-muted-foreground transition-colors hover:text-rose-500 sm:static"
         onClick={onRemove}
       >
         <X size={13} />
@@ -345,24 +345,24 @@ function RulePreviewPanel({
               <div className="max-h-56 overflow-y-auto overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 bg-card text-muted-foreground">
-                    <tr className="border-b border-border text-left">
-                      <th className="py-1.5 pr-2 font-medium">{t('transactions.date')}</th>
-                      <th className="py-1.5 pr-2 font-medium">{t('transactions.description')}</th>
-                      <th className="py-1.5 pr-2 text-right font-medium">{t('transactions.amount')}</th>
+                    <tr className="border-b border-border text-start">
+                      <th className="py-1.5 pe-2 font-medium">{t('transactions.date')}</th>
+                      <th className="py-1.5 pe-2 font-medium">{t('transactions.description')}</th>
+                      <th className="py-1.5 pe-2 text-end font-medium">{t('transactions.amount')}</th>
                       <th className="py-1.5 font-medium">{t('transactions.category')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {sample.map(item => (
                       <tr key={item.id} className={cn(!item.will_change && 'text-muted-foreground')}>
-                        <td className="whitespace-nowrap py-1.5 pr-2 tabular-nums">
+                        <td className="whitespace-nowrap py-1.5 pe-2 tabular-nums">
                           {new Date(item.date + 'T00:00:00').toLocaleDateString(dateLocale)}
                         </td>
-                        <td className="max-w-[22rem] truncate py-1.5 pr-2" title={item.description}>
+                        <td className="max-w-[22rem] truncate py-1.5 pe-2" title={item.description}>
                           {item.description}
                         </td>
                         <td className={cn(
-                          'whitespace-nowrap py-1.5 pr-2 text-right tabular-nums',
+                          'whitespace-nowrap py-1.5 pe-2 text-end tabular-nums',
                           item.will_change && (item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'),
                         )}>
                           {mask(formatSignedAmount(item.amount, item.type, item.currency, locale))}
@@ -696,7 +696,7 @@ export function RuleDialog({
                 const invalidDescription = isInvalidDescriptionAction(action)
                 return (
                   <div key={i} className="space-y-1">
-                    <div className="relative grid min-w-0 gap-2 pr-7 sm:flex sm:items-center sm:pr-0">
+                    <div className="relative grid min-w-0 gap-2 pe-7 sm:flex sm:items-center sm:pe-0">
                       <select
                         className={`${SELECT_CLASS} w-full sm:w-40 sm:shrink-0`}
                         value={action.op}
@@ -757,7 +757,7 @@ export function RuleDialog({
                       )}
                       <button
                         type="button"
-                        className="absolute right-0 top-1 shrink-0 p-1 text-muted-foreground transition-colors hover:text-rose-500 sm:static"
+                        className="absolute end-0 top-1 shrink-0 p-1 text-muted-foreground transition-colors hover:text-rose-500 sm:static"
                         onClick={() => removeAction(i)}
                       >
                         <X size={13} />
@@ -803,7 +803,7 @@ export function RuleDialog({
           </label>
 
           {applyToExisting && (
-            <label className="flex items-center gap-2 cursor-pointer pl-6">
+            <label className="flex items-center gap-2 cursor-pointer ps-6">
               <input
                 type="checkbox"
                 checked={overwriteExistingCategories}

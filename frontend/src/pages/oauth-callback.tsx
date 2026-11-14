@@ -102,7 +102,7 @@ export default function OAuthCallbackPage() {
               <Button asChild variant="outline">
                 <a href={restricted.help_url} target="_blank" rel="noreferrer">
                   {t('accounts.oauthCallback.openPortal')}
-                  <ExternalLink size={14} className="ml-2" />
+                  <ExternalLink size={14} className="ms-2" />
                 </a>
               </Button>
             )}

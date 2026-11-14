@@ -204,7 +204,7 @@ export default function InvoiceScheduleDetailPage() {
             <div className="flex flex-wrap items-center gap-2">
               {actions.canChangePrice && (
                 <Button size="sm" variant="outline" onClick={() => setTermTarget('new')} data-testid="schedule-change-price">
-                  <Pencil className="h-4 w-4 mr-1.5" />
+                  <Pencil className="h-4 w-4 me-1.5" />
                   {t('invoices.schedules.action.changePrice')}
                 </Button>
               )}
@@ -215,7 +215,7 @@ export default function InvoiceScheduleDetailPage() {
                   disabled={generateMutation.isPending}
                   data-testid="schedule-generate"
                 >
-                  <Zap className="h-4 w-4 mr-1.5" />
+                  <Zap className="h-4 w-4 me-1.5" />
                   {t('invoices.schedules.action.generate')}
                 </Button>
               )}
@@ -361,7 +361,7 @@ export default function InvoiceScheduleDetailPage() {
                       {term.lines.map((line) => line.description).join(' · ')}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <p className="text-sm font-bold tabular-nums">{money(term.total)}</p>
                     <p className="text-[11px] text-muted-foreground tabular-nums">
                       {t('invoices.schedules.terms.perMonth', {
@@ -394,7 +394,7 @@ export default function InvoiceScheduleDetailPage() {
             action={
               canWrite && schedule.status !== 'ended' ? (
                 <Button size="sm" variant="outline" onClick={() => setLinkOpen(true)} data-testid="schedule-link-invoice">
-                  <Link2 className="h-4 w-4 mr-1.5" />
+                  <Link2 className="h-4 w-4 me-1.5" />
                   {t('invoices.schedules.action.linkInvoice')}
                 </Button>
               ) : undefined
@@ -414,11 +414,11 @@ export default function InvoiceScheduleDetailPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('invoices.schedules.column.period')}</th>
-                    <th className={`${TH} text-left w-24 hidden sm:table-cell`}>{t('invoices.column.number')}</th>
-                    <th className={`${TH} text-left w-32 hidden md:table-cell`}>{t('invoices.column.due')}</th>
-                    <th className={`${TH} text-right w-32`}>{t('invoices.column.total')}</th>
-                    <th className={`${TH} pr-4 sm:pr-5 text-right w-28`}>{t('invoices.column.state')}</th>
+                    <th className={`${TH} ps-4 sm:ps-5 text-start`}>{t('invoices.schedules.column.period')}</th>
+                    <th className={`${TH} text-start w-24 hidden sm:table-cell`}>{t('invoices.column.number')}</th>
+                    <th className={`${TH} text-start w-32 hidden md:table-cell`}>{t('invoices.column.due')}</th>
+                    <th className={`${TH} text-end w-32`}>{t('invoices.column.total')}</th>
+                    <th className={`${TH} pe-4 sm:pe-5 text-end w-28`}>{t('invoices.column.state')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -431,7 +431,7 @@ export default function InvoiceScheduleDetailPage() {
                         data-testid="schedule-invoice-row"
                         className="border-b border-border last:border-0 hover:bg-muted transition-colors cursor-pointer"
                       >
-                        <td className="py-3 pl-4 sm:pl-5 text-sm tabular-nums">
+                        <td className="py-3 ps-4 sm:ps-5 text-sm tabular-nums">
                           {invoice.period_start && invoice.period_end
                             ? periodLabel(invoice.period_start, invoice.period_end, dateLocale)
                             : showDate(invoice.issue_date)}
@@ -442,8 +442,8 @@ export default function InvoiceScheduleDetailPage() {
                         <td className="py-3 text-xs text-muted-foreground tabular-nums hidden md:table-cell">
                           {showDate(invoice.due_date)}
                         </td>
-                        <td className="py-3 text-right text-sm tabular-nums">{money(invoice.total)}</td>
-                        <td className="py-3 pr-4 sm:pr-5 text-right">
+                        <td className="py-3 text-end text-sm tabular-nums">{money(invoice.total)}</td>
+                        <td className="py-3 pe-4 sm:pe-5 text-end">
                           <StateBadge state={invoice.state} />
                         </td>
                       </tr>
@@ -892,7 +892,7 @@ function LinkInvoiceDialog({
         <DialogFooter className="gap-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
           <Button onClick={() => mutation.mutate()} disabled={!invoiceId || !periodStart || mutation.isPending} data-testid="link-invoice-submit">
-            <Plus className="h-4 w-4 mr-1.5" />
+            <Plus className="h-4 w-4 me-1.5" />
             {t('invoices.schedules.action.link')}
           </Button>
         </DialogFooter>

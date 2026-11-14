@@ -73,7 +73,7 @@ function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDial
                   onSelect(p)
                   onClose()
                 }}
-                className={`w-full flex items-start gap-3 rounded-lg border p-4 text-left transition-colors ${
+                className={`w-full flex items-start gap-3 rounded-lg border p-4 text-start transition-colors ${
                   p.configured
                     ? 'border-border hover:border-primary hover:bg-muted/50 cursor-pointer'
                     : 'border-border/50 opacity-60 cursor-not-allowed'

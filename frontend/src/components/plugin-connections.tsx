@@ -81,7 +81,7 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
         </div>
         {canWrite && (
           <Button size="sm" onClick={() => setAdding(true)}>
-            <Plus size={14} className="mr-1" />
+            <Plus size={14} className="me-1" />
             {t('plugins.connections.add')}
           </Button>
         )}
@@ -93,7 +93,7 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
         <div className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm">
           <span className="text-muted-foreground">{t('plugins.connections.loadFailed')}</span>
           <Button variant="outline" size="sm" onClick={() => void refetch()}>
-            <RefreshCw size={14} className="mr-1" />
+            <RefreshCw size={14} className="me-1" />
             {t('common.retry')}
           </Button>
         </div>
@@ -136,12 +136,12 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
                   <div className="flex items-center gap-1">
                     {signIn ? (
                       <Button size="sm" variant="outline" disabled={busy} onClick={() => authorizeMutation.mutate(connection.id)}>
-                        <LogIn size={14} className="mr-1" />
+                        <LogIn size={14} className="me-1" />
                         {t('plugins.connections.signIn')}
                       </Button>
                     ) : (
                       <Button size="sm" variant="outline" disabled={busy} onClick={() => syncMutation.mutate(connection.id)}>
-                        <RefreshCw size={14} className={cn('mr-1', busy && 'animate-spin')} />
+                        <RefreshCw size={14} className={cn('me-1', busy && 'animate-spin')} />
                         {t('plugins.connections.syncNow')}
                       </Button>
                     )}
@@ -232,7 +232,7 @@ function AddConnectionDialog({
                     type="button"
                     onClick={() => { setKey(option.key); setValues({}) }}
                     className={cn(
-                      'rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+                      'rounded-lg border px-3 py-2 text-start text-sm transition-colors',
                       option.key === key ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
                     )}
                   >
@@ -261,7 +261,7 @@ function AddConnectionDialog({
             <div key={field.key} className="space-y-2">
               <Label htmlFor={`plugin-field-${field.key}`}>
                 {localized(field.label, lang)}
-                {!field.required && <span className="ml-1 font-normal text-muted-foreground">({t('plugins.connections.optional')})</span>}
+                {!field.required && <span className="ms-1 font-normal text-muted-foreground">({t('plugins.connections.optional')})</span>}
               </Label>
               <Input
                 id={`plugin-field-${field.key}`}
@@ -350,7 +350,7 @@ function RemoveConnectionDialog({
             {t('common.cancel')}
           </Button>
           <Button variant="destructive" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-            <Trash2 size={14} className="mr-1" />
+            <Trash2 size={14} className="me-1" />
             {t('plugins.connections.remove')}
           </Button>
         </DialogFooter>
