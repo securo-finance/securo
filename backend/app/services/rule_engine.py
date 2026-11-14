@@ -228,6 +228,7 @@ def apply_rule_actions(
     *,
     skip_description: bool = False,
     assignable_category_ids: Collection[uuid.UUID] | None = None,
+    existing_payee_ids: Collection[uuid.UUID] | None = None,
 ) -> bool:
     """Apply actions in-place and return the updated category-set flag.
 
@@ -242,6 +243,10 @@ def apply_rule_actions(
     and take the whole import or sync batch with it.
 
     Passing nothing skips the check, for callers with no workspace at hand.
+
+    `set_payee` keeps its payee id the same way and can outlive the payee, so
+    it only writes an id in `existing_payee_ids`. Passing nothing skips that
+    check too.
     """
     for action in actions:
         op = action.get("op")
@@ -270,9 +275,12 @@ def apply_rule_actions(
 
         elif op == "set_payee":
             try:
-                tx.payee_id = uuid.UUID(str(value))
+                payee_id = uuid.UUID(str(value))
             except (ValueError, AttributeError):
-                pass
+                continue
+            if existing_payee_ids is not None and payee_id not in existing_payee_ids:
+                continue
+            tx.payee_id = payee_id
 
         elif op == "append_notes":
             new_tags = str(value or "").strip()

@@ -1,6 +1,6 @@
 import uuid
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, cast
 
 from fastapi import Depends, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, schemas
@@ -26,9 +26,14 @@ async def get_user_db(session: AsyncSession = Depends(get_async_session)):
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
-    user_db: SQLAlchemyUserDatabase
     reset_password_token_secret = settings.secret_key
     verification_token_secret = settings.secret_key
+
+    @property
+    def db_session(self) -> AsyncSession:
+        """The session behind `user_db`, which get_user_manager always builds
+        as the SQLAlchemy adapter."""
+        return cast(SQLAlchemyUserDatabase, self.user_db).session
 
     async def update(
         self,
@@ -53,7 +58,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         from app.services.rule_service import create_default_rules
         from app.services.workspace_service import create_personal_workspace_for_user
 
-        session = self.user_db.session
+        session = self.db_session
         currency = user.primary_currency
         lang = (user.preferences or {}).get("language", "en")
 

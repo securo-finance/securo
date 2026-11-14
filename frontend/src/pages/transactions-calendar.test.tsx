@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import type { InternalAxiosRequestConfig } from 'axios'
 import TransactionsPage from '@/pages/transactions'
 import { api } from '@/lib/api'
@@ -41,39 +41,47 @@ beforeEach(() => {
 })
 afterEach(() => { api.defaults.adapter = originalAdapter })
 
+function calendarCalls() {
+  return calls.filter((call) => call.url === '/transactions/calendar')
+}
+
 it.each([
-  { name: 'implicit', collection: null, page: '', expected: undefined },
-  { name: 'flagged collection', collection: ['flagged'], page: '', expected: ['flagged'] },
-  { name: 'mixed collection', collection: ['included', 'flagged'], page: '', expected: ['included', 'flagged'] },
-  { name: 'page selection wins', collection: ['included'], page: '&account_id=flagged', expected: ['flagged'] },
-  { name: 'multiple page selections win', collection: ['other'], page: '&account_id=included,flagged', expected: ['included', 'flagged'] },
-])('passes original selection to real calendar transport: $name', async ({ collection, page, expected }) => {
-  state.ids = collection
-  const view = renderWithProviders(<TransactionsPage />, {
+  { name: 'implicit selection', page: '', expected: undefined },
+  { name: 'single page selection', page: '&account_id=flagged', expected: ['flagged'] },
+  { name: 'multiple page selections are omitted', page: '&account_id=included,flagged', expected: undefined },
+])('sends main single-page calendar selection: $name', async ({ page, expected }) => {
+  renderWithProviders(<TransactionsPage />, {
     route: `/transactions?view=calendar&from=2026-07-01&to=2026-07-31${page}`,
   })
-  await waitFor(() => expect(calls.filter((call) => call.url === '/transactions/calendar')).not.toHaveLength(0))
-  await waitFor(() => expect(calls.filter((call) => call.url === '/transactions/calendar').at(-1)?.params?.account_ids).toEqual(expected))
-  const keys = view.queryClient.getQueryCache().getAll()
-    .filter((query) => query.queryKey[1] === 'calendar').map((query) => query.queryKey)
-  expect(keys.some((key) => JSON.stringify(key.at(-1)) === JSON.stringify(expected ?? null))).toBe(true)
+  await waitFor(() => expect(calendarCalls()).not.toHaveLength(0))
+  await waitFor(() => expect(calendarCalls().at(-1)?.params?.account_ids).toEqual(expected))
+  expect(calendarCalls().at(-1)?.params?.date_basis).toBe('reporting')
 })
 
-it('separates cached collection scopes and never requests an empty collection', async () => {
+it('does not forward an active collection to the transactions calendar', async () => {
   state.ids = ['flagged']
-  const view = renderWithProviders(<TransactionsPage />, { route: '/transactions?view=calendar' })
-  await waitFor(() => expect(calls.some((call) => call.url === '/transactions/calendar')).toBe(true))
-  state.ids = ['included']
-  await act(async () => { view.rerender(<TransactionsPage />) })
-  await waitFor(() => expect(calls.filter((call) => call.url === '/transactions/calendar').at(-1)?.params?.account_ids).toEqual(['included']))
-  const count = calls.filter((call) => call.url === '/transactions/calendar').length
-  state.ids = []
-  await act(async () => { view.rerender(<TransactionsPage />) })
-  expect(calls.filter((call) => call.url === '/transactions/calendar')).toHaveLength(count)
-  expect(screen.queryByRole('button', { name: t('common.refresh') })).not.toBeInTheDocument()
-  const emptyScope = view.queryClient.getQueryCache().getAll().find((query) => (
-    query.queryKey[1] === 'calendar' && JSON.stringify(query.queryKey.at(-1)) === '[]'
-  ))
-  expect(emptyScope).toBeDefined()
-  expect(emptyScope?.state.data).toBeUndefined()
+  const view = renderWithProviders(<TransactionsPage />, {
+    route: '/transactions?view=calendar&from=2026-07-01&to=2026-07-31',
+  })
+  await waitFor(() => expect(calendarCalls()).not.toHaveLength(0))
+  expect(calendarCalls().at(-1)?.params?.account_ids).toBeUndefined()
+  const keys = view.queryClient.getQueryCache().getAll()
+    .filter((query) => query.queryKey[1] === 'calendar').map((query) => query.queryKey)
+  expect(keys.some((key) => JSON.stringify(key.at(-2)) === '[]')).toBe(true)
+})
+
+it('keeps the date basis in the calendar request and query key', async () => {
+  const view = renderWithProviders(<TransactionsPage />, {
+    route: '/transactions?view=calendar&from=2026-07-01&to=2026-07-31',
+  })
+  await waitFor(() => expect(calendarCalls()).not.toHaveLength(0))
+  expect(calendarCalls().at(-1)?.params?.date_basis).toBe('reporting')
+
+  const { user } = view
+  await user.click(screen.getByRole('button', { name: t('transactions.bankDate') }))
+  await waitFor(() => expect(calendarCalls().at(-1)?.params?.date_basis).toBe('bank'))
+
+  const keys = view.queryClient.getQueryCache().getAll()
+    .filter((query) => query.queryKey[1] === 'calendar').map((query) => query.queryKey)
+  expect(keys.some((key) => key.at(-1) === 'bank')).toBe(true)
 })

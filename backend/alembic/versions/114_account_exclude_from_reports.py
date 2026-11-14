@@ -9,14 +9,14 @@ its own pages, exports and deliberately selected account totals.
 No index: the filter rides existing Account selects over a small per-
 workspace row count (`is_closed` sets the precedent).
 
-Revision ID: 107
-Revises: 106
+Revision ID: 114
+Revises: 113
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "107"
-down_revision = "106"
+revision = "114"
+down_revision = "113"
 branch_labels = None
 depends_on = None
 

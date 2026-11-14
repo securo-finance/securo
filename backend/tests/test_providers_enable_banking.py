@@ -240,6 +240,33 @@ async def test_get_oauth_url_returns_consent_url(eb_keys):
 
 
 @pytest.mark.asyncio
+async def test_get_oauth_url_keeps_consent_under_the_bank_max(eb_keys):
+    """Trade Republic allows exactly 90 days of consent and EB rejects even a
+    second more, so asking for the bank's max must land safely below it."""
+    provider = EnableBankingProvider()
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        captured.update(_json.loads(request.read().decode()))
+        return httpx.Response(200, json={"url": "https://consent.enablebanking.com/abc"})
+
+    with _patch_client(provider, handler):
+        await provider.get_oauth_url(
+            "https://app.example.com/oauth/callback",
+            "state-xyz",
+            flow_params={
+                "country": "es",
+                "institution_name": "Trade Republic",
+                "valid_until_days": 90,
+            },
+        )
+    valid_until = datetime.fromisoformat(captured["access"]["valid_until"])
+    assert valid_until < datetime.now(timezone.utc) + timedelta(days=90) - timedelta(minutes=5)
+
+
+@pytest.mark.asyncio
 async def test_get_oauth_url_rejects_missing_flow_params(eb_keys):
     provider = EnableBankingProvider()
     with pytest.raises(ValueError):
@@ -420,6 +447,8 @@ async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
     )
     credit = next(t for t in nested if t.type == "credit")
     assert credit.status == "pending"
+    # The last page carried no cursor, so the whole feed was read.
+    assert provider.truncated_account_ids == set()
 
     flat_page = {
         "transactions": [
@@ -493,6 +522,38 @@ async def test_get_transactions_stops_on_repeated_continuation_key(eb_keys, capl
     )
     assert [transaction.external_id for transaction in transactions] == [expected_id]
     assert "pagination loop detected" in caplog.text
+    # The loop hid whatever came after the repeated cursor.
+    assert provider.truncated_account_ids == {"acc-1"}
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_marks_account_truncated_at_page_cap(eb_keys, caplog):
+    """Pages that still carry a cursor at the safety cap leave the rest of the
+    feed unread, so the account is reported as truncated."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={
+            "transactions": [],
+            "continuation_key": f"cursor-{len(requests)}",
+        })
+
+    credentials = {
+        "session_id": "sess-x",
+        "valid_until": "2099-01-01T00:00:00Z",
+    }
+    with (
+        patch("app.providers.enable_banking.TRANSACTION_PAGE_LIMIT", 3),
+        _patch_client(provider, handler),
+        caplog.at_level("WARNING"),
+    ):
+        await provider.get_transactions(credentials, "acc-1", date(2026, 5, 1))
+
+    assert len(requests) == 3
+    assert provider.truncated_account_ids == {"acc-1"}
+    assert "more than 3 transaction pages" in caplog.text
 
 
 _WRONG_PERIOD_BODY = {
@@ -568,8 +629,10 @@ async def test_get_transactions_retries_shorter_window_on_wrong_period(eb_keys):
 
 
 @pytest.mark.asyncio
-async def test_get_transactions_wrong_period_with_explicit_since_raises(eb_keys):
-    """An explicit ``since`` is the caller's choice; never silently shorten it."""
+async def test_get_transactions_wrong_period_with_explicit_since_retries_once(eb_keys):
+    """A refused ``since`` older than 90 days is retried once with the last 90
+    days (the cut is logged and kept for a later sync); when that is refused
+    too, the error is the caller's, with no further shortening."""
     provider = EnableBankingProvider()
     requests: list[httpx.Request] = []
 
@@ -582,7 +645,12 @@ async def test_get_transactions_wrong_period_with_explicit_since_raises(eb_keys)
             _CREDENTIALS, "acc-1", date.today() - timedelta(days=200)
         )
 
-    assert len(requests) == 1
+    assert len(requests) == 2
+    retry = requests[1].url.params
+    retry_days = (
+        date.fromisoformat(retry["date_to"]) - date.fromisoformat(retry["date_from"])
+    ).days + 1
+    assert retry_days == 90
 
 
 @pytest.mark.asyncio

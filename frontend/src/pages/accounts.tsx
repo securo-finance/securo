@@ -531,16 +531,6 @@ export default function AccountsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-xs text-muted-foreground hover:text-foreground h-7 px-2"
-                          onClick={() => { setEditingAccount(acc); setDialogOpen(true) }}
-                        >
-                          {t('common.edit')}
-                        </Button>
-                      )}
-                      {canWrite && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
                           className="text-xs text-muted-foreground hover:text-foreground h-7 px-2 mr-3"
                           onClick={() => reopenMutation.mutate(acc.id)}
                           disabled={reopenMutation.isPending}
@@ -860,11 +850,6 @@ export function AccountDialog({
           key={account?.id ?? 'new'}
           onSubmit={(e) => {
             e.preventDefault()
-            if (account?.is_closed) {
-              onSave(excludeFromReports !== (account.exclude_from_reports ?? false)
-                ? { exclude_from_reports: excludeFromReports } : {})
-              return
-            }
             const isCC = type === 'credit_card'
             const parseDay = (v: string) => {
               const n = parseInt(v, 10)
@@ -873,7 +858,7 @@ export function AccountDialog({
             const isConnected = !!account?.connection_id
             // Editing: only move the opening balance when the date was changed.
             const dateChanged = !account || balanceDate !== formSource?.balanceDate
-            const values = {
+            onSave({
               ...(!isConnected && {
                 name,
                 balance: parseFloat(balance),
@@ -882,41 +867,24 @@ export function AccountDialog({
               }),
               type,
               ...(type === 'loan' && {
-                ...((!account || securedAssetId !== (account.secured_asset_id ?? '')) && {
-                  secured_asset_id: securedAssetIsListed ? securedAssetId : null,
-                }),
+                secured_asset_id: securedAssetIsListed ? securedAssetId : null,
                 ...loanTermsPayload(loanTerms),
               }),
               display_name: displayName.trim() || null,
-              ...(account && { exclude_from_reports: excludeFromReports }),
+              // Only a changed preference is sent; an untouched or restored
+              // flag stays omitted from the ordinary account save.
+              ...(account
+                && excludeFromReports !== (account.exclude_from_reports ?? false)
+                && { exclude_from_reports: excludeFromReports }),
               ...(isCC && {
                 credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
                 statement_close_day: parseDay(statementCloseDay),
                 payment_due_day: parseDay(paymentDueDay),
               }),
-            }
-            if (!account) {
-              onSave(values)
-              return
-            }
-            // Untouched fields must not overwrite newer provider/other-tab data.
-            const baseline: Record<string, unknown> = {
-              ...account,
-              balance: Number(account.balance),
-              display_name: account.display_name?.trim() || null,
-              exclude_from_reports: account.exclude_from_reports ?? false,
-              secured_asset_id: account.secured_asset_id ?? null,
-              credit_limit: account.credit_limit ?? null,
-              statement_close_day: account.statement_close_day ?? null,
-              payment_due_day: account.payment_due_day ?? null,
-              ...loanTermsPayload(loanTermsFrom(account, account.currency)),
-            }
-            onSave(Object.fromEntries(Object.entries(values)
-              .filter(([key, value]) => value !== baseline[key])))
+            })
           }}
           className="space-y-4"
         >
-          <fieldset hidden={account?.is_closed} disabled={account?.is_closed} className="space-y-4">
           <div className="space-y-2">
             <Label>{t('accounts.accountName')}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!!account?.connection_id} />
@@ -1020,11 +988,6 @@ export function AccountDialog({
                 onChange={(e) => setSecuredAssetId(e.target.value)}
               >
                 <option value="">{t('accounts.noSecuredProperty')}</option>
-                {securedAssetId && !properties.some((asset) => asset.id === securedAssetId) && (
-                  <option value={securedAssetId} disabled>
-                    {assetsList?.find((asset) => asset.id === securedAssetId)?.name ?? securedAssetId}
-                  </option>
-                )}
                 {properties.map((asset) => (
                   <option key={asset.id} value={asset.id}>{asset.name}</option>
                 ))}
@@ -1119,7 +1082,6 @@ export function AccountDialog({
               </div>
             </div>
           )}
-          </fieldset>
           {/* The edit-only inclusion control is the inverse of exclusion. */}
           {account && (
             <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">

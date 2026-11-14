@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
-import { useQuery } from '@tanstack/react-query'
 
 import AccountsPage, { AccountDialog } from '@/pages/accounts'
 import { renderWithProviders, t } from '@/test/utils'
@@ -146,15 +145,6 @@ describe('AccountsPage connection row actions', () => {
   })
 })
 
-function GoalCacheProbe({ loadList, loadSummary }: {
-  loadList: () => Promise<unknown[]>
-  loadSummary: () => Promise<unknown[]>
-}) {
-  useQuery({ queryKey: ['goals', 'active'], queryFn: loadList, staleTime: Infinity })
-  useQuery({ queryKey: ['goals', 'summary'], queryFn: loadSummary, staleTime: Infinity })
-  return null
-}
-
 describe('AccountsPage closed report preferences', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -164,39 +154,18 @@ describe('AccountsPage closed report preferences', () => {
     api.reopen.mockResolvedValue({})
   })
 
-  it.each([null, 'conn-1'])('edits reporting without reopening or changing financial fields: %s', async (connectionId) => {
+  it.each([null, 'conn-1'])('offers only Reopen, never Edit, on a closed row: %s', async (connectionId) => {
     const closed = {
       ...makeAccount('conn-1'), connection_id: connectionId, is_closed: true,
       closed_at: '2026-10-01T00:00:00Z', exclude_from_reports: false,
     }
     api.accountsList.mockImplementation((includeClosed: boolean) => Promise.resolve(includeClosed ? [closed] : []))
-    const loadList = vi.fn().mockResolvedValue([])
-    const loadSummary = vi.fn().mockResolvedValue([])
-    const { user } = renderWithProviders(
-      <><AccountsPage /><GoalCacheProbe loadList={loadList} loadSummary={loadSummary} /></>,
-      { route: '/accounts' },
-    )
-    await waitFor(() => {
-      expect(loadList).toHaveBeenCalledTimes(1)
-      expect(loadSummary).toHaveBeenCalledTimes(1)
-    })
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
     const row = (await screen.findByText(closed.name)).parentElement!.parentElement!
     expect(within(row).getByRole('button', { name: t('accounts.reopen') })).toBeEnabled()
-    await user.click(within(row).getByRole('button', { name: t('common.edit') }))
-    const dialog = screen.getByRole('dialog', { name: t('accounts.editAccount') })
-    expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument()
-    expect(within(dialog).queryByRole('combobox')).not.toBeInTheDocument()
-    await user.click(within(dialog).getByRole('checkbox', { name: t('accounts.includeInReports') }))
-    await user.click(within(dialog).getByRole('button', { name: t('common.save') }))
-    await waitFor(() => expect(api.update).toHaveBeenCalledExactlyOnceWith(closed.id, { exclude_from_reports: true }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    await waitFor(() => {
-      expect(loadList).toHaveBeenCalledTimes(2)
-      expect(loadSummary).toHaveBeenCalledTimes(2)
-    })
-    expect(api.reopen).not.toHaveBeenCalled()
-    expect(api.sync).not.toHaveBeenCalled()
-    expect(closed.is_closed).toBe(true)
+    expect(within(row).queryByRole('button', { name: t('common.edit') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(api.update).not.toHaveBeenCalled()
   })
 
   it('retains the separate Reopen action', async () => {

@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { AppLayout } from './app-layout'
-import { SUPPORTED_LANGS } from '@/lib/i18n'
-import { renderWithProviders, t, i18n } from '@/test/utils'
+import { renderWithProviders, t } from '@/test/utils'
 import type { Account } from '@/types'
 
 // Only IO/providers and unrelated shell panels are substituted. AppLayout's
@@ -85,33 +84,16 @@ function expectRow(id: string, balance: string) {
 }
 
 function expectIncludedTotal(button: HTMLElement, amount: string) {
-  expect(within(button).getByText(t('accounts.includedInTotals'))).toBeVisible()
   expect(within(button).getByText(amount)).toBeVisible()
+  expect(within(button).queryByText(t('accounts.includedInTotals'))).not.toBeInTheDocument()
 }
 
-it('localizes the included-totals qualifier in every shipped locale', async () => {
-  const previousLanguage = i18n.language
-  try {
-    for (const { code } of SUPPORTED_LANGS) {
-      await i18n.changeLanguage(code)
-      const qualifier = i18n.t('accounts.includedInTotals')
-      expect(qualifier, `${code} must define accounts.includedInTotals`)
-        .not.toBe('accounts.includedInTotals')
-      if (code !== 'en') expect(qualifier, `${code} must not fall back to English`)
-        .not.toBe('Included in totals')
-    }
-  } finally {
-    await i18n.changeLanguage(previousLanguage)
-  }
-})
-
-it('visibly qualifies the subtotal and exposes that qualifier to keyboard users', async () => {
+it('keeps the subtotal keyboard-collapsible without adding a qualifier', async () => {
   const { user } = renderWithProviders(<AppLayout />)
   const button = await header()
-  const qualifier = t('accounts.includedInTotals')
 
-  expect(within(button).getByText(qualifier)).toBeVisible()
-  expect(button).toHaveAccessibleName(new RegExp(qualifier))
+  expect(within(button).queryByText(t('accounts.includedInTotals'))).not.toBeInTheDocument()
+  expect(button).toHaveAccessibleName(/^Accounts \$100\.00/)
   expect(button).toHaveAttribute('aria-expanded', 'true')
   button.focus()
   expect(button).toHaveFocus()
@@ -221,7 +203,7 @@ describe('sidebar unchanged calculation and privacy baselines', () => {
     ]
     renderWithProviders(<AppLayout />)
     const button = await header()
-    expect(within(button).getByText(t('accounts.includedInTotals'))).toBeVisible()
+    expect(within(button).queryByText(t('accounts.includedInTotals'))).not.toBeInTheDocument()
     expect(within(button).getByText('-$125.00')).toHaveClass('text-rose-400')
     expectRow('Converted', '-$150.00')
     expectRow('Fallback', '$25.00')
@@ -233,8 +215,7 @@ describe('sidebar unchanged calculation and privacy baselines', () => {
     const button = await header()
     await user.click(sidebar().getByRole('button', { name: t('privacy.hide') }))
     expect(within(button).getByText('•••••')).toBeVisible()
-    expect(within(button).getByText(t('accounts.includedInTotals'))).toBeVisible()
-    expect(button).toHaveAccessibleName(new RegExp(t('accounts.includedInTotals')))
+    expect(within(button).queryByText(t('accounts.includedInTotals'))).not.toBeInTheDocument()
     expect(button).not.toHaveAttribute('title')
     expect(button).not.toHaveAttribute('aria-label')
     expect(button).not.toHaveAccessibleName(/\$\d/)

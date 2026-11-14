@@ -38,6 +38,8 @@ WHOLE_ROW: dict[tuple[str, str], str] = {
         "pending-categorization count (split rows excluded) and viewer shares",
     ("app/services/report_service.py", "get_income_expenses_report"):
         "owner and viewer group-split offsets",
+    ("app/services/category_statement_service.py", "get_category_statement"):
+        "owner and member group-split offsets",
 }
 
 

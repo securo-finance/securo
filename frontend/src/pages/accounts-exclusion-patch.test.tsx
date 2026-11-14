@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
+import { useQuery } from '@tanstack/react-query'
 import type { InternalAxiosRequestConfig } from 'axios'
 
 import AccountsPage from '@/pages/accounts'
@@ -29,6 +30,15 @@ vi.mock('@/components/connector-select-dialog', () => ({ ConnectorSelectDialog: 
 vi.mock('@/components/oauth-connect-dialog', () => ({ OAuthConnectDialog: () => null }))
 vi.mock('@/components/token-connect-dialog', () => ({ TokenConnectDialog: () => null }))
 vi.mock('@/components/connection-settings-dialog', () => ({ ConnectionSettingsDialog: () => null }))
+
+function GoalCacheProbe({ loadList, loadSummary }: {
+  loadList: () => Promise<unknown[]>
+  loadSummary: () => Promise<unknown[]>
+}) {
+  useQuery({ queryKey: ['goals', 'active'], queryFn: loadList, staleTime: Infinity })
+  useQuery({ queryKey: ['goals', 'summary'], queryFn: loadSummary, staleTime: Infinity })
+  return null
+}
 
 function account(overrides: Partial<Account> = {}): Account {
   return {
@@ -115,19 +125,50 @@ describe('account edit payload', () => {
     { kind: 'card', overrides: {
       type: 'credit_card', credit_limit: 5000, statement_close_day: 10, payment_due_day: 20,
     } },
-    { kind: 'closed', overrides: { is_closed: true, closed_at: '2026-07-01T00:00:00Z' } },
   ] as { kind: string; overrides: Partial<Account> }[])(
-    'PATCHes only a changed flag for $kind accounts', async ({ overrides }) => {
+    'sends the ordinary account save plus a changed preference for $kind accounts', async ({ overrides }) => {
       stored = account(overrides)
       const { user, dialog } = await openEditor()
-      // A later provider/other-tab update must not be overwritten by an old
-      // balance, type, loan term or card field in this dialog's snapshot.
-      stored = { ...stored, balance: 987.65, currency: 'EUR' }
       await user.click(dialog.getByRole('checkbox', { name: t('accounts.includeInReports') }))
       await user.click(dialog.getByRole('button', { name: t('common.save') }))
-      expect(await patchBody()).toEqual({ exclude_from_reports: true })
+      const body = await patchBody()
+      // The preference rides along; it does not turn the save into a flag-only PATCH.
+      expect(body.exclude_from_reports).toBe(true)
+      expect(body.display_name).toBe('Original label')
+      expect(body.type).toBe(stored.type)
+      if (stored.connection_id) {
+        expect(body).not.toHaveProperty('name')
+        expect(body).not.toHaveProperty('balance')
+        expect(body).not.toHaveProperty('currency')
+      } else {
+        expect(body.name).toBe('Synthetic checking')
+        expect(body.balance).toBe(420.35)
+        expect(body.currency).toBe('USD')
+        // Unchanged opening balance date keeps main's protection.
+        expect(body).not.toHaveProperty('balance_date')
+      }
+      if (stored.type === 'loan') {
+        expect(body).toMatchObject({
+          secured_asset_id: null, loan_kind: 'personal',
+          loan_original_amount: 1000, loan_term_months: 12,
+        })
+      }
+      if (stored.type === 'credit_card') {
+        expect(body).toMatchObject({
+          credit_limit: 5000, statement_close_day: 10, payment_due_day: 20,
+        })
+      }
     },
   )
+
+  it('keeps a closed account out of the edit UI entirely', async () => {
+    stored = account({ is_closed: true, closed_at: '2026-07-01T00:00:00Z' })
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    const row = (await screen.findByText('Original label')).parentElement!.parentElement!
+    expect(within(row).getByRole('button', { name: t('accounts.reopen') })).toBeEnabled()
+    expect(within(row).queryByRole('button', { name: t('common.edit') })).not.toBeInTheDocument()
+    expect(patches).toHaveLength(0)
+  })
 
   it.each([false, true])('omits an untouched flag after unrelated edit (toggle restored=%s)', async (restore) => {
     stored = account({ connection_id: 'synthetic-connection' })
@@ -154,59 +195,26 @@ describe('account edit payload', () => {
     expect(await patchBody()).not.toHaveProperty('balance_date')
   })
 
-  it('omits untouched saved collateral when a flag-only loan edit loads no eligible properties', async () => {
-    stored = account({
-      name: 'Synthetic secured mortgage', type: 'loan', balance: 180000,
-      current_balance: -180000, balance_primary: -180000,
-      secured_asset_id: '10000000-0000-4000-8000-000000000008',
-      loan_kind: 'mortgage', loan_original_amount: 225000,
-      loan_interest_rate: 4.75, loan_rate_period: 'yearly_nominal',
-      loan_term_months: 240, loan_first_payment_date: '2026-06-03',
-      loan_amortization: 'sac',
+  it('refreshes goal caches after an open account save', async () => {
+    stored = account()
+    const loadList = vi.fn().mockResolvedValue([])
+    const loadSummary = vi.fn().mockResolvedValue([])
+    const view = renderWithProviders(
+      <><AccountsPage /><GoalCacheProbe loadList={loadList} loadSummary={loadSummary} /></>,
+      { route: '/accounts' },
+    )
+    await waitFor(() => {
+      expect(loadList).toHaveBeenCalledTimes(1)
+      expect(loadSummary).toHaveBeenCalledTimes(1)
     })
-    const { user, dialog, queryClient } = await openEditor()
-    // The existing adapter returns an empty eligible-asset list. Wait for
-    // that response so this cannot pass while the assets query is unresolved.
-    await waitFor(() => expect(queryClient.getQueryState(['assets'])?.status).toBe('success'))
-    expect(queryClient.getQueryData(['assets'])).toEqual([])
-    expect(dialog.getByDisplayValue('225000')).toBeInTheDocument()
-    expect(dialog.getByDisplayValue('4.75')).toBeInTheDocument()
-
-    await user.click(dialog.getByRole('checkbox', { name: t('accounts.includeInReports') }))
-    await user.click(dialog.getByRole('button', { name: t('common.save') }))
-
-    // Inspect the real serialized PATCH outside the transport callback:
-    // preserving collateral here means omitting it, not resending its ID.
-    expect(await patchBody()).toEqual({ exclude_from_reports: true })
-  })
-
-  it('represents saved unavailable collateral distinctly before deliberately clearing only its link', async () => {
-    const savedCollateralId = '10000000-0000-4000-8000-000000000008'
-    stored = account({
-      name: 'Synthetic secured mortgage', type: 'loan', balance: 180000,
-      current_balance: -180000, balance_primary: -180000,
-      secured_asset_id: savedCollateralId,
-      loan_kind: 'mortgage', loan_original_amount: 225000,
-      loan_interest_rate: 4.75, loan_rate_period: 'yearly_nominal',
-      loan_term_months: 240, loan_first_payment_date: '2026-06-03',
-      loan_amortization: 'sac',
+    await view.user.click(await screen.findByRole('button', { name: t('common.edit') }))
+    const dialog = within(screen.getByRole('dialog', { name: t('accounts.editAccount') }))
+    await view.user.click(dialog.getByRole('checkbox', { name: t('accounts.includeInReports') }))
+    await view.user.click(dialog.getByRole('button', { name: t('common.save') }))
+    await waitFor(() => expect(patches).toHaveLength(1))
+    await waitFor(() => {
+      expect(loadList).toHaveBeenCalledTimes(2)
+      expect(loadSummary).toHaveBeenCalledTimes(2)
     })
-    const { user, dialog, queryClient } = await openEditor()
-    await waitFor(() => expect(queryClient.getQueryState(['assets'])?.status).toBe('success'))
-    expect(queryClient.getQueryData(['assets'])).toEqual([])
-
-    const noProperty = dialog.getByRole('option', { name: t('accounts.noSecuredProperty') })
-    const collateral = noProperty.closest('select')
-    if (!collateral) throw new Error('Collateral option has no select control')
-    expect(noProperty).toHaveValue('')
-    // A saved link must not already look cleared before the user acts.
-    // Check the actual DOM value, not React state or an invented option label.
-    expect(collateral).toHaveValue(savedCollateralId)
-    expect(collateral.selectedOptions[0]).not.toBe(noProperty)
-
-    await user.selectOptions(collateral, noProperty)
-    expect(collateral).toHaveValue('')
-    await user.click(dialog.getByRole('button', { name: t('common.save') }))
-    expect(await patchBody()).toEqual({ secured_asset_id: null })
   })
 })

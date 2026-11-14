@@ -227,4 +227,21 @@ describe('LinkPaymentDialog candidates', () => {
     expect(screen.queryByText('Already on this invoice')).not.toBeInTheDocument()
     expect(screen.queryByText('Spent on another')).not.toBeInTheDocument()
   })
+
+  it('measures the difference against what is left of a payment used elsewhere', async () => {
+    api.transactions.list.mockResolvedValue({
+      items: [
+        {
+          ...payment,
+          invoice_links: [{ invoice_id: 'inv-9', amount: '400.00', number: 1, series: null, external_number: null }],
+        },
+      ],
+      total: 1,
+    })
+    const { user } = renderDialog()
+    await user.click(await screen.findByTestId('invoice-candidate'))
+    // 1500 expected; 1000 arrived, but 400 of it already settled another
+    // invoice, so linking it here covers 600 and leaves 900.
+    expect(screen.getByTestId('invoice-difference')).toHaveTextContent('$900.00')
+  })
 })

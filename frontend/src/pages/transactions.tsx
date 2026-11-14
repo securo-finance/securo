@@ -81,6 +81,8 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
+import { readCalendarDateBasis } from '@/lib/transaction-calendar'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
 
 type TransactionUpdatePayload = TransactionEditPayload & {
   apply_to_transfer_pair?: boolean
@@ -110,7 +112,7 @@ export default function TransactionsPage() {
   const { mask } = usePrivacyMode()
   const isMobile = useIsMobile()
   const { user } = useAuth()
-  const { activeAccountIds, activeCollectionId, activeCollection } = useCollectionFilter()
+  const { activeAccountIds } = useCollectionFilter()
   const { canWrite, hasModule } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
@@ -169,6 +171,7 @@ export default function TransactionsPage() {
     searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
   ))
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
+  const [calendarDateBasis, setCalendarDateBasis] = useState(readCalendarDateBasis)
   const [filterPayee, setFilterPayee] = useState<string>(searchParams.get('payee_id') ?? '')
   const [filterGroupId, setFilterGroupId] = useState<string>(searchParams.get('group_id') ?? '')
   const [filterType, setFilterType] = useState<string>(searchParams.get('type') ?? '')
@@ -356,6 +359,7 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     if (viewMode === 'calendar') {
+      setFilterAccountIds((prev) => prev.length > 1 ? [] : prev)
       setSelectedIds(new Set())
       setLastSelectedId(null)
       setBulkCategory('')
@@ -428,14 +432,14 @@ export default function TransactionsPage() {
   })
 
   const calendarMonth = steppedMonth
-  const calendarAccountIds = filterAccountIds.length > 0 ? filterAccountIds : activeAccountIds
-  const calendarCollectionPending = filterAccountIds.length === 0 && !!activeCollectionId && !activeCollection
+  const calendarAccountIds = filterAccountIds.length === 1 ? filterAccountIds : []
   const { data: calendarData, isLoading: calendarLoading, isFetching: calendarFetching, refetch: refetchCalendar } = useQuery({
-    queryKey: ['transactions', 'calendar', calendarMonth, calendarCollectionPending ? 'unresolved' : calendarAccountIds],
-    enabled: viewMode === 'calendar' && !noAccounts && !calendarCollectionPending,
+    queryKey: ['transactions', 'calendar', calendarMonth, calendarAccountIds, calendarDateBasis],
+    enabled: viewMode === 'calendar',
     queryFn: () => transactions.calendar({
       month: `${calendarMonth}-01`,
-      account_ids: calendarAccountIds ?? undefined,
+      account_ids: calendarAccountIds.length === 1 ? calendarAccountIds : undefined,
+      date_basis: calendarDateBasis,
     }),
   })
 
@@ -797,10 +801,11 @@ export default function TransactionsPage() {
     const groups: { date: string; label: string; items: Transaction[] }[] = []
     let current: { date: string; label: string; items: Transaction[] } | null = null
     for (const tx of filteredItems) {
-      if (!current || current.date !== tx.date) {
+      const reportingDate = tx.reporting_date_override ?? tx.date
+      if (!current || current.date !== reportingDate) {
         current = {
-          date: tx.date,
-          label: new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale, {
+          date: reportingDate,
+          label: new Date(reportingDate + 'T00:00:00').toLocaleDateString(dateLocale, {
             weekday: 'short',
             day: 'numeric',
             month: 'short',
@@ -1273,8 +1278,9 @@ export default function TransactionsPage() {
               <Paperclip size={12} className="text-muted-foreground shrink-0" />
             )}
           </div>
+          <ReportingDateBadge tx={tx} locale={dateLocale} />
           {showInlineDate && (
-            <p className="text-xs text-muted-foreground mt-0.5">{new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{new Date((tx.reporting_date_override ?? tx.date) + 'T00:00:00').toLocaleDateString(dateLocale)}</p>
           )}
           {(showInlineNotes || showInlineTags) && tx.notes && (
             <div className="mt-1 space-y-0.5">
@@ -1309,7 +1315,7 @@ export default function TransactionsPage() {
       case 'date':
         return (
           <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground tabular-nums`}>
-            {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)}
+            {new Date((tx.reporting_date_override ?? tx.date) + 'T00:00:00').toLocaleDateString(dateLocale)}
           </TableCell>
         )
       case 'description':
@@ -1442,6 +1448,7 @@ export default function TransactionsPage() {
             view={{
               value: viewMode,
               onChange: (value) => {
+                if (value === 'calendar' && filterAccountIds.length > 1) setFilterAccountIds([])
                 setViewMode(value)
               },
               listLabel: t('transactions.listView'),
@@ -1454,7 +1461,7 @@ export default function TransactionsPage() {
             onAdd={canWrite ? () => { setEditingTx(null); setDialogOpen(true) } : undefined}
             onDuplicate={duplicableTx ? () => handleDuplicateTransaction(duplicableTx) : undefined}
             onTransfer={canWrite ? () => setTransferDialogOpen(true) : undefined}
-            onRefresh={noAccounts || (viewMode === 'calendar' && calendarCollectionPending) ? undefined : () => {
+            onRefresh={noAccounts ? undefined : () => {
               void refreshTransactionsView({
                 viewMode,
                 refetchList: refetch,
@@ -1575,8 +1582,8 @@ export default function TransactionsPage() {
 
       {viewMode === 'calendar' && (
         <TransactionCalendarView
-          calendar={noAccounts || calendarCollectionPending ? undefined : calendarData}
-          isLoading={calendarCollectionPending || calendarLoading}
+          calendar={calendarData}
+          isLoading={calendarLoading}
           locale={locale}
           dateLocale={dateLocale}
           mask={mask}
@@ -1585,6 +1592,8 @@ export default function TransactionsPage() {
           onOpenTransaction={handleOpenCalendarTransaction}
           accounts={accountsList}
           userCurrency={userCurrency}
+          dateBasis={calendarDateBasis}
+          onDateBasisChange={setCalendarDateBasis}
         />
       )}
 
@@ -1619,6 +1628,7 @@ export default function TransactionsPage() {
                     highlighted={tx.id === highlightId}
                     highlightedRowRef={tx.id === highlightId ? highlightedRowRef : undefined}
                     locale={locale}
+                    dateLocale={dateLocale}
                     userCurrency={userCurrency}
                     onSelect={toggleSelect}
                     onClick={(t) => {
