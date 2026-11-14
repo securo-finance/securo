@@ -45,6 +45,13 @@ def _to_decimal(value: object) -> Optional[Decimal]:
         return None
 
 
+def _to_date(value: object) -> Optional[date]:
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
 class IsraeliCardProvider(BankProvider):
     company: str = ""
     display_name: str = ""
@@ -81,7 +88,12 @@ class IsraeliCardProvider(BankProvider):
             raise ValueError("Login details are malformed") from exc
         if not isinstance(raw, dict):
             raise ValueError("Login details are malformed")
-        values = {f: str(raw.get(f) or "").strip() for f in self.fields}
+        # Identifiers are trimmed; a password is sent exactly as typed, spaces
+        # included, or a login that works on the company's site fails here.
+        values = {
+            f: str(raw.get(f) or "") if f == "password" else str(raw.get(f) or "").strip()
+            for f in self.fields
+        }
         missing = [f for f, v in values.items() if not v]
         if missing:
             raise ValueError(f"Missing: {', '.join(missing)}")
@@ -147,7 +159,10 @@ class IsraeliCardProvider(BankProvider):
     def _build_account(self, raw: dict) -> AccountData:
         digits = "".join(ch for ch in str(raw.get("accountNumber") or "") if ch.isdigit())
         last4 = digits[-4:] if len(digits) >= 4 else None
-        balance = _to_decimal(raw.get("balance")) or Decimal(0)
+        # The library reports what is owed as a negative number (limit minus
+        # available credit, negated). Connected cards store debt positive, like
+        # every other provider's, so the balance sites can negate it once.
+        balance = -(_to_decimal(raw.get("balance")) or Decimal(0))
         return AccountData(
             external_id=self._account_external_id(raw),
             name=f"{self.display_name} ****{last4}" if last4 else self.display_name,
@@ -187,11 +202,15 @@ class IsraeliCardProvider(BankProvider):
             if raw.get("status") == "pending":
                 continue
             amount = _to_decimal(raw.get("amount"))
-            try:
-                txn_date = date.fromisoformat(str(raw.get("date")))
-            except ValueError:
+            txn_date = _to_date(raw.get("date"))
+            if amount is None or txn_date is None:
                 continue
-            if amount is None or (since and txn_date < since):
+            # `since` rewinds a fortnight before the last sync. A charge keeps
+            # its purchase date when it posts (after being pending above, or
+            # as a later installment), so the cutoff also looks at the billing
+            # date, which is what moves into the window.
+            billed = _to_date(raw.get("processedDate")) or txn_date
+            if since and max(txn_date, billed) < since:
                 continue
             description = (raw.get("description") or "").strip() or "Transaction"
             memo = (raw.get("memo") or "").strip()

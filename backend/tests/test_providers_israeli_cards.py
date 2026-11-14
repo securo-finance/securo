@@ -20,7 +20,7 @@ from app.providers.israeli_cards import IsracardProvider, MaxProvider
 
 LOGIN = {"id": "000000018", "card6Digits": "123456", "password": "not-a-real-password"}
 
-CARD = {
+CARD: dict = {
     "accountNumber": "4321",
     "currency": "ILS",
     "balance": -2000,
@@ -98,7 +98,8 @@ async def test_connect_stores_the_login_encrypted():
     assert LOGIN["id"] not in conn.external_id
     [card] = conn.accounts
     assert (card.type, card.name, card.masked_number) == ("credit_card", "Isracard ****4321", "4321")
-    assert card.balance == Decimal("-2000")
+    # The library reports debt negative; connected cards store it positive.
+    assert card.balance == Decimal("2000")
     assert card.credit_limit == Decimal("10000")
 
 
@@ -195,9 +196,32 @@ def test_unconverted_foreign_charge_leaves_the_bank_amount_unset():
     assert txn.amount_in_account_currency is None
 
 
-def test_since_filters_older_charges():
-    txns = IsracardProvider.build_transactions(CARD, since=date(2026, 3, 1))
-    assert all(t.date >= date(2026, 3, 1) for t in txns)
+def test_since_keeps_charges_billed_in_the_window():
+    # A charge keeps its purchase date when it posts, after being pending or
+    # as a later installment, so the cutoff looks at the billing date too:
+    # the February installment billed in April is in, a charge both bought and
+    # billed before the window is out.
+    old = _charge(date="2026-01-05", processedDate="2026-02-02", identifier="T0")
+    late = _charge(date="2026-02-20", processedDate="2026-03-15", identifier="T9")
+    card = {**CARD, "txns": [old, late, *CARD["txns"]]}
+    txns = IsracardProvider.build_transactions(card, since=date(2026, 3, 1))
+    ids = {(t.raw_data or {})["identifier"] for t in txns}
+    assert "T0" not in ids
+    assert {"T9", "T2"} <= ids
+    for t in txns:
+        assert t.date >= date(2026, 3, 1) or (t.raw_data or {})["processed_date"] >= "2026-03-01"
+
+
+def test_posted_after_pending_is_imported_once_it_bills():
+    # Sync 1: the purchase is pending and skipped. Sync 2, weeks later: the
+    # cutoff has moved past the purchase date, but the row now posts with a
+    # billing date inside the window, so it is imported.
+    pending = _charge(date="2026-02-20", processedDate="2026-02-20", status="pending", identifier=None)
+    assert IsracardProvider.build_transactions({**CARD, "txns": [pending]}, since=date(2026, 2, 1)) == []
+    posted = _charge(date="2026-02-20", processedDate="2026-03-10", status="posted", identifier="T8")
+    [txn] = IsracardProvider.build_transactions({**CARD, "txns": [posted]}, since=date(2026, 3, 1))
+    assert txn.date == date(2026, 2, 20)
+    assert (txn.raw_data or {})["identifier"] == "T8"
 
 
 @pytest.mark.asyncio
@@ -210,3 +234,13 @@ async def test_transactions_read_through_the_stored_login():
         txns = await provider.get_transactions(sealed, card.external_id)
     assert len(txns) == 5
     assert all(body["credentials"] == LOGIN for body in seen)
+
+
+@pytest.mark.asyncio
+async def test_password_is_sent_exactly_as_typed():
+    seen: list[dict] = []
+    login = {"id": " 000000018 ", "card6Digits": "123456", "password": " pass word "}
+    with _patched(IsracardProvider, _sidecar(seen)):
+        await IsracardProvider().handle_oauth_callback(json.dumps(login))
+    assert seen[0]["credentials"]["id"] == "000000018"
+    assert seen[0]["credentials"]["password"] == " pass word "

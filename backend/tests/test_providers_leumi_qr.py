@@ -62,7 +62,12 @@ def _patched(handler):
     return patch.object(LeumiQrProvider, "_client", fake_client)
 
 
-def _sidecar(result_status: int = 200, sessions_status: int = 201, seen: list | None = None):
+def _sidecar(
+    result_status: int = 200,
+    sessions_status: int = 201,
+    seen: list | None = None,
+    sessions: tuple[str, ...] = (SESSION,),
+):
     def handler(request: httpx.Request) -> httpx.Response:
         if seen is not None:
             seen.append(request)
@@ -70,14 +75,14 @@ def _sidecar(result_status: int = 200, sessions_status: int = 201, seen: list | 
             if sessions_status != 201:
                 return httpx.Response(sessions_status, json={"error": "busy"})
             return httpx.Response(201, json={"id": SESSION})
-        if request.url.path == f"/sessions/{SESSION}/result":
+        if request.url.path in {f"/sessions/{s}/result" for s in sessions}:
             # The service hands a result only to the user who started the session.
             if request.url.params.get("user_id") != "user-1":
                 return httpx.Response(404, json={"error": "not found"})
             if result_status != 200:
                 return httpx.Response(result_status, json={"error": "gone"})
             return httpx.Response(200, json=RESULT)
-        if request.url.path == f"/sessions/{SESSION}":
+        if request.url.path in {f"/sessions/{s}" for s in sessions}:
             if request.url.params.get("user_id") != "user-1":
                 return httpx.Response(404, json={"error": "not found"})
             return httpx.Response(200, json={"status": "waiting_for_scan", "qr": "iVBOR", "error": None})
@@ -142,11 +147,15 @@ async def test_callback_builds_accounts_without_storing_full_numbers():
 
 @pytest.mark.asyncio
 async def test_reconnect_keeps_the_same_connection_identity():
-    with _patched(_sidecar()):
+    # A reconnect is a new QR login: a different session, the same customer.
+    # The ids come from the accounts, not from the session.
+    second_session = "66666666-7777-4888-8999-000000000000"
+    with _patched(_sidecar(sessions=(SESSION, second_session))):
         first = await LeumiQrProvider().complete_qr_session(SESSION, "user-1")
-        again = await LeumiQrProvider().complete_qr_session(SESSION, "user-1")
+        again = await LeumiQrProvider().complete_qr_session(second_session, "user-1")
     assert first.external_id == again.external_id
     assert [a.external_id for a in first.accounts] == [a.external_id for a in again.accounts]
+    assert again.credentials["session_id"] == second_session
 
 
 @pytest.mark.asyncio
