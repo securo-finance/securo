@@ -1049,7 +1049,7 @@ export default function DashboardPage() {
               </span>
             </div>
             <span className="shrink-0 text-sm font-semibold text-amber-600 dark:text-amber-400 hover:underline">
-              {t('dashboard.categorizeNow')} &rarr;
+              {t('dashboard.categorizeNow')} <span aria-hidden="true" className="rtl-mirror">&rarr;</span>
             </span>
           </button>
         ) : (
@@ -1406,7 +1406,7 @@ export default function DashboardPage() {
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t('goals.dashboardTitle')}</p>
             <Link to="/goals" className="text-xs font-medium text-primary hover:underline">
-              {t('goals.viewAll')} &rarr;
+              {t('goals.viewAll')} <span aria-hidden="true" className="rtl-mirror">&rarr;</span>
             </Link>
           </div>
           <div className="divide-y divide-border">

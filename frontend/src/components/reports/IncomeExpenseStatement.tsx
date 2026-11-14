@@ -282,7 +282,7 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
                   aria-label={t('reports.statementToggleGroup', { name: label })}
                   className="-ms-1 text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ChevronRight size={16} className={cn('transition-transform', isOpen && 'rotate-90')} />
+                  <ChevronRight size={16} className={cn('transition-transform', isOpen && 'rotate-90 rtl:-rotate-90')} />
                 </button>
               ) : (
                 depth === 0 && <span className="w-[11px] shrink-0" aria-hidden="true" />

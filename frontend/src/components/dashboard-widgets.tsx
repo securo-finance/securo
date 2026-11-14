@@ -51,7 +51,7 @@ function WidgetCard({ title, action, children, className }: { title: string; act
 function CardLink({ to, label }: { to: string; label: string }) {
   return (
     <Link to={to} className="shrink-0 text-xs font-medium text-primary hover:underline">
-      {label} &rarr;
+      {label} <span aria-hidden="true" className="rtl-mirror">&rarr;</span>
     </Link>
   )
 }

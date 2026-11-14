@@ -209,6 +209,11 @@ export function ltrAmount(text: string): string {
   return `\u2066${text}\u2069`
 }
 
+/** "→" for left-to-right pages, "←" for right-to-left ones: for arrows inside plain strings. */
+export function forwardArrow(): string {
+  return typeof document !== 'undefined' && document.documentElement.dir === 'rtl' ? '\u2190' : '\u2192'
+}
+
 export function formatCurrency(
   value: number | null | undefined,
   currency = 'USD',

@@ -322,7 +322,7 @@ export function ImportReviewTable({
                 disabled={safePage <= 1}
                 onClick={() => onPageChange(safePage - 1)}
               >
-                ← {t('common.previous', 'Previous')}
+                <span aria-hidden="true" className="rtl-mirror">←</span> {t('common.previous', 'Previous')}
               </button>
               <span className="text-xs text-muted-foreground">
                 {t('import.page', { current: safePage, total: totalPages })}
@@ -332,7 +332,7 @@ export function ImportReviewTable({
                 disabled={safePage >= totalPages}
                 onClick={() => onPageChange(safePage + 1)}
               >
-                {t('common.next', 'Next')} →
+                {t('common.next', 'Next')} <span aria-hidden="true" className="rtl-mirror">→</span>
               </button>
             </div>
           ) : (
