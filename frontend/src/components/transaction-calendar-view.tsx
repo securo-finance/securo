@@ -13,7 +13,7 @@ import { activityChartData, dayActivity, isCalendarItemInteractive } from '@/lib
 import { todayInTimezone, weekdayShortLabels } from '@/lib/date-utils'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { cn } from '@/lib/utils'
-import { formatCurrency } from '@/lib/format'
+import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import {
   saveCalendarDateBasis,
@@ -25,12 +25,13 @@ function parseLocalDate(value: string) {
 }
 
 function compactCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, {
+  const formatted = new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(value)
+  return ltrAmount(formatted)
 }
 
 function signedAmount(item: TransactionCalendarItem) {
@@ -464,7 +465,7 @@ function ActivityBars({
     if (activity.actualIncome > 0) actualParts.push(`${t('transactions.summaryIncome')} +${amount(activity.actualIncome)}`)
     if (activity.actualExpense > 0) actualParts.push(`${t('transactions.summaryExpenses')} −${amount(activity.actualExpense)}`)
     const projectedParts: string[] = []
-    if (activity.projectedIncome > 0) projectedParts.push(`+${amount(activity.projectedIncome)}`)
+    if (activity.projectedIncome > 0) projectedParts.push(ltrAmount(`+${amount(activity.projectedIncome)}`))
     if (activity.projectedExpense > 0) projectedParts.push(`−${amount(activity.projectedExpense)}`)
     const segments = [
       String(displayDayNumber(activity.date)),
@@ -896,7 +897,7 @@ function DayCellActivity({
   const { t } = useTranslation()
   const activity = dayActivity(day)
   const projectedParts = [
-    activity.projectedIncome > 0 ? mask(`+${compactCurrency(activity.projectedIncome, currency, locale)}`) : null,
+    activity.projectedIncome > 0 ? mask(ltrAmount(`+${compactCurrency(activity.projectedIncome, currency, locale)}`)) : null,
     activity.projectedExpense > 0 ? mask(`−${compactCurrency(activity.projectedExpense, currency, locale)}`) : null,
   ].filter(Boolean)
 
@@ -922,7 +923,7 @@ function DayCellActivity({
         <p className={cn('flex flex-wrap items-center gap-x-1.5 text-sm font-semibold tabular-nums', align === 'right' && 'justify-end')}>
           {activity.actualIncome > 0 && (
             <span className="text-emerald-600 dark:text-emerald-400">
-              {mask(`+${compactCurrency(activity.actualIncome, currency, locale)}`)}
+              {mask(ltrAmount(`+${compactCurrency(activity.actualIncome, currency, locale)}`))}
             </span>
           )}
           {activity.actualExpense > 0 && (
@@ -1143,7 +1144,7 @@ function SelectedDayPanel({
           <div className="space-y-2 border-b border-border px-4 py-3">
             <DayPanelRow
               label={t('transactions.summaryIncome')}
-              value={mask(`+${formatCurrency(activity.actualIncome, currency, locale)}`)}
+              value={mask(ltrAmount(`+${formatCurrency(activity.actualIncome, currency, locale)}`))}
               amount={activity.actualIncome}
             />
             <DayPanelRow
@@ -1171,7 +1172,7 @@ function SelectedDayPanel({
               {activity.projectedIncome > 0 && (
                 <DayPanelRow
                   label={t('transactions.summaryIncome')}
-                  value={mask(`+${formatCurrency(activity.projectedIncome, currency, locale)}`)}
+                  value={mask(ltrAmount(`+${formatCurrency(activity.projectedIncome, currency, locale)}`))}
                   amount={activity.projectedIncome}
                 />
               )}

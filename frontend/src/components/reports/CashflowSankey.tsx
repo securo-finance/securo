@@ -1,3 +1,4 @@
+import { ltrAmount } from '@/lib/format'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -56,12 +57,12 @@ type Hover =
   | { kind: 'surplus' }
 
 function formatMoney(value: number, currency: string, locale: string, compact: boolean) {
-  return new Intl.NumberFormat(locale, {
+  return ltrAmount(new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     notation: compact ? 'compact' : 'standard',
     maximumFractionDigits: compact ? 1 : 0,
-  }).format(value)
+  }).format(value))
 }
 
 /** Sort largest-first, then fold everything past the cap into a single "Other". */

@@ -310,7 +310,7 @@ export function AppLayout() {
           data-collapsed={desktopSidebarCollapsed}
           className={cn(
             'group/sidebar fixed inset-y-0 start-0 z-50 w-60 bg-sidebar border-e border-sidebar-border flex flex-col transform transition-[transform,width] duration-300 ease-in-out motion-reduce:transition-none lg:translate-x-0 shrink-0',
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full',
+            sidebarOpen ? 'translate-x-0' : 'max-lg:-translate-x-full max-lg:rtl:translate-x-full',
             desktopSidebarCollapsed ? 'lg:w-16' : 'lg:w-60',
           )}
         >

@@ -39,7 +39,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
-import { formatCompactCurrency, formatCurrency } from '@/lib/format'
+import { formatCompactCurrency, formatCurrency, ltrAmount } from '@/lib/format'
 import { cashFlowBar, cashFlowTopSeries } from '@/lib/cash-flow-bars'
 import { localDateString, todayInTimezone } from '@/lib/date-utils'
 import { monthLabel } from '@/lib/month-utils'
@@ -1203,13 +1203,13 @@ export default function ReportsPage() {
                             {inflow > 0 && (
                               <p className="text-xs" style={{ color: 'var(--chart-income)' }}>
                                 {t('reports.inflow')}:{' '}
-                                {privacyMode ? MASK : `+${formatCurrency(inflow, userCurrency, locale)}`}
+                                {privacyMode ? MASK : ltrAmount(`+${formatCurrency(inflow, userCurrency, locale)}`)}
                               </p>
                             )}
                             {outflow > 0 && (
                               <p className="text-xs" style={{ color: 'var(--chart-expense)' }}>
                                 {t('reports.outflow')}:{' '}
-                                {privacyMode ? MASK : `-${formatCurrency(outflow, userCurrency, locale)}`}
+                                {privacyMode ? MASK : ltrAmount(`-${formatCurrency(outflow, userCurrency, locale)}`)}
                               </p>
                             )}
                           </div>

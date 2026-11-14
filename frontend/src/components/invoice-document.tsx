@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
-import { formatCurrency } from '@/lib/format'
+import { formatCurrency, ltrAmount } from '@/lib/format'
 import type { InvoiceDocumentPayload } from '@/types'
 
 /**
@@ -134,7 +134,7 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
     totals.push({ label: L.subtotal, value: money(document.subtotal) })
   }
   if (Number(document.discount) > 0) {
-    totals.push({ label: L.discount, value: `-${money(document.discount)}` })
+    totals.push({ label: L.discount, value: ltrAmount(`-${money(document.discount)}`) })
   }
   if (Number(document.tax_total) > 0) {
     totals.push({ label: L.tax, value: money(document.tax_total) })
