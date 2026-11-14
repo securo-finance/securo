@@ -267,11 +267,11 @@ export function MonthResultWidget({ scope }: { scope: DashboardScope }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-muted-foreground">{t('dashboard.monthlyIncome')}</p>
-              <p className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">+{money(income)}</p>
+              <p className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400"><span dir="ltr">+{money(income)}</span></p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('dashboard.monthlyExpenses')}</p>
-              <p className="text-sm font-semibold tabular-nums text-rose-500">-{money(expenses)}</p>
+              <p className="text-sm font-semibold tabular-nums text-rose-500"><span dir="ltr">-{money(expenses)}</span></p>
             </div>
           </div>
         </div>

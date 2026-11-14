@@ -225,7 +225,8 @@ export default function ReportsPage() {
   // financial years.
   const workspaceCtx = useContext(WorkspaceContext)
   const fyStartMonth = (workspaceCtx?.current?.tax_jurisdiction ?? '').toUpperCase() === 'IN' ? 4 : 1
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const isRtl = i18n.dir(i18n.language) === 'rtl'
   const { mask, privacyMode, MASK } = usePrivacyMode()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
@@ -1711,7 +1712,8 @@ export default function ReportsPage() {
                   <div
                     className="flex"
                     style={{
-                      transform: `translateX(-${sparklinePage * 100}%)`,
+                      // Later pages sit at the inline end: to the left in RTL.
+                      transform: `translateX(${isRtl ? '' : '-'}${sparklinePage * 100}%)`,
                       transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)',
                     }}
                   >

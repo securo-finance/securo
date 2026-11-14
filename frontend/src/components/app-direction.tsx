@@ -11,7 +11,7 @@ import { Direction } from 'radix-ui'
 export function AppDirection({ children }: { children: ReactNode }) {
   const { i18n } = useTranslation()
   return (
-    <Direction.DirectionProvider dir={i18n.dir(i18n.resolvedLanguage)}>
+    <Direction.DirectionProvider dir={i18n.dir(i18n.language)}>
       {children}
     </Direction.DirectionProvider>
   )

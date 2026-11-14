@@ -890,7 +890,7 @@ export default function DashboardPage() {
             ) : (
               <>
                 <p className="text-xl font-bold tabular-nums text-emerald-600">
-                  +{mask(formatCurrency(income, primaryCurrency, locale))}
+                  {mask(ltrAmount(`+${formatCurrency(income, primaryCurrency, locale)}`))}
                 </p>
                 {Math.abs(projectedIncome - income) >= 0.01 && (
                   <p className="text-xs text-muted-foreground tabular-nums mt-1">
@@ -918,7 +918,7 @@ export default function DashboardPage() {
             ) : (
               <>
                 <p className="text-xl font-bold tabular-nums text-rose-500">
-                  -{mask(formatCurrency(expenses, primaryCurrency, locale))}
+                  {mask(ltrAmount(`-${formatCurrency(expenses, primaryCurrency, locale)}`))}
                 </p>
                 {Math.abs(projectedExpenses - expenses) >= 0.01 && (
                   <p className="text-xs text-muted-foreground tabular-nums mt-1">

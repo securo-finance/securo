@@ -51,6 +51,8 @@ export const i18nReady = i18n
     detection: {
       order: ['querystring', 'localStorage', 'cookie'],
       caches: ['localStorage'],
+      // 'iw' is the pre-1989 code for Hebrew; load he.json for it too.
+      convertDetectedLanguage: (lng: string) => (/^iw(-|$)/i.test(lng) ? 'he' : lng),
     },
     interpolation: {
       escapeValue: false,

@@ -34,8 +34,9 @@ function CopyButton({ value }: { value: string }) {
 }
 
 function CodeBlock({ value }: { value: string }) {
+  // Code and JSON read left to right in every language, copy button included.
   return (
-    <div className="relative">
+    <div className="relative" dir="ltr">
       <pre className="bg-muted/50 border border-border rounded-md p-3 pe-16 text-[12px] leading-relaxed overflow-x-auto whitespace-pre">
         <code>{value}</code>
       </pre>

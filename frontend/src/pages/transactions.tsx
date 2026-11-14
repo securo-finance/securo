@@ -1024,10 +1024,12 @@ export default function TransactionsPage() {
     e.preventDefault()
     e.stopPropagation()
     resizingRef.current = { id: col.id, startX: e.clientX, startWidth: grid.widthOf(col.id) }
+    // The handle is on the column's end edge: the left one in right-to-left layouts.
+    const towardEnd = getComputedStyle(e.currentTarget).direction === 'rtl' ? -1 : 1
     const onMove = (ev: PointerEvent) => {
       const r = resizingRef.current
       if (!r) return
-      grid.setWidth(r.id, r.startWidth + (ev.clientX - r.startX))
+      grid.setWidth(r.id, r.startWidth + towardEnd * (ev.clientX - r.startX))
     }
     const onUp = () => {
       resizingRef.current = null

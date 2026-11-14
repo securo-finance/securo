@@ -462,8 +462,8 @@ function ActivityBars({
   const tooltipFor = (activity: (typeof data.days)[number]) => {
     const amount = (value: number) => mask(compactCurrency(value, currency, locale))
     const actualParts: string[] = []
-    if (activity.actualIncome > 0) actualParts.push(`${t('transactions.summaryIncome')} +${amount(activity.actualIncome)}`)
-    if (activity.actualExpense > 0) actualParts.push(`${t('transactions.summaryExpenses')} −${amount(activity.actualExpense)}`)
+    if (activity.actualIncome > 0) actualParts.push(`${t('transactions.summaryIncome')} ${ltrAmount(`+${amount(activity.actualIncome)}`)}`)
+    if (activity.actualExpense > 0) actualParts.push(`${t('transactions.summaryExpenses')} ${ltrAmount(`−${amount(activity.actualExpense)}`)}`)
     const projectedParts: string[] = []
     if (activity.projectedIncome > 0) projectedParts.push(ltrAmount(`+${amount(activity.projectedIncome)}`))
     if (activity.projectedExpense > 0) projectedParts.push(ltrAmount(`−${amount(activity.projectedExpense)}`))

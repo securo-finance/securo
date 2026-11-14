@@ -166,11 +166,13 @@ function SortableWidget({
     const handle = event.currentTarget
     handle.setPointerCapture(event.pointerId)
     const startX = event.clientX
+    // The handle sits on the end edge: the left one in right-to-left layouts.
+    const towardEnd = getComputedStyle(section).direction === 'rtl' ? -1 : 1
     const startWidth = section.getBoundingClientRect().width
     const column = (grid.getBoundingClientRect().width + GAP_PX) / 12
     let next = span
     const onMove = (move: PointerEvent) => {
-      const width = startWidth + (move.clientX - startX)
+      const width = startWidth + towardEnd * (move.clientX - startX)
       next = snapSpan((width + GAP_PX) / column, entry.minSpan)
       onPreview(next)
     }

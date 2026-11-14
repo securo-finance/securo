@@ -338,7 +338,7 @@ export function LinkTransferDialog({
               dateLocale={dateLocale}
             />
             <div className="flex items-center justify-center">
-              <ArrowRight size={18} className="rotate-90 text-muted-foreground sm:rotate-0" />
+              <ArrowRight size={18} className="rotate-90 text-muted-foreground sm:rotate-0 rtl:sm:rotate-180" />
             </div>
             <CounterpartCard
               label={t('transactions.linkTransferTo')}

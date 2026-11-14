@@ -22,4 +22,13 @@ describe('document direction follows the language', () => {
     expect(resolveSupportedLang('he-IL')).toBe('he')
     expect(resolveSupportedLang('iw')).toBe('he')
   })
+
+  it('loads Hebrew for a remembered legacy iw choice', () => {
+    localStorage.setItem('i18nextLng', 'iw')
+    try {
+      expect([i18n.services.languageDetector.detect()].flat()[0]).toBe('he')
+    } finally {
+      localStorage.removeItem('i18nextLng')
+    }
+  })
 })

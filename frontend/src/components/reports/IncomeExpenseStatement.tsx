@@ -186,7 +186,9 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
   const selectedMonth = data?.months[0]
   useLayoutEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollLeft = el.scrollWidth
+    // The selected month is the end column: rightmost in LTR, leftmost in RTL,
+    // where scrollLeft counts negative from the right edge.
+    if (el) el.scrollLeft = getComputedStyle(el).direction === 'rtl' ? -el.scrollWidth : el.scrollWidth
   }, [selectedMonth, settings.columns])
 
   const toggleGroup = (key: string) =>
