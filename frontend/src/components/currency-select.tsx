@@ -61,6 +61,7 @@ export const CURRENCIES = [
   { code: 'TWD', flag: '\u{1F1F9}\u{1F1FC}', symbol: 'NT$' },
   { code: 'ZAR', flag: '\u{1F1FF}\u{1F1E6}', symbol: 'R' },
   { code: 'GEL', flag: '\u{1F1EC}\u{1F1EA}', symbol: '₾' },
+  { code: 'ILS', flag: '\u{1F1EE}\u{1F1F1}', symbol: '₪' },
 ] as const
 
 interface CurrencySelectProps {
