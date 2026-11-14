@@ -1380,6 +1380,7 @@
     "selectConnector": "Vybrať konektor",
     "selectConnectorDesc": "Vyber poskytovateľa prepojenia banky",
     "connectorNotConfigured": "Tento konektor vyžaduje konfiguráciu. Na jeho zapnutie nastav požadované prihlasovacie údaje.",
+    "connectorAskAdmin": "Tento konektor nie je nastavený. Požiadaj správcu, aby ho nakonfiguroval.",
     "noConnectorsAvailable": "Nie sú dostupné žiadne bankové konektory",
     "selectCountry": "Vybrať krajinu",
     "selectCountryDesc": "Vyber krajinu, v ktorej je tvoja banka",
@@ -2171,6 +2172,11 @@
     "oversellWarning": "Máš len {{available}} ks — krátke pozície nie sú podporované.",
     "noPriceBadge": "bez ceny",
     "noPriceWarning": "Pridané bez nákupnej ceny — doplň nákupy, aby sa sledovala priemerná cena a výnos.",
+    "exchangeRateSetupWarning": "Výmenné kurzy nie sú nastavené. Súhrny aktív v inej mene môžu byť nepresné.",
+    "exchangeRateSetupLink": "Nastaviť výmenné kurzy",
+    "exchangeRateSetupContactAdmin": "Požiadaj správcu o nastavenie výmenných kurzov.",
+    "exchangeRateSetupAction": "Nastaviť výmenné kurzy z {{from}} na {{to}}",
+    "exchangeRateSetupAskAdmin": "Prevod z {{from}} na {{to}} vyžaduje výmenné kurzy. Požiadaj správcu o ich nastavenie.",
     "noFxRate": "chýba kurz",
     "noFxRateTitle": "Pre túto menu nie je k dispozícii kurz. Aktívum sa zobrazuje v pôvodnej mene a je vynechané z celkov.",
     "fxRateMissing": "Pre {{currencies}} nie je k dispozícii kurz. Tieto aktíva sa zobrazujú v pôvodnej mene a sú vynechané z celkov.",
@@ -3349,6 +3355,68 @@
       "recurringHint": "Ako určujeme, že odpis je účet, ktorý ste už očakávali."
     }
   },
+  "providerSettings": {
+    "catalog": {
+      "setupGuide": "Sprievodca nastavením",
+      "connectionsTitle": "Bankové pripojenia",
+      "connectionsDescription": "Vyber spôsob pripojenia bankových účtov k tejto inštancii.",
+      "exchangeRatesTitle": "Výmenné kurzy",
+      "exchangeRatesDescription": "Udržiavaj aktuálne kurzy na prevod mien.",
+      "configure": "Nastaviť",
+      "manage": "Spravovať",
+      "manageProvider": "Spravovať {{provider}}",
+      "configureProvider": "Nastaviť {{provider}}",
+      "needsAttention": "Vyžaduje pozornosť",
+      "credentialsTitle": "Prihlasovacie údaje",
+      "credentialsDescription": "Zadaj iba hodnoty, ktoré chceš nahradiť. Uložené prihlasovacie údaje sa nikdy nezobrazujú.",
+      "securityNote": "Pri ukladaní sa prihlasovacie údaje zašifrujú.",
+      "saveChanges": "Uložiť zmeny",
+      "saving": "Ukladá sa…",
+      "simplefinTitle": "Povoliť pripojenia SimpleFIN",
+      "simplefinDescription": "Umožni používateľom pripojiť bankové účty vlastným nastavovacím tokenom SimpleFIN.",
+      "notSet": "Nenastavené",
+      "savedValue": "Bezpečne uložené",
+      "environmentValue": "Nastavené prostredím",
+      "replacementPlaceholder": "Zadaj novú hodnotu na nahradenie",
+      "valuePlaceholder": "Zadaj prihlasovacie údaje",
+      "empty": "Nie sú dostupní žiadni poskytovatelia.",
+      "pluggyDescription": "Pripájaj účty cez Pluggy Connect.",
+      "enableBankingDescription": "Pripájaj účty so súhlasom banky.",
+      "simplefinDescriptionShort": "Pripájaj účty cez SimpleFIN Bridge.",
+      "openExchangeRatesDescription": "Výmenné kurzy na prevod mien.",
+      "otherTitle": "Ďalšie integrácie",
+      "otherDescription": "Spravuj ďalšie služby tejto inštancie.",
+      "redirectTitle": "URL presmerovania",
+      "redirectHint": "Pred zadaním prihlasovacích údajov pridajte túto URL do svojej aplikácie Enable Banking.",
+      "copyRedirect": "Kopírovať URL presmerovania",
+      "redirectCopied": "URL presmerovania skopírovaná",
+      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne."
+    },
+    "title": "Konfigurácia poskytovateľov",
+    "description": "Uložené prihlasovacie údaje majú prednosť pred hodnotami prostredia. Zmeny platia bez reštartu. „Nakonfigurovaný“ znamená, že povinné polia sú vyplnené; údaje sa tu neoverujú.",
+    "configured": "Nakonfigurovaný",
+    "notConfigured": "Nenakonfigurovaný",
+    "app": "Uložené v aplikácii",
+    "environment": "Z prostredia",
+    "none": "Nenastavené",
+    "invalid": "Uložené prihlasovacie údaje nemožno prečítať. Nahraďte ich alebo použite hodnotu prostredia.",
+    "reset": "Použiť hodnotu prostredia",
+    "remove": "Odstrániť uloženú hodnotu",
+    "removeTitle": "Odstrániť uloženú hodnotu poľa {{field}}?",
+    "removeWithFallback": "Uložená hodnota sa odstráni. Nové operácie budú používať hodnotu prostredia.",
+    "removeWithoutFallback": "Hodnota prostredia nie je dostupná. Odstránenie vypne poskytovateľa až do opätovnej konfigurácie.",
+    "secretStorageUnavailable": "Pred uložením prihlasovacích údajov nastavte na serveri jedinečný SECRET_KEY s aspoň 32 znakmi. Existujúce nastavenia prostredia budú fungovať naďalej.",
+    "secretPlaceholder": "Zadajte novú hodnotu na nahradenie uložených prihlasovacích údajov",
+    "simplefinHelp": "Tu zapnite SimpleFIN a potom na stránke účtov pridajte každé pripojenie pomocou jeho vlastného nastavovacieho tokenu.",
+    "fields": {
+      "openexchangerates_app_id": "ID aplikácie",
+      "pluggy_client_id": "ID klienta",
+      "pluggy_client_secret": "Tajný kľúč klienta",
+      "enable_banking_app_id": "ID aplikácie",
+      "enable_banking_private_key": "Súkromný kľúč (PEM)",
+      "simplefin_enabled": "Zapnúť SimpleFIN"
+    }
+  },
   "categoryLines": {
     "title": "Rozdeliť do kategórií",
     "start": "Rozdeliť do kategórií",
@@ -3406,7 +3474,7 @@
   },
   "plugins": {
     "title": "Pluginy",
-    "hint": "Kategórie, pravidlá a integrácie od komunity. Každú zmenu si pred použitím skontrolujete.",
+    "hint": "Kategórie, pravidlá, motívy a integrácie od komunity. Každú zmenu si pred použitím skontrolujete.",
     "browse": "Prehliadať katalóg",
     "noneInstalled": "V tomto pracovnom priestore nie sú nainštalované žiadne pluginy.",
     "remove": "Odstrániť plugin",
@@ -3467,7 +3535,10 @@
       "defaults_one": "Vytvorí aj {{count}} predvolenú kategóriu pre pravidlá",
       "defaults_few": "Vytvorí aj {{count}} predvolené kategórie pre pravidlá",
       "defaults_many": "Vytvorí aj {{count}} predvolených kategórií pre pravidlá",
-      "defaults_other": "Vytvorí aj {{count}} predvolených kategórií pre pravidlá"
+      "defaults_other": "Vytvorí aj {{count}} predvolených kategórií pre pravidlá",
+      "themes": "Pridá do knižnice motívy: {{names}}",
+      "themesRemove": "Odoberie z knižnice tieto motívy: {{names}}",
+      "themeInUse": "Používate motív {{name}}: vrátite sa k motívu Securo."
     },
     "page": {
       "section": "Katalóg",
@@ -3538,7 +3609,8 @@
       "parsers": "Čítačky súborov",
       "price_providers": "Poskytovatelia cien",
       "agent_tools": "Nástroje agenta",
-      "integrations": "Integrácie"
+      "integrations": "Integrácie",
+      "themes": "Motívy"
     },
     "detail": {
       "overview": "Prehľad",
@@ -3728,7 +3800,8 @@
     "needs": {
       "assistant": "Vyžaduje zapnutých AI agentov.",
       "invoices": "Dostupné v pracovných priestoroch typu Firemný."
-    }
+    },
+    "fromPlugin": "Z: {{name}}"
   },
   "widgets": {
     "budgets": "Rozpočty",

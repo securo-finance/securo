@@ -183,7 +183,7 @@ def test_placeholder_identifiers_are_not_treated_as_charge_ids():
     first = MaxProvider.build_transactions({"currency": "ILS", "txns": [january]})
     second = MaxProvider.build_transactions({"currency": "ILS", "txns": [february]})
     assert first[0].external_id != second[0].external_id
-    assert first[0].raw_data["identifier"] is None
+    assert (first[0].raw_data or {})["identifier"] is None
 
 
 def test_unconverted_foreign_charge_leaves_the_bank_amount_unset():

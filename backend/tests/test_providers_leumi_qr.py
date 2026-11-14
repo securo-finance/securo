@@ -19,7 +19,7 @@ from app.providers.leumi_qr import LeumiQrProvider
 
 SESSION = "11111111-2222-4333-8444-555555555555"
 
-RESULT = {
+RESULT: dict = {
     "scraped_at": "2026-03-15T10:00:00Z",
     "accounts": [
         {
@@ -235,6 +235,7 @@ async def test_qr_session_endpoint_returns_state(client, auth_headers):
         resp = await client.get(f"/api/connections/leumi/qr-sessions/{SESSION}", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json() == state
+    assert m.await_args is not None
     assert str(m.await_args.args[1]) == SESSION
 
 
@@ -252,3 +253,25 @@ async def test_qr_session_endpoint_expired(client, auth_headers):
 async def test_qr_session_endpoint_rejects_malformed_ids(client, auth_headers):
     resp = await client.get("/api/connections/leumi/qr-sessions/not-a-uuid", headers=auth_headers)
     assert resp.status_code == 422
+
+
+def test_sidecar_providers_follow_the_runtime_settings():
+    from app.core.config import Settings
+    from app.providers import all_known_providers, get_provider
+
+    off = Settings(israeli_banks_enabled=False, israeli_banks_token="")
+    assert {p["name"]: p["configured"] for p in all_known_providers(off)}["leumi"] is False
+    with pytest.raises(ValueError, match="Unknown provider"):
+        get_provider("leumi", settings=off)
+
+    on = Settings(
+        israeli_banks_enabled=True,
+        israeli_banks_token="sidecar-token",
+        israeli_banks_url="http://sidecar:8095/",
+    )
+    configured = {p["name"]: p["configured"] for p in all_known_providers(on)}
+    assert configured["leumi"] and configured["max"] and configured["isracard"]
+    provider = get_provider("leumi", settings=on)
+    assert isinstance(provider, LeumiQrProvider)
+    assert provider.settings is on
+    assert provider._base_url == "http://sidecar:8095"

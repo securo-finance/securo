@@ -684,6 +684,16 @@ export interface PluginScope {
   purpose: LocalizedText
 }
 
+/** A theme a plugin adds to the library: colors for Securo's tokens, nothing else. */
+export interface PluginTheme {
+  key: string
+  name: LocalizedText
+  light: Record<string, string>
+  dark: Record<string, string>
+  radius?: number | null
+  font?: 'sans' | 'mono' | 'serif' | null
+}
+
 export interface InstalledPlugin {
   plugin_id: string
   name: LocalizedText
@@ -696,6 +706,8 @@ export interface InstalledPlugin {
   api_scopes: PluginScope[]
   /** For sign-in integrations: the address to register with the service. */
   redirect_uri: string | null
+  /** Themes it adds to the library. */
+  themes?: PluginTheme[]
 }
 
 export type PluginConnectionStatus = 'pending' | 'active' | 'error' | 'needs_auth'
@@ -789,6 +801,7 @@ export interface PluginContents {
   integrations?: PluginIntegration[]
   network?: PluginHost[]
   api_scopes?: PluginScope[]
+  themes?: PluginTheme[]
 }
 
 /** One plugin opened from the catalog. */
@@ -826,6 +839,8 @@ export interface PluginPlan {
   default_categories: string[]
   /** For plugins with code: what the owner agrees to. */
   code?: PluginCodeConsent | null
+  /** Themes it adds to the library and takes out of it (members using one go back to Securo's own). */
+  themes?: { added: { key: string; name: LocalizedText }[]; removed: { key: string; name: LocalizedText }[] } | null
 }
 
 export interface RuleExportPayload {

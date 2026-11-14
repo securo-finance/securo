@@ -1,3 +1,6 @@
+from importlib import import_module
+
+from app.core.config import Settings
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -11,6 +14,7 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
 )
+from app.providers.credentials import is_configured
 
 # Registry of available providers.
 _PROVIDERS: dict[str, type[BankProvider]] = {}
@@ -75,60 +79,57 @@ def register_provider(name: str, cls: type[BankProvider]) -> None:
     _PROVIDERS[name] = cls
 
 
-def get_provider(name: str) -> BankProvider:
+def get_provider(name: str, settings: Settings | None = None) -> BankProvider:
     """Get an instance of a registered bank provider by name."""
-    provider_class = _PROVIDERS.get(name)
+    available_providers = _available_providers(settings)
+    provider_class = available_providers.get(name)
     if not provider_class:
-        available = ", ".join(_PROVIDERS.keys()) or "(none)"
+        available = ", ".join(available_providers) or "(none)"
         raise ValueError(f"Unknown provider: {name}. Available: {available}")
-    return provider_class()
+    return provider_class(settings=settings)
 
 
-def list_providers() -> list[dict[str, str]]:
-    """Return info about all registered providers."""
-    return [
-        {"name": name, "flow_type": cls().flow_type}
-        for name, cls in _PROVIDERS.items()
-    ]
-
-
-def all_known_providers() -> list[dict]:
+def all_known_providers(settings: Settings | None = None) -> list[dict]:
     """Return all known providers with a configured flag."""
-    return [
-        {**p, "configured": p["name"] in _PROVIDERS}
-        for p in KNOWN_PROVIDERS
-    ]
+    available = _available_providers(settings)
+    return [{**p, "configured": p["name"] in available} for p in KNOWN_PROVIDERS]
 
 
-def _auto_register_providers() -> None:
-    """Auto-register providers when credentials are configured."""
+# Providers enabled by instance settings, imported only once configured.
+_CREDENTIALED_PROVIDERS = {
+    "pluggy": ("app.providers.pluggy", "PluggyProvider"),
+    "enable_banking": ("app.providers.enable_banking", "EnableBankingProvider"),
+    "simplefin": ("app.providers.simplefin", "SimpleFinProvider"),
+}
+
+
+# Providers served by the israeli-banks sidecar. They come and go together:
+# the sidecar is switched on by environment only (ISRAELI_BANKS_ENABLED and
+# its token), not from Admin Settings.
+_SIDECAR_PROVIDERS = {
+    "leumi": ("app.providers.leumi_qr", "LeumiQrProvider"),
+    "max": ("app.providers.israeli_cards", "MaxProvider"),
+    "isracard": ("app.providers.israeli_cards", "IsracardProvider"),
+}
+
+
+def _sidecar_configured(settings: Settings) -> bool:
+    return settings.israeli_banks_enabled and bool(settings.israeli_banks_token.get_secret_value())
+
+
+def _available_providers(settings: Settings | None = None) -> dict[str, type[BankProvider]]:
+    """Derive availability without mutating process-wide registration."""
     from app.core.config import get_settings
-    settings = get_settings()
 
-    if settings.pluggy_client_id and settings.pluggy_client_secret:
-        from app.providers.pluggy import PluggyProvider
-        register_provider("pluggy", PluggyProvider)
-
-    eb_has_key = bool(
-        settings.enable_banking_private_key or settings.enable_banking_private_key_file
-    )
-    if settings.enable_banking_app_id and eb_has_key:
-        from app.providers.enable_banking import EnableBankingProvider
-        register_provider("enable_banking", EnableBankingProvider)
-
-    if settings.simplefin_enabled:
-        from app.providers.simplefin import SimpleFinProvider
-        register_provider("simplefin", SimpleFinProvider)
-
-    if settings.israeli_banks_enabled and settings.israeli_banks_token.get_secret_value():
-        from app.providers.israeli_cards import IsracardProvider, MaxProvider
-        from app.providers.leumi_qr import LeumiQrProvider
-        register_provider("leumi", LeumiQrProvider)
-        register_provider("max", MaxProvider)
-        register_provider("isracard", IsracardProvider)
-
-
-_auto_register_providers()
+    settings = settings or get_settings()
+    providers = dict(_PROVIDERS)
+    for name, (module, class_name) in _CREDENTIALED_PROVIDERS.items():
+        if is_configured(name, settings):
+            providers[name] = getattr(import_module(module), class_name)
+    if _sidecar_configured(settings):
+        for name, (module, class_name) in _SIDECAR_PROVIDERS.items():
+            providers[name] = getattr(import_module(module), class_name)
+    return providers
 
 
 _storage_provider = None
@@ -167,7 +168,6 @@ __all__ = [
     "SessionExpiredError",
     "register_provider",
     "get_provider",
-    "list_providers",
     "all_known_providers",
     "get_storage_provider",
 ]

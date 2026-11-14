@@ -13,6 +13,8 @@ const state = vi.hoisted(() => ({
   saves: [] as { surface: string; ids: string[]; items: { id: string; span?: number }[] }[],
   user: null as unknown as User,
   pluginsEnabled: true,
+  installed: [] as unknown[],
+  mode: 'light' as 'light' | 'dark',
   listeners: new Set<() => void>(),
 }))
 
@@ -35,6 +37,7 @@ const api = vi.hoisted(() => ({
   },
   auth: { updateMe: vi.fn(), me: vi.fn() },
   admin: { defaultColors: async () => ({ light: null, dark: null }) },
+  plugins: { installed: async () => state.installed },
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -61,7 +64,7 @@ vi.mock('@/hooks/use-feature-flags', () => ({
 }))
 
 vi.mock('next-themes', () => ({
-  useTheme: () => ({ resolvedTheme: 'light' }),
+  useTheme: () => ({ resolvedTheme: state.mode }),
 }))
 
 beforeEach(() => {
@@ -172,6 +175,75 @@ describe('LibraryDialog', () => {
     await user.click(within(themes).getByRole('button', { name: t('library.theme.ocean') }))
     await waitFor(() => expect(api.auth.updateMe).toHaveBeenCalledWith({ theme: 'ocean' }))
     expect(state.user.theme).toBe('ocean')
+  })
+
+  it("lists an installed plugin's themes and saves the pick by its id", async () => {
+    state.installed = [
+      {
+        plugin_id: 'securo-finance/plugin-neon',
+        name: { en: 'Neon themes' },
+        version: '1.0.0',
+        commit: 'a'.repeat(40),
+        installed_at: '2026-11-14T00:00:00Z',
+        integrations: [],
+        network: [],
+        api_scopes: [],
+        redirect_uri: null,
+        themes: [
+          {
+            key: 'synthwave',
+            name: { en: 'Synthwave' },
+            light: {},
+            // A value that isn't a plain color never reaches the page.
+            dark: { background: '#0D0221', primary: '#FF2BD6', border: 'url(https://evil.example/x)' },
+            radius: 0,
+            font: 'mono',
+          },
+        ],
+      },
+    ]
+    const { user } = open('themes')
+    const pick = await screen.findByRole('button', { name: /Synthwave/ })
+    expect(within(pick).getByText(t('library.fromPlugin', { name: 'Neon themes' }))).toBeInTheDocument()
+    await user.click(pick)
+    await waitFor(() =>
+      expect(api.auth.updateMe).toHaveBeenCalledWith({ theme: 'plugin:securo-finance/plugin-neon:synthwave' }),
+    )
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--app-font')).toContain('monospace'))
+    state.installed = []
+  })
+
+  it("applies a plugin theme's dark colors, never a value that isn't a color", async () => {
+    state.mode = 'dark'
+    state.user = { ...state.user, theme: 'plugin:securo-finance/plugin-neon:synthwave' }
+    state.installed = [
+      {
+        plugin_id: 'securo-finance/plugin-neon',
+        name: { en: 'Neon themes' },
+        version: '1.0.0',
+        commit: 'a'.repeat(40),
+        installed_at: '2026-11-14T00:00:00Z',
+        integrations: [],
+        network: [],
+        api_scopes: [],
+        redirect_uri: null,
+        themes: [
+          {
+            key: 'synthwave',
+            name: { en: 'Synthwave' },
+            light: {},
+            dark: { background: '#0D0221', border: 'url(https://evil.example/x)' },
+          },
+        ],
+      },
+    ]
+    open('themes')
+    const root = document.documentElement.style
+    await waitFor(() => expect(root.getPropertyValue('--background')).toBe('#0D0221'))
+    expect(root.getPropertyValue('--border')).toBe('')
+    state.installed = []
+    state.mode = 'light'
+    state.user = { ...state.user, theme: null }
   })
 
   it("saves Securo's own theme as no theme", async () => {

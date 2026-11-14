@@ -23,7 +23,7 @@ from typing import Optional
 
 import httpx
 
-from app.core.config import get_settings
+from app.core.config import Settings
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -74,11 +74,11 @@ def _account_name(raw: dict) -> str:
 
 
 class LeumiQrProvider(BankProvider):
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._base_url = settings.israeli_banks_url.rstrip("/")
-        self._token = settings.israeli_banks_token.get_secret_value()
-        self._history_days = settings.israeli_banks_history_days
+    def __init__(self, settings: Settings | None = None) -> None:
+        super().__init__(settings)
+        self._base_url = self.settings.israeli_banks_url.rstrip("/")
+        self._token = self.settings.israeli_banks_token.get_secret_value()
+        self._history_days = self.settings.israeli_banks_history_days
 
     @property
     def name(self) -> str:

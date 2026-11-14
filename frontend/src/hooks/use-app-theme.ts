@@ -5,8 +5,9 @@ import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 
 import { admin as adminApi, auth as authApi } from '@/lib/api'
-import { applyThemeVars, DEFAULT_THEME_ID, findTheme, themeVars } from '@/lib/themes'
+import { applyThemeVars, BUILT_IN_THEMES, DEFAULT_THEME_ID, findTheme, themeVars } from '@/lib/themes'
 import { useAuth } from '@/contexts/auth-context'
+import { usePluginThemes } from '@/hooks/use-plugin-themes'
 
 const themeWrites: { chain: Promise<unknown>; latest: number } = { chain: Promise.resolve(), latest: 0 }
 
@@ -22,7 +23,13 @@ export function useAppTheme() {
   const { user, updateUser } = useAuth()
   const { resolvedTheme } = useTheme()
   const mode = resolvedTheme === 'dark' ? 'dark' : 'light'
-  const theme = findTheme(user?.theme)
+  const { themes: pluginThemes, loading } = usePluginThemes()
+  const themes = [...BUILT_IN_THEMES, ...pluginThemes]
+  const theme = findTheme(user?.theme, themes)
+  // A plugin's theme, until the installed plugins load: keep what the page
+  // shows rather than flashing Securo's own look. A theme whose plugin is
+  // gone falls back to it once they have.
+  const waiting = loading && !!user?.theme?.startsWith('plugin:') && theme.id !== user.theme
 
   const { data: accent } = useQuery({
     queryKey: DEFAULT_COLORS_QUERY_KEY,
@@ -31,8 +38,9 @@ export function useAppTheme() {
   })
 
   useLayoutEffect(() => {
+    if (waiting) return
     applyThemeVars(themeVars(theme, mode, accent))
-  }, [theme, mode, accent])
+  }, [theme, mode, accent, waiting])
 
   // Picks are saved one after another, so the server keeps the last one; only
   // the latest pick decides what the page shows if a save fails.
@@ -60,5 +68,5 @@ export function useAppTheme() {
     [user, updateUser, t],
   )
 
-  return { themeId: theme.id, chooseTheme, accent }
+  return { themeId: theme.id, chooseTheme, accent, themes }
 }

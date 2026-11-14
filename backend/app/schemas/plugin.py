@@ -31,6 +31,15 @@ class PluginScopeRead(BaseModel):
     purpose: dict[str, str]
 
 
+class PluginThemeRead(BaseModel):
+    key: str
+    name: dict[str, str]
+    light: dict[str, str] = {}
+    dark: dict[str, str] = {}
+    radius: float | None = None
+    font: Literal["sans", "mono", "serif"] | None = None
+
+
 class InstalledPluginRead(BaseModel):
     """A catalog plugin installed in this workspace, as recorded here: no catalog needed."""
 
@@ -45,6 +54,7 @@ class InstalledPluginRead(BaseModel):
     redirect_uri: str | None = Field(
         default=None, description="For sign-in integrations: the address to register with the service."
     )
+    themes: list[PluginThemeRead] = Field(default=[], description="Themes it adds to the library.")
 
 
 class PluginCatalogRead(BaseModel):
@@ -117,6 +127,7 @@ class PluginContentsRead(BaseModel):
     integrations: list[PluginIntegrationRead] = []
     network: list[PluginHostRead] = []
     api_scopes: list[PluginScopeRead] = []
+    themes: list[PluginThemeRead] = []
 
 
 class PluginDetailRead(BaseModel):
@@ -153,6 +164,21 @@ class PluginPlanRead(BaseModel):
     default_categories: list[str] = Field(description="Default categories created first for the plugin's rules.")
     code: "PluginCodeConsentRead | None" = Field(
         default=None, description="For plugins with code: what the owner agrees to let it do."
+    )
+    themes: "PluginThemeChangesRead | None" = Field(
+        default=None, description="Themes the action adds to the library and takes out of it."
+    )
+
+
+class PluginThemeNameRead(BaseModel):
+    key: str
+    name: dict[str, str]
+
+
+class PluginThemeChangesRead(BaseModel):
+    added: list[PluginThemeNameRead] = []
+    removed: list[PluginThemeNameRead] = Field(
+        default=[], description="Members using one of these go back to Securo's own theme."
     )
 
 

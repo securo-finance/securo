@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, KeyRound, Plug, RefreshCw, ShieldCheck, Star } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, KeyRound, Plug, RefreshCw, ShieldCheck, Star, Trash2 } from 'lucide-react'
 
 import { CategoryIcon } from '@/components/category-icon'
 import { PluginAvatar } from '@/components/plugin-avatar'
 import { PluginConnections } from '@/components/plugin-connections'
+import { ThemePreview } from '@/components/theme-preview'
 import { PluginStatus, PluginTypes } from '@/components/plugin-meta'
 import { PluginPlanDialog, type PluginTarget } from '@/components/plugin-plan-dialog'
 import { PluginReadme } from '@/components/plugin-readme'
@@ -15,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { plugins as pluginsApi } from '@/lib/api'
 import { localized } from '@/lib/localized-text'
+import { pluginTheme } from '@/lib/themes'
 import { contributedKinds, pluginLocales, pluginTypes } from '@/lib/plugin-catalog'
 import { compactNumber, languageName, relativeDate, scopeLabel } from '@/lib/plugin-format'
 import { conditionSummary } from '@/lib/rule-summary'
@@ -214,6 +216,13 @@ function Actions({ plugin, canWrite, onAction }: { plugin: PluginCatalogEntry; c
       {installable && !plugin.installed_version && (
         <Button className="w-full" onClick={() => onAction('install')}>{t('plugins.install')}</Button>
       )}
+      {canWrite && plugin.installed_version && (
+        // Always offered to an installed plugin, revoked or not: removing never needs the catalog.
+        <Button variant="outline" className="w-full text-destructive hover:text-destructive" onClick={() => onAction('remove')}>
+          <Trash2 size={14} className="mr-1.5" />
+          {t('plugins.remove')}
+        </Button>
+      )}
       {plugin.revoked && plugin.revoked_reason && (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{plugin.revoked_reason}</p>
       )}
@@ -335,6 +344,22 @@ function Contents({ contents }: { contents: PluginContents }) {
           </li>
         ))}
       </ContentSection>
+      {(contents.themes?.length ?? 0) > 0 && (
+        <section className="space-y-3">
+          <h2 className="flex items-baseline gap-2 text-sm font-semibold">
+            {t('plugins.kindName.themes')}
+            <span className="text-xs font-normal tabular-nums text-muted-foreground">{contents.themes!.length}</span>
+          </h2>
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {contents.themes!.map((theme) => (
+              <li key={theme.key} className="rounded-xl border bg-card p-2">
+                <ThemePreview theme={pluginTheme({ plugin_id: 'preview', name: {} }, theme)} />
+                <p className="mt-2 truncate px-1 text-sm font-medium">{localized(theme.name, lang)}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <ContentSection title={t('plugins.kindName.integrations')} count={contents.integrations?.length ?? 0}>
         {(contents.integrations ?? []).map((integration) => (
           <li key={integration.key} className="flex items-center gap-3 px-4 py-2.5">

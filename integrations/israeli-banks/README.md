@@ -23,6 +23,10 @@ The same token goes to Securo and to this container. The container is reached
 only by the backend over the compose network; every request but `/health`
 needs `Authorization: Bearer $ISRAELI_BANKS_TOKEN`.
 
+These settings are read from the environment only. Unlike Pluggy and Enable
+Banking, the sidecar has no entry in **Admin Settings**; the three providers
+appear in the connect dialog together once it is enabled.
+
 ## API (backend only)
 
 - `POST /sessions` `{user_id, start_date}` → `{id}`: start a Leumi QR login.
