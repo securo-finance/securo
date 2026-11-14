@@ -17,7 +17,7 @@ from app.core.config import get_settings
 from app.models.invoice import Invoice
 from app.models.invoice_attachment import ATTACHMENT_KINDS, InvoiceAttachment
 from app.providers import get_storage_provider
-from app.services.attachment_service import _validate_file, sanitize_filename
+from app.services.attachment_service import _validate_file, sanitize_filename, served_content_type
 
 
 async def _invoice_in_workspace(
@@ -79,7 +79,6 @@ async def upload(
     user_id: Optional[uuid.UUID],
     invoice_id: uuid.UUID,
     filename: str,
-    content_type: str,
     data: bytes,
     kind: str = "other",
     source: Optional[str] = None,
@@ -92,7 +91,7 @@ async def upload(
         raise ValueError(f"Unknown document kind '{kind}'.")
 
     filename = sanitize_filename(filename)
-    _validate_file(filename, content_type, len(data))
+    _validate_file(filename, len(data))
     invoice = await _invoice_in_workspace(session, invoice_id, workspace_id)
 
     settings = get_settings()
@@ -129,7 +128,7 @@ async def upload(
             return existing
 
     storage = get_storage_provider()
-    stored = await storage.upload(storage_key, data, content_type)
+    stored = await storage.upload(storage_key, data, served_content_type(filename))
 
     if is_primary:
         await _clear_primary(session, invoice_id)

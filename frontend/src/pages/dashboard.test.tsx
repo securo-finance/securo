@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import DashboardPage from '@/pages/dashboard'
@@ -8,6 +8,11 @@ import { formatCurrency } from '@/lib/format'
 import { monthLabel } from '@/lib/month-utils'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, DashboardSummary } from '@/types'
+
+const layouts = vi.hoisted(() => ({
+  saved: {} as Record<string, { id: string }[] | null>,
+  saves: [] as { surface: string; ids: string[]; items: { id: string; span?: number }[] }[],
+}))
 
 const api = vi.hoisted(() => ({
   dashboard: {
@@ -30,6 +35,18 @@ const api = vi.hoisted(() => ({
   payees: { list: vi.fn() },
   rules: { create: vi.fn(), list: vi.fn() },
   settings: { attachments: vi.fn() },
+  // Nobody arranged anything: Securo's default layout. Tests that need one set `layouts.saved`.
+  uiLayouts: {
+    get: async () => ({ dashboard: null, reports: null, ...layouts.saved }),
+    // Like the server: what was saved is what the next read returns.
+    save: async (surface: string, items: { id: string; span?: number }[]) => {
+      layouts.saves.push({ surface, ids: items.map((item) => item.id), items })
+      layouts.saved = { ...layouts.saved, [surface]: items }
+    },
+    reset: async (surface: string) => {
+      layouts.saved = { ...layouts.saved, [surface]: null }
+    },
+  },
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -43,12 +60,16 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
   usePrivacyMode: () => ({ mask: (value: string) => value, privacyMode: false, MASK: '••••' }),
 }))
 
+const preferences = vi.hoisted(() => ({ currency_display: 'USD' }))
+
 vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
+  useAuth: () => ({ user: { preferences } }),
 }))
 
+const collectionFilter = vi.hoisted(() => ({ activeAccountIds: null as string[] | null, activeWalletIds: null as string[] | null }))
+
 vi.mock('@/contexts/collection-filter-context', () => ({
-  useCollectionFilter: () => ({ activeAccountIds: null, activeWalletIds: null }),
+  useCollectionFilter: () => collectionFilter,
 }))
 
 function account(overrides: Partial<Account>): Account {
@@ -129,6 +150,11 @@ const summary: DashboardSummary = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  layouts.saved = {}
+  layouts.saves = []
+  preferences.currency_display = 'USD'
+  collectionFilter.activeAccountIds = null
+  collectionFilter.activeWalletIds = null
   api.dashboard.summary.mockResolvedValue(summary)
   api.dashboard.spendingByCategory.mockResolvedValue([])
   api.dashboard.balanceHistory.mockResolvedValue({
@@ -273,7 +299,6 @@ describe('Dashboard available balance without an FX rate', () => {
 describe('Dashboard balance comparisons', () => {
   const month = (value: string) => monthLabel(value, 'en')
   const money = (value: number) => formatCurrency(value, 'USD', 'en-US')
-  const signed = (value: number) => `${value >= 0 ? '+' : ''}${money(value)}`
 
   function renderDashboard(route: string) {
     return renderWithProviders(
@@ -303,6 +328,17 @@ describe('Dashboard balance comparisons', () => {
     })
   }
 
+  function balanceChart(container: HTMLElement) {
+    const chart = container.querySelector<HTMLElement>('.recharts-wrapper.cursor-pointer')
+    if (!chart) throw new Error('Balance chart was not rendered')
+    vi.spyOn(chart, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ width: 800, height: 300 }))
+    Object.defineProperties(chart, {
+      offsetWidth: { configurable: true, value: 800 },
+      offsetHeight: { configurable: true, value: 300 },
+    })
+    return chart
+  }
+
   it('labels a single comparison month in the selector, legend and footer', async () => {
     api.dashboard.balanceHistoryMonths.mockResolvedValue(['2026-01', '2026-02', '2026-03'])
     // Current month is +100 since its opening, February was +50: 50 ahead.
@@ -315,7 +351,7 @@ describe('Dashboard balance comparisons', () => {
     renderDashboard('/?month=2026-04&comparison_month=2026-02')
 
     expect(await screen.findByText(
-      t('dashboard.balanceFlowVsMonth', { day: 1, month: month('2026-02'), delta: signed(50) }),
+      'Day 1: cumulative change is $50.00 above February 2026 ($50.00).',
     )).toBeInTheDocument()
     expect(await selectorButton('2026-02')).toHaveTextContent(month('2026-02'))
     // The legend shows the month itself, not the median wording.
@@ -334,14 +370,14 @@ describe('Dashboard balance comparisons', () => {
       comparison_opening_balance: 1900,
     })
 
-    renderDashboard('/?month=2026-04&comparison_month=2026-03')
+    const { container } = renderDashboard('/?month=2026-04&comparison_month=2026-03')
 
     await waitFor(async () => expect(await selectorButton('2026-03')).toHaveTextContent(month('2026-03')))
     expect(await screen.findAllByText(month('2026-03'))).not.toHaveLength(0)
-    // Day 2 has no comparison value, so there is no footer delta to show.
-    expect(screen.queryByText(
-      t('dashboard.balanceFlowVsMonth', { day: 2, month: month('2026-03'), delta: signed(50) }),
-    )).not.toBeInTheDocument()
+    // Day 2 has no comparison value, but its footer space is still reserved.
+    const placeholder = container.querySelector('.h-20.shrink-0')
+    expect(placeholder).not.toBeNull()
+    expect(placeholder).toBeEmptyDOMElement()
   })
 
   it('keeps the URL selection when the month options fail to load', async () => {
@@ -371,7 +407,7 @@ describe('Dashboard balance comparisons', () => {
     renderDashboard('/?month=2026-04&comparison_month=2026-01&comparison_month=2026-02&comparison_month=2026-03')
 
     expect(await screen.findByText(
-      t('dashboard.balanceFlowVsMedian', { day: 1, median: money(40), delta: signed(60) }),
+      'Day 1: cumulative change is $60.00 above the median ($40.00).',
     )).toBeInTheDocument()
     expect(screen.getByText(t('dashboard.balanceMedianLegend'))).toBeInTheDocument()
     expect(screen.getByText(t('dashboard.balanceRangeLegend'))).toBeInTheDocument()
@@ -388,6 +424,180 @@ describe('Dashboard balance comparisons', () => {
 
     expect(await screen.findByText(t('dashboard.balanceMedianLegend'))).toBeInTheDocument()
     expect(screen.queryByText(t('dashboard.balanceRangeLegend'))).not.toBeInTheDocument()
+  })
+
+  it.each(['median', 'single month'])('keeps the %s footer on the hovered chart day', async (mode) => {
+    api.dashboard.balanceHistoryMonths.mockResolvedValue(['2026-01', '2026-02', '2026-03'])
+    const singleMonth = mode === 'single month'
+    mockHistory({
+      current: [
+        { day: 1, balance: 1100 },
+        { day: 2, balance: 1200 },
+        { day: 3, balance: 5000 },
+        { day: 4, balance: null },
+      ],
+      ...(singleMonth ? {
+        comparison: [
+          { day: 1, balance: 1940 },
+          { day: 2, balance: 2050 },
+          { day: 3, balance: 2400 },
+          { day: 4, balance: 2600 },
+        ],
+        comparison_month: '2026-02',
+        comparison_opening_balance: 1900,
+      } : {
+        baseline: [
+          { day: 1, median: 40, lower_quartile: 20, upper_quartile: 60 },
+          { day: 2, median: 150, lower_quartile: 100, upper_quartile: 200 },
+          { day: 3, median: 500, lower_quartile: 400, upper_quartile: 600 },
+          { day: 4, median: 700, lower_quartile: 600, upper_quartile: 800 },
+        ],
+      }),
+    })
+    const footer = (day: number, delta: number, median: number) => t(
+      singleMonth ? 'dashboard.balanceFlowVsMonth' : 'dashboard.balanceFlowVsMedian',
+      {
+        context: 'above',
+        day,
+        delta: money(delta),
+        median: money(median),
+        month: month('2026-02'),
+      },
+    )
+    const { container } = renderDashboard(singleMonth
+      ? '/?month=2026-04&comparison_month=2026-02'
+      : '/?month=2026-04&comparison_month=2026-01&comparison_month=2026-02&comparison_month=2026-03')
+
+    expect(await screen.findByText(footer(3, 3500, 500))).toBeInTheDocument()
+    const chart = balanceChart(container)
+
+    // Exercise Recharts itself: its first two categorical indexes are "0" and "1".
+    fireEvent.mouseMove(chart, { clientX: 64, clientY: 100 })
+    expect(await within(chart).findByText(money(100))).toBeInTheDocument()
+    expect(within(chart).getByText(money(40))).toBeInTheDocument()
+    expect(await screen.findByText(footer(1, 60, 40))).toBeInTheDocument()
+
+    fireEvent.mouseMove(chart, { clientX: 89, clientY: 100 })
+    expect(await within(chart).findByText(money(200))).toBeInTheDocument()
+    expect(within(chart).getByText(money(150))).toBeInTheDocument()
+    expect(await screen.findByText(footer(2, 50, 150))).toBeInTheDocument()
+
+    const footerContainer = screen.getByText(footer(2, 50, 150)).parentElement
+    expect(footerContainer).toHaveClass('h-20', 'shrink-0')
+    fireEvent.mouseMove(chart, { clientX: 139, clientY: 100 })
+    expect(await within(chart).findByText(money(700))).toBeInTheDocument()
+    expect(within(chart).queryByText('April', { selector: '.recharts-tooltip-item-name' })).not.toBeInTheDocument()
+    await waitFor(() => expect(footerContainer).toBeEmptyDOMElement())
+    expect(footerContainer).toBeInTheDocument()
+    expect(footerContainer).toHaveClass('h-20', 'shrink-0')
+
+    // Moving outside the plot yields a null index, not day one's index zero.
+    fireEvent.mouseMove(chart, { clientX: 0, clientY: 0 })
+    expect(await screen.findByText(footer(3, 3500, 500))).toBeInTheDocument()
+
+    fireEvent.mouseMove(chart, { clientX: 64, clientY: 100 })
+    expect(await screen.findByText(footer(1, 60, 40))).toBeInTheDocument()
+    fireEvent.mouseLeave(chart)
+    expect(await screen.findByText(footer(3, 3500, 500))).toBeInTheDocument()
+  })
+
+  it.each([
+    { current: 100, median: 150, color: 'var(--chart-income)', comparison: '$50.00 below the median ($150.00)' },
+    { current: -100, median: -150, color: 'var(--chart-expense)', comparison: '$50.00 above the median (-$150.00)' },
+    { current: 0, median: 0, color: 'var(--muted-foreground)', comparison: 'equals the median ($0.00)' },
+  ])('colors the tooltip by cumulative change $current, not its difference from the median', async ({
+    current, median, color, comparison,
+  }) => {
+    api.dashboard.balanceHistoryMonths.mockResolvedValue(['2026-02', '2026-03'])
+    mockHistory({
+      current: [{ day: 1, balance: 1000 + current }],
+      baseline: [{ day: 1, median, lower_quartile: null, upper_quartile: null }],
+    })
+    const { container } = renderDashboard('/?month=2026-04&comparison_month=2026-02&comparison_month=2026-03')
+
+    const footer = await screen.findByText(
+      `Day 1: cumulative change ${current === median ? '' : 'is '}${comparison}.`,
+    )
+    const triangle = footer.querySelector('span')
+    if (current === median) {
+      expect(triangle).toBeNull()
+    } else {
+      expect(triangle).toHaveTextContent(current > median ? '\u25B2' : '\u25BC')
+      expect(triangle).toHaveClass(current > median ? 'text-emerald-600' : 'text-rose-500')
+      expect(triangle).toHaveAttribute('aria-hidden', 'true')
+    }
+    const chart = balanceChart(container)
+    fireEvent.mouseMove(chart, { clientX: 64, clientY: 100 })
+
+    const label = await within(chart).findByText('April', { selector: '.recharts-tooltip-item-name' })
+    expect(label.closest('li')).toHaveStyle({ color })
+    const medianLabel = within(chart).getByText(t('dashboard.balanceMedianLegend'), {
+      selector: '.recharts-tooltip-item-name',
+    })
+    expect(medianLabel.closest('li')).toHaveStyle({ color: 'var(--chart-muted)' })
+  })
+
+  it.each([
+    { current: -100, comparison: -100, expected: 'equals February 2026 (-$100.00)' },
+    { current: 0, comparison: 50, expected: 'is $50.00 below February 2026 ($50.00)' },
+  ])('explains a single-month comparison for cumulative change $current', async ({
+    current, comparison, expected,
+  }) => {
+    api.dashboard.balanceHistoryMonths.mockResolvedValue(['2026-02'])
+    mockHistory({
+      current: [{ day: 1, balance: 1000 + current }],
+      comparison: [{ day: 1, balance: 1900 + comparison }],
+      comparison_month: '2026-02',
+      comparison_opening_balance: 1900,
+    })
+    renderDashboard('/?month=2026-04&comparison_month=2026-02')
+
+    expect(await screen.findByText(
+      `Day 1: cumulative change ${expected}.`,
+    )).toBeInTheDocument()
+  })
+
+  it.each(['median', 'single month'])('uses currency display precision for the %s footer direction', async (mode) => {
+    api.dashboard.balanceHistoryMonths.mockResolvedValue(['2026-02', '2026-03'])
+    const singleMonth = mode === 'single month'
+    const { queryClient, container } = renderDashboard(singleMonth
+      ? '/?month=2026-04&comparison_month=2026-02'
+      : '/?month=2026-04&comparison_month=2026-02&comparison_month=2026-03')
+    await waitFor(() => expect(api.dashboard.balanceHistory).toHaveBeenCalled())
+
+    for (const [currency, unit] of [['USD', 0.01], ['JPY', 1], ['KWD', 0.001]] as const) {
+      preferences.currency_display = currency
+      for (const multiplier of [-0.6, -0.4, 0.4, 0.6]) {
+        const delta = unit * multiplier
+        mockHistory({
+          opening_balance: 0,
+          current: [{ day: 1, balance: delta }],
+          ...(singleMonth ? {
+            comparison: [{ day: 1, balance: 0 }],
+            comparison_month: '2026-02',
+            comparison_opening_balance: 0,
+          } : {
+            baseline: [{ day: 1, median: 0, lower_quartile: null, upper_quartile: null }],
+          }),
+        })
+        await act(() => queryClient.refetchQueries({ queryKey: ['dashboard', 'balance-history'] }))
+        const equal = Math.abs(multiplier) < 0.5
+        const reference = singleMonth ? 'February 2026' : 'the median'
+        const formatted = formatCurrency(Math.abs(delta), currency, 'en-US').replace(/\u00a0/g, ' ')
+        const zero = formatCurrency(0, currency, 'en-US').replace(/\u00a0/g, ' ')
+        const footer = await screen.findByText(equal
+          ? `Day 1: cumulative change equals ${reference} (${zero}).`
+          : `Day 1: cumulative change is ${formatted} ${delta > 0 ? 'above' : 'below'} ${reference} (${zero}).`)
+        const triangle = footer.querySelector('span')
+        if (equal) {
+          expect(triangle).toBeNull()
+        } else {
+          expect(triangle).toHaveTextContent(delta > 0 ? '\u25B2' : '\u25BC')
+          expect(triangle).toHaveClass(delta > 0 ? 'text-emerald-600' : 'text-rose-500')
+        }
+        expect(container.querySelector('.h-20.shrink-0')).toContainElement(footer)
+      }
+    }
   })
 
   it('defaults to the active months of the previous 12 when the URL has no selection', async () => {
@@ -545,7 +755,10 @@ describe('Dashboard refresh button', () => {
 
     const refetch = vi.spyOn(queryClient, 'refetchQueries')
 
+    // The button waits out the first load, which follows the saved layout.
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
     const button = screen.getByRole('button', { name: 'Refresh' })
+    await waitFor(() => expect(button).toBeEnabled())
     await user.click(button)
 
     expect(refetch).toHaveBeenCalledTimes(1)
@@ -579,5 +792,88 @@ describe('Dashboard refresh button', () => {
       '2026-04-01', undefined, ['2026-02-01'],
     )
     expect(screen.getByTestId('location-search')).toHaveTextContent('comparison_month=2026-02')
+  })
+})
+
+
+it('keeps a wallet-only Expenses drill-down empty instead of querying all accounts', async () => {
+  collectionFilter.activeAccountIds = []
+  collectionFilter.activeWalletIds = ['wallet-1']
+  const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+  await user.click(await screen.findByRole('button', { name: /Expenses/ }))
+  const panel = screen.getByRole('complementary')
+  expect(await within(panel).findByText(t('dashboard.drillDownEmpty'))).toBeInTheDocument()
+  expect(api.transactions.list.mock.calls.some(([params]) => params?.user_pnl_only === true)).toBe(false)
+})
+
+
+it('identifies each category in its spending progress bar accessible name', async () => {
+  api.dashboard.spendingByCategory.mockResolvedValue([
+    { category_id: 'rent', category_name: 'Rent', projected_total: 450, total: 450 },
+    { category_id: 'food', category_name: 'Groceries', projected_total: 200, total: 200 },
+  ])
+  api.budgets.comparison.mockResolvedValue([
+    { category_id: 'rent', budget_amount: 900, percentage_used: 50, projected_prev_month_amount: 0 },
+    { category_id: 'food', budget_amount: 500, percentage_used: 40, projected_prev_month_amount: 0 },
+  ])
+  renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+
+  expect(await screen.findByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Rent` })).toHaveAttribute('aria-valuenow', '50')
+  expect(screen.getByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Groceries` })).toHaveAttribute('aria-valuenow', '40')
+})
+
+describe('Dashboard arranged from the library', () => {
+  const regions = () => screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))
+
+  it("shows Securo's arrangement when nothing was saved", async () => {
+    renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    expect(regions()).toEqual([
+      t('library.widget.overview'),
+      t('library.widget.uncategorized'),
+      t('dashboard.spendingByCategory'),
+      t('dashboard.balanceFlow'),
+      t('dashboard.periodTransactions'),
+    ])
+  })
+
+  it('follows the saved order and loads nothing for a widget left out', async () => {
+    layouts.saved = { dashboard: [{ id: 'transactions' }, { id: 'overview' }] }
+    renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await waitFor(() => expect(regions()).toEqual([t('dashboard.periodTransactions'), t('library.widget.overview')]))
+    expect(api.goals.summary).not.toHaveBeenCalled()
+    expect(api.dashboard.balanceHistory).not.toHaveBeenCalled()
+    expect(api.dashboard.balanceHistoryMonths).not.toHaveBeenCalled()
+    expect(api.dashboard.spendingByCategory).not.toHaveBeenCalled()
+    expect(api.budgets.comparison).not.toHaveBeenCalled()
+  })
+
+  it("leaves out a widget this workspace can't run, and keeps it in the saved arrangement", async () => {
+    // Saved where invoices are shown; this workspace doesn't show them.
+    layouts.saved = { dashboard: [{ id: 'overview' }, { id: 'receivables' }, { id: 'transactions' }] }
+    const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await waitFor(() => expect(regions()).toEqual([t('library.widget.overview'), t('dashboard.periodTransactions')]))
+
+    await user.click(screen.getByRole('button', { name: t('library.customizeDashboard') }))
+    expect(regions()).not.toContain(t('widgets.receivables.title'))
+    await user.click(screen.getByRole('button', { name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }) }))
+    await waitFor(() => expect(layouts.saves.at(-1)?.ids).toEqual(['transactions', 'receivables']))
+  })
+
+  it('saves a widget resized while customizing', async () => {
+    const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await user.click(screen.getByRole('button', { name: t('library.customizeDashboard') }))
+    expect(screen.getByText(t('library.editingDashboard'))).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: t('library.widthOf', { name: t('dashboard.spendingByCategory') }) }))
+    await user.click(screen.getByRole('menuitemradio', { name: t('library.width.8') }))
+    await waitFor(() => expect(layouts.saves.at(-1)?.items).toContainEqual({ id: 'spending-by-category', span: 8 }))
+    expect(screen.getByRole('region', { name: t('dashboard.spendingByCategory') })).toHaveClass('lg:col-span-8')
+
+    await user.click(screen.getByRole('button', { name: t('library.done') }))
+    expect(screen.queryByText(t('library.editingDashboard'))).not.toBeInTheDocument()
   })
 })

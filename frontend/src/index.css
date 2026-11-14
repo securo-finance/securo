@@ -26,11 +26,24 @@
   --input: #E8ECF1;
   --ring: #6366F1;
   --radius: 0.625rem;
+  /* Series in charts, in order; a theme can replace them. */
   --chart-1: #6366F1;
-  --chart-2: #8B5CF6;
+  --chart-2: #F59E0B;
   --chart-3: #10B981;
-  --chart-4: #F59E0B;
-  --chart-5: #F43F5E;
+  --chart-4: #EC4899;
+  --chart-5: #0EA5E9;
+  --chart-6: #8B5CF6;
+  --chart-7: #F97316;
+  --chart-8: #14B8A6;
+  --chart-9: #84CC16;
+  --chart-10: #D946EF;
+  --chart-11: #F43F5E;
+  --chart-12: #06B6D4;
+  /* "Other", a comparison or a range: present but not the subject. */
+  --chart-muted: #94A3B8;
+  /* Money in and money out, wherever a chart draws them. */
+  --chart-income: #10B981;
+  --chart-expense: #F43F5E;
   --sidebar: #FFFFFF;
   --sidebar-foreground: #0F172A;
   --sidebar-primary: #6366F1;
@@ -104,6 +117,9 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-muted: var(--chart-muted);
+  --color-chart-income: var(--chart-income);
+  --color-chart-expense: var(--chart-expense);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

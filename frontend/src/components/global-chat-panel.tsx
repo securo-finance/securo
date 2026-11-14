@@ -10,7 +10,8 @@
  * Conversation persistence: the active conversationId is kept in
  * localStorage keyed by agent. Re-opening the panel resumes the same
  * thread instead of starting fresh — the explicit "+" button is the
- * only way to start a new one.
+ * only way to start a new one, unless the stored conversation was deleted
+ * elsewhere, in which case it is forgotten and the next message starts one.
  *
  * Page context: each send forwards a `page_context` snapshot built
  * from the active page's registration (or a synthesized fallback).
@@ -39,6 +40,9 @@ import { cn } from '@/lib/utils'
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** A message to send to the active agent as soon as the panel is ready. */
+  initialMessage?: string | null
+  onInitialMessageSent?: () => void
 }
 
 const STORAGE_KEY = 'securo.global-chat'
@@ -67,7 +71,7 @@ function writeState(s: PersistedState) {
   }
 }
 
-export function GlobalChatPanel({ open, onOpenChange }: Props) {
+export function GlobalChatPanel({ open, onOpenChange, initialMessage, onInitialMessageSent }: Props) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [view, setView] = useState<'chat' | 'history'>('chat')
@@ -84,13 +88,19 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
     enabled: open,
     staleTime: 1000 * 30,
   })
-  const { data: defaultAgent } = useQuery({
+  // A saved choice counts only while that agent still exists; otherwise the
+  // default is looked up, as when nothing was saved.
+  const savedAgentExists = Boolean(persisted.agentId && agentsList?.some((a) => a.id === persisted.agentId))
+  const { data: defaultAgent, isFetched: defaultChecked } = useQuery({
     queryKey: ['agents-default'],
     queryFn: () => agents.getDefault(),
-    enabled: open && !persisted.agentId,
+    enabled: open && !savedAgentExists,
     retry: false,
     staleTime: 1000 * 60,
   })
+  // A message from elsewhere waits until we know which agent gets it: the
+  // saved choice, or the default once that lookup is done (failed counts as done).
+  const agentSettled = savedAgentExists || defaultChecked
 
   // Resolve which agent is active. Order: persisted choice → default →
   // first in the list. The picked id always points at an agent that
@@ -329,8 +339,15 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                 agent={activeAgent}
                 conversationId={conversationId}
                 onConversationCreated={(id) => setConversationForActive(id)}
+                // The stored conversation was deleted (e.g. from the Agents
+                // page): forget it so the next message starts a new one.
+                onConversationMissing={(id) => {
+                  if (id === conversationId) setConversationForActive(null)
+                }}
                 focusSignal={focusBump}
                 getPageContext={() => getEffectivePageChatContext()}
+                initialMessage={agentSettled ? initialMessage : null}
+                onInitialMessageSent={onInitialMessageSent}
               />
             )}
             {activeAgent && view === 'history' && (

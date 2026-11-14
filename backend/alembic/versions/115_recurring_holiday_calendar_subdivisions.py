@@ -1,7 +1,7 @@
 """recurring holiday calendars: any country, with subdivisions
 
-Revision ID: 103
-Revises: 102
+Revision ID: 115
+Revises: 114
 
 ``holiday_calendar`` held only ``BR``. It now takes any country the
 ``holidays`` package supports, optionally with a subdivision (``BR-SP``,
@@ -13,14 +13,14 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "103"
-down_revision = "102"
+revision = "115"
+down_revision = "114"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    # Already dropped where this ran as 100 before the renumbering.
+    # Already dropped where this ran as 100 or 103 before the renumbering.
     op.execute(
         "ALTER TABLE recurring_transactions "
         "DROP CONSTRAINT IF EXISTS ck_recurring_transactions_holiday_calendar"

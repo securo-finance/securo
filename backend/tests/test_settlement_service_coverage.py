@@ -21,7 +21,12 @@ from app.schemas.group_settlement import (
     GroupSettlementCreate,
     GroupSettlementUpdate,
 )
-from app.services import group_service, settlement_service, workspace_service
+from app.services import (
+    group_service,
+    settlement_service,
+    transaction_service,
+    workspace_service,
+)
 
 
 async def _setup_group(session, user_id, workspace_id):
@@ -341,6 +346,216 @@ async def test_delete_settlement(session: AsyncSession, test_user, test_workspac
 
 
 @pytest.mark.asyncio
+async def test_delete_settlement_removes_the_transactions_it_created(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The payer's debit and the receiver's credit were written by the
+    settlement, so deleting it must not leave them moving both balances."""
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="Undo")
+    )
+    me = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="Me", is_self=True)
+    )
+    friend = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="Friend")
+    )
+    assert me is not None and friend is not None
+
+    paid = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=me.id, to_member_id=friend.id,
+            amount=Decimal("40.00"), currency="USD", date=date.today(),
+            account_id=account.id,
+        ),
+    )
+    received = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=friend.id, to_member_id=me.id,
+            amount=Decimal("15.00"), currency="USD", date=date.today(),
+        ),
+    )
+    assert paid is not None and paid.transaction_id is not None
+    assert received is not None and received.receiver_transaction_id is not None
+    debit_id = paid.transaction_id
+    credit_id = received.receiver_transaction_id
+
+    for settlement in (paid, received):
+        assert await settlement_service.delete_settlement(
+            session, group.id, settlement.id, test_workspace.id, test_user.id
+        ) is True
+
+    assert await session.get(Transaction, debit_id) is None
+    assert await session.get(Transaction, credit_id) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_settlement_keeps_a_transaction_it_did_not_create(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A linked existing row was there before the settlement and stays."""
+    group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    existing = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+
+    s = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id, to_member_id=b.id,
+            amount=Decimal("5.00"), currency="USD", date=date.today(),
+            transaction_id=existing.id,
+        ),
+    )
+    assert s is not None
+    assert await settlement_service.delete_settlement(
+        session, group.id, s.id, test_workspace.id, test_user.id
+    ) is True
+
+    assert await session.get(Transaction, existing.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_settlement_keeps_a_debit_another_settlement_links(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A debit that a second settlement also links stays with that one."""
+    group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    first = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id, to_member_id=b.id,
+            amount=Decimal("5.00"), currency="USD", date=date.today(),
+            account_id=account.id,
+        ),
+    )
+    assert first is not None and first.transaction_id is not None
+    debit_id = first.transaction_id
+    second = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id, to_member_id=b.id,
+            amount=Decimal("5.00"), currency="USD", date=date.today(),
+            transaction_id=debit_id,
+        ),
+    )
+    assert second is not None
+
+    assert await settlement_service.delete_settlement(
+        session, group.id, first.id, test_workspace.id, test_user.id
+    ) is True
+
+    assert await session.get(Transaction, debit_id) is not None
+    await session.refresh(second)
+    assert second.transaction_id == debit_id
+
+
+@pytest.mark.asyncio
+async def test_delete_settlement_only_removes_rows_in_the_current_workspace(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A linked payer records a payment from their own account to the
+    owner. Each side's delete removes only the row in its own workspace."""
+    hashed = _bcrypt.hashpw(b"x", _bcrypt.gensalt()).decode()
+    payer_user = User(
+        id=uuid.uuid4(),
+        email=f"payer-{uuid.uuid4().hex[:6]}@example.com",
+        hashed_password=hashed,
+        is_active=True,
+        is_verified=True,
+        preferences={"currency_display": "USD"},
+    )
+    session.add(payer_user)
+    await session.flush()
+    payer_ws = await workspace_service.create_personal_workspace_for_user(
+        session, payer_user, commit=True
+    )
+    payer_account = await _make_account(session, payer_user.id, payer_ws.id)
+    await _make_account(session, test_user.id, test_workspace.id)
+
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="Shared")
+    )
+    me = await group_service.create_member(
+        session, group.id, test_workspace.id, GroupMemberCreate(name="Me", is_self=True)
+    )
+    payer = await group_service.create_member(
+        session, group.id, test_workspace.id,
+        GroupMemberCreate(name="Payer", linked_user_id=payer_user.id),
+    )
+    assert me is not None and payer is not None
+
+    settlements = []
+    for _ in range(2):
+        s = await settlement_service.create_settlement(
+            session, group.id, payer_ws.id, payer_user.id,
+            GroupSettlementCreate(
+                from_member_id=payer.id, to_member_id=me.id,
+                amount=Decimal("8.00"), currency="USD", date=date.today(),
+                account_id=payer_account.id,
+            ),
+        )
+        assert s is not None
+        assert s.transaction_id is not None
+        assert s.receiver_transaction_id is not None
+        settlements.append((s.id, s.transaction_id, s.receiver_transaction_id))
+
+    # The owner deletes the first one from their workspace.
+    s_id, debit_id, credit_id = settlements[0]
+    assert await settlement_service.delete_settlement(
+        session, group.id, s_id, test_workspace.id, test_user.id
+    ) is True
+    assert await session.get(Transaction, debit_id) is not None
+    assert await session.get(Transaction, credit_id) is None
+
+    # The payer deletes the second one from theirs.
+    s_id, debit_id, credit_id = settlements[1]
+    assert await settlement_service.delete_settlement(
+        session, group.id, s_id, payer_ws.id, payer_user.id
+    ) is True
+    assert await session.get(Transaction, debit_id) is None
+    assert await session.get(Transaction, credit_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_settlement_keeps_a_debit_paired_as_a_transfer(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A debit the user has since paired as a transfer stays, pair intact."""
+    group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    other_account = await _make_account(session, test_user.id, test_workspace.id)
+    incoming = await _make_transaction(
+        session, test_user.id, test_workspace.id, other_account.id
+    )
+    incoming.type = "credit"
+    s = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id, to_member_id=b.id,
+            amount=Decimal("5.00"), currency="USD", date=date.today(),
+            account_id=account.id,
+        ),
+    )
+    assert s is not None and s.transaction_id is not None
+    debit_id = s.transaction_id
+    await transaction_service.link_existing_as_transfer(
+        session, test_workspace.id, [debit_id, incoming.id]
+    )
+    await session.commit()
+
+    assert await settlement_service.delete_settlement(
+        session, group.id, s.id, test_workspace.id, test_user.id
+    ) is True
+
+    debit = await session.get(Transaction, debit_id)
+    assert debit is not None and debit.transfer_pair_id is not None
+
+
+@pytest.mark.asyncio
 async def test_delete_settlement_group_not_visible(session: AsyncSession, test_user, test_workspace):
     assert await settlement_service.delete_settlement(
         session, uuid.uuid4(), uuid.uuid4(), test_workspace.id, test_user.id
@@ -455,3 +670,84 @@ async def test_update_settlement_permission_denied(session: AsyncSession, test_u
         await settlement_service.delete_settlement(
             session, group.id, s.id, intruder_ws.id, intruder.id
         )
+
+
+@pytest.mark.asyncio
+async def test_delete_settlement_keeps_a_debit_that_carries_splits(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Group splits on the debit are the user's allocations, so the row stays."""
+    from sqlalchemy import select
+
+    from app.models.transaction_split import TransactionSplit
+
+    group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    s = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id, to_member_id=b.id,
+            amount=Decimal("30.00"), currency="USD", date=date.today(),
+            account_id=account.id,
+        ),
+    )
+    assert s is not None and s.transaction_id is not None
+    debit_id = s.transaction_id
+    session.add(TransactionSplit(
+        transaction_id=debit_id, workspace_id=test_workspace.id,
+        group_member_id=b.id, share_amount=Decimal("30.00"),
+    ))
+    await session.commit()
+
+    assert await settlement_service.delete_settlement(
+        session, group.id, s.id, test_workspace.id, test_user.id
+    ) is True
+
+    assert await session.get(Transaction, debit_id) is not None
+    splits = await session.execute(
+        select(TransactionSplit).where(TransactionSplit.transaction_id == debit_id)
+    )
+    assert len(splits.scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_settlement_cleans_up_attachment_files(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Stored files of the deleted rows are removed; a kept row's are not."""
+    from unittest.mock import AsyncMock, patch
+
+    group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    existing = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    created = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id, to_member_id=b.id,
+            amount=Decimal("12.00"), currency="USD", date=date.today(),
+            account_id=account.id,
+        ),
+    )
+    linked = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=a.id, to_member_id=b.id,
+            amount=Decimal("5.00"), currency="USD", date=date.today(),
+            transaction_id=existing.id,
+        ),
+    )
+    assert created is not None and created.transaction_id is not None
+    assert linked is not None
+
+    cleanup = AsyncMock()
+    with patch("app.services.attachment_service.cleanup_attachment_files", cleanup):
+        assert await settlement_service.delete_settlement(
+            session, group.id, created.id, test_workspace.id, test_user.id
+        ) is True
+        cleanup.assert_awaited_once_with(session, [created.transaction_id])
+
+        cleanup.reset_mock()
+        assert await settlement_service.delete_settlement(
+            session, group.id, linked.id, test_workspace.id, test_user.id
+        ) is True
+        cleanup.assert_not_awaited()

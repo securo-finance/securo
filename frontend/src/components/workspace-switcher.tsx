@@ -46,8 +46,10 @@ import {
   ShieldCheck,
   Sparkles,
   Fingerprint,
+  Palette,
 } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
+import { useLibrary } from '@/contexts/library-context'
 import {
   WORKSPACE_KINDS,
   WORKSPACE_KIND_ICON,
@@ -114,6 +116,7 @@ export function WorkspaceSwitcher({
   collapsed = false,
 }: AccountMenuProps) {
   const { t, i18n } = useTranslation()
+  const { openLibrary } = useLibrary()
   const navigate = useNavigate()
   const { current, workspaces, switchWorkspace, refresh } = useWorkspace()
   const { user, logout } = useAuth()
@@ -304,6 +307,14 @@ export function WorkspaceSwitcher({
           >
             <BookOpen size={14} />
             {t('nav.documentation')}
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => openLibrary('themes')}
+            className="flex items-center gap-2"
+          >
+            <Palette size={14} />
+            {t('library.appearance')}
           </DropdownMenuItem>
 
           {/* Language sub-menu */}

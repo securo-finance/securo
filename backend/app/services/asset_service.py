@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any, Optional, cast
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, desc, update as sa_update
+from sqlalchemy import select, func, desc, or_, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,7 +23,7 @@ from app.providers.market_price import (
 )
 from app.schemas.asset import AssetCreate, AssetUpdate, AssetValueCreate, AssetRead, AssetValueRead
 from app.services.asset_group_service import ensure_group_in_workspace
-from app.services.fx_rate_service import convert, has_rate, stamp_primary_amount
+from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,8 @@ def _next_due_date(last_date: date, frequency: str) -> date:
         day = min(last_date.day, 28)
         return date(year, month, day)
     elif frequency == "yearly":
-        return date(last_date.year + 1, last_date.month, last_date.day)
+        day = min(last_date.day, 28) if last_date.month == 2 else last_date.day
+        return date(last_date.year + 1, last_date.month, day)
     return last_date + timedelta(days=1)
 
 
@@ -399,6 +400,53 @@ async def get_assets(
     return reads
 
 
+async def stamp_primary_values(
+    session: AsyncSession,
+    asset: AssetRead,
+    primary_currency: str,
+    rates: Optional[dict[str, Optional[Decimal]]] = None,
+) -> None:
+    """Fill ``current_value_primary`` and ``gain_loss_primary`` in place.
+
+    When no FX rate can be resolved both stay NULL instead of a fake 1:1
+    value, so primary-currency totals never silently sum raw foreign
+    amounts (issue #574). An asset already in ``primary_currency`` gets its
+    native amounts copied across; callers that reserve NULL for "same
+    currency" skip those assets before calling.
+
+    List callers pass one ``rates`` dict for the whole request. It keeps
+    the rate resolved for each currency, a missing one included, so a
+    currency with no rate today costs one on-demand provider fetch per
+    request instead of one per asset.
+    """
+    if asset.current_value is None:
+        return
+    if asset.currency == primary_currency:
+        asset.current_value_primary = asset.current_value
+        asset.gain_loss_primary = asset.gain_loss
+        return
+    if rates is not None and asset.currency in rates:
+        rate = rates[asset.currency]
+    else:
+        # Resolving the rate for one unit keeps it unrounded, so both
+        # amounts below round exactly as convert_or_none would.
+        _, rate = await convert_or_none(
+            session, Decimal("1"), asset.currency, primary_currency
+        )
+        if rates is not None:
+            rates[asset.currency] = rate
+    if rate is None:
+        return
+    quantum = Decimal(1).scaleb(-ASSET_PRICE_DECIMALS)
+    asset.current_value_primary = float(
+        (Decimal(str(asset.current_value)) * rate).quantize(quantum)
+    )
+    if asset.gain_loss is not None:
+        asset.gain_loss_primary = float(
+            (Decimal(str(asset.gain_loss)) * rate).quantize(quantum)
+        )
+
+
 async def get_asset(
     session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[AssetRead]:
@@ -655,6 +703,10 @@ async def update_asset(
         await ensure_group_in_workspace(session, update_data["group_id"], workspace_id)
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
+    # Stored uppercase, as on create, so the ledger's ticker filter (which
+    # compares against the uppercased input) keeps matching after an edit.
+    if update_data.get("ticker"):
+        update_data["ticker"] = update_data["ticker"].upper()
 
     tx_count = await session.scalar(
         select(func.count()).select_from(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
@@ -1005,6 +1057,19 @@ async def get_portfolio_trend(
     return {"assets": asset_meta, "trend": trend, "total": round(total, 2)}
 
 
+def held_on(as_of_date: Optional[date] = None):
+    """Filter for assets held on `as_of_date`.
+
+    With no date (the live view) only assets with no sell_date count, as
+    before. With a date, an asset sold after that date was still held on it,
+    so a past snapshot includes it. From the sale day on it is left out:
+    by then the proceeds are usually recorded in an account.
+    """
+    if as_of_date is None:
+        return Asset.sell_date.is_(None)
+    return or_(Asset.sell_date.is_(None), Asset.sell_date > as_of_date)
+
+
 async def get_asset_values_at(
     session: AsyncSession,
     scope_id: uuid.UUID,
@@ -1018,12 +1083,14 @@ async def get_asset_values_at(
 
     `scope_id` is a workspace_id when `by_workspace=True` (preferred for
     multi-tenant code paths), otherwise treated as a legacy user_id
-    filter. Both branches honor the `is_archived=False` + `sell_date is None`
-    filters.
+    filter. Both branches honor the `is_archived=False` filter.
 
-    - as_of_date=None: uses live prices (current view).
+    - as_of_date=None: uses live prices (current view); sold assets are
+      left out.
     - as_of_date set: uses the latest AssetValue on or before that date,
       falling back to purchase_price only if the asset existed by that date.
+      An asset sold after that date was still held on it and counts, the
+      same way the portfolio trend keeps its pre-sale history (#120).
     - primary_currency=None: primary_total is 0.0.
     """
     scope_filter = (
@@ -1036,7 +1103,7 @@ async def get_asset_values_at(
     stmt = select(Asset).where(
         scope_filter,
         Asset.is_archived == False,
-        Asset.sell_date.is_(None),
+        held_on(as_of_date),
     )
     if group_ids:
         stmt = stmt.where(Asset.group_id.in_(group_ids))

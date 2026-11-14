@@ -26,7 +26,11 @@ class Payee(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    # Creator attribution; a client retained by workspace billing records
+    # must survive the creator leaving without being assigned a false author.
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
@@ -68,7 +72,7 @@ class Payee(Base):
     # Dynamically set by payee_service; not a DB column
     transaction_count = cast(int, 0)
 
-    user: Mapped["User"] = relationship()
+    user: Mapped[Optional["User"]] = relationship()
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="payee_entity")
     tax_ids: Mapped[list["PayeeTaxId"]] = relationship(
         back_populates="payee", cascade="all, delete-orphan", lazy="selectin"

@@ -1,19 +1,21 @@
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.plugin_origin import PluginOrigin
 
 if TYPE_CHECKING:
     from app.models.category_group import CategoryGroup
     from app.models.user import User
 
 
-class Category(Base):
+class Category(Base, PluginOrigin):
     __tablename__ = "categories"
+    __table_args__ = (Index("ix_categories_workspace_source", "workspace_id", "source"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))

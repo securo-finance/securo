@@ -1,7 +1,7 @@
 """recurring schedule rules: business day, holidays, grace, keywords, tolerance
 
-Revision ID: 102
-Revises: 101
+Revision ID: 114
+Revises: 113
 
 Adds the rules a salary paid on the fifth business day and a rent that may be
 paid a day late need, and repairs two kinds of rows the old API let through:
@@ -19,8 +19,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "102"
-down_revision = "101"
+revision = "114"
+down_revision = "113"
 branch_labels = None
 depends_on = None
 
@@ -40,7 +40,7 @@ def _snap(pointer: date, frequency: str, intended_day: int) -> date:
 
 
 def upgrade() -> None:
-    # Installs that ran this while it was numbered 099 already have the columns;
+    # Installs that ran this while it was numbered 099 or 102 already have the columns;
     # there only the repairs below rerun, and they leave fixed rows alone.
     columns = {
         c["name"] for c in sa.inspect(op.get_bind()).get_columns("recurring_transactions")

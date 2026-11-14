@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.models.recurring_transaction import RecurringTransaction
     from app.models.transaction_attachment import TransactionAttachment
     from app.models.transaction_split import TransactionSplit
+    from app.models.transaction_category_line import TransactionCategoryLine
 
 
 class Transaction(Base):
@@ -44,6 +45,10 @@ class Transaction(Base):
     # the transaction belongs to — so accrual-mode aggregations count the
     # purchase when it hits the user's cash, not when it was made.
     effective_date: Mapped[_date] = mapped_column(Date, index=True)
+    # Optional user correction for report-period attribution. The provider
+    # `date` remains immutable bank truth; this field only affects reporting
+    # bucketing and is deliberately ignored by sync, balances, matching, and FX.
+    reporting_date_override: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
     type: Mapped[str] = mapped_column(String(10))  # debit, credit
     source: Mapped[str] = mapped_column(String(20))  # sync, ofx, csv, manual
     status: Mapped[str] = mapped_column(String(10), default="posted")  # posted, pending
@@ -105,6 +110,14 @@ class Transaction(Base):
     exclude_from_pnl: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # True while the amount is split across several categories, kept in
+    # `category_lines`. `category_id` is null for those rows, which every
+    # other path reads as "uncategorized"; this flag is how rules, sync and
+    # bulk edits tell the two apart without a subquery. Written only by
+    # category_line_service.
+    has_category_lines: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     # Link to the recurring bill this transaction fulfills (issue #116). Set when
     # a synced/imported/manual charge is matched to a recurring bill, or stamped
     # onto the placeholder generate_pending materializes. ON DELETE SET NULL: if
@@ -131,6 +144,15 @@ class Transaction(Base):
     splits: Mapped[list["TransactionSplit"]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan"
     )
+    # Loaded with every transaction: an unsplit row costs one empty IN query,
+    # and any response that serializes a row needs its lines.
+    category_lines: Mapped[list["TransactionCategoryLine"]] = relationship(
+        back_populates="transaction",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="TransactionCategoryLine.position",
+        lazy="selectin",
+    )
 
     # Populated dynamically by the service (not DB columns).
     is_shared: bool = False
@@ -141,6 +163,8 @@ class Transaction(Base):
     payee_name = cast(Optional[str], None)
     running_balance = cast(Optional[float], None)
     running_balance_primary = cast(Optional[float], None)
+    matched_amount = cast(Optional[Decimal], None)
+    matched_amount_primary = cast(Optional[Decimal], None)
 
 
 # Safety net: `effective_date` is NOT NULL. For non-CC transactions it always

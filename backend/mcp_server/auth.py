@@ -35,6 +35,75 @@ class CallContext:
     # n8n, etc.) rather than Securo's own runtime. Used for log tagging;
     # tool authorization is identical (same user scope).
     external: bool = False
+    # The caller's role in `workspace_id`, set by `authorize_call` from the
+    # database on every tool call. None only when a handler is invoked
+    # directly (tests), never on a request that went through the server.
+    role: Optional[str] = None
+
+    @property
+    def can_write(self) -> bool:
+        """False only for a role known to be read-only.
+
+        Mirrors `WorkspaceContext.can_write` on the HTTP side.
+        """
+        return self.role is None or self.role in WRITE_ROLES
+
+
+WRITE_ROLES = frozenset({"owner", "editor", "manager"})
+
+
+class ToolAccessDenied(PermissionError):
+    """The token is valid but its user may not act in the workspace."""
+
+
+async def authorize_call(session, ctx: CallContext) -> uuid.UUID:
+    """Check, against the database, that the caller may use the workspace.
+
+    A token only proves who minted it and when. Membership can change during
+    its lifetime (external tokens live for months), so the `ws_id` claim is
+    re-checked on every call, the same way the HTTP API resolves
+    `X-Workspace-Id`: the user must be active, the workspace must exist and
+    not be archived, and the user must be a member or its manager.
+
+    On success, pins `ctx.workspace_id` to the checked workspace (so tools
+    never fall back to a different default), sets `ctx.role`, and returns
+    the workspace id.
+    """
+    from app.models.user import User
+    from app.models.workspace import MANAGER_VIRTUAL_ROLE, Workspace
+    from app.services.workspace_service import (
+        get_default_workspace,
+        get_membership,
+        is_workspace_manager,
+    )
+
+    user = await session.get(User, ctx.user_id)
+    if user is None or not user.is_active:
+        raise ToolAccessDenied("This token's user is no longer active.")
+
+    workspace_id = ctx.workspace_id
+    if workspace_id is None:
+        default = await get_default_workspace(session, ctx.user_id)
+        if default is None:
+            raise ToolAccessDenied("No workspace available for this user.")
+        workspace_id = default.id
+
+    workspace = await session.get(Workspace, workspace_id)
+    if workspace is None or workspace.is_archived:
+        raise ToolAccessDenied("Workspace not found.")
+
+    member = await get_membership(session, workspace_id, ctx.user_id)
+    if member is not None:
+        role = member.role
+    elif await is_workspace_manager(session, workspace_id, ctx.user_id):
+        role = MANAGER_VIRTUAL_ROLE
+    else:
+        # Same answer as the HTTP API: don't confirm the workspace exists.
+        raise ToolAccessDenied("Workspace not found.")
+
+    ctx.workspace_id = workspace_id
+    ctx.role = role
+    return workspace_id
 
 
 def _settings():

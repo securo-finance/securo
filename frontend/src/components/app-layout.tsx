@@ -15,7 +15,7 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { CollectionSelector } from '@/components/collection-selector'
-import { auth as authApi, admin as adminApi } from '@/lib/api'
+import { auth as authApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { OnboardingTour } from '@/components/onboarding-tour'
 import { useTheme } from 'next-themes'
@@ -57,6 +57,7 @@ import {
   Shield,
   ShieldCheck,
   Fingerprint,
+  Palette,
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
@@ -68,7 +69,10 @@ import { useCommandPaletteHotkey } from '@/hooks/use-command-palette-hotkey'
 import { GlobalChatPanel } from '@/components/global-chat-panel'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { Bot, Plus, Search, Sparkles } from 'lucide-react'
-import { setThemeBasedOnSystem } from '@/lib/theme-utils'
+import { useAppTheme } from '@/hooks/use-app-theme'
+import { LibraryProvider } from '@/components/library-provider'
+import { useLibrary } from '@/contexts/library-context'
+import { AssistantContext } from '@/contexts/assistant-context'
 import { nextTheme, THEME_LABEL_KEY } from '@/lib/theme-cycle'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { formatCurrency } from '@/lib/format'
@@ -102,7 +106,9 @@ export function AppLayout() {
   const { activeAccountIds } = useCollectionFilter()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
-  const { theme, setTheme, resolvedTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
+  // The theme picked from the library, kept on the page in light and dark.
+  useAppTheme()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
@@ -116,6 +122,8 @@ export function AppLayout() {
   const [backupOpen, setBackupOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  // A message the assistant widget sent, waiting for the chat to pick it up.
+  const [chatMessage, setChatMessage] = useState<string | null>(null)
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   useCommandPaletteHotkey(setPaletteOpen)
   const { agentsEnabled } = useFeatureFlags()
@@ -138,10 +146,6 @@ export function AppLayout() {
   // Gated on agentsEnabled so the hotkey is a no-op when the feature is
   // off — keeps ⌘J free for browsers/other tools.
   useEffect(() => {
-    adminApi.defaultColors().then(({ light, dark }) => {
-      setThemeBasedOnSystem(light, dark, resolvedTheme)
-    }).catch(() => {})
-    
     if (!chatAvailable) return
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey
@@ -152,7 +156,7 @@ export function AppLayout() {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [chatAvailable, resolvedTheme])
+  }, [chatAvailable])
   // The "Agents" management page used to live in the sidebar, but it's
   // a configuration surface (KB upload, providers, default selection),
   // not a daily destination. Moved to the user menu (Change password,
@@ -184,6 +188,17 @@ export function AppLayout() {
     }
   }, [user, updateUser])
 
+  const assistant = useMemo(
+    () => ({
+      available: chatAvailable,
+      ask: (message: string) => {
+        setChatMessage(message)
+        setChatOpen(true)
+      },
+    }),
+    [chatAvailable],
+  )
+
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? '?'
   // The button shows, and switches to, the next theme in the cycle.
   const upcomingTheme = nextTheme(theme)
@@ -206,6 +221,8 @@ export function AppLayout() {
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
+    <AssistantContext.Provider value={assistant}>
+    <LibraryProvider>
     <div className="min-h-screen bg-background">
       {/* Mobile header */}
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 bg-sidebar border-b border-sidebar-border px-4 lg:hidden">
@@ -636,12 +653,21 @@ export function AppLayout() {
       {/* Slide-over global chat — opened from the sidebar pill or via
           ⌘J. The previous floating bottom-right button was removed
           since the entry point now lives in the sidebar next to ⌘K. */}
-      {chatAvailable && <GlobalChatPanel open={chatOpen} onOpenChange={setChatOpen} />}
+      {chatAvailable && (
+        <GlobalChatPanel
+          open={chatOpen}
+          onOpenChange={setChatOpen}
+          initialMessage={chatMessage}
+          onInitialMessageSent={() => setChatMessage(null)}
+        />
+      )}
       <UpdateAvailableDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
       />
     </div>
+    </LibraryProvider>
+    </AssistantContext.Provider>
   )
 }
 
@@ -671,6 +697,7 @@ function UserMenu({
   const { user } = useAuth()
   const { t, i18n } = useTranslation()
   const nav = useNavigate()
+  const { openLibrary } = useLibrary()
   const currentLang = resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language)
   return (
     <DropdownMenu>
@@ -746,6 +773,13 @@ function UserMenu({
             {t('nav.aiAgents')}
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem
+          onClick={() => openLibrary('themes')}
+          className="flex items-center gap-2"
+        >
+          <Palette size={14} />
+          {t('library.appearance')}
+        </DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className="flex items-center gap-2">
             <Languages size={14} />

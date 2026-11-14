@@ -177,6 +177,10 @@ async def replace_mortgage_payment_allocations(
         raise HTTPException(400, "A payment in an ignored category cannot have a mortgage breakdown")
     if payment.transfer_pair_id is not None:
         raise HTTPException(400, "A transfer to another account cannot be a mortgage payment")
+    if payment.has_category_lines:
+        raise HTTPException(
+            400, "Undo the split across categories before adding a mortgage breakdown"
+        )
     total = sum(
         (row.principal_amount + row.interest_amount for row in data.allocations),
         Decimal("0.00"),
