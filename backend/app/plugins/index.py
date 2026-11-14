@@ -28,6 +28,7 @@ from app.core.config import get_settings
 from app.plugins.manifest import (
     CODE_KINDS,
     DATA_KINDS,
+    UI_KINDS,
     ID_PATTERN,
     REPOSITORY_PATTERN,
     VERSION_PATTERN,
@@ -51,7 +52,8 @@ def supported_contributions() -> frozenset[str]:
     can't be installed: code needs a plugin runner to run in."""
     from app.plugins import runner
 
-    return DATA_KINDS | CODE_KINDS if runner.configured() else DATA_KINDS
+    base = DATA_KINDS | UI_KINDS
+    return base | CODE_KINDS if runner.configured() else base
 
 
 class PluginIndexError(Exception):

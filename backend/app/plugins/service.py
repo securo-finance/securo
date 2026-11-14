@@ -91,6 +91,8 @@ class PluginPlan:
     """The commit the plan installs; None when removing."""
     sync: sync.SyncPlan
     code: CodeConsent | None = None
+    themes: dict[str, list[dict[str, Any]]] | None = None
+    """Themes the action adds to the library (`added`) and takes out of it (`removed`)."""
 
 
 async def installed_plugins(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, WorkspacePlugin]:
@@ -162,6 +164,7 @@ def contents(manifest: Manifest) -> dict[str, list[dict[str, Any]]]:
             for rule in manifest.contributes.rules
         ],
         "integrations": [i.model_dump() for i in manifest.contributes.integrations],
+        "themes": [t.model_dump() for t in manifest.contributes.themes],
         "network": [h.model_dump() for h in manifest.network],
         "api_scopes": [a.model_dump() for a in manifest.api_scopes],
     }
@@ -175,7 +178,63 @@ async def plan(
     plan = await sync.plan_sync(
         session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True, fingerprint=fingerprint
     )
-    return PluginPlan(action, plugin_id, commit, plan, await _consent(session, workspace_id, plugin_id, manifest))
+    return PluginPlan(
+        action, plugin_id, commit, plan,
+        await _consent(session, workspace_id, plugin_id, manifest),
+        await _themes(session, workspace_id, plugin_id, manifest),
+    )
+
+
+async def _themes(
+    session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, manifest: Manifest | None
+) -> dict[str, list[dict[str, Any]]] | None:
+    """Themes the action adds to the library and takes out of it."""
+    current = _installed_manifest((await installed_plugins(session, workspace_id)).get(plugin_id))
+    before = {t.key: t for t in current.contributes.themes} if current else {}
+    after = {t.key: t for t in manifest.contributes.themes} if manifest else {}
+    added = [{"key": k, "name": t.name} for k, t in after.items() if k not in before]
+    removed = [{"key": k, "name": t.name} for k, t in before.items() if k not in after]
+    if not added and not removed:
+        return None
+    return {"added": added, "removed": removed}
+
+
+def theme_id(plugin_id: str, key: str) -> str:
+    """How the library names a plugin's theme, as saved in `users.theme`."""
+    return f"plugin:{plugin_id}:{key}"
+
+
+async def _release_themes(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, keys: set[str]) -> None:
+    """Members using a theme that leaves the library go back to Securo's own (not committed).
+
+    Unless the same plugin is still installed in another workspace of theirs,
+    where the theme keeps showing.
+    """
+    if not keys:
+        return
+    from app.models.user import User
+    from app.models.workspace import WorkspaceMember
+
+    ids = {theme_id(plugin_id, key) for key in keys}
+    # Ids first, then rows by id: users.id and workspace_members.user_id
+    # use different column types, so they're compared as values, not joined.
+    member_ids = list((await session.scalars(
+        select(WorkspaceMember.user_id).where(WorkspaceMember.workspace_id == workspace_id)
+    )).all())
+    users = (await session.scalars(select(User).where(User.id.in_(member_ids), User.theme.in_(ids)))).all()
+    for user in users:
+        theirs = list((await session.scalars(
+            select(WorkspaceMember.workspace_id).where(
+                WorkspaceMember.user_id == user.id, WorkspaceMember.workspace_id != workspace_id
+            )
+        )).all())
+        elsewhere = await session.scalar(
+            select(WorkspacePlugin.id)
+            .where(WorkspacePlugin.plugin_id == plugin_id, WorkspacePlugin.workspace_id.in_(theirs))
+            .limit(1)
+        ) if theirs else None
+        if elsewhere is None:
+            user.theme = None
 
 
 async def _fingerprint(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, checksum: str | None) -> str | None:
@@ -285,6 +344,10 @@ async def apply(
             fingerprint=await _fingerprint(session, workspace_id, plugin_id, checksum),
         )
         record = (await installed_plugins(session, workspace_id)).get(plugin_id)
+        gone_themes = {t.key for t in current.contributes.themes} - (
+            {t.key for t in manifest.contributes.themes} if manifest else set()
+        ) if current else set()
+        await _release_themes(session, workspace_id, plugin_id, gone_themes)
         drops_code = current is not None and current.has_code and not (manifest and manifest.has_code)
         if drops_code:
             # A version without code (or removing): its connections and their tokens go too.
@@ -297,7 +360,9 @@ async def apply(
                 record = WorkspacePlugin(workspace_id=workspace_id, plugin_id=plugin_id, installed_by=user_id)
                 session.add(record)
             record.name, record.version, record.commit = manifest.name, manifest.version, target_commit
-            record.manifest = manifest.model_dump(mode="json") if manifest.has_code else None
+            # Kept for every plugin: connections need the integrations, the
+            # library the themes, and neither should depend on the catalog.
+            record.manifest = manifest.model_dump(mode="json")
             if action == "update" and manifest.has_code:
                 await connections.follow_manifest(session, workspace_id, manifest, lang=lang)
         await session.commit()
@@ -308,7 +373,7 @@ async def apply(
         raise
     if current is not None and current.has_code and previous_commit and previous_commit != target_commit:
         await _release_code(session, plugin_id, previous_commit)
-    return PluginPlan(action, plugin_id, target_commit, result.plan, consent)
+    return PluginPlan(action, plugin_id, target_commit, result.plan, consent, None)
 
 
 async def _install_code(entry: index.IndexEntry, manifest: Manifest) -> bool:

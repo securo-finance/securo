@@ -1324,6 +1324,7 @@
     "selectConnector": "בחירת מחבר",
     "selectConnectorDesc": "בחרו ספק חיבור בנקאי",
     "connectorNotConfigured": "מחבר זה דורש הגדרה. הגדירו את פרטי הגישה הנדרשים כדי להפעיל אותו.",
+    "connectorAskAdmin": "מחבר זה אינו מוגדר. בקשו ממנהל מערכת להגדיר אותו.",
     "noConnectorsAvailable": "אין מחברי בנק זמינים",
     "selectCountry": "בחירת מדינה",
     "selectCountryDesc": "בחרו את המדינה שבה נמצא הבנק",
@@ -2035,6 +2036,11 @@
     "oversellWarning": "יש לך רק {{available}} יחידות — פוזיציות שורט אינן נתמכות.",
     "noPriceBadge": "ללא עלות",
     "noPriceWarning": "נוסף ללא מחיר רכישה — הוסיפו את הקניות כדי לעקוב אחר מחיר ממוצע ותשואה.",
+    "exchangeRateSetupWarning": "שערי חליפין אינם מוגדרים. סכומי נכסים במטבע אחר עלולים להיות לא מדויקים.",
+    "exchangeRateSetupLink": "הגדרת שערי חליפין",
+    "exchangeRateSetupContactAdmin": "בקשו ממנהל מערכת להגדיר שערי חליפין.",
+    "exchangeRateSetupAction": "הגדרת שערי חליפין בין {{from}} ובין {{to}}",
+    "exchangeRateSetupAskAdmin": "המרה בין {{from}} ובין {{to}} דורשת שערי חליפין. בקשו ממנהל מערכת להגדיר אותם.",
     "noFxRate": "אין שער חליפין",
     "noFxRateTitle": "אין שער חליפין זמין למטבע זה. הנכס מוצג במטבע המקורי ולא נכלל בסיכומים.",
     "fxRateMissing": "אין שער חליפין זמין עבור {{currencies}}. נכסים אלה מוצגים במטבע המקורי ואינם נכללים בסיכומים.",
@@ -3184,6 +3190,68 @@
       "recurringHint": "איך מחליטים שחיוב הוא החשבון שכבר ציפית לו."
     }
   },
+  "providerSettings": {
+    "catalog": {
+      "setupGuide": "מדריך הגדרה",
+      "connectionsTitle": "חיבורי בנק",
+      "connectionsDescription": "בחרו איך חשבונות בנק מתחברים למערכת שלכם.",
+      "exchangeRatesTitle": "שערי חליפין",
+      "exchangeRatesDescription": "שמירה על המרות מטבע מעודכנות.",
+      "configure": "הגדרה",
+      "manage": "ניהול",
+      "manageProvider": "ניהול {{provider}}",
+      "configureProvider": "הגדרת {{provider}}",
+      "needsAttention": "דורש טיפול",
+      "credentialsTitle": "פרטי גישה",
+      "credentialsDescription": "הזינו רק את הערכים שברצונכם להחליף. פרטי גישה שמורים לעולם אינם מוצגים.",
+      "securityNote": "פרטי הגישה מוצפנים בעת השמירה.",
+      "saveChanges": "שמירת השינויים",
+      "saving": "שומר…",
+      "simplefinTitle": "אפשור חיבורי SimpleFIN",
+      "simplefinDescription": "לאפשר למשתמשים לחבר חשבונות בנק עם אסימון ההגדרה של SimpleFIN שלהם.",
+      "notSet": "לא הוגדר",
+      "savedValue": "נשמר באופן מאובטח",
+      "environmentValue": "הוגדר בסביבה",
+      "replacementPlaceholder": "הזינו ערך חדש כדי להחליף",
+      "valuePlaceholder": "הזינו פרטי גישה",
+      "empty": "אין ספקים זמינים.",
+      "pluggyDescription": "קישור חשבונות דרך Pluggy Connect.",
+      "enableBankingDescription": "חיבור חשבונות באמצעות אישור מהבנק.",
+      "simplefinDescriptionShort": "חיבור חשבונות באמצעות SimpleFIN Bridge.",
+      "openExchangeRatesDescription": "שערי חליפין להמרות מטבע.",
+      "otherTitle": "אינטגרציות נוספות",
+      "otherDescription": "ניהול שירותים נוספים עבור המערכת שלכם.",
+      "redirectTitle": "כתובת הפניה",
+      "redirectHint": "הוסיפו כתובת זו ליישום Enable Banking שלכם לפני הזנת פרטי הגישה שלו.",
+      "copyRedirect": "העתקת כתובת ההפניה",
+      "redirectCopied": "כתובת ההפניה הועתקה",
+      "copyFailed": "ההעתקה נכשלה. סמנו את הכתובת והעתיקו אותה ידנית."
+    },
+    "title": "הגדרת ספקים",
+    "description": "פרטי גישה שמורים גוברים על ערכי הסביבה. השינויים חלים ללא הפעלה מחדש. מוגדר פירושו שהשדות הנדרשים קיימים; פרטי הגישה אינם מאומתים כאן.",
+    "configured": "מוגדר",
+    "notConfigured": "לא מוגדר",
+    "app": "נשמר ביישום",
+    "environment": "מהסביבה",
+    "none": "לא הוגדר",
+    "invalid": "לא ניתן לקרוא את פרטי הגישה השמורים. החליפו אותם או השתמשו בערך הסביבה.",
+    "reset": "שימוש בערך הסביבה",
+    "remove": "הסרת הערך השמור",
+    "removeTitle": "להסיר את הערך השמור של {{field}}?",
+    "removeWithFallback": "הערך השמור יימחק. ערך הסביבה ישמש לפעולות חדשות.",
+    "removeWithoutFallback": "אין ערך סביבה זמין. הסרת ערך זה תשבית את הספק עד שיוגדר מחדש.",
+    "secretStorageUnavailable": "הגדירו בשרת SECRET_KEY ייחודי באורך 32 תווים לפחות לפני שמירת פרטי גישה. הגדרות הסביבה הקיימות ממשיכות לפעול.",
+    "secretPlaceholder": "הזינו ערך חדש כדי להחליף את פרטי הגישה השמורים",
+    "simplefinHelp": "אפשרו כאן את SimpleFIN, ואז הוסיפו כל חיבור עם אסימון ההגדרה שלו בעמוד החשבונות.",
+    "fields": {
+      "openexchangerates_app_id": "מזהה יישום (App ID)",
+      "pluggy_client_id": "מזהה לקוח (Client ID)",
+      "pluggy_client_secret": "סוד לקוח (Client secret)",
+      "enable_banking_app_id": "מזהה יישום (App ID)",
+      "enable_banking_private_key": "מפתח פרטי (PEM)",
+      "simplefin_enabled": "אפשור SimpleFIN"
+    }
+  },
   "categoryLines": {
     "title": "חלוקה בין קטגוריות",
     "start": "חלוקה בין קטגוריות",
@@ -3297,7 +3365,10 @@
       "unresolved": "מדלג על {{items}} שהקטגוריה שלהם חסרה:",
       "defaults_one": "יוצר גם {{count}} קטגוריית ברירת מחדל שהכללים שלו צריכים",
       "defaults_other": "יוצר גם {{count}} קטגוריות ברירת מחדל שהכללים שלו צריכים",
-      "defaults_two": "יוצר גם {{count}} קטגוריות ברירת מחדל שהכללים שלו צריכים"
+      "defaults_two": "יוצר גם {{count}} קטגוריות ברירת מחדל שהכללים שלו צריכים",
+      "themes": "מוסיף ערכות נושא לספרייה: {{names}}",
+      "themesRemove": "מסיר את ערכות הנושא האלה מהספרייה: {{names}}",
+      "themeInUse": "ערכת הנושא {{name}} בשימוש אצלכם: תחזרו לערכת הנושא של Securo עצמה."
     },
     "page": {
       "section": "קטלוג",
@@ -3365,7 +3436,8 @@
       "parsers": "מנתחי קבצים",
       "price_providers": "ספקי מחירים",
       "agent_tools": "כלי סוכנים",
-      "integrations": "אינטגרציות"
+      "integrations": "אינטגרציות",
+      "themes": "ערכות נושא"
     },
     "detail": {
       "overview": "סקירה",
@@ -3555,7 +3627,8 @@
     "needs": {
       "assistant": "דורש הפעלה של סוכני AI.",
       "invoices": "זמין בסביבות עבודה עסקיות."
-    }
+    },
+    "fromPlugin": "מהתוסף {{name}}"
   },
   "widgets": {
     "budgets": "תקציבים",

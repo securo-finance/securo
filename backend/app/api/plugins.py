@@ -70,6 +70,7 @@ def _plan_read(plan: service.PluginPlan) -> PluginPlanRead:
         token=plan.sync.token,
         default_categories=list(plan.sync.default_categories),
         code=plan.code.__dict__ if plan.code else None,
+        themes=plan.themes,
         **{b: items(b) for b in ("create", "update", "delete", "keep", "release", "existing", "unresolved")},
     )
 
@@ -119,6 +120,7 @@ def _installed_read(record) -> InstalledPluginRead:
         redirect_uri=connections.redirect_uri()
         if manifest and any(i.auth == "oauth" for i in manifest.contributes.integrations)
         else None,
+        themes=[t.model_dump() for t in manifest.contributes.themes] if manifest else [],
     )
 
 

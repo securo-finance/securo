@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { TimezoneSettings } from '@/components/timezone-settings'
+import { ProviderSettings } from '@/components/provider-settings'
 import { DEFAULT_COLORS_QUERY_KEY } from '@/hooks/use-app-theme'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays } from 'lucide-react'
@@ -372,6 +373,7 @@ export default function AdminSettingsPage() {
       </div>
 
       <TimezoneSettings />
+      <ProviderSettings />
 
       {/* Theme and Customization Section */}
       <div className="grid grid-cols-1 gap-6 mb-8">

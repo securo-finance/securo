@@ -68,7 +68,7 @@ import { CommandPalette } from '@/components/command-palette'
 import { useCommandPaletteHotkey } from '@/hooks/use-command-palette-hotkey'
 import { GlobalChatPanel } from '@/components/global-chat-panel'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
-import { Bot, Plus, Search, Sparkles } from 'lucide-react'
+import { Bot, Plus, Puzzle, Search, Sparkles } from 'lucide-react'
 import { useAppTheme } from '@/hooks/use-app-theme'
 import { LibraryProvider } from '@/components/library-provider'
 import { useLibrary } from '@/contexts/library-context'
@@ -698,6 +698,7 @@ function UserMenu({
   const { t, i18n } = useTranslation()
   const nav = useNavigate()
   const { openLibrary } = useLibrary()
+  const { pluginsEnabled } = useFeatureFlags()
   const currentLang = resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language)
   return (
     <DropdownMenu>
@@ -771,6 +772,15 @@ function UserMenu({
           >
             <Sparkles size={14} />
             {t('nav.aiAgents')}
+          </DropdownMenuItem>
+        )}
+        {pluginsEnabled && (
+          <DropdownMenuItem
+            onClick={() => nav('/plugins')}
+            className="flex items-center gap-2"
+          >
+            <Puzzle size={14} />
+            {t('plugins.title')}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem

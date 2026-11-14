@@ -12,7 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { plugins as pluginsApi } from '@/lib/api'
+import { auth as authApi, plugins as pluginsApi } from '@/lib/api'
+import { useAuth } from '@/contexts/auth-context'
+import { pluginThemeId } from '@/lib/themes'
 import { useDescribe } from '@/hooks/use-describe-plugin-items'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { localized } from '@/lib/localized-text'
@@ -31,10 +33,11 @@ const NAMES_SHOWN = 5
 
 /** The preview of installing, updating or removing a plugin, and its confirmation. */
 export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; onClose: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const describe = useDescribe()
   const queryClient = useQueryClient()
   const { canManage } = useWorkspace()
+  const { user, updateUser } = useAuth()
 
   const { data: plan, isFetching, isError, refetch } = useQuery({
     queryKey: ['plugins', 'plan', target.id, target.action],
@@ -46,11 +49,13 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
 
   const applyMutation = useMutation({
     mutationFn: (confirmed: PluginPlan) => pluginsApi.apply(target.id, confirmed),
-    onSuccess: () => {
+    onSuccess: (_result, confirmed) => {
       // Both group keys are in use across pages; refresh every view of what changed.
       for (const key of ['plugins', 'plugin-connections', 'categories', 'category-groups', 'categoryGroups', 'rules']) {
         queryClient.invalidateQueries({ queryKey: [key] })
       }
+      // Someone using a theme that left the library is back on Securo's own: pick that up.
+      if (confirmed.themes?.removed.length) authApi.me().then(updateUser).catch(() => {})
       toast.success(t(`plugins.done.${target.action}`, { name: target.name }))
       onClose()
     },
@@ -73,8 +78,13 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
   // that plan is exactly what the server would refuse, so it isn't shown.
   const failed = isError && !isFetching
   const shown = !failed ? plan : undefined
+  const addedThemes = (shown?.themes?.added ?? []).map((theme) => localized(theme.name, i18n.language))
+  const removedThemes = shown?.themes?.removed ?? []
+  // The theme this person uses leaves the library: they go back to Securo's own.
+  const themeInUse = removedThemes.find((theme) => user?.theme === pluginThemeId(target.id, theme.key))
   const changes = shown
-    ? shown.create.length + shown.update.length + shown.delete.length + shown.release.length > 0
+    ? shown.create.length + shown.update.length + shown.delete.length + shown.release.length +
+        addedThemes.length + removedThemes.length > 0
     : false
   // A plan that touches no item still records something: the installed version
   // moves, or an installation whose items are all gone is taken off the list.
@@ -115,6 +125,22 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
 
         {/* Long consent lists scroll; the buttons below always stay in reach. */}
         <div className="-mx-1 max-h-[55vh] space-y-4 overflow-y-auto px-1">
+
+        {addedThemes.length > 0 && (
+          <p className="text-sm">{t('plugins.plan.themes', { names: addedThemes.join(', ') })}</p>
+        )}
+        {removedThemes.length > 0 && (
+          <p className="text-sm">
+            {t('plugins.plan.themesRemove', {
+              names: removedThemes.map((theme) => localized(theme.name, i18n.language)).join(', '),
+            })}
+          </p>
+        )}
+        {themeInUse && (
+          <p className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {t('plugins.plan.themeInUse', { name: localized(themeInUse.name, i18n.language) })}
+          </p>
+        )}
 
         {lines.length > 0 && (
           <ul className="space-y-2 text-sm">
