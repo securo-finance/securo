@@ -424,13 +424,20 @@ export const connections = {
     const { data } = await api.get('/connections')
     return data
   },
-  getProviders: async (): Promise<{ name: string; display_name: string; description: string; flow_type: string; configured: boolean; requires_institution_select?: boolean; supports_asset_sync?: boolean }[]> => {
+  getProviders: async (): Promise<{ name: string; display_name: string; description: string; flow_type: string; configured: boolean; requires_institution_select?: boolean; supports_asset_sync?: boolean; credential_fields?: string[] }[]> => {
     const { data } = await api.get('/connections/providers')
     return data.providers
   },
   getConnectToken: async (provider = 'pluggy'): Promise<string> => {
     const { data } = await api.post('/connections/connect-token', { provider }, readOnly)
     return data.access_token
+  },
+  getQrSession: async (
+    provider: string,
+    sessionId: string,
+  ): Promise<{ status: 'starting' | 'waiting_for_scan' | 'reading' | 'ready' | 'error'; qr: string | null; error: string | null }> => {
+    const { data } = await api.get(`/connections/${provider}/qr-sessions/${sessionId}`)
+    return data
   },
   getOAuthUrl: async (provider: string, flow_params?: Record<string, unknown>): Promise<string> => {
     const { data } = await api.post('/connections/oauth/url', { provider, flow_params }, readOnly)

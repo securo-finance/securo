@@ -52,6 +52,16 @@ class Settings(BaseSettings):
     simplefin_enabled: bool = False
     simplefin_api_url: str = "https://beta-bridge.simplefin.org"
 
+    # Israeli banks and cards via the israeli-banks sidecar
+    # (integrations/israeli-banks, built on israeli-bank-scrapers): Bank Leumi
+    # by scanning its QR code with the Leumi app (nothing stored), Max and
+    # Isracard by credentials stored encrypted on the connection.
+    israeli_banks_enabled: bool = False
+    israeli_banks_url: str = "http://israeli-banks:8095"
+    israeli_banks_token: SecretStr = SecretStr("")
+    # How far back a read goes.
+    israeli_banks_history_days: int = 365
+
     # Frontend
     frontend_url: str = "http://localhost:5173"
     # Docker Compose passes FRONTEND_URL empty when it is not set, plus the

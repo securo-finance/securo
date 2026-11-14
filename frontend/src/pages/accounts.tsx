@@ -35,6 +35,8 @@ import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
 import { OAuthConnectDialog } from '@/components/oauth-connect-dialog'
 import { TokenConnectDialog } from '@/components/token-connect-dialog'
+import { QrConnectDialog } from '@/components/qr-connect-dialog'
+import { CredentialsConnectDialog } from '@/components/credentials-connect-dialog'
 import { ConnectionSettingsDialog } from '@/components/connection-settings-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
@@ -89,6 +91,8 @@ export default function AccountsPage() {
   const [reconnectConnId, setReconnectConnId] = useState<string | null>(null)
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
   const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
+  const [qrReconnectConnection, setQrReconnectConnection] = useState<BankConnection | null>(null)
+  const [credentialsReconnectConnection, setCredentialsReconnectConnection] = useState<BankConnection | null>(null)
 
   const { data: accountsList, isLoading: accountsLoading, isFetching: accountsFetching } = useQuery({
     queryKey: ['accounts'],
@@ -126,6 +130,14 @@ export default function AccountsPage() {
     }
     if (providerInfo?.flow_type === 'token') {
       setTokenReconnectConnection(conn)
+      return
+    }
+    if (providerInfo?.flow_type === 'qr') {
+      setQrReconnectConnection(conn)
+      return
+    }
+    if (providerInfo?.flow_type === 'credentials') {
+      setCredentialsReconnectConnection(conn)
       return
     }
     // Widget flow (Pluggy): re-open the widget with the existing item_id.
@@ -654,6 +666,44 @@ export default function AccountsPage() {
         onClose={() => setSelectedProvider(null)}
         provider={selectedProvider?.name ?? ''}
         supportsAssetSync={selectedProvider?.supports_asset_sync ?? false}
+      />
+
+      {/* QR Connect Dialog — scan-to-log-in banks (Bank Leumi) */}
+      <QrConnectDialog
+        open={!!selectedProvider && selectedProvider.flow_type === 'qr'}
+        onClose={() => setSelectedProvider(null)}
+        provider={selectedProvider?.name ?? ''}
+      />
+
+      {/* Reconnect Dialog — QR (Bank Leumi): each sync needs a fresh scan */}
+      <QrConnectDialog
+        open={!!qrReconnectConnection}
+        onClose={() => setQrReconnectConnection(null)}
+        provider={qrReconnectConnection?.provider ?? ''}
+        reconnectConnectionId={qrReconnectConnection?.id}
+      />
+
+      {/* Credentials Connect Dialog — login-details providers (Max, Isracard) */}
+      <CredentialsConnectDialog
+        open={!!selectedProvider && selectedProvider.flow_type === 'credentials'}
+        onClose={() => setSelectedProvider(null)}
+        provider={selectedProvider?.name ?? ''}
+        displayName={selectedProvider?.display_name ?? ''}
+        fields={selectedProvider?.credential_fields ?? []}
+      />
+
+      {/* Reconnect Dialog — login-details providers: re-enter the login */}
+      <CredentialsConnectDialog
+        open={!!credentialsReconnectConnection}
+        onClose={() => setCredentialsReconnectConnection(null)}
+        provider={credentialsReconnectConnection?.provider ?? ''}
+        displayName={
+          (credentialsReconnectConnection && providersByName.get(credentialsReconnectConnection.provider)?.display_name) ?? ''
+        }
+        fields={
+          (credentialsReconnectConnection && providersByName.get(credentialsReconnectConnection.provider)?.credential_fields) ?? []
+        }
+        reconnectConnectionId={credentialsReconnectConnection?.id}
       />
 
       {/* Reconnect Dialog — widget-based (Pluggy) */}

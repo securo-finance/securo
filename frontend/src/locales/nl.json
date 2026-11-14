@@ -1352,6 +1352,34 @@
       "reconnectDescription": "Plak een nieuw installatietoken om deze verbinding te vernieuwen. Bestaande rekeningen, transacties, categorieën en regels blijven behouden.",
       "reconnect": "Maak opnieuw verbinding"
     },
+    "qrConnect": {
+      "title": "Bank Leumi koppelen",
+      "reconnectTitle": "Scan om Bank Leumi te synchroniseren",
+      "description": "Open de Leumi-app en scan deze code, net als bij inloggen op de website van Leumi. Securo ziet of bewaart je wachtwoord nooit.",
+      "starting": "Inlogpagina van Leumi wordt geopend…",
+      "waiting": "Wachten tot je de code scant met de Leumi-app…",
+      "reading": "Ingelogd. Je rekeningen worden gelezen, dit duurt ongeveer een minuut…",
+      "importing": "Transacties importeren…",
+      "expired": "De code is verlopen voordat hij werd gescand. Begin opnieuw voor een nieuwe.",
+      "retry": "Opnieuw beginnen",
+      "qrAlt": "QR-code om in te loggen bij Bank Leumi"
+    },
+    "credentialsConnect": {
+      "title": "{{name}} koppelen",
+      "reconnectTitle": "{{name}}-login bijwerken",
+      "description": "Vul de login in die je op de website van {{name}} gebruikt. Securo leest daarmee je kaarten.",
+      "storageNote": "Versleuteld op je server opgeslagen en alleen gebruikt om je {{name}}-kaarten te lezen.",
+      "reading": "Inloggen en je kaarten lezen, dit kan een à twee minuten duren…",
+      "connect": "Koppelen",
+      "connecting": "Koppelen…",
+      "reconnect": "Opslaan en synchroniseren",
+      "fields": {
+        "username": "Gebruikersnaam",
+        "password": "Wachtwoord",
+        "id": "Identiteitsnummer",
+        "card6Digits": "Laatste 6 cijfers van de kaart"
+      }
+    },
     "providers": {
       "pluggy": {
         "description": "Open financieringsaanbieder voor Braziliaanse banken"

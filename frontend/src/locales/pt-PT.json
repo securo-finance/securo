@@ -1355,6 +1355,34 @@
       "reconnectDescription": "Cola um novo token de configuração para atualizar esta ligação no lugar. Contas, transações, categorias e regras existentes são preservadas.",
       "reconnect": "Reconectar"
     },
+    "qrConnect": {
+      "title": "Ligar Bank Leumi",
+      "reconnectTitle": "Digitalize para sincronizar o Bank Leumi",
+      "description": "Abra a app do Leumi e digitalize este código, tal como ao entrar no site do Leumi. O Securo nunca vê nem guarda a sua palavra-passe.",
+      "starting": "A abrir a página de início de sessão do Leumi…",
+      "waiting": "À espera que digitalize o código com a app do Leumi…",
+      "reading": "Sessão iniciada. A ler as suas contas, demora cerca de um minuto…",
+      "importing": "A importar transações…",
+      "expired": "O código expirou antes de ser digitalizado. Recomece para obter um novo.",
+      "retry": "Recomeçar",
+      "qrAlt": "Código QR de início de sessão do Bank Leumi"
+    },
+    "credentialsConnect": {
+      "title": "Ligar {{name}}",
+      "reconnectTitle": "Atualizar o início de sessão {{name}}",
+      "description": "Introduza os dados que usa no site da {{name}}. O Securo lê os seus cartões com eles.",
+      "storageNote": "Guardado encriptado no seu servidor e usado apenas para ler os seus cartões {{name}}.",
+      "reading": "A iniciar sessão e a ler os seus cartões, pode demorar um ou dois minutos…",
+      "connect": "Ligar",
+      "connecting": "A ligar…",
+      "reconnect": "Guardar e sincronizar",
+      "fields": {
+        "username": "Nome de utilizador",
+        "password": "Palavra-passe",
+        "id": "Número de identificação",
+        "card6Digits": "Últimos 6 dígitos do cartão"
+      }
+    },
     "providers": {
       "pluggy": {
         "description": "Fornecedor Open Finance para bancos brasileiros"

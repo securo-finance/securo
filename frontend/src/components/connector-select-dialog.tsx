@@ -17,6 +17,7 @@ export interface Provider {
   configured: boolean
   requires_institution_select?: boolean
   supports_asset_sync?: boolean
+  credential_fields?: string[]
 }
 
 interface ConnectorSelectDialogProps {

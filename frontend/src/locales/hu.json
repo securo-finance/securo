@@ -1351,6 +1351,34 @@
       "reconnectDescription": "Illessz be egy új beállítási tokent a kapcsolat helyben történő frissítéséhez. A meglévő számlák, tranzakciók, kategóriák és szabályok megmaradnak.",
       "reconnect": "Újracsatlakozás"
     },
+    "qrConnect": {
+      "title": "Bank Leumi csatlakoztatása",
+      "reconnectTitle": "Szkenneld be a Bank Leumi szinkronizálásához",
+      "description": "Nyisd meg a Leumi alkalmazást, és szkenneld be ezt a kódot, ahogy a Leumi weboldalán is bejelentkezel. A Securo soha nem látja és nem tárolja a jelszavadat.",
+      "starting": "A Leumi bejelentkezési oldalának megnyitása…",
+      "waiting": "Várakozás, hogy beszkenneld a kódot a Leumi alkalmazással…",
+      "reading": "Bejelentkezve. A számláid beolvasása körülbelül egy percig tart…",
+      "importing": "Tranzakciók importálása…",
+      "expired": "A kód lejárt, mielőtt beszkennelted volna. Kezdd újra egy új kódért.",
+      "retry": "Újrakezdés",
+      "qrAlt": "Bank Leumi bejelentkezési QR-kód"
+    },
+    "credentialsConnect": {
+      "title": "{{name}} csatlakoztatása",
+      "reconnectTitle": "{{name}} bejelentkezés frissítése",
+      "description": "Add meg a {{name}} weboldalán használt belépési adatokat. A Securo ezekkel olvassa a kártyáidat.",
+      "storageNote": "Titkosítva tárolva a szervereden, és csak a {{name}} kártyáid olvasására használva.",
+      "reading": "Bejelentkezés és a kártyák beolvasása, ez egy-két percig tarthat…",
+      "connect": "Csatlakoztatás",
+      "connecting": "Csatlakozás…",
+      "reconnect": "Mentés és szinkronizálás",
+      "fields": {
+        "username": "Felhasználónév",
+        "password": "Jelszó",
+        "id": "Személyi szám",
+        "card6Digits": "A kártya utolsó 6 számjegye"
+      }
+    },
     "providers": {
       "pluggy": {
         "description": "Open finance szolgáltató brazil bankokhoz"

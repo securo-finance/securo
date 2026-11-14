@@ -320,6 +320,14 @@ class BankProvider(ABC):
         """Create a connect token for widget-based flows. Override in widget providers."""
         raise NotImplementedError(f"{self.name} does not support widget connect tokens")
 
+    async def get_qr_session(self, session_id: str, client_user_id: str) -> dict:
+        """Status of a QR login started by ``create_connect_token``.
+
+        Only QR providers (flow_type ``qr``) implement this. Returns
+        ``{"status": ..., "qr": <base64 PNG or None>, "error": ...}``.
+        """
+        raise NotImplementedError(f"{self.name} does not support QR login")
+
     async def list_institutions(
         self, country: Optional[str] = None
     ) -> "InstitutionListData":

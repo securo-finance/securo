@@ -41,6 +41,32 @@ KNOWN_PROVIDERS = [
         "requires_institution_select": False,
         "supports_asset_sync": True,
     },
+    {
+        "name": "leumi",
+        "display_name": "Bank Leumi",
+        "description": "Israeli bank, log in by scanning a QR code with the Leumi app",
+        "flow_type": "qr",
+        "requires_institution_select": False,
+        "supports_asset_sync": False,
+    },
+    {
+        "name": "max",
+        "display_name": "Max",
+        "description": "Israeli credit cards (Max)",
+        "flow_type": "credentials",
+        "credential_fields": ["username", "password"],
+        "requires_institution_select": False,
+        "supports_asset_sync": False,
+    },
+    {
+        "name": "isracard",
+        "display_name": "Isracard",
+        "description": "Israeli credit cards (Isracard)",
+        "flow_type": "credentials",
+        "credential_fields": ["id", "card6Digits", "password"],
+        "requires_institution_select": False,
+        "supports_asset_sync": False,
+    },
 ]
 
 
@@ -93,6 +119,13 @@ def _auto_register_providers() -> None:
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
         register_provider("simplefin", SimpleFinProvider)
+
+    if settings.israeli_banks_enabled and settings.israeli_banks_token.get_secret_value():
+        from app.providers.israeli_cards import IsracardProvider, MaxProvider
+        from app.providers.leumi_qr import LeumiQrProvider
+        register_provider("leumi", LeumiQrProvider)
+        register_provider("max", MaxProvider)
+        register_provider("isracard", IsracardProvider)
 
 
 _auto_register_providers()

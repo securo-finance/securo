@@ -1298,6 +1298,11 @@ async def create_connect_token(
     return {"access_token": token_data.access_token}
 
 
+async def get_qr_session(provider_name: str, session_id: uuid.UUID, user_id: uuid.UUID) -> dict:
+    provider = get_provider(provider_name)
+    return await provider.get_qr_session(str(session_id), str(user_id))
+
+
 async def update_connection_settings(
     session: AsyncSession,
     connection_id: uuid.UUID,

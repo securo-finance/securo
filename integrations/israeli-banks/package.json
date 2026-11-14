@@ -1,0 +1,16 @@
+{
+  "name": "securo-israeli-banks",
+  "private": true,
+  "type": "module",
+  "description": "Israeli bank and card reader for Securo (israeli-bank-scrapers): Leumi by QR login, Max and Isracard by stored credentials",
+  "engines": {
+    "node": ">=22.22"
+  },
+  "dependencies": {
+    "israeli-bank-scrapers": "6.13.0",
+    "puppeteer": "24.43.1"
+  },
+  "overrides": {
+    "puppeteer": "24.43.1"
+  }
+}

@@ -1419,6 +1419,34 @@
       "reconnectDescription": "Vlož nový setup token a obnov toto prepojenie na mieste. Existujúce účty, transakcie, kategórie a pravidlá zostanú zachované.",
       "reconnect": "Znovu prepojiť"
     },
+    "qrConnect": {
+      "title": "Pripojiť Bank Leumi",
+      "reconnectTitle": "Naskenujte na synchronizáciu Bank Leumi",
+      "description": "Otvorte aplikáciu Leumi a naskenujte tento kód, rovnako ako pri prihlásení na webe Leumi. Securo vaše heslo nikdy nevidí ani neukladá.",
+      "starting": "Otvára sa prihlasovacia stránka Leumi…",
+      "waiting": "Čaká sa, kým kód naskenujete aplikáciou Leumi…",
+      "reading": "Prihlásené. Načítavajú sa vaše účty, potrvá to asi minútu…",
+      "importing": "Importujú sa transakcie…",
+      "expired": "Platnosť kódu vypršala pred naskenovaním. Začnite znova a získajte nový.",
+      "retry": "Začať znova",
+      "qrAlt": "QR kód na prihlásenie do Bank Leumi"
+    },
+    "credentialsConnect": {
+      "title": "Pripojiť {{name}}",
+      "reconnectTitle": "Aktualizovať prihlásenie {{name}}",
+      "description": "Zadajte prihlasovacie údaje, ktoré používate na webe {{name}}. Securo nimi číta vaše karty.",
+      "storageNote": "Uložené šifrovane na vašom serveri a použité len na čítanie vašich kariet {{name}}.",
+      "reading": "Prihlasovanie a čítanie kariet, môže to trvať minútu alebo dve…",
+      "connect": "Pripojiť",
+      "connecting": "Pripája sa…",
+      "reconnect": "Uložiť a synchronizovať",
+      "fields": {
+        "username": "Používateľské meno",
+        "password": "Heslo",
+        "id": "Číslo preukazu",
+        "card6Digits": "Posledných 6 číslic karty"
+      }
+    },
     "providers": {
       "pluggy": {
         "description": "Poskytovateľ open finance pre brazílske banky"

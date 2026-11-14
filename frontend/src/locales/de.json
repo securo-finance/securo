@@ -1352,6 +1352,34 @@
       "reconnectDescription": "Füge ein neues Setup-Token ein, um diese Verbindung direkt zu aktualisieren. Bestehende Konten, Transaktionen, Kategorien und Regeln bleiben erhalten.",
       "reconnect": "Erneut verbinden"
     },
+    "qrConnect": {
+      "title": "Bank Leumi verbinden",
+      "reconnectTitle": "Zum Synchronisieren von Bank Leumi scannen",
+      "description": "Öffne die Leumi-App und scanne diesen Code, wie bei der Anmeldung auf der Leumi-Website. Securo sieht und speichert dein Passwort nie.",
+      "starting": "Leumi-Anmeldeseite wird geöffnet…",
+      "waiting": "Warte darauf, dass du den Code mit der Leumi-App scannst…",
+      "reading": "Angemeldet. Konten werden gelesen, das dauert etwa eine Minute…",
+      "importing": "Transaktionen werden importiert…",
+      "expired": "Der Code ist abgelaufen, bevor er gescannt wurde. Starte neu, um einen neuen zu erhalten.",
+      "retry": "Neu starten",
+      "qrAlt": "QR-Code für die Bank-Leumi-Anmeldung"
+    },
+    "credentialsConnect": {
+      "title": "{{name}} verbinden",
+      "reconnectTitle": "{{name}}-Anmeldung aktualisieren",
+      "description": "Gib die Anmeldedaten ein, die du auf der {{name}}-Website verwendest. Securo liest damit deine Karten.",
+      "storageNote": "Verschlüsselt auf deinem Server gespeichert und nur zum Lesen deiner {{name}}-Karten verwendet.",
+      "reading": "Anmeldung und Lesen deiner Karten, das kann ein bis zwei Minuten dauern…",
+      "connect": "Verbinden",
+      "connecting": "Verbinde…",
+      "reconnect": "Speichern und synchronisieren",
+      "fields": {
+        "username": "Benutzername",
+        "password": "Passwort",
+        "id": "Ausweisnummer",
+        "card6Digits": "Letzte 6 Ziffern der Karte"
+      }
+    },
     "providers": {
       "pluggy": {
         "description": "Open-Finance-Anbieter für brasilianische Banken"

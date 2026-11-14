@@ -1351,6 +1351,34 @@
       "reconnectDescription": "Paste a new setup token to refresh this connection in place. Existing accounts, transactions, categories, and rules are preserved.",
       "reconnect": "Reconnect"
     },
+    "qrConnect": {
+      "title": "Connect Bank Leumi",
+      "reconnectTitle": "Scan to sync Bank Leumi",
+      "description": "Open the Leumi app and scan this code, just like logging in on Leumi's website. Securo never sees or stores your password.",
+      "starting": "Opening Leumi's login page…",
+      "waiting": "Waiting for you to scan the code with the Leumi app…",
+      "reading": "Logged in. Reading your accounts, this takes about a minute…",
+      "importing": "Importing transactions…",
+      "expired": "The code expired before it was scanned. Start again for a new one.",
+      "retry": "Start again",
+      "qrAlt": "Bank Leumi login QR code"
+    },
+    "credentialsConnect": {
+      "title": "Connect {{name}}",
+      "reconnectTitle": "Update your {{name}} login",
+      "description": "Enter the login you use on the {{name}} website. Securo reads your cards with it.",
+      "storageNote": "Stored encrypted on your server and used only to read your {{name}} cards.",
+      "reading": "Logging in and reading your cards, this can take a minute or two…",
+      "connect": "Connect",
+      "connecting": "Connecting…",
+      "reconnect": "Save and sync",
+      "fields": {
+        "username": "Username",
+        "password": "Password",
+        "id": "ID number",
+        "card6Digits": "Last 6 digits of your card"
+      }
+    },
     "providers": {
       "pluggy": {
         "description": "Open finance provider for Brazilian banks"

@@ -1351,6 +1351,34 @@
       "reconnectDescription": "新しいセットアップトークンを貼り付けて、この接続をその場で更新します。既存の口座、取引、カテゴリ、ルールは保持されます。",
       "reconnect": "再接続"
     },
+    "qrConnect": {
+      "title": "Bank Leumi を接続",
+      "reconnectTitle": "スキャンして Bank Leumi を同期",
+      "description": "Leumi アプリを開いてこのコードをスキャンしてください。Leumi のウェブサイトにログインするときと同じです。Securo がパスワードを見たり保存したりすることはありません。",
+      "starting": "Leumi のログインページを開いています…",
+      "waiting": "Leumi アプリでコードをスキャンするのを待っています…",
+      "reading": "ログインしました。口座を読み込んでいます（約 1 分かかります）…",
+      "importing": "取引をインポートしています…",
+      "expired": "スキャンされる前にコードの有効期限が切れました。もう一度始めて新しいコードを取得してください。",
+      "retry": "やり直す",
+      "qrAlt": "Bank Leumi ログイン用 QR コード"
+    },
+    "credentialsConnect": {
+      "title": "{{name}} を接続",
+      "reconnectTitle": "{{name}} のログイン情報を更新",
+      "description": "{{name}} のウェブサイトで使っているログイン情報を入力してください。Securo はこれでカードを読み込みます。",
+      "storageNote": "サーバー上に暗号化して保存され、{{name}} のカードの読み込みにのみ使われます。",
+      "reading": "ログインしてカードを読み込んでいます。1〜2 分かかることがあります…",
+      "connect": "接続",
+      "connecting": "接続中…",
+      "reconnect": "保存して同期",
+      "fields": {
+        "username": "ユーザー名",
+        "password": "パスワード",
+        "id": "身分証番号",
+        "card6Digits": "カード番号の下 6 桁"
+      }
+    },
     "providers": {
       "pluggy": {
         "description": "ブラジルの銀行に対応したオープンファイナンスプロバイダー"

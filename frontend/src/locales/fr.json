@@ -1355,6 +1355,34 @@
       "reconnectDescription": "Collez un nouveau jeton de configuration pour actualiser cette connexion sur place. Les comptes, transactions, catégories et règles existants sont conservés.",
       "reconnect": "Reconnecter"
     },
+    "qrConnect": {
+      "title": "Connecter Bank Leumi",
+      "reconnectTitle": "Scanner pour synchroniser Bank Leumi",
+      "description": "Ouvrez l'application Leumi et scannez ce code, comme pour vous connecter sur le site de Leumi. Securo ne voit ni ne stocke jamais votre mot de passe.",
+      "starting": "Ouverture de la page de connexion Leumi…",
+      "waiting": "En attente du scan du code avec l'application Leumi…",
+      "reading": "Connecté. Lecture de vos comptes, cela prend environ une minute…",
+      "importing": "Importation des transactions…",
+      "expired": "Le code a expiré avant d'être scanné. Recommencez pour en obtenir un nouveau.",
+      "retry": "Recommencer",
+      "qrAlt": "QR code de connexion Bank Leumi"
+    },
+    "credentialsConnect": {
+      "title": "Connecter {{name}}",
+      "reconnectTitle": "Mettre à jour la connexion {{name}}",
+      "description": "Saisissez les identifiants que vous utilisez sur le site de {{name}}. Securo lit vos cartes avec.",
+      "storageNote": "Stockés chiffrés sur votre serveur et utilisés uniquement pour lire vos cartes {{name}}.",
+      "reading": "Connexion et lecture de vos cartes, cela peut prendre une ou deux minutes…",
+      "connect": "Connecter",
+      "connecting": "Connexion…",
+      "reconnect": "Enregistrer et synchroniser",
+      "fields": {
+        "username": "Nom d'utilisateur",
+        "password": "Mot de passe",
+        "id": "Numéro d'identité",
+        "card6Digits": "6 derniers chiffres de la carte"
+      }
+    },
     "providers": {
       "pluggy": {
         "description": "Fournisseur d'open finance pour les banques brésiliennes"

@@ -21,6 +21,11 @@ x-backend-env: &backend-env
   ENABLE_BANKING_OAUTH_REDIRECT_URI: ${ENABLE_BANKING_OAUTH_REDIRECT_URI:-}
   SIMPLEFIN_ENABLED: ${SIMPLEFIN_ENABLED:-false}
   SIMPLEFIN_API_URL: ${SIMPLEFIN_API_URL:-https://beta-bridge.simplefin.org}
+  # Israeli banks and cards (Bank Leumi by QR code, Max, Isracard), served by
+  # the israeli-banks container below. Start it with `--profile israeli-banks`.
+  ISRAELI_BANKS_ENABLED: ${ISRAELI_BANKS_ENABLED:-false}
+  ISRAELI_BANKS_URL: ${ISRAELI_BANKS_URL:-http://israeli-banks:8095}
+  ISRAELI_BANKS_TOKEN: ${ISRAELI_BANKS_TOKEN:-}
   OIDC_ENABLED: ${OIDC_ENABLED:-false}
   OIDC_PROVIDER_NAME: ${OIDC_PROVIDER_NAME:-OIDC}
   OIDC_DISCOVERY_URL: ${OIDC_DISCOVERY_URL:-}
@@ -229,6 +234,19 @@ services:
     command: uvicorn mcp_server.main:app --host 0.0.0.0 --port 8765
     ports:
       - "${AGENTS_MCP_EXTERNAL_HOST_PORT:-127.0.0.1:8765}:8765"
+
+  # Optional: Israeli banks and cards via israeli-bank-scrapers. Only starts
+  # under the `israeli-banks` profile, with ISRAELI_BANKS_ENABLED=true and the
+  # same ISRAELI_BANKS_TOKEN on both sides. It drives a headless Chrome, so it
+  # needs about 1 GB of memory while a bank is being read.
+  israeli-banks:
+    build: ./integrations/israeli-banks
+    profiles: [israeli-banks]
+    init: true
+    environment:
+      ISRAELI_BANKS_TOKEN: ${ISRAELI_BANKS_TOKEN:-}
+    mem_limit: ${ISRAELI_BANKS_MEMORY:-1500m}
+    restart: unless-stopped
 
   # Optional: plugins with code. Only start under the `plugins` profile
   # (`docker compose -f docker-compose.prod.yml --profile plugins up`, with

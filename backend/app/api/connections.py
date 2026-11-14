@@ -25,6 +25,7 @@ from app.schemas.bank_connection import (
     OAuthCallbackRequest,
     OAuthUrlRequest,
     OAuthUrlResponse,
+    QrSessionResponse,
     ReauthUrlResponse,
     ReconnectTokenResponse,
 )
@@ -94,6 +95,30 @@ async def list_provider_institutions(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to load institutions: {str(e)}",
+        )
+
+
+@router.get("/{provider}/qr-sessions/{session_id}", response_model=QrSessionResponse)
+async def get_qr_session(
+    provider: str,
+    session_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+):
+    """Poll a QR login started with /connect-token (flow_type ``qr``).
+
+    The sidecar only answers for the user who started the session, so one
+    member cannot watch another's QR.
+    """
+    try:
+        return await connection_service.get_qr_session(provider, session_id, ctx.user_id)
+    except SessionExpiredError as e:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(e))
+    except (ValueError, NotImplementedError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"QR session check failed: {str(e)}",
         )
 
 

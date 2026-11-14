@@ -87,6 +87,15 @@ class ReconnectTokenResponse(BaseModel):
     access_token: str
 
 
+class QrSessionResponse(BaseModel):
+    """State of a QR login (flow_type ``qr``): starting, waiting_for_scan,
+    reading, ready or error. ``qr`` is a base64 PNG while waiting for a scan."""
+
+    status: str
+    qr: str | None = None
+    error: str | None = None
+
+
 class ConnectionSettingsUpdate(BaseModel):
     display_name: Optional[str] = None
     payee_source: Optional[Literal["auto", "merchant", "payment_data", "description", "none"]] = None
