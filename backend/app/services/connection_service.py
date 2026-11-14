@@ -1689,19 +1689,16 @@ async def _find_existing_connected_account(
     if account is not None:
         return account
 
-    # The provider re-keyed this account. Enable Banking issues a `uid` scoped to
-    # one session, so reauthorising changes it while `stable_external_id` (the
-    # identification_hash) survives. Rebind the existing row, keeping its
-    # transactions, rules and name overrides, instead of inserting a duplicate.
-    # EB does not guarantee the hash is unique, so require exactly one unclaimed
-    # candidate: a row another incoming account already took in this run carries
-    # an external_id that is in the batch, and adopting it a second time would
-    # put both transaction feeds on one account.id.
+    # Re-keyed providers expose either a stable ID or the predecessor ID.
+    # Ambiguous or already-claimed candidates must fail closed.
     if acc_data.stable_external_id:
         stable_rows = (await session.execute(
             select(Account).where(
                 Account.connection_id == connection.id,
-                Account.stable_external_id == acc_data.stable_external_id,
+                or_(
+                    Account.stable_external_id == acc_data.stable_external_id,
+                    Account.external_id == acc_data.stable_external_id,
+                ),
             )
         )).scalars().all()
         stable_rows = [

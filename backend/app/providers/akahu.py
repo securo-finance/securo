@@ -210,9 +210,8 @@ class AkahuProvider(BankProvider):
             balance = _to_decimal(balance_obj.get("current")) or Decimal("0")
             acc_type = _TYPE_MAP.get(str(raw.get("type") or "").upper(), "checking")
             if acc_type == "credit_card":
-                # The sync layer stores connected credit cards positive-for-debt
-                # (display negates); Akahu reports amounts owed as negative.
-                balance = -balance
+                # Classic and official connections disagree on the debt sign.
+                balance = abs(balance)
             connection = _optional_object(raw.get("connection"), "connection")
             if connection.get("name") and connection["name"] not in connection_names:
                 connection_names.append(connection["name"])
@@ -226,6 +225,7 @@ class AkahuProvider(BankProvider):
                     currency=str(balance_obj.get("currency") or "NZD"),
                     credit_limit=_to_decimal(balance_obj.get("limit")),
                     masked_number=mask_last4(raw.get("formatted_account")),
+                    stable_external_id=raw.get("_migrated"),
                     institution_external_id=connection.get("_id"),
                     institution_name=connection.get("name"),
                     institution_logo_url=connection.get("logo"),
