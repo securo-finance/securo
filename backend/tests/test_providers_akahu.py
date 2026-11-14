@@ -130,6 +130,37 @@ async def test_credit_card_balance_stored_positive_for_debt():
 
 
 @pytest.mark.asyncio
+async def test_migrated_credit_card_positive_balance_stays_positive():
+    item = _account_item(
+        _id="acc_new",
+        _migrated="acc_old",
+        type="CREDITCARD",
+        balance={"current": 1775.81, "currency": "NZD"},
+    )
+
+    def handler(request):
+        return httpx.Response(200, json={"success": True, "items": [item]})
+
+    with _patched_client(handler):
+        accounts = await AkahuProvider().get_accounts(CREDS)
+
+    assert accounts[0].balance == Decimal("1775.81")
+
+
+@pytest.mark.asyncio
+async def test_migrated_account_exposes_predecessor_id():
+    item = _account_item(_id="acc_new", _migrated="acc_old")
+
+    def handler(request):
+        return httpx.Response(200, json={"success": True, "items": [item]})
+
+    with _patched_client(handler):
+        accounts = await AkahuProvider().get_accounts(CREDS)
+
+    assert accounts[0].stable_external_id == "acc_old"
+
+
+@pytest.mark.asyncio
 async def test_unknown_account_type_falls_back_to_checking():
     item = _account_item(_id="acc_tax", type="TAX", balance={"current": 12.34, "currency": "NZD"})
 

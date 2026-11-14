@@ -627,6 +627,62 @@ async def test_sync_rematches_rekeyed_account_by_stable_external_id(
 
 
 @pytest.mark.asyncio
+async def test_sync_rematches_migrated_account_by_predecessor_external_id(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+):
+    conn = await _make_connection(session, test_user.id, "Kiwibank")
+    conn.provider = "akahu"
+    existing = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn.id,
+        external_id="acc_old",
+        name="Every day",
+        type="checking",
+        balance=Decimal("10"),
+        currency="NZD",
+    )
+    session.add(existing)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(
+        return_value=[
+            AccountData(
+                external_id="acc_new",
+                stable_external_id="acc_old",
+                name="Every day",
+                type="checking",
+                balance=Decimal("25"),
+                currency="NZD",
+            )
+        ]
+    )
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with (
+        patch("app.services.connection_service.get_provider", return_value=mock_provider),
+        p1,
+        p2,
+        p3,
+    ):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = (
+        await session.execute(select(Account).where(Account.connection_id == conn.id))
+    ).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].id == existing.id
+    assert rows[0].external_id == "acc_new"
+    assert rows[0].stable_external_id == "acc_old"
+
+
+@pytest.mark.asyncio
 async def test_sync_rematches_legacy_account_by_masked_number(
     session: AsyncSession, test_user, test_workspace,
 ):
