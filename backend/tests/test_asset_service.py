@@ -1002,6 +1002,47 @@ async def test_portfolio_trend_total_consistent_with_get_asset_values_at(
 
 
 @pytest.mark.asyncio
+async def test_values_at_past_date_counts_asset_sold_later(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """An asset sold after `as_of_date` was still held on it; the live view
+    and dates from the sale on leave it out."""
+    sold = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Sold Car", type="vehicle", currency="BRL", valuation_method="manual",
+        purchase_date=date(2025, 1, 10), purchase_price=Decimal("30000"),
+        sell_date=date(2025, 3, 15), sell_price=Decimal("28000"),
+    )
+    session.add(sold)
+    await session.flush()
+    session.add(AssetValue(
+        id=uuid.uuid4(), asset_id=sold.id,
+        amount=Decimal("29000"), date=date(2025, 2, 1), source="manual",
+    ))
+    await session.commit()
+
+    totals, primary = await asset_service.get_asset_values_at(
+        session, test_workspace.id, as_of_date=date(2025, 2, 28),
+        primary_currency="BRL", by_workspace=True,
+    )
+    assert totals == {"BRL": 29000.0}
+    assert primary == pytest.approx(29000.0)
+
+    for as_of in (date(2025, 3, 15), date(2025, 3, 31), None):
+        totals, primary = await asset_service.get_asset_values_at(
+            session, test_workspace.id, as_of_date=as_of,
+            primary_currency="BRL", by_workspace=True,
+        )
+        assert totals == {}
+        assert primary == 0.0
+
+    # The portfolio chart already counts it on that date.
+    trend = await get_portfolio_trend(session, test_workspace.id, test_user.id)
+    feb = next(r for r in trend["trend"] if r["date"] == "2025-02-01")
+    assert feb["_total"] == pytest.approx(29000.0)
+
+
+@pytest.mark.asyncio
 async def test_get_assets_include_archived(session: AsyncSession, test_user: User, test_workspace):
     await asset_service.create_asset(
         session, test_workspace.id, test_user.id, AssetCreate(name="A1", type="other", currency="BRL"),

@@ -26,7 +26,7 @@ describe('invalidateCategoryQueries', () => {
 })
 
 describe('invalidateFinancialQueries', () => {
-  it('invalidates every financial prefix including recurring list, recent changes and histories', () => {
+  it('invalidates every financial prefix including both recurring evidence families', () => {
     const queryClient = new QueryClient()
     const affected = [
       ['transactions', { account: 'a1' }],
@@ -35,13 +35,20 @@ describe('invalidateFinancialQueries', () => {
       ['budgets', 'comparison'],
       ['reports', 'cash-flow'],
       ['drill-down', 'transactions'],
-      ['recurring'],
       ['recurring', 'recent-price-changes', 20],
       ['recurring', 'recent-price-changes', 1],
       ['recurring', 'price-history', 'rt-1'],
       ['recurring', 'price-history', 'rt-2'],
     ] as const
-    const unrelated = [['categories'], ['payees'], ['recurring-settings']] as const
+    // The recurring list is not derived from transaction evidence: an ordinary
+    // financial mutation must not refetch it. Only the two history consumers
+    // above depend on linked transaction rows.
+    const unrelated = [
+      ['recurring'],
+      ['categories'],
+      ['payees'],
+      ['recurring-settings'],
+    ] as const
     for (const key of [...affected, ...unrelated]) queryClient.setQueryData(key, [])
 
     invalidateFinancialQueries(queryClient)

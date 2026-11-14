@@ -7,11 +7,13 @@ here writes, and the signal is recomputed on every read.
 
 Detection rules:
 
-- Eligibility: workspace + series link, real-source allowlist
-  (``sync``/``import``/``ofx``/``csv``/``manual``), ``posted``, not ignored, not a
-  transfer leg, same direction and currency as the series, strictly positive
-  amount. A generated ``source="recurring"`` placeholder is a schedule
-  projection, not proof a merchant charged that amount.
+- Eligibility: workspace + series link, observed-source allowlist
+  (``sync``/``import``/``ofx``/``csv``/``manual`` plus ``recurring``),
+  ``posted``, not ignored, not a transfer leg, same direction and currency as
+  the series, strictly positive amount. ``source="recurring"`` is evidence only
+  when it is posted: the generator books those rows for accounts with no bank
+  sync, where nothing else records the charge. Unposted generated rows are
+  schedule projections, not charges.
 - Normalization: sort by ``(date, id)``; same-date rows with one
   amount collapse to one observation, same-date rows with different amounts
   mark the date ambiguous (omitted, chain resets at the next clean
@@ -50,9 +52,14 @@ from app.schemas.recurring_price_change import (
 
 # Real-transaction sources a recurring charge can arrive under, the same
 # allowlist the recurring matcher uses (recurring_match_service._REAL_SOURCES).
-# Excludes "recurring" itself: a generated placeholder is not an observed
-# charge.
 _REAL_SOURCES = ("sync", "import", "ofx", "csv", "manual")
+
+# Evidence a price history can read: the matcher's real sources plus
+# "recurring" itself. The generator writes source="recurring" rows and marks
+# them posted only for accounts nothing else writes to (no bank sync), where
+# that row is the recorded charge. Synced accounts keep the generated row
+# pending, and the status check below still rejects every unposted placeholder.
+_OBSERVED_SOURCES = (*_REAL_SOURCES, "recurring")
 
 #: One persisted minor unit under Numeric(15, 2): the v1 noise band and the
 #: quantization scale. A currency-minor-unit resolver must replace this
@@ -118,7 +125,7 @@ def is_eligible_occurrence(series: _Series, tx: _Occurrence) -> bool:
         return False
     if tx.recurring_transaction_id != series.id:
         return False
-    if tx.source not in _REAL_SOURCES:
+    if tx.source not in _OBSERVED_SOURCES:
         return False
     if tx.status != "posted":
         return False
@@ -330,7 +337,7 @@ async def get_price_history(
         .where(
             Transaction.recurring_transaction_id == series.id,
             Transaction.workspace_id == series.workspace_id,
-            Transaction.source.in_(_REAL_SOURCES),
+            Transaction.source.in_(_OBSERVED_SOURCES),
             Transaction.status == "posted",
             Transaction.is_ignored.is_(False),
             Transaction.transfer_pair_id.is_(None),
@@ -388,7 +395,7 @@ async def get_recent_price_changes(
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             Transaction.workspace_id == RecurringTransaction.workspace_id,
-            Transaction.source.in_(_REAL_SOURCES),
+            Transaction.source.in_(_OBSERVED_SOURCES),
             Transaction.status == "posted",
             Transaction.is_ignored.is_(False),
             Transaction.transfer_pair_id.is_(None),

@@ -38,6 +38,7 @@ _ROUTE_RESOURCES: dict[str, tuple[str, ...]] = {
     "recurring": ("/api/recurring-transactions",),
     "assets": ("/api/assets", "/api/asset-groups"),
     "reports": ("/api/reports", "/api/dashboard"),
+    "invoices": ("/api/invoices", "/api/invoice-schedules"),
 }
 
 # Resources whose routes only ever read: a `:write` scope is meaningless.

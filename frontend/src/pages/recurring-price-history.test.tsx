@@ -11,6 +11,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 
 import RecurringPage from '@/pages/recurring'
 import { formatCurrency } from '@/lib/format'
+import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { i18n, renderWithProviders, t } from '@/test/utils'
 import type { RecurringPriceChange, RecurringPriceChangeHistory, RecurringTransaction } from '@/types'
 import gapWitness from '@/test/fixtures/recurring-price-change-31-days.json'
@@ -507,6 +508,38 @@ describe('Recurring maintainer correction regressions', () => {
     expect(heading).not.toBeInTheDocument()
     expect(card).not.toBeInTheDocument()
     expect(screen.queryByText(t('recurring.priceChangesEmpty'))).not.toBeInTheDocument()
+  })
+
+  it('refreshes linked price evidence without invalidating the recurring list', async () => {
+    const { user, queryClient } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    await screen.findByText('Netflix')
+    await user.click(historyButton('Netflix'))
+    await screen.findByRole('dialog')
+    await waitFor(() => expect(api.recurring.priceHistory).toHaveBeenCalledTimes(1))
+    const listCalls = api.recurring.list.mock.calls.length
+    const recentCalls = api.recurring.recentPriceChanges.mock.calls.length
+    const historyCalls = api.recurring.priceHistory.mock.calls.length
+
+    // The helper every ordinary financial mutation calls.
+    invalidateFinancialQueries(queryClient)
+
+    // Linked transaction evidence changed: both history consumers refetch.
+    await waitFor(() => expect(api.recurring.recentPriceChanges.mock.calls.length)
+      .toBe(recentCalls + 1))
+    await waitFor(() => expect(api.recurring.priceHistory.mock.calls.length)
+      .toBe(historyCalls + 1))
+    // The series schedule itself did not: no blanket list refetch.
+    expect(api.recurring.list.mock.calls.length).toBe(listCalls)
+  })
+
+  it('uses the PT-BR "cobranças lançadas" insufficient-history copy', async () => {
+    await i18n.changeLanguage('pt-BR')
+    const { user } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
+    await screen.findByText('Netflix')
+    await user.click(historyButton('Netflix'))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText(/cobranças lançadas/)).toBeInTheDocument()
+    expect(within(dialog).queryByText(/cobranças publicadas/)).not.toBeInTheDocument()
   })
 
   const effects = [

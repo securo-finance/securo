@@ -90,6 +90,31 @@ async def test_recent_calendar_boundary_keeps_older_baseline(
     assert response.json() == ([event] if in_recent else [])
 
 
+async def test_api_includes_posted_generated_manual_charge(
+    client, auth_headers, session, test_user, test_workspace, test_account,
+):
+    test_workspace.timezone = "UTC"
+    series, rows = await _seed(session, test_user, test_workspace, test_account,
+                               "Manual generated", _observations(TODAY))
+    # A manual/no-bank-sync account is booked by the generator itself: source
+    # "recurring" with status "posted". Both readers must treat it as evidence.
+    rows[2].source = "recurring"
+    await session.commit()
+
+    history = await client.get(f"/api/recurring-transactions/{series.id}/price-changes",
+                               headers=auth_headers)
+    assert history.status_code == 200
+    body = history.json()
+    assert body["eligible_occurrence_count"] == 3
+    assert body["eligibility"] == "changes_detected"
+    assert [event["current_transaction_id"] for event in body["changes"]] == [str(rows[2].id)]
+
+    recent = await client.get(RECENT, headers=auth_headers)
+    assert recent.status_code == 200
+    assert [event["recurring_id"] for event in recent.json()] == [str(series.id)]
+    assert recent.json() == body["changes"]
+
+
 async def test_recent_selects_eligible_event_before_future_latest(
     client, auth_headers, session, test_user, test_workspace, test_account,
 ):
@@ -144,8 +169,12 @@ async def test_recent_uses_workspace_calendar_at_same_instant(
 async def test_recent_analysis_does_not_dispatch_to_thread(
     session, test_user, test_workspace, test_account, monkeypatch,
 ):
+    test_workspace.timezone = "UTC"
     series, _ = await _seed(session, test_user, test_workspace, test_account,
                             "Direct analysis", _observations(TODAY))
+    # A direct service call does not pass through the request dependency that
+    # applies the workspace calendar, so bind the same operation context here.
+    ambient_today = app_clock.app_today()
     original = asyncio.to_thread
     dispatches = []
 
@@ -154,7 +183,9 @@ async def test_recent_analysis_does_not_dispatch_to_thread(
         return await original(func, *args, **kwargs)
 
     monkeypatch.setattr(asyncio, "to_thread", observe_dispatch)
-    recent = await get_recent_price_changes(session, test_workspace.id)
+    async with app_clock.use_timezone(session, test_workspace.id):
+        recent = await get_recent_price_changes(session, test_workspace.id)
+    assert app_clock.app_today() == ambient_today  # operation context reset
     assert len(recent) == 1
     assert recent[0].recurring_id == series.id
     assert recent[0].current_amount == Decimal("12.00")

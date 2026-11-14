@@ -329,13 +329,37 @@ def test_pending_and_recurring_placeholder_rows_are_excluded():
     series = _series()
     rows = _monthly_rows(series, ["10.00", "10.00", "12.00", "12.00"])
     rows[2] = _tx(series, "12.00", rows[2].date, status="pending")
-    rows[3] = _tx(series, "12.00", rows[3].date, source="recurring")
+    # An unposted generated row is still a schedule projection, whatever wrote
+    # it; only a posted generated row counts as a recorded charge.
+    rows[3] = _tx(series, "12.00", rows[3].date, source="recurring", status="pending")
 
     events = detect_price_changes(series, rows)
 
     assert events == []
     assert count_clean_observations(series, rows) == 2
     assert classify_eligibility(2, events) == "insufficient_history"
+
+
+def test_posted_generated_manual_charge_is_price_evidence():
+    series = _series()
+    rows = _monthly_rows(series, ["10.00", "10.00", "12.00"])
+    # Manual/no-bank-sync series: the generator books the charge itself with
+    # source="recurring" and status="posted" (recurring_transaction_service).
+    rows[2] = _tx(series, "12.00", rows[2].date, source="recurring", status="posted")
+
+    events = detect_price_changes(series, rows)
+
+    assert len(events) == 1
+    assert events[0].current_transaction_id == rows[2].id
+    assert (events[0].previous_amount, events[0].current_amount) == (
+        Decimal("10.00"), Decimal("12.00"))
+    assert count_clean_observations(series, rows) == 3
+
+    # A later unposted placeholder never becomes the baseline or the candidate.
+    pending = _tx(series, "15.00", _add_months(_START, 3),
+                  source="recurring", status="pending")
+    assert detect_price_changes(series, [*rows, pending]) == events
+    assert count_clean_observations(series, [*rows, pending]) == 3
 
 
 def test_credit_refund_on_debit_series_is_excluded():
@@ -551,7 +575,9 @@ async def test_price_history_query_filters_source_status_and_ignore(
     rows.append(_tx(series, "12.00", _add_months(_START, 3), source="opening_balance"))
     rows.append(_tx(series, "12.00", _add_months(_START, 4), status="pending"))
     rows.append(_tx(series, "12.00", _add_months(_START, 5), is_ignored=True))
-    rows.append(_tx(series, "12.00", _add_months(_START, 6), source="recurring"))
+    # Pending generated rows stay projections; a posted one is covered below.
+    rows.append(_tx(series, "12.00", _add_months(_START, 6),
+                    source="recurring", status="pending"))
     await _persist(session, series, rows)
 
     history = await get_price_history(session, series.id, test_workspace.id)
@@ -560,6 +586,46 @@ async def test_price_history_query_filters_source_status_and_ignore(
     assert history.eligible_occurrence_count == 3
     assert history.eligibility == "no_qualifying_change"
     assert history.changes == []
+
+
+async def test_price_history_includes_posted_generated_charge(
+    session, test_workspace, test_user
+):
+    series = _series(workspace_id=test_workspace.id)
+    rows = _monthly_rows(series, ["10.00", "10.00", "12.00"])
+    rows[2] = _tx(series, "12.00", rows[2].date, source="recurring", status="posted")
+    # A pending generated row after the change must not extend the history.
+    rows.append(_tx(series, "15.00", _add_months(_START, 3),
+                    source="recurring", status="pending"))
+    await _persist(session, series, rows)
+
+    history = await get_price_history(session, series.id, test_workspace.id)
+    assert history is not None
+    assert history.eligible_occurrence_count == 3
+    assert history.eligibility == "changes_detected"
+    assert len(history.changes) == 1
+    assert history.changes[0].current_transaction_id == rows[2].id
+    assert history.changes[0].current_amount == Decimal("12.00")
+
+
+async def test_recent_includes_posted_generated_charge_and_skips_pending_placeholder(
+    session, test_workspace, test_user
+):
+    series = _series(workspace_id=test_workspace.id)
+    rows = _monthly_rows(series, ["10.00", "10.00", "12.00"])
+    rows[2] = _tx(series, "12.00", rows[2].date, source="recurring", status="posted")
+    await _persist(session, series, rows)
+
+    recent = await get_recent_price_changes(session, test_workspace.id)
+    assert len(recent) == 1
+    assert recent[0].recurring_id == series.id
+    assert recent[0].current_transaction_id == rows[2].id
+    assert recent[0].current_amount == Decimal("12.00")
+
+    rows.append(_tx(series, "15.00", _add_months(rows[2].date, 1),
+                    source="recurring", status="pending"))
+    await _persist(session, series, rows, compact_calendar=False)
+    assert await get_recent_price_changes(session, test_workspace.id) == recent
 
 
 async def test_price_history_query_reflects_unlink(session, test_workspace, test_user):
@@ -723,7 +789,7 @@ async def test_recent_projection_matches_full_history_without_loading_entities(
             ])
         rows.extend([
             _tx(series, "99.00", date(2027, 1, 15), is_ignored=True),
-            _tx(series, "99.00", date(2027, 2, 15), source="recurring"),
+            _tx(series, "99.00", date(2027, 2, 15), source="recurring", status="pending"),
             _tx(series, "99.00", date(2027, 3, 15), currency="USD"),
             _tx(series, "99.00", date(2027, 4, 15), status="pending"),
             _tx(series, "99.00", date(2027, 5, 15), transfer_pair_id=uuid.uuid4()),

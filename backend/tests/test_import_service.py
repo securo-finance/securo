@@ -20,6 +20,18 @@ from app.services.import_service import (
 )
 
 
+class _RateProviderFactoryStub:
+    """Keep import tests' rate stub while the service builds providers per call."""
+
+    def __init__(self):
+        self.name = "test"
+        self.fetch_latest = AsyncMock(return_value={})
+        self.fetch_historical = AsyncMock(return_value={})
+
+    def __call__(self, _settings):
+        return self
+
+
 class TestParseCsv:
     """Tests for the parse_csv function."""
 
@@ -208,6 +220,16 @@ class TestParseCsv:
         transactions, _ = parse_csv(csv_content.encode("utf-8"), date_format="DD/MM/YYYY")
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 4, 3)
+
+    def test_parse_csv_auto_date_order_from_whole_file(self):
+        """Auto mode reads every row month-first when one date can only be MM/DD."""
+        csv_content = (
+            "date,description,amount\n"
+            "11/03/2026,Coffee,-4.50\n"
+            "11/14/2026,Paycheck,2500.00\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+        assert [t.date for t in transactions] == [date(2026, 11, 3), date(2026, 11, 14)]
 
     def test_parse_csv_flip_amount(self):
         """Flip amount should negate amounts, swapping credit/debit."""
@@ -1432,7 +1454,7 @@ class TestImportTransactionsFx:
     """
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_import_with_fx_rate_from_csv(self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account):
         """When CSV provides fx_rate, it should be used directly without calling FX service."""
         from app.schemas.transaction import TransactionImport
@@ -1528,7 +1550,7 @@ class TestImportTransactionsFx:
         assert tx.description_is_rule_managed is False
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_import_foreign_currency_without_fx_rate_auto_converts(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1572,7 +1594,7 @@ class TestImportTransactionsFx:
         assert float(tx.amount_primary) > 500  # 100 EUR * ~5.43 = ~543
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_import_uses_account_currency_as_default(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace,
     ):
@@ -1624,7 +1646,7 @@ class TestImportTransactionsFx:
         assert tx.currency == "USD"
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_import_brl_into_brl_account_no_fx(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1662,7 +1684,7 @@ class TestImportTransactionsFx:
         mock_provider.fetch_historical.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_import_csv_currency_overrides_account_currency(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1832,7 +1854,7 @@ class TestImportTransactionsWithCategory:
     """Tests for category_name → category_id resolution in import_transactions."""
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_known_category_name_resolved_to_id(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1870,7 +1892,7 @@ class TestImportTransactionsWithCategory:
         assert tx.category_id == category.id
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_unknown_category_name_leaves_uncategorized(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1899,7 +1921,7 @@ class TestImportTransactionsWithCategory:
         assert tx.category_id is None
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_hidden_category_name_leaves_uncategorized(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1941,7 +1963,7 @@ class TestImportTransactionsWithCategory:
         assert tx.category_id is None
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_category_name_matches_case_insensitively(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1977,7 +1999,7 @@ class TestImportTransactionsWithCategory:
         assert tx.category_id == category.id
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_no_category_name_leaves_uncategorized(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -2005,7 +2027,7 @@ class TestImportTransactionsWithCategory:
         assert tx.category_id is None
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_multiple_categories_resolved_correctly(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -2073,7 +2095,7 @@ class TestImportTransactionsWithCategory:
         assert unknown_tx.category_id is None
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_end_to_end_parse_and_import_with_type_and_category(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -2774,7 +2796,7 @@ class TestForceUncategorized:
 
 
 @pytest.mark.asyncio
-@patch("app.services.fx_rate_service._provider")
+@patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
 async def test_import_tolerates_duplicate_external_id_rows(
     mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
 ):

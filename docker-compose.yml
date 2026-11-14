@@ -50,6 +50,14 @@ x-backend-env: &backend-env
   OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
   FX_SYNC_MODE: ${FX_SYNC_MODE:-on_demand}
   TESOURO_DIRETO_ENABLED: ${TESOURO_DIRETO_ENABLED:-true}
+  # Data plugins (categories and rules) from the plugin catalog, opt-in.
+  # No extra container: the catalog is fetched only when someone opens it.
+  PLUGINS_ENABLED: ${PLUGINS_ENABLED:-false}
+  PLUGINS_INDEX_URL: ${PLUGINS_INDEX_URL:-https://plugins.usesecuro.com/v1/index.json}
+  # Plugins with code run in the plugins-runner container below, started only
+  # with `--profile plugins`. Blank PLUGINS_RUNNER_URL: no plugin with code.
+  PLUGINS_RUNNER_URL: ${PLUGINS_RUNNER_URL:-}
+  PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-}
   STORAGE_LOCAL_PATH: /app/data/attachments
   AGENTS_KNOWLEDGE_STORAGE_PATH: /app/data/agent_knowledge
   # Agents/LLM feature, opt-in. Off by default so existing users pay
@@ -103,6 +111,9 @@ x-backend-base: &backend-base
     - attachments:/app/data/attachments
     - agent_knowledge:/app/data/agent_knowledge
     - agent_embedding_models:/app/data/embedding_models
+  # `plugins` is internal: it lets the backend reach the plugin runner and
+  # nothing else. It costs nothing while the `plugins` profile is off.
+  networks: [default, plugins]
   restart: unless-stopped
 
 services:
@@ -203,7 +214,68 @@ services:
     ports:
       - "${AGENTS_MCP_EXTERNAL_HOST_PORT:-127.0.0.1:8765}:8765"
 
+  # Optional: plugins with code. Only start under the `plugins` profile
+  # (`docker compose --profile plugins up`, with PLUGINS_ENABLED=true,
+  # PLUGINS_RUNNER_URL=http://plugins-runner:8090, and PLUGINS_RUNNER_TOKEN and
+  # PLUGINS_EGRESS_SECRET set to long random values: there is no default, since
+  # plugin code runs next to the runner's API). Same image as the backend,
+  # but none of its environment: no SECRET_KEY, no database, no provider keys.
+  # The runner sits only on the internal `plugins` network, so it can't reach
+  # the database, Redis or the internet; each plugin runs as its own user and
+  # goes out only through plugins-egress, to the hosts it declared.
+  plugins-runner:
+    build: ./backend
+    profiles: [plugins]
+    command: uvicorn --factory plugin_runner.main:create_app --host 0.0.0.0 --port 8090
+    environment:
+      PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-}
+      PLUGINS_EGRESS_SECRET: ${PLUGINS_EGRESS_SECRET:-}
+      PLUGINS_EGRESS_PROXY: plugins-egress:3128
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      # Only the runner's own code, never the whole backend folder: a plugin
+      # could read backend/.env or secrets from it.
+      - ./backend/plugin_runner:/app/plugin_runner:ro
+      - plugins:/var/lib/securo-plugins
+    networks: [plugins]
+    read_only: true
+    tmpfs: [/tmp]
+    # Root only to hand each plugin its own user and clean up after it.
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
+    security_opt: ["no-new-privileges:true"]
+    # An init reaps what killed plugin processes leave behind (the runner isn't PID 1).
+    init: true
+    # Caps for everything plugins start together (each call also has its own limits).
+    pids_limit: 512
+    mem_limit: ${PLUGINS_RUNNER_MEMORY:-2g}
+    restart: unless-stopped
+
+  # The plugins' only way out: a CONNECT proxy that checks each plugin's signed
+  # pass against the hosts it declared and refuses private addresses. TLS goes
+  # through untouched (client certificates keep working).
+  plugins-egress:
+    build: ./backend
+    profiles: [plugins]
+    command: python -m plugin_runner.egress
+    environment:
+      PLUGINS_EGRESS_SECRET: ${PLUGINS_EGRESS_SECRET:-}
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./backend/plugin_runner:/app/plugin_runner:ro
+    networks: [default, plugins]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "65534:65534"
+    restart: unless-stopped
+
+networks:
+  plugins:
+    internal: true
+
 volumes:
+  plugins:
   pgdata:
   attachments:
   agent_knowledge:

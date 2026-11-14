@@ -84,6 +84,7 @@ function tx(over: Partial<Transaction> & { id: string; description: string }): T
     installment_purchase_date: null, installment_series_id: null, bill_id: null,
     effective_bill_date: null, splits: [], is_ignored: false,
     ...over,
+    reporting_date_override: over.reporting_date_override ?? null,
   }
 }
 

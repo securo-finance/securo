@@ -958,7 +958,7 @@ async def test_recent_price_changes_limit_is_bounded(
 
 
 @pytest.mark.asyncio
-async def test_price_history_reuses_real_source_allowlist(
+async def test_price_history_rejects_non_evidence_sources(
     client, auth_headers, session, test_user, test_workspace, test_account
 ):
     series, rows = await _seed_price_series(
@@ -970,9 +970,15 @@ async def test_price_history_reuses_real_source_allowlist(
         start=date(2026, 1, 15),
         amounts=("10.00", "10.00", "10.00"),
     )
-    # Synthetic rows at a new amount would complete a price change if the
-    # real-source allowlist leaked.
-    for offset, source in ((3, "opening_balance"), (4, "recurring")):
+    # Non-evidence rows at a new amount would complete a price change if they
+    # leaked into the observed-source allowlist: opening_balance was never a
+    # charge, and an unposted generated row is only a schedule projection.
+    # (A posted generated row is the manual-account charge and is covered by
+    # the recurring-price-change regressions.)
+    for offset, source, status in (
+        (3, "opening_balance", "posted"),
+        (4, "recurring", "pending"),
+    ):
         session.add(
             Transaction(
                 id=uuid.uuid4(),
@@ -985,7 +991,7 @@ async def test_price_history_reuses_real_source_allowlist(
                 date=_add_months(date(2026, 1, 15), offset),
                 type="debit",
                 source=source,
-                status="posted",
+                status=status,
                 recurring_transaction_id=series.id,
             )
         )
