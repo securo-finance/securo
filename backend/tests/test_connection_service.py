@@ -1794,6 +1794,28 @@ async def test_sync_connection_enable_banking_late_reference_with_reworded_remit
 
 
 @pytest.mark.asyncio
+async def test_sync_connection_enable_banking_reworded_remittance_through_sync(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The held row is stored by the sync itself, twice over, so the payload
+    the reworded match compares is the one the sync keeps."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    first = _eb_txn(_eb_reworded_payload(None, _TRANSFER_FIRST_REMITTANCE))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [first])
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [first])
+    [held] = await _account_rows(session, account_id)
+    held_id = held.id
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", _TRANSFER_REWORDED_REMITTANCE))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.external_id) for row in rows] == [(held_id, refetched.external_id)]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("held_remittance", "booked_remittance", "held_value_date"),
     [
