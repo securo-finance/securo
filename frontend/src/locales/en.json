@@ -3203,7 +3203,12 @@
       "simplefinDescriptionShort": "Connect accounts using SimpleFIN Bridge.",
       "openExchangeRatesDescription": "Exchange rates for currency conversions.",
       "otherTitle": "Other integrations",
-      "otherDescription": "Manage additional services for your instance."
+      "otherDescription": "Manage additional services for your instance.",
+      "redirectTitle": "Redirect URL",
+      "redirectHint": "Add this URL to your Enable Banking application before entering its credentials.",
+      "copyRedirect": "Copy redirect URL",
+      "redirectCopied": "Redirect URL copied",
+      "copyFailed": "Could not copy. Select the address and copy it manually."
     },
     "title": "Provider configuration",
     "description": "Saved credentials take priority over environment values. Changes apply without a restart. Configured means the required fields are present; credentials are not verified here.",

@@ -3205,7 +3205,12 @@
       "simplefinDescriptionShort": "Koppel rekeningen via SimpleFIN Bridge.",
       "openExchangeRatesDescription": "Wisselkoersen voor valutaomrekeningen.",
       "otherTitle": "Andere integraties",
-      "otherDescription": "Beheer aanvullende diensten voor deze instantie."
+      "otherDescription": "Beheer aanvullende diensten voor deze instantie.",
+      "redirectTitle": "Redirect-URL",
+      "redirectHint": "Voeg deze URL toe aan je Enable Banking-applicatie voordat je de inloggegevens invult.",
+      "copyRedirect": "Redirect-URL kopiëren",
+      "redirectCopied": "Redirect-URL gekopieerd",
+      "copyFailed": "Kopiëren mislukt. Selecteer het adres en kopieer het handmatig."
     },
     "title": "Providerconfiguratie",
     "description": "Opgeslagen inloggegevens hebben voorrang op omgevingswaarden. Wijzigingen gelden zonder herstart. ‘Geconfigureerd’ betekent dat de verplichte velden aanwezig zijn; de inloggegevens worden hier niet gecontroleerd.",

@@ -60,6 +60,8 @@ class ProviderSettingRead(BaseModel):
     configured: bool
     can_store_secrets: bool
     fields: dict[str, ProviderFieldStatus]
+    #: Callback URL to register with the provider, when it uses one.
+    redirect_uri: Optional[str] = None
 
 
 class TimezoneSettingRead(BaseModel):

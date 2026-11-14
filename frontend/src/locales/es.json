@@ -3207,7 +3207,12 @@
       "openExchangeRatesDescription": "Tipos de cambio para conversiones de moneda.",
       "otherTitle": "Otras integraciones",
       "otherDescription": "Administra otros servicios de esta instancia.",
-      "setupGuide": "Guía de configuración"
+      "setupGuide": "Guía de configuración",
+      "redirectTitle": "URL de redirección",
+      "redirectHint": "Añade esta URL a tu aplicación de Enable Banking antes de introducir sus credenciales.",
+      "copyRedirect": "Copiar URL de redirección",
+      "redirectCopied": "URL de redirección copiada",
+      "copyFailed": "No se pudo copiar. Selecciona la dirección y cópiala manualmente."
     },
     "title": "Configuración de proveedores",
     "description": "Las credenciales guardadas tienen prioridad sobre los valores del entorno. Los cambios se aplican sin reiniciar. «Configurado» indica que los campos obligatorios están presentes; aquí no se verifican las credenciales.",

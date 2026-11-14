@@ -3207,7 +3207,12 @@
       "simplefinDescriptionShort": "Liga contas através do SimpleFIN Bridge.",
       "openExchangeRatesDescription": "Taxas de câmbio para conversões de moeda.",
       "otherTitle": "Outras integrações",
-      "otherDescription": "Gere serviços adicionais para esta instância."
+      "otherDescription": "Gere serviços adicionais para esta instância.",
+      "redirectTitle": "URL de retorno",
+      "redirectHint": "Registe este URL na sua aplicação Enable Banking antes de introduzir as credenciais.",
+      "copyRedirect": "Copiar URL de retorno",
+      "redirectCopied": "URL de retorno copiado",
+      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie-o manualmente."
     },
     "title": "Configuração de provedores",
     "description": "As credenciais salvas têm prioridade sobre os valores do ambiente. As alterações são aplicadas sem reiniciar. Configurado indica que os campos obrigatórios estão preenchidos; as credenciais não são verificadas aqui.",

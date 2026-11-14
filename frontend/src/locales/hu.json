@@ -3203,7 +3203,12 @@
       "simplefinDescriptionShort": "Kapcsold össze a számláidat a SimpleFIN Bridge segítségével.",
       "openExchangeRatesDescription": "Árfolyamok a pénznem-átváltásokhoz.",
       "otherTitle": "Egyéb integrációk",
-      "otherDescription": "Kezeld a példányod további szolgáltatásait."
+      "otherDescription": "Kezeld a példányod további szolgáltatásait.",
+      "redirectTitle": "Átirányítási URL",
+      "redirectHint": "Add hozzá ezt az URL-t az Enable Banking alkalmazásodhoz, mielőtt megadod a hitelesítő adatokat.",
+      "copyRedirect": "Átirányítási URL másolása",
+      "redirectCopied": "Átirányítási URL másolva",
+      "copyFailed": "A másolás nem sikerült. Jelöld ki a címet, és másold kézzel."
     },
     "title": "Szolgáltatók konfigurációja",
     "description": "A mentett hitelesítő adatok elsőbbséget élveznek a környezeti értékekkel szemben. A módosítások újraindítás nélkül érvényesek. A „Konfigurálva” azt jelenti, hogy a kötelező mezők ki vannak töltve; a hitelesítő adatokat itt nem ellenőrizzük.",

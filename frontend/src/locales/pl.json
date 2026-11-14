@@ -3323,7 +3323,12 @@
       "simplefinDescriptionShort": "Łącz konta przez SimpleFIN Bridge.",
       "openExchangeRatesDescription": "Kursy walut do przeliczania kwot.",
       "otherTitle": "Inne integracje",
-      "otherDescription": "Zarządzaj dodatkowymi usługami tej instancji."
+      "otherDescription": "Zarządzaj dodatkowymi usługami tej instancji.",
+      "redirectTitle": "Adres URL przekierowania",
+      "redirectHint": "Dodaj ten adres URL do swojej aplikacji Enable Banking przed wpisaniem danych uwierzytelniających.",
+      "copyRedirect": "Kopiuj adres URL przekierowania",
+      "redirectCopied": "Skopiowano adres URL przekierowania",
+      "copyFailed": "Nie udało się skopiować. Zaznacz adres i skopiuj go ręcznie."
     },
     "title": "Konfiguracja dostawców",
     "description": "Zapisane dane uwierzytelniające mają pierwszeństwo przed wartościami środowiska. Zmiany nie wymagają ponownego uruchomienia. „Skonfigurowany” oznacza obecność wymaganych pól; dane nie są tutaj weryfikowane.",

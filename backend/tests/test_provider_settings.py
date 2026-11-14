@@ -495,3 +495,26 @@ def test_every_bank_provider_is_built_with_the_resolved_settings(name):
 
     provider = get_provider(name, settings=settings)
     assert provider.settings is settings
+
+
+@pytest.mark.asyncio
+async def test_enable_banking_status_shows_the_redirect_url_to_register(
+    client, admin_auth_headers, monkeypatch
+):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "frontend_url", "http://localhost:4321/")
+    monkeypatch.setattr(settings, "enable_banking_oauth_redirect_uri", "")
+
+    async def redirect_uris():
+        response = await client.get("/api/admin/provider-settings", headers=admin_auth_headers)
+        assert response.status_code == 200
+        return {item["name"]: item["redirect_uri"] for item in response.json()}
+
+    uris = await redirect_uris()
+    assert uris["enable_banking"] == "http://localhost:4321/oauth/callback"
+    assert all(uri is None for name, uri in uris.items() if name != "enable_banking")
+
+    monkeypatch.setattr(
+        settings, "enable_banking_oauth_redirect_uri", "http://localhost:4321/bank/callback"
+    )
+    assert (await redirect_uris())["enable_banking"] == "http://localhost:4321/bank/callback"

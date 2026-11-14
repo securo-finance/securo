@@ -3207,7 +3207,12 @@
       "openExchangeRatesDescription": "Tassi di cambio per le conversioni valutarie.",
       "otherTitle": "Altre integrazioni",
       "otherDescription": "Gestisci altri servizi per questa istanza.",
-      "setupGuide": "Guida alla configurazione"
+      "setupGuide": "Guida alla configurazione",
+      "redirectTitle": "URL di reindirizzamento",
+      "redirectHint": "Aggiungi questo URL alla tua applicazione Enable Banking prima di inserire le credenziali.",
+      "copyRedirect": "Copia URL di reindirizzamento",
+      "redirectCopied": "URL di reindirizzamento copiato",
+      "copyFailed": "Impossibile copiare. Seleziona l'indirizzo e copialo manualmente."
     },
     "title": "Configurazione dei fornitori",
     "description": "Le credenziali salvate hanno priorità sui valori dell’ambiente. Le modifiche si applicano senza riavvio. «Configurato» indica che i campi obbligatori sono presenti; le credenziali non vengono verificate qui.",

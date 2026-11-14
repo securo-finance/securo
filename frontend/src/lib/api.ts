@@ -1776,6 +1776,8 @@ export interface ProviderSettingStatus {
     invalid: boolean
     environment_configured: boolean
   }>
+  /** Callback URL to register with the provider, derived from the server URL. */
+  redirect_uri?: string | null
 }
 
 export interface TimezoneSetting {

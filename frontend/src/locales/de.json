@@ -3204,7 +3204,12 @@
       "openExchangeRatesDescription": "Wechselkurse für Währungsumrechnungen.",
       "otherTitle": "Weitere Integrationen",
       "otherDescription": "Weitere Dienste für diese Instanz verwalten.",
-      "setupGuide": "Einrichtungsanleitung"
+      "setupGuide": "Einrichtungsanleitung",
+      "redirectTitle": "Weiterleitungs-URL",
+      "redirectHint": "Tragen Sie diese URL in Ihrer Enable-Banking-Anwendung ein, bevor Sie die Zugangsdaten eingeben.",
+      "copyRedirect": "Weiterleitungs-URL kopieren",
+      "redirectCopied": "Weiterleitungs-URL kopiert",
+      "copyFailed": "Kopieren nicht möglich. Markieren Sie die Adresse und kopieren Sie sie manuell."
     },
     "title": "Anbieterkonfiguration",
     "description": "Gespeicherte Zugangsdaten haben Vorrang vor Umgebungswerten. Änderungen gelten ohne Neustart. „Konfiguriert“ bedeutet, dass Pflichtfelder vorhanden sind; die Zugangsdaten werden hier nicht geprüft.",

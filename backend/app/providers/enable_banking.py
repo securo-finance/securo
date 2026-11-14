@@ -397,6 +397,13 @@ def _is_wrong_period_error(resp: httpx.Response) -> bool:
     return isinstance(body, dict) and body.get("error") == "WRONG_TRANSACTIONS_PERIOD"
 
 
+def enable_banking_redirect_uri() -> str:
+    """The callback URL the Enable Banking application must have registered."""
+    return (
+        get_settings().enable_banking_oauth_redirect_uri or default_oauth_redirect_uri()
+    )
+
+
 class EnableBankingProvider(BankProvider):
     """Enable Banking PSD2 connector."""
 
@@ -441,10 +448,7 @@ class EnableBankingProvider(BankProvider):
 
     @property
     def redirect_uri(self) -> str:
-        return (
-            get_settings().enable_banking_oauth_redirect_uri
-            or default_oauth_redirect_uri()
-        )
+        return enable_banking_redirect_uri()
 
     # ----- credentials -----
 

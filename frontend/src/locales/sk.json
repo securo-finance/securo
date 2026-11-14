@@ -3357,7 +3357,12 @@
       "simplefinDescriptionShort": "Pripájaj účty cez SimpleFIN Bridge.",
       "openExchangeRatesDescription": "Výmenné kurzy na prevod mien.",
       "otherTitle": "Ďalšie integrácie",
-      "otherDescription": "Spravuj ďalšie služby tejto inštancie."
+      "otherDescription": "Spravuj ďalšie služby tejto inštancie.",
+      "redirectTitle": "URL presmerovania",
+      "redirectHint": "Pred zadaním prihlasovacích údajov pridajte túto URL do svojej aplikácie Enable Banking.",
+      "copyRedirect": "Kopírovať URL presmerovania",
+      "redirectCopied": "URL presmerovania skopírovaná",
+      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne."
     },
     "title": "Konfigurácia poskytovateľov",
     "description": "Uložené prihlasovacie údaje majú prednosť pred hodnotami prostredia. Zmeny platia bez reštartu. „Nakonfigurovaný“ znamená, že povinné polia sú vyplnené; údaje sa tu neoverujú.",

@@ -3207,7 +3207,12 @@
       "openExchangeRatesDescription": "Taux de change pour les conversions de devises.",
       "otherTitle": "Autres intégrations",
       "otherDescription": "Gérez les autres services de cette instance.",
-      "setupGuide": "Guide de configuration"
+      "setupGuide": "Guide de configuration",
+      "redirectTitle": "URL de redirection",
+      "redirectHint": "Ajoutez cette URL à votre application Enable Banking avant de saisir ses identifiants.",
+      "copyRedirect": "Copier l'URL de redirection",
+      "redirectCopied": "URL de redirection copiée",
+      "copyFailed": "Copie impossible. Sélectionnez l'adresse et copiez-la manuellement."
     },
     "title": "Configuration des fournisseurs",
     "description": "Les identifiants enregistrés priment sur les valeurs d’environnement. Les changements s’appliquent sans redémarrage. « Configuré » indique que les champs requis sont renseignés ; les identifiants ne sont pas vérifiés ici.",

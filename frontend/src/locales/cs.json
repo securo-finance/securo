@@ -3373,7 +3373,12 @@
       "simplefinDescriptionShort": "Připojte účty pomocí SimpleFIN Bridge.",
       "openExchangeRatesDescription": "Směnné kurzy pro převody měn.",
       "otherTitle": "Další integrace",
-      "otherDescription": "Spravujte další služby své instance."
+      "otherDescription": "Spravujte další služby své instance.",
+      "redirectTitle": "URL pro přesměrování",
+      "redirectHint": "Před zadáním přihlašovacích údajů přidejte tuto URL do své aplikace Enable Banking.",
+      "copyRedirect": "Kopírovat URL pro přesměrování",
+      "redirectCopied": "URL pro přesměrování zkopírována",
+      "copyFailed": "Kopírování se nezdařilo. Označte adresu a zkopírujte ji ručně."
     },
     "title": "Konfigurace poskytovatelů",
     "description": "Uložené přihlašovací údaje mají přednost před hodnotami z prostředí. Změny se projeví bez restartu. „Nakonfigurováno“ znamená, že jsou vyplněna povinná pole; přihlašovací údaje se zde neověřují.",

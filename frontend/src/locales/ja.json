@@ -3203,7 +3203,12 @@
       "simplefinDescriptionShort": "SimpleFIN Bridgeで口座を接続します。",
       "openExchangeRatesDescription": "通貨換算に使用する為替レートです。",
       "otherTitle": "その他の連携",
-      "otherDescription": "このインスタンスの追加サービスを管理します。"
+      "otherDescription": "このインスタンスの追加サービスを管理します。",
+      "redirectTitle": "リダイレクトURL",
+      "redirectHint": "認証情報を入力する前に、このURLをEnable Bankingのアプリケーションに登録してください。",
+      "copyRedirect": "リダイレクトURLをコピー",
+      "redirectCopied": "リダイレクトURLをコピーしました",
+      "copyFailed": "コピーできませんでした。アドレスを選択して手動でコピーしてください。"
     },
     "title": "プロバイダー設定",
     "description": "保存した認証情報は環境変数の値より優先されます。変更は再起動せずに反映されます。「設定済み」は必須項目が入力されていることを示し、認証情報の有効性はここでは確認しません。",

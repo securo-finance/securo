@@ -15,6 +15,7 @@ from app.providers.credentials import (
     field_present,
     is_configured,
 )
+from app.providers.enable_banking import enable_banking_redirect_uri
 
 
 class SecretStorageUnavailable(ValueError):
@@ -80,6 +81,11 @@ async def provider_status(session: AsyncSession) -> list[dict]:
                 "configured": is_configured(provider, settings),
                 "can_store_secrets": secret_storage_available,
                 "fields": statuses,
+                # Read-only: derived from the server URL, shown so it can be
+                # registered with the provider.
+                "redirect_uri": (
+                    enable_banking_redirect_uri() if provider == "enable_banking" else None
+                ),
             }
         )
     return result

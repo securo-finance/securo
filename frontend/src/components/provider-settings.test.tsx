@@ -160,6 +160,31 @@ describe('provider settings', () => {
     }))
   })
 
+  it('shows the Enable Banking redirect URL read-only and copies it', async () => {
+    const enableBanking: ProviderSettingStatus = {
+      name: 'enable_banking', configured: false, can_store_secrets: true,
+      fields: {
+        enable_banking_app_id: { configured: false, source: 'none', invalid: false, environment_configured: false },
+      },
+      redirect_uri: 'http://localhost:3000/oauth/callback',
+    }
+    vi.mocked(admin.providerSettings).mockResolvedValue([enableBanking, pluggy])
+    const { user } = renderWithProviders(<ProviderSettings />)
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+
+    await user.click(await screen.findByRole('button', { name: 'Set up Enable Banking' }))
+    const form = screen.getByRole('form', { name: 'Enable Banking' })
+    expect(within(form).getByText('Redirect URL')).toBeVisible()
+    expect(within(form).getByText('http://localhost:3000/oauth/callback')).toBeVisible()
+    expect(within(form).queryByRole('textbox', { name: /redirect/i })).not.toBeInTheDocument()
+    await user.click(within(form).getByRole('button', { name: 'Copy redirect URL' }))
+    expect(writeText).toHaveBeenCalledWith('http://localhost:3000/oauth/callback')
+    await user.click(within(form).getByRole('button', { name: 'Cancel' }))
+
+    await user.click(screen.getByRole('button', { name: 'Manage Pluggy' }))
+    expect(within(screen.getByRole('form', { name: 'Pluggy' })).queryByText('Redirect URL')).not.toBeInTheDocument()
+  })
+
   it('can retry a failed provider status request', async () => {
     vi.mocked(admin.providerSettings).mockRejectedValueOnce(new Error('Offline'))
     const { user } = renderWithProviders(<ProviderSettings />)

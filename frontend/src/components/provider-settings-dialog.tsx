@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, ExternalLink, Loader2, LockKeyhole } from 'lucide-react'
+import { AlertCircle, Copy, ExternalLink, Loader2, LockKeyhole } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,38 @@ type Props = {
   description?: string
   icon: ReactNode
   guideUrl?: string
+}
+
+function RedirectUri({ value }: { value: string }) {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-1.5">
+      <h3 className="text-sm font-semibold">{t('providerSettings.catalog.redirectTitle')}</h3>
+      <p className="text-sm leading-relaxed text-muted-foreground">{t('providerSettings.catalog.redirectHint')}</p>
+      <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+        <code className="min-w-0 flex-1 select-all break-all font-mono text-xs text-foreground">{value}</code>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 w-7 shrink-0 p-0"
+          aria-label={t('providerSettings.catalog.copyRedirect')}
+          onClick={async () => {
+            try {
+              if (!navigator.clipboard) throw new Error('no clipboard')
+              await navigator.clipboard.writeText(value)
+              toast.success(t('providerSettings.catalog.redirectCopied'))
+            } catch {
+              // Some browsers refuse (no HTTPS, no permission): the address stays selectable.
+              toast.error(t('providerSettings.catalog.copyFailed'))
+            }
+          }}
+        >
+          <Copy className="size-3.5" aria-hidden="true" />
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }: Props & { onClose: () => void }) {
@@ -93,6 +125,7 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
       </DialogHeader>
       <form aria-label={name} onSubmit={(event) => { event.preventDefault(); if (canSave) save.mutate(undefined) }}>
         <div className="space-y-6 px-5 py-6 sm:px-6">
+          {provider.redirect_uri && <RedirectUri value={provider.redirect_uri} />}
           {!isSimplefin && (
             <div className="space-y-1.5">
               <h3 className="text-sm font-semibold">{t('providerSettings.catalog.credentialsTitle')}</h3>
