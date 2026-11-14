@@ -247,7 +247,7 @@ export function ImportReviewTable({
                     {tx.description}
                   </TableCell>
                   <TableCell className={`py-2.5 text-end text-sm font-bold tabular-nums ${tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {tx.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}
+                    <span dir="ltr">{tx.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}</span>
                   </TableCell>
                   <TableCell className="py-2.5">
                     {tx.category_lines?.length ? (

@@ -78,7 +78,7 @@ import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
-import { formatCurrency } from '@/lib/format'
+import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { readCalendarDateBasis } from '@/lib/transaction-calendar'
@@ -1082,11 +1082,11 @@ export default function TransactionsPage() {
           }`}
         >
           {mask(
-            `${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '−'}${formatCurrency(
+            ltrAmount(`${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '−'}${formatCurrency(
               Math.abs(displayAmount),
               tx.currency,
               locale,
-            )}`,
+            )}`),
           )}
         </span>
         {tx.is_shared && (
@@ -1998,11 +1998,11 @@ export default function TransactionsPage() {
                   }`}
                 >
                   {mask(
-                    `${selectedNet >= 0 ? '+' : '−'}${formatCurrency(
+                    ltrAmount(`${selectedNet >= 0 ? '+' : '−'}${formatCurrency(
                       Math.abs(selectedNet),
                       userCurrency,
                       locale,
-                    )}`,
+                    )}`),
                   )}
                 </span>
               </div>

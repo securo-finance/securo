@@ -466,7 +466,7 @@ function ActivityBars({
     if (activity.actualExpense > 0) actualParts.push(`${t('transactions.summaryExpenses')} −${amount(activity.actualExpense)}`)
     const projectedParts: string[] = []
     if (activity.projectedIncome > 0) projectedParts.push(ltrAmount(`+${amount(activity.projectedIncome)}`))
-    if (activity.projectedExpense > 0) projectedParts.push(`−${amount(activity.projectedExpense)}`)
+    if (activity.projectedExpense > 0) projectedParts.push(ltrAmount(`−${amount(activity.projectedExpense)}`))
     const segments = [
       String(displayDayNumber(activity.date)),
       actualParts.length > 0 ? actualParts.join(' · ') : t('transactions.calendarNoMovements'),
@@ -869,7 +869,7 @@ function DayPreviewRow({
           amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
         )}
       >
-        {mask(`${amount >= 0 ? '+' : '−'}${compactCurrency(Math.abs(item.amount), item.currency, locale)}`)}
+        {mask(ltrAmount(`${amount >= 0 ? '+' : '−'}${compactCurrency(Math.abs(item.amount), item.currency, locale)}`))}
       </span>
     </div>
   )
@@ -898,7 +898,7 @@ function DayCellActivity({
   const activity = dayActivity(day)
   const projectedParts = [
     activity.projectedIncome > 0 ? mask(ltrAmount(`+${compactCurrency(activity.projectedIncome, currency, locale)}`)) : null,
-    activity.projectedExpense > 0 ? mask(`−${compactCurrency(activity.projectedExpense, currency, locale)}`) : null,
+    activity.projectedExpense > 0 ? mask(ltrAmount(`−${compactCurrency(activity.projectedExpense, currency, locale)}`)) : null,
   ].filter(Boolean)
 
   if (!activity.hasActual && !activity.hasProjected) {
@@ -928,7 +928,7 @@ function DayCellActivity({
           )}
           {activity.actualExpense > 0 && (
             <span className="text-rose-600 dark:text-rose-400">
-              {mask(`−${compactCurrency(activity.actualExpense, currency, locale)}`)}
+              {mask(ltrAmount(`−${compactCurrency(activity.actualExpense, currency, locale)}`))}
             </span>
           )}
         </p>
@@ -1107,7 +1107,7 @@ function SelectedDayPanel({
   const headline = metric === 'balance' ? day.ending_balance : activity.actualNet
   const headlineLabel = metric === 'balance'
     ? mask(formatCurrency(day.ending_balance, currency, locale))
-    : mask(`${activity.actualNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.actualNet), currency, locale)}`)
+    : mask(ltrAmount(`${activity.actualNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.actualNet), currency, locale)}`))
   return (
     <aside
       id={id}
@@ -1149,7 +1149,7 @@ function SelectedDayPanel({
             />
             <DayPanelRow
               label={t('transactions.summaryExpenses')}
-              value={mask(`−${formatCurrency(activity.actualExpense, currency, locale)}`)}
+              value={mask(ltrAmount(`−${formatCurrency(activity.actualExpense, currency, locale)}`))}
               amount={-activity.actualExpense}
             />
             {day.has_transfer && (
@@ -1179,14 +1179,14 @@ function SelectedDayPanel({
               {activity.projectedExpense > 0 && (
                 <DayPanelRow
                   label={t('transactions.summaryExpenses')}
-                  value={mask(`−${formatCurrency(activity.projectedExpense, currency, locale)}`)}
+                  value={mask(ltrAmount(`−${formatCurrency(activity.projectedExpense, currency, locale)}`))}
                   amount={-activity.projectedExpense}
                 />
               )}
               {activity.projectedIncome > 0 && activity.projectedExpense > 0 && (
                 <DayPanelRow
                   label={t('transactions.summaryNet')}
-                  value={mask(`${activity.projectedNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.projectedNet), currency, locale)}`)}
+                  value={mask(ltrAmount(`${activity.projectedNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.projectedNet), currency, locale)}`))}
                   amount={activity.projectedNet}
                 />
               )}
@@ -1319,7 +1319,7 @@ function CalendarItemRow({
       </div>
       <div className="shrink-0 text-end">
         <span className={cn('text-sm font-bold tabular-nums', amountColor)}>
-          {mask(`${item.is_ignored ? ' ' : item.type === 'credit' ? '+' : '−'}${formatCurrency(Math.abs(item.amount), item.currency, locale)}`)}
+          {mask(ltrAmount(`${item.is_ignored ? ' ' : item.type === 'credit' ? '+' : '−'}${formatCurrency(Math.abs(item.amount), item.currency, locale)}`))}
         </span>
         {item.amount_primary != null && item.currency !== userCurrency && (
           <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">

@@ -61,7 +61,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
-import { formatCompactCurrency, formatCurrency } from '@/lib/format'
+import { formatCompactCurrency, formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { readCalendarDateBasis } from '@/lib/transaction-calendar'
 import { WidgetGrid } from '@/components/widget-grid'
@@ -1197,7 +1197,7 @@ export default function DashboardPage() {
                 <div className="text-end">
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('dashboard.balancePeriodVariation')}</p>
                   <span className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
+                    {mask(ltrAmount(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`))}
                   </span>
                 </div>
               )}
@@ -1599,7 +1599,7 @@ export default function DashboardPage() {
                         {/* Amount */}
                         <div className="shrink-0 text-end">
                           <span className={`text-sm font-bold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                            {mask(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '\u2212'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
+                            {mask(ltrAmount(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '\u2212'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`))}
                           </span>
                           {row.isShared && row.parentTotal != null && (
                             <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
@@ -1722,7 +1722,7 @@ export default function DashboardPage() {
                           </TableCell>
                           <TableCell className="py-2.5 pe-5 text-end">
                             <span className={`text-sm font-semibold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                              {mask(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
+                              {mask(ltrAmount(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`))}
                             </span>
                             {row.isShared && row.parentTotal != null && (
                               <span className="block text-[10px] text-muted-foreground tabular-nums">

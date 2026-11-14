@@ -841,7 +841,7 @@ export default function AssetsPage() {
             {profit ? (
               <span className={profit.amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
                 <span className="block">
-                  {profit.amount >= 0 ? '+' : ''}{mask(formatCurrency(profit.amount, asset.currency, locale))}
+                  <span dir="ltr">{profit.amount >= 0 ? '+' : ''}{mask(formatCurrency(profit.amount, asset.currency, locale))}</span>
                 </span>
                 {profit.percentage != null && (
                   <span className="block text-[10px]">
@@ -1592,7 +1592,7 @@ export default function AssetsPage() {
                     <span className="text-xs font-medium text-muted-foreground">{t('assets.currentValue')}</span>
                     {base > 0 && (
                       <p className={`text-[11px] tabular-nums font-medium mt-0.5 ${isLoss ? 'text-rose-500' : 'text-emerald-600'}`}>
-                        {diff >= 0 ? '+' : ''}{formatCurrency(diff, formCurrency, locale)}
+                        <span dir="ltr">{diff >= 0 ? '+' : ''}{formatCurrency(diff, formCurrency, locale)}</span>
                       </p>
                     )}
                   </div>
@@ -2319,7 +2319,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                     </span>
                     {change != null && (
                       <span className={`text-[11px] tabular-nums font-medium ${change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                        {change >= 0 ? '+' : ''}{mask(formatCurrency(change, currency, loc))}
+                        <span dir="ltr">{change >= 0 ? '+' : ''}{mask(formatCurrency(change, currency, loc))}</span>
                         {changePct != null && ` (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`}
                       </span>
                     )}

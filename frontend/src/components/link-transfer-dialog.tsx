@@ -45,8 +45,10 @@ function CounterpartCard({ label, description, account, date, amount, currency, 
         {new Date(date + 'T00:00:00').toLocaleDateString(dateLocale)}{/* date order from setting, words from app language */}
       </p>
       <p className={`text-sm font-bold tabular-nums ${colorClass} mt-2`}>
-        {sign}
-        {formatCurrency(amount, currency, locale)}
+        <span dir="ltr">
+          {sign}
+          {formatCurrency(amount, currency, locale)}
+        </span>
       </p>
     </div>
   )
@@ -243,8 +245,10 @@ export function LinkTransferDialog({
                             </p>
                           </div>
                           <p className={`text-sm font-bold tabular-nums ${colorClass} shrink-0`}>
-                            {sign}
-                            {formatCurrency(amount, c.currency, locale)}
+                            <span dir="ltr">
+                              {sign}
+                              {formatCurrency(amount, c.currency, locale)}
+                            </span>
                           </p>
                         </button>
                       </li>

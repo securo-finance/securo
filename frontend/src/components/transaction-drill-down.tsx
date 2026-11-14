@@ -448,8 +448,10 @@ export function TransactionDrillDown({
                         item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
                       }`}
                     >
-                      {item.type === 'credit' ? '+' : '-'}
-                      {mask(formatCurrency(Math.abs(item.amount), item.currency ?? userCurrency, locale))}
+                      <span dir="ltr">
+                        {item.type === 'credit' ? '+' : '-'}
+                        {mask(formatCurrency(Math.abs(item.amount), item.currency ?? userCurrency, locale))}
+                      </span>
                     </span>
                     {item.currency !== userCurrency && item.amountPrimary != null && (
                       <div className="flex items-center justify-end gap-1">

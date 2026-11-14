@@ -255,8 +255,10 @@ export function MonthResultWidget({ scope }: { scope: DashboardScope }) {
         <div className="flex flex-1 flex-col justify-between gap-4">
           <div>
             <p className={cn('text-2xl font-bold tabular-nums', result < 0 ? 'text-rose-500' : 'text-foreground')}>
-              {result > 0 ? '+' : ''}
-              {money(result)}
+              <span dir="ltr">
+                {result > 0 ? '+' : ''}
+                {money(result)}
+              </span>
             </p>
             {before !== null && (
               <p className="mt-1 text-xs text-muted-foreground tabular-nums">{t('widgets.monthResult.previous', { amount: money(before) })}</p>
@@ -318,8 +320,10 @@ export function UpcomingWidget({ scope }: { scope: DashboardScope }) {
                 <CategoryIcon icon={row.category_icon} color={row.category_color} size="sm" />
                 <span className="min-w-0 flex-1 truncate text-sm">{row.description}</span>
                 <span className={cn('text-sm font-semibold tabular-nums', row.type === 'credit' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground')}>
-                  {row.type === 'credit' ? '+' : '-'}
-                  {mask(formatCurrency(Math.abs(amount), currency, locale))}
+                  <span dir="ltr">
+                    {row.type === 'credit' ? '+' : '-'}
+                    {mask(formatCurrency(Math.abs(amount), currency, locale))}
+                  </span>
                 </span>
                 <span className="w-14 text-end text-xs tabular-nums text-muted-foreground">
                   {new Date(`${row.date}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })}
