@@ -50,7 +50,7 @@ async def session(postgres_sessions):
 
 @pytest.fixture
 def clean_db(postgres_sessions):
-    """The reused user fixture starts in a fresh per-test PostgreSQL schema."""
+    """The reused user fixture starts in a fresh per-test PostgreSQL database."""
 
 
 async def _split_transaction(session, user, workspace):
@@ -110,12 +110,8 @@ async def test_downgrade_gives_back_the_largest_line_category(
     session, test_user, test_workspace
 ):
     tx, _, home = await _split_transaction(session, test_user, test_workspace)
-    schema = session.bind.get_execution_options()["schema_translate_map"][None]
 
     def run(sync_conn, direction):
-        # The migration's raw SQL is not schema-translated; point it at the
-        # test schema the way a real database's search_path would.
-        sync_conn.exec_driver_sql(f'SET search_path TO "{schema}"')
         with Operations.context(MigrationContext.configure(sync_conn)):
             getattr(migration, direction)()
 
@@ -173,10 +169,8 @@ async def test_recurring_downgrade_gives_back_the_largest_part_category(
         ]),
     )
     await session.commit()
-    schema = session.bind.get_execution_options()["schema_translate_map"][None]
 
     def run(sync_conn, direction):
-        sync_conn.exec_driver_sql(f'SET search_path TO "{schema}"')
         with Operations.context(MigrationContext.configure(sync_conn)):
             getattr(recurring_migration, direction)()
 

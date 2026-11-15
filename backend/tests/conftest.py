@@ -45,7 +45,7 @@ setattr(_pgv, "Vector", _VectorJSON)
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import make_url, text  # noqa: E402
 from sqlalchemy.dialects.postgresql import UUID  # noqa: E402
 from sqlalchemy.ext.compiler import compiles  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker  # noqa: E402
@@ -84,7 +84,7 @@ from app.agents.models import (  # noqa: E402,F401
 # In-memory SQLite keeps tests independent of external databases and other
 # workers. StaticPool shares the connection across fixtures and tests on the
 # session-scoped event loop so they see the same schema state.
-from sqlalchemy.pool import StaticPool  # noqa: E402
+from sqlalchemy.pool import NullPool, StaticPool  # noqa: E402
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -124,29 +124,55 @@ async def session() -> AsyncGenerator[AsyncSession, None]:
         await session.rollback()
 
 
-@pytest_asyncio.fixture
-async def postgres_sessions():
-    """Give each PostgreSQL test its own schema, including under xdist."""
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def postgres_admin():
+    """Build the schema once per worker as a template database.
+
+    create_all takes ~0.5s; cloning a template database takes ~60ms. Each test
+    gets its own database, so tests that run migrations or other DDL stay
+    isolated.
+    """
     url = os.environ.get("POSTGRES_TEST_URL")
     if not url:
         if os.environ.get("CI"):
             pytest.fail("CI must supply POSTGRES_TEST_URL for PostgreSQL tests")
         pytest.skip("isolated PostgreSQL not configured")
-    schema = f"postgres_test_{uuid.uuid4().hex}"
-    pg_engine = create_async_engine(url)
-    scoped = pg_engine.execution_options(schema_translate_map={None: schema})
+    base_url = make_url(url)
+    admin = create_async_engine(base_url, isolation_level="AUTOCOMMIT")
+    template = f"postgres_template_{uuid.uuid4().hex}"
     try:
-        async with pg_engine.begin() as conn:
-            await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
-        async with scoped.begin() as conn:
+        async with admin.connect() as conn:
+            await conn.execute(text(f'CREATE DATABASE "{template}"'))
+        # CREATE DATABASE ... TEMPLATE refuses while any session is connected.
+        builder = create_async_engine(base_url.set(database=template), poolclass=NullPool)
+        async with builder.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        yield async_sessionmaker(scoped, expire_on_commit=False)
+        await builder.dispose()
+        yield admin, base_url, template
     finally:
         try:
-            async with pg_engine.begin() as conn:
-                await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+            async with admin.connect() as conn:
+                await conn.execute(text(f'DROP DATABASE IF EXISTS "{template}" WITH (FORCE)'))
         finally:
+            await admin.dispose()
+
+
+@pytest_asyncio.fixture
+async def postgres_sessions(postgres_admin):
+    """Give each PostgreSQL test its own database, including under xdist."""
+    admin, base_url, template = postgres_admin
+    database = f"postgres_test_{uuid.uuid4().hex}"
+    async with admin.connect() as conn:
+        await conn.execute(text(f'CREATE DATABASE "{database}" TEMPLATE "{template}"'))
+    pg_engine = create_async_engine(base_url.set(database=database))
+    try:
+        yield async_sessionmaker(pg_engine, expire_on_commit=False)
+    finally:
+        try:
             await pg_engine.dispose()
+        finally:
+            async with admin.connect() as conn:
+                await conn.execute(text(f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)'))
 
 
 @pytest_asyncio.fixture

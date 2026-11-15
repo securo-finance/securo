@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
@@ -40,7 +40,7 @@ async def session(postgres_sessions):
 
 @pytest.fixture
 def clean_db(postgres_sessions):
-    """The reused user fixture starts in a fresh per-test PostgreSQL schema."""
+    """The reused user fixture starts in a fresh per-test PostgreSQL database."""
 
 
 def _payload(
@@ -103,10 +103,7 @@ def _row(account, user_id, external_id, raw, *, status="posted", source="sync") 
 
 
 async def _upgrade(session, monkeypatch) -> None:
-    schema = session.bind.get_execution_options()["schema_translate_map"][None]
     conn = await session.connection()
-    # The migration's raw SQL bypasses schema_translate_map.
-    await conn.execute(text(f'SET LOCAL search_path TO "{schema}"'))
 
     def run(sync_conn):
         monkeypatch.setattr(migration.op, "get_bind", lambda: sync_conn)

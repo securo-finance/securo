@@ -43,7 +43,7 @@ async def session(postgres_sessions):
 
 @pytest.fixture
 def clean_db(postgres_sessions):
-    """Each test starts in a fresh per-test PostgreSQL schema."""
+    """Each test starts in a fresh per-test PostgreSQL database."""
 
 
 @pytest_asyncio.fixture

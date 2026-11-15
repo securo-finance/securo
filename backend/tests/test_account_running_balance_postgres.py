@@ -25,7 +25,7 @@ async def session(postgres_sessions):
 
 @pytest.fixture
 def clean_db(postgres_sessions):
-    """The reused user/data fixtures start in a fresh per-test PostgreSQL schema."""
+    """The reused user/data fixtures start in a fresh per-test PostgreSQL database."""
 
 
 @pytest_asyncio.fixture
