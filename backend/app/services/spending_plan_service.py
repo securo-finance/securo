@@ -250,7 +250,8 @@ async def get_timeline(
     points = walk(base, today, allowance, spent)
     last_covered = covered_until(points, today, floor)
     untouched = walk(base, today, 0.0, spent)
-    average_surplus = (untouched[-1].balance - untouched[0].balance) / max(1, len(untouched) - 1)
+    # From the close of yesterday, so money that lands today counts.
+    average_surplus = (untouched[-1].balance - base.seed) / max(1, len(untouched))
 
     return SpendingPlanTimeline(
         currency=primary_currency,

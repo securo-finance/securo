@@ -374,8 +374,7 @@ async def test_simulation_moves_the_balance_without_saving_anything(
     assert simulated.points[-1].balance == 1800.0
     assert plain.points[-1].balance == 3000.0
     assert simulated.safe_daily_allowance < plain.safe_daily_allowance
-    days = len(simulated.points) - 1
-    assert simulated.average_daily_surplus == round(-1200 / days, 2)
+    assert simulated.average_daily_surplus == round(-1200 / len(simulated.points), 2)
     rows = (await session.execute(select(func.count()).select_from(Transaction))).scalar_one()
     assert rows == 1
 
@@ -542,3 +541,24 @@ async def test_a_later_installment_of_an_old_purchase_is_not_todays_variable_spe
 
     assert timeline.today.spent == 0.0
     assert timeline.today.remaining == 50.0
+
+
+@pytest.mark.asyncio
+async def test_average_daily_surplus_counts_todays_salary(
+    session: AsyncSession, test_user, test_workspace
+):
+    today = app_today()
+    checking = await _checking(session, test_user.id, test_workspace.id)
+    session.add_all([
+        _tx(test_user.id, test_workspace.id, checking.id, 1000, "credit", today - timedelta(days=1),
+            source="opening_balance"),
+        _tx(test_user.id, test_workspace.id, checking.id, 3650, "credit", today, description="Salary"),
+    ])
+    await session.commit()
+    await save_plan(
+        session, test_workspace.id, SpendingPlanWrite(daily_allowance=Decimal("0"), horizon_months=1)
+    )
+
+    timeline = await get_timeline(session, test_workspace.id, test_user.id)
+
+    assert timeline.average_daily_surplus == round(3650 / len(timeline.points), 2)
