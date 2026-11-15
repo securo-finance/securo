@@ -27,4 +27,12 @@ describe('PluginStatus', () => {
     renderWithProviders(<PluginStatus entry={entry({ fits_workspace: true })} />)
     expect(screen.queryByText(t('plugins.onlyForBusiness'))).not.toBeInTheDocument()
   })
+
+  it('says why when an update is only for the other workspace type', () => {
+    renderWithProviders(
+      <PluginStatus entry={entry({ installed_version: '1.0.0', update_available: true })} />,
+    )
+    expect(screen.getByText(t('plugins.onlyForBusiness'))).toBeInTheDocument()
+    expect(screen.queryByText(t('plugins.updateAvailable'))).not.toBeInTheDocument()
+  })
 })
