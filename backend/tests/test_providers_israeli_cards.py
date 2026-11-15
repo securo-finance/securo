@@ -224,6 +224,25 @@ def test_posted_after_pending_is_imported_once_it_bills():
     assert (txn.raw_data or {})["identifier"] == "T8"
 
 
+def test_duplicate_fallback_ids_stay_stable_as_the_cutoff_moves():
+    # Two identical, identifier-less purchases on the same day bill on
+    # different days. A sync whose `since` has moved past the first charge's
+    # billing date, but not the second's, must not reuse the first charge's
+    # id for the second: its ordinal comes from the full history, not from
+    # what a particular sync's cutoff happens to keep.
+    first = _charge(date="2026-03-01", processedDate="2026-03-02", identifier=None)
+    second = _charge(date="2026-03-01", processedDate="2026-03-20", identifier=None)
+    account = {**CARD, "txns": [first, second]}
+
+    initial = IsracardProvider.build_transactions(account, since=None)
+    assert len(initial) == 2
+    assert initial[0].external_id != initial[1].external_id
+
+    later = IsracardProvider.build_transactions(account, since=date(2026, 3, 18))
+    assert len(later) == 1
+    assert later[0].external_id == initial[1].external_id
+
+
 @pytest.mark.asyncio
 async def test_transactions_read_through_the_stored_login():
     seen: list[dict] = []

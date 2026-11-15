@@ -192,11 +192,41 @@ class IsraeliCardProvider(BankProvider):
         return self.build_transactions(raw_account, since) if raw_account else []
 
     @staticmethod
+    def _fallback_key(raw: dict, identifier: Optional[str]) -> str:
+        installments = raw.get("installments") or {}
+        if identifier:
+            return f"id|{identifier}|{installments.get('number') or ''}"
+        txn_date = raw.get("date") or ""
+        description = (raw.get("description") or "").strip() or "Transaction"
+        memo = (raw.get("memo") or "").strip()
+        return "|".join([str(txn_date), str(raw.get("amount")), description, memo])
+
+    @staticmethod
     def build_transactions(raw_account: dict, since: Optional[date] = None) -> list[TransactionData]:
         transactions: list[TransactionData] = []
-        seen: dict[str, int] = {}
         account_currency = raw_account.get("currency") or "ILS"
-        for raw in raw_account.get("txns", []):
+        raw_txns = raw_account.get("txns", [])
+
+        # The ordinal that disambiguates two otherwise-identical charges
+        # (same date, amount, description, no identifier) must come from the
+        # sidecar's full history, counted here before any pending/since
+        # filtering. Counting only the rows a particular sync's `since` keeps
+        # would shift the ordinal as an earlier occurrence ages out of the
+        # window, handing a later sync's row the id already used for a
+        # different occurrence.
+        seen: dict[str, int] = {}
+        ordinals: list[int] = []
+        identifiers: list[Optional[str]] = []
+        for raw in raw_txns:
+            identifier = raw.get("identifier")
+            if identifier is not None and str(identifier).split("_")[0] in ("", "undefined", "null"):
+                identifier = None
+            identifiers.append(identifier)
+            key = IsraeliCardProvider._fallback_key(raw, identifier)
+            seen[key] = seen.get(key, 0) + 1
+            ordinals.append(seen[key])
+
+        for raw, identifier, ordinal in zip(raw_txns, identifiers, ordinals):
             # Pending charges may still change amount or disappear; they are
             # picked up once the company posts them.
             if raw.get("status") == "pending":
@@ -215,19 +245,7 @@ class IsraeliCardProvider(BankProvider):
             description = (raw.get("description") or "").strip() or "Transaction"
             memo = (raw.get("memo") or "").strip()
             installments = raw.get("installments") or {}
-            # The company's identifier is unique per charge (and per installment);
-            # rows without one fall back to their content plus a counter. Max
-            # builds it from the deal's ARN, so an installment without one comes
-            # back as "undefined_<n>": shared by unrelated charges, not an id.
-            identifier = raw.get("identifier")
-            if identifier is not None and str(identifier).split("_")[0] in ("", "undefined", "null"):
-                identifier = None
-            key = (
-                f"id|{identifier}|{installments.get('number') or ''}"
-                if identifier
-                else "|".join([txn_date.isoformat(), str(amount), description, memo])
-            )
-            seen[key] = seen.get(key, 0) + 1
+            key = IsraeliCardProvider._fallback_key(raw, identifier)
             original_currency = raw.get("originalCurrency")
             # A foreign charge not yet converted can carry a zero ILS amount;
             # its direction then comes from the original amount.
@@ -241,7 +259,7 @@ class IsraeliCardProvider(BankProvider):
             charged_in_account_currency = charged_currency == account_currency
             transactions.append(
                 TransactionData(
-                    external_id="card-" + _hash(key, str(seen[key])),
+                    external_id="card-" + _hash(key, str(ordinal)),
                     description=(f"{description} | {memo}" if memo else description)[:500],
                     amount=(original_amount if foreign and original_amount is not None else amount).copy_abs(),
                     # Zero means the company has not converted the charge yet:
