@@ -234,7 +234,11 @@ class IsraeliCardProvider(BankProvider):
 
         for raw, identifier, ordinal in zip(raw_txns, identifiers, ordinals):
             # Pending charges may still change amount or disappear; they are
-            # picked up once the company posts them.
+            # picked up once the company posts them. Only Max reports this:
+            # its scraper sets `isPending` when the charge has no payment
+            # date yet, and `processedDate` is the purchase date itself
+            # until then. Isracard's scraper has no pending state — every
+            # row arrives already posted.
             if raw.get("status") == "pending":
                 continue
             amount = _to_decimal(raw.get("amount"))

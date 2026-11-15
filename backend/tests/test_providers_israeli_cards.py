@@ -213,13 +213,18 @@ def test_since_keeps_charges_billed_in_the_window():
 
 
 def test_posted_after_pending_is_imported_once_it_bills():
-    # Sync 1: the purchase is pending and skipped. Sync 2, weeks later: the
-    # cutoff has moved past the purchase date, but the row now posts with a
-    # billing date inside the window, so it is imported.
+    # Only Max's scraper reports a pending card charge (isPending when the
+    # charge has no payment date yet); Isracard's rows arrive already
+    # posted. While pending, `processedDate` is the purchase date itself;
+    # once Max assigns a payment date, `processedDate` becomes that later
+    # billing date (israeli-bank-scrapers 6.13.0, max.js). Sync 1: the
+    # purchase is pending and skipped. Sync 2, weeks later: the cutoff has
+    # moved past the purchase date, but the row now posts with a billing
+    # date inside the window, so it is imported.
     pending = _charge(date="2026-02-20", processedDate="2026-02-20", status="pending", identifier=None)
-    assert IsracardProvider.build_transactions({**CARD, "txns": [pending]}, since=date(2026, 2, 1)) == []
+    assert MaxProvider.build_transactions({**CARD, "txns": [pending]}, since=date(2026, 2, 1)) == []
     posted = _charge(date="2026-02-20", processedDate="2026-03-10", status="posted", identifier="T8")
-    [txn] = IsracardProvider.build_transactions({**CARD, "txns": [posted]}, since=date(2026, 3, 1))
+    [txn] = MaxProvider.build_transactions({**CARD, "txns": [posted]}, since=date(2026, 3, 1))
     assert txn.date == date(2026, 2, 20)
     assert (txn.raw_data or {})["identifier"] == "T8"
 
@@ -244,15 +249,15 @@ def test_duplicate_fallback_ids_stay_stable_as_the_cutoff_moves():
 
 
 def test_pending_rows_do_not_shift_posted_fallback_ids():
-    # A pending row is never itself emitted and can vanish between syncs
-    # once it posts or drops, so it must not count toward a posted row's
-    # ordinal: [pending, posted] and [posted] alone must give the posted
-    # charge the same external_id.
+    # Same Max-only pending charge as above. It is never itself emitted and
+    # can vanish between syncs once it posts or drops, so it must not count
+    # toward a posted row's ordinal: [pending, posted] and [posted] alone
+    # must give the posted charge the same external_id.
     posted = _charge(identifier=None)
     pending = _charge(status="pending", identifier=None)
 
-    with_pending = IsracardProvider.build_transactions({**CARD, "txns": [pending, posted]})
-    without_pending = IsracardProvider.build_transactions({**CARD, "txns": [posted]})
+    with_pending = MaxProvider.build_transactions({**CARD, "txns": [pending, posted]})
+    without_pending = MaxProvider.build_transactions({**CARD, "txns": [posted]})
     assert len(with_pending) == 1
     assert with_pending[0].external_id == without_pending[0].external_id
 
