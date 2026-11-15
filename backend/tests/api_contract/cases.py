@@ -91,6 +91,7 @@ BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
         "lines": _INVOICE_LINES,
     },
     ("PATCH", "/api/admin/settings/{key}"): lambda w: {"value": "true"},
+    ("POST", "/api/goals"): lambda w: {"name": "Contract test", "target_amount": 10},
     ("POST", "/api/transactions/link-transfer"): lambda w: {
         "transaction_ids": [w["second_transaction_id"], w["savings_transaction_id"]],
     },

@@ -788,3 +788,224 @@ async def test_goal_asset_tracking_eur_goal_usd_asset(
 async def test_unauthenticated_access(client: AsyncClient):
     response = await client.get("/api/goals")
     assert response.status_code == 401
+
+
+async def _create_recurring(
+    client: AsyncClient,
+    headers: dict,
+    account: Account,
+    *,
+    description: str = "Salário",
+    amount: str = "13967.38",
+    type: str = "credit",
+    frequency: str = "monthly",
+) -> str:
+    resp = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": description,
+            "amount": amount,
+            "currency": "BRL",
+            "type": type,
+            "frequency": frequency,
+            "start_date": (date.today() + timedelta(days=30)).isoformat(),
+            "account_id": str(account.id),
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+async def _create_salary_goal(client: AsyncClient, headers: dict, recurring_id: str, months: int) -> dict:
+    resp = await client.post(
+        "/api/goals",
+        json={
+            "name": "Reserva de emergência",
+            "current_amount": "27934.76",
+            "currency": "BRL",
+            "salary_recurring_id": recurring_id,
+            "salary_months": months,
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+@pytest.mark.asyncio
+async def test_salary_goal_target_is_salary_times_months(
+    client: AsyncClient, auth_headers: dict, test_account: Account
+):
+    recurring_id = await _create_recurring(client, auth_headers, test_account)
+    data = await _create_salary_goal(client, auth_headers, recurring_id, 6)
+
+    assert data["target_amount"] == "83804.28"
+    assert data["monthly_salary"] == "13967.38"
+    assert data["salary_months"] == 6
+    assert data["salary_recurring_id"] == recurring_id
+    assert data["salary_name"] == "Salário"
+    assert data["percentage"] == 33.3
+
+
+@pytest.mark.asyncio
+async def test_salary_goal_follows_salary_changes(
+    client: AsyncClient, auth_headers: dict, test_account: Account
+):
+    recurring_id = await _create_recurring(client, auth_headers, test_account)
+    goal = await _create_salary_goal(client, auth_headers, recurring_id, 3)
+    assert goal["target_amount"] == "41902.14"
+
+    resp = await client.patch(
+        f"/api/recurring-transactions/{recurring_id}",
+        json={"amount": "9311.59"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    data = (await client.get(f"/api/goals/{goal['id']}", headers=auth_headers)).json()
+    assert data["target_amount"] == "27934.77"
+    assert data["monthly_salary"] == "9311.59"
+    assert data["percentage"] == 100.0
+
+    summary = (await client.get("/api/goals/summary", headers=auth_headers)).json()
+    assert summary[0]["target_amount"] == "27934.77"
+    assert summary[0]["salary_months"] == 3
+    assert summary[0]["monthly_salary"] == "9311.59"
+
+
+@pytest.mark.asyncio
+async def test_salary_goal_normalizes_weekly_pay_to_monthly(
+    client: AsyncClient, auth_headers: dict, test_account: Account
+):
+    recurring_id = await _create_recurring(
+        client, auth_headers, test_account, amount="1000.00", frequency="weekly"
+    )
+    data = await _create_salary_goal(client, auth_headers, recurring_id, 6)
+
+    assert data["monthly_salary"] == "4333.33"
+    assert data["target_amount"] == "26000.00"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"salary_recurring_id": "<salary>", "salary_months": 5},
+        {"salary_months": 6, "target_amount": "1000.00"},
+        {"salary_recurring_id": "<salary>", "target_amount": "1000.00"},
+        {},
+    ],
+    ids=["months-not-3-6-12", "months-without-recurring", "recurring-without-months", "no-target"],
+)
+async def test_salary_goal_rejects_invalid_shapes(
+    client: AsyncClient, auth_headers: dict, test_account: Account, fields: dict
+):
+    recurring_id = await _create_recurring(client, auth_headers, test_account)
+    body = {"name": "Reserva", **{k: recurring_id if v == "<salary>" else v for k, v in fields.items()}}
+    resp = await client.post("/api/goals", json=body, headers=auth_headers)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_salary_goal_rejects_a_debit_recurring(
+    client: AsyncClient, auth_headers: dict, test_account: Account
+):
+    recurring_id = await _create_recurring(
+        client, auth_headers, test_account, description="Aluguel", type="debit"
+    )
+    resp = await client.post(
+        "/api/goals",
+        json={"name": "Reserva", "salary_recurring_id": recurring_id, "salary_months": 6},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Linked salary must be a recurring income"
+
+
+@pytest.mark.asyncio
+async def test_salary_goal_rejects_a_recurring_from_another_workspace(
+    client: AsyncClient, auth_headers: dict, test_user: User, session: AsyncSession
+):
+    from app.models.recurring_transaction import RecurringTransaction
+    from app.models.workspace import Workspace
+
+    other_ws = Workspace(
+        id=uuid.uuid4(), name="Outro", kind="shared", created_by_user_id=test_user.id,
+        default_currency="BRL", locale="pt-BR",
+    )
+    session.add(other_ws)
+    await session.flush()
+    foreign = RecurringTransaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other_ws.id,
+        description="Salário", amount=Decimal("5000.00"), currency="BRL", type="credit",
+        frequency="monthly", start_date=date.today(), next_occurrence=date.today(),
+    )
+    session.add(foreign)
+    await session.commit()
+
+    resp = await client.post(
+        "/api/goals",
+        json={"name": "Reserva", "salary_recurring_id": str(foreign.id), "salary_months": 6},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Linked salary not found"
+
+
+@pytest.mark.asyncio
+async def test_salary_goal_update_requires_both_fields(
+    client: AsyncClient, auth_headers: dict, test_account: Account
+):
+    recurring_id = await _create_recurring(client, auth_headers, test_account)
+    goal = await _create_salary_goal(client, auth_headers, recurring_id, 6)
+
+    resp = await client.patch(
+        f"/api/goals/{goal['id']}", json={"salary_months": 12}, headers=auth_headers
+    )
+    assert resp.status_code == 422
+
+    resp = await client.patch(
+        f"/api/goals/{goal['id']}",
+        json={"salary_recurring_id": recurring_id, "salary_months": 12},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["target_amount"] == "167608.56"
+
+
+@pytest.mark.asyncio
+async def test_salary_goal_switches_back_to_fixed_target(
+    client: AsyncClient, auth_headers: dict, test_account: Account
+):
+    recurring_id = await _create_recurring(client, auth_headers, test_account)
+    goal = await _create_salary_goal(client, auth_headers, recurring_id, 6)
+
+    resp = await client.patch(
+        f"/api/goals/{goal['id']}",
+        json={"salary_recurring_id": None, "salary_months": None, "target_amount": "50000.00"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["target_amount"] == "50000.00"
+    assert data["salary_recurring_id"] is None
+    assert data["salary_months"] is None
+    assert data["monthly_salary"] is None
+    assert data["salary_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_salary_goal_keeps_last_target_when_recurring_is_deleted(
+    client: AsyncClient, auth_headers: dict, test_account: Account
+):
+    recurring_id = await _create_recurring(client, auth_headers, test_account)
+    goal = await _create_salary_goal(client, auth_headers, recurring_id, 6)
+
+    resp = await client.delete(f"/api/recurring-transactions/{recurring_id}", headers=auth_headers)
+    assert resp.status_code == 204
+
+    data = (await client.get(f"/api/goals/{goal['id']}", headers=auth_headers)).json()
+    assert data["target_amount"] == "83804.28"
+    assert data["monthly_salary"] is None
+    assert data["percentage"] == 33.3
