@@ -10,20 +10,13 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { Button } from '@/components/ui/button'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { GroupForm } from '@/components/group-form'
 import { PageHeader } from '@/components/page-header'
 import { Archive, ChevronRight, Plus, Search, Trash2, Users, X } from 'lucide-react'
 import type { Group, GroupKind } from '@/types'
 
 type StatusFilter = 'active' | 'archived' | 'all'
-
 
 export default function GroupsPage() {
   const { t } = useTranslation()
@@ -48,19 +41,21 @@ export default function GroupsPage() {
 
   const updateFilter = (key: 'q' | 'status', value: string) => {
     if (key === 'status') setSearchQuery(search.trim())
-    setSearchParams((previous) => {
-      const next = new URLSearchParams(previous)
-      if (value && !(key === 'status' && value === 'active')) next.set(key, value)
-      else next.delete(key)
-      return next
-    }, { replace: key === 'q' })
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        if (value && !(key === 'status' && value === 'active')) next.set(key, value)
+        else next.delete(key)
+        return next
+      },
+      { replace: key === 'q' },
+    )
   }
 
   const [name, setName] = useState('')
   const [kind, setKind] = useState<GroupKind>('social')
   const [defaultCurrency, setDefaultCurrency] = useState(userCurrency)
   const [notes, setNotes] = useState('')
-
 
   const { data: list = [], isLoading } = useQuery({
     queryKey: ['groups', { q: searchQuery, status: statusFilter }],
@@ -194,7 +189,12 @@ export default function GroupsPage() {
             />
           </div>
           {search && (
-            <Button variant="ghost" size="icon-sm" aria-label={t('splitGroups.clearSearch')} onClick={() => updateFilter('q', '')}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t('splitGroups.clearSearch')}
+              onClick={() => updateFilter('q', '')}
+            >
               <X size={15} />
             </Button>
           )}
@@ -212,9 +212,7 @@ export default function GroupsPage() {
           <div className="text-center py-16 text-muted-foreground">
             <Users size={32} className="mx-auto mb-2 opacity-50" />
             <p>{t(searchQuery ? 'common.noResults' : 'splitGroups.empty')}</p>
-            {!searchQuery && (
-              <p className="text-xs mt-1">{t('splitGroups.emptyHint')}</p>
-            )}
+            {!searchQuery && <p className="text-xs mt-1">{t('splitGroups.emptyHint')}</p>}
           </div>
         ) : (
           <ul className="divide-y divide-border">

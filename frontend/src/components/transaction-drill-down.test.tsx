@@ -37,7 +37,7 @@ function renderPanel({ dialogOpen }: { dialogOpen: boolean }) {
 // The outside-click listener is attached after a short delay so the click
 // that opened the panel does not close it.
 async function waitForOutsideClickListener() {
-  await new Promise(resolve => setTimeout(resolve, 150))
+  await new Promise((resolve) => setTimeout(resolve, 150))
 }
 
 describe('TransactionDrillDown', () => {
@@ -52,15 +52,44 @@ describe('TransactionDrillDown', () => {
   })
 
   it('preserves the expense share of recurring category splits in the Overview panel', async () => {
-    vi.mocked(dashboard.projectedTransactions).mockResolvedValue([{
-      recurring_id: 'split-bill', account_id: 'account-1', description: 'Split recurring bill',
-      amount: 100, amount_primary: 200, currency: 'EUR', type: 'debit', date: '2026-11-10',
-      category_id: null, has_category_lines: true, category_lines: [
-        { category_id: 'food', category_name: 'Food', category_icon: null, category_color: null, amount: 80, treat_as_transfer: false },
-        { category_id: 'investment', category_name: 'Investment', category_icon: null, category_color: null, amount: 20, treat_as_transfer: true },
-      ],
-    }] as never)
-    renderWithProviders(<TransactionDrillDown filter={{ title: 'Expenses', type: 'debit', from: '2026-11-01', to: '2026-11-30' }} onClose={vi.fn()} />)
+    vi.mocked(dashboard.projectedTransactions).mockResolvedValue([
+      {
+        recurring_id: 'split-bill',
+        account_id: 'account-1',
+        description: 'Split recurring bill',
+        amount: 100,
+        amount_primary: 200,
+        currency: 'EUR',
+        type: 'debit',
+        date: '2026-11-10',
+        category_id: null,
+        has_category_lines: true,
+        category_lines: [
+          {
+            category_id: 'food',
+            category_name: 'Food',
+            category_icon: null,
+            category_color: null,
+            amount: 80,
+            treat_as_transfer: false,
+          },
+          {
+            category_id: 'investment',
+            category_name: 'Investment',
+            category_icon: null,
+            category_color: null,
+            amount: 20,
+            treat_as_transfer: true,
+          },
+        ],
+      },
+    ] as never)
+    renderWithProviders(
+      <TransactionDrillDown
+        filter={{ title: 'Expenses', type: 'debit', from: '2026-11-01', to: '2026-11-30' }}
+        onClose={vi.fn()}
+      />,
+    )
     expect(await screen.findByText('Split recurring bill')).toBeInTheDocument()
     expect(screen.getByText('-€80.00')).toBeInTheDocument()
     expect(screen.getAllByText('$160.00').length).toBeGreaterThan(0)
@@ -105,9 +134,21 @@ describe('TransactionDrillDown', () => {
 
   it('totals only the user share of a split expense and asks for posted rows', async () => {
     const tx = (overrides: Record<string, unknown>) => ({
-      id: 'tx', description: 'Dinner', date: '2026-09-05', type: 'debit', amount: 100,
-      amount_primary: 100, currency: 'USD', status: 'posted', category: null,
-      attachment_count: 0, splits: [], viewer_share: null, is_shared: false, user_id: 'me', ...overrides,
+      id: 'tx',
+      description: 'Dinner',
+      date: '2026-09-05',
+      type: 'debit',
+      amount: 100,
+      amount_primary: 100,
+      currency: 'USD',
+      status: 'posted',
+      category: null,
+      attachment_count: 0,
+      splits: [],
+      viewer_share: null,
+      is_shared: false,
+      user_id: 'me',
+      ...overrides,
     })
     vi.mocked(transactions.list).mockResolvedValue({
       items: [
@@ -124,7 +165,14 @@ describe('TransactionDrillDown', () => {
 
     renderWithProviders(
       <TransactionDrillDown
-        filter={{ title: 'Food', from: '2026-09-01', to: '2026-09-12', realizedOnly: true, ownShare: true, netTotal: true }}
+        filter={{
+          title: 'Food',
+          from: '2026-09-01',
+          to: '2026-09-12',
+          realizedOnly: true,
+          ownShare: true,
+          netTotal: true,
+        }}
         onClose={vi.fn()}
       />,
     )

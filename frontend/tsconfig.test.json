@@ -38,10 +38,5 @@
      vitest.config.ts defines. A test rendering the app shell reaches
      lib/build-info through its imports, so this project needs the
      declaration too. */
-  "include": [
-    "src/**/*.test.ts",
-    "src/**/*.test.tsx",
-    "src/test/**/*",
-    "src/vite-env.d.ts"
-  ]
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**/*", "src/vite-env.d.ts"]
 }

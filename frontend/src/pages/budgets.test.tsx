@@ -15,14 +15,26 @@ const api = vi.hoisted(() => ({
   dashboard: { spendingByCategory: vi.fn(), projectedTransactions: vi.fn() },
   transactions: { list: vi.fn() },
   admin: { accountingMode: vi.fn() },
-  budgets: { list: vi.fn(), comparison: vi.fn(), suggestions: vi.fn(), createBatch: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  budgets: {
+    list: vi.fn(),
+    comparison: vi.fn(),
+    suggestions: vi.fn(),
+    createBatch: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
   categories: { listIncludingHidden: vi.fn() },
   categoryGroups: { listIncludingHidden: vi.fn() },
 }))
 
 vi.mock('@/lib/api', () => ({
-  budgets: api.budgets, categories: api.categories, categoryGroups: api.categoryGroups,
-  dashboard: api.dashboard, transactions: api.transactions, admin: api.admin,
+  budgets: api.budgets,
+  categories: api.categories,
+  categoryGroups: api.categoryGroups,
+  dashboard: api.dashboard,
+  transactions: api.transactions,
+  admin: api.admin,
 }))
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
 vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'UTC' }))
@@ -36,20 +48,62 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
 }))
 
 function category(id: string, name: string, is_hidden = false): Category {
-  return { id, user_id: 'u', group_id: 'g', name, icon: 'circle-help', color: '#000', is_system: false, is_hidden, treat_as_transfer: false, is_ignored: false }
+  return {
+    id,
+    user_id: 'u',
+    group_id: 'g',
+    name,
+    icon: 'circle-help',
+    color: '#000',
+    is_system: false,
+    is_hidden,
+    treat_as_transfer: false,
+    is_ignored: false,
+  }
 }
 
 function comparisonRow(categoryId: string, actual: number): BudgetVsActual {
   return {
-    category_id: categoryId, category_name: categoryId, category_icon: 'x', category_color: '#000', group_id: null, group_name: null,
-    budget_amount: null, actual_amount: actual, projected_amount: actual, prev_month_amount: 0, projected_prev_month_amount: 0,
-    percentage_used: null, is_recurring: false,
+    category_id: categoryId,
+    category_name: categoryId,
+    category_icon: 'x',
+    category_color: '#000',
+    group_id: null,
+    group_name: null,
+    budget_amount: null,
+    actual_amount: actual,
+    projected_amount: actual,
+    prev_month_amount: 0,
+    projected_prev_month_amount: 0,
+    percentage_used: null,
+    is_recurring: false,
   }
 }
 
-const rent: Budget = { id: 'b-rent', user_id: 'u', category_id: 'rent', amount: 900, month: '2026-08-01', is_recurring: true }
-const hiddenBudget: Budget = { id: 'b-hidden', user_id: 'u', category_id: 'hidden', amount: 120, month: '2026-08-01', is_recurring: true }
-const foodTombstone: Budget = { id: 'b-food-zero', user_id: 'u', category_id: 'food', amount: 0, month: '2026-09-01', is_recurring: true }
+const rent: Budget = {
+  id: 'b-rent',
+  user_id: 'u',
+  category_id: 'rent',
+  amount: 900,
+  month: '2026-08-01',
+  is_recurring: true,
+}
+const hiddenBudget: Budget = {
+  id: 'b-hidden',
+  user_id: 'u',
+  category_id: 'hidden',
+  amount: 120,
+  month: '2026-08-01',
+  is_recurring: true,
+}
+const foodTombstone: Budget = {
+  id: 'b-food-zero',
+  user_id: 'u',
+  category_id: 'food',
+  amount: 0,
+  month: '2026-09-01',
+  is_recurring: true,
+}
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -58,30 +112,58 @@ beforeEach(() => {
   api.activeAccountIds = null
   api.canWrite = true
   api.privacyMode = false
-  api.mask.mockImplementation(value => value)
+  api.mask.mockImplementation((value) => value)
   api.dashboard.spendingByCategory.mockResolvedValue([])
   api.dashboard.projectedTransactions.mockResolvedValue([])
   api.transactions.list.mockResolvedValue({ items: [], total: 0 })
   api.admin.accountingMode.mockResolvedValue({ mode: 'cash' })
   api.budgets.list.mockResolvedValue([rent, hiddenBudget, foodTombstone])
   api.categories.listIncludingHidden.mockResolvedValue([])
-  api.categoryGroups.listIncludingHidden.mockResolvedValue([{
-    id: 'g', user_id: 'u', name: 'Housing', icon: 'home', color: '#000', position: 0, is_system: false, is_hidden: false,
-    categories: [category('rent', 'Rent'), category('food', 'Groceries'), category('hidden', 'Archived utilities', true)],
-  }])
+  api.categoryGroups.listIncludingHidden.mockResolvedValue([
+    {
+      id: 'g',
+      user_id: 'u',
+      name: 'Housing',
+      icon: 'home',
+      color: '#000',
+      position: 0,
+      is_system: false,
+      is_hidden: false,
+      categories: [
+        category('rent', 'Rent'),
+        category('food', 'Groceries'),
+        category('hidden', 'Archived utilities', true),
+      ],
+    },
+  ])
   api.budgets.suggestions.mockResolvedValue({
-    month: '2026-10-01', months_requested: 3, months_analyzed: 3,
-    suggestions: [{
-      category_id: 'food', category_name: 'Groceries', category_icon: 'x', category_color: '#000', group_id: 'g', group_name: 'Housing',
-      suggested_amount: '880', total_spent: '2640', months_with_data: 3, existing_budget: false,
-    }],
+    month: '2026-10-01',
+    months_requested: 3,
+    months_analyzed: 3,
+    suggestions: [
+      {
+        category_id: 'food',
+        category_name: 'Groceries',
+        category_icon: 'x',
+        category_color: '#000',
+        group_id: 'g',
+        group_name: 'Housing',
+        suggested_amount: '880',
+        total_spent: '2640',
+        months_with_data: 3,
+        existing_budget: false,
+      },
+    ],
   })
   api.budgets.createBatch.mockResolvedValue([hiddenBudget])
-  api.budgets.comparison.mockImplementation(async (month: string) => ({
-    '2026-09-01': [comparisonRow('food', 300)],
-    '2026-08-01': [comparisonRow('food', 2000)],
-    '2026-07-01': [comparisonRow('food', 340)],
-  }[month] ?? []))
+  api.budgets.comparison.mockImplementation(
+    async (month: string) =>
+      ({
+        '2026-09-01': [comparisonRow('food', 300)],
+        '2026-08-01': [comparisonRow('food', 2000)],
+        '2026-07-01': [comparisonRow('food', 340)],
+      })[month] ?? [],
+  )
   api.budgets.update.mockResolvedValue(rent)
   api.budgets.create.mockResolvedValue(rent)
 })
@@ -92,7 +174,9 @@ describe('Budget settings page', () => {
   it('keeps hidden category budgets manageable and uses the history suggestion dialog', async () => {
     const { user } = renderWithProviders(<BudgetsPage />)
 
-    expect(await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Archived utilities' }) })).toHaveValue('120')
+    expect(
+      await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Archived utilities' }) }),
+    ).toHaveValue('120')
     expect(screen.getByText(t('budgets.hiddenCategory'))).toBeInTheDocument()
     expect(await screen.findByText(t('budgets.average', { amount: '$880.00' }))).toBeInTheDocument()
 
@@ -103,7 +187,9 @@ describe('Budget settings page', () => {
 
     await waitFor(() => {
       expect(api.budgets.createBatch).toHaveBeenCalledWith({
-        month: '2026-10-01', is_recurring: false, items: [{ category_id: 'food', amount: 880 }],
+        month: '2026-10-01',
+        is_recurring: false,
+        items: [{ category_id: 'food', amount: 880 }],
       })
     })
   })
@@ -113,18 +199,24 @@ describe('Budget settings page', () => {
     const rentInput = await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
     await user.clear(rentInput)
     await user.type(rentInput, '950')
-    await user.click(screen.getByRole('button', { name: t('budgets.repeatEveryMonthFor', { category: 'Archived utilities' }) }))
+    await user.click(
+      screen.getByRole('button', { name: t('budgets.repeatEveryMonthFor', { category: 'Archived utilities' }) }),
+    )
     await user.click(screen.getByRole('button', { name: t('common.save') }))
 
     await waitFor(() => {
-      expect(api.budgets.create).toHaveBeenCalledWith({ category_id: 'hidden', amount: 120, month: '2026-10-01', is_recurring: false })
+      expect(api.budgets.create).toHaveBeenCalledWith({
+        category_id: 'hidden',
+        amount: 120,
+        month: '2026-10-01',
+        is_recurring: false,
+      })
       expect(api.budgets.update).toHaveBeenCalledWith('b-hidden', { amount: 0, effective_month: '2026-11-01' })
     })
     expect(api.budgets.update).toHaveBeenCalledWith('b-rent', { amount: 950, effective_month: '2026-10-01' })
     expect(api.budgets.delete).not.toHaveBeenCalledWith('b-food-zero')
   })
 })
-
 
 const selectedMonth = '2026-10-01'
 
@@ -133,7 +225,9 @@ function budgetInput(name = 'Rent') {
 }
 
 function categoryTrigger(name = 'Rent', month = '2026-10') {
-  return screen.getByRole('button', { name: t('dashboard.drillDownCategory', { category: name, month: monthLabel(month, 'en') }) })
+  return screen.getByRole('button', {
+    name: t('dashboard.drillDownCategory', { category: name, month: monthLabel(month, 'en') }),
+  })
 }
 
 function budgetRow(name = 'Rent') {
@@ -152,9 +246,7 @@ function expectNoBudgetWrites() {
 }
 
 function mockSpending(amount = 450) {
-  api.dashboard.spendingByCategory.mockResolvedValue([
-    { category_id: 'rent', total: 100, projected_total: amount },
-  ])
+  api.dashboard.spendingByCategory.mockResolvedValue([{ category_id: 'rent', total: 100, projected_total: amount }])
 }
 
 describe('Budget spending in the inline editor', () => {
@@ -168,7 +260,9 @@ describe('Budget spending in the inline editor', () => {
     expect(await screen.findByText('$450.00')).toBeInTheDocument()
     expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
     expect(screen.getByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Rent` })).toBeInTheDocument()
-    expect(screen.getByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Archived utilities` })).toBeInTheDocument()
+    expect(
+      screen.getByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Archived utilities` }),
+    ).toBeInTheDocument()
     expect(budgetRow('Archived utilities').getByText('$0.00')).toBeInTheDocument()
     expect(budgetRow('Archived utilities').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
     expect(budgetRow('Groceries').queryByRole('progressbar')).not.toBeInTheDocument()
@@ -179,22 +273,25 @@ describe('Budget spending in the inline editor', () => {
     expect(api.dashboard.spendingByCategory).toHaveBeenCalledWith(selectedMonth, undefined)
   })
 
-  it.each([true, false])('places regular-weight spending beside the limit on desktop and below the category on mobile (canWrite=%s)', async (canWrite) => {
-    api.canWrite = canWrite
-    mockSpending()
-    renderWithProviders(<BudgetsPage />)
-    await screen.findByText('$450.00')
-    const row = budgetRow()
-    const spending = row.getByRole('progressbar').parentElement?.parentElement
+  it.each([true, false])(
+    'places regular-weight spending beside the limit on desktop and below the category on mobile (canWrite=%s)',
+    async (canWrite) => {
+      api.canWrite = canWrite
+      mockSpending()
+      renderWithProviders(<BudgetsPage />)
+      await screen.findByText('$450.00')
+      const row = budgetRow()
+      const spending = row.getByRole('progressbar').parentElement?.parentElement
 
-    expect(spending).toHaveClass('row-start-2', 'col-span-3', 'md:row-start-1', 'md:col-start-3', 'md:col-span-1')
-    expect(spending?.parentElement).toHaveClass('grid')
-    expect(budgetInput().parentElement).toHaveClass('col-start-3', 'row-start-1', 'md:col-start-5')
-    expect(row.getByText('$450.00')).toHaveClass('font-normal')
-    expect(row.getByText('$450.00')).not.toHaveClass('font-semibold', 'font-bold')
-    expect(budgetInput()).toHaveClass('font-semibold')
-    expect(row.queryByText(t('dashboard.ofBudget', { budget: '$900.00' }))).not.toBeInTheDocument()
-  })
+      expect(spending).toHaveClass('row-start-2', 'col-span-3', 'md:row-start-1', 'md:col-start-3', 'md:col-span-1')
+      expect(spending?.parentElement).toHaveClass('grid')
+      expect(budgetInput().parentElement).toHaveClass('col-start-3', 'row-start-1', 'md:col-start-5')
+      expect(row.getByText('$450.00')).toHaveClass('font-normal')
+      expect(row.getByText('$450.00')).not.toHaveClass('font-semibold', 'font-bold')
+      expect(budgetInput()).toHaveClass('font-semibold')
+      expect(row.queryByText(t('dashboard.ofBudget', { budget: '$900.00' }))).not.toBeInTheDocument()
+    },
+  )
 
   it.each([
     [0, 0, 'bg-emerald-500'],
@@ -208,7 +305,9 @@ describe('Budget spending in the inline editor', () => {
     renderWithProviders(<BudgetsPage />)
 
     await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
-    await waitFor(() => expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', String(percentage)))
+    await waitFor(() =>
+      expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', String(percentage)),
+    )
     expect(budgetRow().getByRole('progressbar').firstElementChild).toHaveStyle({ width: `${percentage}%` })
     expect(budgetRow().getByRole('progressbar').firstElementChild).toHaveClass(color)
   })
@@ -229,9 +328,12 @@ describe('Budget spending in the inline editor', () => {
     expectNoBudgetWrites()
 
     await user.click(screen.getByRole('button', { name: t('common.save') }))
-    await waitFor(() => expect(api.budgets.update).toHaveBeenCalledWith('b-rent', {
-      amount: 600, effective_month: selectedMonth,
-    }))
+    await waitFor(() =>
+      expect(api.budgets.update).toHaveBeenCalledWith('b-rent', {
+        amount: 600,
+        effective_month: selectedMonth,
+      }),
+    )
     expect(api.budgets.update).toHaveBeenCalledTimes(1)
   })
 
@@ -256,29 +358,42 @@ describe('Budget spending in the inline editor', () => {
     expectNoBudgetWrites()
   })
 
-  it.each(['', '0', 'invalid', '-10'])('omits draft progress for the nonpositive or invalid limit "%s"', async (draft) => {
-    mockSpending()
-    const { user } = renderWithProviders(<BudgetsPage />)
-    await screen.findByText('$450.00')
-    await user.clear(budgetInput())
-    if (draft) await user.type(budgetInput(), draft)
+  it.each(['', '0', 'invalid', '-10'])(
+    'omits draft progress for the nonpositive or invalid limit "%s"',
+    async (draft) => {
+      mockSpending()
+      const { user } = renderWithProviders(<BudgetsPage />)
+      await screen.findByText('$450.00')
+      await user.clear(budgetInput())
+      if (draft) await user.type(budgetInput(), draft)
 
-    expect(budgetRow().queryByRole('progressbar')).not.toBeInTheDocument()
-    expect(budgetRow().getByText('$450.00')).toBeInTheDocument()
-    expectNoBudgetWrites()
-    if (draft === 'invalid' || draft === '-10') {
-      expect(budgetInput()).toHaveAttribute('aria-invalid', 'true')
-      expect(budgetRow().getByRole('alert')).toHaveTextContent(t('budgets.invalidAmount'))
-      expect(screen.getByRole('button', { name: t('common.save') })).toBeDisabled()
-    }
-  })
+      expect(budgetRow().queryByRole('progressbar')).not.toBeInTheDocument()
+      expect(budgetRow().getByText('$450.00')).toBeInTheDocument()
+      expectNoBudgetWrites()
+      if (draft === 'invalid' || draft === '-10') {
+        expect(budgetInput()).toHaveAttribute('aria-invalid', 'true')
+        expect(budgetRow().getByRole('alert')).toHaveTextContent(t('budgets.invalidAmount'))
+        expect(screen.getByRole('button', { name: t('common.save') })).toBeDisabled()
+      }
+    },
+  )
 
   it('opens the real panel by keyboard without losing drafts, and restores focus when closed', async () => {
     mockSpending()
-    api.transactions.list.mockResolvedValue({ items: [{
-      id: 'tx-rent', description: 'October rent payment', date: selectedMonth,
-      type: 'debit', amount: 450, currency: 'USD', status: 'posted',
-    }], total: 1 })
+    api.transactions.list.mockResolvedValue({
+      items: [
+        {
+          id: 'tx-rent',
+          description: 'October rent payment',
+          date: selectedMonth,
+          type: 'debit',
+          amount: 450,
+          currency: 'USD',
+          status: 'posted',
+        },
+      ],
+      total: 1,
+    })
     const { user } = renderWithProviders(<BudgetsPage />)
     await screen.findByText('$450.00')
     await user.clear(budgetInput())
@@ -292,10 +407,15 @@ describe('Budget spending in the inline editor', () => {
     await user.keyboard('{Enter}')
     expect(await screen.findByText('October rent payment')).toBeInTheDocument()
     expect(screen.getByRole('complementary')).toHaveFocus()
-    expect(api.transactions.list).toHaveBeenCalledWith(expect.objectContaining({
-      category_id: 'rent', type: 'debit', ...monthRange('2026-10'),
-      account_ids: undefined, user_pnl_only: true,
-    }))
+    expect(api.transactions.list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category_id: 'rent',
+        type: 'debit',
+        ...monthRange('2026-10'),
+        account_ids: undefined,
+        user_pnl_only: true,
+      }),
+    )
     expect(budgetInput()).toHaveValue('1200')
     expect(repeat).toHaveAttribute('aria-pressed', 'false')
     expectNoBudgetWrites()
@@ -318,31 +438,46 @@ describe('Budget spending in the inline editor', () => {
 
   it('updates spending and the open panel when accounts or month change', async () => {
     api.activeAccountIds = ['account-1']
-    api.dashboard.spendingByCategory.mockImplementation(async (month, accountIds) => [{
-      category_id: 'rent', projected_total: month === '2026-09-01' ? 75 : accountIds?.[0] === 'account-2' ? 225 : 450,
-    }])
+    api.dashboard.spendingByCategory.mockImplementation(async (month, accountIds) => [
+      {
+        category_id: 'rent',
+        projected_total: month === '2026-09-01' ? 75 : accountIds?.[0] === 'account-2' ? 225 : 450,
+      },
+    ])
     const { user, rerender } = renderWithProviders(<BudgetsPage />)
     await screen.findByText('$450.00')
     await user.click(categoryTrigger())
     expect(await screen.findByText(t('dashboard.drillDownEmpty'))).toBeInTheDocument()
-    expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({
-      category_id: 'rent', account_ids: ['account-1'], ...monthRange('2026-10'),
-    }))
+    expect(api.transactions.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        category_id: 'rent',
+        account_ids: ['account-1'],
+        ...monthRange('2026-10'),
+      }),
+    )
     expect(api.dashboard.spendingByCategory).toHaveBeenCalledWith(selectedMonth, ['account-1'])
 
     api.activeAccountIds = ['account-2']
     rerender(<BudgetsPage />)
     expect(await screen.findByText('$225.00')).toBeInTheDocument()
-    await waitFor(() => expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({ account_ids: ['account-2'] })))
+    await waitFor(() =>
+      expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({ account_ids: ['account-2'] })),
+    )
     expect(api.dashboard.spendingByCategory).toHaveBeenLastCalledWith(selectedMonth, ['account-2'])
 
     screen.getByRole('button', { name: t('budgets.previousMonth') }).focus()
     await user.keyboard('{Enter}')
     expect(await screen.findByText('$75.00')).toBeInTheDocument()
     expect(screen.getByRole('complementary')).toBeInTheDocument()
-    await waitFor(() => expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({
-      category_id: 'rent', account_ids: ['account-2'], ...monthRange('2026-09'),
-    })))
+    await waitFor(() =>
+      expect(api.transactions.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          category_id: 'rent',
+          account_ids: ['account-2'],
+          ...monthRange('2026-09'),
+        }),
+      ),
+    )
     expect(api.dashboard.spendingByCategory).toHaveBeenLastCalledWith('2026-09-01', ['account-2'])
     expect(api.dashboard.projectedTransactions).toHaveBeenLastCalledWith({ month: '2026-09-01' })
   })
@@ -354,9 +489,12 @@ describe('Budget spending in the inline editor', () => {
     expect(api.dashboard.spendingByCategory).toHaveBeenCalledWith('2026-08-01', undefined)
     await user.click(categoryTrigger('Rent', '2026-08'))
     await screen.findByText(t('dashboard.drillDownEmpty'))
-    expect(api.transactions.list).toHaveBeenCalledWith(expect.objectContaining({
-      category_id: 'rent', ...monthRange('2026-08'),
-    }))
+    expect(api.transactions.list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category_id: 'rent',
+        ...monthRange('2026-08'),
+      }),
+    )
   })
 
   it('does not apply a draft limit to another month when navigating', async () => {
@@ -408,10 +546,22 @@ describe('Budget spending in the inline editor', () => {
 
   it.each([null, ['account-1']])('uses viewer shares only for the unfiltered panel scope (%s)', async (accountIds) => {
     api.activeAccountIds = accountIds
-    api.transactions.list.mockResolvedValue({ items: [{
-      id: 'split', description: 'Shared rent', date: selectedMonth, type: 'debit',
-      amount: 120, amount_primary: 240, viewer_share: 30, currency: 'EUR', status: 'posted',
-    }], total: 1 })
+    api.transactions.list.mockResolvedValue({
+      items: [
+        {
+          id: 'split',
+          description: 'Shared rent',
+          date: selectedMonth,
+          type: 'debit',
+          amount: 120,
+          amount_primary: 240,
+          viewer_share: 30,
+          currency: 'EUR',
+          status: 'posted',
+        },
+      ],
+      total: 1,
+    })
     const { user } = renderWithProviders(<BudgetsPage />)
     await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
     await user.click(categoryTrigger())
@@ -425,10 +575,20 @@ describe('Budget spending in the inline editor', () => {
     api.privacyMode = true
     api.mask.mockImplementation(() => '••••')
     mockSpending(123.45)
-    api.transactions.list.mockResolvedValue({ items: [{
-      id: 'private-rent', description: 'Private rent payment', date: selectedMonth,
-      type: 'debit', amount: 123.45, currency: 'USD', status: 'posted',
-    }], total: 1 })
+    api.transactions.list.mockResolvedValue({
+      items: [
+        {
+          id: 'private-rent',
+          description: 'Private rent payment',
+          date: selectedMonth,
+          type: 'debit',
+          amount: 123.45,
+          currency: 'USD',
+          status: 'posted',
+        },
+      ],
+      total: 1,
+    })
     const { user } = renderWithProviders(<BudgetsPage />)
     await waitFor(() => expect(api.mask).toHaveBeenCalledWith('$123.45'))
     expect(screen.queryByText('$123.45')).not.toBeInTheDocument()
@@ -466,14 +626,21 @@ describe('Budget spending in the inline editor', () => {
     expectNoBudgetWrites()
 
     await user.click(screen.getByRole('button', { name: t('common.save') }))
-    await waitFor(() => expect(api.budgets.update).toHaveBeenCalledWith('b-rent', {
-      amount: 1200, effective_month: selectedMonth,
-    }))
+    await waitFor(() =>
+      expect(api.budgets.update).toHaveBeenCalledWith('b-rent', {
+        amount: 1200,
+        effective_month: selectedMonth,
+      }),
+    )
   })
 
   it('does not show zero spending or a progress bar while spending is still loading', async () => {
     let resolveSpending!: (value: unknown[]) => void
-    api.dashboard.spendingByCategory.mockReturnValue(new Promise(resolve => { resolveSpending = resolve }))
+    api.dashboard.spendingByCategory.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSpending = resolve
+      }),
+    )
     renderWithProviders(<BudgetsPage />)
     await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
     expect(budgetRow().queryByText('$0.00')).not.toBeInTheDocument()
@@ -481,7 +648,9 @@ describe('Budget spending in the inline editor', () => {
     expect(budgetRow().getByText('—')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
-    await act(async () => { resolveSpending([{ category_id: 'rent', projected_total: 450 }]) })
+    await act(async () => {
+      resolveSpending([{ category_id: 'rent', projected_total: 450 }])
+    })
     expect(await screen.findByText('$450.00')).toBeInTheDocument()
     expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
   })

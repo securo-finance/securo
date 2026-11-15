@@ -114,7 +114,12 @@ export function TransactionDrillDown({
   // Derive month param from filter.from for projected transactions
   const monthParam = filter?.from ? filter.from.slice(0, 7) + '-01' : undefined
 
-  const { data: projectedTxs, isLoading: projectionsLoading, isError: projectionsError, refetch: refetchProjections } = useQuery({
+  const {
+    data: projectedTxs,
+    isLoading: projectionsLoading,
+    isError: projectionsError,
+    refetch: refetchProjections,
+  } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
     enabled: !!filter && !!monthParam && !noAccounts && !filter.realizedOnly,
@@ -151,23 +156,30 @@ export function TransactionDrillDown({
       // share, the owner the amount less everyone else's shares, and anyone
       // else the full amount.
       const splits = tx.splits ?? []
-      const ownShare = viewerShare != null || !filter?.ownShare || tx.type !== 'debit'
-        ? null
-        : tx.is_shared
-          ? Number(tx.viewer_share ?? 0)
-          : splits.length > 0 && tx.user_id === user?.id
-            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0))
-            : null
+      const ownShare =
+        viewerShare != null || !filter?.ownShare || tx.type !== 'debit'
+          ? null
+          : tx.is_shared
+            ? Number(tx.viewer_share ?? 0)
+            : splits.length > 0 && tx.user_id === user?.id
+              ? parentAmount -
+                (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0))
+              : null
       const share = viewerShare ?? ownShare
       // Shares are in the row's own currency, so the primary amount scales
       // by the same ratio.
-      const amount = isPart ? Number(tx.matched_amount) : share ?? parentAmount
+      const amount = isPart ? Number(tx.matched_amount) : (share ?? parentAmount)
       const amountPrimary = isPart
-        ? tx.matched_amount_primary != null ? Number(tx.matched_amount_primary) : null
-        : share == null ? parentPrimary
-          : share === 0 ? 0 : parentPrimary != null && parentAmount !== 0
-            ? parentPrimary * Math.abs(share / parentAmount)
-            : null
+        ? tx.matched_amount_primary != null
+          ? Number(tx.matched_amount_primary)
+          : null
+        : share == null
+          ? parentPrimary
+          : share === 0
+            ? 0
+            : parentPrimary != null && parentAmount !== 0
+              ? parentPrimary * Math.abs(share / parentAmount)
+              : null
       items.push({
         key: tx.id,
         description: tx.description,
@@ -188,20 +200,23 @@ export function TransactionDrillDown({
     }
 
     // A disabled query can still hand back what the dashboard cached.
-    for (const pt of filter?.realizedOnly ? [] : projectedTxs ?? []) {
+    for (const pt of filter?.realizedOnly ? [] : (projectedTxs ?? [])) {
       // Filter projected txs by drill-down criteria
       if (filter?.account_id && pt.account_id !== filter.account_id) continue
       if (filter?.account_ids && (!pt.account_id || !filter.account_ids.includes(pt.account_id))) continue
       if (filter?.type && pt.type !== filter.type) continue
       // A split template counts in a category through its part there.
-      const parts = pt.has_category_lines ? pt.category_lines ?? [] : []
+      const parts = pt.has_category_lines ? (pt.category_lines ?? []) : []
       // Every part ignored: the template counts nowhere, so it lists nowhere.
       if (pt.has_category_lines && !parts.length) continue
-      const matchedParts = filter?.category_id
-        ? parts.filter((part) => part.category_id === filter.category_id)
-        : []
+      const matchedParts = filter?.category_id ? parts.filter((part) => part.category_id === filter.category_id) : []
       if (filter?.category_id && !matchedParts.length && String(pt.category_id) !== filter.category_id) continue
-      if (filter?.category_ids && !parts.some((part) => filter.category_ids!.includes(part.category_id)) && !filter.category_ids.includes(String(pt.category_id))) continue
+      if (
+        filter?.category_ids &&
+        !parts.some((part) => filter.category_ids!.includes(part.category_id)) &&
+        !filter.category_ids.includes(String(pt.category_id))
+      )
+        continue
       if (filter?.uncategorized && (pt.category_id != null || parts.length)) continue
       if (filter?.from && pt.date < filter.from) continue
       if (filter?.to && pt.date > filter.to) continue
@@ -282,7 +297,9 @@ export function TransactionDrillDown({
     if (!isOpen) return
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     panelRef.current?.focus()
-    return () => { opener?.focus() }
+    return () => {
+      opener?.focus()
+    }
   }, [isOpen])
 
   // Close on Escape, unless the key belongs to a dialog opened from the
@@ -321,8 +338,10 @@ export function TransactionDrillDown({
   // amount_primary; if it's missing we can't convert, so skip the row
   // instead of adding a raw foreign amount as if it were primary. This
   // matches how get_summary computes monthly_*_primary on the backend.
-  const { absTotal, netTotal, postedTotal, pendingTotal, projectedTotal } =
-    sumDrillDownTotals(displayItems, userCurrency)
+  const { absTotal, netTotal, postedTotal, pendingTotal, projectedTotal } = sumDrillDownTotals(
+    displayItems,
+    userCurrency,
+  )
   const shownTotal = filter?.netTotal ? netTotal : absTotal
 
   // Break the total down whenever some of it is money that has not settled,
@@ -354,9 +373,7 @@ export function TransactionDrillDown({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <h2 className="text-sm font-semibold text-foreground truncate pr-4">
-            {filter?.title}
-          </h2>
+          <h2 className="text-sm font-semibold text-foreground truncate pr-4">{filter?.title}</h2>
           <button
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
@@ -378,10 +395,16 @@ export function TransactionDrillDown({
           {loadError ? (
             <div role="alert" className="p-5 text-center space-y-3">
               <p className="text-sm text-destructive">{t('dashboard.drillDownError')}</p>
-              <button type="button" className="text-sm text-primary hover:underline" onClick={() => {
-                void refetch()
-                if (monthParam && !noAccounts) void refetchProjections()
-              }}>{t('common.retry')}</button>
+              <button
+                type="button"
+                className="text-sm text-primary hover:underline"
+                onClick={() => {
+                  void refetch()
+                  if (monthParam && !noAccounts) void refetchProjections()
+                }}
+              >
+                {t('common.retry')}
+              </button>
             </div>
           ) : loading ? (
             <div className="p-5 space-y-3">
@@ -390,9 +413,7 @@ export function TransactionDrillDown({
               ))}
             </div>
           ) : displayItems.length === 0 ? (
-            <p className="text-muted-foreground text-sm text-center py-12">
-              {t('dashboard.drillDownEmpty')}
-            </p>
+            <p className="text-muted-foreground text-sm text-center py-12">{t('dashboard.drillDownEmpty')}</p>
           ) : (
             <div className="divide-y divide-border">
               {displayItems.map((item) => (
@@ -408,38 +429,36 @@ export function TransactionDrillDown({
                   {item.transaction && isSplitByCategory(item.transaction) && item.partOf == null ? (
                     <TransactionCategoryIcon tx={item.transaction} size="lg" />
                   ) : (
-                    <CategoryIcon
-                      icon={item.categoryIcon}
-                      color={item.categoryColor}
-                      size="lg"
-                    />
+                    <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} size="lg" />
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
-                      {item.isProjected && (
-                        <ProjectedTransactionBadge />
-                      )}
+                      {item.isProjected && <ProjectedTransactionBadge />}
                       {item.isPending && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10">
-                              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+                              <Clock
+                                size={12}
+                                className="text-amber-500"
+                                role="img"
+                                aria-label={t('transactions.pending')}
+                              />
                             </span>
                           </TooltipTrigger>
                           <TooltipContent>{t('transactions.pending')}</TooltipContent>
                         </Tooltip>
                       )}
-                      {item.attachmentCount > 0 && (
-                        <Paperclip size={12} className="text-muted-foreground shrink-0" />
-                      )}
+                      {item.attachmentCount > 0 && <Paperclip size={12} className="text-muted-foreground shrink-0" />}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {new Date(item.date + 'T00:00:00').toLocaleDateString(dateLocale)}
                       {item.categoryName && ` · ${item.categoryName}`}
-                      {item.partOf != null && ` · ${t('categoryLines.partOf', {
-                        value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
-                      })}`}
+                      {item.partOf != null &&
+                        ` · ${t('categoryLines.partOf', {
+                          value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
+                        })}`}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
@@ -454,7 +473,9 @@ export function TransactionDrillDown({
                     {item.currency !== userCurrency && item.amountPrimary != null && (
                       <div className="flex items-center justify-end gap-1">
                         {item.transaction?.fx_fallback && (
-                          <span title={t('transactions.fxFallbackTooltip')}><AlertTriangle size={11} className="text-amber-500 shrink-0" /></span>
+                          <span title={t('transactions.fxFallbackTooltip')}>
+                            <AlertTriangle size={11} className="text-amber-500 shrink-0" />
+                          </span>
                         )}
                         <span className="text-[10px] text-muted-foreground tabular-nums">
                           {mask(formatCurrency(Math.abs(item.amountPrimary), userCurrency, locale))}
@@ -475,21 +496,31 @@ export function TransactionDrillDown({
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
                   <span>{t('dashboard.drillDownSettledTotal')}</span>
-                  <span className="tabular-nums text-foreground">{mask(formatCurrency(postedTotal, userCurrency, locale))}</span>
+                  <span className="tabular-nums text-foreground">
+                    {mask(formatCurrency(postedTotal, userCurrency, locale))}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
                   <span>{t('dashboard.drillDownPendingTotal')}</span>
-                  <span className="tabular-nums text-foreground">{mask(formatCurrency(pendingTotal, userCurrency, locale))}</span>
+                  <span className="tabular-nums text-foreground">
+                    {mask(formatCurrency(pendingTotal, userCurrency, locale))}
+                  </span>
                 </div>
                 {projectedTotal > 0 && (
                   <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
                     <span>{t('transactions.projected')}</span>
-                    <span className="tabular-nums text-foreground">{mask(formatCurrency(projectedTotal, userCurrency, locale))}</span>
+                    <span className="tabular-nums text-foreground">
+                      {mask(formatCurrency(projectedTotal, userCurrency, locale))}
+                    </span>
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-4 border-t border-border pt-2 mt-2">
-                  <span className="text-xs font-medium text-muted-foreground">{t('dashboard.drillDownShownTotal')}</span>
-                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(shownTotal, userCurrency, locale))}</span>
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {t('dashboard.drillDownShownTotal')}
+                  </span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">
+                    {mask(formatCurrency(shownTotal, userCurrency, locale))}
+                  </span>
                 </div>
               </div>
             ) : (

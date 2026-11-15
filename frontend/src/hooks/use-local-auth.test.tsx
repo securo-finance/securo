@@ -10,11 +10,7 @@ const authApi = vi.hoisted(() => ({ oidcConfig: vi.fn() }))
 vi.mock('@/lib/api', () => ({ auth: authApi }))
 
 function wrapper({ children }: { children: ReactNode }) {
-  return (
-    <QueryClientProvider client={createTestQueryClient()}>
-      {children}
-    </QueryClientProvider>
-  )
+  return <QueryClientProvider client={createTestQueryClient()}>{children}</QueryClientProvider>
 }
 
 beforeEach(() => {

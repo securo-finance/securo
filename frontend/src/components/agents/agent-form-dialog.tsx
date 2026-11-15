@@ -5,13 +5,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, Plug, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -151,7 +145,12 @@ export function AgentFormDialog({ open, onOpenChange, agent, preset }: Props) {
         <div className="grid gap-4 py-2">
           <div className="grid gap-2">
             <Label htmlFor="agent-name">{t('agents.form.name')}</Label>
-            <Input id="agent-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('agents.form.namePlaceholder')} />
+            <Input
+              id="agent-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('agents.form.namePlaceholder')}
+            />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="agent-desc">{t('agents.form.description')}</Label>
@@ -235,7 +234,9 @@ export function AgentFormDialog({ open, onOpenChange, agent, preset }: Props) {
                   placeholder={selectedConnection?.default_model || t('agents.form.modelPlaceholder')}
                 />
                 {!model && selectedConnection?.default_model && (
-                  <p className="text-xs text-muted-foreground">{t('agents.form.willUseConnectionDefault', { model: selectedConnection.default_model })}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('agents.form.willUseConnectionDefault', { model: selectedConnection.default_model })}
+                  </p>
                 )}
               </div>
             </div>

@@ -46,9 +46,7 @@ export default function AgentDetailPage() {
     queryKey: ['agent-connections'],
     queryFn: () => agents.connections.list(),
   })
-  const linkedConnection = agent?.connection_id
-    ? connections?.find((c) => c.id === agent.connection_id)
-    : undefined
+  const linkedConnection = agent?.connection_id ? connections?.find((c) => c.id === agent.connection_id) : undefined
   const providerLabel =
     linkedConnection?.name ||
     (linkedConnection ? linkedConnection.kind : null) ||
@@ -77,7 +75,13 @@ export default function AgentDetailPage() {
     // overflow-hidden ensures only the messages div inside ChatPanel scrolls.
     <div className="flex flex-col h-[calc(100dvh-6.5rem)] lg:h-[calc(100dvh-3rem)] overflow-hidden">
       <div className="border-b px-4 py-3 flex items-center gap-3">
-        <Button size="icon" variant="ghost" onClick={() => navigate('/agents')} title={t('common.back')} aria-label={t('common.back')}>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => navigate('/agents')}
+          title={t('common.back')}
+          aria-label={t('common.back')}
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div
@@ -124,8 +128,15 @@ export default function AgentDetailPage() {
         <TabsContent value="chat" className="flex-1 flex min-h-0 mt-3">
           <aside className="hidden md:flex md:w-64 border-r flex-col min-h-0">
             <div className="px-3 pt-2 pb-1 flex items-center justify-between shrink-0">
-              <span className="text-xs uppercase tracking-wider text-muted-foreground">{t('agents.detail.conversations')}</span>
-              <Button size="icon" variant="ghost" onClick={() => pickConversation(null)} title={t('agents.detail.newConversation')}>
+              <span className="text-xs uppercase tracking-wider text-muted-foreground">
+                {t('agents.detail.conversations')}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => pickConversation(null)}
+                title={t('agents.detail.newConversation')}
+              >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>

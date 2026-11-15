@@ -74,33 +74,39 @@ export default function LoginPage() {
       navigate('/', { replace: true })
       return
     }
-    adminApi.registrationStatus().then(({ enabled }) => {
-      setRegistrationEnabled(enabled)
-    }).catch(() => {})
-    authApi.oidcConfig()
+    adminApi
+      .registrationStatus()
+      .then(({ enabled }) => {
+        setRegistrationEnabled(enabled)
+      })
+      .catch(() => {})
+    authApi
+      .oidcConfig()
       .then((config) => {
         setOidcConfig(config)
         setOidcConfigFailed(false)
       })
       .catch(() => setOidcConfigFailed(true))
-    adminApi.defaultColors().then(({ light, dark }) => {
-      setThemeBasedOnSystem(light, dark, resolvedTheme)
-    }).catch(() => {})
+    adminApi
+      .defaultColors()
+      .then(({ light, dark }) => {
+        setThemeBasedOnSystem(light, dark, resolvedTheme)
+      })
+      .catch(() => {})
   }, [navigate, token, resolvedTheme])
 
   useEffect(() => {
     if (token || (oidcConfig === null && !oidcConfigFailed)) return
 
     let active = true
-    setup.status().then(({ has_users }) => {
-      if (
-        active &&
-        !has_users &&
-        resolveLocalAuthEnabled(oidcConfig, oidcConfigFailed)
-      ) {
-        navigate('/setup', { replace: true })
-      }
-    }).catch(() => {})
+    setup
+      .status()
+      .then(({ has_users }) => {
+        if (active && !has_users && resolveLocalAuthEnabled(oidcConfig, oidcConfigFailed)) {
+          navigate('/setup', { replace: true })
+        }
+      })
+      .catch(() => {})
 
     return () => {
       active = false
@@ -116,14 +122,15 @@ export default function LoginPage() {
       !passkeySupported ||
       isLoading ||
       isPasskeyLoading
-    ) return
+    )
+      return
 
     const abortController = new AbortController()
     conditionalPasskeyAbortRef.current?.abort()
     conditionalPasskeyAbortRef.current = abortController
 
     const authenticateConditionally = async () => {
-      if (!await isConditionalPasskeySupported() || abortController.signal.aborted) return
+      if (!(await isConditionalPasskeySupported()) || abortController.signal.aborted) return
 
       try {
         // An account-less request lets the browser discover eligible passkeys
@@ -131,10 +138,7 @@ export default function LoginPage() {
         const options = await authApi.passkeyAuthenticationOptions()
         if (abortController.signal.aborted) return
 
-        const credential = await startConditionalPasskeyAuthentication(
-          options.options,
-          abortController.signal,
-        )
+        const credential = await startConditionalPasskeyAuthentication(options.options, abortController.signal)
         // A challenge is one-shot server-side: verifying one the user already
         // walked away from burns it and answers a ceremony nobody is watching.
         if (abortController.signal.aborted) return
@@ -178,7 +182,9 @@ export default function LoginPage() {
     try {
       const result = await login(email, password)
       if (result.requires_2fa) {
-        const methods: Array<'totp' | 'passkey'> = result.available_methods?.length ? result.available_methods : ['totp']
+        const methods: Array<'totp' | 'passkey'> = result.available_methods?.length
+          ? result.available_methods
+          : ['totp']
         setRequires2fa(true)
         setTempToken(result.temp_token ?? '')
         setAvailable2faMethods(methods)
@@ -306,11 +312,7 @@ export default function LoginPage() {
               </p>
             </div>
             <CardContent className="space-y-4 px-8 pt-4">
-              {error && (
-                <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">
-                  {error}
-                </div>
-              )}
+              {error && <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">{error}</div>}
               {available2faMethods.length > 1 && (
                 <div className="grid grid-cols-2 gap-2">
                   {available2faMethods.includes('passkey') && (
@@ -335,7 +337,9 @@ export default function LoginPage() {
               )}
               {selected2faMethod === 'totp' && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="totp-code" className="text-sm">{t('auth.twoFactor')}</Label>
+                  <Label htmlFor="totp-code" className="text-sm">
+                    {t('auth.twoFactor')}
+                  </Label>
                   <Input
                     id="totp-code"
                     type="text"
@@ -352,9 +356,7 @@ export default function LoginPage() {
                 </div>
               )}
               {selected2faMethod === 'passkey' && (
-                <p className="text-sm text-muted-foreground text-center">
-                  {t('auth.passkeySecondFactorPrompt')}
-                </p>
+                <p className="text-sm text-muted-foreground text-center">{t('auth.passkeySecondFactorPrompt')}</p>
               )}
             </CardContent>
             <CardFooter className="flex flex-col gap-4 px-8 pb-8 pt-2">
@@ -428,7 +430,9 @@ export default function LoginPage() {
                 </div>
               )}
               <div className="space-y-1.5">
-                <Label htmlFor="email" className="text-sm">{t('auth.email')}</Label>
+                <Label htmlFor="email" className="text-sm">
+                  {t('auth.email')}
+                </Label>
                 <Input
                   id="email"
                   type="email"
@@ -444,7 +448,9 @@ export default function LoginPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="password" className="text-sm">{t('auth.password')}</Label>
+                <Label htmlFor="password" className="text-sm">
+                  {t('auth.password')}
+                </Label>
                 <Input
                   id="password"
                   type="password"

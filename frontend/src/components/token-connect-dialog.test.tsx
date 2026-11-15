@@ -23,7 +23,11 @@ import { TokenConnectDialog } from './token-connect-dialog'
 function gatewayTimeout(): AxiosError {
   const config = { headers: new AxiosHeaders() }
   return new AxiosError('timeout', undefined, config, undefined, {
-    status: 504, statusText: 'Gateway Timeout', headers: {}, config, data: '<html>504</html>',
+    status: 504,
+    statusText: 'Gateway Timeout',
+    headers: {},
+    config,
+    data: '<html>504</html>',
   })
 }
 
@@ -63,9 +67,15 @@ it('still reports the failure when no connection appears', async () => {
 
 it('does not wait on an error the backend itself returned', async () => {
   const config = { headers: new AxiosHeaders() }
-  api.handleCallback.mockRejectedValue(new AxiosError('bad', undefined, config, undefined, {
-    status: 400, statusText: '', headers: {}, config, data: { detail: 'Invalid token' },
-  }))
+  api.handleCallback.mockRejectedValue(
+    new AxiosError('bad', undefined, config, undefined, {
+      status: 400,
+      statusText: '',
+      headers: {},
+      config,
+      data: { detail: 'Invalid token' },
+    }),
+  )
 
   submit()
 

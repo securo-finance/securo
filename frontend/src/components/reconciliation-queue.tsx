@@ -30,11 +30,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { cn } from '@/lib/utils'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      {children}
-    </div>
-  )
+  return <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">{children}</div>
 }
 
 /** What kind of question this row is.
@@ -53,12 +49,7 @@ function KindBadge({ kind }: { kind: ReconciliationSuggestion['expectation_kind'
         ? 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300'
         : 'bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300'
   return (
-    <span
-      className={cn(
-        'shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full',
-        tone,
-      )}
-    >
+    <span className={cn('shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full', tone)}>
       {t(`reconciliation.queue.kind.${kind}`)}
     </span>
   )
@@ -151,8 +142,7 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
 
   const money = (value: string | number | null | undefined, currency?: string | null) =>
     mask(formatCurrency(Number(value ?? 0), currency || 'USD', locale))
-  const showDate = (iso: string) =>
-    new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
+  const showDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
 
   if (!suggestions) return null
 
@@ -167,9 +157,7 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
             </span>
           )}
         </p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {t('reconciliation.queue.hint')}
-        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">{t('reconciliation.queue.hint')}</p>
       </div>
 
       {suggestions.length === 0 ? (
@@ -183,23 +171,18 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
             <div
               key={suggestion.id}
               className="px-4 sm:px-5 py-3 hover:bg-muted/60 transition-colors cursor-pointer"
-              onClick={() =>
-                setOpenId((current) => (current === suggestion.id ? null : suggestion.id))
-              }
+              onClick={() => setOpenId((current) => (current === suggestion.id ? null : suggestion.id))}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground flex items-center gap-2">
                     <span className="truncate">
-                      {suggestion.transaction?.description ??
-                        t('reconciliation.queue.aPayment')}
+                      {suggestion.transaction?.description ?? t('reconciliation.queue.aPayment')}
                     </span>
                     <KindBadge kind={suggestion.expectation_kind} />
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {suggestion.transaction?.date
-                      ? showDate(suggestion.transaction.date)
-                      : ''}
+                    {suggestion.transaction?.date ? showDate(suggestion.transaction.date) : ''}
                     {/* Which of the reader's accounts this row sits on.
                         The sentence that follows names the other side,
                         and without this one the reader has to open the
@@ -217,12 +200,12 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                       suggestion.expectation_kind === 'invoice'
                         ? 'reconciliation.queue.maySettle'
                         : suggestion.expectation_kind === 'transaction'
-                          // "may settle" and "may be" both read as one
-                          // record explaining another. Two legs of a
-                          // transfer are neither: they are the same money
-                          // seen twice, and the row has to say so or the
-                          // reader answers a question we did not ask.
-                          ? 'reconciliation.queue.mayPairWith'
+                          ? // "may settle" and "may be" both read as one
+                            // record explaining another. Two legs of a
+                            // transfer are neither: they are the same money
+                            // seen twice, and the row has to say so or the
+                            // reader answers a question we did not ask.
+                            'reconciliation.queue.mayPairWith'
                           : 'reconciliation.queue.mayBe',
                       {
                         // One payment can answer several promises, and the
@@ -230,10 +213,8 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                         // all of them rather than the first and a count.
                         name:
                           suggestion.covers.length > 1
-                            ? suggestion.covers
-                                .map((c) => c.label ?? '—')
-                                .join(', ')
-                            : suggestion.expectation_label ?? '—',
+                            ? suggestion.covers.map((c) => c.label ?? '—').join(', ')
+                            : (suggestion.expectation_label ?? '—'),
                       },
                     )}
                   </p>
@@ -246,9 +227,7 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                           className="text-xs text-muted-foreground flex justify-between gap-3 max-w-xs"
                         >
                           <span className="truncate">{cover.label ?? '—'}</span>
-                          <span className="tabular-nums">
-                            {money(cover.amount, suggestion.scores.currency)}
-                          </span>
+                          <span className="tabular-nums">{money(cover.amount, suggestion.scores.currency)}</span>
                         </li>
                       ))}
                     </ul>
@@ -261,10 +240,7 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                     {money(suggestion.amount, suggestion.scores.currency)}
                   </span>
                   {canWrite && (
-                    <div
-                      className="flex items-center gap-1"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                       <Button
                         size="sm"
                         variant="outline"
@@ -273,9 +249,7 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                         disabled={accept.isPending || decline.isPending}
                       >
                         <Check size={13} />
-                        <span className="hidden sm:inline">
-                          {t('reconciliation.queue.accept')}
-                        </span>
+                        <span className="hidden sm:inline">{t('reconciliation.queue.accept')}</span>
                       </Button>
                       <Button
                         size="sm"
@@ -322,19 +296,14 @@ function useSettleMutation(
   t: (key: string) => string,
 ) {
   return useMutation({
-    mutationFn: (id: string) =>
-      action === 'accept'
-        ? reconciliationApi.accept(id)
-        : reconciliationApi.decline(id),
+    mutationFn: (id: string) => (action === 'accept' ? reconciliationApi.accept(id) : reconciliationApi.decline(id)),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['reconciliation-suggestions'] })
       // Answering a question is itself an event, so the stream below has
       // to be re-read or it shows a history that stops one act ago.
       void queryClient.invalidateQueries({ queryKey: ['reconciliation-history'] })
       if (action === 'accept') invalidateFinancialQueries(queryClient)
-      toast.success(
-        t(action === 'accept' ? 'reconciliation.queue.linked' : 'reconciliation.queue.declined'),
-      )
+      toast.success(t(action === 'accept' ? 'reconciliation.queue.linked' : 'reconciliation.queue.declined'))
     },
     onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })

@@ -30,22 +30,24 @@ export default function RegisterPage() {
 
   useEffect(() => {
     let active = true
-    Promise.all([
-      adminApi.registrationStatus(),
-      authApi.oidcConfig().catch(() => null),
-    ]).then(([registration, authConfig]) => {
-      if (!active) return
-      if (!registration.enabled || authConfig?.local_auth_enabled === false) {
-        navigate('/login', { replace: true })
-        return
-      }
-      setChecking(false)
-    }).catch(() => {
-      if (active) setChecking(false)
-    })
-    adminApi.defaultColors().then(({ light, dark }) => {
-      setThemeBasedOnSystem(light, dark, resolvedTheme)
-    }).catch(() => {})
+    Promise.all([adminApi.registrationStatus(), authApi.oidcConfig().catch(() => null)])
+      .then(([registration, authConfig]) => {
+        if (!active) return
+        if (!registration.enabled || authConfig?.local_auth_enabled === false) {
+          navigate('/login', { replace: true })
+          return
+        }
+        setChecking(false)
+      })
+      .catch(() => {
+        if (active) setChecking(false)
+      })
+    adminApi
+      .defaultColors()
+      .then(({ light, dark }) => {
+        setThemeBasedOnSystem(light, dark, resolvedTheme)
+      })
+      .catch(() => {})
     return () => {
       active = false
     }
@@ -107,13 +109,11 @@ export default function RegisterPage() {
             <p className="text-sm text-muted-foreground mt-1">{t('auth.registerDescription')}</p>
           </div>
           <CardContent className="space-y-4 px-8 pt-4">
-            {error && (
-              <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">
-                {error}
-              </div>
-            )}
+            {error && <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">{error}</div>}
             <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-sm">{t('auth.email')}</Label>
+              <Label htmlFor="email" className="text-sm">
+                {t('auth.email')}
+              </Label>
               <Input
                 id="email"
                 type="email"
@@ -124,7 +124,9 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-sm">{t('auth.password')}</Label>
+              <Label htmlFor="password" className="text-sm">
+                {t('auth.password')}
+              </Label>
               <Input
                 id="password"
                 type="password"
@@ -135,7 +137,9 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="confirmPassword" className="text-sm">{t('auth.confirmPassword')}</Label>
+              <Label htmlFor="confirmPassword" className="text-sm">
+                {t('auth.confirmPassword')}
+              </Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -145,7 +149,9 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="currency" className="text-sm">{t('auth.currency')}</Label>
+              <Label htmlFor="currency" className="text-sm">
+                {t('auth.currency')}
+              </Label>
               <CurrencySelect id="currency" value={currency} onChange={setCurrency} />
             </div>
           </CardContent>

@@ -36,11 +36,7 @@ export interface JurisdictionKinds {
   kinds: string[]
 }
 
-export function taxIdCountry(
-  kind: string,
-  value: string,
-  jurisdictions: JurisdictionKinds[],
-): string | null {
+export function taxIdCountry(kind: string, value: string, jurisdictions: JurisdictionKinds[]): string | null {
   if (!kind || kind === 'other') return null
 
   const owners = jurisdictions.filter((j) => j.kinds.includes(kind))
@@ -54,11 +50,7 @@ export function taxIdCountry(
 }
 
 /** The flag to show beside a stored document, or an empty string for none. */
-export function taxIdFlag(
-  kind: string,
-  value: string,
-  jurisdictions: JurisdictionKinds[],
-): string {
+export function taxIdFlag(kind: string, value: string, jurisdictions: JurisdictionKinds[]): string {
   const code = taxIdCountry(kind, value, jurisdictions)
   return code ? countryFlag(code) : ''
 }

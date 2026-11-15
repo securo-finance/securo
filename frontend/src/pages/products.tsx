@@ -17,13 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { IconAction, SectionCard, Segmented, TH } from '@/components/invoice-ui'
 import { CurrencySelect } from '@/components/currency-select'
@@ -70,9 +64,7 @@ export default function ProductsPage() {
     if (!list) return []
     const q = search.trim().toLowerCase()
     if (!q) return list
-    return list.filter(
-      (p) => p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q),
-    )
+    return list.filter((p) => p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q))
   }, [list, search])
 
   const refresh = () => {
@@ -105,9 +97,7 @@ export default function ProductsPage() {
     if (live.length === 0) return t('invoices.products.noPrice')
     return live
       .map(
-        (p) =>
-          money(p.unit_price, p.currency) +
-          (p.interval ? ` / ${t(`invoices.products.per.${p.interval}`)}` : ''),
+        (p) => money(p.unit_price, p.currency) + (p.interval ? ` / ${t(`invoices.products.per.${p.interval}`)}` : ''),
       )
       .join(' · ')
   }
@@ -187,7 +177,9 @@ export default function ProductsPage() {
                   <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('invoices.products.column.name')}</th>
                   <th className={`${TH} text-left w-24 hidden sm:table-cell`}>{t('invoices.products.column.kind')}</th>
                   <th className={`${TH} text-left hidden md:table-cell`}>{t('invoices.products.column.prices')}</th>
-                  <th className={`${TH} text-right w-24 hidden lg:table-cell`}>{t('invoices.products.column.invoices')}</th>
+                  <th className={`${TH} text-right w-24 hidden lg:table-cell`}>
+                    {t('invoices.products.column.invoices')}
+                  </th>
                   {canWrite && (
                     <th className={`${TH} pr-4 sm:pr-5 w-28`}>
                       <span className="sr-only">{t('invoices.moreActions')}</span>
@@ -203,7 +195,8 @@ export default function ProductsPage() {
                       <td className="py-3 pl-4 sm:pl-5">
                         <div className="text-sm font-medium text-foreground truncate">{product.name}</div>
                         <div className="text-xs text-muted-foreground truncate">
-                          {product.description ?? (product.unit ? t('invoices.products.perUnit', { unit: product.unit }) : '')}
+                          {product.description ??
+                            (product.unit ? t('invoices.products.perUnit', { unit: product.unit }) : '')}
                         </div>
                       </td>
                       <td className="py-3 hidden sm:table-cell text-xs text-muted-foreground">
@@ -277,7 +270,16 @@ interface PriceRow {
 }
 
 function blankPrice(currency: string): PriceRow {
-  return { id: null, currency, unit_price: '', tax_rate: '', billing: 'one_time', interval: '', nickname: '', active: true }
+  return {
+    id: null,
+    currency,
+    unit_price: '',
+    tax_rate: '',
+    billing: 'one_time',
+    interval: '',
+    nickname: '',
+    active: true,
+  }
 }
 
 function toPayload(row: PriceRow): PricePayload {
@@ -404,7 +406,9 @@ export function ProductDialog({
     },
   })
 
-  const ready = name.trim().length > 0 && prices.every((row) => row.billing !== 'recurring' || row.interval !== '' || row.unit_price === '')
+  const ready =
+    name.trim().length > 0 &&
+    prices.every((row) => row.billing !== 'recurring' || row.interval !== '' || row.unit_price === '')
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -418,27 +422,49 @@ export function ProductDialog({
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_9rem_6rem] gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="product-name">{t('invoices.products.field.name')}</Label>
-              <Input id="product-name" data-testid="product-name-input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('invoices.products.field.namePlaceholder')} />
+              <Input
+                id="product-name"
+                data-testid="product-name-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t('invoices.products.field.namePlaceholder')}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>{t('invoices.products.field.kind')}</Label>
               <Select value={kind} onValueChange={(v) => setKind(v as ProductKind)}>
-                <SelectTrigger data-testid="product-kind-select"><SelectValue /></SelectTrigger>
+                <SelectTrigger data-testid="product-kind-select">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   {(['service', 'product'] as const).map((value) => (
-                    <SelectItem key={value} value={value}>{t(`invoices.products.kind.${value}`)}</SelectItem>
+                    <SelectItem key={value} value={value}>
+                      {t(`invoices.products.kind.${value}`)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="product-unit">{t('invoices.field.unit')}</Label>
-              <Input id="product-unit" data-testid="product-unit-input" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder={t('invoices.field.unitPlaceholder')} maxLength={20} />
+              <Input
+                id="product-unit"
+                data-testid="product-unit-input"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                placeholder={t('invoices.field.unitPlaceholder')}
+                maxLength={20}
+              />
             </div>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="product-description">{t('invoices.products.field.description')}</Label>
-            <Input id="product-description" data-testid="product-description-input" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <Input
+              id="product-description"
+              data-testid="product-description-input"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
           </div>
 
           {/* Fiscal references. The keys the jurisdiction suggests for
@@ -448,9 +474,7 @@ export function ProductDialog({
               workspace whose country has no pack yet can still carry
               what its documents need. */}
           {(() => {
-            const offered = (suggested?.fields ?? []).filter(
-              (f) => f.kinds.length === 0 || f.kinds.includes(kind),
-            )
+            const offered = (suggested?.fields ?? []).filter((f) => f.kinds.length === 0 || f.kinds.includes(kind))
             const offeredKeys = new Set(offered.map((f) => f.key))
             const extra = refs.filter((r) => !offeredKeys.has(r.key))
             const valueOf = (key: string) => refs.find((r) => r.key === key)?.value ?? ''
@@ -465,14 +489,14 @@ export function ProductDialog({
               <div className="space-y-2" data-testid="product-fiscal-refs">
                 <Label>{t('invoices.products.field.fiscalRefs')}</Label>
                 <p className="text-[11px] text-muted-foreground">
-                  {anyField
-                    ? t('invoices.products.field.fiscalRefsHint')
-                    : t('invoices.products.field.fiscalRefsNone')}
+                  {anyField ? t('invoices.products.field.fiscalRefsHint') : t('invoices.products.field.fiscalRefsNone')}
                 </p>
                 <div className={cn('grid grid-cols-2 sm:grid-cols-3 gap-3', !anyField && 'hidden')}>
                   {offered.map((f) => (
                     <div key={f.key} className="space-y-1.5">
-                      <Label htmlFor={`ref-${f.key}`} className="text-xs">{t(f.label_key, f.key)}</Label>
+                      <Label htmlFor={`ref-${f.key}`} className="text-xs">
+                        {t(f.label_key, f.key)}
+                      </Label>
                       <Input
                         id={`ref-${f.key}`}
                         data-testid={`product-ref-${f.key}`}
@@ -485,7 +509,9 @@ export function ProductDialog({
                   ))}
                   {extra.map((r) => (
                     <div key={r.key} className="space-y-1.5">
-                      <Label htmlFor={`ref-${r.key}`} className="text-xs">{t(`fiscal.productField.${r.key}`, r.key)}</Label>
+                      <Label htmlFor={`ref-${r.key}`} className="text-xs">
+                        {t(`fiscal.productField.${r.key}`, r.key)}
+                      </Label>
                       <Input
                         id={`ref-${r.key}`}
                         data-testid={`product-ref-${r.key}`}
@@ -509,7 +535,10 @@ export function ProductDialog({
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={!/^[a-z][a-z0-9_]*$/.test(customKey.trim().toLowerCase()) || refs.some((r) => r.key === customKey.trim().toLowerCase())}
+                    disabled={
+                      !/^[a-z][a-z0-9_]*$/.test(customKey.trim().toLowerCase()) ||
+                      refs.some((r) => r.key === customKey.trim().toLowerCase())
+                    }
                     onClick={() => {
                       setRef(customKey.trim().toLowerCase(), '')
                       setCustomKey('')
@@ -527,7 +556,12 @@ export function ProductDialog({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>{t('invoices.products.field.prices')}</Label>
-              <Button size="sm" variant="ghost" onClick={() => setPrices([...prices, blankPrice(defaultCurrency)])} data-testid="product-add-price">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setPrices([...prices, blankPrice(defaultCurrency)])}
+                data-testid="product-add-price"
+              >
                 <Plus className="h-3.5 w-3.5 mr-1" />
                 {t('invoices.products.field.addPrice')}
               </Button>
@@ -535,8 +569,19 @@ export function ProductDialog({
             <p className="text-[11px] text-muted-foreground">{t('invoices.products.field.pricesHint')}</p>
             <div className="rounded-lg border border-border divide-y divide-border">
               {prices.map((row, index) => (
-                <div key={row.id ?? `new-${index}`} className={cn('grid grid-cols-2 sm:grid-cols-[7rem_1fr_9rem_8rem_2rem] gap-2 px-3 py-2.5 items-center', !row.active && 'opacity-60')} data-testid="product-price-row">
-                  <CurrencySelect id={`price-currency-${index}`} value={row.currency} onChange={(code) => updatePrice(index, { currency: code })} />
+                <div
+                  key={row.id ?? `new-${index}`}
+                  className={cn(
+                    'grid grid-cols-2 sm:grid-cols-[7rem_1fr_9rem_8rem_2rem] gap-2 px-3 py-2.5 items-center',
+                    !row.active && 'opacity-60',
+                  )}
+                  data-testid="product-price-row"
+                >
+                  <CurrencySelect
+                    id={`price-currency-${index}`}
+                    value={row.currency}
+                    onChange={(code) => updatePrice(index, { currency: code })}
+                  />
                   <Input
                     className="h-9 text-right"
                     inputMode="decimal"
@@ -551,14 +596,21 @@ export function ProductDialog({
                     onValueChange={(v) =>
                       v === 'one_time'
                         ? updatePrice(index, { billing: 'one_time', interval: '' })
-                        : updatePrice(index, { billing: 'recurring', interval: v === 'recurring' ? '' : (v as InvoiceScheduleFrequency) })
+                        : updatePrice(index, {
+                            billing: 'recurring',
+                            interval: v === 'recurring' ? '' : (v as InvoiceScheduleFrequency),
+                          })
                     }
                   >
-                    <SelectTrigger data-testid={`price-billing-${index}`}><SelectValue /></SelectTrigger>
+                    <SelectTrigger data-testid={`price-billing-${index}`}>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="one_time">{t('invoices.products.billing.one_time')}</SelectItem>
                       {FREQUENCIES.map((f) => (
-                        <SelectItem key={f} value={f}>{t('invoices.products.billing.every', { interval: t(`invoices.products.per.${f}`) })}</SelectItem>
+                        <SelectItem key={f} value={f}>
+                          {t('invoices.products.billing.every', { interval: t(`invoices.products.per.${f}`) })}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -580,7 +632,9 @@ export function ProductDialog({
                       className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                       onClick={() => updatePrice(index, { active: !row.active })}
                       data-testid={`price-${row.active ? 'archive' : 'restore'}-${index}`}
-                      aria-label={row.active ? t('invoices.products.action.archive') : t('invoices.products.action.restore')}
+                      aria-label={
+                        row.active ? t('invoices.products.action.archive') : t('invoices.products.action.restore')
+                      }
                     >
                       {row.active ? <Archive className="h-4 w-4" /> : <ArchiveRestore className="h-4 w-4" />}
                     </Button>
@@ -599,7 +653,14 @@ export function ProductDialog({
                   {showTax && (
                     <div className="col-span-2 sm:col-span-5 flex items-center gap-2">
                       <span className="text-[11px] text-muted-foreground">{t('invoices.field.taxRate')}</span>
-                      <Input className="h-8 w-20 text-right" inputMode="decimal" placeholder="%" value={row.tax_rate} onChange={(e) => updatePrice(index, { tax_rate: e.target.value })} data-testid={`price-tax-${index}`} />
+                      <Input
+                        className="h-8 w-20 text-right"
+                        inputMode="decimal"
+                        placeholder="%"
+                        value={row.tax_rate}
+                        onChange={(e) => updatePrice(index, { tax_rate: e.target.value })}
+                        data-testid={`price-tax-${index}`}
+                      />
                     </div>
                   )}
                 </div>
@@ -612,7 +673,9 @@ export function ProductDialog({
         </div>
 
         <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
           <Button onClick={() => mutation.mutate()} disabled={!ready || mutation.isPending} data-testid="product-save">
             {product ? t('common.save') : t('common.create')}
           </Button>

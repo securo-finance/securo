@@ -25,7 +25,12 @@ const groups = [
   { id: '2', name: 'Trabajo', is_archived: false },
   { id: '3', name: 'Vacación pasada', is_archived: true },
 ].map((group) => ({
-  ...group, kind: 'social', color: '#123456', members: [], default_currency: 'USD', is_owner: true,
+  ...group,
+  kind: 'social',
+  color: '#123456',
+  members: [],
+  default_currency: 'USD',
+  is_owner: true,
 }))
 
 function LocationProbe() {
@@ -33,7 +38,10 @@ function LocationProbe() {
   const navigate = useNavigate()
   return (
     <>
-      <output data-testid="location">{location.pathname}{location.search}</output>
+      <output data-testid="location">
+        {location.pathname}
+        {location.search}
+      </output>
       <button onClick={() => navigate(-1)}>Back</button>
     </>
   )
@@ -46,7 +54,13 @@ describe('GroupsPage search', () => {
   })
 
   it('sends a trimmed search to the server, renders its response, and clears the search', async () => {
-    const { user } = renderWithProviders(<><GroupsPage /><LocationProbe /></>, { route: '/groups' })
+    const { user } = renderWithProviders(
+      <>
+        <GroupsPage />
+        <LocationProbe />
+      </>,
+      { route: '/groups' },
+    )
     await screen.findByText('Vacación familiar')
     // Only the server decides whether a returned group matches the query.
     api.list.mockResolvedValue([groups[1]])
@@ -64,7 +78,13 @@ describe('GroupsPage search', () => {
   })
 
   it('combines search with status filters and distinguishes no matches from an empty list', async () => {
-    const { user } = renderWithProviders(<><GroupsPage /><LocationProbe /></>, { route: '/groups' })
+    const { user } = renderWithProviders(
+      <>
+        <GroupsPage />
+        <LocationProbe />
+      </>,
+      { route: '/groups' },
+    )
     await screen.findByText('Vacación familiar')
     await user.type(screen.getByRole('searchbox'), 'vacacion')
     api.list.mockResolvedValue([groups[2]])
@@ -90,9 +110,15 @@ describe('GroupsPage search', () => {
 
   it('restores search and status from a bookmarked URL, preserving other parameters when clearing', async () => {
     api.list.mockResolvedValue([groups[2]])
-    const { user } = renderWithProviders(<><GroupsPage /><LocationProbe /></>, {
-      route: '/groups?q=vacacion&status=archived&other=value',
-    })
+    const { user } = renderWithProviders(
+      <>
+        <GroupsPage />
+        <LocationProbe />
+      </>,
+      {
+        route: '/groups?q=vacacion&status=archived&other=value',
+      },
+    )
     await screen.findByText('Vacación pasada')
     expect(api.list).toHaveBeenLastCalledWith(true, { q: 'vacacion', status: 'archived' })
     expect(screen.getByRole('searchbox')).toHaveValue('vacacion')
@@ -104,9 +130,15 @@ describe('GroupsPage search', () => {
   })
 
   it('restores results on back navigation and uses active for an invalid status', async () => {
-    const { user } = renderWithProviders(<><GroupsPage /><LocationProbe /></>, {
-      route: '/groups?q=vacacion&status=invalid',
-    })
+    const { user } = renderWithProviders(
+      <>
+        <GroupsPage />
+        <LocationProbe />
+      </>,
+      {
+        route: '/groups?q=vacacion&status=invalid',
+      },
+    )
     await screen.findByText('Vacación familiar')
     expect(api.list).toHaveBeenLastCalledWith(false, { q: 'vacacion', status: 'active' })
     api.list.mockResolvedValue([groups[2]])

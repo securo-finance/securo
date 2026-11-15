@@ -3,13 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -23,15 +17,44 @@ interface Props {
   connection?: LlmConnection | null
 }
 
-const KIND_LABELS: Record<LlmConnectionKind, { label: string; needsBaseUrl: boolean; needsKey: boolean; modelHint: string; urlHint: string; defaultModel?: string }> = {
-  ollama: { label: 'Ollama', needsBaseUrl: false, needsKey: false, modelHint: 'llama3.1:8b', urlHint: 'http://host.docker.internal:11434' },
+const KIND_LABELS: Record<
+  LlmConnectionKind,
+  { label: string; needsBaseUrl: boolean; needsKey: boolean; modelHint: string; urlHint: string; defaultModel?: string }
+> = {
+  ollama: {
+    label: 'Ollama',
+    needsBaseUrl: false,
+    needsKey: false,
+    modelHint: 'llama3.1:8b',
+    urlHint: 'http://host.docker.internal:11434',
+  },
   // OpenAI + Anthropic ship a sensible default model so non-tech users
   // don't need to know which id to type. Self-hosted kinds (Ollama,
   // OpenAI-compatible) intentionally have NO default — the right model
   // depends on what the user actually has installed/loaded.
-  openai: { label: 'OpenAI', needsBaseUrl: false, needsKey: true, modelHint: 'gpt-4o-mini', urlHint: '', defaultModel: 'gpt-4o-mini' },
-  anthropic: { label: 'Anthropic', needsBaseUrl: false, needsKey: true, modelHint: 'claude-haiku-4-5', urlHint: '', defaultModel: 'claude-haiku-4-5' },
-  openai_compatible: { label: 'OpenAI-compatible (LM Studio, vLLM, Groq, Together, …)', needsBaseUrl: true, needsKey: false, modelHint: 'llama3.1-70b', urlHint: 'http://192.168.1.142:1234' },
+  openai: {
+    label: 'OpenAI',
+    needsBaseUrl: false,
+    needsKey: true,
+    modelHint: 'gpt-4o-mini',
+    urlHint: '',
+    defaultModel: 'gpt-4o-mini',
+  },
+  anthropic: {
+    label: 'Anthropic',
+    needsBaseUrl: false,
+    needsKey: true,
+    modelHint: 'claude-haiku-4-5',
+    urlHint: '',
+    defaultModel: 'claude-haiku-4-5',
+  },
+  openai_compatible: {
+    label: 'OpenAI-compatible (LM Studio, vLLM, Groq, Together, …)',
+    needsBaseUrl: true,
+    needsKey: false,
+    modelHint: 'llama3.1-70b',
+    urlHint: 'http://192.168.1.142:1234',
+  },
 }
 
 export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) {
@@ -141,7 +164,11 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
         <div className="grid gap-4 py-2">
           <div className="grid gap-2">
             <Label>{t('agents.connections.name')}</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('agents.connections.namePlaceholder')} />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('agents.connections.namePlaceholder')}
+            />
           </div>
           <div className="grid gap-2">
             <Label>{t('agents.connections.kind')}</Label>
@@ -161,28 +188,26 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
           <div className="grid gap-2">
             <Label>
               {t('agents.connections.baseUrl')}
-              {!meta.needsBaseUrl && <span className="text-xs text-muted-foreground ml-1">({t('agents.connections.optional')})</span>}
+              {!meta.needsBaseUrl && (
+                <span className="text-xs text-muted-foreground ml-1">({t('agents.connections.optional')})</span>
+              )}
             </Label>
             <Input
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder={meta.urlHint || t('agents.connections.baseUrlPlaceholder')}
             />
-            {kind === 'ollama' && (
-              <p className="text-xs text-muted-foreground">
-                {t('agents.connections.ollamaHint')}
-              </p>
-            )}
+            {kind === 'ollama' && <p className="text-xs text-muted-foreground">{t('agents.connections.ollamaHint')}</p>}
             {kind === 'openai_compatible' && (
-              <p className="text-xs text-muted-foreground">
-                {t('agents.connections.openaiCompatHint')}
-              </p>
+              <p className="text-xs text-muted-foreground">{t('agents.connections.openaiCompatHint')}</p>
             )}
           </div>
           <div className="grid gap-2">
             <Label>
               {t('agents.connections.apiKey')}
-              {!meta.needsKey && <span className="text-xs text-muted-foreground ml-1">({t('agents.connections.optional')})</span>}
+              {!meta.needsKey && (
+                <span className="text-xs text-muted-foreground ml-1">({t('agents.connections.optional')})</span>
+              )}
             </Label>
             <Input
               type="password"
@@ -191,7 +216,11 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
                 setApiKey(e.target.value)
                 setKeyTouched(true)
               }}
-              placeholder={isEdit && connection?.has_api_key ? t('agents.connections.apiKeyPlaceholderEdit') : t('agents.connections.apiKeyPlaceholder')}
+              placeholder={
+                isEdit && connection?.has_api_key
+                  ? t('agents.connections.apiKeyPlaceholderEdit')
+                  : t('agents.connections.apiKeyPlaceholder')
+              }
             />
             <p className="text-xs text-muted-foreground">{t('agents.connections.apiKeyHint')}</p>
           </div>
@@ -218,7 +247,11 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
             {t('agents.connections.cancel')}
           </Button>
           <Button onClick={submit} disabled={saveMut.isPending}>
-            {saveMut.isPending ? t('agents.connections.saving') : isEdit ? t('agents.connections.save') : t('agents.connections.create')}
+            {saveMut.isPending
+              ? t('agents.connections.saving')
+              : isEdit
+                ? t('agents.connections.save')
+                : t('agents.connections.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

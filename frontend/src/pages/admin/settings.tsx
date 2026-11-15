@@ -20,19 +20,27 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { TimezoneSettings } from '@/components/timezone-settings'
 import { ProviderSettings } from '@/components/provider-settings'
 import { DEFAULT_COLORS_QUERY_KEY } from '@/hooks/use-app-theme'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
-import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays } from 'lucide-react'
+import {
+  Search,
+  Plus,
+  Trash2,
+  Shield,
+  ShieldOff,
+  UserCog,
+  Users,
+  Scale,
+  Tag,
+  Palette,
+  Save,
+  Hash,
+  CalendarDays,
+} from 'lucide-react'
 import type { AdminUser } from '@/types'
 
 export default function AdminSettingsPage() {
@@ -69,8 +77,12 @@ export default function AdminSettingsPage() {
   const localAuthEnabled = useLocalAuthEnabled()
 
   const createMutation = useMutation({
-    mutationFn: (data: { email: string; password: string; is_superuser: boolean; preferences: Record<string, unknown> }) =>
-      adminApi.createUser(data),
+    mutationFn: (data: {
+      email: string
+      password: string
+      is_superuser: boolean
+      preferences: Record<string, unknown>
+    }) => adminApi.createUser(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
       setCreateOpen(false)
@@ -83,8 +95,7 @@ export default function AdminSettingsPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
-      adminApi.updateUser(id, data),
+    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) => adminApi.updateUser(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
       setEditUser(null)
@@ -288,7 +299,12 @@ export default function AdminSettingsPage() {
         title={t('admin.settings.title')}
         action={
           localAuthEnabled ? (
-            <Button onClick={() => { resetCreateForm(); setCreateOpen(true) }}>
+            <Button
+              onClick={() => {
+                resetCreateForm()
+                setCreateOpen(true)
+              }}
+            >
               <Plus size={16} className="mr-1.5" />
               {t('admin.users.add')}
             </Button>
@@ -311,7 +327,9 @@ export default function AdminSettingsPage() {
       <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-8">
         {usersLoading ? (
           <div className="p-4 space-y-3">
-            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-lg" />
+            ))}
           </div>
         ) : filteredUsers.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
@@ -327,7 +345,13 @@ export default function AdminSettingsPage() {
                 className="flex items-center gap-4 w-full px-5 py-3.5 text-left hover:bg-muted/40 transition-colors"
               >
                 <Avatar className="h-9 w-9 shrink-0">
-                  <AvatarFallback className={u.is_superuser ? 'bg-primary/15 text-primary text-xs font-semibold' : 'bg-muted text-muted-foreground text-xs font-semibold'}>
+                  <AvatarFallback
+                    className={
+                      u.is_superuser
+                        ? 'bg-primary/15 text-primary text-xs font-semibold'
+                        : 'bg-muted text-muted-foreground text-xs font-semibold'
+                    }
+                  >
                     {u.email.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
@@ -352,13 +376,14 @@ export default function AdminSettingsPage() {
                       {t('admin.users.inactive')}
                     </Badge>
                   )}
-                  {u.is_superuser && (
-                    <Shield size={14} className="text-primary" />
-                  )}
+                  {u.is_superuser && <Shield size={14} className="text-primary" />}
                   {!isSelf(u) && (
                     <span
                       role="button"
-                      onClick={(e) => { e.stopPropagation(); setDeleteUser(u) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeleteUser(u)
+                      }}
                       className="p-1.5 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
                       title={t('common.delete')}
                     >
@@ -383,10 +408,7 @@ export default function AdminSettingsPage() {
               <Palette size={15} className="text-muted-foreground" />
               <h3 className="text-sm font-semibold text-foreground">{t('settings.customization')}</h3>
             </div>
-            <Button
-              onClick={() => saveColorsMutation.mutate()}
-              disabled={saveColorsMutation.isPending}
-            >
+            <Button onClick={() => saveColorsMutation.mutate()} disabled={saveColorsMutation.isPending}>
               <Save size={13} />
               {saveColorsMutation.isPending ? t('common.loading') : t('common.save')}
             </Button>
@@ -400,9 +422,9 @@ export default function AdminSettingsPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('settings.themeColor')}</Label>
                 <div className="flex items-center gap-2">
-                  <Input 
-                    type="color" 
-                    className="w-12 h-9 p-1 cursor-pointer" 
+                  <Input
+                    type="color"
+                    className="w-12 h-9 p-1 cursor-pointer"
                     value={localLight}
                     onChange={(e) => setLocalLight(e.target.value)}
                   />
@@ -419,9 +441,9 @@ export default function AdminSettingsPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('settings.themeColor')}</Label>
                 <div className="flex items-center gap-2">
-                  <Input 
-                    type="color" 
-                    className="w-12 h-9 p-1 cursor-pointer" 
+                  <Input
+                    type="color"
+                    className="w-12 h-9 p-1 cursor-pointer"
                     value={localDark}
                     onChange={(e) => setLocalDark(e.target.value)}
                   />
@@ -449,8 +471,12 @@ export default function AdminSettingsPage() {
             disabled={updateAccountingModeMutation.isPending}
             className="flex items-start gap-3 w-full px-5 py-4 text-left hover:bg-muted/40 transition-colors"
           >
-            <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'cash' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
-              {accountingMode === 'cash' && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
+            <div
+              className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'cash' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}
+            >
+              {accountingMode === 'cash' && (
+                <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-foreground">{t('admin.settings.accountingCash')}</p>
@@ -463,8 +489,12 @@ export default function AdminSettingsPage() {
             disabled={updateAccountingModeMutation.isPending}
             className="flex items-start gap-3 w-full px-5 py-4 text-left hover:bg-muted/40 transition-colors"
           >
-            <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'accrual' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
-              {accountingMode === 'accrual' && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
+            <div
+              className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'accrual' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}
+            >
+              {accountingMode === 'accrual' && (
+                <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-foreground">{t('admin.settings.accountingAccrual')}</p>
@@ -510,17 +540,42 @@ export default function AdminSettingsPage() {
           <p className="text-xs text-muted-foreground">{t('admin.settings.numberFormatDesc')}</p>
         </div>
         <div className="divide-y divide-border/40">
-          {([
-            { value: 'auto', label: t('admin.settings.numberFormatAuto'), desc: t('admin.settings.numberFormatAutoDesc') },
-            { value: 'comma_dot', label: t('admin.settings.numberFormatCommaDot'), desc: t('admin.settings.numberFormatCommaDotDesc') },
-            { value: 'dot_comma', label: t('admin.settings.numberFormatDotComma'), desc: t('admin.settings.numberFormatDotCommaDesc') },
-            { value: 'space_comma', label: t('admin.settings.numberFormatSpaceComma'), desc: t('admin.settings.numberFormatSpaceCommaDesc') },
-          ] as const).map((opt) => {
+          {(
+            [
+              {
+                value: 'auto',
+                label: t('admin.settings.numberFormatAuto'),
+                desc: t('admin.settings.numberFormatAutoDesc'),
+              },
+              {
+                value: 'comma_dot',
+                label: t('admin.settings.numberFormatCommaDot'),
+                desc: t('admin.settings.numberFormatCommaDotDesc'),
+              },
+              {
+                value: 'dot_comma',
+                label: t('admin.settings.numberFormatDotComma'),
+                desc: t('admin.settings.numberFormatDotCommaDesc'),
+              },
+              {
+                value: 'space_comma',
+                label: t('admin.settings.numberFormatSpaceComma'),
+                desc: t('admin.settings.numberFormatSpaceCommaDesc'),
+              },
+            ] as const
+          ).map((opt) => {
             // Live preview of how this option renders a sample amount, resolved
             // against the admin's currency + UI language.
             const adminCurrency = currentUser?.preferences?.currency_display ?? 'USD'
-            const numLocale = resolveDisplayLocale(opt.value as NumberFormat, adminCurrency, i18n.language === 'en' ? 'en-US' : i18n.language)
-            const numExample = new Intl.NumberFormat(numLocale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(1234.56)
+            const numLocale = resolveDisplayLocale(
+              opt.value as NumberFormat,
+              adminCurrency,
+              i18n.language === 'en' ? 'en-US' : i18n.language,
+            )
+            const numExample = new Intl.NumberFormat(numLocale, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            }).format(1234.56)
             return (
               <button
                 key={opt.value}
@@ -529,17 +584,19 @@ export default function AdminSettingsPage() {
                 disabled={updateNumberFormatMutation.isPending}
                 className="flex items-start gap-3 w-full px-5 py-4 text-left hover:bg-muted/40 transition-colors"
               >
-                <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${numberFormat === opt.value ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
-                  {numberFormat === opt.value && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
+                <div
+                  className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${numberFormat === opt.value ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}
+                >
+                  {numberFormat === opt.value && (
+                    <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <p className="text-sm font-medium text-foreground tabular-nums">{opt.label}</p>
                     <span className="text-xs tabular-nums text-muted-foreground">{numExample}</span>
                   </div>
-                  {opt.desc && (
-                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
-                  )}
+                  {opt.desc && <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>}
                 </div>
               </button>
             )
@@ -557,18 +614,33 @@ export default function AdminSettingsPage() {
           <p className="text-xs text-muted-foreground">{t('admin.settings.dateFormatDesc')}</p>
         </div>
         <div className="divide-y divide-border/40">
-          {([
-            { value: 'auto', label: t('admin.settings.dateFormatAuto'), desc: t('admin.settings.dateFormatAutoDesc') },
-            { value: 'dmy', label: t('admin.settings.dateFormatDmy'), desc: t('admin.settings.dateFormatDmyDesc') },
-            { value: 'mdy', label: t('admin.settings.dateFormatMdy'), desc: t('admin.settings.dateFormatMdyDesc') },
-            { value: 'ymd', label: t('admin.settings.dateFormatYmd'), desc: t('admin.settings.dateFormatYmdDesc') },
-          ] as const).map((opt) => {
+          {(
+            [
+              {
+                value: 'auto',
+                label: t('admin.settings.dateFormatAuto'),
+                desc: t('admin.settings.dateFormatAutoDesc'),
+              },
+              { value: 'dmy', label: t('admin.settings.dateFormatDmy'), desc: t('admin.settings.dateFormatDmyDesc') },
+              { value: 'mdy', label: t('admin.settings.dateFormatMdy'), desc: t('admin.settings.dateFormatMdyDesc') },
+              { value: 'ymd', label: t('admin.settings.dateFormatYmd'), desc: t('admin.settings.dateFormatYmdDesc') },
+            ] as const
+          ).map((opt) => {
             // Live preview, resolved against the current number format + UI
             // language. Sample 4 June makes the day/month order unambiguous.
             const adminCurrency = currentUser?.preferences?.currency_display ?? 'USD'
-            const dateLocale = resolveDateLocale(opt.value as DateFormat, numberFormat as NumberFormat, adminCurrency, resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language))
+            const dateLocale = resolveDateLocale(
+              opt.value as DateFormat,
+              numberFormat as NumberFormat,
+              adminCurrency,
+              resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language),
+            )
             const numericExample = new Date(2026, 5, 4).toLocaleDateString(dateLocale)
-            const wordedExample = new Date(2026, 5, 4).toLocaleDateString(dateLocale, { day: 'numeric', month: 'short', year: 'numeric' })
+            const wordedExample = new Date(2026, 5, 4).toLocaleDateString(dateLocale, {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            })
             return (
               <button
                 key={opt.value}
@@ -577,8 +649,12 @@ export default function AdminSettingsPage() {
                 disabled={updateDateFormatMutation.isPending}
                 className="flex items-start gap-3 w-full px-5 py-4 text-left hover:bg-muted/40 transition-colors"
               >
-                <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${dateFormat === opt.value ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
-                  {dateFormat === opt.value && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
+                <div
+                  className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${dateFormat === opt.value ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}
+                >
+                  {dateFormat === opt.value && (
+                    <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2 flex-wrap">
@@ -587,9 +663,7 @@ export default function AdminSettingsPage() {
                       {numericExample} <span className="opacity-50">·</span> {wordedExample}
                     </span>
                   </div>
-                  {opt.desc && (
-                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
-                  )}
+                  {opt.desc && <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>}
                 </div>
               </button>
             )
@@ -637,23 +711,39 @@ export default function AdminSettingsPage() {
             <DialogTitle>{t('admin.users.add')}</DialogTitle>
             <DialogDescription>{t('admin.users.addDesc')}</DialogDescription>
           </DialogHeader>
-          <form onSubmit={(e) => {
-            e.preventDefault()
-            createMutation.mutate({
-              email: formEmail,
-              password: formPassword,
-              is_superuser: formIsAdmin,
-              preferences: { language: formLanguage, currency_display: formCurrency },
-            })
-          }}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              createMutation.mutate({
+                email: formEmail,
+                password: formPassword,
+                is_superuser: formIsAdmin,
+                preferences: { language: formLanguage, currency_display: formCurrency },
+              })
+            }}
+          >
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
                 <Label className="text-[13px]">{t('admin.users.email')}</Label>
-                <Input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} required className="h-10 rounded-lg" placeholder="user@example.com" />
+                <Input
+                  type="email"
+                  value={formEmail}
+                  onChange={(e) => setFormEmail(e.target.value)}
+                  required
+                  className="h-10 rounded-lg"
+                  placeholder="user@example.com"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-[13px]">{t('auth.password')}</Label>
-                <Input type="password" value={formPassword} onChange={(e) => setFormPassword(e.target.value)} required minLength={8} className="h-10 rounded-lg" />
+                <Input
+                  type="password"
+                  value={formPassword}
+                  onChange={(e) => setFormPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  className="h-10 rounded-lg"
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -664,7 +754,9 @@ export default function AdminSettingsPage() {
                     className="w-full h-10 rounded-lg border border-input bg-card px-3 text-sm"
                   >
                     {SUPPORTED_LANGS.map(({ code, label }) => (
-                      <option key={code} value={code}>{label}</option>
+                      <option key={code} value={code}>
+                        {label}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -715,19 +807,27 @@ export default function AdminSettingsPage() {
             <DialogTitle>{t('admin.users.edit')}</DialogTitle>
           </DialogHeader>
           {editUser && (
-            <form onSubmit={(e) => {
-              e.preventDefault()
-              const updates: Record<string, unknown> = { id: editUser.id }
-              if (editEmail !== editUser.email) updates.email = editEmail
-              if (editIsActive !== editUser.is_active) updates.is_active = editIsActive
-              if (editIsAdmin !== editUser.is_superuser) updates.is_superuser = editIsAdmin
-              if (editPassword && editPassword.length >= 8) updates.password = editPassword
-              updateMutation.mutate(updates as { id: string })
-            }}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const updates: Record<string, unknown> = { id: editUser.id }
+                if (editEmail !== editUser.email) updates.email = editEmail
+                if (editIsActive !== editUser.is_active) updates.is_active = editIsActive
+                if (editIsAdmin !== editUser.is_superuser) updates.is_superuser = editIsAdmin
+                if (editPassword && editPassword.length >= 8) updates.password = editPassword
+                updateMutation.mutate(updates as { id: string })
+              }}
+            >
               <div className="space-y-4 py-2">
                 <div className="flex items-center gap-3 pb-2">
                   <Avatar className="h-10 w-10">
-                    <AvatarFallback className={editUser.is_superuser ? 'bg-primary/15 text-primary font-semibold' : 'bg-muted text-muted-foreground font-semibold'}>
+                    <AvatarFallback
+                      className={
+                        editUser.is_superuser
+                          ? 'bg-primary/15 text-primary font-semibold'
+                          : 'bg-muted text-muted-foreground font-semibold'
+                      }
+                    >
                       {editUser.email.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
@@ -742,33 +842,41 @@ export default function AdminSettingsPage() {
 
                 <div className="space-y-1.5">
                   <Label className="text-[13px]">{t('admin.users.email')}</Label>
-                  <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required autoComplete="off" className="h-10 rounded-lg" />
+                  <Input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    required
+                    autoComplete="off"
+                    className="h-10 rounded-lg"
+                  />
                 </div>
-                {localAuthEnabled && (showPasswordField ? (
-                  <div className="space-y-1.5">
-                    <Label className="text-[13px]">{t('admin.users.resetPassword')}</Label>
-                    <Input
-                      type="text"
-                      value={editPassword}
-                      onChange={(e) => setEditPassword(e.target.value)}
-                      placeholder={t('admin.users.resetPasswordPlaceholder')}
-                      minLength={8}
-                      maxLength={72}
-                      autoComplete="off"
-                      autoFocus
-                      className="h-10 rounded-lg"
-                    />
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full rounded-lg"
-                    onClick={() => setShowPasswordField(true)}
-                  >
-                    {t('admin.users.resetPassword')}
-                  </Button>
-                ))}
+                {localAuthEnabled &&
+                  (showPasswordField ? (
+                    <div className="space-y-1.5">
+                      <Label className="text-[13px]">{t('admin.users.resetPassword')}</Label>
+                      <Input
+                        type="text"
+                        value={editPassword}
+                        onChange={(e) => setEditPassword(e.target.value)}
+                        placeholder={t('admin.users.resetPasswordPlaceholder')}
+                        minLength={8}
+                        maxLength={72}
+                        autoComplete="off"
+                        autoFocus
+                        className="h-10 rounded-lg"
+                      />
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full rounded-lg"
+                      onClick={() => setShowPasswordField(true)}
+                    >
+                      {t('admin.users.resetPassword')}
+                    </Button>
+                  ))}
 
                 <div className="flex items-center gap-2">
                   <button
@@ -779,7 +887,9 @@ export default function AdminSettingsPage() {
                       isSelf(editUser) ? 'opacity-50 cursor-not-allowed' : ''
                     } ${editIsActive ? 'bg-emerald-500/8 border-emerald-500/30 text-emerald-600' : 'border-border text-muted-foreground'}`}
                   >
-                    <span className={`h-2 w-2 rounded-full ${editIsActive ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`} />
+                    <span
+                      className={`h-2 w-2 rounded-full ${editIsActive ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`}
+                    />
                     {editIsActive ? t('admin.users.active') : t('admin.users.inactive')}
                   </button>
                   <button
@@ -813,9 +923,7 @@ export default function AdminSettingsPage() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('admin.users.confirmDeleteTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('admin.users.confirmDeleteDesc', { email: deleteUser?.email })}
-            </DialogDescription>
+            <DialogDescription>{t('admin.users.confirmDeleteDesc', { email: deleteUser?.email })}</DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-2">
             <Button variant="outline" onClick={() => setDeleteUser(null)} className="rounded-lg">

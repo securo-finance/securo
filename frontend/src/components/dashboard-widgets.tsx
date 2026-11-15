@@ -36,7 +36,17 @@ export interface DashboardScope {
   currency: string
 }
 
-function WidgetCard({ title, action, children, className }: { title: string; action?: ReactNode; children: ReactNode; className?: string }) {
+function WidgetCard({
+  title,
+  action,
+  children,
+  className,
+}: {
+  title: string
+  action?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
   return (
     <div className={cn('@container flex flex-col rounded-xl border border-border bg-card shadow-sm', className)}>
       <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
@@ -57,7 +67,9 @@ function CardLink({ to, label }: { to: string; label: string }) {
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <p className="flex flex-1 items-center justify-center py-6 text-center text-sm text-muted-foreground">{children}</p>
+  return (
+    <p className="flex flex-1 items-center justify-center py-6 text-center text-sm text-muted-foreground">{children}</p>
+  )
 }
 
 /** A load that failed: said so, with a retry, never shown as an empty result. */
@@ -83,7 +95,8 @@ function useSummary(scope: DashboardScope, month = scope.month) {
   })
 }
 
-const expensesOf = (summary?: DashboardSummary) => Number(summary?.monthly_expenses_primary ?? summary?.monthly_expenses ?? 0)
+const expensesOf = (summary?: DashboardSummary) =>
+  Number(summary?.monthly_expenses_primary ?? summary?.monthly_expenses ?? 0)
 const incomeOf = (summary?: DashboardSummary) => Number(summary?.monthly_income_primary ?? summary?.monthly_income ?? 0)
 
 function todayMonth() {
@@ -97,7 +110,12 @@ export function SpendingPaceWidget({ scope }: { scope: DashboardScope }) {
   const locale = useDisplayLocale()
   const { mask } = usePrivacyMode()
   const { data: summary, isLoading, isError, refetch } = useSummary(scope)
-  const { data: comparison, isLoading: budgetsLoading, isError: budgetsError, refetch: refetchBudgets } = useQuery({
+  const {
+    data: comparison,
+    isLoading: budgetsLoading,
+    isError: budgetsError,
+    refetch: refetchBudgets,
+  } = useQuery({
     queryKey: ['budgets', 'comparison', scope.month],
     queryFn: () => budgets.comparison(`${scope.month}-01`),
   })
@@ -115,11 +133,19 @@ export function SpendingPaceWidget({ scope }: { scope: DashboardScope }) {
   const daysLeft = lastDay - today + 1
 
   return (
-    <WidgetCard title={t('widgets.spendingPace.title')} action={<CardLink to="/budgets" label={t('widgets.budgets')} />}>
+    <WidgetCard
+      title={t('widgets.spendingPace.title')}
+      action={<CardLink to="/budgets" label={t('widgets.budgets')} />}
+    >
       {isLoading || budgetsLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : isError || budgetsError ? (
-        <Failed onRetry={() => { void refetch(); void refetchBudgets() }} />
+        <Failed
+          onRetry={() => {
+            void refetch()
+            void refetchBudgets()
+          }}
+        />
       ) : budget <= 0 ? (
         <div className="flex flex-1 flex-col justify-between gap-4">
           <p className="text-2xl font-bold tabular-nums">{money(spent)}</p>
@@ -134,11 +160,18 @@ export function SpendingPaceWidget({ scope }: { scope: DashboardScope }) {
           <div>
             <div className="relative h-2 overflow-hidden rounded-full bg-muted">
               <div
-                className={cn('h-full rounded-full', used > 100 ? 'bg-rose-500' : used > pace ? 'bg-amber-400' : 'bg-emerald-500')}
+                className={cn(
+                  'h-full rounded-full',
+                  used > 100 ? 'bg-rose-500' : used > pace ? 'bg-amber-400' : 'bg-emerald-500',
+                )}
                 style={{ width: `${Math.min(used, 100)}%` }}
               />
               {isCurrent && (
-                <span aria-hidden className="absolute top-0 h-full w-0.5 bg-foreground/50" style={{ left: `${pace}%` }} />
+                <span
+                  aria-hidden
+                  className="absolute top-0 h-full w-0.5 bg-foreground/50"
+                  style={{ left: `${pace}%` }}
+                />
               )}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground tabular-nums">
@@ -184,7 +217,11 @@ export function SpendingDistributionWidget({ scope }: { scope: DashboardScope })
   const top = rows.slice(0, 5)
   const rest = rows.slice(5).reduce((sum, row) => sum + row.total, 0)
   const slices = [
-    ...top.map((row) => ({ key: row.category_id ?? row.category_name, value: row.total, color: row.category_color || 'var(--chart-muted)' })),
+    ...top.map((row) => ({
+      key: row.category_id ?? row.category_name,
+      value: row.total,
+      color: row.category_color || 'var(--chart-muted)',
+    })),
     ...(rest > 0 ? [{ key: 'other', value: rest, color: 'var(--chart-muted)' }] : []),
   ]
   const money = (value: number) => mask(formatCurrency(value, scope.currency, locale))
@@ -202,7 +239,16 @@ export function SpendingDistributionWidget({ scope }: { scope: DashboardScope })
           <div className="relative size-40 shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={slices} dataKey="value" nameKey="key" innerRadius="72%" outerRadius="100%" stroke="none" paddingAngle={1.5} isAnimationActive={false}>
+                <Pie
+                  data={slices}
+                  dataKey="value"
+                  nameKey="key"
+                  innerRadius="72%"
+                  outerRadius="100%"
+                  stroke="none"
+                  paddingAngle={1.5}
+                  isAnimationActive={false}
+                >
                   {slices.map((slice) => (
                     <Cell key={slice.key} fill={slice.color} />
                   ))}
@@ -216,7 +262,10 @@ export function SpendingDistributionWidget({ scope }: { scope: DashboardScope })
           </div>
           <ul className="w-full min-w-0 flex-1 divide-y divide-border">
             {top.map((row) => (
-              <li key={row.category_id ?? row.category_name} className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+              <li
+                key={row.category_id ?? row.category_name}
+                className="flex items-center gap-3 py-2 first:pt-0 last:pb-0"
+              >
                 <CategoryIcon icon={row.category_icon} color={row.category_color} size="sm" />
                 <span className="min-w-0 flex-1 truncate text-sm">{row.category_name}</span>
                 <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
@@ -259,13 +308,17 @@ export function MonthResultWidget({ scope }: { scope: DashboardScope }) {
               {money(result)}
             </p>
             {before !== null && (
-              <p className="mt-1 text-xs text-muted-foreground tabular-nums">{t('widgets.monthResult.previous', { amount: money(before) })}</p>
+              <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                {t('widgets.monthResult.previous', { amount: money(before) })}
+              </p>
             )}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-muted-foreground">{t('dashboard.monthlyIncome')}</p>
-              <p className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">+{money(income)}</p>
+              <p className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                +{money(income)}
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('dashboard.monthlyExpenses')}</p>
@@ -287,7 +340,8 @@ export function UpcomingWidget({ scope }: { scope: DashboardScope }) {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const today = new Date()
-  const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const iso = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   const from = iso(today)
   const to = iso(new Date(today.getFullYear(), today.getMonth(), today.getDate() + UPCOMING_DAYS))
   const { data, isLoading, isError, refetch } = useQuery({
@@ -314,10 +368,18 @@ export function UpcomingWidget({ scope }: { scope: DashboardScope }) {
             const amount = Number(row.amount_primary ?? row.amount)
             const currency = row.amount_primary != null ? scope.currency : row.currency
             return (
-              <li key={`${row.recurring_id}-${row.date}`} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+              <li
+                key={`${row.recurring_id}-${row.date}`}
+                className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
+              >
                 <CategoryIcon icon={row.category_icon} color={row.category_color} size="sm" />
                 <span className="min-w-0 flex-1 truncate text-sm">{row.description}</span>
-                <span className={cn('text-sm font-semibold tabular-nums', row.type === 'credit' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground')}>
+                <span
+                  className={cn(
+                    'text-sm font-semibold tabular-nums',
+                    row.type === 'credit' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground',
+                  )}
+                >
                   {row.type === 'credit' ? '+' : '-'}
                   {mask(formatCurrency(Math.abs(amount), currency, locale))}
                 </span>
@@ -339,8 +401,15 @@ export function CreditCardsWidget({ scope }: { scope: DashboardScope }) {
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
-  const { data: list, isLoading, isError, refetch } = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list() })
-  const scoped = (list ?? []).filter((a) => !a.is_closed && (scope.activeAccountIds ? scope.activeAccountIds.includes(a.id) : true))
+  const {
+    data: list,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list() })
+  const scoped = (list ?? []).filter(
+    (a) => !a.is_closed && (scope.activeAccountIds ? scope.activeAccountIds.includes(a.id) : true),
+  )
   const cards = scoped.filter((a) => a.type === 'credit_card')
   const owed = Math.max(0, -sumAccountBalances(cards))
   const available = scoped
@@ -392,7 +461,9 @@ export function CreditCardsWidget({ scope }: { scope: DashboardScope }) {
               {shown.map(({ card, label, owes, due }) => (
                 <li key={card.id} className="flex items-center gap-2.5">
                   <AccountIcon account={card} size="xs" className="h-5 w-5 rounded-md" />
-                  <span className="min-w-0 flex-1 truncate text-sm" title={label}>{label}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm" title={label}>
+                    {label}
+                  </span>
                   <span className="text-sm font-semibold tabular-nums">{money(owes)}</span>
                   {due && (
                     <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">
@@ -414,7 +485,11 @@ export function AssistantWidget() {
   const { t } = useTranslation()
   const { available, ask } = useAssistant()
   const [message, setMessage] = useState('')
-  const suggestions = [t('widgets.assistant.suggestion1'), t('widgets.assistant.suggestion2'), t('widgets.assistant.suggestion3')]
+  const suggestions = [
+    t('widgets.assistant.suggestion1'),
+    t('widgets.assistant.suggestion2'),
+    t('widgets.assistant.suggestion3'),
+  ]
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -449,7 +524,10 @@ export function AssistantWidget() {
               </button>
             ))}
           </div>
-          <form onSubmit={submit} className="flex items-center gap-2 rounded-lg border border-border bg-background p-1 pl-3 focus-within:ring-2 focus-within:ring-ring/30">
+          <form
+            onSubmit={submit}
+            className="flex items-center gap-2 rounded-lg border border-border bg-background p-1 pl-3 focus-within:ring-2 focus-within:ring-ring/30"
+          >
             <input
               value={message}
               onChange={(event) => setMessage(event.target.value)}
@@ -506,22 +584,35 @@ export function InvoiceTotalsWidget({ direction, scope }: { direction: InvoiceDi
       ) : (
         <div className="flex flex-1 flex-col justify-between gap-4">
           <div>
-            <p className="text-xs text-muted-foreground">{t(receivable ? 'invoices.summary.outstanding' : 'invoices.summary.owed')}</p>
+            <p className="text-xs text-muted-foreground">
+              {t(receivable ? 'invoices.summary.outstanding' : 'invoices.summary.owed')}
+            </p>
             <p className="text-2xl font-bold tabular-nums">{money(summary.outstanding)}</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-muted-foreground">{t('invoices.summary.overdue')}</p>
-              <p className={cn('text-sm font-semibold tabular-nums', overdue > 0 ? 'text-rose-500' : 'text-foreground')}>{money(overdue)}</p>
+              <p
+                className={cn('text-sm font-semibold tabular-nums', overdue > 0 ? 'text-rose-500' : 'text-foreground')}
+              >
+                {money(overdue)}
+              </p>
               {summary.overdue_count > 0 && (
-                <p className="text-xs text-muted-foreground">{t('invoices.summary.overdueCount', { count: summary.overdue_count })}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('invoices.summary.overdueCount', { count: summary.overdue_count })}
+                </p>
               )}
             </div>
             <div>
               <p className="text-xs text-muted-foreground">
                 {t(receivable ? 'invoices.summary.receivedThisMonth' : 'invoices.summary.paidThisMonth')}
               </p>
-              <p className={cn('text-sm font-semibold tabular-nums', receivable && Number(summary.received_this_month) > 0 && 'text-emerald-600 dark:text-emerald-400')}>
+              <p
+                className={cn(
+                  'text-sm font-semibold tabular-nums',
+                  receivable && Number(summary.received_this_month) > 0 && 'text-emerald-600 dark:text-emerald-400',
+                )}
+              >
                 {money(summary.received_this_month)}
               </p>
             </div>
@@ -551,10 +642,18 @@ export function AgingWidget({ scope }: { scope: DashboardScope }) {
         <Empty>{t('invoices.summary.nothingDue')}</Empty>
       ) : (
         <div className="flex flex-1 flex-col gap-4">
-          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted" role="img" aria-label={t('widgets.aging.title')}>
+          <div
+            className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted"
+            role="img"
+            aria-label={t('widgets.aging.title')}
+          >
             {AGING_BUCKETS.map((bucket) =>
               amountOf(bucket.key) > 0 ? (
-                <div key={bucket.key} className={bucket.tone} style={{ width: `${(amountOf(bucket.key) / total) * 100}%` }} />
+                <div
+                  key={bucket.key}
+                  className={bucket.tone}
+                  style={{ width: `${(amountOf(bucket.key) / total) * 100}%` }}
+                />
               ) : null,
             )}
           </div>
@@ -564,7 +663,9 @@ export function AgingWidget({ scope }: { scope: DashboardScope }) {
                 <div key={bucket.key} className="flex items-center gap-2 text-sm">
                   <span className={cn('size-2 shrink-0 rounded-full', bucket.tone)} />
                   <dt className="text-muted-foreground">{t(`invoices.bucket.${bucket.key}`)}</dt>
-                  <dd className="ml-auto font-medium tabular-nums">{mask(formatCurrency(amountOf(bucket.key), scope.currency, locale))}</dd>
+                  <dd className="ml-auto font-medium tabular-nums">
+                    {mask(formatCurrency(amountOf(bucket.key), scope.currency, locale))}
+                  </dd>
                 </div>
               ) : null,
             )}
@@ -585,7 +686,10 @@ export function InvoicesDueWidget() {
   const rows = summary?.upcoming ?? []
 
   return (
-    <WidgetCard title={t('widgets.invoicesDue.title')} action={<CardLink to="/invoices" label={t('widgets.viewAll')} />}>
+    <WidgetCard
+      title={t('widgets.invoicesDue.title')}
+      action={<CardLink to="/invoices" label={t('widgets.viewAll')} />}
+    >
       {isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : isError ? (
@@ -603,10 +707,15 @@ export function InvoicesDueWidget() {
                     {invoice.payee?.name ?? t('widgets.invoicesDue.noClient')}
                     {number && <span className="ml-1.5 text-xs text-muted-foreground">#{number}</span>}
                   </span>
-                  <span className="text-sm font-semibold tabular-nums">{mask(formatCurrency(Number(invoice.balance), invoice.currency, locale))}</span>
+                  <span className="text-sm font-semibold tabular-nums">
+                    {mask(formatCurrency(Number(invoice.balance), invoice.currency, locale))}
+                  </span>
                   <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">
                     {/* An invoice in installments is due on its next unpaid one. */}
-                    {new Date(`${invoice.next_due_date ?? invoice.due_date}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })}
+                    {new Date(`${invoice.next_due_date ?? invoice.due_date}T00:00:00`).toLocaleDateString(dateLocale, {
+                      day: '2-digit',
+                      month: 'short',
+                    })}
                   </span>
                 </Link>
               </li>
@@ -623,7 +732,12 @@ export function RecurringRevenueWidget({ scope }: { scope: DashboardScope }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
   const { mask } = usePrivacyMode()
-  const { data: summary, isLoading, isError, refetch } = useQuery({
+  const {
+    data: summary,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ['invoice-schedule-summary'],
     queryFn: invoiceSchedules.summary,
   })
@@ -636,7 +750,10 @@ export function RecurringRevenueWidget({ scope }: { scope: DashboardScope }) {
   const money = (value: string, currency: string) => mask(formatCurrency(Number(value), currency, locale))
 
   return (
-    <WidgetCard title={t('widgets.recurringRevenue.title')} action={<CardLink to="/invoices/schedules" label={t('widgets.viewAll')} />}>
+    <WidgetCard
+      title={t('widgets.recurringRevenue.title')}
+      action={<CardLink to="/invoices/schedules" label={t('widgets.viewAll')} />}
+    >
       {isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : isError ? (
@@ -654,7 +771,9 @@ export function RecurringRevenueWidget({ scope }: { scope: DashboardScope }) {
               </p>
             ))}
             <p className="mt-1 text-xs text-muted-foreground">
-              {t('invoices.schedules.summary.activeCount', { count: rows.reduce((sum, row) => sum + row.active_count, 0) })}
+              {t('invoices.schedules.summary.activeCount', {
+                count: rows.reduce((sum, row) => sum + row.active_count, 0),
+              })}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -663,14 +782,22 @@ export function RecurringRevenueWidget({ scope }: { scope: DashboardScope }) {
               {rows
                 .filter((row) => row === main || Number(row.monthly_lost) > 0)
                 .map((row) => (
-                  <p key={row.currency} className={cn('text-sm font-semibold tabular-nums', Number(row.monthly_lost) > 0 ? 'text-rose-500' : 'text-foreground')}>
+                  <p
+                    key={row.currency}
+                    className={cn(
+                      'text-sm font-semibold tabular-nums',
+                      Number(row.monthly_lost) > 0 ? 'text-rose-500' : 'text-foreground',
+                    )}
+                  >
                     {money(row.monthly_lost, row.currency)}
                   </p>
                 ))}
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('invoices.schedules.summary.pastDue')}</p>
-              <p className={cn('text-sm font-semibold tabular-nums', pastDue > 0 ? 'text-rose-500' : 'text-foreground')}>
+              <p
+                className={cn('text-sm font-semibold tabular-nums', pastDue > 0 ? 'text-rose-500' : 'text-foreground')}
+              >
                 {pastDue}
               </p>
             </div>

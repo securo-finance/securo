@@ -89,9 +89,7 @@ export function availableActions(invoice: Invoice): {
 export function displayNumber(invoice: Invoice, prefix?: string | null): string | null {
   if (invoice.origin === 'imported') return invoice.external_number || null
   if (invoice.number == null) return null
-  const resolved = invoice.snapshot
-    ? ((invoice.snapshot.number_prefix as string | null) ?? '')
-    : (prefix ?? '')
+  const resolved = invoice.snapshot ? ((invoice.snapshot.number_prefix as string | null) ?? '') : (prefix ?? '')
   return `${resolved}${invoice.number}`
 }
 
@@ -135,8 +133,7 @@ export function daysUntilDue(invoice: Invoice, today = new Date()): number {
  *  a stable `code`; matching on the English message would break the
  *  moment either side is reworded. */
 export function invoiceErrorKey(error: unknown): string | null {
-  const detail = (error as { response?: { data?: { detail?: { code?: string } } } })?.response?.data
-    ?.detail
+  const detail = (error as { response?: { data?: { detail?: { code?: string } } } })?.response?.data?.detail
   const code = detail && typeof detail === 'object' ? detail.code : undefined
   return code ? `invoices.errors.${code}` : null
 }
@@ -164,7 +161,6 @@ export function allocationOrigin(method: string): {
   const automatic = method !== MANUAL_METHOD
   return { automatic, strategyId: automatic ? method : null }
 }
-
 
 /** A file size as a person reads it. Bytes below a kilobyte, then whole
  *  kilobytes, then one decimal of a megabyte — the precision stops where

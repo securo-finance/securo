@@ -27,10 +27,7 @@ export function usePrivacyMode() {
     notify()
   }, [])
 
-  const mask = useCallback(
-    (value: string) => (privacyMode ? MASK : value),
-    [privacyMode],
-  )
+  const mask = useCallback((value: string) => (privacyMode ? MASK : value), [privacyMode])
 
   return { privacyMode, togglePrivacyMode, mask, MASK } as const
 }

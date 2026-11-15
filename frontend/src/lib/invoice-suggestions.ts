@@ -9,15 +9,10 @@ import type { ReconciliationSuggestion } from '@/types'
  *  the whole module, and this half is pure enough to be tested without a
  *  render.
  */
-export function suggestionsFor(
-  suggestions: ReconciliationSuggestion[],
-  invoiceId: string,
-): ReconciliationSuggestion[] {
+export function suggestionsFor(suggestions: ReconciliationSuggestion[], invoiceId: string): ReconciliationSuggestion[] {
   return suggestions.filter(
     (s) =>
       (s.expectation_kind === 'invoice' && s.expectation_id === invoiceId) ||
-      (s.covers ?? []).some(
-        (c) => c.expectation_kind === 'invoice' && c.expectation_id === invoiceId,
-      ),
+      (s.covers ?? []).some((c) => c.expectation_kind === 'invoice' && c.expectation_id === invoiceId),
   )
 }

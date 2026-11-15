@@ -41,12 +41,7 @@ export function AccountIcon({
       )}
     >
       {showImage ? (
-        <img
-          src={logo!}
-          alt=""
-          className="w-full h-full object-contain"
-          onError={() => setErrored(true)}
-        />
+        <img src={logo!} alt="" className="w-full h-full object-contain" onError={() => setErrored(true)} />
       ) : (
         <Icon size={icon} className={cfg.color} />
       )}
@@ -58,13 +53,7 @@ export function AccountIcon({
  * Institution logo for a bank connection header. Falls back to a generic
  * bank icon when no logo is stored or the image fails to load.
  */
-export function ConnectionLogo({
-  logoUrl,
-  className,
-}: {
-  logoUrl?: string | null
-  className?: string
-}) {
+export function ConnectionLogo({ logoUrl, className }: { logoUrl?: string | null; className?: string }) {
   const [errored, setErrored] = useState(false)
   const showImage = !!logoUrl && !errored
 
@@ -77,12 +66,7 @@ export function ConnectionLogo({
       )}
     >
       {showImage ? (
-        <img
-          src={logoUrl!}
-          alt=""
-          className="w-full h-full object-contain"
-          onError={() => setErrored(true)}
-        />
+        <img src={logoUrl!} alt="" className="w-full h-full object-contain" onError={() => setErrored(true)} />
       ) : (
         <Building2 size={14} className="text-muted-foreground" />
       )}

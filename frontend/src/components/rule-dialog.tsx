@@ -10,26 +10,12 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { X, Plus, ChevronDown, Eye, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CategorySelect } from '@/components/category-select'
 import { flattenConditions, isConditionGroup } from '@/lib/rule-conditions'
-import type {
-  Category,
-  CategoryGroup,
-  Payee,
-  Rule,
-  RuleCondition,
-  RuleConditionNode,
-  RuleAction,
-} from '@/types'
+import type { Category, CategoryGroup, Payee, Rule, RuleCondition, RuleConditionNode, RuleAction } from '@/types'
 
 const CONDITION_FIELDS = [
   { value: 'description', label: 'rules.fieldDescription' },
@@ -64,10 +50,11 @@ const NUMERIC_OPS = [
 function getOpsForField(field: string) {
   if (field === 'amount' || field === 'date') return NUMERIC_OPS
   if (field === 'type') return [{ value: 'equals', label: 'rules.opIs' }]
-  if (field === 'payee_id' || field === 'account_id' || field === 'status') return [
-    { value: 'equals', label: 'rules.opIs' },
-    { value: 'not_equals', label: 'rules.opIsNot' },
-  ]
+  if (field === 'payee_id' || field === 'account_id' || field === 'status')
+    return [
+      { value: 'equals', label: 'rules.opIs' },
+      { value: 'not_equals', label: 'rules.opIsNot' },
+    ]
   return STRING_OPS
 }
 
@@ -82,11 +69,7 @@ function newCondition(): RuleCondition {
 }
 
 /** Apply one edit to a leaf, resetting op/value when the field changes. */
-function applyLeafChange(
-  condition: RuleCondition,
-  key: keyof RuleCondition,
-  val: string | number,
-): RuleCondition {
+function applyLeafChange(condition: RuleCondition, key: keyof RuleCondition, val: string | number): RuleCondition {
   if (key !== 'field') return { ...condition, [key]: val }
   return {
     ...condition,
@@ -96,20 +79,21 @@ function applyLeafChange(
   }
 }
 
-const SELECT_CLASS = 'border border-border rounded-lg px-2 py-1.5 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
+const SELECT_CLASS =
+  'border border-border rounded-lg px-2 py-1.5 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 
 /** AND/OR switch, used for the rule itself and for each nested group. */
 function OpToggle({ value, onChange }: { value: 'and' | 'or'; onChange: (op: 'and' | 'or') => void }) {
   const { t } = useTranslation()
   return (
     <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-      {(['and', 'or'] as const).map(op => (
+      {(['and', 'or'] as const).map((op) => (
         <button
           key={op}
           type="button"
           className={cn(
             'px-3 py-1 text-xs font-semibold rounded-md transition-all',
-            value === op ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'
+            value === op ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground',
           )}
           onClick={() => onChange(op)}
         >
@@ -121,7 +105,11 @@ function OpToggle({ value, onChange }: { value: 'and' | 'or'; onChange: (op: 'an
 }
 
 function ConditionRow({
-  condition, accounts, payees, onChange, onRemove,
+  condition,
+  accounts,
+  payees,
+  onChange,
+  onRemove,
 }: {
   condition: RuleCondition
   accounts: { id: string; name: string; display_name?: string | null }[]
@@ -137,8 +125,10 @@ function ConditionRow({
         value={condition.field}
         onChange={(e) => onChange('field', e.target.value)}
       >
-        {CONDITION_FIELDS.map(f => (
-          <option key={f.value} value={f.value}>{t(f.label)}</option>
+        {CONDITION_FIELDS.map((f) => (
+          <option key={f.value} value={f.value}>
+            {t(f.label)}
+          </option>
         ))}
       </select>
       <select
@@ -146,8 +136,10 @@ function ConditionRow({
         value={condition.op}
         onChange={(e) => onChange('op', e.target.value)}
       >
-        {getOpsForField(condition.field).map(o => (
-          <option key={o.value} value={o.value}>{t(o.label)}</option>
+        {getOpsForField(condition.field).map((o) => (
+          <option key={o.value} value={o.value}>
+            {t(o.label)}
+          </option>
         ))}
       </select>
       {condition.field === 'type' ? (
@@ -175,8 +167,10 @@ function ConditionRow({
           onChange={(e) => onChange('value', e.target.value)}
         >
           <option value="">{t('rules.selectAccount')}</option>
-          {accounts.map(acc => (
-            <option key={acc.id} value={acc.id}>{getAccountName(acc)}</option>
+          {accounts.map((acc) => (
+            <option key={acc.id} value={acc.id}>
+              {getAccountName(acc)}
+            </option>
           ))}
         </select>
       ) : condition.field === 'payee_id' ? (
@@ -186,8 +180,10 @@ function ConditionRow({
           onChange={(e) => onChange('value', e.target.value)}
         >
           <option value="">{t('rules.selectPayee')}</option>
-          {payees.map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
+          {payees.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
           ))}
         </select>
       ) : (
@@ -195,7 +191,13 @@ function ConditionRow({
           className="col-span-2 h-8 w-full min-w-0 text-sm sm:w-0 sm:flex-1"
           value={String(condition.value)}
           onChange={(e) => onChange('value', e.target.value)}
-          placeholder={condition.field === 'amount' ? '0.00' : condition.field === 'date' ? 'YYYY-MM-DD' : t('rules.valuePlaceholder')}
+          placeholder={
+            condition.field === 'amount'
+              ? '0.00'
+              : condition.field === 'date'
+                ? 'YYYY-MM-DD'
+                : t('rules.valuePlaceholder')
+          }
           type={condition.field === 'amount' ? 'number' : condition.field === 'date' ? 'date' : 'text'}
         />
       )}
@@ -227,8 +229,15 @@ const PREVIEW_PAGE_SIZE = 50
  * screen.
  */
 function RulePreviewPanel({
-  conditionsOp, conditions, actions, isActive, applyToExisting, overwriteExistingCategories,
-  disabled, open, onOpenChange,
+  conditionsOp,
+  conditions,
+  actions,
+  isActive,
+  applyToExisting,
+  overwriteExistingCategories,
+  disabled,
+  open,
+  onOpenChange,
 }: {
   conditionsOp: 'and' | 'or'
   conditions: RuleConditionNode[]
@@ -260,19 +269,25 @@ function RulePreviewPanel({
   // transactions is one worth reading past the first page of.
   const preview = useInfiniteQuery({
     queryKey: [
-      'rule-preview', conditionsOp, conditions, draftActions,
-      isActive, applyToExisting, overwriteExistingCategories,
-    ],
-    queryFn: ({ pageParam }) => rulesApi.preview({
-      conditions_op: conditionsOp,
+      'rule-preview',
+      conditionsOp,
       conditions,
-      actions: draftActions,
-      is_active: isActive,
-      apply_to_existing: applyToExisting,
-      overwrite_existing_categories: overwriteExistingCategories,
-      limit: PREVIEW_PAGE_SIZE,
-      offset: pageParam,
-    }),
+      draftActions,
+      isActive,
+      applyToExisting,
+      overwriteExistingCategories,
+    ],
+    queryFn: ({ pageParam }) =>
+      rulesApi.preview({
+        conditions_op: conditionsOp,
+        conditions,
+        actions: draftActions,
+        is_active: isActive,
+        apply_to_existing: applyToExisting,
+        overwrite_existing_categories: overwriteExistingCategories,
+        limit: PREVIEW_PAGE_SIZE,
+        offset: pageParam,
+      }),
     initialPageParam: 0,
     // The counts are exact whatever window came back, so what is already on
     // screen is the offset of the next page.
@@ -294,10 +309,7 @@ function RulePreviewPanel({
 
   // Every page carries the same counts; the rows accumulate.
   const data = preview.data?.pages[0]
-  const sample = useMemo(
-    () => preview.data?.pages.flatMap(page => page.sample) ?? [],
-    [preview.data],
-  )
+  const sample = useMemo(() => preview.data?.pages.flatMap((page) => page.sample) ?? [], [preview.data])
 
   return (
     <div className="rounded-lg border border-border">
@@ -334,13 +346,15 @@ function RulePreviewPanel({
               <p className="text-xs text-muted-foreground">
                 {t('rules.previewSummary', { matched: data.matched, changed: data.will_change })}
                 {!data.will_apply && (
-                  <> · <span className="font-medium text-amber-600 dark:text-amber-400">
-                    {isActive ? t('rules.previewNotAppliedToExisting') : t('rules.previewInactive')}
-                  </span></>
+                  <>
+                    {' '}
+                    ·{' '}
+                    <span className="font-medium text-amber-600 dark:text-amber-400">
+                      {isActive ? t('rules.previewNotAppliedToExisting') : t('rules.previewInactive')}
+                    </span>
+                  </>
                 )}
-                {sample.length < data.matched && (
-                  <> · {t('rules.previewSampleNote', { shown: sample.length })}</>
-                )}
+                {sample.length < data.matched && <> · {t('rules.previewSampleNote', { shown: sample.length })}</>}
               </p>
               <div className="max-h-56 overflow-y-auto overflow-x-auto">
                 <table className="w-full text-xs">
@@ -353,7 +367,7 @@ function RulePreviewPanel({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {sample.map(item => (
+                    {sample.map((item) => (
                       <tr key={item.id} className={cn(!item.will_change && 'text-muted-foreground')}>
                         <td className="whitespace-nowrap py-1.5 pr-2 tabular-nums">
                           {new Date(item.date + 'T00:00:00').toLocaleDateString(dateLocale)}
@@ -361,10 +375,12 @@ function RulePreviewPanel({
                         <td className="max-w-[22rem] truncate py-1.5 pr-2" title={item.description}>
                           {item.description}
                         </td>
-                        <td className={cn(
-                          'whitespace-nowrap py-1.5 pr-2 text-right tabular-nums',
-                          item.will_change && (item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'),
-                        )}>
+                        <td
+                          className={cn(
+                            'whitespace-nowrap py-1.5 pr-2 text-right tabular-nums',
+                            item.will_change && (item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'),
+                          )}
+                        >
                           {mask(formatSignedAmount(item.amount, item.type, item.currency, locale))}
                         </td>
                         <td className="py-1.5">
@@ -387,7 +403,7 @@ function RulePreviewPanel({
                               <span className="truncate">
                                 {item.current_has_category_lines
                                   ? t('categoryLines.badgeShort')
-                                  : item.current_category_name ?? t('transactions.uncategorized')}
+                                  : (item.current_category_name ?? t('transactions.uncategorized'))}
                               </span>
                               <span className="shrink-0 rounded-full bg-muted px-1.5 text-[10px] font-semibold">
                                 {t('rules.previewNoChange')}
@@ -431,7 +447,17 @@ export interface RuleDialogInitialData {
 }
 
 export function RuleDialog({
-  open, onClose, rule, categories, categoryGroups, currentCategories = [], accounts, payees, onSave, loading, initialData,
+  open,
+  onClose,
+  rule,
+  categories,
+  categoryGroups,
+  currentCategories = [],
+  accounts,
+  payees,
+  onSave,
+  loading,
+  initialData,
 }: {
   open: boolean
   onClose: () => void
@@ -449,15 +475,16 @@ export function RuleDialog({
   const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
 
   const defaultConditions: RuleConditionNode[] = initialData?.conditions ?? rule?.conditions ?? [newCondition()]
-  const defaultActions: RuleAction[] = initialData?.actions ?? rule?.actions as RuleAction[] ?? [{ op: 'set_category', value: '' }]
+  const defaultActions: RuleAction[] = initialData?.actions ??
+    (rule?.actions as RuleAction[]) ?? [{ op: 'set_category', value: '' }]
 
   const [name, setName] = useState(initialData?.name ?? rule?.name ?? '')
   const [conditionsOp, setConditionsOp] = useState<'and' | 'or'>(rule?.conditions_op ?? 'and')
   const [conditions, setConditions] = useState<RuleConditionNode[]>(
-    defaultConditions.length ? defaultConditions : [newCondition()]
+    defaultConditions.length ? defaultConditions : [newCondition()],
   )
   const [actions, setActions] = useState<RuleAction[]>(
-    defaultActions.length ? defaultActions : [{ op: 'set_category', value: '' }]
+    defaultActions.length ? defaultActions : [{ op: 'set_category', value: '' }],
   )
   const [priority, setPriority] = useState(String(rule?.priority ?? 0))
   // Read, never written here: the row owns the switch. Kept so an edit
@@ -466,90 +493,94 @@ export function RuleDialog({
   const [isActive] = useState(rule?.is_active ?? true)
   const [applyToExisting, setApplyToExisting] = useState(initialData?.applyToExisting ?? !rule)
   const [overwriteExistingCategories, setOverwriteExistingCategories] = useState(
-    initialData?.overwriteExistingCategories ?? false
+    initialData?.overwriteExistingCategories ?? false,
   )
   const [previewOpen, setPreviewOpen] = useState(false)
 
   // Signed amounts are not obvious from a bare number box, so say it once,
   // right where the threshold is typed: income positive, expenses negative.
   const hasAmountCondition = useMemo(
-    () => flattenConditions(conditions).some(c => c.field === 'amount'),
+    () => flattenConditions(conditions).some((c) => c.field === 'amount'),
     [conditions],
   )
 
   function updateCondition(i: number, field: keyof RuleCondition, val: string | number) {
-    setConditions(prev => prev.map((node, idx) => (
-      idx === i && !isConditionGroup(node) ? applyLeafChange(node, field, val) : node
-    )))
+    setConditions((prev) =>
+      prev.map((node, idx) => (idx === i && !isConditionGroup(node) ? applyLeafChange(node, field, val) : node)),
+    )
   }
 
   function removeCondition(i: number) {
-    setConditions(prev => prev.filter((_, idx) => idx !== i))
+    setConditions((prev) => prev.filter((_, idx) => idx !== i))
   }
 
   function addCondition() {
-    setConditions(prev => [...prev, newCondition()])
+    setConditions((prev) => [...prev, newCondition()])
   }
 
   // A group starts with two conditions: one alone would carry no AND/OR meaning.
   function addGroup() {
-    setConditions(prev => [...prev, { op: 'or', conditions: [newCondition(), newCondition()] }])
+    setConditions((prev) => [...prev, { op: 'or', conditions: [newCondition(), newCondition()] }])
   }
 
   function setGroupOp(i: number, op: 'and' | 'or') {
-    setConditions(prev => prev.map((node, idx) => (
-      idx === i && isConditionGroup(node) ? { ...node, op } : node
-    )))
+    setConditions((prev) => prev.map((node, idx) => (idx === i && isConditionGroup(node) ? { ...node, op } : node)))
   }
 
   function addGroupCondition(i: number) {
-    setConditions(prev => prev.map((node, idx) => (
-      idx === i && isConditionGroup(node)
-        ? { ...node, conditions: [...node.conditions, newCondition()] }
-        : node
-    )))
+    setConditions((prev) =>
+      prev.map((node, idx) =>
+        idx === i && isConditionGroup(node) ? { ...node, conditions: [...node.conditions, newCondition()] } : node,
+      ),
+    )
   }
 
   function updateGroupCondition(i: number, j: number, field: keyof RuleCondition, val: string | number) {
-    setConditions(prev => prev.map((node, idx) => {
-      if (idx !== i || !isConditionGroup(node)) return node
-      return {
-        ...node,
-        conditions: node.conditions.map((c, cIdx) => (cIdx === j ? applyLeafChange(c, field, val) : c)),
-      }
-    }))
+    setConditions((prev) =>
+      prev.map((node, idx) => {
+        if (idx !== i || !isConditionGroup(node)) return node
+        return {
+          ...node,
+          conditions: node.conditions.map((c, cIdx) => (cIdx === j ? applyLeafChange(c, field, val) : c)),
+        }
+      }),
+    )
   }
 
   // Removing a group's last condition removes the group — an empty one never
   // matches anything and the API rejects it.
   function removeGroupCondition(i: number, j: number) {
-    setConditions(prev => prev.flatMap((node, idx) => {
-      if (idx !== i || !isConditionGroup(node)) return [node]
-      const remaining = node.conditions.filter((_, cIdx) => cIdx !== j)
-      return remaining.length ? [{ ...node, conditions: remaining }] : []
-    }))
+    setConditions((prev) =>
+      prev.flatMap((node, idx) => {
+        if (idx !== i || !isConditionGroup(node)) return [node]
+        const remaining = node.conditions.filter((_, cIdx) => cIdx !== j)
+        return remaining.length ? [{ ...node, conditions: remaining }] : []
+      }),
+    )
   }
 
   function updateAction(i: number, field: keyof RuleAction, val: string) {
-    setActions(prev => prev.map((a, idx) => {
-      if (idx !== i) return a
-      const next = { ...a, [field]: val }
-      if (field === 'op') next.value = ''
-      return next
-    }))
+    setActions((prev) =>
+      prev.map((a, idx) => {
+        if (idx !== i) return a
+        const next = { ...a, [field]: val }
+        if (field === 'op') next.value = ''
+        return next
+      }),
+    )
   }
 
   function removeAction(i: number) {
-    setActions(prev => prev.filter((_, idx) => idx !== i))
+    setActions((prev) => prev.filter((_, idx) => idx !== i))
   }
 
   function addAction() {
-    setActions(prev => [...prev, { op: 'set_category', value: '' }])
+    setActions((prev) => [...prev, { op: 'set_category', value: '' }])
   }
 
   // A blank condition value matches every transaction, so the rule would apply
   // its actions to the whole ledger. The API rejects these too.
-  const hasBlankCondition = flattenConditions(conditions).some(c => String(c.value ?? '').trim() === '')
+  const hasBlankCondition = flattenConditions(conditions).some((c) => String(c.value ?? '').trim() === '')
   const hasInvalidDescriptionAction = actions.some(isInvalidDescriptionAction)
 
   function handleSubmit(e: React.FormEvent) {
@@ -616,7 +647,7 @@ export function RuleDialog({
               <OpToggle value={conditionsOp} onChange={setConditionsOp} />
             </div>
             <div className="space-y-2">
-              {conditions.map((node, i) => (
+              {conditions.map((node, i) =>
                 isConditionGroup(node) ? (
                   <div key={i} className="rounded-lg border border-border bg-muted/40 p-2 space-y-2">
                     <div className="flex items-center justify-between gap-2">
@@ -660,11 +691,9 @@ export function RuleDialog({
                     onChange={(field, val) => updateCondition(i, field, val)}
                     onRemove={() => removeCondition(i)}
                   />
-                )
-              ))}
-              {hasBlankCondition && (
-                <p className="text-xs text-rose-500">{t('rules.blankConditionValue')}</p>
+                ),
               )}
+              {hasBlankCondition && <p className="text-xs text-rose-500">{t('rules.blankConditionValue')}</p>}
               <div className="flex flex-wrap items-center gap-4">
                 <button
                   type="button"
@@ -682,9 +711,7 @@ export function RuleDialog({
                   <Plus size={12} /> {t('rules.addGroup')}
                 </button>
               </div>
-              {hasAmountCondition && (
-                <p className="text-xs text-muted-foreground">{t('rules.amountSignHint')}</p>
-              )}
+              {hasAmountCondition && <p className="text-xs text-muted-foreground">{t('rules.amountSignHint')}</p>}
             </div>
           </div>
 
@@ -719,9 +746,7 @@ export function RuleDialog({
                             onChange={(val) => updateAction(i, 'value', val)}
                             categories={categories}
                             groups={categoryGroups}
-                            currentCategory={currentCategories.find(
-                              (category) => category.id === action.value
-                            )}
+                            currentCategory={currentCategories.find((category) => category.id === action.value)}
                             placeholder={t('rules.selectCategory')}
                             creatable
                             className={`${SELECT_CLASS} w-full`}
@@ -735,8 +760,10 @@ export function RuleDialog({
                           required
                         >
                           <option value="">{t('rules.selectPayee')}</option>
-                          {payees.map(p => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
+                          {payees.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
                           ))}
                         </select>
                       ) : (
@@ -829,7 +856,9 @@ export function RuleDialog({
           />
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
             <Button type="submit" disabled={loading || hasBlankCondition}>
               {loading ? t('common.loading') : t('common.save')}
             </Button>

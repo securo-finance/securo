@@ -1,10 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [
-    "typescript",
-    "react",
-    "jsx-a11y"
-  ],
+  "plugins": ["typescript", "react", "jsx-a11y"],
   "categories": {
     "correctness": "off"
   },
@@ -12,9 +8,7 @@
     "browser": true,
     "es2020": true
   },
-  "ignorePatterns": [
-    "dist"
-  ],
+  "ignorePatterns": ["dist"],
   "rules": {
     "constructor-super": "error",
     "for-direction": "error",
@@ -119,23 +113,15 @@
     "jsx-a11y/control-has-associated-label": [
       "error",
       {
-        "controlComponents": [
-          "Button"
-        ],
+        "controlComponents": ["Button"],
         "depth": 3,
-        "ignoreElements": [
-          "input",
-          "textarea",
-          "select"
-        ]
+        "ignoreElements": ["input", "textarea", "select"]
       }
     ],
     "jsx-a11y/anchor-has-content": [
       "error",
       {
-        "components": [
-          "Link"
-        ]
+        "components": ["Link"]
       }
     ]
   }

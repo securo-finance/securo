@@ -6,13 +6,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { connections } from '@/lib/api'
 import { isGatewayTimeout, waitForNewConnection } from '@/lib/await-new-connection'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
@@ -67,12 +61,13 @@ export function TokenConnectDialog({
     // Connections that already exist, so a slow import that outlasts a proxy
     // timeout can still be recognised when it lands.
     const userId = user?.id
-    const knownIds = isReconnect || !userId
-      ? null
-      : await connections.list().then(
-          (list) => new Set(list.map((c) => c.id)),
-          () => null,
-        )
+    const knownIds =
+      isReconnect || !userId
+        ? null
+        : await connections.list().then(
+            (list) => new Set(list.map((c) => c.id)),
+            () => null,
+          )
     try {
       await connections.handleCallback(
         token.trim(),
@@ -158,9 +153,7 @@ export function TokenConnectDialog({
             disabled={submitting}
           />
           <p className="text-xs text-muted-foreground">
-            {submitting && !isReconnect
-              ? t('accounts.oauthCallback.linking')
-              : t('accounts.tokenConnect.tokenHelp')}
+            {submitting && !isReconnect ? t('accounts.oauthCallback.linking') : t('accounts.tokenConnect.tokenHelp')}
           </p>
         </div>
 

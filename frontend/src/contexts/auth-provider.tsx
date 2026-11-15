@@ -19,15 +19,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!token) return
     let cancelled = false
-    auth.me()
-      .then((me) => { if (!cancelled) setUser(me) })
+    auth
+      .me()
+      .then((me) => {
+        if (!cancelled) setUser(me)
+      })
       .catch(() => {
         if (cancelled) return
         localStorage.removeItem('token')
         setToken(null)
       })
-      .finally(() => { if (!cancelled) setIsLoading(false) })
-    return () => { cancelled = true }
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [token])
 
   // Sync token across tabs via storage events
@@ -67,17 +74,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithToken = useCallback((accessToken: string) => {
     localStorage.setItem('token', accessToken)
     setToken(accessToken)
-    auth.me().then(setUser).catch(() => {})
+    auth
+      .me()
+      .then(setUser)
+      .catch(() => {})
   }, [])
 
   const updateUser = useCallback((updatedUser: User) => {
     setUser(updatedUser)
   }, [])
 
-  const register = useCallback(async (email: string, password: string, preferences?: Record<string, string>) => {
-    await auth.register(email, password, preferences)
-    await login(email, password)
-  }, [login])
+  const register = useCallback(
+    async (email: string, password: string, preferences?: Record<string, string>) => {
+      await auth.register(email, password, preferences)
+      await login(email, password)
+    },
+    [login],
+  )
 
   const logout = useCallback(() => {
     localStorage.removeItem('token')
@@ -87,7 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient])
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, verify2fa, loginWithToken, register, updateUser, logout }}>
+    <AuthContext.Provider
+      value={{ user, token, isLoading, login, verify2fa, loginWithToken, register, updateUser, logout }}
+    >
       {children}
     </AuthContext.Provider>
   )

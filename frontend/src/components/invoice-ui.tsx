@@ -12,22 +12,9 @@ import type { InvoiceState } from '@/types'
  */
 
 /** The card every section sits in. Same shell as `recurring`. */
-export function SectionCard({
-  children,
-  className = '',
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
+export function SectionCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div
-      className={cn(
-        'bg-card rounded-xl border border-border shadow-sm overflow-hidden',
-        className,
-      )}
-    >
-      {children}
-    </div>
+    <div className={cn('bg-card rounded-xl border border-border shadow-sm overflow-hidden', className)}>{children}</div>
   )
 }
 
@@ -67,7 +54,8 @@ export const TH = 'text-xs font-medium text-muted-foreground py-3'
 const STATE_TONE: Record<InvoiceState, string> = {
   draft: 'bg-muted text-muted-foreground border-border',
   open: 'bg-muted text-foreground border-border',
-  partial: 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20',
+  partial:
+    'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20',
   paid: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20',
   overdue: 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20',
   void: 'bg-muted text-muted-foreground border-border line-through',
@@ -79,10 +67,7 @@ export function StateBadge({ state }: { state: InvoiceState }) {
   return (
     <span
       data-testid={`invoice-state-${state}`}
-      className={cn(
-        'text-[11px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap',
-        STATE_TONE[state],
-      )}
+      className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap', STATE_TONE[state])}
     >
       {t(`invoices.state.${state}`)}
     </span>
@@ -116,9 +101,7 @@ export function Segmented<T extends string>({
             data-testid={`${testIdPrefix}-${option.value}`}
             className={cn(
               'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors whitespace-nowrap',
-              active
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
+              active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {option.label}
@@ -162,9 +145,7 @@ export function IconAction({
       title={label}
       className={cn(
         'p-1.5 rounded-md text-muted-foreground transition-colors',
-        destructive
-          ? 'hover:text-destructive hover:bg-destructive/5'
-          : 'hover:text-primary hover:bg-primary/5',
+        destructive ? 'hover:text-destructive hover:bg-destructive/5' : 'hover:text-primary hover:bg-primary/5',
       )}
     >
       {children}

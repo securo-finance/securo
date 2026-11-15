@@ -25,7 +25,7 @@ export function PropertyEquitySummary({
   mask: (value: string) => string
 }) {
   const { t } = useTranslation()
-  const linked = loans.filter(loan => loan.type === 'loan' && loan.secured_asset_id === asset.id)
+  const linked = loans.filter((loan) => loan.type === 'loan' && loan.secured_asset_id === asset.id)
   const equity = getPropertyEquity(asset, linked, currency)
   if (linked.length === 0) return null
 
@@ -33,7 +33,7 @@ export function PropertyEquitySummary({
     <div className="px-4 py-3 border-t border-border bg-muted/20 space-y-2">
       <h3 className="text-xs font-semibold">{t('assets.linkedLoans')}</h3>
       <div className="space-y-1">
-        {linked.map(loan => (
+        {linked.map((loan) => (
           <div key={loan.id} className="flex items-center justify-between gap-3 text-xs">
             <Link to={`/accounts/${loan.id}`} className="text-muted-foreground hover:underline truncate">
               {loan.display_name || loan.name}

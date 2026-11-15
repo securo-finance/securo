@@ -63,16 +63,12 @@ describe('isTransferTransaction', () => {
 
   it('reads a treat_as_transfer category as a transfer without a pair (#993)', () => {
     const category = makeCategory({ treat_as_transfer: true })
-    expect(
-      isTransferTransaction(makeTx({ category_id: category.id, category })),
-    ).toBe(true)
+    expect(isTransferTransaction(makeTx({ category_id: category.id, category }))).toBe(true)
   })
 
   it('does not read a normal category as a transfer', () => {
     const category = makeCategory({ treat_as_transfer: false })
-    expect(
-      isTransferTransaction(makeTx({ category_id: category.id, category })),
-    ).toBe(false)
+    expect(isTransferTransaction(makeTx({ category_id: category.id, category }))).toBe(false)
   })
 
   it('does not read an uncategorized row without a pair as a transfer', () => {

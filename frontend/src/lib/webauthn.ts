@@ -1,10 +1,16 @@
-type PublicKeyCredentialCreationOptionsJSON = Omit<PublicKeyCredentialCreationOptions, 'challenge' | 'user' | 'excludeCredentials'> & {
+type PublicKeyCredentialCreationOptionsJSON = Omit<
+  PublicKeyCredentialCreationOptions,
+  'challenge' | 'user' | 'excludeCredentials'
+> & {
   challenge: string
   user: Omit<PublicKeyCredentialUserEntity, 'id'> & { id: string }
   excludeCredentials?: Array<Omit<PublicKeyCredentialDescriptor, 'id'> & { id: string }>
 }
 
-type PublicKeyCredentialRequestOptionsJSON = Omit<PublicKeyCredentialRequestOptions, 'challenge' | 'allowCredentials'> & {
+type PublicKeyCredentialRequestOptionsJSON = Omit<
+  PublicKeyCredentialRequestOptions,
+  'challenge' | 'allowCredentials'
+> & {
   challenge: string
   allowCredentials?: Array<Omit<PublicKeyCredentialDescriptor, 'id'> & { id: string }>
 }
@@ -215,7 +221,9 @@ async function getPasskeyAuthentication(
   }
 }
 
-export async function startPasskeyAuthentication(options: Record<string, unknown>): Promise<AuthenticationCredentialJSON> {
+export async function startPasskeyAuthentication(
+  options: Record<string, unknown>,
+): Promise<AuthenticationCredentialJSON> {
   return getPasskeyAuthentication(options)
 }
 

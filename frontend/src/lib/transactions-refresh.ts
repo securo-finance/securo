@@ -16,9 +16,7 @@ export interface RefreshTransactionsViewOptions {
  * Refetch the query behind the view on screen (the calendar renders its own
  * query, not the list) and report a failed request with the API's message.
  */
-export async function refreshTransactionsView(
-  options: RefreshTransactionsViewOptions,
-): Promise<void> {
+export async function refreshTransactionsView(options: RefreshTransactionsViewOptions): Promise<void> {
   const refetch = options.viewMode === 'calendar' ? options.refetchCalendar : options.refetchList
   const result = await refetch()
   if (result.isError) options.onError(extractApiError(result.error))

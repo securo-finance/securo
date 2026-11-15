@@ -14,9 +14,7 @@ type AsgiFixture = {
 }
 
 const asgiFixturePath = process.env.SECURO_1022_ASGI_FIXTURE
-const asgiFixture = asgiFixturePath
-  ? JSON.parse(readFileSync(asgiFixturePath, 'utf8')) as AsgiFixture
-  : null
+const asgiFixture = asgiFixturePath ? (JSON.parse(readFileSync(asgiFixturePath, 'utf8')) as AsgiFixture) : null
 
 const api = vi.hoisted(() => ({
   accounts: { get: vi.fn(), bills: vi.fn(), summary: vi.fn(), list: vi.fn(), update: vi.fn(), runningBalance: vi.fn() },
@@ -55,21 +53,49 @@ const account = {
   type: asgiFixture?.account.type ?? 'checking',
   currency: asgiFixture?.account.currency ?? 'BRL',
   balance: Number(asgiFixture?.account.balance ?? 150),
-  current_balance: 150, is_active: true,
+  current_balance: 150,
+  is_active: true,
 }
 const opening = {
-  id: 'opening', user_id: 'user-1', account_id: 'acc-1', category_id: null,
-  category: null, external_id: null, description: 'Saldo inicial', original_description: null,
-  amount: 100, currency: 'BRL', date: '2026-09-12', type: 'credit',
-  source: 'opening_balance', status: 'posted', payee: null, payee_id: null,
-  payee_name: null, notes: null, transfer_pair_id: null, amount_primary: null,
-  fx_rate_used: null, fx_fallback: false, installment_number: null,
-  total_installments: null, installment_total_amount: null,
-  installment_purchase_date: null, installment_series_id: null, bill_id: null,
-  effective_bill_date: null, reporting_date_override: null, splits: [], is_ignored: false,
+  id: 'opening',
+  user_id: 'user-1',
+  account_id: 'acc-1',
+  category_id: null,
+  category: null,
+  external_id: null,
+  description: 'Saldo inicial',
+  original_description: null,
+  amount: 100,
+  currency: 'BRL',
+  date: '2026-09-12',
+  type: 'credit',
+  source: 'opening_balance',
+  status: 'posted',
+  payee: null,
+  payee_id: null,
+  payee_name: null,
+  notes: null,
+  transfer_pair_id: null,
+  amount_primary: null,
+  fx_rate_used: null,
+  fx_fallback: false,
+  installment_number: null,
+  total_installments: null,
+  installment_total_amount: null,
+  installment_purchase_date: null,
+  installment_series_id: null,
+  bill_id: null,
+  effective_bill_date: null,
+  reporting_date_override: null,
+  splits: [],
+  is_ignored: false,
 } satisfies Transaction
 const manual = {
-  ...opening, id: 'manual', source: 'manual', amount: 50, date: '2026-09-11',
+  ...opening,
+  id: 'manual',
+  source: 'manual',
+  amount: 50,
+  date: '2026-09-11',
 } satisfies Transaction
 const items: Transaction[] = asgiFixture?.responses.en.items.map((item) => ({
   ...item,
@@ -91,12 +117,14 @@ beforeEach(async () => {
   api.accounts.get.mockResolvedValue(account)
   api.accounts.list.mockResolvedValue([account])
   api.accounts.summary.mockResolvedValue({
-    opening_balance: 0, current_balance: 150, monthly_income: 0, monthly_expenses: 0,
-    projected_income: 0, projected_expenses: 0,
+    opening_balance: 0,
+    current_balance: 150,
+    monthly_income: 0,
+    monthly_expenses: 0,
+    projected_income: 0,
+    projected_expenses: 0,
   })
-  api.transactions.list.mockResolvedValue(
-    asgiFixture?.responses.en ?? { items, total: items.length },
-  )
+  api.transactions.list.mockResolvedValue(asgiFixture?.responses.en ?? { items, total: items.length })
   api.accounts.runningBalance.mockResolvedValue([])
   api.dashboard.projectedTransactions.mockResolvedValue([])
   api.categories.list.mockResolvedValue([])
@@ -114,12 +142,17 @@ describe.each([false, true])('account-detail opening-balance description (mobile
     viewport.mobile = mobile
     const originalItems = structuredClone(items)
     renderWithProviders(<AccountDetailPage />, {
-      route: `/accounts/${account.id}`, path: '/accounts/:id',
+      route: `/accounts/${account.id}`,
+      path: '/accounts/:id',
     })
     await waitFor(() => expect(api.transactions.list).toHaveBeenCalled())
-    await waitFor(() => expect(screen.queryAllByText('Saldo inicial', {
-      selector: mobile ? 'p.font-semibold' : 'span.font-semibold',
-    }).length).toBeGreaterThan(0))
+    await waitFor(() =>
+      expect(
+        screen.queryAllByText('Saldo inicial', {
+          selector: mobile ? 'p.font-semibold' : 'span.font-semibold',
+        }).length,
+      ).toBeGreaterThan(0),
+    )
 
     // The translated badge alone must not satisfy this: check the description element.
     expect(description('Opening balance', mobile)).toBeVisible()
@@ -129,16 +162,24 @@ describe.each([false, true])('account-detail opening-balance description (mobile
     expect(items).toEqual(originalItems)
     captureAsgiRender('en')
 
-    await act(async () => { await i18n.changeLanguage('pt-BR') })
-    expect(screen.getAllByText('Saldo inicial', {
-      selector: mobile ? 'p.font-semibold' : 'span.font-semibold',
-      exact: true,
-    })).toHaveLength(2)
+    await act(async () => {
+      await i18n.changeLanguage('pt-BR')
+    })
+    expect(
+      screen.getAllByText('Saldo inicial', {
+        selector: mobile ? 'p.font-semibold' : 'span.font-semibold',
+        exact: true,
+      }),
+    ).toHaveLength(2)
     captureAsgiRender('pt-BR')
-    await act(async () => { await i18n.changeLanguage('nl') })
+    await act(async () => {
+      await i18n.changeLanguage('nl')
+    })
     expect(description('Openingsbalans', mobile)).toBeVisible()
     expect(description('Saldo inicial', mobile)).toBeVisible()
-    await act(async () => { await i18n.changeLanguage('en') })
+    await act(async () => {
+      await i18n.changeLanguage('en')
+    })
     expect(description('Opening balance', mobile)).toBeVisible()
     expect(description('Saldo inicial', mobile)).toBeVisible()
     expect(opening.description).toBe('Saldo inicial')
@@ -152,9 +193,17 @@ describe.each([false, true])('account-detail opening-balance description (mobile
 it('leaves the shared mobile row unchanged for other callers', async () => {
   renderWithProviders(
     <MobileTransactionRow
-      tx={opening} account={undefined} groupName={undefined} selected={false}
-      selectable={false} canWrite={false} highlighted={false} locale="en-US"
-      userCurrency="BRL" onSelect={() => {}} onClick={() => {}}
+      tx={opening}
+      account={undefined}
+      groupName={undefined}
+      selected={false}
+      selectable={false}
+      canWrite={false}
+      highlighted={false}
+      locale="en-US"
+      userCurrency="BRL"
+      onSelect={() => {}}
+      onClick={() => {}}
     />,
   )
   expect(screen.getByText('Saldo inicial', { selector: 'p.font-semibold' })).toBeVisible()

@@ -8,7 +8,9 @@ import en from '@/locales/en.json'
 // Keep the default and Brazilian Portuguese bundles available immediately;
 // other languages are separate build assets loaded by i18next when selected.
 const localeLoaders = import.meta.glob<{ default: ResourceLanguage }>([
-  '../locales/*.json', '!../locales/en.json', '!../locales/pt-BR.json',
+  '../locales/*.json',
+  '!../locales/en.json',
+  '!../locales/pt-BR.json',
 ])
 
 function syncHtmlLang(lng: string) {

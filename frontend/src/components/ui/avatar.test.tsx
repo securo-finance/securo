@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarGroup,
-  AvatarGroupCount,
-} from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar'
 import { renderWithProviders } from '@/test/utils'
 
 describe('Avatar', () => {
@@ -29,10 +24,7 @@ describe('Avatar', () => {
       </Avatar>,
     )
 
-    expect(container.querySelector('[data-slot="avatar"]')).toHaveAttribute(
-      'data-size',
-      'default',
-    )
+    expect(container.querySelector('[data-slot="avatar"]')).toHaveAttribute('data-size', 'default')
   })
 
   it('records the requested size, which the child styling keys off', () => {
@@ -42,10 +34,7 @@ describe('Avatar', () => {
       </Avatar>,
     )
 
-    expect(container.querySelector('[data-slot="avatar"]')).toHaveAttribute(
-      'data-size',
-      'lg',
-    )
+    expect(container.querySelector('[data-slot="avatar"]')).toHaveAttribute('data-size', 'lg')
   })
 
   it('renders a group with an overflow count', () => {

@@ -6,13 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ArrowRight, Info } from 'lucide-react'
 import type { Account } from '@/types'
 
@@ -50,8 +44,17 @@ export function TransferDialog({
   const [notes, setNotes] = useState('')
   const [destinationAmount, setDestinationAmount] = useState('')
 
-  const [formSource, setFormSource] = useState<{ open: boolean; defaultFromAccountId?: string; firstAccountId: string } | null>(null)
-  if (!formSource || formSource.open !== open || formSource.defaultFromAccountId !== defaultFromAccountId || formSource.firstAccountId !== firstAccountId) {
+  const [formSource, setFormSource] = useState<{
+    open: boolean
+    defaultFromAccountId?: string
+    firstAccountId: string
+  } | null>(null)
+  if (
+    !formSource ||
+    formSource.open !== open ||
+    formSource.defaultFromAccountId !== defaultFromAccountId ||
+    formSource.firstAccountId !== firstAccountId
+  ) {
     setFormSource({ open, defaultFromAccountId, firstAccountId })
     if (open) {
       setFromAccountId(defaultFromAccountId || firstAccountId)
@@ -87,9 +90,7 @@ export function TransferDialog({
               date,
               description,
               notes: notes.trim() || undefined,
-              destination_amount: isCrossCurrency && destinationAmount
-                ? parseFloat(destinationAmount)
-                : undefined,
+              destination_amount: isCrossCurrency && destinationAmount ? parseFloat(destinationAmount) : undefined,
             })
           }}
           className="space-y-4"
@@ -107,7 +108,9 @@ export function TransferDialog({
                 }}
                 required
               >
-                <option value="" disabled>{t('transactions.account')}</option>
+                <option value="" disabled>
+                  {t('transactions.account')}
+                </option>
                 {sortedAccounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
                     {getAccountLabel(acc)} ({acc.currency})
@@ -129,7 +132,9 @@ export function TransferDialog({
                 }}
                 required
               >
-                <option value="" disabled>{t('transactions.account')}</option>
+                <option value="" disabled>
+                  {t('transactions.account')}
+                </option>
                 {availableToAccounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
                     {getAccountLabel(acc)} ({acc.currency})
@@ -169,19 +174,13 @@ export function TransferDialog({
             </div>
             <div className="space-y-2">
               <Label>{t('transactions.date')}</Label>
-              <DatePickerInput
-                value={date}
-                onChange={setDate}
-                className="w-full justify-start"
-              />
+              <DatePickerInput value={date} onChange={setDate} className="w-full justify-start" />
             </div>
           </div>
 
           {isCrossCurrency && (
             <div className="space-y-2 p-3 bg-muted/50 border border-border rounded-md">
-              <Label className="text-xs">
-                {t('transactions.convertedAmount', { currency: toAccount?.currency })}
-              </Label>
+              <Label className="text-xs">{t('transactions.convertedAmount', { currency: toAccount?.currency })}</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -195,11 +194,7 @@ export function TransferDialog({
 
           <div className="space-y-2">
             <Label>{t('transactions.transferDescription')}</Label>
-            <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              required
-            />
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} required />
           </div>
 
           <div className="space-y-2">
@@ -219,10 +214,7 @@ export function TransferDialog({
             <Button type="button" variant="outline" onClick={onClose}>
               {t('common.cancel')}
             </Button>
-            <Button
-              type="submit"
-              disabled={loading || !fromAccountId || !toAccountId || !!isSameAccount}
-            >
+            <Button type="submit" disabled={loading || !fromAccountId || !toAccountId || !!isSameAccount}>
               {loading ? t('common.loading') : t('common.save')}
             </Button>
           </DialogFooter>

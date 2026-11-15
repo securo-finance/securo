@@ -1,4 +1,11 @@
-import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import {
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { GripVertical, LayoutDashboard, MoveHorizontal, Plus, X } from 'lucide-react'
 import {
@@ -10,7 +17,13 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import { arrayMove, rectSortingStrategy, SortableContext, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable'
+import {
+  arrayMove,
+  rectSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
 import { Button } from '@/components/ui/button'
@@ -237,7 +250,11 @@ function SortableWidget({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
-                    <button type="button" aria-label={t('library.widthOf', { name: title })} className={iconButton('hidden lg:flex')}>
+                    <button
+                      type="button"
+                      aria-label={t('library.widthOf', { name: title })}
+                      className={iconButton('hidden lg:flex')}
+                    >
                       <MoveHorizontal />
                     </button>
                   </DropdownMenuTrigger>
@@ -245,7 +262,9 @@ function SortableWidget({
                 <TooltipContent>{t('library.widthOf', { name: title })}</TooltipContent>
               </Tooltip>
               <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">{t('library.widthLabel')}</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                  {t('library.widthLabel')}
+                </DropdownMenuLabel>
                 <DropdownMenuRadioGroup value={String(span)} onValueChange={(value) => onResize(Number(value) as Span)}>
                   {SPANS.filter((option) => option >= entry.minSpan).map((option) => (
                     <DropdownMenuRadioItem key={option} value={String(option)}>

@@ -6,7 +6,14 @@ import { toast } from 'sonner'
 import { CategorySelect } from '@/components/category-select'
 import { Button } from '@/components/ui/button'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
@@ -48,7 +55,11 @@ export function LoanBalanceDialog({
   const [categoryId, setCategoryId] = useState('')
 
   const { data: categoryList = [] } = useQuery({ queryKey: ['categories'], queryFn: categoriesApi.list, enabled: open })
-  const { data: groupList = [] } = useQuery({ queryKey: ['categoryGroups'], queryFn: categoryGroupsApi.list, enabled: open })
+  const { data: groupList = [] } = useQuery({
+    queryKey: ['categoryGroups'],
+    queryFn: categoryGroupsApi.list,
+    enabled: open,
+  })
 
   const money = (value: number) => formatCurrency(value, currency, locale)
   const statement = balance.trim() === '' ? NaN : Number(balance)

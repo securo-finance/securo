@@ -16,9 +16,7 @@ describe('Input', () => {
 
   it('reports every keystroke to onChange', async () => {
     const onChange = vi.fn()
-    const { user } = renderWithProviders(
-      <Input aria-label="Amount" onChange={onChange} />,
-    )
+    const { user } = renderWithProviders(<Input aria-label="Amount" onChange={onChange} />)
 
     await user.type(screen.getByLabelText('Amount'), '250')
 

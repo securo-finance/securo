@@ -95,9 +95,7 @@ export function InvoiceLineEditor({
             <Plus className="h-4 w-4" />
             {t('invoices.field.addLine')}
           </span>
-          <span className="mt-1 block text-xs text-muted-foreground">
-            {t('invoices.field.linesOptional')}
-          </span>
+          <span className="mt-1 block text-xs text-muted-foreground">{t('invoices.field.linesOptional')}</span>
         </button>
       ) : (
         <div className="rounded-lg border border-border overflow-hidden">
@@ -126,9 +124,7 @@ export function InvoiceLineEditor({
                   <ProductPicker
                     currency={currency}
                     onPick={(product, price) =>
-                      onChange(
-                        rows.map((row, i) => (i === index ? lineFromProduct(row, product, price) : row)),
-                      )
+                      onChange(rows.map((row, i) => (i === index ? lineFromProduct(row, product, price) : row)))
                     }
                   />
                   <Input
@@ -194,10 +190,7 @@ export function InvoiceLineEditor({
                   <span className="sm:hidden text-[11px] text-muted-foreground block">
                     {t('invoices.column.amount')}
                   </span>
-                  <span
-                    className="text-sm font-medium tabular-nums"
-                    data-testid={`invoice-line-amount-${index}`}
-                  >
+                  <span className="text-sm font-medium tabular-nums" data-testid={`invoice-line-amount-${index}`}>
                     {money(lineAmount(line))}
                   </span>
                 </div>
@@ -220,9 +213,7 @@ export function InvoiceLineEditor({
                     asked. On its own row so the columns above stay put. */}
                 {showTax && (
                   <div className="col-span-2 sm:col-span-6 flex items-center gap-2 pt-1">
-                    <span className="text-[11px] text-muted-foreground">
-                      {t('invoices.field.taxRate')}
-                    </span>
+                    <span className="text-[11px] text-muted-foreground">{t('invoices.field.taxRate')}</span>
                     <Input
                       className="h-8 w-20 text-right"
                       inputMode="decimal"

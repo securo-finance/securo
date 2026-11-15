@@ -3,7 +3,13 @@ import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { categories as categoriesApi, categoryGroups as categoryGroupsApi, recurring as recurringApi, accounts as accountsApi, currencies as currenciesApi } from '@/lib/api'
+import {
+  categories as categoriesApi,
+  categoryGroups as categoryGroupsApi,
+  recurring as recurringApi,
+  accounts as accountsApi,
+  currencies as currenciesApi,
+} from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
@@ -12,13 +18,7 @@ import { Button } from '@/components/ui/button'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import type {
   Category,
   CategoryGroup,
@@ -53,11 +53,7 @@ import { formatCurrency } from '@/lib/format'
 const TH = 'text-xs font-medium text-muted-foreground py-3'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      {children}
-    </div>
-  )
+  return <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">{children}</div>
 }
 
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
@@ -132,8 +128,7 @@ function RecurringTab() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: Partial<RecurringTransaction> & { id: string }) =>
-      recurringApi.update(id, data),
+    mutationFn: ({ id, ...data }: Partial<RecurringTransaction> & { id: string }) => recurringApi.update(id, data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['recurring'] })
@@ -158,8 +153,7 @@ function RecurringTab() {
   })
 
   const payMutation = useMutation({
-    mutationFn: ({ id, ...payment }: RecurringPaymentInput & { id: string }) =>
-      recurringApi.pay(id, payment),
+    mutationFn: ({ id, ...payment }: RecurringPaymentInput & { id: string }) => recurringApi.pay(id, payment),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['recurring'] })
@@ -212,7 +206,14 @@ function RecurringTab() {
                   <RefreshCw size={12} />
                   <span className="hidden sm:inline">{t('recurring.generatePending')}</span>
                 </Button>
-                <Button size="sm" className="gap-1.5 h-8" onClick={() => { setEditing(null); setDialogOpen(true) }}>
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => {
+                    setEditing(null)
+                    setDialogOpen(true)
+                  }}
+                >
                   <Plus size={13} /> <span className="hidden sm:inline">{t('recurring.add')}</span>
                 </Button>
               </div>
@@ -240,7 +241,9 @@ function RecurringTab() {
                       {isSplitByCategory(rt) && <CategorySplitBadge tx={rt} />}
                     </span>
                   </td>
-                  <td className={`py-3 text-xs sm:text-sm font-bold tabular-nums ${rt.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                  <td
+                    className={`py-3 text-xs sm:text-sm font-bold tabular-nums ${rt.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}
+                  >
                     {mask(`${rt.type === 'credit' ? '+' : '−'}${formatCurrency(rt.amount, rt.currency, locale)}`)}
                     {rt.currency !== userCurrency && rt.amount_primary != null && (
                       <div className="flex items-center gap-1 text-[11px] font-normal text-muted-foreground">
@@ -260,12 +263,14 @@ function RecurringTab() {
                     {new Date(rt.next_occurrence + 'T00:00:00').toLocaleDateString(dateLocale)}
                   </td>
                   <td className="py-3 hidden sm:table-cell">
-                    <span className={cn(
-                      'text-[11px] font-semibold px-2 py-0.5 rounded-full border',
-                      rt.is_active
-                        ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                        : 'bg-muted text-muted-foreground border-border'
-                    )}>
+                    <span
+                      className={cn(
+                        'text-[11px] font-semibold px-2 py-0.5 rounded-full border',
+                        rt.is_active
+                          ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                          : 'bg-muted text-muted-foreground border-border',
+                      )}
+                    >
                       {rt.is_active ? t('recurring.active') : t('recurring.inactive')}
                     </span>
                   </td>
@@ -284,7 +289,10 @@ function RecurringTab() {
                         )}
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
-                          onClick={() => { setEditing(rt); setDialogOpen(true) }}
+                          onClick={() => {
+                            setEditing(rt)
+                            setDialogOpen(true)
+                          }}
                           aria-label={t('common.edit')}
                           title={t('common.edit')}
                         >
@@ -311,7 +319,13 @@ function RecurringTab() {
         )}
       </SectionCard>
 
-      <Dialog open={dialogOpen} onOpenChange={() => { setDialogOpen(false); setEditing(null) }}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={() => {
+          setDialogOpen(false)
+          setEditing(null)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? t('recurring.edit') : t('recurring.add')}</DialogTitle>
@@ -321,9 +335,7 @@ function RecurringTab() {
             recurring={editing}
             categories={categoriesList ?? []}
             categoryGroups={categoryGroupsList ?? []}
-            currentCategory={allCategoriesList?.find(
-              (category) => category.id === editing?.category_id
-            )}
+            currentCategory={allCategoriesList?.find((category) => category.id === editing?.category_id)}
             accounts={accountsList ?? []}
             onSave={(data) => {
               if (editing) {
@@ -332,13 +344,21 @@ function RecurringTab() {
                 createMutation.mutate(data)
               }
             }}
-            onCancel={() => { setDialogOpen(false); setEditing(null) }}
+            onCancel={() => {
+              setDialogOpen(false)
+              setEditing(null)
+            }}
             loading={createMutation.isPending || updateMutation.isPending}
           />
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!paying} onOpenChange={(open) => { if (!open) setPaying(null) }}>
+      <Dialog
+        open={!!paying}
+        onOpenChange={(open) => {
+          if (!open) setPaying(null)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('recurring.payNow')}</DialogTitle>
@@ -402,7 +422,7 @@ function RecurringForm({
   const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? 'debit')
   const [frequency, setFrequency] = useState(recurring?.frequency ?? 'monthly')
   const [weekendAdjustment, setWeekendAdjustment] = useState<RecurringTransaction['weekend_adjustment']>(
-    recurring?.weekend_adjustment ?? 'none'
+    recurring?.weekend_adjustment ?? 'none',
   )
   const [dayOfMonth, setDayOfMonth] = useState(recurring?.day_of_month?.toString() ?? '')
   const [startDate, setStartDate] = useState(recurring?.start_date ?? localDateString())
@@ -427,18 +447,22 @@ function RecurringForm({
   const undoSplit = () => {
     const kept = largestLineCategoryId(
       (lineRows ?? []).map((row, position) => ({
-        id: row.key, category_id: row.categoryId, position, share_type: lineShareType,
-        share_pct: null, notes: null,
-        amount: lineShareType === 'exact'
-          ? rowCents(row.amount, displayLocale) ?? 0
-          : rowBasisPoints(row.percent) ?? 0,
+        id: row.key,
+        category_id: row.categoryId,
+        position,
+        share_type: lineShareType,
+        share_pct: null,
+        notes: null,
+        amount:
+          lineShareType === 'exact' ? (rowCents(row.amount, displayLocale) ?? 0) : (rowBasisPoints(row.percent) ?? 0),
       })),
     )
     setCategoryId(kept ?? '')
     setLineRows(null)
   }
 
-  const selectClass = 'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
+  const selectClass =
+    'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 
   return (
     <form
@@ -479,9 +503,13 @@ function RecurringForm({
         <div className="space-y-2">
           <Label>{t('recurring.currency')}</Label>
           <select className={selectClass} value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map((c) => (
-              <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
-            ))}
+            {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map(
+              (c) => (
+                <option key={c.code} value={c.code}>
+                  {c.flag} {c.name}
+                </option>
+              ),
+            )}
           </select>
         </div>
         <div className="space-y-2">
@@ -495,7 +523,11 @@ function RecurringForm({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>{t('recurring.frequency')}</Label>
-          <select className={selectClass} value={frequency} onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}>
+          <select
+            className={selectClass}
+            value={frequency}
+            onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}
+          >
             <option value="monthly">{t('recurring.monthly')}</option>
             <option value="quarterly">{t('recurring.quarterly')}</option>
             <option value="semiannual">{t('recurring.semiannual')}</option>
@@ -530,7 +562,12 @@ function RecurringForm({
         </div>
         <div className="space-y-2">
           <Label>{t('recurring.endDate')}</Label>
-          <DatePickerInput value={endDate} onChange={setEndDate} placeholder={t('recurring.endDate')} className="w-full justify-start" />
+          <DatePickerInput
+            value={endDate}
+            onChange={setEndDate}
+            placeholder={t('recurring.endDate')}
+            className="w-full justify-start"
+          />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -571,15 +608,16 @@ function RecurringForm({
         </div>
         <div className="space-y-2">
           <Label>{t('recurring.account')}</Label>
-          <select
-            className={selectClass}
-            value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
-            required
-          >
-            {!accountId && <option value="" disabled hidden>{t('transactions.createCounterpartSelectAccount')}</option>}
+          <select className={selectClass} value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
+            {!accountId && (
+              <option value="" disabled hidden>
+                {t('transactions.createCounterpartSelectAccount')}
+              </option>
+            )}
             {sortedAccounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>{getAccountName(acc)}</option>
+              <option key={acc.id} value={acc.id}>
+                {getAccountName(acc)}
+              </option>
             ))}
           </select>
         </div>
@@ -623,7 +661,9 @@ function RecurringForm({
         </label>
       )}
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>{t('common.cancel')}</Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          {t('common.cancel')}
+        </Button>
         <Button type="submit" disabled={loading || !linesValid}>
           {loading ? t('common.loading') : t('common.save')}
         </Button>
@@ -652,7 +692,8 @@ function PayNowForm({
   const [amount, setAmount] = useState(recurring.amount.toString())
   const [description, setDescription] = useState(recurring.description)
 
-  const selectClass = 'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
+  const selectClass =
+    'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 
   return (
     <form
@@ -669,7 +710,15 @@ function PayNowForm({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="pay-amount">{t('recurring.amount')}</Label>
-          <Input id="pay-amount" type="number" step="0.01" min="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+          <Input
+            id="pay-amount"
+            type="number"
+            step="0.01"
+            min="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+          />
         </div>
         <div className="space-y-2">
           <Label>{t('recurring.payDate')}</Label>
@@ -685,14 +734,22 @@ function PayNowForm({
           onChange={(e) => setAccountId(e.target.value)}
           required
         >
-          {!accountId && <option value="" disabled hidden>{t('transactions.createCounterpartSelectAccount')}</option>}
+          {!accountId && (
+            <option value="" disabled hidden>
+              {t('transactions.createCounterpartSelectAccount')}
+            </option>
+          )}
           {sortedAccounts.map((acc) => (
-            <option key={acc.id} value={acc.id}>{getAccountName(acc)}</option>
+            <option key={acc.id} value={acc.id}>
+              {getAccountName(acc)}
+            </option>
           ))}
         </select>
       </div>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>{t('common.cancel')}</Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          {t('common.cancel')}
+        </Button>
         <Button type="submit" disabled={loading}>
           {loading ? t('common.loading') : t('recurring.payNow')}
         </Button>

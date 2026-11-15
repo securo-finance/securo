@@ -17,8 +17,7 @@ const OVERLAY_LAYER_SELECTOR = [
   '[data-sonner-toaster]',
 ].join(', ')
 
-const OPEN_DIALOG_SELECTOR =
-  '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'
+const OPEN_DIALOG_SELECTOR = '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'
 
 /** True when the event target sits inside a portaled dialog, popover, menu or toast. */
 export function isInsideOverlayLayer(target: EventTarget | null): boolean {

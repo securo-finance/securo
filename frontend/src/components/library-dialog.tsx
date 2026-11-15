@@ -41,7 +41,11 @@ export function LibraryDialog({
           <DialogTitle>{t('library.title')}</DialogTitle>
           <DialogDescription>{t('library.subtitle')}</DialogDescription>
         </DialogHeader>
-        <Tabs value={kind} onValueChange={(value) => onKindChange(value as LibraryKind)} className="min-h-0 flex-1 gap-0">
+        <Tabs
+          value={kind}
+          onValueChange={(value) => onKindChange(value as LibraryKind)}
+          className="min-h-0 flex-1 gap-0"
+        >
           <div className="px-6">
             <TabsList className="w-full sm:w-fit">
               {KINDS.map((k) => (
@@ -94,7 +98,9 @@ function SurfaceItems({ surface }: { surface: Surface }) {
   const unavailable = useEntryAvailability()
   const placed = new Set(ids)
   // Everything is listed; what can't work in this workspace sits at the end, said why.
-  const entries = [...SURFACE_ENTRIES[surface]].sort((a, b) => Number(unavailable(a) !== null) - Number(unavailable(b) !== null))
+  const entries = [...SURFACE_ENTRIES[surface]].sort(
+    (a, b) => Number(unavailable(a) !== null) - Number(unavailable(b) !== null),
+  )
   // The reports page can't be left empty; the dashboard can.
   const lastReport = surface === 'reports' && ids.length === 1
 
@@ -106,7 +112,11 @@ function SurfaceItems({ surface }: { surface: Surface }) {
           const locked = isPlaced && lastReport
           const reason = unavailable(entry)
           return (
-            <li key={entry.id} className="flex items-center gap-3 px-4 py-3" aria-disabled={reason !== null || undefined}>
+            <li
+              key={entry.id}
+              className="flex items-center gap-3 px-4 py-3"
+              aria-disabled={reason !== null || undefined}
+            >
               <div className={cn('flex min-w-0 flex-1 items-center gap-3', reason && 'opacity-60')}>
                 <EntryIcon entry={entry} />
                 <div className="min-w-0 flex-1">
@@ -206,4 +216,3 @@ function Themes() {
     </div>
   )
 }
-

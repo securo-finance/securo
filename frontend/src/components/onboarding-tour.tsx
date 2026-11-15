@@ -12,7 +12,11 @@ const STEPS: TourStep[] = [
   { target: '[data-tour="sidebar"]', titleKey: 'onboarding.sidebar', descKey: 'onboarding.sidebarDesc' },
   { target: '[data-tour="nav-dashboard"]', titleKey: 'onboarding.dashboard', descKey: 'onboarding.dashboardDesc' },
   { target: '[data-tour="nav-accounts"]', titleKey: 'onboarding.accounts', descKey: 'onboarding.accountsDesc' },
-  { target: '[data-tour="nav-transactions"]', titleKey: 'onboarding.transactions', descKey: 'onboarding.transactionsDesc' },
+  {
+    target: '[data-tour="nav-transactions"]',
+    titleKey: 'onboarding.transactions',
+    descKey: 'onboarding.transactionsDesc',
+  },
   { target: '[data-tour="nav-import"]', titleKey: 'onboarding.import', descKey: 'onboarding.importDesc' },
   { target: '[data-tour="nav-categories"]', titleKey: 'onboarding.categories', descKey: 'onboarding.categoriesDesc' },
 ]

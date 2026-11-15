@@ -16,11 +16,13 @@ describe('isInvalidDescriptionAction', () => {
 
 describe('previewableActions', () => {
   it('drops the half-filled rows a draft carries while it is being written', () => {
-    expect(previewableActions([
-      { op: 'set_category', value: '' },
-      { op: 'set_payee', value: '   ' },
-      { op: 'set_description', value: 'x'.repeat(501) },
-    ])).toEqual([])
+    expect(
+      previewableActions([
+        { op: 'set_category', value: '' },
+        { op: 'set_payee', value: '   ' },
+        { op: 'set_description', value: 'x'.repeat(501) },
+      ]),
+    ).toEqual([])
   })
 
   it('keeps completed actions, and `ignore`, which has no value', () => {

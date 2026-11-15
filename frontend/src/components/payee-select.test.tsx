@@ -17,9 +17,7 @@ const bakery = { id: 'payee-2', name: 'Corner Bakery' } as Payee
 
 function Workspace({ canWrite, children }: { canWrite: boolean; children: ReactNode }) {
   return (
-    <WorkspaceContext.Provider
-      value={{ canWrite } as unknown as React.ContextType<typeof WorkspaceContext>}
-    >
+    <WorkspaceContext.Provider value={{ canWrite } as unknown as React.ContextType<typeof WorkspaceContext>}>
       {children}
     </WorkspaceContext.Provider>
   )
@@ -32,7 +30,10 @@ function Harness({ initial, onChange }: { initial: string; onChange: (v: string)
   return (
     <PayeeSelect
       value={value}
-      onChange={(v) => { setValue(v); onChange(v) }}
+      onChange={(v) => {
+        setValue(v)
+        onChange(v)
+      }}
       payees={[bakery, acme]}
       creatable
     />

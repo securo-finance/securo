@@ -53,7 +53,9 @@ describe('SpendingPlanSummary', () => {
 
   it('is red when the money runs out before the horizon', async () => {
     api.spendingPlan.get.mockResolvedValue(plan)
-    api.spendingPlan.timeline.mockResolvedValue(timeline({ covered_until: '2026-12-01', covered_through_horizon: false }))
+    api.spendingPlan.timeline.mockResolvedValue(
+      timeline({ covered_until: '2026-12-01', covered_through_horizon: false }),
+    )
 
     renderWithProviders(<SpendingPlanSummary />)
 

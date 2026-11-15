@@ -5,20 +5,9 @@ import { FileText, Image as ImageIcon, Plus, Star, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { IconAction, SectionCard } from '@/components/invoice-ui'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { invoices as invoicesApi } from '@/lib/api'
-import {
-  documentProvenance,
-  formatFileSize,
-  ISSUED_BY_US,
-  previewKind,
-} from '@/lib/invoice-utils'
+import { documentProvenance, formatFileSize, ISSUED_BY_US, previewKind } from '@/lib/invoice-utils'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import { cn } from '@/lib/utils'
 import type { InvoiceAttachment, InvoiceAttachmentKind } from '@/types'
@@ -124,8 +113,7 @@ export function InvoiceDocumentBrowser({
   })
 
   const primaryMutation = useMutation({
-    mutationFn: (id: string) =>
-      invoicesApi.attachments.update(invoiceId, id, { is_primary: true }),
+    mutationFn: (id: string) => invoicesApi.attachments.update(invoiceId, id, { is_primary: true }),
     onSuccess: refresh,
   })
 
@@ -152,8 +140,7 @@ export function InvoiceDocumentBrowser({
    *  27th for anybody west of Greenwich. */
   const showPlainDate = (value: string) => longDate(new Date(`${value}T00:00:00`))
 
-  const activeAttachment =
-    active && active !== OUR_PAGE ? attachments.find((a) => a.id === active) : undefined
+  const activeAttachment = active && active !== OUR_PAGE ? attachments.find((a) => a.id === active) : undefined
   const anyPrimary = attachments.some((a) => a.is_primary)
 
   return (
@@ -165,10 +152,7 @@ export function InvoiceDocumentBrowser({
             {canWrite ? (
               <>
                 <Select value={kind} onValueChange={(v) => setKind(v as InvoiceAttachmentKind)}>
-                  <SelectTrigger
-                    className="h-8 flex-1 text-xs"
-                    aria-label={t('invoices.documents.kindLabel')}
-                  >
+                  <SelectTrigger className="h-8 flex-1 text-xs" aria-label={t('invoices.documents.kindLabel')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -202,9 +186,7 @@ export function InvoiceDocumentBrowser({
                 />
               </>
             ) : (
-              <p className="text-xs font-medium text-muted-foreground py-1">
-                {t('invoices.documents.title')}
-              </p>
+              <p className="text-xs font-medium text-muted-foreground py-1">{t('invoices.documents.title')}</p>
             )}
           </div>
 
@@ -287,10 +269,7 @@ export function InvoiceDocumentBrowser({
             ))}
 
             {!showOurPage && attachments.length === 0 && (
-              <li
-                className="px-3 py-6 text-xs text-muted-foreground"
-                data-testid="invoice-no-documents"
-              >
+              <li className="px-3 py-6 text-xs text-muted-foreground" data-testid="invoice-no-documents">
                 {t('invoices.documents.empty')}
               </li>
             )}
@@ -304,17 +283,11 @@ export function InvoiceDocumentBrowser({
           ) : activeAttachment ? (
             // Keyed by file: selecting another one remounts rather than
             // reusing a component still holding the previous blob URL.
-            <AttachmentView
-              key={activeAttachment.id}
-              invoiceId={invoiceId}
-              attachment={activeAttachment}
-            />
+            <AttachmentView key={activeAttachment.id} invoiceId={invoiceId} attachment={activeAttachment} />
           ) : (
             <div className="py-20 text-center" data-testid="invoice-missing-source">
               <FileText className="h-6 w-6 mx-auto text-muted-foreground" />
-              <p className="mt-3 text-sm font-medium text-foreground">
-                {t('invoices.documents.notOurs')}
-              </p>
+              <p className="mt-3 text-sm font-medium text-foreground">{t('invoices.documents.notOurs')}</p>
               <p className="mt-1 text-sm text-muted-foreground max-w-md mx-auto">
                 {t('invoices.documents.notOursHint')}
               </p>
@@ -362,29 +335,20 @@ function ShelfItem({
       )}
     >
       <button onClick={onSelect} className="flex items-start gap-2 min-w-0 flex-1 text-left">
-        <span className={cn('mt-0.5 shrink-0', active ? 'text-primary' : 'text-muted-foreground')}>
-          {icon}
-        </span>
+        <span className={cn('mt-0.5 shrink-0', active ? 'text-primary' : 'text-muted-foreground')}>{icon}</span>
         <span className="min-w-0">
           <span className="block text-sm font-medium text-foreground truncate">{title}</span>
           <span className="block text-xs text-muted-foreground truncate mt-0.5">{subtitle}</span>
           {reference && (
-            <span className="block text-[11px] text-muted-foreground/80 truncate mt-0.5 tabular-nums">
-              {reference}
-            </span>
+            <span className="block text-[11px] text-muted-foreground/80 truncate mt-0.5 tabular-nums">{reference}</span>
           )}
           {provenance && (
-            <span className="block text-[11px] text-muted-foreground/80 truncate mt-0.5">
-              {provenance}
-            </span>
+            <span className="block text-[11px] text-muted-foreground/80 truncate mt-0.5">{provenance}</span>
           )}
         </span>
       </button>
       {isPrimary && (
-        <span
-          className="shrink-0 mt-0.5 text-primary"
-          title={t('invoices.documents.primaryHint')}
-        >
+        <span className="shrink-0 mt-0.5 text-primary" title={t('invoices.documents.primaryHint')}>
           <Star className="h-3.5 w-3.5 fill-current" />
         </span>
       )}
@@ -398,13 +362,7 @@ function ShelfItem({
 }
 
 /** One filed file, rendered where it can be read rather than downloaded. */
-function AttachmentView({
-  invoiceId,
-  attachment,
-}: {
-  invoiceId: string
-  attachment: InvoiceAttachment
-}) {
+function AttachmentView({ invoiceId, attachment }: { invoiceId: string; attachment: InvoiceAttachment }) {
   const { t } = useTranslation()
   const [url, setUrl] = useState<string | null>(null)
 
@@ -436,18 +394,12 @@ function AttachmentView({
           // An <iframe>, not an <object>: both hand the file to Chrome's
           // PDF viewer, but the object element is replaced content the
           // plugin resizes past its box, taking the page layout with it.
-          <iframe
-            src={url}
-            title={attachment.filename}
-            className="w-full h-[1123px] max-h-[78vh] border-0 block"
-          />
+          <iframe src={url} title={attachment.filename} className="w-full h-[1123px] max-h-[78vh] border-0 block" />
         ) : preview === 'image' ? (
           <img src={url} alt={attachment.filename} className="w-full block" />
         ) : (
           <div className="p-10 text-center">
-            <p className="text-sm text-muted-foreground">
-              {t('invoices.documents.cannotPreview')}
-            </p>
+            <p className="text-sm text-muted-foreground">{t('invoices.documents.cannotPreview')}</p>
           </div>
         )}
       </div>

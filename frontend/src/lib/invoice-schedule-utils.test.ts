@@ -61,7 +61,13 @@ describe('scheduleActions', () => {
     expect(paused).toMatchObject({ canPause: false, canResume: true, canGenerate: false, canChangePrice: true })
 
     const ended = scheduleActions({ status: 'ended', invoice_count: 3, origin: 'local' })
-    expect(ended).toMatchObject({ canPause: false, canResume: false, canEnd: false, canEdit: false, canChangePrice: false })
+    expect(ended).toMatchObject({
+      canPause: false,
+      canResume: false,
+      canEnd: false,
+      canEdit: false,
+      canChangePrice: false,
+    })
   })
 
   it('never generates for a mirrored gateway agreement', () => {
@@ -96,8 +102,16 @@ describe('periodLabel', () => {
 describe('endPayload', () => {
   it('sends only the field the chosen shape needs, and nulls the other', () => {
     expect(endPayload('never', '2027-01-01', '5')).toEqual({ end_type: 'never', end_date: null, end_count: null })
-    expect(endPayload('on_date', '2027-01-01', '5')).toEqual({ end_type: 'on_date', end_date: '2027-01-01', end_count: null })
-    expect(endPayload('after_count', '2027-01-01', '5')).toEqual({ end_type: 'after_count', end_date: null, end_count: 5 })
+    expect(endPayload('on_date', '2027-01-01', '5')).toEqual({
+      end_type: 'on_date',
+      end_date: '2027-01-01',
+      end_count: null,
+    })
+    expect(endPayload('after_count', '2027-01-01', '5')).toEqual({
+      end_type: 'after_count',
+      end_date: null,
+      end_count: 5,
+    })
   })
 })
 

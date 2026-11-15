@@ -3,7 +3,15 @@ import type { Budget } from '@/types'
 import { normalizeBudgetComparisonRows, parseBudgetDraft, planBudgetChange } from '@/lib/budget-settings-utils'
 
 function budget(overrides: Partial<Budget>): Budget {
-  return { id: 'b1', user_id: 'u', category_id: 'food', amount: 100, month: '2026-08-01', is_recurring: true, ...overrides }
+  return {
+    id: 'b1',
+    user_id: 'u',
+    category_id: 'food',
+    amount: 100,
+    month: '2026-08-01',
+    is_recurring: true,
+    ...overrides,
+  }
 }
 
 const month = '2026-10-01'
@@ -23,13 +31,26 @@ describe('parseBudgetDraft', () => {
 
 describe('budget settings helpers', () => {
   it('normalizes decimal strings returned by the API', () => {
-    expect(normalizeBudgetComparisonRows([{
-      category_id: 'food', category_name: 'Food', category_icon: 'food', category_color: 'blue', group_id: null, group_name: null,
-      budget_amount: '1200.50', actual_amount: '2.25', projected_amount: '3',
-      prev_month_amount: '4', projected_prev_month_amount: '5', percentage_used: '0.2', is_recurring: false,
-    }])[0]).toMatchObject({ budget_amount: 1200.5, actual_amount: 2.25, percentage_used: 0.2 })
+    expect(
+      normalizeBudgetComparisonRows([
+        {
+          category_id: 'food',
+          category_name: 'Food',
+          category_icon: 'food',
+          category_color: 'blue',
+          group_id: null,
+          group_name: null,
+          budget_amount: '1200.50',
+          actual_amount: '2.25',
+          projected_amount: '3',
+          prev_month_amount: '4',
+          projected_prev_month_amount: '5',
+          percentage_used: '0.2',
+          is_recurring: false,
+        },
+      ])[0],
+    ).toMatchObject({ budget_amount: 1200.5, actual_amount: 2.25, percentage_used: 0.2 })
   })
-
 })
 
 describe('planBudgetChange', () => {
@@ -39,7 +60,9 @@ describe('planBudgetChange', () => {
   })
 
   it('starts a new recurring amount from this month on', () => {
-    expect(plan(150, true, budget({}))).toEqual([{ type: 'update', id: 'b1', data: { amount: 150, effective_month: month } }])
+    expect(plan(150, true, budget({}))).toEqual([
+      { type: 'update', id: 'b1', data: { amount: 150, effective_month: month } },
+    ])
     expect(plan(150, true, undefined)).toEqual([
       { type: 'create', data: { category_id: 'food', amount: 150, month, is_recurring: true } },
     ])
@@ -77,23 +100,35 @@ describe('planBudgetChange', () => {
   })
 
   it('keeps zero tombstones when clearing one-off and recurring budgets', () => {
-    expect(plan(0, true, budget({ id: 'o1', month, is_recurring: false }))).toEqual([{ type: 'update', id: 'o1', data: { amount: 0 } }])
-    expect(plan(0, true, budget({ id: 'z1', amount: 0, is_recurring: false }))).toEqual([{ type: 'update', id: 'z1', data: { amount: 0 } }])
-    expect(plan(0, true, budget({ month }))).toEqual([{ type: 'update', id: 'b1', data: { amount: 0, effective_month: month } }])
-    expect(plan(0, true, budget({ id: 'zr', amount: 0, month }))).toEqual([{ type: 'update', id: 'zr', data: { amount: 0, effective_month: month } }])
+    expect(plan(0, true, budget({ id: 'o1', month, is_recurring: false }))).toEqual([
+      { type: 'update', id: 'o1', data: { amount: 0 } },
+    ])
+    expect(plan(0, true, budget({ id: 'z1', amount: 0, is_recurring: false }))).toEqual([
+      { type: 'update', id: 'z1', data: { amount: 0 } },
+    ])
+    expect(plan(0, true, budget({ month }))).toEqual([
+      { type: 'update', id: 'b1', data: { amount: 0, effective_month: month } },
+    ])
+    expect(plan(0, true, budget({ id: 'zr', amount: 0, month }))).toEqual([
+      { type: 'update', id: 'zr', data: { amount: 0, effective_month: month } },
+    ])
   })
 
   it('keeps a cleared month-only override as a zero tombstone and removes future segments', () => {
-    expect(planBudgetChange({
-      categoryId: 'food', amount: 0, recurring: false,
-      current: budget({ id: 'oct-oneoff', month, is_recurring: false }),
-      series: [
-        budget({ id: 'aug-series', month: '2026-08-01' }),
-        budget({ id: 'oct-oneoff', month, is_recurring: false }),
-        budget({ id: 'dec-edit', month: '2026-12-01', amount: 250 }),
-      ],
-      month,
-    })).toEqual([
+    expect(
+      planBudgetChange({
+        categoryId: 'food',
+        amount: 0,
+        recurring: false,
+        current: budget({ id: 'oct-oneoff', month, is_recurring: false }),
+        series: [
+          budget({ id: 'aug-series', month: '2026-08-01' }),
+          budget({ id: 'oct-oneoff', month, is_recurring: false }),
+          budget({ id: 'dec-edit', month: '2026-12-01', amount: 250 }),
+        ],
+        month,
+      }),
+    ).toEqual([
       { type: 'delete', id: 'dec-edit' },
       { type: 'update', id: 'oct-oneoff', data: { amount: 0 } },
       { type: 'update', id: 'aug-series', data: { amount: 0, effective_month: '2026-11-01' } },
@@ -101,22 +136,28 @@ describe('planBudgetChange', () => {
   })
 
   it('clearing the start of a series removes later recurring edits', () => {
-    expect(planBudgetChange({
-      categoryId: 'food', amount: 0, recurring: true,
-      current: budget({ id: 'aug-series', month: '2026-08-01' }),
-      series: [
-        budget({ id: 'aug-series', month: '2026-08-01' }),
-        budget({ id: 'dec-edit', month: '2026-12-01', amount: 250 }),
-      ],
-      month: '2026-08-01',
-    })).toEqual([
+    expect(
+      planBudgetChange({
+        categoryId: 'food',
+        amount: 0,
+        recurring: true,
+        current: budget({ id: 'aug-series', month: '2026-08-01' }),
+        series: [
+          budget({ id: 'aug-series', month: '2026-08-01' }),
+          budget({ id: 'dec-edit', month: '2026-12-01', amount: 250 }),
+        ],
+        month: '2026-08-01',
+      }),
+    ).toEqual([
       { type: 'delete', id: 'dec-edit' },
       { type: 'update', id: 'aug-series', data: { amount: 0, effective_month: '2026-08-01' } },
     ])
   })
 
   it('keeps earlier months of a recurring budget when clearing this month', () => {
-    expect(plan(0, true, budget({}))).toEqual([{ type: 'update', id: 'b1', data: { amount: 0, effective_month: month } }])
+    expect(plan(0, true, budget({}))).toEqual([
+      { type: 'update', id: 'b1', data: { amount: 0, effective_month: month } },
+    ])
     expect(plan(0, false, budget({}))).toEqual([
       { type: 'update', id: 'b1', data: { amount: 0, effective_month: month } },
     ])

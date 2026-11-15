@@ -1,9 +1,6 @@
 import { translateApiMessage } from '@/lib/api-error-translations'
 
-export function extractApiError(
-  error: unknown,
-  fallback = 'An unexpected error occurred',
-): string {
+export function extractApiError(error: unknown, fallback = 'An unexpected error occurred'): string {
   if (
     error &&
     typeof error === 'object' &&
@@ -25,10 +22,12 @@ export function extractApiError(
         if (typeof message === 'string' && message.trim()) return translateApiMessage(message)
       }
       if (Array.isArray(detail)) {
-        const message = detail.map((d: { msg?: string; loc?: string[] }) => {
-          const field = d.loc?.slice(-1)[0] ?? ''
-          return `${field}: ${d.msg ?? 'invalid'}`
-        }).join(', ')
+        const message = detail
+          .map((d: { msg?: string; loc?: string[] }) => {
+            const field = d.loc?.slice(-1)[0] ?? ''
+            return `${field}: ${d.msg ?? 'invalid'}`
+          })
+          .join(', ')
         if (message.trim()) return message
       }
     }

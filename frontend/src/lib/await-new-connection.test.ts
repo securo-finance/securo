@@ -14,8 +14,7 @@ function axiosError(status?: number): AxiosError {
   )
 }
 
-const conn = (id: string, provider = 'simplefin', user_id = 'me') =>
-  ({ id, provider, user_id }) as BankConnection
+const conn = (id: string, provider = 'simplefin', user_id = 'me') => ({ id, provider, user_id }) as BankConnection
 
 describe('isGatewayTimeout', () => {
   it('is true when no response came back or a gateway gave up', () => {

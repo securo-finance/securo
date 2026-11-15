@@ -89,12 +89,8 @@ export default function OAuthCallbackPage() {
               <Building2 size={18} className="text-amber-700 dark:text-amber-300" />
             </div>
             <div className="space-y-1">
-              <h2 className="text-base font-semibold">
-                {t('accounts.oauthCallback.linkAccountsFirstTitle')}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {t('accounts.oauthCallback.linkAccountsFirstDesc')}
-              </p>
+              <h2 className="text-base font-semibold">{t('accounts.oauthCallback.linkAccountsFirstTitle')}</h2>
+              <p className="text-sm text-muted-foreground">{t('accounts.oauthCallback.linkAccountsFirstDesc')}</p>
             </div>
           </div>
           <div className="flex flex-col gap-2">
@@ -128,12 +124,8 @@ export default function OAuthCallbackPage() {
       <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       <div className="space-y-1.5 max-w-md">
         <p className="text-base font-medium">{t('accounts.oauthCallback.title')}</p>
-        <p className="text-sm text-muted-foreground">
-          {t('accounts.oauthCallback.linking')}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {t('accounts.oauthCallback.dontClose')}
-        </p>
+        <p className="text-sm text-muted-foreground">{t('accounts.oauthCallback.linking')}</p>
+        <p className="text-xs text-muted-foreground">{t('accounts.oauthCallback.dontClose')}</p>
       </div>
     </div>
   )

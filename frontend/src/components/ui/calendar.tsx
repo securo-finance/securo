@@ -32,13 +32,7 @@ interface CalendarProps {
 type View = 'days' | 'months' | 'years'
 const YEAR_PAGE_SIZE = 12
 
-function Calendar({
-  selected,
-  defaultMonth,
-  locale,
-  onSelect,
-  className,
-}: CalendarProps) {
+function Calendar({ selected, defaultMonth, locale, onSelect, className }: CalendarProps) {
   const [viewMonth, setViewMonth] = useState(defaultMonth ?? selected ?? new Date())
   const [view, setView] = useState<View>('days')
 
@@ -164,9 +158,7 @@ function Calendar({
           {Array.from({ length: 12 }).map((_, i) => {
             const monthDate = dfSetMonth(viewMonth, i)
             const isCurrent =
-              selected &&
-              selected.getFullYear() === monthDate.getFullYear() &&
-              selected.getMonth() === i
+              selected && selected.getFullYear() === monthDate.getFullYear() && selected.getMonth() === i
             return (
               <button
                 key={i}
@@ -177,9 +169,7 @@ function Calendar({
                 }}
                 className={cn(
                   'h-10 rounded-lg text-sm capitalize transition-colors',
-                  isCurrent
-                    ? 'bg-primary text-primary-foreground font-semibold'
-                    : 'text-foreground hover:bg-muted/60',
+                  isCurrent ? 'bg-primary text-primary-foreground font-semibold' : 'text-foreground hover:bg-muted/60',
                 )}
               >
                 {format(monthDate, 'MMM', { locale })}
@@ -204,9 +194,7 @@ function Calendar({
                 }}
                 className={cn(
                   'h-10 rounded-lg text-sm transition-colors',
-                  isCurrent
-                    ? 'bg-primary text-primary-foreground font-semibold'
-                    : 'text-foreground hover:bg-muted/60',
+                  isCurrent ? 'bg-primary text-primary-foreground font-semibold' : 'text-foreground hover:bg-muted/60',
                 )}
               >
                 {y}

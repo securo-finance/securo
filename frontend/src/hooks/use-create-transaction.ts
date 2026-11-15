@@ -39,7 +39,7 @@ export function useCreateTransaction({ onDone }: { onDone: () => void }) {
   // Remount the create form, optionally seeded from a draft.
   const resetForm = (draft: TransactionEditPayload | null = null) => {
     setDuplicateDraft(draft)
-    setFormResetKey(k => k + 1)
+    setFormResetKey((k) => k + 1)
   }
 
   const mutation = useMutation({
@@ -73,9 +73,7 @@ export function useCreateTransaction({ onDone }: { onDone: () => void }) {
         } as Record<string, unknown>)
       }
       if (payload.pendingFiles?.length) {
-        await Promise.all(
-          payload.pendingFiles.map(file => transactions.attachments.upload(created.id, file))
-        )
+        await Promise.all(payload.pendingFiles.map((file) => transactions.attachments.upload(created.id, file)))
       }
       return created
     },

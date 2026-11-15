@@ -50,8 +50,7 @@ export function sidebarAccountBalance(
     | 'open_bill_total_primary'
   >,
 ): { amount: number; isPrimary: boolean } {
-  const sharedCard =
-    account.type === 'credit_card' && account.shared_balance_group != null
+  const sharedCard = account.type === 'credit_card' && account.shared_balance_group != null
   if (sharedCard && account.open_bill_total != null) {
     const raw = account.open_bill_total_primary ?? account.open_bill_total
     // A bill is an amount to pay, so the row shows it as debt.
@@ -80,9 +79,9 @@ export function sumAccountsTotal(
  * Return a presentation-only copy ordered by the name users see.
  * The input is never mutated, which keeps React Query's cached account list intact.
  */
-export function sortAccountsByDisplayName<
-  T extends { name: string; display_name?: string | null },
->(accounts: readonly T[]): T[] {
+export function sortAccountsByDisplayName<T extends { name: string; display_name?: string | null }>(
+  accounts: readonly T[],
+): T[] {
   return [...accounts].sort((left, right) =>
     getAccountName(left).localeCompare(getAccountName(right), undefined, {
       numeric: true,
@@ -97,9 +96,7 @@ export function sortAccountsByDisplayName<
  * sidebar, while invalid/missing balances sort as zero.
  * Pass a selector to compare multi-currency accounts in a common currency.
  */
-export function sortAccountsByAbsoluteBalance<
-  T extends { current_balance?: number | string | null },
->(
+export function sortAccountsByAbsoluteBalance<T extends { current_balance?: number | string | null }>(
   accounts: readonly T[],
   getBalance: (account: T) => number | string | null | undefined = (account) => account.current_balance,
 ): T[] {

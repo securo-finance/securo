@@ -51,8 +51,7 @@ export function CategoryPicker({
   const queryClient = useQueryClient()
 
   const createMutation = useMutation({
-    mutationFn: (name: string) =>
-      categoriesApi.create({ name, icon: NEW_CATEGORY_ICON, color: NEW_CATEGORY_COLOR }),
+    mutationFn: (name: string) => categoriesApi.create({ name, icon: NEW_CATEGORY_ICON, color: NEW_CATEGORY_COLOR }),
     onSuccess: (category) => {
       // Only the category lists refetch. Whatever form hosts this picker
       // (an import preview, a half-filled transaction) keeps its state.
@@ -73,7 +72,10 @@ export function CategoryPicker({
   }, [autoFocus])
 
   const createName = creatable
-    ? inlineCreateName(search, (categories ?? []).map((c) => c.name))
+    ? inlineCreateName(
+        search,
+        (categories ?? []).map((c) => c.name),
+      )
     : null
 
   const displayGroups = useMemo(() => {
@@ -97,11 +99,7 @@ export function CategoryPicker({
         return normalizeText(itemValue).includes(normalizeText(search)) ? 1 : 0
       }}
     >
-      <CommandInput
-        placeholder={t('transactions.searchCategory')}
-        value={search}
-        onValueChange={setSearch}
-      />
+      <CommandInput placeholder={t('transactions.searchCategory')} value={search} onValueChange={setSearch} />
       <CommandList>
         <CommandEmpty>{t('transactions.noCategoryFound')}</CommandEmpty>
         {allowNone && (

@@ -69,8 +69,24 @@ const account = {
 }
 
 const bills = [
-  { id: 'bill-apr', account_id: 'acc-1', external_id: 'a', due_date: '2026-04-10', total_amount: 125, currency: 'BRL', minimum_payment: null },
-  { id: 'bill-may', account_id: 'acc-1', external_id: 'b', due_date: '2026-05-10', total_amount: 280, currency: 'BRL', minimum_payment: null },
+  {
+    id: 'bill-apr',
+    account_id: 'acc-1',
+    external_id: 'a',
+    due_date: '2026-04-10',
+    total_amount: 125,
+    currency: 'BRL',
+    minimum_payment: null,
+  },
+  {
+    id: 'bill-may',
+    account_id: 'acc-1',
+    external_id: 'b',
+    due_date: '2026-05-10',
+    total_amount: 280,
+    currency: 'BRL',
+    minimum_payment: null,
+  },
 ]
 
 /** The cycle header. Matching on the month alone is ambiguous: the timeline
@@ -93,7 +109,10 @@ beforeEach(() => {
   api.accounts.bills.mockResolvedValue(bills)
   api.accounts.list.mockResolvedValue([account])
   api.accounts.summary.mockResolvedValue({
-    monthly_income: 0, monthly_expenses: 0, projected_income: 0, projected_expenses: 0,
+    monthly_income: 0,
+    monthly_expenses: 0,
+    projected_income: 0,
+    projected_expenses: 0,
   })
   api.transactions.list.mockResolvedValue({ items: [], total: 0 })
   api.dashboard.projectedTransactions.mockResolvedValue([])

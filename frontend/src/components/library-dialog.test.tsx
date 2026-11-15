@@ -95,33 +95,51 @@ describe('LibraryDialog', () => {
   it('adds a widget left out of the dashboard, at the end', async () => {
     state.saved = { dashboard: [{ id: 'overview' }] }
     const { user } = open('widgets')
-    const add = await screen.findByRole('button', { name: t('library.addTo.dashboard', { name: t('goals.dashboardTitle') }) })
+    const add = await screen.findByRole('button', {
+      name: t('library.addTo.dashboard', { name: t('goals.dashboardTitle') }),
+    })
     await user.click(add)
     await waitFor(() => expect(state.saves.at(-1)?.items).toEqual([{ id: 'overview' }, { id: 'goals' }]))
     // The row flips to remove at once.
-    expect(await screen.findByRole('button', { name: t('library.removeFrom.dashboard', { name: t('goals.dashboardTitle') }) })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', {
+        name: t('library.removeFrom.dashboard', { name: t('goals.dashboardTitle') }),
+      }),
+    ).toBeInTheDocument()
   })
 
   it("can't change anything before the saved arrangement is in", async () => {
     let release: () => void = () => {}
-    state.held = new Promise((done) => { release = done })
+    state.held = new Promise((done) => {
+      release = done
+    })
     state.saved = { dashboard: [{ id: 'overview' }] }
     open('widgets')
-    const remove = screen.getByRole('button', { name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }) })
+    const remove = screen.getByRole('button', {
+      name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }),
+    })
     expect(remove).toBeDisabled()
     release()
     // Once loaded, the saved arrangement shows, and it can be changed.
-    expect(await screen.findByRole('button', { name: t('library.addTo.dashboard', { name: t('goals.dashboardTitle') }) })).toBeEnabled()
+    expect(
+      await screen.findByRole('button', { name: t('library.addTo.dashboard', { name: t('goals.dashboardTitle') }) }),
+    ).toBeEnabled()
   })
 
   it('reads and saves the arrangement of the workspace it was opened in', async () => {
-    const workspace = { current: { id: 'ws-a' }, hasModule: () => false } as unknown as NonNullable<React.ContextType<typeof WorkspaceContext>>
+    const workspace = { current: { id: 'ws-a' }, hasModule: () => false } as unknown as NonNullable<
+      React.ContextType<typeof WorkspaceContext>
+    >
     const { user } = renderWithProviders(
       <WorkspaceContext.Provider value={workspace}>
         <LibraryDialog kind="widgets" onKindChange={() => {}} onClose={() => {}} />
       </WorkspaceContext.Provider>,
     )
-    await user.click(await screen.findByRole('button', { name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }) }))
+    await user.click(
+      await screen.findByRole('button', {
+        name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }),
+      }),
+    )
     await waitFor(() => expect(state.saves).toHaveLength(1))
     // Every read and the write named ws-a, whatever the active workspace is when they go out.
     expect(new Set(state.workspaces)).toEqual(new Set(['ws-a']))
@@ -135,13 +153,18 @@ describe('LibraryDialog', () => {
     expect(row).toHaveAttribute('aria-disabled', 'true')
     expect(within(row).getByText(t('library.needs.invoices'))).toBeInTheDocument()
     // The agent widget too, with agents off.
-    expect(screen.getByRole('button', { name: t('library.addTo.dashboard', { name: t('widgets.assistant.title') }) })).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: t('library.addTo.dashboard', { name: t('widgets.assistant.title') }) }),
+    ).toBeDisabled()
     expect(screen.getByText(t('library.needs.assistant'))).toBeInTheDocument()
   })
 
   it('offers the invoice widgets in a workspace that shows invoices', async () => {
     state.saved = { dashboard: [{ id: 'overview' }] }
-    const workspace = { current: { id: 'ws-b' }, hasModule: (id: string) => id === 'invoices' } as unknown as NonNullable<React.ContextType<typeof WorkspaceContext>>
+    const workspace = {
+      current: { id: 'ws-b' },
+      hasModule: (id: string) => id === 'invoices',
+    } as unknown as NonNullable<React.ContextType<typeof WorkspaceContext>>
     const { user } = renderWithProviders(
       <WorkspaceContext.Provider value={workspace}>
         <LibraryDialog kind="widgets" onKindChange={() => {}} onClose={() => {}} />
@@ -155,14 +178,20 @@ describe('LibraryDialog', () => {
 
   it('removes a widget from the dashboard', async () => {
     const { user } = open('widgets')
-    await user.click(await screen.findByRole('button', { name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }) }))
+    await user.click(
+      await screen.findByRole('button', {
+        name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }),
+      }),
+    )
     await waitFor(() => expect(state.saves.at(-1)?.ids).not.toContain('overview'))
   })
 
   it('keeps the last report on the page', async () => {
     state.saved = { reports: [{ id: 'cash_flow' }] }
     open('reports')
-    const remove = await screen.findByRole('button', { name: t('library.removeFrom.reports', { name: t('reports.cashFlow') }) })
+    const remove = await screen.findByRole('button', {
+      name: t('library.removeFrom.reports', { name: t('reports.cashFlow') }),
+    })
     await waitFor(() => expect(remove).toBeDisabled())
     expect(remove).toHaveAttribute('title', t('library.lastReport'))
   })
@@ -170,7 +199,10 @@ describe('LibraryDialog', () => {
   it('applies a theme and saves it for the person', async () => {
     const { user } = open('themes')
     const themes = screen.getByRole('group', { name: t('library.kind.themes') })
-    expect(within(themes).getByRole('button', { name: t('library.theme.securo') })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(themes).getByRole('button', { name: t('library.theme.securo') })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
 
     await user.click(within(themes).getByRole('button', { name: t('library.theme.ocean') }))
     await waitFor(() => expect(api.auth.updateMe).toHaveBeenCalledWith({ theme: 'ocean' }))
@@ -255,7 +287,11 @@ describe('LibraryDialog', () => {
 
   it('shows the pick at once, and goes back to what the server has when saving fails', async () => {
     let reject: (reason: Error) => void = () => {}
-    api.auth.updateMe.mockReturnValue(new Promise((_, no) => { reject = no }))
+    api.auth.updateMe.mockReturnValue(
+      new Promise((_, no) => {
+        reject = no
+      }),
+    )
     api.auth.me.mockResolvedValue({ ...state.user, theme: 'ocean' })
     const { user } = open('themes')
 

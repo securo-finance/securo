@@ -1,13 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { renderWithProviders } from '@/test/utils'
 
 function Example({
@@ -20,11 +14,7 @@ function Example({
   disabled?: boolean
 } = {}) {
   return (
-    <Select
-      defaultValue={defaultValue}
-      onValueChange={onValueChange}
-      disabled={disabled}
-    >
+    <Select defaultValue={defaultValue} onValueChange={onValueChange} disabled={disabled}>
       <SelectTrigger aria-label="Currency">
         <SelectValue placeholder="Pick a currency" />
       </SelectTrigger>
@@ -62,18 +52,14 @@ describe('Select', () => {
 
     await user.click(screen.getByRole('combobox', { name: 'Currency' }))
 
-    expect(
-      await screen.findByRole('option', { name: 'Brazilian Real' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: 'Brazilian Real' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'US Dollar' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Euro' })).toBeInTheDocument()
   })
 
   it('reports the chosen value', async () => {
     const onValueChange = vi.fn()
-    const { user } = renderWithProviders(
-      <Example onValueChange={onValueChange} />,
-    )
+    const { user } = renderWithProviders(<Example onValueChange={onValueChange} />)
 
     await user.click(screen.getByRole('combobox', { name: 'Currency' }))
     await user.click(await screen.findByRole('option', { name: 'Euro' }))
@@ -81,9 +67,7 @@ describe('Select', () => {
     expect(onValueChange).toHaveBeenCalledWith('EUR')
     // The trigger has to follow. Reporting the value while still showing the
     // placeholder is a real Radix misconfiguration and the mock cannot see it.
-    expect(screen.getByRole('combobox', { name: 'Currency' })).toHaveTextContent(
-      'Euro',
-    )
+    expect(screen.getByRole('combobox', { name: 'Currency' })).toHaveTextContent('Euro')
     expect(screen.queryByText('Pick a currency')).not.toBeInTheDocument()
   })
 

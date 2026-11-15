@@ -42,10 +42,7 @@ export interface InstallmentSeriesFormInput {
  * of a series after the first sync. The series id survives that merge.
  */
 export function isManualInstallmentSeriesRow(
-  tx:
-    | Pick<Transaction, 'installment_series_id' | 'installment_number' | 'total_installments'>
-    | null
-    | undefined,
+  tx: Pick<Transaction, 'installment_series_id' | 'installment_number' | 'total_installments'> | null | undefined,
 ): boolean {
   return (
     tx?.installment_series_id != null &&
@@ -68,13 +65,8 @@ export function isManualInstallmentSeriesRow(
  * - Split-with-group and FX overrides ride along on the base so every parcel
  *   is finalized exactly like a single manual transaction.
  */
-export function buildInstallmentSeriesInput(
-  input: InstallmentSeriesFormInput,
-): InstallmentSeriesInput {
-  const installments = Math.min(
-    Math.max(parseInt(input.installmentCount, 10) || 2, 2),
-    360,
-  )
+export function buildInstallmentSeriesInput(input: InstallmentSeriesFormInput): InstallmentSeriesInput {
+  const installments = Math.min(Math.max(parseInt(input.installmentCount, 10) || 2, 2), 360)
   return {
     base: {
       account_id: input.accountId,
@@ -105,16 +97,8 @@ export function buildInstallmentSeriesInput(
  * and splits are normalized before comparison. Status-only edits skip the
  * installment-series scope prompt.
  */
-export function hasNonStatusChange(
-  data: TransactionEditPayload,
-  original: Transaction,
-): boolean {
-  const numericKeys = new Set([
-    'amount',
-    'amount_primary',
-    'fx_rate_used',
-    'installment_total_amount',
-  ])
+export function hasNonStatusChange(data: TransactionEditPayload, original: Transaction): boolean {
+  const numericKeys = new Set(['amount', 'amount_primary', 'fx_rate_used', 'installment_total_amount'])
   const toNumber = (v: unknown): number | null => {
     if (v == null || v === '') return null
     const n = Number(v)

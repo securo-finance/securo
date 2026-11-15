@@ -37,17 +37,15 @@ export type DrillDownTotals = {
  * already in the user's currency. This matches how `get_summary` computes
  * `monthly_*_primary` on the backend.
  */
-export function sumDrillDownTotals(
-  items: DrillDownTotalsItem[],
-  userCurrency: string,
-): DrillDownTotals {
+export function sumDrillDownTotals(items: DrillDownTotalsItem[], userCurrency: string): DrillDownTotals {
   return items.reduce<DrillDownTotals>(
     (totals, item) => {
-      const amount = item.currency === userCurrency
-        ? Math.abs(item.amount)
-        : item.amountPrimary != null
-          ? Math.abs(item.amountPrimary)
-          : 0
+      const amount =
+        item.currency === userCurrency
+          ? Math.abs(item.amount)
+          : item.amountPrimary != null
+            ? Math.abs(item.amountPrimary)
+            : 0
 
       totals.absTotal += amount
       totals.netTotal += item.type === 'credit' ? amount : -amount

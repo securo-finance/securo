@@ -106,7 +106,9 @@ describe('PluginPlanDialog with code', () => {
     )
     expect(await screen.findByText('api.ledger.example')).toBeInTheDocument()
     expect(screen.getByText('Reads your payouts')).toBeInTheDocument()
-    expect(screen.getByText(t('plugins.code.write', { what: t('plugins.code.resource.transactions') }))).toBeInTheDocument()
+    expect(
+      screen.getByText(t('plugins.code.write', { what: t('plugins.code.resource.transactions') })),
+    ).toBeInTheDocument()
     expect(screen.getByText(t('plugins.code.new'))).toBeInTheDocument()
     expect(screen.getByText(t('plugins.code.runsCode'))).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: t('plugins.confirm.install') }))
@@ -139,7 +141,10 @@ describe('PluginPlanDialog with themes', () => {
   it('warns whoever uses a theme that leaves the library', async () => {
     auth.user = { theme: 'plugin:acme/ledger:matrix' }
     api.plugins.plan.mockResolvedValue({
-      ...PLAN, action: 'remove', commit: null, code: null,
+      ...PLAN,
+      action: 'remove',
+      commit: null,
+      code: null,
       themes: { added: [], removed: [{ key: 'matrix', name: { en: 'Matrix' } }] },
     })
     renderWithProviders(
@@ -189,7 +194,10 @@ describe('PluginConnections', () => {
     await user.click(connect)
     await waitFor(() =>
       expect(api.plugins.connect).toHaveBeenCalledWith({
-        plugin_id: 'acme/ledger', integration: 'keys', name: '', values: { api_key: 'sk_live_1' },
+        plugin_id: 'acme/ledger',
+        integration: 'keys',
+        name: '',
+        values: { api_key: 'sk_live_1' },
       }),
     )
     // The dialog closes and the new connection shows, waiting for its first sync.
@@ -200,7 +208,9 @@ describe('PluginConnections', () => {
 
   it('tells an update that drops the code what goes with it', async () => {
     api.plugins.plan.mockResolvedValue({
-      ...PLAN, action: 'update', code: { ...PLAN.code!, connections: 2, drops_code: true },
+      ...PLAN,
+      action: 'update',
+      code: { ...PLAN.code!, connections: 2, drops_code: true },
     })
     renderWithProviders(
       <WorkspaceContext.Provider value={workspace(true)}>

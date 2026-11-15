@@ -5,19 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import i18next, { type Resource } from 'i18next'
 
-import {
-  CATEGORY_ICONS,
-  getCategoryIconLabel,
-  ICON_MAP,
-  isEmoji,
-} from '@/lib/category-icons'
+import { CATEGORY_ICONS, getCategoryIconLabel, ICON_MAP, isEmoji } from '@/lib/category-icons'
 import en from '@/locales/en.json'
 import ptBR from '@/locales/pt-BR.json'
 
-const LOCALES_DIR = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../locales',
-)
+const LOCALES_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../locales')
 
 function makeT(lng: string, resources: Resource, fallbackLng: string | false = false) {
   const instance = i18next.createInstance()
@@ -117,10 +109,7 @@ describe('default categories', () => {
       groups: Record<string, { icon: string }>
       categories: Record<string, { icon: string }>
     }
-    const seeded = [
-      ...Object.values(taxonomy.groups),
-      ...Object.values(taxonomy.categories),
-    ].map((entry) => entry.icon)
+    const seeded = [...Object.values(taxonomy.groups), ...Object.values(taxonomy.categories)].map((entry) => entry.icon)
     const missing = [...new Set(seeded)].filter((icon) => !(icon in ICON_MAP))
     expect(missing).toEqual([])
   })

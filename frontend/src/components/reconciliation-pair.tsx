@@ -18,11 +18,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import {
-  invoices as invoicesApi,
-  transactions as transactionsApi,
-  accounts as accountsApi,
-} from '@/lib/api'
+import { invoices as invoicesApi, transactions as transactionsApi, accounts as accountsApi } from '@/lib/api'
 import type { Account, Invoice, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -74,11 +70,7 @@ function Figure({
  *  decision rests on. */
 function Facts({ items }: { items: (string | null | undefined)[] }) {
   const shown = items.filter(Boolean) as string[]
-  return (
-    <p className="text-xs text-muted-foreground leading-relaxed">
-      {shown.join(' · ')}
-    </p>
-  )
+  return <p className="text-xs text-muted-foreground leading-relaxed">{shown.join(' · ')}</p>
 }
 
 function useInvoice(id: string, enabled: boolean) {
@@ -117,13 +109,7 @@ function PromiseLine({
         <p className="text-sm font-medium text-foreground truncate">
           {side.label ?? t('reconciliation.pair.otherLeg')}
         </p>
-        <Facts
-          items={[
-            leg && showDate(leg.date),
-            leg && money(leg.amount, leg.currency),
-            leg?.description,
-          ]}
-        />
+        <Facts items={[leg && showDate(leg.date), leg && money(leg.amount, leg.currency), leg?.description]} />
       </div>
     )
   }
@@ -131,9 +117,7 @@ function PromiseLine({
   if (side.kind !== 'invoice') {
     return (
       <div>
-        <p className="text-sm font-medium text-foreground">
-          {side.label ?? t('reconciliation.pair.recurringBill')}
-        </p>
+        <p className="text-sm font-medium text-foreground">{side.label ?? t('reconciliation.pair.recurringBill')}</p>
         <Facts items={[t('reconciliation.pair.recurringBill')]} />
       </div>
     )
@@ -201,18 +185,14 @@ export function ReconciliationPair({
     enabled: open && !!transactionId,
   })
   const first = sides.length > 0 ? sides[0] : undefined
-  const { data: firstInvoice } = useInvoice(
-    first?.id ?? '',
-    open && first?.kind === 'invoice',
-  )
+  const { data: firstInvoice } = useInvoice(first?.id ?? '', open && first?.kind === 'invoice')
 
   if (!open) return null
 
   const currency = firstInvoice?.currency ?? transaction?.currency
   const money = (value: string | number | null | undefined, code?: string | null) =>
     mask(formatCurrency(Number(value ?? 0), code || currency || 'USD', locale))
-  const showDate = (iso: string) =>
-    new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
+  const showDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
   const accountName = accounts.find((a) => a.id === transaction?.account_id)?.name
 
   const applied = sides.reduce((sum, side) => sum + Number(side.amount), 0)
@@ -233,39 +213,23 @@ export function ReconciliationPair({
       <div className="flex items-end gap-6 sm:gap-10 flex-wrap">
         {singleInvoice ? (
           <>
-            <Figure
-              value={money(outstanding)}
-              caption={t('reconciliation.pair.stillOpen')}
-              tone="quiet"
-            />
+            <Figure value={money(outstanding)} caption={t('reconciliation.pair.stillOpen')} tone="quiet" />
             <Figure
               value={money(applied)}
-              caption={
-                pending
-                  ? t('reconciliation.pair.thisPayment')
-                  : t('reconciliation.pair.wasApplied')
-              }
+              caption={pending ? t('reconciliation.pair.thisPayment') : t('reconciliation.pair.wasApplied')}
               tone="applied"
             />
             {pending && (
               <Figure
                 value={money(remaining > 0 ? remaining : 0)}
-                caption={
-                  remaining <= 0
-                    ? t('reconciliation.pair.wouldClose')
-                    : t('reconciliation.pair.wouldRemain')
-                }
+                caption={remaining <= 0 ? t('reconciliation.pair.wouldClose') : t('reconciliation.pair.wouldRemain')}
                 tone={remaining <= 0 ? 'applied' : 'neutral'}
               />
             )}
           </>
         ) : isTransfer ? (
           <>
-            <Figure
-              value={money(applied)}
-              caption={t('reconciliation.pair.otherLegAmount')}
-              tone="quiet"
-            />
+            <Figure value={money(applied)} caption={t('reconciliation.pair.otherLegAmount')} tone="quiet" />
             {transaction && (
               <Figure
                 value={money(transaction.amount, transaction.currency)}
@@ -302,13 +266,7 @@ export function ReconciliationPair({
             {t(isTransfer ? 'reconciliation.pair.otherLeg' : 'reconciliation.pair.owed')}
           </p>
           {sides.map((side) => (
-            <PromiseLine
-              key={side.id}
-              side={side}
-              open={open}
-              money={money}
-              showDate={showDate}
-            />
+            <PromiseLine key={side.id} side={side} open={open} money={money} showDate={showDate} />
           ))}
         </div>
 

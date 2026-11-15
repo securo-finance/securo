@@ -179,7 +179,14 @@ describe('ProposalCard goal and budget kinds', () => {
         toolCallId="call-delete-budget"
         data={{
           kind: 'delete_budget',
-          target: { id: 'budget-2', category_name: 'Streaming', month: '2026-01-01', amount: 60, currency: 'USD', is_recurring: true },
+          target: {
+            id: 'budget-2',
+            category_name: 'Streaming',
+            month: '2026-01-01',
+            amount: 60,
+            currency: 'USD',
+            is_recurring: true,
+          },
         }}
       />,
     )
@@ -223,9 +230,7 @@ describe('ProposalCard notes and category group kinds', () => {
 
     await user.click(screen.getByRole('button', { name: /Apply/ }))
 
-    await waitFor(() =>
-      expect(updateTransaction).toHaveBeenCalledWith('tx-1', { notes: 'with Ana #trip' }),
-    )
+    await waitFor(() => expect(updateTransaction).toHaveBeenCalledWith('tx-1', { notes: 'with Ana #trip' }))
   })
 
   it('clears the notes when the proposal leaves none', async () => {
@@ -268,9 +273,7 @@ describe('ProposalCard notes and category group kinds', () => {
 
     await user.click(screen.getByRole('button', { name: /Apply/ }))
 
-    await waitFor(() =>
-      expect(createGroup).toHaveBeenCalledWith({ name: 'Pets', icon: 'paw-print', color: '#10B981' }),
-    )
+    await waitFor(() => expect(createGroup).toHaveBeenCalledWith({ name: 'Pets', icon: 'paw-print', color: '#10B981' }))
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['categoryGroups'] }))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['category-groups'] })
   })

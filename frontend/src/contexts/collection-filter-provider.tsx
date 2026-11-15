@@ -55,7 +55,5 @@ export function CollectionFilterProvider({ children }: { children: ReactNode }) 
     activeWalletIds: activeCollection ? activeCollection.wallet_ids : null,
   }
 
-  return (
-    <CollectionFilterContext.Provider value={value}>{children}</CollectionFilterContext.Provider>
-  )
+  return <CollectionFilterContext.Provider value={value}>{children}</CollectionFilterContext.Provider>
 }

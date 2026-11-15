@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import { DASHBOARD_WIDGETS, defaultLayout, REPORTS, resizeItem, resolveLayout, snapSpan, SPANS, widgetSpan } from './library'
+import {
+  DASHBOARD_WIDGETS,
+  defaultLayout,
+  REPORTS,
+  resizeItem,
+  resolveLayout,
+  snapSpan,
+  SPANS,
+  widgetSpan,
+} from './library'
 
 const entry = (id: string) => DASHBOARD_WIDGETS.find((widget) => widget.id === id)!
 
@@ -17,8 +26,16 @@ describe('library', () => {
   })
 
   it("defaults to everything Securo has, in Securo's order", () => {
-    expect(defaultLayout('reports').map((item) => item.id)).toEqual(['net_worth', 'income_expenses', 'cash_flow', 'money_map', 'statement'])
-    expect(resolveLayout('dashboard', null)).toEqual(DASHBOARD_WIDGETS.filter((widget) => !widget.optional).map((widget) => ({ id: widget.id })))
+    expect(defaultLayout('reports').map((item) => item.id)).toEqual([
+      'net_worth',
+      'income_expenses',
+      'cash_flow',
+      'money_map',
+      'statement',
+    ])
+    expect(resolveLayout('dashboard', null)).toEqual(
+      DASHBOARD_WIDGETS.filter((widget) => !widget.optional).map((widget) => ({ id: widget.id })),
+    )
     // New widgets wait in the library instead of appearing on everyone's dashboard.
     expect(resolveLayout('dashboard', null).map((item) => item.id)).not.toContain('spending-pace')
   })
@@ -59,10 +76,17 @@ describe('library', () => {
         { id: 'spending-by-category', span: 4 },
       ])
       // Back to its own width, each is saved as just its id.
-      expect(resizeItem([{ id: 'goals', span: 8 }, { id: 'spending-by-category', span: 4 }], DASHBOARD_WIDGETS, 'goals', 6)).toEqual([
-        { id: 'goals', span: 6 },
-        { id: 'spending-by-category' },
-      ])
+      expect(
+        resizeItem(
+          [
+            { id: 'goals', span: 8 },
+            { id: 'spending-by-category', span: 4 },
+          ],
+          DASHBOARD_WIDGETS,
+          'goals',
+          6,
+        ),
+      ).toEqual([{ id: 'goals', span: 6 }, { id: 'spending-by-category' }])
     })
 
     it("leaves the neighbour alone when it can't get that narrow", () => {

@@ -8,15 +8,7 @@ import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/date-range-format'
 import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
 import { useDateLocale } from '@/hooks/use-display-locale'
-import {
-  budgets,
-  categories,
-  categoryGroups,
-  goals,
-  recurring,
-  rules,
-  transactions,
-} from '@/lib/api'
+import { budgets, categories, categoryGroups, goals, recurring, rules, transactions } from '@/lib/api'
 
 import type { ProposalKind, ProposalData, TransferLeg } from '@/lib/agent-proposals'
 
@@ -57,15 +49,9 @@ export function ProposalCard({ toolCallId, data }: Props) {
       toast.success(t('agents.proposal.applied'))
       // Invalidate the broad surface that proposals may have changed.
       invalidateCategoryQueries(qc)
-      ;[
-        'transactions',
-        'accounts',
-        'recurring-transactions',
-        'budgets',
-        'rules',
-        'goals',
-        'dashboard',
-      ].forEach((key) => qc.invalidateQueries({ queryKey: [key] }))
+      ;['transactions', 'accounts', 'recurring-transactions', 'budgets', 'rules', 'goals', 'dashboard'].forEach((key) =>
+        qc.invalidateQueries({ queryKey: [key] }),
+      )
     },
     onError: (err: unknown) => {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -100,11 +86,7 @@ export function ProposalCard({ toolCallId, data }: Props) {
     >
       <div className="px-3 py-2.5 flex items-start gap-3">
         <div className="shrink-0 mt-0.5">
-          {isApplied ? (
-            <Check className="h-4 w-4 text-emerald-600" />
-          ) : (
-            <Sparkles className="h-4 w-4 text-amber-600" />
-          )}
+          {isApplied ? <Check className="h-4 w-4 text-emerald-600" /> : <Sparkles className="h-4 w-4 text-amber-600" />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -180,9 +162,11 @@ function renderSummary(
         category: d.target_category?.name ?? '?',
       })
     case 'create_category':
-      return t('agents.proposal.summary.createCategory', {
-        name: String(p.name ?? '?'),
-      }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+      return (
+        t('agents.proposal.summary.createCategory', {
+          name: String(p.name ?? '?'),
+        }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+      )
     case 'create_budget':
       return t('agents.proposal.summary.createBudget', {
         category: String((p.category_name as string) ?? p.category_id ?? '?'),
@@ -203,21 +187,25 @@ function renderSummary(
     case 'delete_rule':
       return `“${String(tgt.name ?? '?')}”`
     case 'create_transaction':
-      return t('agents.proposal.summary.createTransaction', {
-        description: String(p.description ?? '?'),
-        amount: fmt(p.amount, p.currency),
-        type: String(p.type ?? '?'),
-        date: String(p.date ?? ''),
-        account: String((p.account_name as string) ?? '?'),
-      }) + splitSummary(p as Record<string, unknown>, fmt)
+      return (
+        t('agents.proposal.summary.createTransaction', {
+          description: String(p.description ?? '?'),
+          amount: fmt(p.amount, p.currency),
+          type: String(p.type ?? '?'),
+          date: String(p.date ?? ''),
+          account: String((p.account_name as string) ?? '?'),
+        }) + splitSummary(p as Record<string, unknown>, fmt)
+      )
     case 'create_recurring_transaction':
-      return t('agents.proposal.summary.createRecurring', {
-        description: String(p.description ?? '?'),
-        amount: fmt(p.amount, p.currency),
-        frequency: String(p.frequency ?? '?'),
-        day: p.day_of_month ? `${p.day_of_month}` : '?',
-        account: String((p.account_name as string) ?? '?'),
-      }) + splitSummary(p as Record<string, unknown>, fmt)
+      return (
+        t('agents.proposal.summary.createRecurring', {
+          description: String(p.description ?? '?'),
+          amount: fmt(p.amount, p.currency),
+          frequency: String(p.frequency ?? '?'),
+          day: p.day_of_month ? `${p.day_of_month}` : '?',
+          account: String((p.account_name as string) ?? '?'),
+        }) + splitSummary(p as Record<string, unknown>, fmt)
+      )
     case 'update_recurring_transaction': {
       const changes = (d.changes || {}) as Record<string, unknown>
       const lines = Object.entries(changes).map(([k, v]) => {
@@ -230,9 +218,12 @@ function renderSummary(
       })
     }
     case 'cancel_recurring_transaction':
-      return t(d.mode === 'delete' ? 'agents.proposal.summary.deleteRecurring' : 'agents.proposal.summary.deactivateRecurring', {
-        description: String(tgt.description ?? '?'),
-      })
+      return t(
+        d.mode === 'delete' ? 'agents.proposal.summary.deleteRecurring' : 'agents.proposal.summary.deactivateRecurring',
+        {
+          description: String(tgt.description ?? '?'),
+        },
+      )
     case 'create_goal':
       return t('agents.proposal.summary.createGoal', {
         name: String(p.name ?? '?'),
@@ -271,11 +262,14 @@ function renderSummary(
       })
     }
     case 'delete_budget':
-      return t(tgt.is_recurring ? 'agents.proposal.summary.deleteRecurringBudget' : 'agents.proposal.summary.deleteBudget', {
-        category: String((tgt.category_name as string) ?? tgt.category_id ?? '?'),
-        amount: fmt(tgt.amount, tgt.currency),
-        month: String(tgt.month ?? '?'),
-      })
+      return t(
+        tgt.is_recurring ? 'agents.proposal.summary.deleteRecurringBudget' : 'agents.proposal.summary.deleteBudget',
+        {
+          category: String((tgt.category_name as string) ?? tgt.category_id ?? '?'),
+          amount: fmt(tgt.amount, tgt.currency),
+          month: String(tgt.month ?? '?'),
+        },
+      )
     case 'update_transaction_notes': {
       const changes = (d.changes || {}) as Record<string, unknown>
       return t('agents.proposal.summary.updateTransactionNotes', {
@@ -285,9 +279,11 @@ function renderSummary(
       })
     }
     case 'create_category_group':
-      return t('agents.proposal.summary.createCategoryGroup', {
-        name: String(p.name ?? '?'),
-      }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+      return (
+        t('agents.proposal.summary.createCategoryGroup', {
+          name: String(p.name ?? '?'),
+        }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+      )
     default:
       return ''
   }
@@ -316,9 +312,10 @@ function fmt(amount: unknown, currency: unknown): string {
 function splitSummary(p: Record<string, unknown>, format: typeof fmt): string {
   const block = p.category_lines as { lines?: Array<Record<string, unknown>> } | undefined
   if (!block?.lines?.length) return ''
-  return ' · ' + block.lines
-    .map((line) => `${String(line.category_name ?? '?')} ${format(line.amount, p.currency)}`)
-    .join(', ')
+  return (
+    ' · ' +
+    block.lines.map((line) => `${String(line.category_name ?? '?')} ${format(line.amount, p.currency)}`).join(', ')
+  )
 }
 
 /** The parts a proposal validated, in the shape the API takes, or undefined. */
@@ -328,11 +325,11 @@ function categoryLinesPayload(p: Record<string, unknown>) {
   const percent = block.share_type === 'percent'
   return {
     share_type: percent ? 'percent' : 'exact',
-    lines: block.lines.map((line) => (
+    lines: block.lines.map((line) =>
       percent
         ? { category_id: String(line.category_id), share_pct: Number(line.share_pct) }
-        : { category_id: String(line.category_id), amount: Number(line.amount) }
-    )),
+        : { category_id: String(line.category_id), amount: Number(line.amount) },
+    ),
   }
 }
 
@@ -354,7 +351,8 @@ function SplitPreview({ proposed }: { proposed?: Record<string, unknown> }) {
   return (
     <div className="mt-1.5 text-[12px] border rounded px-2 py-1.5 bg-background/40">
       <div className="text-muted-foreground mb-1">
-        {groupName ? `${groupName} · ` : ''}{shareType}
+        {groupName ? `${groupName} · ` : ''}
+        {shareType}
       </div>
       <ul className="space-y-0.5">
         {splits.items.map((s, i) => (
@@ -410,9 +408,7 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       const r = await rules.create({
         name: `Rule: ${String(p.match_pattern).slice(0, 60)}`,
         conditions_op: 'and',
-        conditions: [
-          { field: 'description', op: 'contains', value: String(p.match_pattern) },
-        ],
+        conditions: [{ field: 'description', op: 'contains', value: String(p.match_pattern) }],
         actions: [{ op: 'set_category', value: String(p.category_id) }],
         priority: 10,
         is_active: true,
@@ -441,16 +437,17 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       // member amounts back is not required, but we keep them so an
       // exact/percent split round-trips identically to the preview.
       const splitsBlock = p.splits as { share_type?: string; items?: Array<Record<string, unknown>> } | undefined
-      const splitsPayload = splitsBlock && Array.isArray(splitsBlock.items) && splitsBlock.items.length > 0
-        ? {
-            share_type: String(splitsBlock.share_type || 'equal'),
-            splits: splitsBlock.items.map((it) => ({
-              group_member_id: String(it.member_id),
-              ...(it.share_amount != null ? { share_amount: Number(it.share_amount) } : {}),
-              ...(it.share_pct != null ? { share_pct: Number(it.share_pct) } : {}),
-            })),
-          }
-        : undefined
+      const splitsPayload =
+        splitsBlock && Array.isArray(splitsBlock.items) && splitsBlock.items.length > 0
+          ? {
+              share_type: String(splitsBlock.share_type || 'equal'),
+              splits: splitsBlock.items.map((it) => ({
+                group_member_id: String(it.member_id),
+                ...(it.share_amount != null ? { share_amount: Number(it.share_amount) } : {}),
+                ...(it.share_pct != null ? { share_pct: Number(it.share_pct) } : {}),
+              })),
+            }
+          : undefined
       const linesPayload = categoryLinesPayload(p)
       const t = await transactions.create({
         description: String(p.description),

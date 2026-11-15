@@ -51,16 +51,8 @@ export interface ProviderRenderResult extends RenderResult {
   user: ReturnType<typeof userEvent.setup>
 }
 
-export function renderWithProviders(
-  ui: ReactElement,
-  options: ProviderOptions = {},
-): ProviderRenderResult {
-  const {
-    route = '/',
-    path,
-    queryClient = createTestQueryClient(),
-    ...renderOptions
-  } = options
+export function renderWithProviders(ui: ReactElement, options: ProviderOptions = {}): ProviderRenderResult {
+  const { route = '/', path, queryClient = createTestQueryClient(), ...renderOptions } = options
 
   function Wrapper({ children }: { children: ReactNode }) {
     return (

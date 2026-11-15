@@ -36,10 +36,7 @@ describe('useCrossTabRefresh', () => {
   beforeEach(() => localStorage.clear())
 
   it('refetches active queries when another tab changes data', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValueOnce('stale')
-      .mockResolvedValue('fresh')
+    const fetchFn = vi.fn().mockResolvedValueOnce('stale').mockResolvedValue('fresh')
     const { result, unmount } = renderSubject(fetchFn)
 
     await waitFor(() => expect(result.current.data).toBe('stale'))

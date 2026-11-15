@@ -14,7 +14,6 @@ function toggleInArray(arr: string[], id: string): string[] {
   return arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]
 }
 
-
 interface CategoryFilterContentProps {
   categoryIds: string[]
   onCategoryIdsChange: (ids: string[]) => void
@@ -39,14 +38,17 @@ export function CategoryFilterContent({
 
   const displayCategoryGroups = useMemo(() => {
     const ungrouped = (categories ?? []).filter((c) => !c.group_id)
-    const baseGroups = ungrouped.length === 0 ? groups : [
-      ...groups,
-      {
-        id: 'ungrouped-virtual',
-        name: t('groups.noGroup'),
-        categories: ungrouped,
-      } as CategoryGroup,
-    ]
+    const baseGroups =
+      ungrouped.length === 0
+        ? groups
+        : [
+            ...groups,
+            {
+              id: 'ungrouped-virtual',
+              name: t('groups.noGroup'),
+              categories: ungrouped,
+            } as CategoryGroup,
+          ]
 
     if (!search.trim()) return baseGroups
 
@@ -54,9 +56,7 @@ export function CategoryFilterContent({
     return baseGroups
       .map((g) => ({
         ...g,
-        categories: g.categories.filter((c) =>
-          normalizeText(c.name).includes(query)
-        ),
+        categories: g.categories.filter((c) => normalizeText(c.name).includes(query)),
       }))
       .filter((g) => g.categories.length > 0)
   }, [categories, groups, search, t])
@@ -102,9 +102,7 @@ export function CategoryFilterContent({
       )}
       {displayCategoryGroups.length === 0 ? (
         <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
-          {search.trim()
-            ? t('transactions.noCategoryFound')
-            : t('transactions.filtersBar.noOptions')}
+          {search.trim() ? t('transactions.noCategoryFound') : t('transactions.filtersBar.noOptions')}
         </div>
       ) : (
         displayCategoryGroups.map((group) => (
@@ -129,9 +127,7 @@ export function CategoryFilterContent({
                     style={{ backgroundColor: c.color }}
                   />
                 ) : null}
-                <span className="min-w-0 flex-1 truncate text-left">
-                  {c.name}
-                </span>
+                <span className="min-w-0 flex-1 truncate text-left">{c.name}</span>
               </DropdownMenuCheckboxItem>
             ))}
           </DropdownMenuGroup>

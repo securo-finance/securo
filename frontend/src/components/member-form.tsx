@@ -70,18 +70,12 @@ export function MemberForm({
             </option>
           ))}
         </select>
-        <p className="text-xs text-muted-foreground">
-          {t('splitGroups.linkedUserHint')}
-        </p>
+        <p className="text-xs text-muted-foreground">{t('splitGroups.linkedUserHint')}</p>
       </div>
 
       <div className="space-y-2">
         <Label>{t('splitGroups.memberName')}</Label>
-        <Input
-          value={name}
-          onChange={(e) => onChangeName(e.target.value)}
-          disabled={linkedUserId !== null}
-        />
+        <Input value={name} onChange={(e) => onChangeName(e.target.value)} disabled={linkedUserId !== null} />
       </div>
 
       <div className="space-y-2">
@@ -103,9 +97,7 @@ export function MemberForm({
             {t('splitGroups.willLinkToUser', { email: lookupResult.email })}
           </p>
         ) : (
-          <p className="text-xs text-muted-foreground">
-            {t('splitGroups.memberEmailHint')}
-          </p>
+          <p className="text-xs text-muted-foreground">{t('splitGroups.memberEmailHint')}</p>
         )}
       </div>
     </div>

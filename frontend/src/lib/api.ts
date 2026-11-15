@@ -159,7 +159,7 @@ api.interceptors.response.use(
       window.location.href = '/login'
     }
     return Promise.reject(error)
-  }
+  },
 )
 
 declare module 'axios' {
@@ -184,7 +184,7 @@ api.interceptors.response.use(
     if (method !== 'get' && !response.config.skipDataChanged) markDataChanged()
     return response
   },
-  (error: unknown) => Promise.reject(error)
+  (error: unknown) => Promise.reject(error),
 )
 
 // Workspaces
@@ -213,9 +213,10 @@ export const workspaces = {
   // `kind` is absent on purpose: it is fixed when the workspace is created.
   update: async (
     id: string,
-    payload: Partial<
-      Pick<Workspace, 'name' | 'icon' | 'color' | 'default_currency' | 'locale'>
-    > & { tax_jurisdiction?: string | null; timezone?: string | null },
+    payload: Partial<Pick<Workspace, 'name' | 'icon' | 'color' | 'default_currency' | 'locale'>> & {
+      tax_jurisdiction?: string | null
+      timezone?: string | null
+    },
   ): Promise<Workspace> => {
     const { data } = await api.patch(`/workspaces/${id}`, payload)
     return data
@@ -224,7 +225,10 @@ export const workspaces = {
     const { data } = await api.get(`/workspaces/${id}/members`)
     return data
   },
-  invite: async (id: string, payload: { email: string; role?: WorkspaceRole; password?: string }): Promise<WorkspaceMember> => {
+  invite: async (
+    id: string,
+    payload: { email: string; role?: WorkspaceRole; password?: string },
+  ): Promise<WorkspaceMember> => {
     const { data } = await api.post(`/workspaces/${id}/members`, payload)
     return data
   },
@@ -251,7 +255,13 @@ export const setup = {
     const { data } = await api.get('/setup/status')
     return data
   },
-  createAdmin: async (email: string, password: string, currency = 'USD', name = '', language = 'en'): Promise<{ access_token: string }> => {
+  createAdmin: async (
+    email: string,
+    password: string,
+    currency = 'USD',
+    name = '',
+    language = 'en',
+  ): Promise<{ access_token: string }> => {
     const { data } = await api.post('/setup/create-admin', { email, password, currency, name, language })
     return data
   },
@@ -330,10 +340,14 @@ export const auth = {
     challengeId: string,
     credential: Record<string, unknown>,
   ): Promise<{ access_token: string; token_type: string }> => {
-    const { data } = await api.post('/auth/passkeys/authenticate/verify', {
-      challenge_id: challengeId,
-      credential,
-    }, readOnly)
+    const { data } = await api.post(
+      '/auth/passkeys/authenticate/verify',
+      {
+        challenge_id: challengeId,
+        credential,
+      },
+      readOnly,
+    )
     return data
   },
   passkeySecondFactorOptions: async (tempToken: string): Promise<PasskeyOptionsResponse> => {
@@ -345,11 +359,15 @@ export const auth = {
     challengeId: string,
     credential: Record<string, unknown>,
   ): Promise<{ access_token: string; token_type: string }> => {
-    const { data } = await api.post('/auth/passkeys/2fa/verify', {
-      temp_token: tempToken,
-      challenge_id: challengeId,
-      credential,
-    }, readOnly)
+    const { data } = await api.post(
+      '/auth/passkeys/2fa/verify',
+      {
+        temp_token: tempToken,
+        challenge_id: challengeId,
+        credential,
+      },
+      readOnly,
+    )
     return data
   },
   oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
@@ -429,7 +447,17 @@ export const connections = {
     const { data } = await api.get('/connections')
     return data
   },
-  getProviders: async (): Promise<{ name: string; display_name: string; description: string; flow_type: string; configured: boolean; requires_institution_select?: boolean; supports_asset_sync?: boolean }[]> => {
+  getProviders: async (): Promise<
+    {
+      name: string
+      display_name: string
+      description: string
+      flow_type: string
+      configured: boolean
+      requires_institution_select?: boolean
+      supports_asset_sync?: boolean
+    }[]
+  > => {
     const { data } = await api.get('/connections/providers')
     return data.providers
   },
@@ -533,11 +561,23 @@ export const accounts = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/accounts/${id}`)
   },
-  summary: async (id: string, from?: string, to?: string, billId?: string, unbilledOnly?: boolean): Promise<AccountSummary> => {
-    const { data } = await api.get(`/accounts/${id}/summary`, { params: { from, to, bill_id: billId, unbilled_only: unbilledOnly || undefined } })
+  summary: async (
+    id: string,
+    from?: string,
+    to?: string,
+    billId?: string,
+    unbilledOnly?: boolean,
+  ): Promise<AccountSummary> => {
+    const { data } = await api.get(`/accounts/${id}/summary`, {
+      params: { from, to, bill_id: billId, unbilled_only: unbilledOnly || undefined },
+    })
     return data
   },
-  balanceHistory: async (id: string, from?: string, to?: string): Promise<{ date: string; balance: number; balance_primary?: number; fx_fallback?: boolean }[]> => {
+  balanceHistory: async (
+    id: string,
+    from?: string,
+    to?: string,
+  ): Promise<{ date: string; balance: number; balance_primary?: number; fx_fallback?: boolean }[]> => {
     const { data } = await api.get(`/accounts/${id}/balance-history`, { params: { from, to } })
     return data
   },
@@ -580,7 +620,9 @@ export interface MortgagePaymentAllocation {
 }
 
 export const mortgagePayments = {
-  get: async (paymentId: string): Promise<{
+  get: async (
+    paymentId: string,
+  ): Promise<{
     payment_transaction_id: string
     payment_amount: number
     currency: string
@@ -713,7 +755,10 @@ export const transactions = {
     const { data } = await api.post('/transactions/transfer', transfer)
     return data
   },
-  bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number; skipped_split?: number }> => {
+  bulkCategorize: async (
+    transactionIds: string[],
+    categoryId: string | null,
+  ): Promise<{ updated: number; skipped_split?: number }> => {
     const { data } = await api.patch('/transactions/bulk-categorize', {
       transaction_ids: transactionIds,
       category_id: categoryId,
@@ -756,7 +801,9 @@ export const transactions = {
     })
     return data
   },
-  linkTransfer: async (transactionIds: string[]): Promise<{ debit: Transaction; credit: Transaction; transfer_pair_id: string }> => {
+  linkTransfer: async (
+    transactionIds: string[],
+  ): Promise<{ debit: Transaction; credit: Transaction; transfer_pair_id: string }> => {
     const { data } = await api.post('/transactions/link-transfer', {
       transaction_ids: transactionIds,
     })
@@ -771,7 +818,10 @@ export const transactions = {
     })
     return data
   },
-  transferCandidates: async (transactionId: string, params?: { limit?: number; window_days?: number }): Promise<Transaction[]> => {
+  transferCandidates: async (
+    transactionId: string,
+    params?: { limit?: number; window_days?: number },
+  ): Promise<Transaction[]> => {
     const { data } = await api.get(`/transactions/${transactionId}/transfer-candidates`, { params })
     return data
   },
@@ -782,13 +832,22 @@ export const transactions = {
   unlinkTransfer: async (pairId: string): Promise<void> => {
     await api.delete(`/connections/transfers/${pairId}`)
   },
-  previewImport: async (file: File, options?: {
-    date_format?: string
-    flip_amount?: boolean
-    inflow_column?: string
-    outflow_column?: string
-    column_mapping?: Record<string, string>
-  }): Promise<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null; failed_rows?: FailedRow[] }> => {
+  previewImport: async (
+    file: File,
+    options?: {
+      date_format?: string
+      flip_amount?: boolean
+      inflow_column?: string
+      outflow_column?: string
+      column_mapping?: Record<string, string>
+    },
+  ): Promise<{
+    transactions: ImportPreviewTransaction[]
+    detected_format: string
+    csv_columns?: string[]
+    parse_error?: string | null
+    failed_rows?: FailedRow[]
+  }> => {
     const formData = new FormData()
     formData.append('file', file)
     if (options?.date_format) formData.append('date_format', options.date_format)
@@ -970,7 +1029,11 @@ export const products = {
     const { data } = await api.post(`/products/${id}/prices`, payload)
     return data
   },
-  updatePrice: async (id: string, priceId: string, payload: Partial<PricePayload> & { active?: boolean }): Promise<Product> => {
+  updatePrice: async (
+    id: string,
+    priceId: string,
+    payload: Partial<PricePayload> & { active?: boolean },
+  ): Promise<Product> => {
     const { data } = await api.patch(`/products/${id}/prices/${priceId}`, payload)
     return data
   },
@@ -981,7 +1044,9 @@ export const products = {
 }
 
 export const payees = {
-  list: async (params?: { q?: string; type?: string; is_favorite?: boolean } | Record<string, unknown>): Promise<Payee[]> => {
+  list: async (
+    params?: { q?: string; type?: string; is_favorite?: boolean } | Record<string, unknown>,
+  ): Promise<Payee[]> => {
     const cleanParams = params && !('queryKey' in params) ? params : undefined
     const { data } = await api.get('/payees', { params: cleanParams })
     return data
@@ -1005,7 +1070,10 @@ export const payees = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/payees/${id}`)
   },
-  merge: async (targetId: string, sourceIds: string[]): Promise<{ merged: number; transactions_reassigned: number }> => {
+  merge: async (
+    targetId: string,
+    sourceIds: string[],
+  ): Promise<{ merged: number; transactions_reassigned: number }> => {
     const { data } = await api.post('/payees/merge', { target_id: targetId, source_ids: sourceIds })
     return data
   },
@@ -1048,7 +1116,10 @@ export interface GroupSettlementPayload {
 }
 
 export const groups = {
-  list: async (includeArchived = false, filters: { q?: string; status?: 'active' | 'archived' | 'all' } = {}): Promise<Group[]> => {
+  list: async (
+    includeArchived = false,
+    filters: { q?: string; status?: 'active' | 'archived' | 'all' } = {},
+  ): Promise<Group[]> => {
     const { data } = await api.get('/groups', { params: { include_archived: includeArchived, ...filters } })
     return data
   },
@@ -1093,7 +1164,11 @@ export const groups = {
       const { data } = await api.post(`/groups/${groupId}/settlements`, payload)
       return data
     },
-    update: async (groupId: string, settlementId: string, payload: Partial<GroupSettlementPayload>): Promise<GroupSettlement> => {
+    update: async (
+      groupId: string,
+      settlementId: string,
+      payload: Partial<GroupSettlementPayload>,
+    ): Promise<GroupSettlement> => {
       const { data } = await api.patch(`/groups/${groupId}/settlements/${settlementId}`, payload)
       return data
     },
@@ -1143,7 +1218,6 @@ export const users = {
     return data
   },
 }
-
 
 // Categorization Rules
 export const rules = {
@@ -1229,11 +1303,7 @@ export const reconciliation = {
     const { data } = await api.get('/reconciliation/rules')
     return data
   },
-  updateRule: async (
-    node: string,
-    id: string,
-    patch: ReconciliationRulePatch,
-  ): Promise<ReconciliationRule> => {
+  updateRule: async (node: string, id: string, patch: ReconciliationRulePatch): Promise<ReconciliationRule> => {
     const { data } = await api.patch(
       `/reconciliation/rules/${encodeURIComponent(node)}/${encodeURIComponent(id)}`,
       patch,
@@ -1243,14 +1313,8 @@ export const reconciliation = {
   /** Set the order rules are tried in. Names every rule in the set: the
    *  first match wins, so a half-implicit order rearranges itself the day
    *  a new default ships. */
-  reorderRules: async (
-    node: string,
-    order: string[],
-  ): Promise<ReconciliationRule[]> => {
-    const { data } = await api.put(
-      `/reconciliation/rules/${encodeURIComponent(node)}/order`,
-      { order },
-    )
+  reorderRules: async (node: string, order: string[]): Promise<ReconciliationRule[]> => {
+    const { data } = await api.put(`/reconciliation/rules/${encodeURIComponent(node)}/order`, { order })
     return data
   },
   createRule: async (rule: ReconciliationRuleDraft): Promise<ReconciliationRule> => {
@@ -1263,17 +1327,13 @@ export const reconciliation = {
    *  does not run it) but that is our problem, not something to make a
    *  person learn. */
   deleteRule: async (node: string, id: string): Promise<void> => {
-    await api.delete(
-      `/reconciliation/rules/${encodeURIComponent(node)}/${encodeURIComponent(id)}`,
-    )
+    await api.delete(`/reconciliation/rules/${encodeURIComponent(node)}/${encodeURIComponent(id)}`)
   },
   /** Forget everything this workspace did to one of our rules (a moved
    *  threshold, a place in the order, a deletion), and go back to
    *  whatever we ship today. */
   resetRule: async (node: string, id: string): Promise<void> => {
-    await api.post(
-      `/reconciliation/rules/${encodeURIComponent(node)}/${encodeURIComponent(id)}/reset`,
-    )
+    await api.post(`/reconciliation/rules/${encodeURIComponent(node)}/${encodeURIComponent(id)}/reset`)
   },
   /** `node` narrows the file to one set. Each set is its own card with
    *  its own button, and a button under one heading that hands over
@@ -1312,9 +1372,7 @@ export const reconciliation = {
   },
   /** What matching did, newest first. `expectationId` narrows it to
    *  everything that ever happened to one invoice. */
-  history: async (
-    expectationId?: string,
-  ): Promise<ReconciliationHistoryEvent[]> => {
+  history: async (expectationId?: string): Promise<ReconciliationHistoryEvent[]> => {
     const { data } = await api.get('/reconciliation/history', {
       params: expectationId ? { expectation_id: expectationId } : undefined,
     })
@@ -1369,7 +1427,12 @@ export const budgets = {
     const { data } = await api.get('/budgets', { params: { month } })
     return data
   },
-  create: async (budget: { category_id: string; amount: number; month: string; is_recurring?: boolean }): Promise<Budget> => {
+  create: async (budget: {
+    category_id: string
+    amount: number
+    month: string
+    is_recurring?: boolean
+  }): Promise<Budget> => {
     const { data } = await api.post('/budgets', budget)
     return data
   },
@@ -1465,11 +1528,17 @@ export const spendingPlan = {
 }
 
 export const dashboard = {
-  summary: async (month?: string, balanceDate?: string, accountIds?: string[], assetGroupIds?: string[]): Promise<DashboardSummary> => {
+  summary: async (
+    month?: string,
+    balanceDate?: string,
+    accountIds?: string[],
+    assetGroupIds?: string[],
+  ): Promise<DashboardSummary> => {
     const hasFilter = (accountIds && accountIds.length > 0) || (assetGroupIds && assetGroupIds.length > 0)
     const { data } = await api.get('/dashboard/summary', {
       params: {
-        month, balance_date: balanceDate,
+        month,
+        balance_date: balanceDate,
         ...(accountIds && accountIds.length > 0 ? { account_ids: accountIds } : {}),
         ...(assetGroupIds && assetGroupIds.length > 0 ? { asset_group_ids: assetGroupIds } : {}),
       },
@@ -1479,15 +1548,26 @@ export const dashboard = {
   },
   spendingByCategory: async (month?: string, accountIds?: string[]): Promise<SpendingByCategory[]> => {
     const extra = acctIdsParam(accountIds)
-    const { data } = await api.get('/dashboard/spending-by-category', { params: { month, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    const { data } = await api.get('/dashboard/spending-by-category', {
+      params: { month, ...(extra.params ?? {}) },
+      ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
+    })
     return data
   },
   monthlyTrend: async (months = 6, accountIds?: string[]): Promise<MonthlyTrend[]> => {
     const extra = acctIdsParam(accountIds)
-    const { data } = await api.get('/dashboard/monthly-trend', { params: { months, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    const { data } = await api.get('/dashboard/monthly-trend', {
+      params: { months, ...(extra.params ?? {}) },
+      ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
+    })
     return data
   },
-  projectedTransactions: async (params?: { month?: string; account_id?: string; from?: string; to?: string }): Promise<ProjectedTransaction[]> => {
+  projectedTransactions: async (params?: {
+    month?: string
+    account_id?: string
+    from?: string
+    to?: string
+  }): Promise<ProjectedTransaction[]> => {
     const { data } = await api.get('/dashboard/projected-transactions', { params })
     return data
   },
@@ -1555,7 +1635,11 @@ export const assets = {
   deleteValue: async (valueId: string): Promise<void> => {
     await api.delete(`/assets/values/${valueId}`)
   },
-  portfolioTrend: async (): Promise<{ assets: { id: string; name: string; type: string; group_id: string | null; first_date: string | null }[]; trend: Record<string, unknown>[]; total: number }> => {
+  portfolioTrend: async (): Promise<{
+    assets: { id: string; name: string; type: string; group_id: string | null; first_date: string | null }[]
+    trend: Record<string, unknown>[]
+    total: number
+  }> => {
     const { data } = await api.get('/assets/portfolio-trend')
     return data
   },
@@ -1598,9 +1682,16 @@ export const assets = {
     const { data } = await api.delete(`/assets/transactions/${txId}`)
     return data
   },
-  buy: async (
-    tx: { ticker: string; quantity: number; price: number; fee?: number; date: string; name?: string; group_id?: string | null; notes?: string },
-  ): Promise<Asset> => {
+  buy: async (tx: {
+    ticker: string
+    quantity: number
+    price: number
+    fee?: number
+    date: string
+    name?: string
+    group_id?: string | null
+    notes?: string
+  }): Promise<Asset> => {
     const { data } = await api.post('/assets/buy', tx)
     return data
   },
@@ -1664,11 +1755,27 @@ export const collections = {
     const { data } = await api.get('/collections')
     return data
   },
-  create: async (payload: { name: string; icon?: string; color?: string; account_ids?: string[]; wallet_ids?: string[] }): Promise<Collection> => {
+  create: async (payload: {
+    name: string
+    icon?: string
+    color?: string
+    account_ids?: string[]
+    wallet_ids?: string[]
+  }): Promise<Collection> => {
     const { data } = await api.post('/collections', payload)
     return data
   },
-  update: async (id: string, payload: Partial<{ name: string; icon: string; color: string; position: number; account_ids: string[]; wallet_ids: string[] }>): Promise<Collection> => {
+  update: async (
+    id: string,
+    payload: Partial<{
+      name: string
+      icon: string
+      color: string
+      position: number
+      account_ids: string[]
+      wallet_ids: string[]
+    }>,
+  ): Promise<Collection> => {
     const { data } = await api.patch(`/collections/${id}`, payload)
     return data
   },
@@ -1691,7 +1798,9 @@ export const reports = {
     const hasFilter = (accountIds && accountIds.length > 0) || (assetGroupIds && assetGroupIds.length > 0)
     const { data } = await api.get('/reports/net-worth', {
       params: {
-        months, interval, period,
+        months,
+        interval,
+        period,
         ...(startDate && endDate ? { start_date: startDate, end_date: endDate } : {}),
         ...(accountIds && accountIds.length > 0 ? { account_ids: accountIds } : {}),
         ...(assetGroupIds && assetGroupIds.length > 0 ? { asset_group_ids: assetGroupIds } : {}),
@@ -1716,7 +1825,10 @@ export const reports = {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/reports/income-expenses', {
       params: {
-        months, interval, period, days,
+        months,
+        interval,
+        period,
+        days,
         ...(startDate && endDate ? { start_date: startDate, end_date: endDate } : {}),
         ...(extra.params ?? {}),
       },
@@ -1724,15 +1836,30 @@ export const reports = {
     })
     return data
   },
-  cashFlow: async (months = 6, interval = 'daily', baseline = false, accountIds?: string[]): Promise<ReportResponse> => {
+  cashFlow: async (
+    months = 6,
+    interval = 'daily',
+    baseline = false,
+    accountIds?: string[],
+  ): Promise<ReportResponse> => {
     const extra = acctIdsParam(accountIds)
-    const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    const { data } = await api.get('/reports/cash-flow', {
+      params: { months, interval, baseline, ...(extra.params ?? {}) },
+      ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
+    })
     return data
   },
   // `month` is "YYYY-MM"; the response covers it and the `months - 1` before it.
-  categoryStatement: async (month: string, months: number, accountIds?: string[]): Promise<CategoryStatementResponse> => {
+  categoryStatement: async (
+    month: string,
+    months: number,
+    accountIds?: string[],
+  ): Promise<CategoryStatementResponse> => {
     const extra = acctIdsParam(accountIds)
-    const { data } = await api.get('/reports/category-statement', { params: { month, months, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    const { data } = await api.get('/reports/category-statement', {
+      params: { month, months, ...(extra.params ?? {}) },
+      ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
+    })
     return data
   },
   // Oldest and newest transaction dates in the workspace (opening
@@ -1758,7 +1885,12 @@ export const fxRates = {
     const { data } = await api.post('/fx-rates/refresh')
     return data
   },
-  status: async (): Promise<{ last_sync_date: string | null; total_rates: number; fx_sync_mode: string; configured: boolean }> => {
+  status: async (): Promise<{
+    last_sync_date: string | null
+    total_rates: number
+    fx_sync_mode: string
+    configured: boolean
+  }> => {
     const { data } = await api.get('/fx-rates/status')
     return data
   },
@@ -1777,7 +1909,11 @@ export const importLogs = {
 
 // Settings
 export const settings = {
-  attachments: async (): Promise<{ allowed_extensions: string[]; max_file_size_mb: number; max_attachments_per_transaction: number }> => {
+  attachments: async (): Promise<{
+    allowed_extensions: string[]
+    max_file_size_mb: number
+    max_attachments_per_transaction: number
+  }> => {
     const { data } = await api.get('/settings/attachments')
     return data
   },
@@ -1791,11 +1927,10 @@ export const backup = {
    * and proxy logs.
    */
   download: async (password?: string): Promise<void> => {
-    const { data } = await api.post(
-      '/export/backup',
-      password ? { password } : {},
-      { ...readOnly, responseType: 'blob' },
-    )
+    const { data } = await api.post('/export/backup', password ? { password } : {}, {
+      ...readOnly,
+      responseType: 'blob',
+    })
     const blob = new Blob([data], { type: 'application/zip' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -1813,12 +1948,15 @@ export interface ProviderSettingStatus {
   name: string
   configured: boolean
   can_store_secrets: boolean
-  fields: Record<string, {
-    configured: boolean
-    source: 'app' | 'environment' | 'none'
-    invalid: boolean
-    environment_configured: boolean
-  }>
+  fields: Record<
+    string,
+    {
+      configured: boolean
+      source: 'app' | 'environment' | 'none'
+      invalid: boolean
+      environment_configured: boolean
+    }
+  >
   /** Callback URL to register with the provider, derived from the server URL. */
   redirect_uri?: string | null
 }
@@ -1849,11 +1987,25 @@ export const admin = {
     const { data } = await api.get(`/admin/users/${id}`)
     return data
   },
-  createUser: async (user: { email: string; password: string; is_superuser?: boolean; preferences?: Record<string, unknown> }): Promise<AdminUser> => {
+  createUser: async (user: {
+    email: string
+    password: string
+    is_superuser?: boolean
+    preferences?: Record<string, unknown>
+  }): Promise<AdminUser> => {
     const { data } = await api.post('/admin/users', user)
     return data
   },
-  updateUser: async (id: string, user: Partial<{ email: string; password: string; is_active: boolean; is_superuser: boolean; preferences: Record<string, unknown> }>): Promise<AdminUser> => {
+  updateUser: async (
+    id: string,
+    user: Partial<{
+      email: string
+      password: string
+      is_active: boolean
+      is_superuser: boolean
+      preferences: Record<string, unknown>
+    }>,
+  ): Promise<AdminUser> => {
     const { data } = await api.patch(`/admin/users/${id}`, user)
     return data
   },
@@ -1935,13 +2087,7 @@ export const uiLayouts = {
 }
 
 // Global search (powers the command palette)
-export type SearchHitType =
-  | 'transaction'
-  | 'account'
-  | 'payee'
-  | 'category'
-  | 'goal'
-  | 'asset'
+export type SearchHitType = 'transaction' | 'account' | 'payee' | 'category' | 'goal' | 'asset'
 
 export interface SearchHit {
   type: SearchHitType
@@ -2384,7 +2530,10 @@ export const invoiceSchedules = {
     const { data } = await api.post(`/invoice-schedules/${id}/resume`)
     return data
   },
-  end: async (id: string, payload: { reason: InvoiceScheduleEndReason; ended_at?: string }): Promise<InvoiceSchedule> => {
+  end: async (
+    id: string,
+    payload: { reason: InvoiceScheduleEndReason; ended_at?: string },
+  ): Promise<InvoiceSchedule> => {
     const { data } = await api.post(`/invoice-schedules/${id}/end`, payload)
     return data
   },
@@ -2419,7 +2568,19 @@ export const invoices = {
     })
     return data
   },
-  list: async (params?: { state?: string; year?: number; direction?: InvoiceDirection; payee_id?: string; schedule_id?: string; q?: string; limit?: number } | Record<string, unknown>): Promise<Invoice[]> => {
+  list: async (
+    params?:
+      | {
+          state?: string
+          year?: number
+          direction?: InvoiceDirection
+          payee_id?: string
+          schedule_id?: string
+          q?: string
+          limit?: number
+        }
+      | Record<string, unknown>,
+  ): Promise<Invoice[]> => {
     const cleanParams = params && !('queryKey' in params) ? params : undefined
     const { data } = await api.get('/invoices', { params: cleanParams })
     return data
@@ -2483,7 +2644,13 @@ export const invoices = {
   /** Close part of the debt without money: tax withheld, a fee kept. */
   deduct: async (
     id: string,
-    payload: { kind: DeductionKind; amount: string; tax_kind?: string | null; note?: string | null; transaction_id?: string | null },
+    payload: {
+      kind: DeductionKind
+      amount: string
+      tax_kind?: string | null
+      note?: string | null
+      transaction_id?: string | null
+    },
   ): Promise<Invoice> => {
     const { data } = await api.post(`/invoices/${id}/deductions`, payload)
     return data

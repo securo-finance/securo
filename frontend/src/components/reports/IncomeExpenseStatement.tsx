@@ -35,7 +35,6 @@ import {
 } from '@/lib/category-statement'
 import type { CategoryStatementRow } from '@/types'
 
-
 function capitalize(text: string) {
   return text.replace(/^\p{L}/u, (c) => c.toUpperCase())
 }
@@ -114,8 +113,14 @@ export function StatementControls({ month, onMonthChange, settings, onSettingsCh
             ))}
           </fieldset>
           <div>
-            <p id="statement-columns" className="text-sm font-semibold mb-2">{t('reports.statementColumns')}</p>
-            <div role="group" aria-labelledby="statement-columns" className="flex rounded-lg border border-border overflow-hidden">
+            <p id="statement-columns" className="text-sm font-semibold mb-2">
+              {t('reports.statementColumns')}
+            </p>
+            <div
+              role="group"
+              aria-labelledby="statement-columns"
+              className="flex rounded-lg border border-border overflow-hidden"
+            >
               {STATEMENT_COLUMN_OPTIONS.map((n) => (
                 <button
                   key={n}
@@ -135,7 +140,9 @@ export function StatementControls({ month, onMonthChange, settings, onSettingsCh
             </div>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span id="statement-show-change" className="text-sm">{t('reports.statementShowChange')}</span>
+            <span id="statement-show-change" className="text-sm">
+              {t('reports.statementShowChange')}
+            </span>
             <Switch
               checked={settings.showChange}
               onCheckedChange={(checked) => onSettingsChange({ ...settings, showChange: checked })}
@@ -290,7 +297,9 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
                 color={row.kind === 'uncategorized' ? '#9CA3AF' : row.color}
                 size={depth > 0 ? 'sm' : 'md'}
               />
-              <span className="truncate text-foreground" title={label}>{label}</span>
+              <span className="truncate text-foreground" title={label}>
+                {label}
+              </span>
             </div>
           </th>
           {renderValues(row.values, section, { row })}
@@ -308,17 +317,27 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
     return (
       <tbody>
         <tr className="bg-muted">
-          <th scope="col" className="sticky left-0 z-[1] bg-muted px-3 sm:px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <th
+            scope="col"
+            className="sticky left-0 z-[1] bg-muted px-3 sm:px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+          >
             {title}
           </th>
           {columnIndexes.map((i) => (
-            <th key={data!.months[i]} scope="col" className="px-3 py-2 text-right text-xs font-semibold text-foreground whitespace-nowrap">
+            <th
+              key={data!.months[i]}
+              scope="col"
+              className="px-3 py-2 text-right text-xs font-semibold text-foreground whitespace-nowrap"
+            >
               {capitalize(monthLabel(data!.months[i], dateLocale))}
             </th>
           ))}
         </tr>
         <tr className="border-t border-border">
-          <th scope="row" className="sticky left-0 z-[1] bg-card px-3 sm:px-4 py-3 text-left font-semibold text-foreground">
+          <th
+            scope="row"
+            className="sticky left-0 z-[1] bg-card px-3 sm:px-4 py-3 text-left font-semibold text-foreground"
+          >
             {totalLabel}
           </th>
           {renderValues(block.totals, section, { strong: true })}
@@ -328,9 +347,7 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
     )
   }
 
-  const netValues = data
-    ? data.months.map((_, i) => (data.income.totals[i] ?? 0) + (data.expenses.totals[i] ?? 0))
-    : []
+  const netValues = data ? data.months.map((_, i) => (data.income.totals[i] ?? 0) + (data.expenses.totals[i] ?? 0)) : []
   const isEmpty = !!data && data.income.rows.length === 0 && data.expenses.rows.length === 0
 
   return (
@@ -364,16 +381,17 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
             {renderSection('expenses')}
             <tfoot>
               <tr className="border-t-2 border-border">
-                <th scope="row" className="sticky left-0 z-[1] bg-card px-3 sm:px-4 py-3 text-left font-semibold text-foreground">
+                <th
+                  scope="row"
+                  className="sticky left-0 z-[1] bg-card px-3 sm:px-4 py-3 text-left font-semibold text-foreground"
+                >
                   {t('reports.netIncome')}
                 </th>
                 {renderValues(netValues, 'net', { strong: true })}
               </tr>
             </tfoot>
           </table>
-          {isEmpty && (
-            <p className="px-4 py-6 text-center text-sm text-muted-foreground">{t('reports.noData')}</p>
-          )}
+          {isEmpty && <p className="px-4 py-6 text-center text-sm text-muted-foreground">{t('reports.noData')}</p>}
         </div>
       )}
 

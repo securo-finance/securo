@@ -21,11 +21,9 @@ export function TransactionsColumnPicker({ state }: Props) {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 p-2">
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-          {t('transactions.columns')}
-        </div>
+        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{t('transactions.columns')}</div>
         <ul className="max-h-72 overflow-y-auto">
-          {COLUMN_REGISTRY.map(col => {
+          {COLUMN_REGISTRY.map((col) => {
             const checked = state.isVisible(col.id)
             const disabled = !!col.alwaysOn
             return (

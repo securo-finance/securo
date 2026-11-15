@@ -8,7 +8,10 @@ export function monthlySalary(recurring: Pick<RecurringTransaction, 'amount' | '
   return (Number(recurring.amount) * PERIODS_PER_YEAR[recurring.frequency]) / 12
 }
 
-export function salaryTarget(recurring: Pick<RecurringTransaction, 'amount' | 'frequency'>, months: SalaryMonths): number {
+export function salaryTarget(
+  recurring: Pick<RecurringTransaction, 'amount' | 'frequency'>,
+  months: SalaryMonths,
+): number {
   return Math.round(monthlySalary(recurring) * months * 100) / 100
 }
 

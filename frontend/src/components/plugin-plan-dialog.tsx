@@ -39,7 +39,12 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
   const { canManage } = useWorkspace()
   const { user, updateUser } = useAuth()
 
-  const { data: plan, isFetching, isError, refetch } = useQuery({
+  const {
+    data: plan,
+    isFetching,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ['plugins', 'plan', target.id, target.action],
     queryFn: () => pluginsApi.plan(target.id, target.action),
     // Every opening starts from a fresh plan, never a cached one.
@@ -55,7 +60,11 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
         queryClient.invalidateQueries({ queryKey: [key] })
       }
       // Someone using a theme that left the library is back on Securo's own: pick that up.
-      if (confirmed.themes?.removed.length) authApi.me().then(updateUser).catch(() => {})
+      if (confirmed.themes?.removed.length)
+        authApi
+          .me()
+          .then(updateUser)
+          .catch(() => {})
       toast.success(t(`plugins.done.${target.action}`, { name: target.name }))
       onClose()
     },
@@ -83,8 +92,13 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
   // The theme this person uses leaves the library: they go back to Securo's own.
   const themeInUse = removedThemes.find((theme) => user?.theme === pluginThemeId(target.id, theme.key))
   const changes = shown
-    ? shown.create.length + shown.update.length + shown.delete.length + shown.release.length +
-        addedThemes.length + removedThemes.length > 0
+    ? shown.create.length +
+        shown.update.length +
+        shown.delete.length +
+        shown.release.length +
+        addedThemes.length +
+        removedThemes.length >
+      0
     : false
   // A plan that touches no item still records something: the installed version
   // moves, or an installation whose items are all gone is taken off the list.
@@ -106,7 +120,12 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
     : []
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !pending) onClose()
+      }}
+    >
       <DialogContent className="sm:max-w-md" showCloseButton={!pending}>
         <DialogHeader>
           <DialogTitle>{t(`plugins.planTitle.${target.action}`, { name: target.name })}</DialogTitle>
@@ -125,56 +144,55 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
 
         {/* Long consent lists scroll; the buttons below always stay in reach. */}
         <div className="-mx-1 max-h-[55vh] space-y-4 overflow-y-auto px-1">
+          {addedThemes.length > 0 && (
+            <p className="text-sm">{t('plugins.plan.themes', { names: addedThemes.join(', ') })}</p>
+          )}
+          {removedThemes.length > 0 && (
+            <p className="text-sm">
+              {t('plugins.plan.themesRemove', {
+                names: removedThemes.map((theme) => localized(theme.name, i18n.language)).join(', '),
+              })}
+            </p>
+          )}
+          {themeInUse && (
+            <p className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              {t('plugins.plan.themeInUse', { name: localized(themeInUse.name, i18n.language) })}
+            </p>
+          )}
 
-        {addedThemes.length > 0 && (
-          <p className="text-sm">{t('plugins.plan.themes', { names: addedThemes.join(', ') })}</p>
-        )}
-        {removedThemes.length > 0 && (
-          <p className="text-sm">
-            {t('plugins.plan.themesRemove', {
-              names: removedThemes.map((theme) => localized(theme.name, i18n.language)).join(', '),
-            })}
-          </p>
-        )}
-        {themeInUse && (
-          <p className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            {t('plugins.plan.themeInUse', { name: localized(themeInUse.name, i18n.language) })}
-          </p>
-        )}
+          {lines.length > 0 && (
+            <ul className="space-y-2 text-sm">
+              {lines.map((line) => (
+                <li key={line.key}>
+                  <p>{t(`plugins.plan.${line.key}`, { items: describe(line.items) })}</p>
+                  {line.names && (
+                    <p className="text-xs text-muted-foreground">
+                      {line.items
+                        .slice(0, NAMES_SHOWN)
+                        .map((i) => i.name)
+                        .join(', ')}
+                      {line.items.length > NAMES_SHOWN &&
+                        ` ${t('plugins.andMore', { count: line.items.length - NAMES_SHOWN })}`}
+                    </p>
+                  )}
+                </li>
+              ))}
+              {shown && shown.default_categories.length > 0 && (
+                <li>{t('plugins.plan.defaults', { count: shown.default_categories.length })}</li>
+              )}
+            </ul>
+          )}
 
-        {lines.length > 0 && (
-          <ul className="space-y-2 text-sm">
-            {lines.map((line) => (
-              <li key={line.key}>
-                <p>{t(`plugins.plan.${line.key}`, { items: describe(line.items) })}</p>
-                {line.names && (
-                  <p className="text-xs text-muted-foreground">
-                    {line.items.slice(0, NAMES_SHOWN).map((i) => i.name).join(', ')}
-                    {line.items.length > NAMES_SHOWN &&
-                      ` ${t('plugins.andMore', { count: line.items.length - NAMES_SHOWN })}`}
-                  </p>
-                )}
-              </li>
-            ))}
-            {shown && shown.default_categories.length > 0 && (
-              <li>{t('plugins.plan.defaults', { count: shown.default_categories.length })}</li>
-            )}
-          </ul>
-        )}
+          {code && <CodeConsent code={code} action={target.action} />}
 
-        {code && <CodeConsent code={code} action={target.action} />}
+          {shown && !code && (
+            <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+              <ShieldCheck size={14} className="mt-0.5 shrink-0" />
+              <span>{target.action === 'remove' ? t('plugins.history') : t('plugins.privacy')}</span>
+            </div>
+          )}
 
-        {shown && !code && (
-          <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
-            <ShieldCheck size={14} className="mt-0.5 shrink-0" />
-            <span>{target.action === 'remove' ? t('plugins.history') : t('plugins.privacy')}</span>
-          </div>
-        )}
-
-        {code && !allowed && (
-          <p className="text-xs text-muted-foreground">{t('plugins.code.ownerOnly')}</p>
-        )}
-
+          {code && !allowed && <p className="text-xs text-muted-foreground">{t('plugins.code.ownerOnly')}</p>}
         </div>
 
         <DialogFooter>
@@ -281,4 +299,3 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
     </div>
   )
 }
-

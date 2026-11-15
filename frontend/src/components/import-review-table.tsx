@@ -3,24 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { ChartPie } from 'lucide-react'
 import type { ImportReviewTransaction, Category, CategoryGroup } from '@/types'
 import { formatCurrency } from '@/lib/format'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { CategorySelect } from '@/components/category-select'
 import { CategoryFilterDropdown } from '@/components/category-filter-dropdown'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
 
@@ -120,7 +107,7 @@ export function ImportReviewTable({
   }
 
   const filtered = useMemo(() => {
-    return transactions.filter(tx => {
+    return transactions.filter((tx) => {
       if (searchQuery) {
         const q = searchQuery.toLowerCase()
         if (!tx.description.toLowerCase().includes(q)) return false
@@ -144,10 +131,18 @@ export function ImportReviewTable({
       return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, searchQuery, filterCategoryIds, filterUncategorized, hasCategoryFilter, statusFilter, categoryIdsByName])
+  }, [
+    transactions,
+    searchQuery,
+    filterCategoryIds,
+    filterUncategorized,
+    hasCategoryFilter,
+    statusFilter,
+    categoryIdsByName,
+  ])
 
-  const allFilteredIncluded = filtered.length > 0 && filtered.every(tx => !tx.excluded)
-  const someFilteredIncluded = filtered.some(tx => !tx.excluded)
+  const allFilteredIncluded = filtered.length > 0 && filtered.every((tx) => !tx.excluded)
+  const someFilteredIncluded = filtered.some((tx) => !tx.excluded)
 
   useEffect(() => {
     if (selectAllRef.current) {
@@ -166,14 +161,23 @@ export function ImportReviewTable({
         <Input
           placeholder={t('import.searchTransactions')}
           value={searchQuery}
-          onChange={(e) => { onSearchChange(e.target.value); onPageChange(1) }}
+          onChange={(e) => {
+            onSearchChange(e.target.value)
+            onPageChange(1)
+          }}
           className="max-w-xs h-8 text-sm border border-border rounded-md px-3 bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
         />
         <CategoryFilterDropdown
           categoryIds={filterCategoryIds}
-          onCategoryIdsChange={(ids) => { onCategoryIdsChange(ids); onPageChange(1) }}
+          onCategoryIdsChange={(ids) => {
+            onCategoryIdsChange(ids)
+            onPageChange(1)
+          }}
           filterUncategorized={filterUncategorized}
-          onUncategorizedChange={(v) => { onUncategorizedChange(v); onPageChange(1) }}
+          onUncategorizedChange={(v) => {
+            onUncategorizedChange(v)
+            onPageChange(1)
+          }}
           categories={categories}
           groups={groups}
           label={t('import.filterCategory')}
@@ -181,7 +185,10 @@ export function ImportReviewTable({
         <select
           className="border border-border rounded-md px-3 py-1.5 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
           value={statusFilter}
-          onChange={(e) => { onStatusFilterChange(e.target.value as 'all' | 'included' | 'excluded'); onPageChange(1) }}
+          onChange={(e) => {
+            onStatusFilterChange(e.target.value as 'all' | 'included' | 'excluded')
+            onPageChange(1)
+          }}
         >
           <option value="all">{t('import.allStatus')}</option>
           <option value="included">{t('import.included')}</option>
@@ -200,7 +207,7 @@ export function ImportReviewTable({
                   type="checkbox"
                   checked={allFilteredIncluded}
                   onChange={() => {
-                    const ids = filtered.map(tx => tx._id)
+                    const ids = filtered.map((tx) => tx._id)
                     onToggleAllFiltered(ids, allFilteredIncluded)
                   }}
                   disabled={filtered.length === 0}
@@ -243,11 +250,16 @@ export function ImportReviewTable({
                   <TableCell className="py-2.5 text-xs text-muted-foreground whitespace-nowrap">
                     {formatLocalDate(tx.date, dateLocale)}
                   </TableCell>
-                  <TableCell className={`py-2.5 text-sm ${tx.excluded ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                  <TableCell
+                    className={`py-2.5 text-sm ${tx.excluded ? 'line-through text-muted-foreground' : 'text-foreground'}`}
+                  >
                     {tx.description}
                   </TableCell>
-                  <TableCell className={`py-2.5 text-right text-sm font-bold tabular-nums ${tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {tx.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}
+                  <TableCell
+                    className={`py-2.5 text-right text-sm font-bold tabular-nums ${tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}
+                  >
+                    {tx.type === 'credit' ? '+' : '−'}
+                    {formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}
                   </TableCell>
                   <TableCell className="py-2.5">
                     {tx.category_lines?.length ? (
@@ -256,7 +268,10 @@ export function ImportReviewTable({
                       <span className="flex flex-col gap-1">
                         <span
                           title={tx.category_lines
-                            .map((line) => `${line.category_name}: ${formatCurrency(Number(line.amount), tx.currency ?? userCurrency, locale)}`)
+                            .map(
+                              (line) =>
+                                `${line.category_name}: ${formatCurrency(Number(line.amount), tx.currency ?? userCurrency, locale)}`,
+                            )
                             .join('\n')}
                           className="inline-flex w-fit items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full"
                         >
@@ -280,18 +295,20 @@ export function ImportReviewTable({
                         )}
                       </span>
                     ) : (
-                    <CategorySelect
-                      value={tx.selected_category_id !== undefined
-                        ? (tx.selected_category_id ?? '')
-                        : (tx.suggested_category_id ?? '')}
-                      onChange={(v) => onChangeCategory(tx._id, v || null)}
-                      categories={categories}
-                      groups={groups}
-                      placeholder={t('import.noCategory')}
-                      allowNone
-                      creatable
-                      className="w-full border border-border rounded-md px-2 py-1 text-xs bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                    />
+                      <CategorySelect
+                        value={
+                          tx.selected_category_id !== undefined
+                            ? (tx.selected_category_id ?? '')
+                            : (tx.suggested_category_id ?? '')
+                        }
+                        onChange={(v) => onChangeCategory(tx._id, v || null)}
+                        categories={categories}
+                        groups={groups}
+                        placeholder={t('import.noCategory')}
+                        allowNone
+                        creatable
+                        className="w-full border border-border rounded-md px-2 py-1 text-xs bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                      />
                     )}
                   </TableCell>
                   <TableCell className="py-2.5 pr-4">

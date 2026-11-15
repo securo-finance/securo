@@ -23,7 +23,11 @@ export function ToolsSection({ agentId }: { agentId: string }) {
   }, [data?.tools])
 
   const save = useMutation({
-    mutationFn: () => agents.setTools(agentId, draft.map((t) => ({ server: t.server, tool_name: t.name, enabled: t.enabled }))),
+    mutationFn: () =>
+      agents.setTools(
+        agentId,
+        draft.map((t) => ({ server: t.server, tool_name: t.name, enabled: t.enabled })),
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agent-tools', agentId] })
       toast.success(t('agents.tools.saved'))
@@ -81,7 +85,9 @@ export function ToolsSection({ agentId }: { agentId: string }) {
                       checked={tool.enabled}
                       disabled={!canWrite}
                       onCheckedChange={(v) => {
-                        setDraft((d) => d.map((x) => (x.server === tool.server && x.name === tool.name ? { ...x, enabled: !!v } : x)))
+                        setDraft((d) =>
+                          d.map((x) => (x.server === tool.server && x.name === tool.name ? { ...x, enabled: !!v } : x)),
+                        )
                       }}
                     />
                   </div>

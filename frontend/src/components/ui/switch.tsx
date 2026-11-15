@@ -9,14 +9,7 @@ interface SwitchProps {
   className?: string
 }
 
-export function Switch({
-  checked,
-  onCheckedChange,
-  disabled,
-  id,
-  className,
-  ...rest
-}: SwitchProps) {
+export function Switch({ checked, onCheckedChange, disabled, id, className, ...rest }: SwitchProps) {
   return (
     <button
       type="button"

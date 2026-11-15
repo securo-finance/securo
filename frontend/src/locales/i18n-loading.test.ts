@@ -31,7 +31,9 @@ it('finishes loading a persisted locale before initialization resolves', async (
 
 it('still initializes with English fallback if a selected locale asset fails', async () => {
   localStorage.setItem('i18nextLng', 'de')
-  vi.doMock('./de.json', () => { throw new Error('synthetic unavailable locale asset') })
+  vi.doMock('./de.json', () => {
+    throw new Error('synthetic unavailable locale asset')
+  })
   vi.resetModules()
   const { default: i18n, i18nReady } = await import('@/lib/i18n')
   await i18nReady

@@ -6,13 +6,7 @@ import type { ModuleId } from '@/lib/modules'
  *  active workspace doesn't show that module lands on home instead of
  *  rendering it. Hiding the nav link alone leaves the page reachable.
  *  Mirrors AdminRoute / AgentsRoute. */
-export function ModuleRoute({
-  module,
-  children,
-}: {
-  module: ModuleId
-  children: React.ReactNode
-}) {
+export function ModuleRoute({ module, children }: { module: ModuleId; children: React.ReactNode }) {
   const { hasModule, isLoading } = useWorkspace()
   if (isLoading) {
     return (

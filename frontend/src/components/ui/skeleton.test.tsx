@@ -15,10 +15,7 @@ describe('Skeleton', () => {
   it('keeps the caller sizing classes', () => {
     const { container } = renderWithProviders(<Skeleton className="h-8 w-32" />)
 
-    expect(container.querySelector('[data-slot="skeleton"]')).toHaveClass(
-      'h-8',
-      'w-32',
-    )
+    expect(container.querySelector('[data-slot="skeleton"]')).toHaveClass('h-8', 'w-32')
   })
 
   it('carries no text, so a loading card announces nothing misleading', () => {

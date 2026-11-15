@@ -6,13 +6,7 @@ import { auth } from '@/lib/api'
 import { passkeyBlocker, passkeyFailure, startPasskeyRegistration } from '@/lib/webauthn'
 import type { PasskeyFailure } from '@/lib/webauthn'
 import type { Passkey } from '@/types'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -120,7 +114,9 @@ function PasskeyManagementSession({ open, onClose, localAuthEnabled = true }: Pa
         </DialogHeader>
 
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">{t(localAuthEnabled ? 'auth.passkeysDescription' : 'auth.passkeysCleanupDescription')}</p>
+          <p className="text-sm text-muted-foreground">
+            {t(localAuthEnabled ? 'auth.passkeysDescription' : 'auth.passkeysCleanupDescription')}
+          </p>
 
           {blocker && (
             <div className="flex items-start gap-2.5 rounded-lg bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-300">

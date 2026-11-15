@@ -9,14 +9,21 @@ import {
 
 describe('applyTransactionToBalance', () => {
   it('does not change the balance for ignored transactions', () => {
-    expect(applyTransactionToBalance(100, {
-      amount: 30,
-      amount_primary: null,
-      currency: 'BRL',
-      is_ignored: true,
-      source: 'manual',
-      type: 'debit',
-    }, false, 'BRL')).toBe(100)
+    expect(
+      applyTransactionToBalance(
+        100,
+        {
+          amount: 30,
+          amount_primary: null,
+          currency: 'BRL',
+          is_ignored: true,
+          source: 'manual',
+          type: 'debit',
+        },
+        false,
+        'BRL',
+      ),
+    ).toBe(100)
   })
 
   it('uses the selected currency amount for active transactions', () => {
@@ -47,14 +54,21 @@ describe('applyTransactionToBalance', () => {
   })
 
   it('applies an opening balance row when it is inside the visible period', () => {
-    expect(applyTransactionToBalance(100, {
-      amount: 500,
-      amount_primary: null,
-      currency: 'BRL',
-      is_ignored: false,
-      source: 'opening_balance',
-      type: 'credit',
-    }, false, 'BRL')).toBe(600)
+    expect(
+      applyTransactionToBalance(
+        100,
+        {
+          amount: 500,
+          amount_primary: null,
+          currency: 'BRL',
+          is_ignored: false,
+          source: 'opening_balance',
+          type: 'credit',
+        },
+        false,
+        'BRL',
+      ),
+    ).toBe(600)
   })
 })
 
@@ -79,10 +93,20 @@ describe('mergeRunningBalances', () => {
   // Real rows as the API sends them: newest first, each with the balance
   // right after it.
   const row = (id: string, date: string, balance: number, balancePrimary: number | null = null) => ({
-    id, date, running_balance: balance, running_balance_primary: balancePrimary,
+    id,
+    date,
+    running_balance: balance,
+    running_balance_primary: balancePrimary,
   })
   const projection = (id: string, date: string, amount: number, type: 'debit' | 'credit' = 'debit') => ({
-    id, date, amount, amount_primary: null, currency: 'BRL', is_ignored: false, source: 'projected', type,
+    id,
+    date,
+    amount,
+    amount_primary: null,
+    currency: 'BRL',
+    is_ignored: false,
+    source: 'projected',
+    type,
   })
   const options = { openingBalance: 1000, hasMore: false, usePrimary: false, displayCurrency: 'BRL' }
   const balances = (merged: { id: string; runningBalance: number }[]) =>
@@ -104,10 +128,11 @@ describe('mergeRunningBalances', () => {
   it('stacks projections dated after the newest row on top of it', () => {
     const rows = [row('a', '2026-09-05', 500)]
 
-    const merged = mergeRunningBalances(rows, [
-      projection('p2', '2026-09-28', 50),
-      projection('p1', '2026-09-15', 200, 'credit'),
-    ], options)
+    const merged = mergeRunningBalances(
+      rows,
+      [projection('p2', '2026-09-28', 50), projection('p1', '2026-09-15', 200, 'credit')],
+      options,
+    )
 
     expect(balances(merged)).toEqual([
       ['p2', 650],

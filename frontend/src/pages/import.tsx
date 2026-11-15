@@ -4,19 +4,26 @@ import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions as transactionsApi, accounts as accountsApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
+import {
+  transactions as transactionsApi,
+  accounts as accountsApi,
+  categories as categoriesApi,
+  categoryGroups as categoryGroupsApi,
+} from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import type {
-  AccountType,
-  ImportPreviewTransaction,
-  ImportReviewTransaction,
-  FailedRow,
-} from '@/types'
+import type { AccountType, ImportPreviewTransaction, ImportReviewTransaction, FailedRow } from '@/types'
 import { Upload, FileText, X, CheckCircle2, AlertCircle, Settings2, Download } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { PageHeader } from '@/components/page-header'
 import { AssetImportPanel } from '@/components/asset-import-panel'
 import { ImportSummaryBar } from '@/components/import-summary-bar'
@@ -66,7 +73,13 @@ function TransactionImportPanel() {
   const dateLocale = useDateLocale()
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [previewData, setPreviewData] = useState<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null; failed_rows?: FailedRow[] } | null>(null)
+  const [previewData, setPreviewData] = useState<{
+    transactions: ImportPreviewTransaction[]
+    detected_format: string
+    csv_columns?: string[]
+    parse_error?: string | null
+    failed_rows?: FailedRow[]
+  } | null>(null)
   const [reviewTransactions, setReviewTransactions] = useState<ImportReviewTransaction[]>([])
   const [selectedAccount, setSelectedAccount] = useState('')
   const [dragOver, setDragOver] = useState(false)
@@ -105,8 +118,19 @@ function TransactionImportPanel() {
   })
 
   const previewMutation = useMutation({
-    mutationFn: ({ file, options }: { file: File; options?: { date_format?: string; flip_amount?: boolean; inflow_column?: string; outflow_column?: string; column_mapping?: Record<string, string> } }) =>
-      transactionsApi.previewImport(file, options),
+    mutationFn: ({
+      file,
+      options,
+    }: {
+      file: File
+      options?: {
+        date_format?: string
+        flip_amount?: boolean
+        inflow_column?: string
+        outflow_column?: string
+        column_mapping?: Record<string, string>
+      }
+    }) => transactionsApi.previewImport(file, options),
     onSuccess: (data) => {
       setPreviewData(data)
       setCsvHeaders(data.csv_columns ?? [])
@@ -125,7 +149,7 @@ function TransactionImportPanel() {
 
   const importMutation = useMutation({
     mutationFn: () => {
-      const txns = reviewTransactions.map(rt => ({
+      const txns = reviewTransactions.map((rt) => ({
         description: rt.description,
         amount: rt.amount,
         date: rt.date,
@@ -138,9 +162,7 @@ function TransactionImportPanel() {
         category_name: rt.category_name ?? undefined,
         category_lines: rt.category_lines ?? undefined,
         excluded: rt.excluded,
-        category_id: rt.selected_category_id !== undefined
-          ? (rt.selected_category_id ?? undefined)
-          : undefined,
+        category_id: rt.selected_category_id !== undefined ? (rt.selected_category_id ?? undefined) : undefined,
         force_uncategorized: rt.selected_category_id === null,
       }))
       return transactionsApi.import(
@@ -158,7 +180,11 @@ function TransactionImportPanel() {
       queryClient.invalidateQueries({ queryKey: ['categories'] })
       const hasSkippedOrExcluded = (data.skipped ?? 0) > 0 || (data.excluded ?? 0) > 0
       const msg = hasSkippedOrExcluded
-        ? t('import.importedWithExcluded', { imported: data.imported, skipped: data.skipped ?? 0, excluded: data.excluded ?? 0 })
+        ? t('import.importedWithExcluded', {
+            imported: data.imported,
+            skipped: data.skipped ?? 0,
+            excluded: data.excluded ?? 0,
+          })
         : `${data.imported} ${t('import.transactionsImported')}`
       toast.success(msg)
       setPreviewData(null)
@@ -198,42 +224,54 @@ function TransactionImportPanel() {
   // Re-run the preview with the current CSV options. Accepts overrides so a
   // change handler can pass its new value synchronously instead of waiting
   // for the corresponding state update to flush.
-  const rePreview = useCallback((overrides?: {
-    date_format?: string
-    flip_amount?: boolean
-    split?: boolean
-    inflow?: string
-    outflow?: string
-    mapping?: Record<string, string>
-  }) => {
-    if (!currentFile) return
-    const dateFormat = overrides?.date_format ?? csvDateFormat
-    const flip = overrides?.flip_amount ?? csvFlipAmount
-    const split = overrides?.split ?? csvSplitColumns
-    const inflow = overrides?.inflow ?? csvInflowColumn
-    const outflow = overrides?.outflow ?? csvOutflowColumn
-    const mapping = overrides?.mapping ?? csvColumnMapping
+  const rePreview = useCallback(
+    (overrides?: {
+      date_format?: string
+      flip_amount?: boolean
+      split?: boolean
+      inflow?: string
+      outflow?: string
+      mapping?: Record<string, string>
+    }) => {
+      if (!currentFile) return
+      const dateFormat = overrides?.date_format ?? csvDateFormat
+      const flip = overrides?.flip_amount ?? csvFlipAmount
+      const split = overrides?.split ?? csvSplitColumns
+      const inflow = overrides?.inflow ?? csvInflowColumn
+      const outflow = overrides?.outflow ?? csvOutflowColumn
+      const mapping = overrides?.mapping ?? csvColumnMapping
 
-    const options: { date_format?: string; flip_amount?: boolean; inflow_column?: string; outflow_column?: string; column_mapping?: Record<string, string> } = {}
-    if (dateFormat) options.date_format = dateFormat
-    if (flip) options.flip_amount = true
-    if (split && inflow && outflow) {
-      options.inflow_column = inflow
-      options.outflow_column = outflow
-    }
-    const cleanMapping = Object.fromEntries(Object.entries(mapping).filter(([, v]) => v))
-    if (Object.keys(cleanMapping).length > 0) options.column_mapping = cleanMapping
-    previewMutation.mutate({ file: currentFile, options })
+      const options: {
+        date_format?: string
+        flip_amount?: boolean
+        inflow_column?: string
+        outflow_column?: string
+        column_mapping?: Record<string, string>
+      } = {}
+      if (dateFormat) options.date_format = dateFormat
+      if (flip) options.flip_amount = true
+      if (split && inflow && outflow) {
+        options.inflow_column = inflow
+        options.outflow_column = outflow
+      }
+      const cleanMapping = Object.fromEntries(Object.entries(mapping).filter(([, v]) => v))
+      if (Object.keys(cleanMapping).length > 0) options.column_mapping = cleanMapping
+      previewMutation.mutate({ file: currentFile, options })
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFile, csvDateFormat, csvFlipAmount, csvSplitColumns, csvInflowColumn, csvOutflowColumn, csvColumnMapping])
+    [currentFile, csvDateFormat, csvFlipAmount, csvSplitColumns, csvInflowColumn, csvOutflowColumn, csvColumnMapping],
+  )
 
-  const handleMappingChange = useCallback((field: string, column: string) => {
-    setCsvColumnMapping(prev => {
-      const next = { ...prev, [field]: column }
-      rePreview({ mapping: next })
-      return next
-    })
-  }, [rePreview])
+  const handleMappingChange = useCallback(
+    (field: string, column: string) => {
+      setCsvColumnMapping((prev) => {
+        const next = { ...prev, [field]: column }
+        rePreview({ mapping: next })
+        return next
+      })
+    },
+    [rePreview],
+  )
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -258,22 +296,16 @@ function TransactionImportPanel() {
   }
 
   const handleToggleExcluded = useCallback((id: string) => {
-    setReviewTransactions(prev => prev.map(t =>
-      t._id === id ? { ...t, excluded: !t.excluded } : t
-    ))
+    setReviewTransactions((prev) => prev.map((t) => (t._id === id ? { ...t, excluded: !t.excluded } : t)))
   }, [])
 
   const handleToggleAllFiltered = useCallback((ids: string[], excluded: boolean) => {
     const idSet = new Set(ids)
-    setReviewTransactions(prev => prev.map(t =>
-      idSet.has(t._id) ? { ...t, excluded } : t
-    ))
+    setReviewTransactions((prev) => prev.map((t) => (idSet.has(t._id) ? { ...t, excluded } : t)))
   }, [])
 
   const handleChangeCategory = useCallback((id: string, categoryId: string | null) => {
-    setReviewTransactions(prev => prev.map(t =>
-      t._id === id ? { ...t, selected_category_id: categoryId } : t
-    ))
+    setReviewTransactions((prev) => prev.map((t) => (t._id === id ? { ...t, selected_category_id: categoryId } : t)))
   }, [])
 
   const isCsvFile = fileName?.toLowerCase().endsWith('.csv') ?? false
@@ -281,86 +313,96 @@ function TransactionImportPanel() {
   // options panel is shown for QIF too, limited to the date-format selector.
   const isQifFile = fileName?.toLowerCase().endsWith('.qif') ?? false
 
-  const incomeCount = previewData?.transactions.filter(t => t.type === 'credit').length ?? 0
-  const expenseCount = previewData?.transactions.filter(t => t.type === 'debit').length ?? 0
+  const incomeCount = previewData?.transactions.filter((t) => t.type === 'credit').length ?? 0
+  const expenseCount = previewData?.transactions.filter((t) => t.type === 'debit').length ?? 0
 
-  const includedCount = reviewTransactions.filter(t => !t.excluded).length
+  const includedCount = reviewTransactions.filter((t) => !t.excluded).length
 
   return (
     <div className="space-y-6">
       {/* Upload zone */}
-      {canWrite && <div
-        className={`bg-card rounded-xl border-2 border-dashed transition-all cursor-pointer ${
-          dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-border'
-        }`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        onClick={() => !previewMutation.isPending && fileInputRef.current?.click()}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".ofx,.qfx,.csv,.qif,.xml,.camt"
-          onChange={handleFileChange}
-          className="hidden"
-        />
+      {canWrite && (
+        <div
+          className={`bg-card rounded-xl border-2 border-dashed transition-all cursor-pointer ${
+            dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-border'
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setDragOver(true)
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => !previewMutation.isPending && fileInputRef.current?.click()}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".ofx,.qfx,.csv,.qif,.xml,.camt"
+            onChange={handleFileChange}
+            className="hidden"
+          />
 
-        <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-          {previewMutation.isPending ? (
-            <>
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4 animate-pulse">
-                <FileText size={22} className="text-primary" />
-              </div>
-              <p className="text-sm font-semibold text-foreground">{t('import.processing')}</p>
-              <p className="text-xs text-muted-foreground mt-1">{fileName}</p>
-            </>
-          ) : fileName && previewData ? (
-            <>
-              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mb-4">
-                <CheckCircle2 size={22} className="text-emerald-500" />
-              </div>
-              <p className="text-sm font-semibold text-foreground">{fileName}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {t('import.previewInfo', { count: previewData.transactions.length, format: previewData.detected_format.toUpperCase() })}
-              </p>
-              <button
-                className="mt-3 text-xs text-muted-foreground hover:text-rose-500 transition-colors flex items-center gap-1"
-                onClick={(e) => { e.stopPropagation(); handleReset() }}
-              >
-                <X size={12} /> {t('import.removeFile')}
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
-                <Upload size={22} className="text-muted-foreground" />
-              </div>
-              <p className="text-sm font-semibold text-foreground mb-1">
-                {t('import.dragOrClick')}
-              </p>
-              <p className="text-xs text-muted-foreground">{t('import.acceptedFormats')}</p>
-              <button
-                className="mt-2 text-xs text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  const csv = 'date,description,amount,currency,fx_rate\n2026-01-15,Grocery Store,-120.50,USD,\n2026-01-20,Salary Payment,5000.00,EUR,1.08\n'
-                  const blob = new Blob([csv], { type: 'text/csv' })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = 'template.csv'
-                  a.click()
-                  URL.revokeObjectURL(url)
-                }}
-              >
-                <Download size={12} />
-                {t('import.downloadTemplate')}
-              </button>
-            </>
-          )}
+          <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+            {previewMutation.isPending ? (
+              <>
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4 animate-pulse">
+                  <FileText size={22} className="text-primary" />
+                </div>
+                <p className="text-sm font-semibold text-foreground">{t('import.processing')}</p>
+                <p className="text-xs text-muted-foreground mt-1">{fileName}</p>
+              </>
+            ) : fileName && previewData ? (
+              <>
+                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mb-4">
+                  <CheckCircle2 size={22} className="text-emerald-500" />
+                </div>
+                <p className="text-sm font-semibold text-foreground">{fileName}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('import.previewInfo', {
+                    count: previewData.transactions.length,
+                    format: previewData.detected_format.toUpperCase(),
+                  })}
+                </p>
+                <button
+                  className="mt-3 text-xs text-muted-foreground hover:text-rose-500 transition-colors flex items-center gap-1"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleReset()
+                  }}
+                >
+                  <X size={12} /> {t('import.removeFile')}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <Upload size={22} className="text-muted-foreground" />
+                </div>
+                <p className="text-sm font-semibold text-foreground mb-1">{t('import.dragOrClick')}</p>
+                <p className="text-xs text-muted-foreground">{t('import.acceptedFormats')}</p>
+                <button
+                  className="mt-2 text-xs text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const csv =
+                      'date,description,amount,currency,fx_rate\n2026-01-15,Grocery Store,-120.50,USD,\n2026-01-20,Salary Payment,5000.00,EUR,1.08\n'
+                    const blob = new Blob([csv], { type: 'text/csv' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = 'template.csv'
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                >
+                  <Download size={12} />
+                  {t('import.downloadTemplate')}
+                </button>
+              </>
+            )}
+          </div>
         </div>
-      </div>}
+      )}
 
       {/* Review section */}
       {previewData && (
@@ -385,9 +427,7 @@ function TransactionImportPanel() {
           {/* Account picker */}
           <div className="px-4 sm:px-5 py-4 border-b border-border bg-muted/50">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <Label className="text-sm text-muted-foreground whitespace-nowrap shrink-0">
-                {t('import.importTo')}
-              </Label>
+              <Label className="text-sm text-muted-foreground whitespace-nowrap shrink-0">{t('import.importTo')}</Label>
               <select
                 className="flex-1 border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                 value={selectedAccount}
@@ -395,7 +435,9 @@ function TransactionImportPanel() {
               >
                 <option value="">{t('import.selectAccount')}</option>
                 {sortAccountsByDisplayName(accountsList ?? []).map((acc) => (
-                  <option key={acc.id} value={acc.id}>{getAccountName(acc)} ({t(TYPE_LABELS[acc.type as AccountType] || acc.type)})</option>
+                  <option key={acc.id} value={acc.id}>
+                    {getAccountName(acc)} ({t(TYPE_LABELS[acc.type as AccountType] || acc.type)})
+                  </option>
                 ))}
               </select>
               {!selectedAccount && (
@@ -428,9 +470,7 @@ function TransactionImportPanel() {
                 <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg mb-3">
                   <AlertCircle size={14} className="shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <span>
-                      {t('import.failedRowsWarning', { count: previewData.failed_rows.length })}
-                    </span>
+                    <span>{t('import.failedRowsWarning', { count: previewData.failed_rows.length })}</span>
                     <button
                       type="button"
                       className="ml-2 font-semibold underline hover:text-amber-800 focus:outline-none"
@@ -447,7 +487,10 @@ function TransactionImportPanel() {
                   <select
                     className="w-full border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                     value={csvDateFormat}
-                    onChange={(e) => { setCsvDateFormat(e.target.value); rePreview({ date_format: e.target.value }) }}
+                    onChange={(e) => {
+                      setCsvDateFormat(e.target.value)
+                      rePreview({ date_format: e.target.value })
+                    }}
                   >
                     <option value="">{t('import.dateFormatAuto')}</option>
                     <option value="DD/MM/YYYY">DD/MM/YYYY</option>
@@ -455,42 +498,54 @@ function TransactionImportPanel() {
                     <option value="YYYY-MM-DD">YYYY-MM-DD</option>
                   </select>
                 </div>
-                {isCsvFile && <div className="flex items-center gap-2 pt-4">
-                  <input
-                    type="checkbox"
-                    id="flip-amount"
-                    checked={csvFlipAmount}
-                    onChange={(e) => { setCsvFlipAmount(e.target.checked); rePreview({ flip_amount: e.target.checked }) }}
-                    className="rounded border-border text-primary focus:ring-primary"
-                  />
-                  <Label htmlFor="flip-amount" className="text-sm text-muted-foreground cursor-pointer">
-                    {t('import.flipAmounts')}
-                  </Label>
-                </div>}
-                {isCsvFile && <div className="flex items-center gap-2 pt-4">
-                  <input
-                    type="checkbox"
-                    id="split-columns"
-                    checked={csvSplitColumns}
-                    onChange={(e) => { setCsvSplitColumns(e.target.checked); rePreview({ split: e.target.checked }) }}
-                    className="rounded border-border text-primary focus:ring-primary"
-                  />
-                  <Label htmlFor="split-columns" className="text-sm text-muted-foreground cursor-pointer">
-                    {t('import.splitColumns')}
-                  </Label>
-                </div>}
-                {isCsvFile && <div className="flex items-center gap-2 pt-4">
-                  <input
-                    type="checkbox"
-                    id="detect-duplicates"
-                    checked={csvDetectDuplicates}
-                    onChange={(e) => setCsvDetectDuplicates(e.target.checked)}
-                    className="rounded border-border text-primary focus:ring-primary"
-                  />
-                  <Label htmlFor="detect-duplicates" className="text-sm text-muted-foreground cursor-pointer">
-                    {t('import.detectDuplicates')}
-                  </Label>
-                </div>}
+                {isCsvFile && (
+                  <div className="flex items-center gap-2 pt-4">
+                    <input
+                      type="checkbox"
+                      id="flip-amount"
+                      checked={csvFlipAmount}
+                      onChange={(e) => {
+                        setCsvFlipAmount(e.target.checked)
+                        rePreview({ flip_amount: e.target.checked })
+                      }}
+                      className="rounded border-border text-primary focus:ring-primary"
+                    />
+                    <Label htmlFor="flip-amount" className="text-sm text-muted-foreground cursor-pointer">
+                      {t('import.flipAmounts')}
+                    </Label>
+                  </div>
+                )}
+                {isCsvFile && (
+                  <div className="flex items-center gap-2 pt-4">
+                    <input
+                      type="checkbox"
+                      id="split-columns"
+                      checked={csvSplitColumns}
+                      onChange={(e) => {
+                        setCsvSplitColumns(e.target.checked)
+                        rePreview({ split: e.target.checked })
+                      }}
+                      className="rounded border-border text-primary focus:ring-primary"
+                    />
+                    <Label htmlFor="split-columns" className="text-sm text-muted-foreground cursor-pointer">
+                      {t('import.splitColumns')}
+                    </Label>
+                  </div>
+                )}
+                {isCsvFile && (
+                  <div className="flex items-center gap-2 pt-4">
+                    <input
+                      type="checkbox"
+                      id="detect-duplicates"
+                      checked={csvDetectDuplicates}
+                      onChange={(e) => setCsvDetectDuplicates(e.target.checked)}
+                      className="rounded border-border text-primary focus:ring-primary"
+                    />
+                    <Label htmlFor="detect-duplicates" className="text-sm text-muted-foreground cursor-pointer">
+                      {t('import.detectDuplicates')}
+                    </Label>
+                  </div>
+                )}
               </div>
 
               {csvSplitColumns && csvHeaders.length > 0 && (
@@ -500,10 +555,17 @@ function TransactionImportPanel() {
                     <select
                       className="w-full border border-border rounded-md px-3 py-1.5 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                       value={csvInflowColumn}
-                      onChange={(e) => { setCsvInflowColumn(e.target.value); rePreview({ inflow: e.target.value }) }}
+                      onChange={(e) => {
+                        setCsvInflowColumn(e.target.value)
+                        rePreview({ inflow: e.target.value })
+                      }}
                     >
                       <option value="">{t('import.selectColumn')}</option>
-                      {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                      {csvHeaders.map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -511,10 +573,17 @@ function TransactionImportPanel() {
                     <select
                       className="w-full border border-border rounded-md px-3 py-1.5 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                       value={csvOutflowColumn}
-                      onChange={(e) => { setCsvOutflowColumn(e.target.value); rePreview({ outflow: e.target.value }) }}
+                      onChange={(e) => {
+                        setCsvOutflowColumn(e.target.value)
+                        rePreview({ outflow: e.target.value })
+                      }}
                     >
                       <option value="">{t('import.selectColumn')}</option>
-                      {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                      {csvHeaders.map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -526,21 +595,23 @@ function TransactionImportPanel() {
                   <p className="text-xs font-medium text-muted-foreground">{t('import.columnMapping')}</p>
                   <p className="text-xs text-muted-foreground mt-0.5 mb-3">{t('import.columnMappingHint')}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {CSV_MAPPING_FIELDS
-                      .filter((f) => !(csvSplitColumns && f.key === 'amount'))
-                      .map((f) => (
-                        <div key={f.key}>
-                          <Label className="text-xs text-muted-foreground mb-1 block">{t(f.label)}</Label>
-                          <select
-                            className="w-full border border-border rounded-md px-3 py-1.5 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                            value={csvColumnMapping[f.key] ?? ''}
-                            onChange={(e) => handleMappingChange(f.key, e.target.value)}
-                          >
-                            <option value="">{t('import.columnAutoDetect')}</option>
-                            {csvHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
-                          </select>
-                        </div>
-                      ))}
+                    {CSV_MAPPING_FIELDS.filter((f) => !(csvSplitColumns && f.key === 'amount')).map((f) => (
+                      <div key={f.key}>
+                        <Label className="text-xs text-muted-foreground mb-1 block">{t(f.label)}</Label>
+                        <select
+                          className="w-full border border-border rounded-md px-3 py-1.5 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                          value={csvColumnMapping[f.key] ?? ''}
+                          onChange={(e) => handleMappingChange(f.key, e.target.value)}
+                        >
+                          <option value="">{t('import.columnAutoDetect')}</option>
+                          {csvHeaders.map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -548,11 +619,7 @@ function TransactionImportPanel() {
           )}
 
           {/* Summary bar */}
-          <ImportSummaryBar
-            transactions={reviewTransactions}
-            userCurrency={userCurrency}
-            locale={locale}
-          />
+          <ImportSummaryBar transactions={reviewTransactions} userCurrency={userCurrency} locale={locale} />
 
           {/* Review table */}
           <ImportReviewTable
@@ -591,9 +658,7 @@ function TransactionImportPanel() {
               className="gap-2"
             >
               <Upload size={14} />
-              {importMutation.isPending
-                ? t('common.loading')
-                : t('import.importButton', { count: includedCount })}
+              {importMutation.isPending ? t('common.loading') : t('import.importButton', { count: includedCount })}
             </Button>
           </div>
         </div>
@@ -624,7 +689,9 @@ function TransactionImportPanel() {
                 {previewData?.failed_rows?.map((row, idx) => (
                   <tr key={idx} className="border-b border-border last:border-0 hover:bg-muted/50">
                     <td className="px-3 py-2 text-muted-foreground">{row.line_number}</td>
-                    <td className="px-3 py-2 truncate max-w-[200px]" title={row.description}>{row.description || '-'}</td>
+                    <td className="px-3 py-2 truncate max-w-[200px]" title={row.description}>
+                      {row.description || '-'}
+                    </td>
                     <td className="px-3 py-2 font-mono break-all max-w-[150px]">{row.raw_value}</td>
                     <td className="px-3 py-2 text-amber-600 font-medium">{t(`import.errors.${row.error_reason}`)}</td>
                   </tr>

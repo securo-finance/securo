@@ -1,9 +1,4 @@
-import type {
-  InvoiceSchedule,
-  InvoiceScheduleEndType,
-  InvoiceScheduleFrequency,
-  InvoiceScheduleStatus,
-} from '@/types'
+import type { InvoiceSchedule, InvoiceScheduleEndType, InvoiceScheduleFrequency, InvoiceScheduleStatus } from '@/types'
 
 /**
  * Pure helpers for recurring invoices. Everything here is a function of

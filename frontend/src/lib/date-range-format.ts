@@ -28,11 +28,7 @@ export function formatDateRange(
  * each bound, for places that show a single day. Parsed as local midnight so
  * the day does not shift with the viewer's timezone.
  */
-export function formatDate(
-  iso: string,
-  locale: string,
-  { compact = false }: { compact?: boolean } = {},
-): string {
+export function formatDate(iso: string, locale: string, { compact = false }: { compact?: boolean } = {}): string {
   return new Date(iso.slice(0, 10) + 'T00:00:00').toLocaleDateString(locale, {
     day: '2-digit',
     month: 'short',

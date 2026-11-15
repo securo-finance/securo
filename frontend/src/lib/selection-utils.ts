@@ -4,13 +4,13 @@ export function calculateRangeSelection<T extends { id: string }>(
   clickedId: string,
   items: T[],
   isShiftKey: boolean,
-  isSelectable: (item: T) => boolean = () => true
+  isSelectable: (item: T) => boolean = () => true,
 ): Set<string> {
   const next = new Set(currentSelected)
 
   if (isShiftKey && lastSelectedId) {
-    const lastIndex = items.findIndex(item => item.id === lastSelectedId)
-    const currentIndex = items.findIndex(item => item.id === clickedId)
+    const lastIndex = items.findIndex((item) => item.id === lastSelectedId)
+    const currentIndex = items.findIndex((item) => item.id === clickedId)
 
     if (lastIndex !== -1 && currentIndex !== -1) {
       const start = Math.min(lastIndex, currentIndex)

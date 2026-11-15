@@ -39,7 +39,9 @@ beforeEach(() => {
 
 function renderBoth() {
   const client = createTestQueryClient()
-  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
   return renderHook(() => ({ dashboard: useLayout('dashboard'), reports: useLayout('reports') }), { wrapper })
 }
 
@@ -49,7 +51,9 @@ describe('useLayout', () => {
     await waitFor(() => expect(result.current.reports.ready).toBe(true))
 
     let release: () => void = () => {}
-    server.holds.reports = new Promise((done) => { release = done })
+    server.holds.reports = new Promise((done) => {
+      release = done
+    })
     act(() => result.current.reports.save([{ id: 'net_worth' }]))
     act(() => result.current.dashboard.save([{ id: 'overview' }]))
 
@@ -68,7 +72,9 @@ describe('useLayout', () => {
     const { result } = renderBoth()
     await waitFor(() => expect(result.current.dashboard.ready).toBe(true))
     let release: () => void = () => {}
-    server.holds.dashboard = new Promise((done) => { release = done })
+    server.holds.dashboard = new Promise((done) => {
+      release = done
+    })
 
     act(() => result.current.dashboard.save([{ id: 'goals' }]))
     act(() => result.current.dashboard.save([{ id: 'overview' }, { id: 'goals', span: 4 }]))
@@ -78,13 +84,15 @@ describe('useLayout', () => {
     expect(result.current.dashboard.ids).toEqual(['overview', 'goals'])
   })
 
-  it('puts back the last arrangement when a save fails and the server can\'t be read either', async () => {
+  it("puts back the last arrangement when a save fails and the server can't be read either", async () => {
     server.saved = { dashboard: [{ id: 'goals' }] }
     const { result } = renderBoth()
     await waitFor(() => expect(result.current.dashboard.ids).toEqual(['goals']))
 
     let release: () => void = () => {}
-    server.holds.dashboard = new Promise((done) => { release = done })
+    server.holds.dashboard = new Promise((done) => {
+      release = done
+    })
     act(() => result.current.dashboard.save([{ id: 'overview' }]))
     await waitFor(() => expect(result.current.dashboard.ids).toEqual(['overview']))
 
@@ -99,7 +107,9 @@ describe('useLayout', () => {
     await waitFor(() => expect(result.current.dashboard.ids).toEqual(['goals']))
 
     let release: () => void = () => {}
-    server.holds.dashboard = new Promise((done) => { release = done })
+    server.holds.dashboard = new Promise((done) => {
+      release = done
+    })
     act(() => result.current.dashboard.save([{ id: 'overview' }]))
     act(() => result.current.dashboard.save([{ id: 'transactions' }]))
     await waitFor(() => expect(result.current.dashboard.ids).toEqual(['transactions']))

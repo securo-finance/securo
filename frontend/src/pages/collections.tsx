@@ -46,17 +46,30 @@ export default function CollectionsPage() {
 
   const createMutation = useMutation({
     mutationFn: collectionsApi.create,
-    onSuccess: () => { invalidate(); setDialogOpen(false); toast.success(t('collections.created')) },
+    onSuccess: () => {
+      invalidate()
+      setDialogOpen(false)
+      toast.success(t('collections.created'))
+    },
     onError: () => toast.error(t('common.error')),
   })
   const updateMutation = useMutation({
     mutationFn: ({ id, ...payload }: { id: string } & Record<string, unknown>) => collectionsApi.update(id, payload),
-    onSuccess: () => { invalidate(); setDialogOpen(false); setEditing(null); toast.success(t('collections.updated')) },
+    onSuccess: () => {
+      invalidate()
+      setDialogOpen(false)
+      setEditing(null)
+      toast.success(t('collections.updated'))
+    },
     onError: () => toast.error(t('common.error')),
   })
   const deleteMutation = useMutation({
     mutationFn: (id: string) => collectionsApi.delete(id),
-    onSuccess: () => { invalidate(); setDeleting(null); toast.success(t('collections.deleted')) },
+    onSuccess: () => {
+      invalidate()
+      setDeleting(null)
+      toast.success(t('collections.deleted'))
+    },
     onError: () => toast.error(t('common.error')),
   })
 
@@ -74,7 +87,12 @@ export default function CollectionsPage() {
         section={t('nav.groupSetup')}
         title={t('collections.title')}
         action={
-          <Button onClick={() => { setEditing(null); setDialogOpen(true) }}>
+          <Button
+            onClick={() => {
+              setEditing(null)
+              setDialogOpen(true)
+            }}
+          >
             <Plus size={16} className="mr-1.5" />
             {t('collections.add')}
           </Button>
@@ -84,7 +102,11 @@ export default function CollectionsPage() {
 
       <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
         {isLoading ? (
-          <div className="p-4 space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}</div>
+          <div className="p-4 space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-lg" />
+            ))}
+          </div>
         ) : list.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <FolderOpen size={32} className="mb-3 opacity-40" />
@@ -107,10 +129,24 @@ export default function CollectionsPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <Button variant="ghost" size="icon" onClick={() => { setEditing(c); setDialogOpen(true) }} aria-label={t('common.edit')}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      setEditing(c)
+                      setDialogOpen(true)
+                    }}
+                    aria-label={t('common.edit')}
+                  >
                     <Pencil size={15} />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => setDeleting(c)} aria-label={t('common.delete')} className="text-muted-foreground/60 hover:text-destructive">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setDeleting(c)}
+                    aria-label={t('common.delete')}
+                    className="text-muted-foreground/60 hover:text-destructive"
+                  >
                     <Trash2 size={15} />
                   </Button>
                 </div>
@@ -122,9 +158,16 @@ export default function CollectionsPage() {
 
       <CollectionDialog
         open={dialogOpen}
-        onClose={() => { setDialogOpen(false); setEditing(null) }}
+        onClose={() => {
+          setDialogOpen(false)
+          setEditing(null)
+        }}
         collection={editing}
-        accounts={sortAccountsByDisplayName(accounts ?? []).map((a) => ({ id: a.id, label: accountName.get(a.id) ?? a.name, currency: a.currency }))}
+        accounts={sortAccountsByDisplayName(accounts ?? []).map((a) => ({
+          id: a.id,
+          label: accountName.get(a.id) ?? a.name,
+          currency: a.currency,
+        }))}
         wallets={(wallets ?? []).map((w) => ({ id: w.id, label: w.name }))}
         loading={createMutation.isPending || updateMutation.isPending}
         onSave={(payload) => {
@@ -140,8 +183,14 @@ export default function CollectionsPage() {
             <DialogDescription>{t('collections.confirmDeleteDesc', { name: deleting?.name })}</DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-2">
-            <Button variant="outline" onClick={() => setDeleting(null)}>{t('common.cancel')}</Button>
-            <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deleting && deleteMutation.mutate(deleting.id)}>
+            <Button variant="outline" onClick={() => setDeleting(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleting && deleteMutation.mutate(deleting.id)}
+            >
               {deleteMutation.isPending ? t('common.loading') : t('common.delete')}
             </Button>
           </DialogFooter>
@@ -152,7 +201,13 @@ export default function CollectionsPage() {
 }
 
 function CollectionDialog({
-  open, onClose, collection, accounts, wallets, loading, onSave,
+  open,
+  onClose,
+  collection,
+  accounts,
+  wallets,
+  loading,
+  onSave,
 }: {
   open: boolean
   onClose: () => void
@@ -203,7 +258,13 @@ function CollectionDialog({
         >
           <div className="space-y-1.5">
             <Label>{t('collections.name')}</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus placeholder={t('collections.namePlaceholder')} />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              autoFocus
+              placeholder={t('collections.namePlaceholder')}
+            />
           </div>
 
           <div className="space-y-1.5">
@@ -229,7 +290,10 @@ function CollectionDialog({
                 <p className="px-3 py-3 text-xs text-muted-foreground">{t('collections.noAccounts')}</p>
               ) : (
                 accounts.map((a) => (
-                  <label key={a.id} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40">
+                  <label
+                    key={a.id}
+                    className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40"
+                  >
                     <input
                       type="checkbox"
                       checked={selected.has(a.id)}
@@ -250,7 +314,10 @@ function CollectionDialog({
               <Label>{t('collections.wallets')}</Label>
               <div className="max-h-44 overflow-y-auto rounded-lg border border-border/60 divide-y divide-border/40">
                 {wallets.map((w) => (
-                  <label key={w.id} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40">
+                  <label
+                    key={w.id}
+                    className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40"
+                  >
                     <input
                       type="checkbox"
                       checked={selectedWallets.has(w.id)}
@@ -261,12 +328,16 @@ function CollectionDialog({
                   </label>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">{t('collections.walletsHint', { count: selectedWallets.size })}</p>
+              <p className="text-xs text-muted-foreground">
+                {t('collections.walletsHint', { count: selectedWallets.size })}
+              </p>
             </div>
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
             <Button type="submit" disabled={loading || !name.trim()}>
               {loading ? t('common.loading') : t('common.save')}
             </Button>

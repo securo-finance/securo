@@ -58,11 +58,7 @@ describe('Table', () => {
     renderWithProviders(<Example />)
 
     const headers = screen.getAllByRole('columnheader')
-    expect(headers.map((h) => h.textContent)).toEqual([
-      'Date',
-      'Payee',
-      'Amount',
-    ])
+    expect(headers.map((h) => h.textContent)).toEqual(['Date', 'Payee', 'Amount'])
   })
 
   it('renders one row per record plus the header and footer rows', () => {

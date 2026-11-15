@@ -13,21 +13,8 @@ import { applyMask, formatTaxId } from '@/lib/tax-id'
 import { TaxIdKindPicker } from '@/components/tax-id-kind-picker'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,13 +32,7 @@ import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
 import { PayeeDetailDialog } from '@/components/payee-detail-dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Search, Star, Merge, Trash2, ListFilter, X, Check, Pencil, Plus, ArrowDown, ArrowUp } from 'lucide-react'
 import { useWorkspace } from '@/contexts/workspace-context'
 import type { Payee } from '@/types'
@@ -76,10 +57,13 @@ export default function PayeesPage() {
   // No entry for an unset type: most rows come from sync, which cannot know
   // a legal nature from a bank descriptor, and a badge reading "unknown" on
   // hundreds of rows is noise rather than information.
-  const typeLabels = useMemo<Record<string, string>>(() => ({
-    person: t('payees.typePerson'),
-    company: t('payees.typeCompany'),
-  }), [t])
+  const typeLabels = useMemo<Record<string, string>>(
+    () => ({
+      person: t('payees.typePerson'),
+      company: t('payees.typeCompany'),
+    }),
+    [t],
+  )
   const queryClient = useQueryClient()
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') ?? '')
@@ -145,11 +129,7 @@ export default function PayeesPage() {
       ].filter(([, v]) => v && v.length),
     )
 
-    window.history.replaceState(
-      null,
-      '',
-      params.size ? `?${params}` : window.location.pathname,
-    )
+    window.history.replaceState(null, '', params.size ? `?${params}` : window.location.pathname)
   }, [searchQuery, filterType, filterFavorites, page])
 
   useEffect(() => {
@@ -162,7 +142,11 @@ export default function PayeesPage() {
     }
   }, [search])
 
-  if (selectionFilter.searchQuery !== searchQuery || selectionFilter.filterType !== filterType || selectionFilter.filterFavorites !== filterFavorites) {
+  if (
+    selectionFilter.searchQuery !== searchQuery ||
+    selectionFilter.filterType !== filterType ||
+    selectionFilter.filterFavorites !== filterFavorites
+  ) {
     setSelectionFilter({ searchQuery, filterType, filterFavorites })
     setSelectedIds(new Set())
     setLastSelectedId(null)
@@ -219,11 +203,12 @@ export default function PayeesPage() {
 
   const { data: payeesList, isLoading } = useQuery({
     queryKey: ['payees', searchQuery, filterType, filterFavorites],
-    queryFn: () => payeesApi.list({
-      q: searchQuery || undefined,
-      type: filterType || undefined,
-      is_favorite: filterFavorites || undefined,
-    }),
+    queryFn: () =>
+      payeesApi.list({
+        q: searchQuery || undefined,
+        type: filterType || undefined,
+        is_favorite: filterFavorites || undefined,
+      }),
   })
 
   const createMutation = useMutation({
@@ -257,7 +242,7 @@ export default function PayeesPage() {
       if (editingPayee?.id === id) {
         setEditingPayee(null)
       }
-      setSelectedIds(prev => {
+      setSelectedIds((prev) => {
         const next = new Set(prev)
         next.delete(id)
         return next
@@ -271,8 +256,7 @@ export default function PayeesPage() {
   })
 
   const favoriteMutation = useMutation({
-    mutationFn: ({ id, is_favorite }: { id: string; is_favorite: boolean }) =>
-      payeesApi.update(id, { is_favorite }),
+    mutationFn: ({ id, is_favorite }: { id: string; is_favorite: boolean }) => payeesApi.update(id, { is_favorite }),
     onMutate: async ({ id, is_favorite }) => {
       // Array-shaped caches only. `['payees']` is a prefix that also matches
       // `['payees', id, 'summary']`, whose data is an object, and mapping over
@@ -328,11 +312,12 @@ export default function PayeesPage() {
       if (summaryPayee && deletedIds.includes(summaryPayee)) {
         setSummaryPayee(null)
       }
-      toast.success(t('payees.deletedMultiple', { count: result.deleted, defaultValue: `${result.deleted} payees deleted` }))
+      toast.success(
+        t('payees.deletedMultiple', { count: result.deleted, defaultValue: `${result.deleted} payees deleted` }),
+      )
     },
     onError: () => toast.error(t('common.error')),
   })
-
 
   // A workspace that files somewhere gets its primary document ready to type
   // into. A company whose clients are all local should never have to ask for
@@ -393,9 +378,7 @@ export default function PayeesPage() {
       website: formWebsite.trim() || null,
       // An emptied field means "drop this document", so blanks are sent and
       // the server treats them as removals.
-      tax_ids: taxIdRows
-        .filter((row) => row.value.trim() !== '')
-        .map((row) => ({ kind: row.kind, value: row.value })),
+      tax_ids: taxIdRows.filter((row) => row.value.trim() !== '').map((row) => ({ kind: row.kind, value: row.value })),
     }
     if (editingPayee) {
       updateMutation.mutate({ id: editingPayee.id, ...payload })
@@ -417,7 +400,7 @@ export default function PayeesPage() {
   // Resolved from the full filtered list, not from `pageItems`: the dialog must
   // survive a page change made behind it, and a row deleted elsewhere in the
   // list should close it rather than show a stale name.
-  const detailPayee = summaryPayee ? sortedPayees.find(payee => payee.id === summaryPayee) ?? null : null
+  const detailPayee = summaryPayee ? (sortedPayees.find((payee) => payee.id === summaryPayee) ?? null) : null
 
   // Deleting the last page's contents strands `page` past the end. `safePage`
   // already covers what renders; this keeps the state and the URL honest.
@@ -435,18 +418,16 @@ export default function PayeesPage() {
   }
 
   const toggleSelect = (id: string, isShiftKey: boolean = false) => {
-    setSelectedIds(prev =>
-      calculateRangeSelection(prev, lastSelectedId, id, pageItems, isShiftKey)
-    )
+    setSelectedIds((prev) => calculateRangeSelection(prev, lastSelectedId, id, pageItems, isShiftKey))
     setLastSelectedId(id)
   }
 
-  const allSelected = pageItems.length > 0 && pageItems.every(payee => selectedIds.has(payee.id))
-  const someSelected = pageItems.some(payee => selectedIds.has(payee.id)) && !allSelected
+  const allSelected = pageItems.length > 0 && pageItems.every((payee) => selectedIds.has(payee.id))
+  const someSelected = pageItems.some((payee) => selectedIds.has(payee.id)) && !allSelected
 
   const toggleSelectAll = () => {
     if (!pageItems.length) return
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const next = new Set(prev)
       // Add or remove only this page: the selection itself spans pages, so
       // clearing it wholesale would silently drop rows picked elsewhere.
@@ -468,14 +449,28 @@ export default function PayeesPage() {
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               {selectedIds.size >= 2 && (
                 <>
-                  <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => { setMergeTargetId(''); setMergeDialogOpen(true) }}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5"
+                    onClick={() => {
+                      setMergeTargetId('')
+                      setMergeDialogOpen(true)
+                    }}
+                  >
                     <Merge size={13} />
                     {t('payees.merge')} ({selectedIds.size})
                   </Button>
-                  <Button size="sm" variant="destructive" className="h-8 gap-1.5" onClick={() => {
-                    setPayeesToDelete(Array.from(selectedIds))
-                    setDeleteDialogOpen(true)
-                  }} disabled={bulkDeleteMutation.isPending}>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-8 gap-1.5"
+                    onClick={() => {
+                      setPayeesToDelete(Array.from(selectedIds))
+                      setDeleteDialogOpen(true)
+                    }}
+                    disabled={bulkDeleteMutation.isPending}
+                  >
                     <Trash2 size={13} />
                     {t('common.delete')} ({selectedIds.size})
                   </Button>
@@ -540,11 +535,14 @@ export default function PayeesPage() {
                   <span>{t('transactions.filtersBar.filters')}</span>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[200px] p-1 bg-card border border-border rounded-xl shadow-md">
+              <DropdownMenuContent
+                align="end"
+                className="w-[200px] p-1 bg-card border border-border rounded-xl shadow-md"
+              >
                 <DropdownMenuLabel className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                   {t('transactions.filtersBar.filterBy') || 'Filter By'}
                 </DropdownMenuLabel>
-                
+
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 rounded-lg px-2 py-1.5 text-xs cursor-pointer hover:bg-muted transition-colors">
                     <ListFilter size={13} className="text-muted-foreground shrink-0" />
@@ -570,12 +568,8 @@ export default function PayeesPage() {
                             filterType === opt.value && 'bg-primary/5 text-primary hover:bg-primary/5',
                           )}
                         >
-                          <span className="min-w-0 flex-1 truncate text-left">
-                            {opt.label}
-                          </span>
-                          {filterType === opt.value && (
-                            <Check size={13} className="text-primary" />
-                          )}
+                          <span className="min-w-0 flex-1 truncate text-left">{opt.label}</span>
+                          {filterType === opt.value && <Check size={13} className="text-primary" />}
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuSubContent>
@@ -587,7 +581,13 @@ export default function PayeesPage() {
                   onCheckedChange={setFilterFavorites}
                   className="gap-2 rounded-lg px-2 py-1.5 text-xs cursor-pointer hover:bg-muted transition-colors"
                 >
-                  <Star size={13} className={cn("mr-1 shrink-0", filterFavorites ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                  <Star
+                    size={13}
+                    className={cn(
+                      'mr-1 shrink-0',
+                      filterFavorites ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground',
+                    )}
+                  />
                   <span className="flex-1 text-left">{t('payees.favoritesOnly')}</span>
                 </DropdownMenuCheckboxItem>
 
@@ -624,9 +624,7 @@ export default function PayeesPage() {
                   <ListFilter size={12} />
                 </span>
                 <span className="text-muted-foreground">{t('payees.type')}:</span>
-                <span className="max-w-[140px] truncate font-medium text-foreground">
-                  {typeLabels[filterType]}
-                </span>
+                <span className="max-w-[140px] truncate font-medium text-foreground">{typeLabels[filterType]}</span>
                 <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 group-hover:text-destructive">
                   <X size={11} />
                 </span>
@@ -662,215 +660,247 @@ export default function PayeesPage() {
           </div>
         ) : (
           <>
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b border-border hover:bg-transparent">
-                 {canWrite && (
-                   <TableHead className="w-[40px] py-3 pl-4 pr-0">
-                     <input
-                       type="checkbox"
-                       checked={allSelected}
-                       ref={(el) => { if (el) el.indeterminate = someSelected }}
-                       onChange={toggleSelectAll}
-                       className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
-                     />
-                   </TableHead>
-                )}
-                <TableHead className="text-xs font-medium text-muted-foreground py-3 w-[32px]" />
-                <TableHead
-                  aria-sort={sort.by === 'name' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
-                  className="text-xs font-medium text-muted-foreground py-3 w-full max-w-0"
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleSort('name')}
-                    className="w-full inline-flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground"
-                  >
-                    {t('payees.name')}
-                    {sort.by === 'name'
-                      && (sort.direction === 'asc' ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />)}
-                  </button>
-                </TableHead>
-                <TableHead
-                  aria-sort={sort.by === 'type' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
-                  className="hidden text-left text-xs font-medium text-muted-foreground py-3 md:table-cell w-[120px]"
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleSort('type')}
-                    className="inline-flex w-full cursor-pointer items-center gap-1 transition-colors hover:text-foreground"
-                  >
-                    {t('payees.type')}
-                    {sort.by === 'type'
-                      && (sort.direction === 'asc' ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />)}
-                  </button>
-                </TableHead>
-                <TableHead
-                  aria-sort={sort.by === 'transaction_count' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
-                  className="text-left text-xs font-medium text-muted-foreground py-3 w-[120px]"
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleSort('transaction_count')}
-                    className="inline-flex w-full cursor-pointer items-center gap-1 transition-colors hover:text-foreground"
-                  >
-                    {t('payees.transactionCount')}
-                    {sort.by === 'transaction_count'
-                      && (sort.direction === 'asc' ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />)}
-                  </button>
-                </TableHead>
-                {canWrite && <TableHead className="w-[100px]" />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pageItems.map((payee) => (
-                <TableRow
-                  key={payee.id}
-                  className={`cursor-pointer hover:bg-muted border-b border-border last:border-0 ${
-                    summaryPayee === payee.id ? 'bg-muted/80 font-medium' : selectedIds.has(payee.id) ? 'bg-primary/5' : ''
-                  }`}
-                  onClick={() => {
-                    setSummaryPayee(summaryPayee === payee.id ? null : payee.id)
-                  }}
-                >
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b border-border hover:bg-transparent">
                   {canWrite && (
-                    <TableCell className="py-2.5 pl-4 pr-0 w-[40px]">
+                    <TableHead className="w-[40px] py-3 pl-4 pr-0">
                       <input
                         type="checkbox"
-                        checked={selectedIds.has(payee.id)}
-                        onChange={() => {}}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleSelect(payee.id, e.shiftKey)
+                        checked={allSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someSelected
                         }}
+                        onChange={toggleSelectAll}
                         className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                       />
-                    </TableCell>
+                    </TableHead>
                   )}
-                  <TableCell className="py-2.5 w-[32px]">
-                    {canWrite ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          favoriteMutation.mutate({ id: payee.id, is_favorite: !payee.is_favorite })
-                        }}
-                        className="p-1 rounded hover:bg-accent"
-                        title={payee.is_favorite ? t('payees.removeFavorite') : t('payees.addFavorite')}
-                      >
+                  <TableHead className="text-xs font-medium text-muted-foreground py-3 w-[32px]" />
+                  <TableHead
+                    aria-sort={sort.by === 'name' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
+                    className="text-xs font-medium text-muted-foreground py-3 w-full max-w-0"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('name')}
+                      className="w-full inline-flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground"
+                    >
+                      {t('payees.name')}
+                      {sort.by === 'name' &&
+                        (sort.direction === 'asc' ? (
+                          <ArrowUp size={12} aria-hidden="true" />
+                        ) : (
+                          <ArrowDown size={12} aria-hidden="true" />
+                        ))}
+                    </button>
+                  </TableHead>
+                  <TableHead
+                    aria-sort={sort.by === 'type' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
+                    className="hidden text-left text-xs font-medium text-muted-foreground py-3 md:table-cell w-[120px]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('type')}
+                      className="inline-flex w-full cursor-pointer items-center gap-1 transition-colors hover:text-foreground"
+                    >
+                      {t('payees.type')}
+                      {sort.by === 'type' &&
+                        (sort.direction === 'asc' ? (
+                          <ArrowUp size={12} aria-hidden="true" />
+                        ) : (
+                          <ArrowDown size={12} aria-hidden="true" />
+                        ))}
+                    </button>
+                  </TableHead>
+                  <TableHead
+                    aria-sort={
+                      sort.by === 'transaction_count'
+                        ? sort.direction === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : undefined
+                    }
+                    className="text-left text-xs font-medium text-muted-foreground py-3 w-[120px]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('transaction_count')}
+                      className="inline-flex w-full cursor-pointer items-center gap-1 transition-colors hover:text-foreground"
+                    >
+                      {t('payees.transactionCount')}
+                      {sort.by === 'transaction_count' &&
+                        (sort.direction === 'asc' ? (
+                          <ArrowUp size={12} aria-hidden="true" />
+                        ) : (
+                          <ArrowDown size={12} aria-hidden="true" />
+                        ))}
+                    </button>
+                  </TableHead>
+                  {canWrite && <TableHead className="w-[100px]" />}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pageItems.map((payee) => (
+                  <TableRow
+                    key={payee.id}
+                    className={`cursor-pointer hover:bg-muted border-b border-border last:border-0 ${
+                      summaryPayee === payee.id
+                        ? 'bg-muted/80 font-medium'
+                        : selectedIds.has(payee.id)
+                          ? 'bg-primary/5'
+                          : ''
+                    }`}
+                    onClick={() => {
+                      setSummaryPayee(summaryPayee === payee.id ? null : payee.id)
+                    }}
+                  >
+                    {canWrite && (
+                      <TableCell className="py-2.5 pl-4 pr-0 w-[40px]">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(payee.id)}
+                          onChange={() => {}}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleSelect(payee.id, e.shiftKey)
+                          }}
+                          className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                        />
+                      </TableCell>
+                    )}
+                    <TableCell className="py-2.5 w-[32px]">
+                      {canWrite ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            favoriteMutation.mutate({ id: payee.id, is_favorite: !payee.is_favorite })
+                          }}
+                          className="p-1 rounded hover:bg-accent"
+                          title={payee.is_favorite ? t('payees.removeFavorite') : t('payees.addFavorite')}
+                        >
+                          <Star
+                            size={14}
+                            className={payee.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}
+                          />
+                        </button>
+                      ) : (
                         <Star
                           size={14}
-                          className={payee.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}
+                          className={
+                            payee.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground opacity-50'
+                          }
                         />
-                      </button>
-                    ) : (
-                      <Star
-                        size={14}
-                        className={payee.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground opacity-50'}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell className="py-2.5 max-w-0 w-full">
-                    <p className="text-sm font-semibold text-foreground truncate" title={payee.name}>{payee.name}</p>
-                    {payee.notes && (
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate" title={payee.notes}>{payee.notes}</p>
-                    )}
-                  </TableCell>
-                  <TableCell className="hidden py-2.5 text-left md:table-cell">
-                    {payee.type && (
-                      <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full capitalize">{typeLabels[payee.type]}</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="py-2.5 text-left">
-                    <span className="text-sm tabular-nums text-muted-foreground">{payee.transaction_count}</span>
-                  </TableCell>
-                  {canWrite && (
-                    <TableCell className="py-2.5 pr-4 sm:pr-5">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
-                          onClick={(e) => { e.stopPropagation(); openEdit(payee) }}
-                          title={t('common.edit')}
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                          onClick={(e) => { 
-                            e.stopPropagation(); 
-                            setPayeesToDelete([payee.id])
-                            setDeleteDialogOpen(true)
-                          }}
-                          disabled={deleteMutation.isPending || bulkDeleteMutation.isPending}
-                          title={t('common.delete')}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
+                      )}
                     </TableCell>
-                  )}
-                </TableRow>
-              ))}
-              {sortedPayees.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={canWrite ? 6 : 4} className="text-center py-16 text-muted-foreground">
-                    {t('payees.empty')}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                    <TableCell className="py-2.5 max-w-0 w-full">
+                      <p className="text-sm font-semibold text-foreground truncate" title={payee.name}>
+                        {payee.name}
+                      </p>
+                      {payee.notes && (
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate" title={payee.notes}>
+                          {payee.notes}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden py-2.5 text-left md:table-cell">
+                      {payee.type && (
+                        <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full capitalize">
+                          {typeLabels[payee.type]}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-2.5 text-left">
+                      <span className="text-sm tabular-nums text-muted-foreground">{payee.transaction_count}</span>
+                    </TableCell>
+                    {canWrite && (
+                      <TableCell className="py-2.5 pr-4 sm:pr-5">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openEdit(payee)
+                            }}
+                            title={t('common.edit')}
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPayeesToDelete([payee.id])
+                              setDeleteDialogOpen(true)
+                            }}
+                            disabled={deleteMutation.isPending || bulkDeleteMutation.isPending}
+                            title={t('common.delete')}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+                {sortedPayees.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={canWrite ? 6 : 4} className="text-center py-16 text-muted-foreground">
+                      {t('payees.empty')}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
 
-          {/* Pagination. Inside the card so the strip reads as part of the
+            {/* Pagination. Inside the card so the strip reads as part of the
               table rather than as loose controls under it. */}
-          {sortedPayees.length > 10 && (
-            <div className="px-5 py-3 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
-              {totalPages > 1 ? (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={safePage <= 1}
-                    onClick={() => setPage(safePage - 1)}
-                  >
-                    {t('common.previous')}
-                  </Button>
-                  <span className="text-sm text-muted-foreground tabular-nums">
-                    {safePage} / {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={safePage >= totalPages}
-                    onClick={() => setPage(safePage + 1)}
-                  >
-                    {t('common.next')}
-                  </Button>
-                </div>
-              ) : (
-                <div className="hidden sm:block" />
-              )}
+            {sortedPayees.length > 10 && (
+              <div className="px-5 py-3 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+                {totalPages > 1 ? (
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>
+                      {t('common.previous')}
+                    </Button>
+                    <span className="text-sm text-muted-foreground tabular-nums">
+                      {safePage} / {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={safePage >= totalPages}
+                      onClick={() => setPage(safePage + 1)}
+                    >
+                      {t('common.next')}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="hidden sm:block" />
+                )}
 
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t('common.rowsPerPage')}</span>
-                <Select
-                  value={String(pageSize)}
-                  onValueChange={(value) => {
-                    setPageSize(Number(value))
-                    setPage(1)
-                  }}
-                >
-                  <SelectTrigger className="w-[70px] h-8 text-xs">
-                    <SelectValue placeholder={pageSize} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAGE_SIZES.map((value) => (
-                      <SelectItem key={value} value={String(value)}>{value}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{t('common.rowsPerPage')}</span>
+                  <Select
+                    value={String(pageSize)}
+                    onValueChange={(value) => {
+                      setPageSize(Number(value))
+                      setPage(1)
+                    }}
+                  >
+                    <SelectTrigger className="w-[70px] h-8 text-xs">
+                      <SelectValue placeholder={pageSize} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAGE_SIZES.map((value) => (
+                        <SelectItem key={value} value={String(value)}>
+                          {value}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
-          )}
+            )}
           </>
         )}
       </div>
@@ -881,7 +911,9 @@ export default function PayeesPage() {
       <PayeeDetailDialog
         payee={detailPayee}
         canWrite={canWrite}
-        onOpenChange={(open) => { if (!open) setSummaryPayee(null) }}
+        onOpenChange={(open) => {
+          if (!open) setSummaryPayee(null)
+        }}
         onEdit={openEdit}
         onDelete={(payee) => {
           setPayeesToDelete([payee.id])
@@ -952,11 +984,7 @@ export default function PayeesPage() {
             </div>
             <div className="space-y-2">
               <Label>{t('payees.website', 'Website')}</Label>
-              <Input
-                value={formWebsite}
-                onChange={(e) => setFormWebsite(e.target.value)}
-                placeholder="acme.com"
-              />
+              <Input value={formWebsite} onChange={(e) => setFormWebsite(e.target.value)} placeholder="acme.com" />
             </div>
 
             {/* Fiscal documents. Which ones appear comes from the workspace's
@@ -999,9 +1027,7 @@ export default function PayeesPage() {
                         onChange={(e) =>
                           setTaxIdRows((prev) =>
                             prev.map((r, i) =>
-                              i === index
-                                ? { ...r, value: applyMask(e.target.value, option?.mask ?? null) }
-                                : r,
+                              i === index ? { ...r, value: applyMask(e.target.value, option?.mask ?? null) } : r,
                             ),
                           )
                         }
@@ -1027,8 +1053,7 @@ export default function PayeesPage() {
                       // Default to the jurisdiction's primary document, which is
                       // the one the overwhelming majority of rows will use.
                       const next =
-                        localKinds.find((k) => !usedKinds.has(k.kind)) ??
-                        allKinds.find((k) => !usedKinds.has(k.kind))
+                        localKinds.find((k) => !usedKinds.has(k.kind)) ?? allKinds.find((k) => !usedKinds.has(k.kind))
                       if (next) setTaxIdRows((prev) => [...prev, { kind: next.kind, value: '' }])
                     }}
                   >
@@ -1074,10 +1099,12 @@ export default function PayeesPage() {
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">{t('payees.mergeDescription')}</p>
             <div className="space-y-1">
-              {Array.from(selectedIds).map(id => {
-                const p = payeesList?.find(x => x.id === id)
+              {Array.from(selectedIds).map((id) => {
+                const p = payeesList?.find((x) => x.id === id)
                 return p ? (
-                  <div key={id} className="text-sm py-1 px-2 rounded bg-muted">{p.name} ({p.transaction_count})</div>
+                  <div key={id} className="text-sm py-1 px-2 rounded bg-muted">
+                    {p.name} ({p.transaction_count})
+                  </div>
                 ) : null
               })}
             </div>
@@ -1089,9 +1116,13 @@ export default function PayeesPage() {
                 onChange={(e) => setMergeTargetId(e.target.value)}
               >
                 <option value="">{t('payees.selectTarget')}</option>
-                {Array.from(selectedIds).map(id => {
-                  const p = payeesList?.find(x => x.id === id)
-                  return p ? <option key={id} value={id}>{p.name}</option> : null
+                {Array.from(selectedIds).map((id) => {
+                  const p = payeesList?.find((x) => x.id === id)
+                  return p ? (
+                    <option key={id} value={id}>
+                      {p.name}
+                    </option>
+                  ) : null
                 })}
               </select>
             </div>
@@ -1103,7 +1134,7 @@ export default function PayeesPage() {
             <Button
               disabled={!mergeTargetId || mergeMutation.isPending}
               onClick={() => {
-                const sourceIds = Array.from(selectedIds).filter(id => id !== mergeTargetId)
+                const sourceIds = Array.from(selectedIds).filter((id) => id !== mergeTargetId)
                 mergeMutation.mutate({ targetId: mergeTargetId, sourceIds })
               }}
             >
@@ -1123,7 +1154,9 @@ export default function PayeesPage() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              {payeesToDelete.length > 1 ? t('payees.deleteMultipleConfirm', { count: payeesToDelete.length }) : t('payees.deleteConfirm')}
+              {payeesToDelete.length > 1
+                ? t('payees.deleteMultipleConfirm', { count: payeesToDelete.length })
+                : t('payees.deleteConfirm')}
             </p>
           </div>
           <DialogFooter>

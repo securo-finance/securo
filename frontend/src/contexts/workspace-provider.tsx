@@ -6,7 +6,6 @@ import type { ModuleId } from '@/lib/modules'
 import type { Workspace } from '@/types'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 
-
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, token, isLoading: authLoading } = useAuth()
   const [list, setList] = useState<Workspace[]>([])
@@ -75,23 +74,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [currentId, queryClient],
   )
 
-  const current = useMemo(
-    () => list.find((w) => w.id === currentId) ?? null,
-    [list, currentId],
-  )
+  const current = useMemo(() => list.find((w) => w.id === currentId) ?? null, [list, currentId])
 
   const role = current?.role ?? null
   const canManage = role === 'owner' || role === 'manager'
   const canWrite = role === 'owner' || role === 'manager' || role === 'editor'
 
-  const enabledModules = useMemo(
-    () => (current?.enabled_modules ?? []) as ModuleId[],
-    [current],
-  )
-  const hasModule = useCallback(
-    (id: ModuleId) => enabledModules.includes(id),
-    [enabledModules],
-  )
+  const enabledModules = useMemo(() => (current?.enabled_modules ?? []) as ModuleId[], [current])
+  const hasModule = useCallback((id: ModuleId) => enabledModules.includes(id), [enabledModules])
 
   return (
     <WorkspaceContext.Provider

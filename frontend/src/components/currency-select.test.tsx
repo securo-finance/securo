@@ -49,9 +49,7 @@ describe('CurrencySelect', () => {
   })
 
   it('lists every supported currency when opened', async () => {
-    const { user } = renderWithProviders(
-      <CurrencySelect value="USD" onChange={vi.fn()} />,
-    )
+    const { user } = renderWithProviders(<CurrencySelect value="USD" onChange={vi.fn()} />)
 
     await user.click(screen.getByRole('combobox'))
 
@@ -61,9 +59,7 @@ describe('CurrencySelect', () => {
 
   it('reports the chosen code', async () => {
     const onChange = vi.fn()
-    const { user } = renderWithProviders(
-      <CurrencySelect value="USD" onChange={onChange} />,
-    )
+    const { user } = renderWithProviders(<CurrencySelect value="USD" onChange={onChange} />)
 
     await user.click(screen.getByRole('combobox'))
     await user.click(await screen.findByRole('option', { name: /BRL/ }))

@@ -34,7 +34,10 @@ export function ThemePreview({ theme, accent }: { theme: Theme; accent?: AccentC
         <span className="space-y-1">
           {theme.font && theme.font !== 'sans' ? (
             // A theme with its own font shows it, instead of the first line of text.
-            <span className="block text-[11px] font-semibold leading-none" style={{ color: pick('foreground'), fontFamily: FONT_FAMILY[theme.font] }}>
+            <span
+              className="block text-[11px] font-semibold leading-none"
+              style={{ color: pick('foreground'), fontFamily: FONT_FAMILY[theme.font] }}
+            >
               Aa 123
             </span>
           ) : (
@@ -46,7 +49,11 @@ export function ThemePreview({ theme, accent }: { theme: Theme; accent?: AccentC
           <span className="h-3 w-8" style={{ background: pick('primary'), borderRadius: radius }} />
           <span className="flex items-end gap-0.5">
             {[0.5, 0.8, 0.65, 1].map((h, i) => (
-              <span key={i} className="w-1.5 rounded-sm" style={{ height: `${h * 18}px`, background: pick('chart-1'), opacity: 0.5 + i * 0.15 }} />
+              <span
+                key={i}
+                className="w-1.5 rounded-sm"
+                style={{ height: `${h * 18}px`, background: pick('chart-1'), opacity: 0.5 + i * 0.15 }}
+              />
             ))}
           </span>
         </span>

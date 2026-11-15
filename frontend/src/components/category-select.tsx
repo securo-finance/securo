@@ -6,10 +6,7 @@ import { CategoryPicker } from '@/components/category-picker'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 import type { Category, CategoryGroup } from '@/types'
 import { cn } from '@/lib/utils'
-import {
-  isCategoryHiddenFromSelection,
-  resolveSelectedCategory,
-} from '@/lib/category-selection-utils'
+import { isCategoryHiddenFromSelection, resolveSelectedCategory } from '@/lib/category-selection-utils'
 
 interface CategorySelectProps {
   value: string
@@ -28,7 +25,6 @@ interface CategorySelectProps {
   creatable?: boolean
   contentProps?: React.ComponentProps<typeof PopoverContent>
 }
-
 
 export function CategorySelect({
   value,
@@ -65,8 +61,7 @@ export function CategorySelect({
   }, [categories, created, currentCategory, value])
   // A category created a moment ago is not hidden, only not refetched yet.
   const selectedCategoryIsHidden =
-    selectedCategory !== created
-    && isCategoryHiddenFromSelection(categories ?? [], selectedCategory)
+    selectedCategory !== created && isCategoryHiddenFromSelection(categories ?? [], selectedCategory)
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -75,8 +70,8 @@ export function CategorySelect({
           type="button"
           disabled={disabled}
           className={cn(
-            "flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-left shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer",
-            className
+            'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-left shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer',
+            className,
           )}
         >
           <span className="flex items-center gap-2 min-w-0 truncate">

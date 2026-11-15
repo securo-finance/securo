@@ -4,9 +4,7 @@ import { screen } from '@testing-library/react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { renderWithProviders } from '@/test/utils'
 
-function Example({
-  onValueChange,
-}: { onValueChange?: (value: string) => void } = {}) {
+function Example({ onValueChange }: { onValueChange?: (value: string) => void } = {}) {
   return (
     <Tabs defaultValue="expenses" onValueChange={onValueChange}>
       <TabsList>
@@ -34,14 +32,8 @@ describe('Tabs', () => {
   it('marks the active trigger as selected', () => {
     renderWithProviders(<Example />)
 
-    expect(screen.getByRole('tab', { name: 'Expenses' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
-    expect(screen.getByRole('tab', { name: 'Income' })).toHaveAttribute(
-      'aria-selected',
-      'false',
-    )
+    expect(screen.getByRole('tab', { name: 'Expenses' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Income' })).toHaveAttribute('aria-selected', 'false')
   })
 
   it('switches panels on click', async () => {
@@ -55,9 +47,7 @@ describe('Tabs', () => {
 
   it('reports the newly selected value', async () => {
     const onValueChange = vi.fn()
-    const { user } = renderWithProviders(
-      <Example onValueChange={onValueChange} />,
-    )
+    const { user } = renderWithProviders(<Example onValueChange={onValueChange} />)
 
     await user.click(screen.getByRole('tab', { name: 'Income' }))
 
@@ -66,9 +56,7 @@ describe('Tabs', () => {
 
   it('ignores a disabled tab', async () => {
     const onValueChange = vi.fn()
-    const { user } = renderWithProviders(
-      <Example onValueChange={onValueChange} />,
-    )
+    const { user } = renderWithProviders(<Example onValueChange={onValueChange} />)
 
     await user.click(screen.getByRole('tab', { name: 'Transfers' }))
 
@@ -86,9 +74,6 @@ describe('Tabs', () => {
       </Tabs>,
     )
 
-    expect(container.querySelector('[data-slot="tabs-list"]')).toHaveAttribute(
-      'data-variant',
-      'line',
-    )
+    expect(container.querySelector('[data-slot="tabs-list"]')).toHaveAttribute('data-variant', 'line')
   })
 })

@@ -36,17 +36,22 @@ import type { BudgetSuggestion, Category } from '@/types'
 /** Months of history shown per category; suggestion amounts come from the backend average. */
 const HISTORY_MONTHS = 6
 
-const STEP_BUTTON = 'h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base'
+const STEP_BUTTON =
+  'h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      {children}
-    </div>
-  )
+  return <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">{children}</div>
 }
 
-function SectionHeader({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
+function SectionHeader({
+  title,
+  description,
+  action,
+}: {
+  title: string
+  description?: string
+  action?: React.ReactNode
+}) {
   return (
     <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
       <div className="min-w-0">
@@ -87,9 +92,7 @@ export default function BudgetsPage() {
   const today = todayInTimezone(timeZone)
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedMonth = searchParams.get('month')
-  const validRequestedMonth = requestedMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth)
-    ? requestedMonth
-    : null
+  const validRequestedMonth = requestedMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth) ? requestedMonth : null
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const queryClient = useQueryClient()
@@ -105,7 +108,9 @@ export default function BudgetsPage() {
   const uiLocale = i18n.resolvedLanguage ?? i18n.language
   const dateFnsLocale = resolveDateFnsLocale(uiLocale)
   const monthParam = `${selectedMonth}-01`
-  const monthTitle = monthLabel(selectedMonth, uiLocale).replace(/^\p{L}/u, (letter) => letter.toLocaleUpperCase(uiLocale))
+  const monthTitle = monthLabel(selectedMonth, uiLocale).replace(/^\p{L}/u, (letter) =>
+    letter.toLocaleUpperCase(uiLocale),
+  )
   const selectMonth = (nextMonth: string) => {
     setMonthOverride(nextMonth)
     const next = new URLSearchParams(searchParams)
@@ -121,32 +126,59 @@ export default function BudgetsPage() {
 
   const fmt = (amount: number) => mask(formatCurrency(amount, userCurrency, locale))
 
-  const { data: budgetsList, isLoading: budgetsLoading, isError: budgetsError, error: budgetsLoadError, refetch: refetchBudgets } = useQuery({
+  const {
+    data: budgetsList,
+    isLoading: budgetsLoading,
+    isError: budgetsError,
+    error: budgetsLoadError,
+    refetch: refetchBudgets,
+  } = useQuery({
     queryKey: ['budgets', selectedMonth],
     queryFn: () => budgetsApi.list(monthParam),
   })
-  const { data: spending, isPending: spendingPending, isError: spendingError, refetch: refetchSpending } = useQuery({
+  const {
+    data: spending,
+    isPending: spendingPending,
+    isError: spendingError,
+    refetch: refetchSpending,
+  } = useQuery({
     queryKey: ['dashboard', 'spending', selectedMonth, activeAccountIds],
     queryFn: () => dashboard.spendingByCategory(monthParam, activeAccountIds ?? undefined),
     enabled: !noAccounts,
   })
   const spendingAvailable = noAccounts || (!spendingPending && !spendingError)
   const spendingByCategory = new Map(
-    (noAccounts ? [] : spending ?? []).map((item) => [item.category_id, item.projected_total]),
+    (noAccounts ? [] : (spending ?? [])).map((item) => [item.category_id, item.projected_total]),
   )
   const { data: budgetSeries } = useQuery({
     queryKey: ['budgets', 'series'],
     queryFn: () => budgetsApi.list(),
   })
-  const { data: categoriesList, isLoading: categoriesLoading, isError: categoriesError, error: categoriesLoadError, refetch: refetchCategories } = useQuery({
+  const {
+    data: categoriesList,
+    isLoading: categoriesLoading,
+    isError: categoriesError,
+    error: categoriesLoadError,
+    refetch: refetchCategories,
+  } = useQuery({
     queryKey: ['categories'],
     queryFn: categoriesApi.listIncludingHidden,
   })
-  const { data: groupsList, isLoading: groupsLoading, isError: groupsError, error: groupsLoadError, refetch: refetchGroups } = useQuery({
+  const {
+    data: groupsList,
+    isLoading: groupsLoading,
+    isError: groupsError,
+    error: groupsLoadError,
+    refetch: refetchGroups,
+  } = useQuery({
     queryKey: ['category-groups'],
     queryFn: groupsApi.listIncludingHidden,
   })
-  const { data: suggestionData, isPending: suggestionsPending, isError: suggestionsError } = useQuery({
+  const {
+    data: suggestionData,
+    isPending: suggestionsPending,
+    isError: suggestionsError,
+  } = useQuery({
     queryKey: ['budgets', 'suggestions', monthParam, suggestMonths],
     queryFn: () => budgetsApi.suggestions(monthParam, suggestMonths),
   })
@@ -165,9 +197,11 @@ export default function BudgetsPage() {
     [budgetsList],
   )
   const savedAmount = (categoryId: string) => Number(budgetByCategory.get(categoryId)?.amount ?? 0)
-  const draftFor = (categoryId: string) => drafts[categoryId] ?? (savedAmount(categoryId) > 0 ? formatAmountInput(savedAmount(categoryId), locale) : '')
+  const draftFor = (categoryId: string) =>
+    drafts[categoryId] ?? (savedAmount(categoryId) > 0 ? formatAmountInput(savedAmount(categoryId), locale) : '')
   // New budgets repeat every month unless switched off, like the old add dialog's default.
-  const recurringFor = (categoryId: string) => current.recurring[categoryId] ?? budgetByCategory.get(categoryId)?.is_recurring ?? true
+  const recurringFor = (categoryId: string) =>
+    current.recurring[categoryId] ?? budgetByCategory.get(categoryId)?.is_recurring ?? true
   const parsedDraftFor = (categoryId: string) => parseBudgetDraft(draftFor(categoryId), locale)
   const planFor = (categoryId: string) => {
     const amount = parsedDraftFor(categoryId)
@@ -189,21 +223,38 @@ export default function BudgetsPage() {
       .map((group) => ({ id: group.id, name: group.name, categories: group.categories.filter(budgetable) }))
       .filter((group) => group.categories.length > 0)
     const groupedCategoryIds = new Set(grouped.flatMap((group) => group.categories.map((category) => category.id)))
-    const ungrouped = (categoriesList ?? []).filter((category) => !groupedCategoryIds.has(category.id) && budgetable(category))
-    return ungrouped.length ? [...grouped, { id: 'ungrouped', name: t('budgets.otherCategories'), categories: ungrouped }] : grouped
+    const ungrouped = (categoriesList ?? []).filter(
+      (category) => !groupedCategoryIds.has(category.id) && budgetable(category),
+    )
+    return ungrouped.length
+      ? [...grouped, { id: 'ungrouped', name: t('budgets.otherCategories'), categories: ungrouped }]
+      : grouped
   }, [groupsList, categoriesList, t])
   const allCategories = sections.flatMap((section) => section.categories)
 
   // Only plan categories the user edited in this month. Merely opening a
   // month must never turn stored zero tombstones into delete operations.
   const dirtyCategoryIds = new Set([...Object.keys(drafts), ...Object.keys(current.recurring)])
-  const operations = allCategories.flatMap((category) => dirtyCategoryIds.has(category.id) ? planFor(category.id) : [])
-  const changedCategories = new Set(allCategories.filter((category) => dirtyCategoryIds.has(category.id) && planFor(category.id).length > 0).map((category) => category.id))
-  const invalidCategories = new Set(allCategories.filter((category) => parsedDraftFor(category.id) === null).map((category) => category.id))
+  const operations = allCategories.flatMap((category) =>
+    dirtyCategoryIds.has(category.id) ? planFor(category.id) : [],
+  )
+  const changedCategories = new Set(
+    allCategories
+      .filter((category) => dirtyCategoryIds.has(category.id) && planFor(category.id).length > 0)
+      .map((category) => category.id),
+  )
+  const invalidCategories = new Set(
+    allCategories.filter((category) => parsedDraftFor(category.id) === null).map((category) => category.id),
+  )
   const totalBudget = allCategories.reduce((sum, category) => sum + (parsedDraftFor(category.id) ?? 0), 0)
   const rowFor = (suggestion: BudgetSuggestion) =>
-    suggestEdits[suggestion.category_id] ?? { checked: !suggestion.existing_budget, amount: String(suggestion.suggested_amount) }
-  const suggestionByCategory = new Map((suggestionData?.suggestions ?? []).map((suggestion) => [suggestion.category_id, suggestion]))
+    suggestEdits[suggestion.category_id] ?? {
+      checked: !suggestion.existing_budget,
+      amount: String(suggestion.suggested_amount),
+    }
+  const suggestionByCategory = new Map(
+    (suggestionData?.suggestions ?? []).map((suggestion) => [suggestion.category_id, suggestion]),
+  )
   const suggestable = (suggestionData?.suggestions ?? []).filter((suggestion) => !suggestion.existing_budget)
   const batchItems = suggestable.filter((suggestion) => {
     const row = rowFor(suggestion)
@@ -239,14 +290,15 @@ export default function BudgetsPage() {
   })
 
   const batchMutation = useMutation({
-    mutationFn: () => budgetsApi.createBatch({
-      month: monthParam,
-      is_recurring: suggestRecurring,
-      items: batchItems.map((suggestion) => ({
-        category_id: suggestion.category_id,
-        amount: Number(rowFor(suggestion).amount),
-      })),
-    }),
+    mutationFn: () =>
+      budgetsApi.createBatch({
+        month: monthParam,
+        is_recurring: suggestRecurring,
+        items: batchItems.map((suggestion) => ({
+          category_id: suggestion.category_id,
+          amount: Number(rowFor(suggestion).amount),
+        })),
+      }),
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['budgets'] })
       setSuggestOpen(false)
@@ -264,7 +316,14 @@ export default function BudgetsPage() {
         title={t('budgets.settingsTitle')}
         action={
           <div className="flex flex-wrap items-center gap-1">
-            <button type="button" className={STEP_BUTTON} aria-label={t('budgets.previousMonth')} onClick={() => selectMonth(shiftMonth(selectedMonth, -1))}>‹</button>
+            <button
+              type="button"
+              className={STEP_BUTTON}
+              aria-label={t('budgets.previousMonth')}
+              onClick={() => selectMonth(shiftMonth(selectedMonth, -1))}
+            >
+              ‹
+            </button>
             <Popover open={monthCalOpen} onOpenChange={setMonthCalOpen}>
               <PopoverTrigger asChild>
                 <button
@@ -287,7 +346,14 @@ export default function BudgetsPage() {
                 />
               </PopoverContent>
             </Popover>
-            <button type="button" className={STEP_BUTTON} aria-label={t('budgets.nextMonth')} onClick={() => selectMonth(shiftMonth(selectedMonth, 1))}>›</button>
+            <button
+              type="button"
+              className={STEP_BUTTON}
+              aria-label={t('budgets.nextMonth')}
+              onClick={() => selectMonth(shiftMonth(selectedMonth, 1))}
+            >
+              ›
+            </button>
           </div>
         }
       />
@@ -296,46 +362,94 @@ export default function BudgetsPage() {
         <SectionHeader
           title={t('budgets.monthBudgets', { month: monthTitle })}
           description={t('budgets.spendingDescription')}
-          action={canWrite ? (
-            <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => { setSuggestEdits({}); setSuggestOpen(true) }}>
-              <Sparkles size={13} /> {t('budgets.suggest')}
-            </Button>
-          ) : undefined}
+          action={
+            canWrite ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-8"
+                onClick={() => {
+                  setSuggestEdits({})
+                  setSuggestOpen(true)
+                }}
+              >
+                <Sparkles size={13} /> {t('budgets.suggest')}
+              </Button>
+            ) : undefined
+          }
         />
 
         {spendingError && !noAccounts && (
-          <div role="alert" className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 text-sm text-destructive">
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 text-sm text-destructive"
+          >
             <span>{t('budgets.spendingError')}</span>
-            <Button variant="outline" size="sm" onClick={() => { void refetchSpending() }}>{t('common.retry')}</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void refetchSpending()
+              }}
+            >
+              {t('common.retry')}
+            </Button>
           </div>
         )}
         {budgetsError || categoriesError || groupsError ? (
-          <div role="alert" className="flex items-center justify-between gap-3 px-4 sm:px-5 py-4 text-sm text-rose-700 dark:text-rose-300">
-            <span className="flex items-center gap-2"><AlertCircle size={16} />{extractApiError(budgetsLoadError ?? categoriesLoadError ?? groupsLoadError, t('common.error'))}</span>
-            <Button variant="outline" size="sm" onClick={() => { void Promise.all([refetchBudgets(), refetchCategories(), refetchGroups()]) }}>{t('common.retry')}</Button>
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-3 px-4 sm:px-5 py-4 text-sm text-rose-700 dark:text-rose-300"
+          >
+            <span className="flex items-center gap-2">
+              <AlertCircle size={16} />
+              {extractApiError(budgetsLoadError ?? categoriesLoadError ?? groupsLoadError, t('common.error'))}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void Promise.all([refetchBudgets(), refetchCategories(), refetchGroups()])
+              }}
+            >
+              {t('common.retry')}
+            </Button>
           </div>
         ) : budgetsLoading || categoriesLoading || groupsLoading || !budgetsList || !categoriesList || !groupsList ? (
-          <div className="p-5 space-y-3">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-10 w-full" />)}</div>
+          <div className="p-5 space-y-3">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <Skeleton key={index} className="h-10 w-full" />
+            ))}
+          </div>
         ) : allCategories.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-10">{t('budgets.noCategories')}</p>
         ) : (
           sections.map((section) => (
             <div key={section.id}>
-              <p className="bg-muted/30 px-4 sm:px-5 py-2 text-xs font-medium text-muted-foreground border-b border-border">{section.name}</p>
+              <p className="bg-muted/30 px-4 sm:px-5 py-2 text-xs font-medium text-muted-foreground border-b border-border">
+                {section.name}
+              </p>
               <div className="divide-y divide-border border-b border-border">
                 {section.categories.map((category) => {
                   const draft = draftFor(category.id)
                   const suggestion = suggestionByCategory.get(category.id)
-                  const values = history ? [...history].reverse().map((rows) => rows.find((row) => row.category_id === category.id)?.actual_amount ?? 0) : []
+                  const values = history
+                    ? [...history]
+                        .reverse()
+                        .map((rows) => rows.find((row) => row.category_id === category.id)?.actual_amount ?? 0)
+                    : []
                   const changed = changedCategories.has(category.id)
                   const recurring = recurringFor(category.id)
                   const spent = spendingByCategory.get(category.id) ?? 0
                   // Preview the valid draft limit, just like the live total below.
                   // No edit is persisted until the user presses Save.
                   const limit = parsedDraftFor(category.id)
-                  const percentage = limit !== null && limit > 0 ? Math.round(spent / limit * 1000) / 10 : 0
+                  const percentage = limit !== null && limit > 0 ? Math.round((spent / limit) * 1000) / 10 : 0
                   return (
-                    <div key={category.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] md:grid-cols-[minmax(0,1fr)_auto_minmax(8rem,12rem)_auto_8rem] items-center gap-x-2 gap-y-2 md:gap-x-3 px-4 sm:px-5 py-2.5">
+                    <div
+                      key={category.id}
+                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] md:grid-cols-[minmax(0,1fr)_auto_minmax(8rem,12rem)_auto_8rem] items-center gap-x-2 gap-y-2 md:gap-x-3 px-4 sm:px-5 py-2.5"
+                    >
                       <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
                         <CategoryIcon icon={category.icon} color={category.color} size="md" />
                         <div className="min-w-0 flex-1">
@@ -345,26 +459,52 @@ export default function BudgetsPage() {
                               event.currentTarget.focus()
                               setDrillDownCategoryId(category.id)
                             }}
-                            aria-label={t('dashboard.drillDownCategory', { category: category.name, month: monthLabel(selectedMonth, uiLocale) })}
+                            aria-label={t('dashboard.drillDownCategory', {
+                              category: category.name,
+                              month: monthLabel(selectedMonth, uiLocale),
+                            })}
                             className="max-w-full break-words text-left text-sm font-medium text-foreground hover:text-primary rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                           >
                             {category.name}
                           </button>
-                          {category.is_hidden && <span className="block text-[11px] text-muted-foreground">{t('budgets.hiddenCategory')}</span>}
-                          {suggestion && <p className="text-[11px] text-muted-foreground tabular-nums">{t('budgets.average', { amount: fmt(Number(suggestion.suggested_amount)) })}</p>}
-                          {invalidCategories.has(category.id) && <p id={`budget-error-${category.id}`} role="alert" className="text-[11px] text-destructive">{t('budgets.invalidAmount')}</p>}
+                          {category.is_hidden && (
+                            <span className="block text-[11px] text-muted-foreground">
+                              {t('budgets.hiddenCategory')}
+                            </span>
+                          )}
+                          {suggestion && (
+                            <p className="text-[11px] text-muted-foreground tabular-nums">
+                              {t('budgets.average', { amount: fmt(Number(suggestion.suggested_amount)) })}
+                            </p>
+                          )}
+                          {invalidCategories.has(category.id) && (
+                            <p id={`budget-error-${category.id}`} role="alert" className="text-[11px] text-destructive">
+                              {t('budgets.invalidAmount')}
+                            </p>
+                          )}
                         </div>
                       </div>
                       {values.length > 0 && (
-                        <SpendHistory values={values} labels={values.map((value, index) => `${historyLabels[index]}: ${fmt(value)}`)} />
+                        <SpendHistory
+                          values={values}
+                          labels={values.map((value, index) => `${historyLabels[index]}: ${fmt(value)}`)}
+                        />
                       )}
                       <div className="col-span-3 row-start-2 min-w-0 pl-11 md:col-span-1 md:col-start-3 md:row-start-1 md:pl-0">
                         <p className="mb-1 text-xs text-muted-foreground">
                           {t('budgets.spending')}{' '}
-                          <span className="text-sm font-normal tabular-nums text-foreground break-words">{spendingAvailable ? fmt(spent) : '—'}</span>
+                          <span className="text-sm font-normal tabular-nums text-foreground break-words">
+                            {spendingAvailable ? fmt(spent) : '—'}
+                          </span>
                         </p>
                         {spendingAvailable && limit !== null && limit > 0 && (
-                          <BudgetSpendingProgress categoryName={category.name} percentage={percentage} budgetAmount={limit} currency={userCurrency} showBudgetLabel={false} />
+                          <BudgetSpendingProgress
+                            categoryName={category.name}
+                            percentage={percentage}
+                            budgetAmount={limit}
+                            currency={userCurrency}
+                            showBudgetLabel={false}
+                          />
                         )}
                       </div>
                       <button
@@ -378,14 +518,20 @@ export default function BudgetsPage() {
                       >
                         <Repeat size={13} />
                       </button>
-                      <div className={`col-start-3 row-start-1 md:col-start-5 flex w-24 md:w-32 min-w-0 items-center rounded-lg border bg-card px-2.5 focus-within:ring-2 focus-within:ring-primary ${invalidCategories.has(category.id) ? 'border-destructive' : changed ? 'border-primary/60' : 'border-border'}`}>
-                        <span className="text-xs text-muted-foreground">{formatCurrency(0, userCurrency, locale).replace(/[\d.,\s]/g, '')}</span>
+                      <div
+                        className={`col-start-3 row-start-1 md:col-start-5 flex w-24 md:w-32 min-w-0 items-center rounded-lg border bg-card px-2.5 focus-within:ring-2 focus-within:ring-primary ${invalidCategories.has(category.id) ? 'border-destructive' : changed ? 'border-primary/60' : 'border-border'}`}
+                      >
+                        <span className="text-xs text-muted-foreground">
+                          {formatCurrency(0, userCurrency, locale).replace(/[\d.,\s]/g, '')}
+                        </span>
                         <input
                           type="text"
                           inputMode="decimal"
                           aria-label={t('budgets.budgetFor', { category: category.name })}
                           aria-invalid={invalidCategories.has(category.id)}
-                          aria-describedby={invalidCategories.has(category.id) ? `budget-error-${category.id}` : undefined}
+                          aria-describedby={
+                            invalidCategories.has(category.id) ? `budget-error-${category.id}` : undefined
+                          }
                           placeholder="0"
                           value={privacyMode && focusedCategoryId !== category.id && draft ? mask(draft) : draft}
                           disabled={!canWrite}
@@ -404,31 +550,55 @@ export default function BudgetsPage() {
         )}
       </SectionCard>
 
-      <Dialog open={suggestOpen} onOpenChange={(open) => { setSuggestOpen(open); if (!open) setSuggestEdits({}) }}>
+      <Dialog
+        open={suggestOpen}
+        onOpenChange={(open) => {
+          setSuggestOpen(open)
+          if (!open) setSuggestEdits({})
+        }}
+      >
         <DialogContent>
-          <DialogHeader><DialogTitle>{t('budgets.suggestTitle')}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{t('budgets.suggestTitle')}</DialogTitle>
+          </DialogHeader>
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="space-y-1">
                 <Label>{t('budgets.suggestPeriod')}</Label>
                 <select
                   value={suggestMonths}
-                  onChange={(event) => { setSuggestMonths(Number(event.target.value)); setSuggestEdits({}) }}
+                  onChange={(event) => {
+                    setSuggestMonths(Number(event.target.value))
+                    setSuggestEdits({})
+                  }}
                   className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 >
-                  {[3, 6, 12].map((months) => <option key={months} value={months}>{months} {t('budgets.suggestMonths')}</option>)}
+                  {[3, 6, 12].map((months) => (
+                    <option key={months} value={months}>
+                      {months} {t('budgets.suggestMonths')}
+                    </option>
+                  ))}
                 </select>
               </div>
               <label className="flex items-center gap-2 cursor-pointer mt-5">
-                <input type="checkbox" checked={suggestRecurring} onChange={(event) => setSuggestRecurring(event.target.checked)} className="rounded border-border" />
+                <input
+                  type="checkbox"
+                  checked={suggestRecurring}
+                  onChange={(event) => setSuggestRecurring(event.target.checked)}
+                  className="rounded border-border"
+                />
                 <span className="text-sm text-foreground">{t('budgets.repeatEveryMonth')}</span>
               </label>
             </div>
-            <p className="text-sm text-muted-foreground">{t('budgets.suggestDescription', { months: suggestMonths })}</p>
+            <p className="text-sm text-muted-foreground">
+              {t('budgets.suggestDescription', { months: suggestMonths })}
+            </p>
             {suggestionsPending ? (
               <p className="text-sm text-muted-foreground text-center py-8">{t('common.loading')}</p>
             ) : suggestionsError ? (
-              <p role="alert" className="text-sm text-destructive text-center py-8">{t('budgets.suggestError')}</p>
+              <p role="alert" className="text-sm text-destructive text-center py-8">
+                {t('budgets.suggestError')}
+              </p>
             ) : suggestable.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">{t('budgets.suggestEmpty')}</p>
             ) : (
@@ -436,22 +606,39 @@ export default function BudgetsPage() {
                 {suggestable.map((suggestion) => {
                   const row = rowFor(suggestion)
                   return (
-                    <div key={suggestion.category_id} className="flex items-center gap-3 border-b border-border last:border-0 px-3 py-2">
+                    <div
+                      key={suggestion.category_id}
+                      className="flex items-center gap-3 border-b border-border last:border-0 px-3 py-2"
+                    >
                       <input
                         type="checkbox"
                         checked={row.checked}
-                        onChange={(event) => setSuggestEdits((previous) => ({ ...previous, [suggestion.category_id]: { ...rowFor(suggestion), checked: event.target.checked } }))}
+                        onChange={(event) =>
+                          setSuggestEdits((previous) => ({
+                            ...previous,
+                            [suggestion.category_id]: { ...rowFor(suggestion), checked: event.target.checked },
+                          }))
+                        }
                         className="rounded border-border"
                         aria-label={suggestion.category_name}
                       />
-                      <span className="flex-1 text-sm font-medium text-foreground truncate">{suggestion.category_name}</span>
-                      <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{t('budgets.suggestSpent', { amount: fmt(Number(suggestion.total_spent)) })}</span>
+                      <span className="flex-1 text-sm font-medium text-foreground truncate">
+                        {suggestion.category_name}
+                      </span>
+                      <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                        {t('budgets.suggestSpent', { amount: fmt(Number(suggestion.total_spent)) })}
+                      </span>
                       <Input
                         type="number"
                         step="0.01"
                         min="0"
                         value={row.amount}
-                        onChange={(event) => setSuggestEdits((previous) => ({ ...previous, [suggestion.category_id]: { ...rowFor(suggestion), amount: event.target.value } }))}
+                        onChange={(event) =>
+                          setSuggestEdits((previous) => ({
+                            ...previous,
+                            [suggestion.category_id]: { ...rowFor(suggestion), amount: event.target.value },
+                          }))
+                        }
                         className="w-24 h-8"
                         aria-label={`${suggestion.category_name} ${t('budgets.amount')}`}
                       />
@@ -462,37 +649,69 @@ export default function BudgetsPage() {
             )}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setSuggestOpen(false)}>{t('common.cancel')}</Button>
-            <Button type="button" disabled={batchMutation.isPending || batchItems.length === 0} onClick={() => batchMutation.mutate()}>{t('budgets.suggestCreate')}</Button>
+            <Button type="button" variant="outline" onClick={() => setSuggestOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              disabled={batchMutation.isPending || batchItems.length === 0}
+              onClick={() => batchMutation.mutate()}
+            >
+              {t('budgets.suggestCreate')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Save bar: same fixed placement as the transactions bulk-action bar, so it
           stays in reach while editing a long list. */}
-      {canWrite && allCategories.length > 0 && !budgetsLoading && !categoriesLoading && !groupsLoading && !budgetsError && !categoriesError && !groupsError && budgetsList && budgetSeries && categoriesList && groupsList && (
-        <div className={cn(
-          'fixed bottom-0 left-0 right-0 z-40',
-          'transition-[left] duration-300 ease-in-out motion-reduce:transition-none',
-          sidebarCollapsed ? 'lg:left-16' : 'lg:left-60',
-        )}>
-          <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-card border border-border shadow-xl rounded-2xl px-4 py-3">
-              <div className="text-sm tabular-nums">
-                <span className="font-semibold text-foreground">{t('budgets.total', { amount: fmt(totalBudget) })}</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button variant="outline" size="sm" disabled={operations.length === 0 || saveMutation.isPending} onClick={() => setDraftState(emptyDrafts())}>
-                  {t('common.cancel')}
-                </Button>
-                <Button size="sm" disabled={operations.length === 0 || invalidCategories.size > 0 || saveMutation.isPending} onClick={() => saveMutation.mutate(operations)}>
-                  {t('common.save')}
-                </Button>
+      {canWrite &&
+        allCategories.length > 0 &&
+        !budgetsLoading &&
+        !categoriesLoading &&
+        !groupsLoading &&
+        !budgetsError &&
+        !categoriesError &&
+        !groupsError &&
+        budgetsList &&
+        budgetSeries &&
+        categoriesList &&
+        groupsList && (
+          <div
+            className={cn(
+              'fixed bottom-0 left-0 right-0 z-40',
+              'transition-[left] duration-300 ease-in-out motion-reduce:transition-none',
+              sidebarCollapsed ? 'lg:left-16' : 'lg:left-60',
+            )}
+          >
+            <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-card border border-border shadow-xl rounded-2xl px-4 py-3">
+                <div className="text-sm tabular-nums">
+                  <span className="font-semibold text-foreground">
+                    {t('budgets.total', { amount: fmt(totalBudget) })}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={operations.length === 0 || saveMutation.isPending}
+                    onClick={() => setDraftState(emptyDrafts())}
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={operations.length === 0 || invalidCategories.size > 0 || saveMutation.isPending}
+                    onClick={() => saveMutation.mutate(operations)}
+                  >
+                    {t('common.save')}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Render after the fixed Save bar so its backdrop also covers those controls. */}
       {drillDownCategoryId !== null && (
@@ -500,7 +719,8 @@ export default function BudgetsPage() {
           useViewerShare={activeAccountIds === null}
           filter={{
             title: t('dashboard.drillDownCategory', {
-              category: allCategories.find((category) => category.id === drillDownCategoryId)?.name ?? drillDownCategoryId,
+              category:
+                allCategories.find((category) => category.id === drillDownCategoryId)?.name ?? drillDownCategoryId,
               month: monthLabel(selectedMonth, uiLocale),
             }),
             category_id: drillDownCategoryId,

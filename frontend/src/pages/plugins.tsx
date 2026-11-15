@@ -58,7 +58,12 @@ export default function PluginsPage() {
   const [target, setTarget] = useState<PluginTarget | null>(null)
 
   // One request to the catalog, made because the user opened this page.
-  const { data: entries, isFetching, isError, refetch } = useQuery({
+  const {
+    data: entries,
+    isFetching,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ['plugins', 'catalog'],
     queryFn: pluginsApi.catalog,
     staleTime: 5 * 60 * 1000,
@@ -90,13 +95,21 @@ export default function PluginsPage() {
     {
       key: 'type',
       title: t('plugins.page.facet.type'),
-      options: PLUGIN_TYPES.map((type) => ({ value: type, label: t(`plugins.page.type.${type}`), count: countWith({ type }) })),
+      options: PLUGIN_TYPES.map((type) => ({
+        value: type,
+        label: t(`plugins.page.type.${type}`),
+        count: countWith({ type }),
+      })),
     },
     {
       key: 'kind',
       title: t('plugins.page.facet.content'),
       options: [...new Set(list.flatMap(contributedKinds))]
-        .map((kind) => ({ value: kind, label: t(`plugins.kindName.${kind}`, { defaultValue: kind }), count: countWith({ kind }) }))
+        .map((kind) => ({
+          value: kind,
+          label: t(`plugins.kindName.${kind}`, { defaultValue: kind }),
+          count: countWith({ kind }),
+        }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     },
     {
@@ -118,18 +131,25 @@ export default function PluginsPage() {
     {
       key: 'status',
       title: t('plugins.page.facet.status'),
-      options: STATUSES.map((status) => ({ value: status, label: t(`plugins.page.status.${status}`), count: countWith({ status }) })),
+      options: STATUSES.map((status) => ({
+        value: status,
+        label: t(`plugins.page.status.${status}`),
+        count: countWith({ status }),
+      })),
     },
   ]
   const choose = (key: FacetKey, value: string | null) => update({ [key]: value } as Partial<PluginFilters>)
 
   const filtered = filterPlugins(list, filters)
   const shown =
-    view === 'trending' ? trendingPlugins(filtered, filtered.length)
-      : view === 'new' ? newPlugins(filtered, filtered.length)
+    view === 'trending'
+      ? trendingPlugins(filtered, filtered.length)
+      : view === 'new'
+        ? newPlugins(filtered, filtered.length)
         : sortPlugins(filtered, sort, nameOf)
   const authors = new Set(list.map((entry) => entry.owner)).size
-  const act = (entry: PluginCatalogEntry, action: PluginAction) => setTarget({ id: entry.id, name: nameOf(entry), action })
+  const act = (entry: PluginCatalogEntry, action: PluginAction) =>
+    setTarget({ id: entry.id, name: nameOf(entry), action })
 
   const views: { value: View; label: string }[] = [
     { value: 'all', label: t('plugins.page.view.all') },
@@ -158,7 +178,10 @@ export default function PluginsPage() {
       />
 
       <div className="relative mb-8">
-        <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Search
+          size={18}
+          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+        />
         <Input
           ref={searchRef}
           value={filters.query}
@@ -186,7 +209,11 @@ export default function PluginsPage() {
       <div className="grid gap-x-10 gap-y-6 lg:grid-cols-[13rem_minmax(0,1fr)]">
         <aside className="hidden lg:block">
           <div className="sticky top-6 space-y-7">
-            {facets.map((facet) => (facet.options.length ? <FacetList key={facet.key} facet={facet} value={filters[facet.key]} onChoose={choose} /> : null))}
+            {facets.map((facet) =>
+              facet.options.length ? (
+                <FacetList key={facet.key} facet={facet} value={filters[facet.key]} onChoose={choose} />
+              ) : null,
+            )}
             {facetsActive && (
               <Button variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground" onClick={clearFacets}>
                 <X size={14} className="mr-1" />
@@ -230,7 +257,9 @@ export default function PluginsPage() {
                 </SelectTrigger>
                 <SelectContent align="end">
                   {SORTS.map((option) => (
-                    <SelectItem key={option} value={option}>{t(`plugins.page.sort.${option}`)}</SelectItem>
+                    <SelectItem key={option} value={option}>
+                      {t(`plugins.page.sort.${option}`)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -239,10 +268,17 @@ export default function PluginsPage() {
 
           <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] lg:hidden">
             {facets.map((facet) =>
-              facet.options.length ? <FacetSelect key={facet.key} facet={facet} value={filters[facet.key]} onChoose={choose} /> : null,
+              facet.options.length ? (
+                <FacetSelect key={facet.key} facet={facet} value={filters[facet.key]} onChoose={choose} />
+              ) : null,
             )}
             {facetsActive && (
-              <Button variant="ghost" size="sm" className="h-8 shrink-0 rounded-full text-muted-foreground" onClick={clearFacets}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 shrink-0 rounded-full text-muted-foreground"
+                onClick={clearFacets}
+              >
                 <X size={14} className="mr-1" />
                 {t('plugins.page.clear')}
               </Button>
@@ -292,8 +328,10 @@ export default function PluginsPage() {
             </ol>
           ) : (
             <Empty>
-              {hasFilters(filters) ? t('plugins.page.noResults')
-                : view === 'trending' ? t('plugins.page.trendingEmpty')
+              {hasFilters(filters)
+                ? t('plugins.page.noResults')
+                : view === 'trending'
+                  ? t('plugins.page.trendingEmpty')
                   : t('plugins.page.newEmpty')}
               {hasFilters(filters) && (
                 <Button variant="outline" size="sm" onClick={() => setFilters(NO_FILTERS)}>
@@ -312,7 +350,15 @@ export default function PluginsPage() {
   )
 }
 
-function FacetList({ facet, value, onChoose }: { facet: Facet; value: string | null; onChoose: (key: FacetKey, value: string | null) => void }) {
+function FacetList({
+  facet,
+  value,
+  onChoose,
+}: {
+  facet: Facet
+  value: string | null
+  onChoose: (key: FacetKey, value: string | null) => void
+}) {
   return (
     <section aria-label={facet.title}>
       <h2 className="mb-1.5 px-2 text-xs font-medium text-muted-foreground">{facet.title}</h2>
@@ -328,7 +374,9 @@ function FacetList({ facet, value, onChoose }: { facet: Facet; value: string | n
                 onClick={() => onChoose(facet.key, active ? null : option.value)}
                 className={cn(
                   'flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                  active ? 'bg-accent font-medium text-accent-foreground' : 'text-foreground/80 hover:bg-muted hover:text-foreground',
+                  active
+                    ? 'bg-accent font-medium text-accent-foreground'
+                    : 'text-foreground/80 hover:bg-muted hover:text-foreground',
                   'disabled:pointer-events-none disabled:opacity-40',
                 )}
               >
@@ -344,14 +392,25 @@ function FacetList({ facet, value, onChoose }: { facet: Facet; value: string | n
 }
 
 /** Below `lg` the facets sit in one scrolling row of selects instead of a sidebar. */
-function FacetSelect({ facet, value, onChoose }: { facet: Facet; value: string | null; onChoose: (key: FacetKey, value: string | null) => void }) {
+function FacetSelect({
+  facet,
+  value,
+  onChoose,
+}: {
+  facet: Facet
+  value: string | null
+  onChoose: (key: FacetKey, value: string | null) => void
+}) {
   const { t } = useTranslation()
   return (
     <Select value={value ?? 'any'} onValueChange={(next) => onChoose(facet.key, next === 'any' ? null : next)}>
       <SelectTrigger
         size="sm"
         aria-label={facet.title}
-        className={cn('h-8 w-auto shrink-0 rounded-full text-sm', value && 'border-foreground/30 bg-accent dark:bg-accent')}
+        className={cn(
+          'h-8 w-auto shrink-0 rounded-full text-sm',
+          value && 'border-foreground/30 bg-accent dark:bg-accent',
+        )}
       >
         <span className={cn(!value && 'text-muted-foreground')}>
           {value ? facet.options.find((option) => option.value === value)?.label : facet.title}
@@ -394,10 +453,21 @@ function PluginRow({
   const name = localized(entry.name, lang)
   const installable = canWrite && !entry.revoked && entry.compatible && entry.supported && entry.fits_workspace
   const only = onlyFor(entry)
-  const action: PluginAction | null = !installable ? null : entry.update_available ? 'update' : entry.installed_version ? null : 'install'
+  const action: PluginAction | null = !installable
+    ? null
+    : entry.update_available
+      ? 'update'
+      : entry.installed_version
+        ? null
+        : 'install'
 
   return (
-    <li className={cn('relative flex gap-4 px-4 py-4 transition-colors hover:bg-muted/40 sm:px-5', entry.revoked && 'opacity-60')}>
+    <li
+      className={cn(
+        'relative flex gap-4 px-4 py-4 transition-colors hover:bg-muted/40 sm:px-5',
+        entry.revoked && 'opacity-60',
+      )}
+    >
       {rank !== undefined && (
         <span className="hidden w-4 shrink-0 pt-2.5 text-right text-sm font-medium tabular-nums text-muted-foreground sm:block">
           {rank}
@@ -408,7 +478,10 @@ function PluginRow({
         <div className="flex min-w-0 items-center gap-2">
           <h3 className="min-w-0 truncate text-[15px] font-semibold leading-6">
             {/* The whole row opens the plugin; its own button sits above this link. */}
-            <Link to={pluginPath(entry.id)} className="outline-none after:absolute after:inset-0 focus-visible:underline">
+            <Link
+              to={pluginPath(entry.id)}
+              className="outline-none after:absolute after:inset-0 focus-visible:underline"
+            >
               {name}
             </Link>
           </h3>
@@ -422,13 +495,18 @@ function PluginRow({
           <PluginTypes entry={entry} />
           <span>{summary(entry)}</span>
           {/* When it doesn't fit, the status pill already says so. */}
-          {only && entry.fits_workspace && <span>{t(only === 'business' ? 'plugins.onlyForBusiness' : 'plugins.onlyForPersonal')}</span>}
+          {only && entry.fits_workspace && (
+            <span>{t(only === 'business' ? 'plugins.onlyForBusiness' : 'plugins.onlyForPersonal')}</span>
+          )}
           <span className="tabular-nums">v{entry.version}</span>
           {entry.updated_at && <span>{t('plugins.page.updated', { when: relativeDate(entry.updated_at, lang) })}</span>}
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-2">
-        <span className="flex items-center gap-1 text-sm tabular-nums text-muted-foreground" title={t('plugins.page.stars', { count: entry.stars })}>
+        <span
+          className="flex items-center gap-1 text-sm tabular-nums text-muted-foreground"
+          title={t('plugins.page.stars', { count: entry.stars })}
+        >
           <Star size={14} className="fill-amber-400 text-amber-400" />
           {compactNumber(entry.stars, lang)}
         </span>

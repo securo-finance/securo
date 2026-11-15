@@ -25,18 +25,11 @@ import { cn } from '@/lib/utils'
 import { ReconciliationPair, type PairSide } from '@/components/reconciliation-pair'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      {children}
-    </div>
-  )
+  return <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">{children}</div>
 }
 
 /** The six verbs, each with the shape a reader can scan for. */
-const LOOK: Record<
-  ReconciliationHistoryEvent['action'],
-  { icon: typeof Link2; tone: string }
-> = {
+const LOOK: Record<ReconciliationHistoryEvent['action'], { icon: typeof Link2; tone: string }> = {
   // A link, not a lightning bolt. The bolt meant "the rules did this",
   // which is a claim about *who*, and a person linking a payment by hand
   // writes a `linked` event too: the row then showed the automatic mark
@@ -92,82 +85,68 @@ export function ReconciliationHistory() {
   return (
     <SectionCard>
       <div className="px-4 sm:px-5 py-4 border-b border-border">
-        <p className="text-sm font-semibold text-foreground">
-          {t('reconciliation.history.title')}
-        </p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {t('reconciliation.history.hint')}
-        </p>
+        <p className="text-sm font-semibold text-foreground">{t('reconciliation.history.title')}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{t('reconciliation.history.hint')}</p>
       </div>
 
       {events.length === 0 ? (
         // An empty state rather than nothing: as a card in a stack,
         // rendering nothing was right. As a tab somebody clicked, a blank
         // page reads as broken.
-        <p className="text-sm text-muted-foreground text-center py-10">
-          {t('reconciliation.history.empty')}
-        </p>
+        <p className="text-sm text-muted-foreground text-center py-10">{t('reconciliation.history.empty')}</p>
       ) : (
-      <div className="divide-y divide-border">
-        {shown.map((event) => {
-          const look = LOOK[event.action]
-          const Icon = look.icon
-          return (
-            <div
-              key={event.id}
-              className="px-4 sm:px-5 py-2.5 text-sm hover:bg-muted/60 transition-colors cursor-pointer"
-              onClick={() =>
-                setOpenId((current) => (current === event.id ? null : event.id))
-              }
-            >
-              <div className="flex items-start gap-3">
-              <Icon size={14} className={cn('mt-0.5 shrink-0', look.tone)} />
-              <div className="flex-1 min-w-0">
-                <p className="text-foreground">
-                  {t(`reconciliation.history.action.${event.action}`, {
-                    name: event.expectation_label ?? '—',
-                  })}
-                  <span className="text-muted-foreground">
-                    {' · '}
-                    {money(event.amount, event.currency)}
-                  </span>
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {/* Whether a person or the rules did it is the first
+        <div className="divide-y divide-border">
+          {shown.map((event) => {
+            const look = LOOK[event.action]
+            const Icon = look.icon
+            return (
+              <div
+                key={event.id}
+                className="px-4 sm:px-5 py-2.5 text-sm hover:bg-muted/60 transition-colors cursor-pointer"
+                onClick={() => setOpenId((current) => (current === event.id ? null : event.id))}
+              >
+                <div className="flex items-start gap-3">
+                  <Icon size={14} className={cn('mt-0.5 shrink-0', look.tone)} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-foreground">
+                      {t(`reconciliation.history.action.${event.action}`, {
+                        name: event.expectation_label ?? '—',
+                      })}
+                      <span className="text-muted-foreground">
+                        {' · '}
+                        {money(event.amount, event.currency)}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {/* Whether a person or the rules did it is the first
                       thing anybody wants from a history like this, so it
                       leads the detail line. */}
-                  {event.user_id
-                    ? t('reconciliation.history.byPerson')
-                    : t('reconciliation.history.byRules')}
-                  {event.transaction_description
-                    ? ` · ${event.transaction_description}`
-                    : ''}
-                </p>
-              </div>
-              <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
-                {when(event.at)}
-              </span>
-              </div>
+                      {event.user_id ? t('reconciliation.history.byPerson') : t('reconciliation.history.byRules')}
+                      {event.transaction_description ? ` · ${event.transaction_description}` : ''}
+                    </p>
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0 tabular-nums">{when(event.at)}</span>
+                </div>
 
-              <ReconciliationPair
-                open={openId === event.id}
-                transactionId={event.transaction_id}
-                // Already written: the invoice reflects it, so the panel
-                // reports rather than projects.
-                pending={false}
-                sides={[
-                  {
-                    kind: event.expectation_kind,
-                    id: event.expectation_id,
-                    label: event.expectation_label,
-                    amount: event.amount,
-                  } satisfies PairSide,
-                ]}
-              />
-            </div>
-          )
-        })}
-      </div>
+                <ReconciliationPair
+                  open={openId === event.id}
+                  transactionId={event.transaction_id}
+                  // Already written: the invoice reflects it, so the panel
+                  // reports rather than projects.
+                  pending={false}
+                  sides={[
+                    {
+                      kind: event.expectation_kind,
+                      id: event.expectation_id,
+                      label: event.expectation_label,
+                      amount: event.amount,
+                    } satisfies PairSide,
+                  ]}
+                />
+              </div>
+            )
+          })}
+        </div>
       )}
 
       {events.length > SHOWN_AT_FIRST && (

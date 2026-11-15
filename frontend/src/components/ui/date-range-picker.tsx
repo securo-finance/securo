@@ -5,11 +5,7 @@ import { addYears } from 'date-fns'
 
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { localDateString } from '@/lib/date-utils'
 import { formatDateRange } from '@/lib/date-range-format'
@@ -101,9 +97,7 @@ export function DateRangePicker({
   const normalizeDraft = (f: string, toDate: string): { from: string; to: string } => {
     const nextFrom = f || toDate
     const nextTo = toDate || f
-    return nextFrom && nextTo && nextFrom > nextTo
-      ? { from: nextTo, to: nextFrom }
-      : { from: nextFrom, to: nextTo }
+    return nextFrom && nextTo && nextFrom > nextTo ? { from: nextTo, to: nextFrom } : { from: nextFrom, to: nextTo }
   }
   const normalizedDraft = normalizeDraft(draftFrom, draftTo)
 
@@ -135,8 +129,8 @@ export function DateRangePicker({
     if (next) {
       onOpen?.()
       // Seed only drafts; closing without Apply leaves the controlled range intact.
-      const seedFrom = from || to ? from : defaultFrom ?? from
-      const seedTo = from || to ? to : defaultTo ?? to
+      const seedFrom = from || to ? from : (defaultFrom ?? from)
+      const seedTo = from || to ? to : (defaultTo ?? to)
       setDraftFrom(seedFrom)
       setDraftTo(seedTo)
     }
@@ -144,17 +138,14 @@ export function DateRangePicker({
   }
 
   const headerLabel = label ?? t('transactions.filtersBar.customRange')
-  const emptyLabel =
-    placeholder ?? t('transactions.filtersBar.pickRange')
-  const triggerLabel =
-    from || to ? formatDateRange(from, to, dateLocale) : emptyLabel
+  const emptyLabel = placeholder ?? t('transactions.filtersBar.pickRange')
+  const triggerLabel = from || to ? formatDateRange(from, to, dateLocale) : emptyLabel
   // Segment mode sits inline among short preset labels (6M, 1Y, …), so it
   // drops the year even across a year boundary — the same compact form the
   // transactions filter bar's applied-range chip uses. The year is still
   // visible while the calendar is open, which is the only place picking it
   // actually matters.
-  const compactLabel =
-    from || to ? formatDateRange(from, to, dateLocale, { compact: true }) : emptyLabel
+  const compactLabel = from || to ? formatDateRange(from, to, dateLocale, { compact: true }) : emptyLabel
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -178,11 +169,7 @@ export function DateRangePicker({
             type="button"
             variant="outline"
             size={size}
-            className={cn(
-              'gap-1.5 whitespace-nowrap font-normal',
-              !(from || to) && 'text-muted-foreground',
-              className,
-            )}
+            className={cn('gap-1.5 whitespace-nowrap font-normal', !(from || to) && 'text-muted-foreground', className)}
             aria-label={headerLabel}
           >
             <CalendarIcon size={14} />
@@ -190,20 +177,11 @@ export function DateRangePicker({
           </Button>
         )}
       </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        sideOffset={8}
-        className="w-auto p-0"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
+      <PopoverContent align="end" sideOffset={8} className="w-auto p-0" onOpenAutoFocus={(e) => e.preventDefault()}>
         <div className="border-b border-border/70 px-4 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            {headerLabel}
-          </p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{headerLabel}</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground/70">
-            {draftFrom || draftTo
-              ? formatDateRange(draftFrom, draftTo, dateLocale)
-              : emptyLabel}
+            {draftFrom || draftTo ? formatDateRange(draftFrom, draftTo, dateLocale) : emptyLabel}
           </p>
         </div>
         <div className="flex flex-col gap-4 p-3 sm:flex-row sm:gap-0">
@@ -213,9 +191,7 @@ export function DateRangePicker({
             </p>
             <Calendar
               selected={draftFrom ? new Date(draftFrom + 'T00:00:00') : undefined}
-              defaultMonth={
-                draftFrom ? new Date(draftFrom + 'T00:00:00') : new Date()
-              }
+              defaultMonth={draftFrom ? new Date(draftFrom + 'T00:00:00') : new Date()}
               locale={dateFnsLocale}
               onSelect={(d) => setDraftFrom(d ? localDateString(d) : '')}
             />
@@ -227,11 +203,7 @@ export function DateRangePicker({
             <Calendar
               selected={draftTo ? new Date(draftTo + 'T00:00:00') : undefined}
               defaultMonth={
-                draftTo
-                  ? new Date(draftTo + 'T00:00:00')
-                  : draftFrom
-                    ? new Date(draftFrom + 'T00:00:00')
-                    : new Date()
+                draftTo ? new Date(draftTo + 'T00:00:00') : draftFrom ? new Date(draftFrom + 'T00:00:00') : new Date()
               }
               locale={dateFnsLocale}
               onSelect={(d) => setDraftTo(d ? localDateString(d) : '')}

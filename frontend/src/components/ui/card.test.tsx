@@ -1,15 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { renderWithProviders } from '@/test/utils'
 
 describe('Card', () => {
@@ -46,15 +38,9 @@ describe('Card', () => {
     )
 
     expect(container.querySelector('[data-slot="card"]')).toBeInTheDocument()
-    expect(
-      container.querySelector('[data-slot="card-header"]'),
-    ).toBeInTheDocument()
-    expect(
-      container.querySelector('[data-slot="card-title"]'),
-    ).toBeInTheDocument()
-    expect(
-      container.querySelector('[data-slot="card-content"]'),
-    ).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="card-header"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="card-title"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="card-content"]')).toBeInTheDocument()
   })
 
   it('renders a card with no optional slots', () => {

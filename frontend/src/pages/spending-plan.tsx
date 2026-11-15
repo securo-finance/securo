@@ -4,16 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Calculator, Pencil, Plus, X } from 'lucide-react'
-import {
-  Area,
-  AreaChart,
-  Line,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { Area, AreaChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { accounts as accountsApi, spendingPlan as spendingPlanApi } from '@/lib/api'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { extractApiError } from '@/lib/api-errors'
@@ -27,19 +18,14 @@ import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 import { useWorkspace } from '@/contexts/workspace-context'
 import type { SimulatedPurchase, SpendingPlan, SpendingPlanInput, SpendingPlanTimeline } from '@/types'
 
-const SELECT_CLASS = 'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
+const SELECT_CLASS =
+  'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 const TH = 'text-xs font-medium text-muted-foreground py-3'
 const HORIZONS = [6, 12, 18, 24, 36]
 const BALANCE = '#10B981'
@@ -61,9 +47,7 @@ function parseAmount(value: string) {
 
 function SectionCard({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn('bg-card rounded-xl border border-border shadow-sm overflow-hidden', className)}>
-      {children}
-    </div>
+    <div className={cn('bg-card rounded-xl border border-border shadow-sm overflow-hidden', className)}>{children}</div>
   )
 }
 
@@ -111,13 +95,18 @@ export default function SpendingPlanPage() {
   const money = (value: number) => mask(formatCurrency(value, currency, locale))
   const today = timeline?.points[0]?.date ?? ''
   const savingsTarget = timeline
-    ? (savingsDate && savingsDate >= today && savingsDate <= timeline.horizon_end
+    ? savingsDate && savingsDate >= today && savingsDate <= timeline.horizon_end
       ? savingsDate
-      : defaultSavingsDate(today, timeline.horizon_end))
+      : defaultSavingsDate(today, timeline.horizon_end)
     : ''
 
   const editButton = canWrite ? (
-    <Button size="sm" variant={plan ? 'outline' : 'default'} className="gap-1.5 h-8" onClick={() => setEditorOpen(true)}>
+    <Button
+      size="sm"
+      variant={plan ? 'outline' : 'default'}
+      className="gap-1.5 h-8"
+      onClick={() => setEditorOpen(true)}
+    >
       {plan ? <Pencil size={13} /> : <Plus size={13} />}
       {plan ? t('spendingPlan.editPlan') : t('spendingPlan.createPlan')}
     </Button>
@@ -153,12 +142,11 @@ export default function SpendingPlanPage() {
       <SectionCard className="mb-5">
         <SectionHeader
           title={t('spendingPlan.chartTitle')}
-          action={timeline ? (
-            <ChartLegend
-              floor={plan ? money(timeline.balance_floor) : null}
-              scenario={!!activeScenario}
-            />
-          ) : undefined}
+          action={
+            timeline ? (
+              <ChartLegend floor={plan ? money(timeline.balance_floor) : null} scenario={!!activeScenario} />
+            ) : undefined
+          }
         />
         <div className="h-72 px-2 sm:px-3 pt-4 pb-2">
           {timeline ? (
@@ -189,10 +177,7 @@ export default function SpendingPlanPage() {
             dateLocale={dateLocale}
           />
           <SectionCard>
-            <SectionHeader
-              title={t('spendingPlan.savingsTitle')}
-              subtitle={t('spendingPlan.savingsHint')}
-            />
+            <SectionHeader title={t('spendingPlan.savingsTitle')} subtitle={t('spendingPlan.savingsHint')} />
             <div className="px-4 sm:px-5 py-4 space-y-4">
               <div className="space-y-2">
                 <Label>{t('spendingPlan.savingsUntil')}</Label>
@@ -222,9 +207,7 @@ export default function SpendingPlanPage() {
         </div>
       )}
 
-      {editorOpen && (
-        <PlanEditorDialog plan={plan ?? null} onClose={() => setEditorOpen(false)} />
-      )}
+      {editorOpen && <PlanEditorDialog plan={plan ?? null} onClose={() => setEditorOpen(false)} />}
     </div>
   )
 }
@@ -244,7 +227,8 @@ function PlanHero({
   const { t } = useTranslation()
   const remaining = timeline.today.remaining
   const covered = timeline.covered_until !== null
-  const divider = "relative min-w-0 sm:before:content-[''] sm:before:absolute sm:before:-left-2.5 sm:before:top-1.5 sm:before:bottom-1.5 sm:before:w-px sm:before:bg-border"
+  const divider =
+    "relative min-w-0 sm:before:content-[''] sm:before:absolute sm:before:-left-2.5 sm:before:top-1.5 sm:before:bottom-1.5 sm:before:w-px sm:before:bg-border"
   return (
     <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
       <div className="pb-4 mb-4 border-b border-border">
@@ -253,7 +237,10 @@ function PlanHero({
           {money(remaining)}
         </p>
         <p className="text-xs text-muted-foreground mt-1">
-          {t('spendingPlan.todayCaption', { spent: money(timeline.today.spent), allowance: money(timeline.today.allowance) })}
+          {t('spendingPlan.todayCaption', {
+            spent: money(timeline.today.spent),
+            allowance: money(timeline.today.allowance),
+          })}
         </p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-4">
@@ -274,9 +261,9 @@ function PlanHero({
         <Indicator
           className={divider}
           label={t('spendingPlan.coverageLabel')}
-          value={timeline.covered_until
-            ? formatPlanDate(timeline.covered_until, dateLocale)
-            : t('spendingPlan.notCovered')}
+          value={
+            timeline.covered_until ? formatPlanDate(timeline.covered_until, dateLocale) : t('spendingPlan.notCovered')
+          }
           caption={t('spendingPlan.floorCaption', {
             floor: money(timeline.balance_floor),
             horizon: t('spendingPlan.months', { count: plan.horizon_months }),
@@ -304,12 +291,13 @@ function Indicator({
   return (
     <div className={cn('min-w-0', className)}>
       <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px]">{label}</p>
-      <p className={cn(
-        'text-lg sm:text-xl font-bold tabular-nums truncate',
-        tone === 'good' && 'text-emerald-600 dark:text-emerald-400',
-        tone === 'bad' && 'text-rose-500',
-        tone === 'neutral' && 'text-foreground',
-      )}
+      <p
+        className={cn(
+          'text-lg sm:text-xl font-bold tabular-nums truncate',
+          tone === 'good' && 'text-emerald-600 dark:text-emerald-400',
+          tone === 'bad' && 'text-rose-500',
+          tone === 'neutral' && 'text-foreground',
+        )}
       >
         {value}
       </p>
@@ -375,7 +363,9 @@ function PlanChart({
         </defs>
         <XAxis
           dataKey="date"
-          tickFormatter={(value: string) => new Date(`${value}T00:00:00`).toLocaleDateString(dateLocale, { month: 'short', year: '2-digit' })}
+          tickFormatter={(value: string) =>
+            new Date(`${value}T00:00:00`).toLocaleDateString(dateLocale, { month: 'short', year: '2-digit' })
+          }
           tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
           axisLine={false}
           tickLine={false}
@@ -399,11 +389,18 @@ function PlanChart({
           labelFormatter={(label) => formatPlanDate(String(label), dateLocale)}
           contentStyle={TOOLTIP_STYLE}
         />
-        {showFloor && <ReferenceLine y={timeline.balance_floor} stroke={FLOOR} strokeDasharray="4 4" strokeOpacity={0.7} />}
-        {coveredUntil && (
-          <ReferenceLine x={coveredUntil} stroke={FLOOR} strokeOpacity={0.5} />
+        {showFloor && (
+          <ReferenceLine y={timeline.balance_floor} stroke={FLOOR} strokeDasharray="4 4" strokeOpacity={0.7} />
         )}
-        <Area type="monotone" dataKey="balance" stroke="none" tooltipType="none" fill="url(#planBalanceFill)" isAnimationActive={false} />
+        {coveredUntil && <ReferenceLine x={coveredUntil} stroke={FLOOR} strokeOpacity={0.5} />}
+        <Area
+          type="monotone"
+          dataKey="balance"
+          stroke="none"
+          tooltipType="none"
+          fill="url(#planBalanceFill)"
+          isAnimationActive={false}
+        />
         <Line
           type="monotone"
           dataKey="balance"
@@ -459,11 +456,13 @@ function PurchaseSimulator({
       <SectionHeader
         title={t('spendingPlan.simulateTitle')}
         subtitle={t('spendingPlan.simulateHint')}
-        action={simulated ? (
-          <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => onSimulate(null)}>
-            <X size={13} /> {t('spendingPlan.clearSimulation')}
-          </Button>
-        ) : undefined}
+        action={
+          simulated ? (
+            <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => onSimulate(null)}>
+              <X size={13} /> {t('spendingPlan.clearSimulation')}
+            </Button>
+          ) : undefined
+        }
       />
       <form
         className="px-4 sm:px-5 py-4 space-y-4"
@@ -553,9 +552,8 @@ function ScenarioComparison({
   dateLocale: string
 }) {
   const { t } = useTranslation()
-  const coverage = (timeline: SpendingPlanTimeline) => timeline.covered_until
-    ? formatPlanDate(timeline.covered_until, dateLocale)
-    : t('spendingPlan.notCovered')
+  const coverage = (timeline: SpendingPlanTimeline) =>
+    timeline.covered_until ? formatPlanDate(timeline.covered_until, dateLocale) : t('spendingPlan.notCovered')
   const amountOr = (value: number | null) => (value === null ? '—' : money(value))
   const rows: { label: string; before: string; after: string; worse: boolean }[] = [
     {
@@ -587,7 +585,9 @@ function ScenarioComparison({
     <table className="w-full border-t border-border">
       <thead>
         <tr className="border-b border-border">
-          <th className={cn(TH, 'text-left px-4 sm:px-5')}><span className="sr-only">{t('spendingPlan.simulateTitle')}</span></th>
+          <th className={cn(TH, 'text-left px-4 sm:px-5')}>
+            <span className="sr-only">{t('spendingPlan.simulateTitle')}</span>
+          </th>
           <th className={cn(TH, 'text-right px-3')}>{t('spendingPlan.withoutPurchase')}</th>
           <th className={cn(TH, 'text-right px-4 sm:px-5')}>
             <span className="inline-flex items-center gap-1.5">
@@ -602,10 +602,11 @@ function ScenarioComparison({
           <tr key={row.label} className="border-b border-border last:border-0">
             <td className="py-3 px-4 sm:px-5 text-sm text-muted-foreground">{row.label}</td>
             <td className="py-3 px-3 text-sm text-right tabular-nums text-foreground">{row.before}</td>
-            <td className={cn(
-              'py-3 px-4 sm:px-5 text-sm text-right tabular-nums font-semibold',
-              row.worse ? 'text-rose-500' : 'text-foreground',
-            )}
+            <td
+              className={cn(
+                'py-3 px-4 sm:px-5 text-sm text-right tabular-nums font-semibold',
+                row.worse ? 'text-rose-500' : 'text-foreground',
+              )}
             >
               {row.after}
             </td>
@@ -638,12 +639,19 @@ function SavingsFigure({
     <div className="rounded-lg border border-border px-4 py-3">
       {label && (
         <p className="text-xs font-medium text-muted-foreground mb-1 inline-flex items-center gap-1.5">
-          {tone === 'scenario' && <span className="h-0 w-3 border-t-2 border-dashed" style={{ borderColor: SCENARIO }} />}
+          {tone === 'scenario' && (
+            <span className="h-0 w-3 border-t-2 border-dashed" style={{ borderColor: SCENARIO }} />
+          )}
           {label}
         </p>
       )}
       <p className="text-xl font-bold tabular-nums text-foreground">{money(end)}</p>
-      <p className={cn('text-xs tabular-nums mt-0.5', delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500')}>
+      <p
+        className={cn(
+          'text-xs tabular-nums mt-0.5',
+          delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500',
+        )}
+      >
         {t('spendingPlan.savingsDelta', { amount: `${delta >= 0 ? '+' : '−'}${money(Math.abs(delta))}` })}
       </p>
     </div>
@@ -672,7 +680,9 @@ function PlanEditorDialog({ plan, onClose }: { plan: SpendingPlan | null; onClos
   })
   const [draft, setDraft] = useState<SpendingPlanInput>(() => draftFrom(plan))
   const [allowanceText, setAllowanceText] = useState(() => (plan ? String(Number(plan.daily_allowance)) : ''))
-  const [floorText, setFloorText] = useState(() => (plan && Number(plan.balance_floor) ? String(Number(plan.balance_floor)) : ''))
+  const [floorText, setFloorText] = useState(() =>
+    plan && Number(plan.balance_floor) ? String(Number(plan.balance_floor)) : '',
+  )
 
   const previewDraft = useDeferredValue(draft)
   const { data: preview } = useQuery({
@@ -710,14 +720,21 @@ function PlanEditorDialog({ plan, onClose }: { plan: SpendingPlan | null; onClos
     () => sortAccountsByDisplayName((accountsList ?? []).filter((a) => !a.is_closed && a.type !== 'credit_card')),
     [accountsList],
   )
-  const isChosen = (id: string, type: string) => (draft.account_ids === null ? type !== 'loan' : draft.account_ids.includes(id))
-  const toggleAccount = (id: string) => setDraft((current) => {
-    const base = current.account_ids ?? planAccounts.filter((a) => a.type !== 'loan').map((a) => a.id)
-    return { ...current, account_ids: base.includes(id) ? base.filter((x) => x !== id) : [...base, id] }
-  })
+  const isChosen = (id: string, type: string) =>
+    draft.account_ids === null ? type !== 'loan' : draft.account_ids.includes(id)
+  const toggleAccount = (id: string) =>
+    setDraft((current) => {
+      const base = current.account_ids ?? planAccounts.filter((a) => a.type !== 'loan').map((a) => a.id)
+      return { ...current, account_ids: base.includes(id) ? base.filter((x) => x !== id) : [...base, id] }
+    })
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{plan ? t('spendingPlan.editPlan') : t('spendingPlan.createPlan')}</DialogTitle>
@@ -795,7 +812,9 @@ function PlanEditorDialog({ plan, onClose }: { plan: SpendingPlan | null; onClos
                 }}
               >
                 {HORIZONS.map((months) => (
-                  <option key={months} value={months}>{t('spendingPlan.months', { count: months })}</option>
+                  <option key={months} value={months}>
+                    {t('spendingPlan.months', { count: months })}
+                  </option>
                 ))}
               </select>
             </div>
@@ -832,10 +851,16 @@ function PlanEditorDialog({ plan, onClose }: { plan: SpendingPlan | null; onClos
               >
                 {t('spendingPlan.remove')}
               </Button>
-            ) : <span />}
+            ) : (
+              <span />
+            )}
             <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-              <Button type="submit" disabled={save.isPending}>{t('common.save')}</Button>
+              <Button type="button" variant="outline" onClick={onClose}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" disabled={save.isPending}>
+                {t('common.save')}
+              </Button>
             </div>
           </DialogFooter>
         </form>

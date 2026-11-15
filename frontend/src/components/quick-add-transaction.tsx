@@ -47,7 +47,7 @@ export default function QuickAddTransaction({ open, onClose }: { open: boolean; 
       formResetKey={formResetKey}
       categories={categoriesList ?? []}
       categoryGroups={categoryGroupsList ?? []}
-      accounts={(accountsList ?? []).filter(a => !a.is_closed)}
+      accounts={(accountsList ?? []).filter((a) => !a.is_closed)}
       onSave={(data, recurringData, installmentData, pendingFiles, action) => {
         createTransaction(data, recurringData, installmentData, pendingFiles, action)
       }}

@@ -68,10 +68,21 @@ function DesktopSecondaryActions(props: TransactionsPageActionsProps) {
         </Button>
       )}
       <Button variant="outline" disabled={props.exporting} onClick={props.onExport}>
-        <Download size={16} className="mr-1.5" />{props.exportLabel}
+        <Download size={16} className="mr-1.5" />
+        {props.exportLabel}
       </Button>
-      {props.onDuplicate && <Button variant="outline" onClick={props.onDuplicate}><Copy size={16} className="mr-1.5" />{t('transactions.duplicate')}</Button>}
-      {props.onTransfer && <Button variant="outline" onClick={props.onTransfer}><ArrowLeftRight size={16} className="mr-1.5" />{t('transactions.transfer')}</Button>}
+      {props.onDuplicate && (
+        <Button variant="outline" onClick={props.onDuplicate}>
+          <Copy size={16} className="mr-1.5" />
+          {t('transactions.duplicate')}
+        </Button>
+      )}
+      {props.onTransfer && (
+        <Button variant="outline" onClick={props.onTransfer}>
+          <ArrowLeftRight size={16} className="mr-1.5" />
+          {t('transactions.transfer')}
+        </Button>
+      )}
     </div>
   )
 }
@@ -101,14 +112,38 @@ function MobileSecondaryMenu(props: TransactionsPageActionsProps) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuRadioGroup value={props.view.value} onValueChange={changeView}>
-          <DropdownMenuRadioItem value="list"><List />{props.view.listLabel}</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="calendar"><CalendarDays />{props.view.calendarLabel}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="list">
+            <List />
+            {props.view.listLabel}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="calendar">
+            <CalendarDays />
+            {props.view.calendarLabel}
+          </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={props.exporting} onClick={props.onExport}><Download size={16} className="mr-2" />{props.exportLabel}</DropdownMenuItem>
-        {props.onRefresh && <DropdownMenuItem onClick={props.onRefresh}><RefreshCw size={16} className="mr-2" />{t('transactions.refresh')}</DropdownMenuItem>}
-        {props.onDuplicate && <DropdownMenuItem onClick={props.onDuplicate}><Copy size={16} className="mr-2" />{t('transactions.duplicate')}</DropdownMenuItem>}
-        {props.onTransfer && <DropdownMenuItem onClick={props.onTransfer}><ArrowLeftRight size={16} className="mr-2" />{t('transactions.transfer')}</DropdownMenuItem>}
+        <DropdownMenuItem disabled={props.exporting} onClick={props.onExport}>
+          <Download size={16} className="mr-2" />
+          {props.exportLabel}
+        </DropdownMenuItem>
+        {props.onRefresh && (
+          <DropdownMenuItem onClick={props.onRefresh}>
+            <RefreshCw size={16} className="mr-2" />
+            {t('transactions.refresh')}
+          </DropdownMenuItem>
+        )}
+        {props.onDuplicate && (
+          <DropdownMenuItem onClick={props.onDuplicate}>
+            <Copy size={16} className="mr-2" />
+            {t('transactions.duplicate')}
+          </DropdownMenuItem>
+        )}
+        {props.onTransfer && (
+          <DropdownMenuItem onClick={props.onTransfer}>
+            <ArrowLeftRight size={16} className="mr-2" />
+            {t('transactions.transfer')}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -121,7 +156,10 @@ function MobileSecondaryMenu(props: TransactionsPageActionsProps) {
 export function TransactionsPageActions(props: TransactionsPageActionsProps) {
   // Secondary actions stay labelled on desktop and collapse only where width is scarce.
   return (
-    <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-wrap sm:justify-end" data-testid={props.testId}>
+    <div
+      className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-wrap sm:justify-end"
+      data-testid={props.testId}
+    >
       <HeaderMonthStepper month={props.month} />
       <DesktopSecondaryActions {...props} />
       <PrimaryAddAction onAdd={props.onAdd} />

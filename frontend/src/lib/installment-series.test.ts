@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  buildInstallmentSeriesInput,
-  hasNonStatusChange,
-  isManualInstallmentSeriesRow,
-} from './installment-series'
+import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from './installment-series'
 import type { InstallmentSeriesFormInput } from './installment-series'
 import type { Transaction, TransactionEditPayload } from '../types'
 
@@ -28,7 +24,10 @@ describe('buildInstallmentSeriesInput', () => {
   it('carries a split across categories to every parcel, without a single category', () => {
     const categoryLines = {
       share_type: 'percent' as const,
-      lines: [{ category_id: 'cat-1', share_pct: 70 }, { category_id: 'cat-2', share_pct: 30 }],
+      lines: [
+        { category_id: 'cat-1', share_pct: 70 },
+        { category_id: 'cat-2', share_pct: 30 },
+      ],
     }
     const payload = buildInstallmentSeriesInput({ ...base, categoryLines })
     expect(payload.base.category_lines).toEqual(categoryLines)
@@ -77,12 +76,8 @@ describe('buildInstallmentSeriesInput', () => {
     expect(buildInstallmentSeriesInput({ ...base, installmentFrequency: 'quarterly' }).frequency).toBe('quarterly')
     expect(buildInstallmentSeriesInput({ ...base, installmentFrequency: 'weekly' }).frequency).toBe('weekly')
     expect(buildInstallmentSeriesInput({ ...base, installmentFrequency: 'yearly' }).frequency).toBe('yearly')
-    expect(buildInstallmentSeriesInput({ ...base, installmentFrequency: 'biweekly' }).frequency).toBe(
-      'biweekly',
-    )
-    expect(
-      buildInstallmentSeriesInput({ ...base, installmentFrequency: 'semiannual' }).frequency,
-    ).toBe('semiannual')
+    expect(buildInstallmentSeriesInput({ ...base, installmentFrequency: 'biweekly' }).frequency).toBe('biweekly')
+    expect(buildInstallmentSeriesInput({ ...base, installmentFrequency: 'semiannual' }).frequency).toBe('semiannual')
   })
 
   it('omits currency when not set', () => {
@@ -116,42 +111,52 @@ describe('buildInstallmentSeriesInput', () => {
 
 describe('isManualInstallmentSeriesRow', () => {
   it('recognizes multi-installment rows created by the series endpoint', () => {
-    expect(isManualInstallmentSeriesRow({
-      installment_series_id: 'series-1',
-      installment_number: 2,
-      total_installments: 3,
-    })).toBe(true)
+    expect(
+      isManualInstallmentSeriesRow({
+        installment_series_id: 'series-1',
+        installment_number: 2,
+        total_installments: 3,
+      }),
+    ).toBe(true)
   })
 
   it('does not recognize bank-synced installment rows', () => {
-    expect(isManualInstallmentSeriesRow({
-      installment_series_id: null,
-      installment_number: 2,
-      total_installments: 3,
-    })).toBe(false)
+    expect(
+      isManualInstallmentSeriesRow({
+        installment_series_id: null,
+        installment_number: 2,
+        total_installments: 3,
+      }),
+    ).toBe(false)
   })
 
   it('keeps recognizing a parcel that bank sync absorbed', () => {
     // The fuzzy manual match flips `source` to "sync" but leaves the series
     // id, so the scope prompt must not vanish for that parcel.
-    expect(isManualInstallmentSeriesRow({
-      installment_series_id: 'series-1',
-      installment_number: 1,
-      total_installments: 3,
-    })).toBe(true)
+    expect(
+      isManualInstallmentSeriesRow({
+        installment_series_id: 'series-1',
+        installment_number: 1,
+        total_installments: 3,
+      }),
+    ).toBe(true)
   })
 
   it('does not recognize single-parcel or incomplete installment metadata', () => {
-    expect(isManualInstallmentSeriesRow({
-      installment_series_id: 'series-1',
-      installment_number: 1,
-      total_installments: 1,
-    })).toBe(false)
-    expect(isManualInstallmentSeriesRow({
-      installment_series_id: 'series-1',
-      installment_number: null,
-      total_installments: 3,
-    })).toBe(false)
+    expect(
+      isManualInstallmentSeriesRow({
+        installment_series_id: 'series-1',
+        installment_number: 1,
+        total_installments: 1,
+      }),
+    ).toBe(false)
+    expect(
+      isManualInstallmentSeriesRow({
+        installment_series_id: 'series-1',
+        installment_number: null,
+        total_installments: 3,
+      }),
+    ).toBe(false)
   })
 })
 
@@ -210,11 +215,16 @@ describe('hasNonStatusChange', () => {
   })
 
   it('treats untouched FX overrides as unchanged', () => {
-    expect(hasNonStatusChange({
-      ...statusOnlyPayload,
-      amount_primary: 150,
-      fx_rate_used: 1,
-    }, original)).toBe(false)
+    expect(
+      hasNonStatusChange(
+        {
+          ...statusOnlyPayload,
+          amount_primary: 150,
+          fx_rate_used: 1,
+        },
+        original,
+      ),
+    ).toBe(false)
   })
 
   it('treats null vs undefined ids as unchanged', () => {

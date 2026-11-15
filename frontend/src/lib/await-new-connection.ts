@@ -32,9 +32,7 @@ export async function waitForNewConnection(
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
     try {
-      const added = (await list()).filter(
-        (c) => c.provider === provider && c.user_id === userId && !knownIds.has(c.id),
-      )
+      const added = (await list()).filter((c) => c.provider === provider && c.user_id === userId && !knownIds.has(c.id))
       if (added.length === 1) return added[0]
       if (added.length > 1) return null
     } catch {

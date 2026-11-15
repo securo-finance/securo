@@ -8,9 +8,7 @@ describe('formatDateRange', () => {
   })
 
   it('drops the year in compact mode, even across a year boundary', () => {
-    expect(formatDateRange('2025-09-26', '2026-01-30', 'en-US', { compact: true })).toBe(
-      'Sep 26 - Jan 30',
-    )
+    expect(formatDateRange('2025-09-26', '2026-01-30', 'en-US', { compact: true })).toBe('Sep 26 - Jan 30')
   })
 
   it('formats a from-only lower bound', () => {

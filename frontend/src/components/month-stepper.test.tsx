@@ -6,9 +6,7 @@ import { renderWithProviders } from '@/test/utils'
 
 describe('MonthStepper', () => {
   it('shows the selected month', () => {
-    renderWithProviders(
-      <MonthStepper value="2026-06" onChange={vi.fn()} locale="en-US" />,
-    )
+    renderWithProviders(<MonthStepper value="2026-06" onChange={vi.fn()} locale="en-US" />)
 
     expect(screen.getByTitle(/June 2026/)).toBeInTheDocument()
   })
@@ -82,22 +80,16 @@ describe('MonthStepper', () => {
   })
 
   it('renders the label in the given locale', () => {
-    renderWithProviders(
-      <MonthStepper value="2026-05" onChange={vi.fn()} locale="pt-BR" />,
-    )
+    renderWithProviders(<MonthStepper value="2026-05" onChange={vi.fn()} locale="pt-BR" />)
 
     expect(screen.getByTitle(/maio de 2026/i)).toBeInTheDocument()
   })
 
   it('holds no state of its own, so the parent stays the source of truth', () => {
     const onChange = vi.fn()
-    const { rerender } = renderWithProviders(
-      <MonthStepper value="2026-06" onChange={onChange} locale="en-US" />,
-    )
+    const { rerender } = renderWithProviders(<MonthStepper value="2026-06" onChange={onChange} locale="en-US" />)
 
-    rerender(
-      <MonthStepper value="2026-09" onChange={onChange} locale="en-US" />,
-    )
+    rerender(<MonthStepper value="2026-09" onChange={onChange} locale="en-US" />)
 
     expect(screen.getByTitle(/September 2026/)).toBeInTheDocument()
   })

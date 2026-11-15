@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useAutoUpdateCheck } from '@/hooks/use-auto-update-check'
 
-const LATEST_RELEASE_URL =
-  'https://api.github.com/repos/securo-finance/securo/releases/latest'
+const LATEST_RELEASE_URL = 'https://api.github.com/repos/securo-finance/securo/releases/latest'
 
 const SIX_HOURS = 1000 * 60 * 60 * 6
 

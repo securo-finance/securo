@@ -5,9 +5,7 @@ import { useEffect } from 'react'
  * Lives in its own file so the palette module can stay a pure component
  * export (keeps React Fast Refresh happy).
  */
-export function useCommandPaletteHotkey(
-  setOpen: (open: boolean | ((prev: boolean) => boolean)) => void
-) {
+export function useCommandPaletteHotkey(setOpen: (open: boolean | ((prev: boolean) => boolean)) => void) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey

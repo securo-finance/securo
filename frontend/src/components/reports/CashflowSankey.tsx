@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  sankey as d3Sankey,
-  sankeyLinkHorizontal,
-  sankeyJustify,
-} from 'd3-sankey'
+import { sankey as d3Sankey, sankeyLinkHorizontal, sankeyJustify } from 'd3-sankey'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { ReportCompositionItem } from '@/types'
 
@@ -49,11 +45,7 @@ interface SankeyLinkDatum {
 // What the cursor is isolating. A plain node hover lights its own flows; the
 // two halves of the centre bar light *all* expenses or the surplus at once —
 // the "show me everything I spent" gesture the single bar couldn't offer.
-type Hover =
-  | { kind: 'node'; index: number }
-  | { kind: 'expenses' }
-  | { kind: 'investments' }
-  | { kind: 'surplus' }
+type Hover = { kind: 'node'; index: number } | { kind: 'expenses' } | { kind: 'investments' } | { kind: 'surplus' }
 
 function formatMoney(value: number, currency: string, locale: string, compact: boolean) {
   return new Intl.NumberFormat(locale, {
@@ -71,10 +63,7 @@ function collapse(items: ReportCompositionItem[], otherLabel: string): ReportCom
   const top = sorted.slice(0, MAX_NODES_PER_SIDE - 1)
   const rest = sorted.slice(MAX_NODES_PER_SIDE - 1)
   const otherValue = rest.reduce((s, c) => s + c.value, 0)
-  return [
-    ...top,
-    { key: 'other', label: otherLabel, value: otherValue, color: NEUTRAL_COLOR, group: rest[0].group },
-  ]
+  return [...top, { key: 'other', label: otherLabel, value: otherValue, color: NEUTRAL_COLOR, group: rest[0].group }]
 }
 
 interface CashflowSankeyProps {
@@ -100,7 +89,11 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
     return () => observer.disconnect()
   }, [])
 
-  const { nodes: rawNodes, links: rawLinks, hasData } = useMemo(() => {
+  const {
+    nodes: rawNodes,
+    links: rawLinks,
+    hasData,
+  } = useMemo(() => {
     const income = collapse(
       composition.filter((c) => c.group === 'income' && c.value > 0),
       t('reports.other'),
@@ -137,9 +130,7 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
     }
 
     const labelFor = (c: ReportCompositionItem) =>
-      c.key === 'uncategorized' ? t('reports.uncategorized')
-        : c.key === 'other' ? t('reports.other')
-          : c.label
+      c.key === 'uncategorized' ? t('reports.uncategorized') : c.key === 'other' ? t('reports.other') : c.label
     const isNeutral = (c: ReportCompositionItem) => c.key === 'uncategorized' || c.key === 'other'
 
     income.forEach((c, i) =>
@@ -239,8 +230,8 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
     for (const left of [true, false]) {
       const column = layout.nodes
         .filter((n) => n.id !== 'center')
-        .filter((n) => ((n.x0 ?? 0) < width / 2) === left)
-        .sort((a, b) => ((a.y0! + a.y1!) / 2) - ((b.y0! + b.y1!) / 2))
+        .filter((n) => (n.x0 ?? 0) < width / 2 === left)
+        .sort((a, b) => (a.y0! + a.y1!) / 2 - (b.y0! + b.y1!) / 2)
       let prev = -Infinity
       for (const n of column) {
         let y = (n.y0! + n.y1!) / 2
@@ -276,27 +267,25 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
   }, [layout, hover])
 
   if (!hasData) {
-    return (
-      <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
-    )
+    return <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
   }
 
   const linkPath = sankeyLinkHorizontal<SankeyNodeDatum, SankeyLinkDatum>()
   // Percentages are relative to total cash-flow throughput — the centre node's
   // value (d3-sankey sets it to the larger of its in/out sums).
   const total = layout?.nodes.find((n) => n.id === 'center')?.value ?? 0
-  const fmtAmount = (v: number) =>
-    privacyMode ? MASK : formatMoney(v, currency, locale, true)
+  const fmtAmount = (v: number) => (privacyMode ? MASK : formatMoney(v, currency, locale, true))
 
   // The centre bar's outflow split: spent (red) vs invested (teal) vs kept
   // (green). Links attach top→bottom in node order (expenses, investments,
   // surplus), so stacking the bar's colours in that order lines up with where
   // the flows actually leave the hub.
-  const outBy = (pred: (n: SankeyNodeDatum) => boolean) => layout
-    ? layout.links
-        .filter((l) => (l.source as SankeyNodeDatum).id === 'center' && pred(l.target as SankeyNodeDatum))
-        .reduce((s, l) => s + l.value, 0)
-    : 0
+  const outBy = (pred: (n: SankeyNodeDatum) => boolean) =>
+    layout
+      ? layout.links
+          .filter((l) => (l.source as SankeyNodeDatum).id === 'center' && pred(l.target as SankeyNodeDatum))
+          .reduce((s, l) => s + l.value, 0)
+      : 0
   const expenseOut = outBy((n) => n.side === 'expense' && n.id !== 'surplus')
   const investOut = outBy((n) => n.side === 'investment')
   const surplusOut = outBy((n) => n.id === 'surplus')
@@ -319,13 +308,7 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
               const src = link.source as SankeyNodeDatum & { x1: number }
               const tgt = link.target as SankeyNodeDatum & { x0: number }
               return (
-                <linearGradient
-                  key={i}
-                  id={`flow-grad-${i}`}
-                  gradientUnits="userSpaceOnUse"
-                  x1={src.x1}
-                  x2={tgt.x0}
-                >
+                <linearGradient key={i} id={`flow-grad-${i}`} gradientUnits="userSpaceOnUse" x1={src.x1} x2={tgt.x0}>
                   <stop offset="0%" stopColor={src.color} />
                   <stop offset="100%" stopColor={tgt.color} />
                 </linearGradient>
@@ -382,31 +365,68 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
                 const redH = nodeHeight * (expenseOut / out)
                 const tealH = nodeHeight * (investOut / out)
                 const segments = [
-                  { h: redH, fill: EXPENSE_COLOR, hover: { kind: 'expenses' } as Hover, title: t('reports.expenses'), val: expenseOut },
-                  { h: tealH, fill: INVEST_COLOR, hover: { kind: 'investments' } as Hover, title: t('reports.investments'), val: investOut },
-                  { h: Math.max(0, nodeHeight - redH - tealH), fill: SURPLUS_COLOR, hover: { kind: 'surplus' } as Hover, title: t('reports.surplus'), val: surplusOut },
+                  {
+                    h: redH,
+                    fill: EXPENSE_COLOR,
+                    hover: { kind: 'expenses' } as Hover,
+                    title: t('reports.expenses'),
+                    val: expenseOut,
+                  },
+                  {
+                    h: tealH,
+                    fill: INVEST_COLOR,
+                    hover: { kind: 'investments' } as Hover,
+                    title: t('reports.investments'),
+                    val: investOut,
+                  },
+                  {
+                    h: Math.max(0, nodeHeight - redH - tealH),
+                    fill: SURPLUS_COLOR,
+                    hover: { kind: 'surplus' } as Hover,
+                    title: t('reports.surplus'),
+                    val: surplusOut,
+                  },
                 ]
                 let segY = y0
                 return (
                   <g key={i} style={{ transition: 'opacity 0.2s ease', opacity: dimmed ? 0.4 : 1 }}>
-                    {segments.filter((seg) => seg.val > 0).map((seg, si) => {
-                      const yy = segY
-                      segY += seg.h
-                      return (
-                        <rect
-                          key={si}
-                          x={x0} y={yy} width={nodeWidthPx} height={Math.max(1, seg.h)}
-                          fill={seg.fill} rx={4}
-                          style={{ cursor: 'pointer' }}
-                          onMouseEnter={() => setHover(seg.hover)}
-                        >
-                          <title>{seg.title}: {fmtAmount(seg.val)}</title>
-                        </rect>
-                      )
-                    })}
-                    <text x={cx} y={10} textAnchor="middle" className="fill-foreground pointer-events-none" style={{ fontSize: 11, fontWeight: 600 }}>
+                    {segments
+                      .filter((seg) => seg.val > 0)
+                      .map((seg, si) => {
+                        const yy = segY
+                        segY += seg.h
+                        return (
+                          <rect
+                            key={si}
+                            x={x0}
+                            y={yy}
+                            width={nodeWidthPx}
+                            height={Math.max(1, seg.h)}
+                            fill={seg.fill}
+                            rx={4}
+                            style={{ cursor: 'pointer' }}
+                            onMouseEnter={() => setHover(seg.hover)}
+                          >
+                            <title>
+                              {seg.title}: {fmtAmount(seg.val)}
+                            </title>
+                          </rect>
+                        )
+                      })}
+                    <text
+                      x={cx}
+                      y={10}
+                      textAnchor="middle"
+                      className="fill-foreground pointer-events-none"
+                      style={{ fontSize: 11, fontWeight: 600 }}
+                    >
                       {node.name}
-                      <tspan x={cx} dy={13} className="fill-muted-foreground" style={{ fontSize: 10, fontFamily: 'var(--font-mono, monospace)', fontWeight: 400 }}>
+                      <tspan
+                        x={cx}
+                        dy={13}
+                        className="fill-muted-foreground"
+                        style={{ fontSize: 10, fontFamily: 'var(--font-mono, monospace)', fontWeight: 400 }}
+                      >
                         {fmtAmount(node.value ?? 0)}
                       </tspan>
                     </text>
@@ -424,7 +444,9 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
                   onMouseEnter={() => setHover({ kind: 'node', index: i })}
                 >
                   <rect x={x0} y={y0} width={Math.max(1, x1 - x0)} height={nodeHeight} fill={node.color} rx={3}>
-                    <title>{node.name}: {fmtAmount(node.value ?? 0)}</title>
+                    <title>
+                      {node.name}: {fmtAmount(node.value ?? 0)}
+                    </title>
                   </rect>
                   <text
                     x={labelX}

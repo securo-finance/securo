@@ -3,7 +3,15 @@ import { AccountIcon } from '@/components/account-icon'
 import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowLeftRight,
+  CalendarClock,
+  ChartNoAxesColumn,
+  Clock,
+  EyeClosed,
+  Paperclip,
+} from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency } from '@/lib/format'
@@ -57,19 +65,11 @@ export function MobileTransactionRow({
 }: MobileTransactionRowProps) {
   const { mask } = usePrivacyMode()
   const { t } = useTranslation()
-  const description = localizeOpeningBalance
-    ? transactionDescription(tx.description, tx.source, t)
-    : tx.description
+  const description = localizeOpeningBalance ? transactionDescription(tx.description, tx.source, t) : tx.description
 
-  const displayAmount = tx.is_shared && tx.viewer_share != null
-    ? Number(tx.viewer_share)
-    : Number(tx.amount)
+  const displayAmount = tx.is_shared && tx.viewer_share != null ? Number(tx.viewer_share) : Number(tx.amount)
 
-  const amountColor = tx.is_ignored
-    ? 'text-gray-500'
-    : tx.type === 'credit'
-      ? 'text-emerald-600'
-      : 'text-rose-500'
+  const amountColor = tx.is_ignored ? 'text-gray-500' : tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
 
   const virtual = tx.virtual === true
 
@@ -78,9 +78,7 @@ export function MobileTransactionRow({
       ref={highlighted ? highlightedRowRef : undefined}
       className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 transition-colors ${
         selected ? 'bg-primary/5' : 'bg-card'
-      } ${highlighted ? 'securo-highlight-flash' : ''} ${
-        virtual ? 'opacity-80' : ''
-      } ${
+      } ${highlighted ? 'securo-highlight-flash' : ''} ${virtual ? 'opacity-80' : ''} ${
         virtual || tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer active:bg-muted/60'
       }`}
       onClick={() => {
@@ -115,27 +113,24 @@ export function MobileTransactionRow({
       <div className="min-w-0 flex-1">
         {/* Description row */}
         <div className="flex items-center gap-1.5">
-          <p className={`text-sm font-semibold text-foreground leading-tight min-w-0 ${hasWordBreaks(description) ? 'break-words whitespace-normal' : 'truncate'}`}>
+          <p
+            className={`text-sm font-semibold text-foreground leading-tight min-w-0 ${hasWordBreaks(description) ? 'break-words whitespace-normal' : 'truncate'}`}
+          >
             {description}
           </p>
           {tx.group_id && (
             <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
-              {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
+              {tx.is_shared && tx.parent_owner_name
+                ? tx.parent_owner_name
+                : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
             </span>
           )}
           {isSplitByCategory(tx) && <CategorySplitBadge tx={tx} compact className="shrink-0 text-[9px] px-1" />}
           {isTransferTransaction(tx) && (
-            <ArrowLeftRight
-              className="h-3 w-3 text-blue-600 shrink-0"
-              aria-label={t('transactions.transfer')}
-            />
+            <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" aria-label={t('transactions.transfer')} />
           )}
-          {virtual && (
-            <CalendarClock className="h-3 w-3 text-primary shrink-0" />
-          )}
-          {tx.is_ignored && (
-            <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
-          )}
+          {virtual && <CalendarClock className="h-3 w-3 text-primary shrink-0" />}
+          {tx.is_ignored && <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />}
           {tx.exclude_from_pnl && !tx.is_ignored && (
             <ChartNoAxesColumn
               className="h-3 w-3 text-slate-500 shrink-0"
@@ -160,31 +155,23 @@ export function MobileTransactionRow({
               <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
             </span>
           )}
-          {(tx.attachment_count ?? 0) > 0 && (
-            <Paperclip size={11} className="text-muted-foreground shrink-0" />
-          )}
+          {(tx.attachment_count ?? 0) > 0 && <Paperclip size={11} className="text-muted-foreground shrink-0" />}
         </div>
 
         {/* Account row or payee row */}
         {showPayee ? (
           (tx.payee_name || tx.payee) && (tx.payee_name || tx.payee) !== tx.description ? (
-            <p className="text-xs text-muted-foreground mt-0.5 truncate">
-              {tx.payee_name || tx.payee}
-            </p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">{tx.payee_name || tx.payee}</p>
           ) : null
         ) : (
           account && (
             <div className="flex items-center gap-1.5 mt-0.5">
               <AccountIcon account={account} size="xs" />
-              <span className="text-xs text-muted-foreground truncate">
-                {getAccountName(account)}
-              </span>
+              <span className="text-xs text-muted-foreground truncate">{getAccountName(account)}</span>
               {tx.transfer_counterpart && (
                 <>
                   <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" aria-hidden="true" />
-                  <span className="text-xs text-muted-foreground truncate">
-                    {tx.transfer_counterpart.account_name}
-                  </span>
+                  <span className="text-xs text-muted-foreground truncate">{tx.transfer_counterpart.account_name}</span>
                 </>
               )}
             </div>
@@ -206,9 +193,7 @@ export function MobileTransactionRow({
         </span>
         {tx.amount_primary != null && tx.currency !== userCurrency && (
           <div className="flex items-center justify-end gap-0.5 mt-0.5">
-            {tx.fx_fallback && (
-              <AlertTriangle size={10} className="text-amber-500 shrink-0" />
-            )}
+            {tx.fx_fallback && <AlertTriangle size={10} className="text-amber-500 shrink-0" />}
             <span className="text-[10px] text-muted-foreground tabular-nums">
               {mask(formatCurrency(Math.abs(tx.amount_primary), userCurrency, locale))}
             </span>

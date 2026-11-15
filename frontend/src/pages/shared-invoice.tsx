@@ -29,9 +29,7 @@ export default function SharedInvoicePage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen grid place-items-center text-sm text-muted-foreground">
-        {t('common.loading')}
-      </div>
+      <div className="min-h-screen grid place-items-center text-sm text-muted-foreground">{t('common.loading')}</div>
     )
   }
 
@@ -40,9 +38,7 @@ export default function SharedInvoicePage() {
       <div className="min-h-screen grid place-items-center px-6">
         <div className="text-center space-y-2">
           <h1 className="text-lg font-semibold">{t('invoices.shared.notFoundTitle')}</h1>
-          <p className="text-sm text-muted-foreground max-w-sm">
-            {t('invoices.shared.notFoundBody')}
-          </p>
+          <p className="text-sm text-muted-foreground max-w-sm">{t('invoices.shared.notFoundBody')}</p>
         </div>
       </div>
     )

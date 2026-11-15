@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  getAssetValuePrimary,
-  getPortfolioShare,
-  getPortfolioTotalPrimary,
-} from '@/lib/asset-portfolio-share'
+import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } from '@/lib/asset-portfolio-share'
 
 describe('asset portfolio share', () => {
   const inPrimary = { currency: 'USD', current_value: 600, current_value_primary: null }

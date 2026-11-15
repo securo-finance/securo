@@ -116,9 +116,9 @@ describe('Reports page — Custom range segment', () => {
         day: '2-digit',
         month: 'short',
       })
-    expect(
-      screen.getByRole('button', { name: t('reports.customRange') }),
-    ).toHaveTextContent(`${fmt(`${year}-01-01`)} - ${fmt('2026-09-12')}`)
+    expect(screen.getByRole('button', { name: t('reports.customRange') })).toHaveTextContent(
+      `${fmt(`${year}-01-01`)} - ${fmt('2026-09-12')}`,
+    )
   })
 
   it('is not offered on the Cash Flow tab', async () => {
@@ -132,9 +132,9 @@ describe('Reports page — Custom range segment', () => {
   })
 })
 
-
 it.each(['Cancel', 'Escape', 'outside'] as const)(
-  '6M → Custom → %s leaves the preset and query unchanged', async (dismiss) => {
+  '6M → Custom → %s leaves the preset and query unchanged',
+  async (dismiss) => {
     const { user } = renderWithProviders(<ReportsPage />)
     await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalledTimes(1))
     const preset = screen.getByRole('button', { name: t('reports.range6m') })
@@ -171,9 +171,7 @@ it.each([
   await user.click(custom)
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
   const reportApi = tab === 'reports.netWorth' ? api.reports.netWorth : api.reports.incomeExpenses
-  await waitFor(() => expect(reportApi.mock.calls.at(-1)?.slice(-2)).toEqual([
-    '2026-01-01', '2026-09-12',
-  ]))
+  await waitFor(() => expect(reportApi.mock.calls.at(-1)?.slice(-2)).toEqual(['2026-01-01', '2026-09-12']))
   await user.click(custom)
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.reset') }))
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
@@ -192,13 +190,13 @@ it('preserves saved custom dates across supported tabs and preset dismissal', as
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
   for (const tab of ['reports.incomeExpenses', 'reports.moneyMap']) {
     await user.click(screen.getByRole('button', { name: t(tab) }))
-    await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2))
-      .toEqual(['2026-01-01', '2026-09-12']))
+    await waitFor(() =>
+      expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2)).toEqual(['2026-01-01', '2026-09-12']),
+    )
     expect(custom).toHaveClass('bg-primary')
   }
   await user.click(screen.getByRole('button', { name: t('reports.range6m') }))
-  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2))
-    .toEqual([undefined, undefined]))
+  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2)).toEqual([undefined, undefined]))
   const count = api.reports.incomeExpenses.mock.calls.length
   await user.click(custom)
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.reset') }))
@@ -207,8 +205,9 @@ it('preserves saved custom dates across supported tabs and preset dismissal', as
   expect(screen.getByRole('button', { name: t('reports.range6m') })).toHaveClass('bg-primary')
   await user.click(custom)
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
-  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2))
-    .toEqual(['2026-01-01', '2026-09-12']))
+  await waitFor(() =>
+    expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2)).toEqual(['2026-01-01', '2026-09-12']),
+  )
   await user.click(screen.getByRole('button', { name: t('reports.cashFlow') }))
   await waitFor(() => expect(api.reports.cashFlow).toHaveBeenCalled())
   expect(screen.queryByRole('button', { name: t('reports.customRange') })).not.toBeInTheDocument()
@@ -216,8 +215,7 @@ it('preserves saved custom dates across supported tabs and preset dismissal', as
   await user.click(screen.getByRole('button', { name: t('reports.netWorth') }))
   await user.click(screen.getByRole('button', { name: t('reports.customRange') }))
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
-  await waitFor(() => expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2))
-    .toEqual(['2026-01-01', '2026-09-12']))
+  await waitFor(() => expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2)).toEqual(['2026-01-01', '2026-09-12']))
 })
 
 describe('Reports page — query failure', () => {
@@ -257,7 +255,9 @@ describe('Reports page — query failure', () => {
     const { user } = renderWithProviders(<ReportsPage />)
     await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalledTimes(1))
 
-    api.reports.netWorth.mockRejectedValueOnce({ response: { data: { detail: 'end_date must be on or before today' } } })
+    api.reports.netWorth.mockRejectedValueOnce({
+      response: { data: { detail: 'end_date must be on or before today' } },
+    })
     await user.click(screen.getByRole('button', { name: t('reports.customRange') }))
     await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
     expect(await screen.findByText('end_date must be on or before today')).toBeInTheDocument()
@@ -313,9 +313,7 @@ describe('Reports page, cash-flow runway', () => {
         lowest_balance: -10,
         lowest_balance_date: '2026-10-14',
       })
-      await waitFor(() =>
-        expect(behind).toHaveTextContent(t('reports.runwayNegativeOn', { date: 'Oct 14' })),
-      )
+      await waitFor(() => expect(behind).toHaveTextContent(t('reports.runwayNegativeOn', { date: 'Oct 14' })))
     } finally {
       vi.useRealTimers()
       api.timezones.list.mockResolvedValue({ timezones: [], default: null })
@@ -455,7 +453,13 @@ describe('Reports page - year picker (issue #765)', () => {
 
     // Full calendar year: 364 days, ceil(364/30) = 13 monthly buckets.
     expect(api.reports.netWorth).toHaveBeenCalledWith(
-      13, 'monthly', undefined, undefined, undefined, '2023-01-01', '2023-12-31',
+      13,
+      'monthly',
+      undefined,
+      undefined,
+      undefined,
+      '2023-01-01',
+      '2023-12-31',
     )
     // The custom segment is now the active range and shows the span.
     expect(screen.getByRole('button', { name: t('reports.customRange') })).toHaveClass('bg-primary')
@@ -472,7 +476,13 @@ describe('Reports page - year picker (issue #765)', () => {
 
     // Jan 1 through today (2026-09-12): 254 days, ceil(254/30) = 9.
     expect(api.reports.netWorth).toHaveBeenCalledWith(
-      9, 'monthly', undefined, undefined, undefined, '2026-01-01', '2026-09-12',
+      9,
+      'monthly',
+      undefined,
+      undefined,
+      undefined,
+      '2026-01-01',
+      '2026-09-12',
     )
   })
 
@@ -520,7 +530,8 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
   // animation so the chart lands on its final geometry straight away.
   beforeEach(() => {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
-      setTimeout(() => callback(performance.now() + 60_000), 0))
+      setTimeout(() => callback(performance.now() + 60_000), 0),
+    )
     vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
   })
   afterEach(() => vi.unstubAllGlobals())
@@ -528,7 +539,11 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
   type Segment = { y: number; height: number; rounded: boolean }
   type Column = { x: number; width: number; inflow?: Segment; outflow?: Segment }
 
-  function report(type: string, trend: Array<{ date: string; breakdowns: Record<string, number> }>, seriesKeys: string[] = []) {
+  function report(
+    type: string,
+    trend: Array<{ date: string; breakdowns: Record<string, number> }>,
+    seriesKeys: string[] = [],
+  ) {
     const base = emptyReport(type)
     return {
       ...base,
@@ -546,7 +561,10 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
 
   async function openCashFlowBars(periods: Array<[date: string, inflow: number, outflow: number]>) {
     api.reports.cashFlow.mockResolvedValue(
-      report('cash_flow', periods.map(([date, inflow, outflow]) => ({ date, breakdowns: { inflow, outflow } }))),
+      report(
+        'cash_flow',
+        periods.map(([date, inflow, outflow]) => ({ date, breakdowns: { inflow, outflow } })),
+      ),
     )
     return barChart(await openTab('reports.cashFlow'))
   }
@@ -555,8 +573,9 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
   // stacked bars live in their own one.
   function barChart(container: HTMLElement) {
     return waitFor(() => {
-      const found = Array.from(container.querySelectorAll<HTMLElement>('.recharts-wrapper'))
-        .find((wrapper) => wrapper.querySelector('.recharts-bar'))
+      const found = Array.from(container.querySelectorAll<HTMLElement>('.recharts-wrapper')).find((wrapper) =>
+        wrapper.querySelector('.recharts-bar'),
+      )
       expect(found).toBeDefined()
       return found!
     })
@@ -605,8 +624,9 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
   }
 
   function periodX(chart: HTMLElement, date: string) {
-    const tick = Array.from(chart.querySelectorAll('.recharts-xAxis-tick-labels text'))
-      .find((text) => text.textContent === date)!
+    const tick = Array.from(chart.querySelectorAll('.recharts-xAxis-tick-labels text')).find(
+      (text) => text.textContent === date,
+    )!
     return Number(tick.getAttribute('x'))
   }
 
@@ -726,7 +746,9 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
     })
 
     const tooltip = await hoverColumn(chart, column)
-    expect(within(tooltip).getByText(`${t('reports.netFlow')}: $0.00`)).toHaveStyle({ color: 'var(--muted-foreground)' })
+    expect(within(tooltip).getByText(`${t('reports.netFlow')}: $0.00`)).toHaveStyle({
+      color: 'var(--muted-foreground)',
+    })
   })
 
   it('leaves a month with no cash flow empty, without a bar or a tooltip', async () => {
@@ -753,15 +775,19 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
   })
 
   it('draws no bars and no tooltip when the whole range has no cash flow', async () => {
-    api.reports.cashFlow.mockResolvedValue(report('cash_flow', [
-      { date: '2026-10-01', breakdowns: { inflow: 0, outflow: 0 } },
-      { date: '2026-11-01', breakdowns: { inflow: 0, outflow: 0 } },
-    ]))
+    api.reports.cashFlow.mockResolvedValue(
+      report('cash_flow', [
+        { date: '2026-10-01', breakdowns: { inflow: 0, outflow: 0 } },
+        { date: '2026-11-01', breakdowns: { inflow: 0, outflow: 0 } },
+      ]),
+    )
     const container = await openTab('reports.cashFlow')
     // The balance projection is the tab's area chart; the other one holds the bars.
     const chart = await waitFor(() => {
-      const found = Array.from(container.querySelectorAll<HTMLElement>('.recharts-wrapper'))
-        .find((wrapper) => !wrapper.querySelector('.recharts-area') && wrapper.querySelector('.recharts-xAxis-tick-labels text'))
+      const found = Array.from(container.querySelectorAll<HTMLElement>('.recharts-wrapper')).find(
+        (wrapper) =>
+          !wrapper.querySelector('.recharts-area') && wrapper.querySelector('.recharts-xAxis-tick-labels text'),
+      )
       expect(found).toBeDefined()
       return found!
     })
@@ -790,11 +816,15 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
 
   it('keeps the Net Worth bars stacked by sign, without a net flow row', async () => {
     api.reports.netWorth.mockResolvedValue(
-      report('net_worth', [{ date: '2026-08-01', breakdowns: { accounts: 3000, liabilities: 2500 } }], ['accounts', 'liabilities']),
+      report(
+        'net_worth',
+        [{ date: '2026-08-01', breakdowns: { accounts: 3000, liabilities: 2500 } }],
+        ['accounts', 'liabilities'],
+      ),
     )
     const chart = await barChart(await openTab())
-    const segments = () => Array.from(chart.querySelectorAll('.recharts-bar-rectangle path'), box)
-      .sort((a, b) => a.y - b.y)
+    const segments = () =>
+      Array.from(chart.querySelectorAll('.recharts-bar-rectangle path'), box).sort((a, b) => a.y - b.y)
     await waitFor(() => {
       const zero = zeroLine(chart)
       const [assets, debt] = segments()

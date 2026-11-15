@@ -62,15 +62,10 @@ function Party({
 }) {
   return (
     <div className="min-w-0">
-      <div
-        className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-        style={{ color: MUTED }}
-      >
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: MUTED }}>
         {title}
       </div>
-      {name && (
-        <div className="mt-1.5 text-[15px] font-semibold leading-snug break-words">{name}</div>
-      )}
+      {name && <div className="mt-1.5 text-[15px] font-semibold leading-snug break-words">{name}</div>}
       {/* Only when it differs — printing the same string twice reads as a bug. */}
       {legalName && legalName !== name && (
         <div className="text-[13px] leading-relaxed break-words" style={{ color: MUTED }}>
@@ -87,10 +82,7 @@ function Party({
         </div>
       ))}
       {address && (
-        <div
-          className="text-[13px] leading-relaxed whitespace-pre-line break-words"
-          style={{ color: MUTED }}
-        >
+        <div className="text-[13px] leading-relaxed whitespace-pre-line break-words" style={{ color: MUTED }}>
           {address}
         </div>
       )}
@@ -106,10 +98,7 @@ function Party({
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div
-        className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-        style={{ color: MUTED }}
-      >
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: MUTED }}>
         {label}
       </div>
       <div className="mt-0.5 text-[13px] tabular-nums">{value}</div>
@@ -159,13 +148,8 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
           issued — the parties are already swapped server-side, but the
           claim needs words, not just an order. */}
       {received && (
-        <div
-          className="mx-auto mb-3 max-w-[794px] text-xs text-muted-foreground"
-          data-testid="document-received-note"
-        >
-          <span className="font-medium text-foreground">
-            {t('invoices.receivedDocument')}
-          </span>{' '}
+        <div className="mx-auto mb-3 max-w-[794px] text-xs text-muted-foreground" data-testid="document-received-note">
+          <span className="font-medium text-foreground">{t('invoices.receivedDocument')}</span>{' '}
           {t('invoices.receivedDocumentHint')}
         </div>
       )}
@@ -243,7 +227,9 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
                 {document.installments.map((row, index) => (
                   <tr key={index} style={{ borderBottom: `1px solid ${RULE}` }}>
                     <td className="py-1.5 pr-4">{row.label ?? `${index + 1}/${document.installments.length}`}</td>
-                    <td className="py-1.5 pr-4 tabular-nums" style={{ color: MUTED }}>{showDate(row.due_date)}</td>
+                    <td className="py-1.5 pr-4 tabular-nums" style={{ color: MUTED }}>
+                      {showDate(row.due_date)}
+                    </td>
                     <td className="py-1.5 text-right tabular-nums">{money(row.amount)}</td>
                   </tr>
                 ))}
@@ -292,12 +278,8 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
                     {Number(line.quantity)}
                     {line.unit ? ` ${line.unit}` : ''}
                   </td>
-                  <td className="py-3 text-right text-[13.5px] tabular-nums">
-                    {money(line.unit_price)}
-                  </td>
-                  <td className="py-3 text-right text-[13.5px] tabular-nums">
-                    {money(line.total)}
-                  </td>
+                  <td className="py-3 text-right text-[13.5px] tabular-nums">{money(line.unit_price)}</td>
+                  <td className="py-3 text-right text-[13.5px] tabular-nums">{money(line.total)}</td>
                 </tr>
               ))}
             </tbody>
@@ -306,11 +288,7 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
           // Not an error state: an invoice with no lines is the normal
           // case where the fiscal document was issued somewhere else and
           // this only tracks the money.
-          <p
-            className="mt-9 text-[13px] leading-relaxed"
-            style={{ color: MUTED }}
-            data-testid="document-no-lines"
-          >
+          <p className="mt-9 text-[13px] leading-relaxed" style={{ color: MUTED }} data-testid="document-no-lines">
             {t('invoices.document.noLines')}
           </p>
         )}
@@ -331,9 +309,7 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
                 </dt>
                 <dd
                   className="text-[13.5px] tabular-nums"
-                  style={
-                    row.strong ? { color: accent, fontWeight: 700, fontSize: '15px' } : undefined
-                  }
+                  style={row.strong ? { color: accent, fontWeight: 700, fontSize: '15px' } : undefined}
                 >
                   {row.value}
                 </dd>
@@ -346,45 +322,35 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
             band, pushed to the foot of the page by `mt-auto` so it lands
             where the PDF pins it and where a reader looks for it. */}
         <div className="mt-auto pt-10">
-        {(document.payment_details || document.notes) && (
-          <div className="grid gap-6 sm:grid-cols-2">
-            {document.payment_details && (
-              <div>
-                <div
-                  className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-                  style={{ color: MUTED }}
-                >
-                  {L.paymentDetails}
+          {(document.payment_details || document.notes) && (
+            <div className="grid gap-6 sm:grid-cols-2">
+              {document.payment_details && (
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: MUTED }}>
+                    {L.paymentDetails}
+                  </div>
+                  <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-line">{document.payment_details}</p>
                 </div>
-                <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-line">
-                  {document.payment_details}
-                </p>
-              </div>
-            )}
-            {document.notes && (
-              <div>
-                <div
-                  className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-                  style={{ color: MUTED }}
-                >
-                  {L.notes}
+              )}
+              {document.notes && (
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: MUTED }}>
+                    {L.notes}
+                  </div>
+                  <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-line">{document.notes}</p>
                 </div>
-                <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-line">
-                  {document.notes}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
 
-        {document.footer_note && (
-          <p
-            className="mt-6 pt-4 text-[11.5px] leading-relaxed"
-            style={{ borderTop: `1px solid ${RULE}`, color: MUTED }}
-          >
-            {document.footer_note}
-          </p>
-        )}
+          {document.footer_note && (
+            <p
+              className="mt-6 pt-4 text-[11.5px] leading-relaxed"
+              style={{ borderTop: `1px solid ${RULE}`, color: MUTED }}
+            >
+              {document.footer_note}
+            </p>
+          )}
         </div>
       </div>
     </div>

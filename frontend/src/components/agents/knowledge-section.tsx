@@ -13,7 +13,8 @@ function StatusBadge({ d }: { d: KnowledgeDoc }) {
   if (d.status === 'ready')
     return (
       <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-        <CheckCircle2 className="h-3.5 w-3.5" /> {t('agents.knowledge.ready')} · {t('agents.knowledge.chunks', { count: d.chunk_count })}
+        <CheckCircle2 className="h-3.5 w-3.5" /> {t('agents.knowledge.ready')} ·{' '}
+        {t('agents.knowledge.chunks', { count: d.chunk_count })}
       </span>
     )
   if (d.status === 'failed')

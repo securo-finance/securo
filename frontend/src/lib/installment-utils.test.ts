@@ -26,7 +26,12 @@ describe('splitEvenly', () => {
 
 describe('installmentsTotal', () => {
   it('ignores what is not a number yet', () => {
-    expect(installmentsTotal([{ due_date: '2026-10-01', amount: '10' }, { due_date: '2026-11-01', amount: '' }])).toBe(10)
+    expect(
+      installmentsTotal([
+        { due_date: '2026-10-01', amount: '10' },
+        { due_date: '2026-11-01', amount: '' },
+      ]),
+    ).toBe(10)
   })
 })
 

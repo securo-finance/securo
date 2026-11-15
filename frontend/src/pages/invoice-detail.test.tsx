@@ -94,14 +94,7 @@ describe('EditDraftDialog', () => {
     api.invoices.update.mockResolvedValue(invoice)
     const onSaved = vi.fn()
     const { user } = renderWithProviders(
-      <EditDraftDialog
-        open
-        onOpenChange={vi.fn()}
-        invoice={invoice}
-        showTax
-        currency="USD"
-        onSaved={onSaved}
-      />,
+      <EditDraftDialog open onOpenChange={vi.fn()} invoice={invoice} showTax currency="USD" onSaved={onSaved} />,
     )
 
     await user.type(screen.getByTestId('edit-notes-input'), 'Thanks for your business')
@@ -202,7 +195,6 @@ describe('LinkPaymentDialog', () => {
   })
 })
 
-
 describe('LinkPaymentDialog candidates', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -210,7 +202,11 @@ describe('LinkPaymentDialog candidates', () => {
 
   it('leaves out money already linked here or spent in full elsewhere', async () => {
     const link = (invoice_id: string, amount: string) => ({
-      invoice_id, amount, number: 1, series: null, external_number: null,
+      invoice_id,
+      amount,
+      number: 1,
+      series: null,
+      external_number: null,
     })
     api.transactions.list.mockResolvedValue({
       items: [

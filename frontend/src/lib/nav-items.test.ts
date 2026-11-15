@@ -28,8 +28,7 @@ const PERSONAL_MODULES: ModuleId[] = [
   'rules',
 ]
 
-const linkKeys = (items: NavItem[]) =>
-  items.filter((i) => i.type === 'link').map((i) => i.key)
+const linkKeys = (items: NavItem[]) => items.filter((i) => i.type === 'link').map((i) => i.key)
 
 describe('nav catalog', () => {
   it('maps every link to a known module', () => {
@@ -87,10 +86,7 @@ describe('visibleNavItems', () => {
       { type: 'link', key: 'two', path: '/2', icon: () => null, module: 'assets' },
     ]
     const result = visibleNavItems(items, allExcept('reports'))
-    expect(result.map((i) => (i.type === 'separator' ? i.labelKey : i.key))).toEqual([
-      'b',
-      'two',
-    ])
+    expect(result.map((i) => (i.type === 'separator' ? i.labelKey : i.key))).toEqual(['b', 'two'])
   })
 
   it('keeps a section header while any of its links remain', () => {

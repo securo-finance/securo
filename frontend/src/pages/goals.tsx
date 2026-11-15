@@ -3,27 +3,32 @@ import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { goals as goalsApi, accounts as accountsApi, assets as assetsApi, assetGroups as assetGroupsApi, currencies as currenciesApi, recurring as recurringApi } from '@/lib/api'
+import {
+  goals as goalsApi,
+  accounts as accountsApi,
+  assets as assetsApi,
+  assetGroups as assetGroupsApi,
+  currencies as currenciesApi,
+  recurring as recurringApi,
+} from '@/lib/api'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from '@/components/ui/popover'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import type { Account, Asset, AssetGroup, Goal, SalaryMonths } from '@/types'
 import {
-  Pencil, Trash2, Plus, Pause, Play, CheckCircle2, Archive, ArchiveRestore, Target,
+  Pencil,
+  Trash2,
+  Plus,
+  Pause,
+  Play,
+  CheckCircle2,
+  Archive,
+  ArchiveRestore,
+  Target,
   ChevronDown,
 } from 'lucide-react'
 import { ICON_MAP } from '@/lib/category-icons'
@@ -39,12 +44,10 @@ function getGoalIcon(iconKey: string | null) {
   return (iconKey && ICON_MAP[iconKey]) || Target
 }
 
-const PRESET_COLORS = [
-  '#3B82F6', '#10B981', '#F59E0B', '#EF4444',
-  '#8B5CF6', '#EC4899', '#06B6D4', '#F97316',
-]
+const PRESET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316']
 
-const SELECT_CLASS = 'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
+const SELECT_CLASS =
+  'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 
 function LinkedResourceSelect<T extends { id: string }>({
   name,
@@ -110,11 +113,7 @@ function Segmented<T extends string | number>({
 }
 
 function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      {children}
-    </div>
-  )
+  return <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">{children}</div>
 }
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
@@ -128,11 +127,31 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
 function OnTrackBadge({ status, t }: { status: string | null; t: (key: string) => string }) {
   if (!status) return null
   const config: Record<string, { bg: string; text: string; key: string }> = {
-    ahead: { bg: 'bg-emerald-100 dark:bg-emerald-500/20', text: 'text-emerald-700 dark:text-emerald-400', key: 'goals.onTrackAhead' },
-    on_track: { bg: 'bg-blue-100 dark:bg-blue-500/20', text: 'text-blue-700 dark:text-blue-400', key: 'goals.onTrackOnTrack' },
-    behind: { bg: 'bg-amber-100 dark:bg-amber-500/20', text: 'text-amber-700 dark:text-amber-400', key: 'goals.onTrackBehind' },
-    overdue: { bg: 'bg-rose-100 dark:bg-rose-500/20', text: 'text-rose-700 dark:text-rose-400', key: 'goals.onTrackOverdue' },
-    achieved: { bg: 'bg-emerald-100 dark:bg-emerald-500/20', text: 'text-emerald-700 dark:text-emerald-400', key: 'goals.onTrackAchieved' },
+    ahead: {
+      bg: 'bg-emerald-100 dark:bg-emerald-500/20',
+      text: 'text-emerald-700 dark:text-emerald-400',
+      key: 'goals.onTrackAhead',
+    },
+    on_track: {
+      bg: 'bg-blue-100 dark:bg-blue-500/20',
+      text: 'text-blue-700 dark:text-blue-400',
+      key: 'goals.onTrackOnTrack',
+    },
+    behind: {
+      bg: 'bg-amber-100 dark:bg-amber-500/20',
+      text: 'text-amber-700 dark:text-amber-400',
+      key: 'goals.onTrackBehind',
+    },
+    overdue: {
+      bg: 'bg-rose-100 dark:bg-rose-500/20',
+      text: 'text-rose-700 dark:text-rose-400',
+      key: 'goals.onTrackOverdue',
+    },
+    achieved: {
+      bg: 'bg-emerald-100 dark:bg-emerald-500/20',
+      text: 'text-emerald-700 dark:text-emerald-400',
+      key: 'goals.onTrackAchieved',
+    },
   }
   const c = config[status]
   if (!c) return null
@@ -145,9 +164,21 @@ function OnTrackBadge({ status, t }: { status: string | null; t: (key: string) =
 
 function StatusBadge({ status, t }: { status: string; t: (key: string) => string }) {
   const config: Record<string, { bg: string; text: string; key: string }> = {
-    active: { bg: 'bg-emerald-100 dark:bg-emerald-500/20', text: 'text-emerald-700 dark:text-emerald-400', key: 'goals.statusActive' },
-    completed: { bg: 'bg-blue-100 dark:bg-blue-500/20', text: 'text-blue-700 dark:text-blue-400', key: 'goals.statusCompleted' },
-    paused: { bg: 'bg-amber-100 dark:bg-amber-500/20', text: 'text-amber-700 dark:text-amber-400', key: 'goals.statusPaused' },
+    active: {
+      bg: 'bg-emerald-100 dark:bg-emerald-500/20',
+      text: 'text-emerald-700 dark:text-emerald-400',
+      key: 'goals.statusActive',
+    },
+    completed: {
+      bg: 'bg-blue-100 dark:bg-blue-500/20',
+      text: 'text-blue-700 dark:text-blue-400',
+      key: 'goals.statusCompleted',
+    },
+    paused: {
+      bg: 'bg-amber-100 dark:bg-amber-500/20',
+      text: 'text-amber-700 dark:text-amber-400',
+      key: 'goals.statusPaused',
+    },
     archived: { bg: 'bg-muted', text: 'text-muted-foreground', key: 'goals.statusArchived' },
   }
   const c = config[status] ?? config.active
@@ -283,10 +314,7 @@ export default function GoalsPage() {
 
   return (
     <div>
-      <PageHeader
-        section={t('goals.title')}
-        title={t('goals.title')}
-      />
+      <PageHeader section={t('goals.title')} title={t('goals.title')} />
 
       {/* Status filter */}
       <div className="flex items-center gap-2 mb-4">
@@ -320,13 +348,14 @@ export default function GoalsPage() {
           <div className="divide-y divide-border">
             {goalsList.map((goal) => {
               const days = goal.target_date ? daysUntil(goal.target_date) : null
-              const progressColor = goal.percentage >= 100
-                ? 'bg-emerald-500'
-                : goal.percentage >= 60
-                  ? 'bg-blue-500'
-                  : goal.percentage >= 30
-                    ? 'bg-amber-400'
-                    : 'bg-muted-foreground/30'
+              const progressColor =
+                goal.percentage >= 100
+                  ? 'bg-emerald-500'
+                  : goal.percentage >= 60
+                    ? 'bg-blue-500'
+                    : goal.percentage >= 30
+                      ? 'bg-amber-400'
+                      : 'bg-muted-foreground/30'
 
               const GoalIcon = getGoalIcon(goal.icon)
               return (
@@ -370,7 +399,8 @@ export default function GoalsPage() {
                         </span>
                         {goal.monthly_contribution != null && goal.monthly_contribution > 0 && (
                           <span className="tabular-nums">
-                            {mask(formatCurrency(goal.monthly_contribution, goal.currency, locale))}{t('goals.perMonth')}
+                            {mask(formatCurrency(goal.monthly_contribution, goal.currency, locale))}
+                            {t('goals.perMonth')}
                           </span>
                         )}
                         {days !== null && (
@@ -380,32 +410,27 @@ export default function GoalsPage() {
                               : t('goals.daysOverdue', { count: Math.abs(days) })}
                           </span>
                         )}
-                        {!goal.target_date && (
-                          <span>{t('goals.noTargetDate')}</span>
-                        )}
+                        {!goal.target_date && <span>{t('goals.noTargetDate')}</span>}
                         {goal.salary_months != null && goal.monthly_salary != null && (
                           <>
                             <span>{t('goals.salaryTarget', { months: goal.salary_months })}</span>
                             <span className="tabular-nums">
                               {t('goals.salaryCoverage', {
-                                covered: (Number(goal.current_amount) / Number(goal.monthly_salary)).toLocaleString(locale, {
-                                  minimumFractionDigits: 1,
-                                  maximumFractionDigits: 1,
-                                }),
+                                covered: (Number(goal.current_amount) / Number(goal.monthly_salary)).toLocaleString(
+                                  locale,
+                                  {
+                                    minimumFractionDigits: 1,
+                                    maximumFractionDigits: 1,
+                                  },
+                                ),
                                 months: goal.salary_months,
                               })}
                             </span>
                           </>
                         )}
-                        {goal.account_name && (
-                          <span>{goal.account_name}</span>
-                        )}
-                        {goal.asset_name && (
-                          <span>{goal.asset_name}</span>
-                        )}
-                        {goal.asset_group_name && (
-                          <span>{goal.asset_group_name}</span>
-                        )}
+                        {goal.account_name && <span>{goal.account_name}</span>}
+                        {goal.asset_name && <span>{goal.asset_name}</span>}
+                        {goal.asset_group_name && <span>{goal.asset_group_name}</span>}
                       </div>
                     </div>
 
@@ -484,7 +509,13 @@ export default function GoalsPage() {
       </SectionCard>
 
       {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={() => { setDialogOpen(false); setEditing(null) }}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={() => {
+          setDialogOpen(false)
+          setEditing(null)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? t('goals.edit') : t('goals.add')}</DialogTitle>
@@ -494,18 +525,19 @@ export default function GoalsPage() {
             onSubmit={(e) => {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
-              const target = targetMode === 'salary' && selectedSalary
-                ? {
-                    salary_recurring_id: selectedSalary.id,
-                    salary_months: salaryMonths,
-                    currency: selectedSalary.currency,
-                  }
-                : {
-                    salary_recurring_id: null,
-                    salary_months: null,
-                    target_amount: parseFloat(formData.get('target_amount') as string),
-                    currency: (formData.get('currency') as string) || userCurrency,
-                  }
+              const target =
+                targetMode === 'salary' && selectedSalary
+                  ? {
+                      salary_recurring_id: selectedSalary.id,
+                      salary_months: salaryMonths,
+                      currency: selectedSalary.currency,
+                    }
+                  : {
+                      salary_recurring_id: null,
+                      salary_months: null,
+                      target_amount: parseFloat(formData.get('target_amount') as string),
+                      currency: (formData.get('currency') as string) || userCurrency,
+                    }
               const payload: Record<string, unknown> = {
                 name: formData.get('name') as string,
                 ...target,
@@ -580,10 +612,13 @@ export default function GoalsPage() {
                       options={SALARY_MONTHS.map((m) => ({ value: m, label: String(m) }))}
                     />
                     <p className="text-xs text-muted-foreground tabular-nums">
-                      {salaryMonths} × {mask(formatCurrency(monthlySalary(selectedSalary), selectedSalary.currency, locale))}
+                      {salaryMonths} ×{' '}
+                      {mask(formatCurrency(monthlySalary(selectedSalary), selectedSalary.currency, locale))}
                       {' = '}
                       <span className="font-semibold text-foreground">
-                        {mask(formatCurrency(salaryTarget(selectedSalary, salaryMonths), selectedSalary.currency, locale))}
+                        {mask(
+                          formatCurrency(salaryTarget(selectedSalary, salaryMonths), selectedSalary.currency, locale),
+                        )}
                       </span>
                     </p>
                   </div>
@@ -605,11 +640,7 @@ export default function GoalsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>{t('goals.currency')}</Label>
-                  <select
-                    name="currency"
-                    defaultValue={editing?.currency ?? userCurrency}
-                    className={SELECT_CLASS}
-                  >
+                  <select name="currency" defaultValue={editing?.currency ?? userCurrency} className={SELECT_CLASS}>
                     {supportedCurrencies?.map((c: { code: string; name: string; flag: string }) => (
                       <option key={c.code} value={c.code}>
                         {c.flag} {c.name} ({c.code})
@@ -622,11 +653,7 @@ export default function GoalsPage() {
 
             <div className="space-y-2">
               <Label>{t('goals.targetDate')}</Label>
-              <DatePickerInput
-                value={targetDate}
-                onChange={setTargetDate}
-                className="w-full justify-start"
-              />
+              <DatePickerInput value={targetDate} onChange={setTargetDate} className="w-full justify-start" />
             </div>
 
             <div className="space-y-2">
@@ -740,12 +767,21 @@ export default function GoalsPage() {
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); setEditing(null) }}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDialogOpen(false)
+                  setEditing(null)
+                }}
+              >
                 {t('common.cancel')}
               </Button>
               <Button
                 type="submit"
-                disabled={createMutation.isPending || updateMutation.isPending || (targetMode === 'salary' && !selectedSalary)}
+                disabled={
+                  createMutation.isPending || updateMutation.isPending || (targetMode === 'salary' && !selectedSalary)
+                }
               >
                 {t('common.save')}
               </Button>
@@ -760,9 +796,7 @@ export default function GoalsPage() {
           <DialogHeader>
             <DialogTitle>{t('goals.confirmDeleteTitle')}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t('goals.confirmDeleteDesc', { name: deletingGoal?.name })}
-          </p>
+          <p className="text-sm text-muted-foreground">{t('goals.confirmDeleteDesc', { name: deletingGoal?.name })}</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeletingGoal(null)}>
               {t('common.cancel')}

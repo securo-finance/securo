@@ -14,14 +14,27 @@ const content = {
   'balance-flow': <div>Flow card</div>,
 }
 
-const LAYOUT: LayoutItem[] = [{ id: 'overview' }, { id: 'goals' }, { id: 'spending-by-category' }, { id: 'balance-flow' }]
+const LAYOUT: LayoutItem[] = [
+  { id: 'overview' },
+  { id: 'goals' },
+  { id: 'spending-by-category' },
+  { id: 'balance-flow' },
+]
 
 function renderGrid(props: Partial<Parameters<typeof WidgetGrid>[0]> = {}) {
   const onChange = vi.fn()
   const onAdd = vi.fn()
   render(
     <TooltipProvider>
-      <WidgetGrid items={LAYOUT} entries={DASHBOARD_WIDGETS} content={content} editing={false} onChange={onChange} onAdd={onAdd} {...props} />
+      <WidgetGrid
+        items={LAYOUT}
+        entries={DASHBOARD_WIDGETS}
+        content={content}
+        editing={false}
+        onChange={onChange}
+        onAdd={onAdd}
+        {...props}
+      />
     </TooltipProvider>,
   )
   return { onChange, onAdd }
@@ -43,16 +56,30 @@ describe('WidgetGrid', () => {
 
   it('has no edit controls outside editing', () => {
     renderGrid()
-    expect(screen.queryByRole('button', { name: t('library.dragToMove', { name: t('library.widget.overview') }) })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: t('library.dragToMove', { name: t('library.widget.overview') }) }),
+    ).not.toBeInTheDocument()
   })
 
   it('moves a widget with the keyboard', async () => {
     // jsdom lays nothing out: stack the widgets 100px apart so arrows have somewhere to go.
-    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
       const sections = [...document.querySelectorAll('section[aria-label]')]
       const index = sections.indexOf(this.closest('section[aria-label]') as Element)
       const top = Math.max(index, 0) * 100
-      return { x: 0, y: top, top, left: 0, width: 600, height: 90, right: 600, bottom: top + 90, toJSON: () => ({}) } as DOMRect
+      return {
+        x: 0,
+        y: top,
+        top,
+        left: 0,
+        width: 600,
+        height: 90,
+        right: 600,
+        bottom: top + 90,
+        toJSON: () => ({}),
+      } as DOMRect
     })
     const { onChange } = renderGrid({ editing: true })
     const handle = screen.getByRole('button', { name: t('library.dragToMove', { name: t('library.widget.overview') }) })
@@ -66,7 +93,12 @@ describe('WidgetGrid', () => {
     await user.keyboard('[Space]')
     rect.mockRestore()
     expect(onChange).toHaveBeenCalledTimes(1)
-    expect(onChange.mock.calls[0][0].map((item: LayoutItem) => item.id)).toEqual(['goals', 'overview', 'spending-by-category', 'balance-flow'])
+    expect(onChange.mock.calls[0][0].map((item: LayoutItem) => item.id)).toEqual([
+      'goals',
+      'overview',
+      'spending-by-category',
+      'balance-flow',
+    ])
   })
 
   it('resizes from the width menu, saving the default width as just the id', async () => {
@@ -74,26 +106,36 @@ describe('WidgetGrid', () => {
     const { onChange } = renderGrid({ editing: true })
     const spending = screen.getByRole('region', { name: t('dashboard.spendingByCategory') })
 
-    await user.click(within(spending).getByRole('button', { name: t('library.widthOf', { name: t('dashboard.spendingByCategory') }) }))
+    await user.click(
+      within(spending).getByRole('button', { name: t('library.widthOf', { name: t('dashboard.spendingByCategory') }) }),
+    )
     // Spending reads well down to a third.
     const options = screen.getAllByRole('menuitemradio').map((option) => option.textContent)
     expect(options).toEqual([t('library.width.4'), t('library.width.6'), t('library.width.8'), t('library.width.12')])
     await user.click(screen.getByRole('menuitemradio', { name: t('library.width.8') }))
-    expect(onChange).toHaveBeenLastCalledWith(LAYOUT.map((item) => (item.id === 'spending-by-category' ? { id: item.id, span: 8 } : item)))
+    expect(onChange).toHaveBeenLastCalledWith(
+      LAYOUT.map((item) => (item.id === 'spending-by-category' ? { id: item.id, span: 8 } : item)),
+    )
   })
 
   it("doesn't offer a width narrower than the widget reads well at", async () => {
     const user = userEvent.setup()
     renderGrid({ editing: true })
     const overview = screen.getByRole('region', { name: t('library.widget.overview') })
-    await user.click(within(overview).getByRole('button', { name: t('library.widthOf', { name: t('library.widget.overview') }) }))
+    await user.click(
+      within(overview).getByRole('button', { name: t('library.widthOf', { name: t('library.widget.overview') }) }),
+    )
     expect(screen.queryByRole('menuitemradio', { name: t('library.width.4') })).not.toBeInTheDocument()
   })
 
   it('removes a widget while editing', () => {
     const { onChange } = renderGrid({ editing: true })
     const overview = screen.getByRole('region', { name: t('library.widget.overview') })
-    fireEvent.click(within(overview).getByRole('button', { name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }) }))
+    fireEvent.click(
+      within(overview).getByRole('button', {
+        name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }),
+      }),
+    )
     expect(onChange).toHaveBeenLastCalledWith(LAYOUT.filter((item) => item.id !== 'overview'))
   })
 

@@ -1,9 +1,7 @@
 import { execSync, execFileSync } from 'node:child_process'
 const officialReleaseRepo = 'https://github.com/securo-finance/securo.git'
-const officialLatestReleaseApi =
-  'https://api.github.com/repos/securo-finance/securo/releases/latest'
-const semverPattern =
-  /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const officialLatestReleaseApi = 'https://api.github.com/repos/securo-finance/securo/releases/latest'
+const semverPattern = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 
 type ParsedSemverTag = {
   major: number
@@ -34,9 +32,7 @@ function normalizeVersionLabel(value?: string | null) {
 }
 
 function parseSemverTag(value: string): ParsedSemverTag | null {
-  const match = value.match(
-    /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/,
-  )
+  const match = value.match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/)
   if (!match) return null
 
   return {
@@ -112,14 +108,11 @@ function getHeadShortSha(projectRoot: string) {
 
 function getOfficialMainSha(projectRoot: string) {
   try {
-    const output = execSync(
-      `git ls-remote ${officialReleaseRepo} refs/heads/main`,
-      {
-        cwd: projectRoot,
-        stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: 3000,
-      },
-    )
+    const output = execSync(`git ls-remote ${officialReleaseRepo} refs/heads/main`, {
+      cwd: projectRoot,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 3000,
+    })
       .toString()
       .trim()
 
@@ -142,14 +135,11 @@ function getHeadSha(projectRoot: string) {
 
 function getLatestOfficialReleaseTagFromGit(projectRoot: string) {
   try {
-    const output = execSync(
-      `git ls-remote --refs --tags ${officialReleaseRepo} 'v*'`,
-      {
-        cwd: projectRoot,
-        stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: 3000,
-      },
-    ).toString()
+    const output = execSync(`git ls-remote --refs --tags ${officialReleaseRepo} 'v*'`, {
+      cwd: projectRoot,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 3000,
+    }).toString()
 
     const semverTags = output
       .split('\n')
@@ -166,22 +156,13 @@ function getLatestOfficialReleaseTagFromGit(projectRoot: string) {
           parsedTag,
         }
       })
-      .filter(
-        (
-          entry,
-        ): entry is { normalizedTag: string; parsedTag: ParsedSemverTag } =>
-          Boolean(entry),
-      )
+      .filter((entry): entry is { normalizedTag: string; parsedTag: ParsedSemverTag } => Boolean(entry))
 
     if (semverTags.length === 0) return null
 
-    const stableTags = semverTags.filter(
-      (entry) => entry.parsedTag.prerelease.length === 0,
-    )
+    const stableTags = semverTags.filter((entry) => entry.parsedTag.prerelease.length === 0)
     const candidateTags = stableTags.length > 0 ? stableTags : semverTags
-    candidateTags.sort((left, right) =>
-      compareSemverTags(left.parsedTag, right.parsedTag),
-    )
+    candidateTags.sort((left, right) => compareSemverTags(left.parsedTag, right.parsedTag))
 
     return candidateTags.at(-1)?.normalizedTag ?? null
   } catch {
@@ -209,24 +190,17 @@ async function getLatestOfficialReleaseTagFromApi() {
 }
 
 async function getLatestOfficialReleaseTag(projectRoot: string) {
-  return (
-    getLatestOfficialReleaseTagFromGit(projectRoot) ??
-    (await getLatestOfficialReleaseTagFromApi())
-  )
+  return getLatestOfficialReleaseTagFromGit(projectRoot) ?? (await getLatestOfficialReleaseTagFromApi())
 }
 
-export async function resolveAppVersion(
-  projectRoot: string,
-  explicitVersion?: string,
-) {
+export async function resolveAppVersion(projectRoot: string, explicitVersion?: string) {
   const resolvedExplicitVersion = normalizeVersionLabel(explicitVersion)
   if (resolvedExplicitVersion) return resolvedExplicitVersion
 
   const currentGitTag = getCurrentGitTag(projectRoot)
   if (currentGitTag) return currentGitTag
 
-  const latestOfficialReleaseTag =
-    await getLatestOfficialReleaseTag(projectRoot)
+  const latestOfficialReleaseTag = await getLatestOfficialReleaseTag(projectRoot)
   const headSha = getHeadSha(projectRoot)
   const officialMainSha = getOfficialMainSha(projectRoot)
   const headShortSha = getHeadShortSha(projectRoot)

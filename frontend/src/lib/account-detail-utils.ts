@@ -2,10 +2,7 @@ import { addDays, addYears, format, parseISO, subYears } from 'date-fns'
 
 import type { ProjectedTransaction, Transaction } from '../types'
 
-type BalanceTransaction = Pick<
-  Transaction,
-  'amount' | 'amount_primary' | 'currency' | 'is_ignored' | 'source' | 'type'
->
+type BalanceTransaction = Pick<Transaction, 'amount' | 'amount_primary' | 'currency' | 'is_ignored' | 'source' | 'type'>
 
 type MaterializedTransaction = Pick<Transaction, 'date' | 'recurring_transaction_id'>
 
@@ -15,11 +12,7 @@ export function transactionAmountForBalance(
   usePrimary: boolean,
   displayCurrency: string,
 ): number | null {
-  if (
-    usePrimary
-    && transaction.amount_primary == null
-    && transaction.currency !== displayCurrency
-  ) return null
+  if (usePrimary && transaction.amount_primary == null && transaction.currency !== displayCurrency) return null
 
   return usePrimary && transaction.amount_primary != null
     ? Number(transaction.amount_primary)
@@ -47,9 +40,7 @@ export function applyTransactionToBalance(
  * The recurring link plus the effective occurrence date is authoritative;
  * description and amount can legitimately change after materialization.
  */
-export function excludeMaterializedProjections<
-  T extends Pick<ProjectedTransaction, 'date' | 'recurring_id'>,
->(
+export function excludeMaterializedProjections<T extends Pick<ProjectedTransaction, 'date' | 'recurring_id'>>(
   projections: T[],
   transactions: MaterializedTransaction[],
 ): T[] {
@@ -59,9 +50,7 @@ export function excludeMaterializedProjections<
       .map((transaction) => `${transaction.recurring_transaction_id}:${transaction.date}`),
   )
 
-  return projections.filter(
-    (projection) => !materialized.has(`${projection.recurring_id}:${projection.date}`),
-  )
+  return projections.filter((projection) => !materialized.has(`${projection.recurring_id}:${projection.date}`))
 }
 
 type ServerBalanceRow = Pick<Transaction, 'date' | 'running_balance' | 'running_balance_primary'>
@@ -97,16 +86,15 @@ export function mergeRunningBalances<R extends ServerBalanceRow, P extends Proje
 ): Array<(R | P) & { runningBalance: number }> {
   const { openingBalance, hasMore, usePrimary, displayCurrency } = options
   // The page only lists rows the server walked, so a null here is not expected.
-  const serverBalance = (row: R) => (
-    usePrimary ? row.running_balance_primary ?? row.running_balance : row.running_balance
-  ) ?? 0
+  const serverBalance = (row: R) =>
+    (usePrimary ? (row.running_balance_primary ?? row.running_balance) : row.running_balance) ?? 0
 
   // Stable, so same-day projections keep the order they came in.
   const ascending = [...projections].sort((a, b) => a.date.localeCompare(b.date))
   let total = 0
-  const projectedUpTo = ascending.map((projection) => (
-    total = applyTransactionToBalance(total, projection, usePrimary, displayCurrency)
-  ))
+  const projectedUpTo = ascending.map(
+    (projection) => (total = applyTransactionToBalance(total, projection, usePrimary, displayCurrency)),
+  )
 
   const merged: Array<(R | P) & { runningBalance: number }> = []
   let next = ascending.length - 1

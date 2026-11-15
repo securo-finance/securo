@@ -36,21 +36,13 @@ export function TransactionCategoryIcon({
   className?: string
 }) {
   if (!isSplitByCategory(tx)) {
-    return (
-      <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size={size} className={className} />
-    )
+    return <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size={size} className={className} />
   }
   return <SplitCategoryIcon size={size} className={className} />
 }
 
 /** The marker for a row split across categories. */
-export function SplitCategoryIcon({
-  size = 'md',
-  className,
-}: {
-  size?: keyof typeof ICON_BOX
-  className?: string
-}) {
+export function SplitCategoryIcon({ size = 'md', className }: { size?: keyof typeof ICON_BOX; className?: string }) {
   return (
     <div
       className={cn(
@@ -147,8 +139,12 @@ export function CategorySplitBadge({
             e.stopPropagation()
             setOpen(true)
           }}
-          onPointerEnter={(e) => { if (e.pointerType === 'mouse') setOpen(true) }}
-          onPointerLeave={(e) => { if (e.pointerType === 'mouse') setOpen(false) }}
+          onPointerEnter={(e) => {
+            if (e.pointerType === 'mouse') setOpen(true)
+          }}
+          onPointerLeave={(e) => {
+            if (e.pointerType === 'mouse') setOpen(false)
+          }}
         >
           <ChartPie size={10} />
           {compact ? count : t('categoryLines.badge', { count })}

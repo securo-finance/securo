@@ -34,10 +34,11 @@ const NUMERIC_OPS = [
 export function getOpsForField(field: string) {
   if (field === 'amount' || field === 'date') return NUMERIC_OPS
   if (field === 'type') return [{ value: 'equals', label: 'rules.opIs' }]
-  if (field === 'payee_id' || field === 'account_id' || field === 'status') return [
-    { value: 'equals', label: 'rules.opIs' },
-    { value: 'not_equals', label: 'rules.opIsNot' },
-  ]
+  if (field === 'payee_id' || field === 'account_id' || field === 'status')
+    return [
+      { value: 'equals', label: 'rules.opIs' },
+      { value: 'not_equals', label: 'rules.opIsNot' },
+    ]
   return STRING_OPS
 }
 
@@ -50,11 +51,11 @@ export function conditionSummary(
   customValue?: (c: RuleCondition) => string | undefined,
 ): string {
   const fieldLabel = (f: string) => {
-    const key = CONDITION_FIELDS.find(x => x.value === f)?.label
+    const key = CONDITION_FIELDS.find((x) => x.value === f)?.label
     return key ? t(key) : f
   }
   const opLabel = (f: string, op: string) => {
-    const key = getOpsForField(f).find(x => x.value === op)?.label
+    const key = getOpsForField(f).find((x) => x.value === op)?.label
     return key ? t(key) : op
   }
   const valueLabel = (c: RuleCondition) => {
@@ -69,10 +70,8 @@ export function conditionSummary(
   const leafSummary = (c: RuleCondition) => `${fieldLabel(c.field)} ${opLabel(c.field, c.op)} "${valueLabel(c)}"`
   const joiner = (op: string) => ` ${op === 'or' ? t('rules.orOp') : t('rules.andOp')} `
   // Groups get parentheses so a mixed AND/OR rule reads unambiguously.
-  const parts = conditions.map(node => (
-    isConditionGroup(node)
-      ? `(${node.conditions.map(leafSummary).join(joiner(node.op))})`
-      : leafSummary(node)
-  ))
+  const parts = conditions.map((node) =>
+    isConditionGroup(node) ? `(${node.conditions.map(leafSummary).join(joiner(node.op))})` : leafSummary(node),
+  )
   return parts.join(joiner(conditionsOp)) || t('rules.noConditions')
 }

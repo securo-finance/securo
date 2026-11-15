@@ -2,7 +2,18 @@ import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, KeyRound, Plug, RefreshCw, ShieldCheck, Star, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  Globe,
+  KeyRound,
+  Plug,
+  RefreshCw,
+  ShieldCheck,
+  Star,
+  Trash2,
+} from 'lucide-react'
 
 import { CategoryIcon } from '@/components/category-icon'
 import { PluginAvatar } from '@/components/plugin-avatar'
@@ -57,7 +68,10 @@ export default function PluginDetailPage() {
   const connectable = Boolean(installed?.integrations.length)
 
   const back = (
-    <Link to="/plugins" className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+    <Link
+      to="/plugins"
+      className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+    >
       <ArrowLeft size={14} />
       {t('plugins.title')}
     </Link>
@@ -132,12 +146,17 @@ export default function PluginDetailPage() {
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <span>{t('plugins.page.byOwner', { owner: plugin.owner })}</span>
-            <span className="inline-flex items-center gap-1 tabular-nums" title={t('plugins.page.stars', { count: plugin.stars })}>
+            <span
+              className="inline-flex items-center gap-1 tabular-nums"
+              title={t('plugins.page.stars', { count: plugin.stars })}
+            >
               <Star size={14} className="fill-amber-400 text-amber-400" />
               {compactNumber(plugin.stars, lang)}
             </span>
           </div>
-          <p className="mt-3 max-w-[65ch] text-[15px] leading-relaxed text-foreground/80">{localized(plugin.description, lang)}</p>
+          <p className="mt-3 max-w-[65ch] text-[15px] leading-relaxed text-foreground/80">
+            {localized(plugin.description, lang)}
+          </p>
         </div>
       </header>
 
@@ -152,24 +171,30 @@ export default function PluginDetailPage() {
 
         <div className="min-w-0">
           <div role="tablist" className="mb-6 flex gap-6 border-b">
-            {(connectable ? (['overview', 'inside', 'connections'] as const) : (['overview', 'inside'] as const)).map((value) => (
-              <button
-                key={value}
-                type="button"
-                role="tab"
-                aria-selected={tab === value}
-                onClick={() => setTab(value)}
-                className={cn(
-                  '-mb-px inline-flex items-center gap-2 border-b-2 pb-2.5 text-sm font-medium transition-colors',
-                  tab === value ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {t(`plugins.detail.${value}`)}
-                {value === 'inside' && (
-                  <span className="rounded-full bg-muted px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground">{itemCount}</span>
-                )}
-              </button>
-            ))}
+            {(connectable ? (['overview', 'inside', 'connections'] as const) : (['overview', 'inside'] as const)).map(
+              (value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === value}
+                  onClick={() => setTab(value)}
+                  className={cn(
+                    '-mb-px inline-flex items-center gap-2 border-b-2 pb-2.5 text-sm font-medium transition-colors',
+                    tab === value
+                      ? 'border-foreground text-foreground'
+                      : 'border-transparent text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {t(`plugins.detail.${value}`)}
+                  {value === 'inside' && (
+                    <span className="rounded-full bg-muted px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+                      {itemCount}
+                    </span>
+                  )}
+                </button>
+              ),
+            )}
           </div>
 
           {tab === 'connections' && installed ? (
@@ -178,7 +203,9 @@ export default function PluginDetailPage() {
             data.readme ? (
               <PluginReadme markdown={data.readme} base={`${plugin.repository}/blob/${plugin.commit}/`} />
             ) : (
-              <p className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">{t('plugins.detail.noReadme')}</p>
+              <p className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
+                {t('plugins.detail.noReadme')}
+              </p>
             )
           ) : data.contents ? (
             <Contents contents={data.contents} />
@@ -205,20 +232,36 @@ export default function PluginDetailPage() {
   )
 }
 
-function Actions({ plugin, canWrite, onAction }: { plugin: PluginCatalogEntry; canWrite: boolean; onAction: (action: PluginAction) => void }) {
+function Actions({
+  plugin,
+  canWrite,
+  onAction,
+}: {
+  plugin: PluginCatalogEntry
+  canWrite: boolean
+  onAction: (action: PluginAction) => void
+}) {
   const { t } = useTranslation()
   const installable = canWrite && !plugin.revoked && plugin.compatible && plugin.supported && plugin.fits_workspace
   return (
     <div className="space-y-2">
       {installable && plugin.update_available && (
-        <Button className="w-full" onClick={() => onAction('update')}>{t('plugins.update')}</Button>
+        <Button className="w-full" onClick={() => onAction('update')}>
+          {t('plugins.update')}
+        </Button>
       )}
       {installable && !plugin.installed_version && (
-        <Button className="w-full" onClick={() => onAction('install')}>{t('plugins.install')}</Button>
+        <Button className="w-full" onClick={() => onAction('install')}>
+          {t('plugins.install')}
+        </Button>
       )}
       {canWrite && plugin.installed_version && (
         // Always offered to an installed plugin, revoked or not: removing never needs the catalog.
-        <Button variant="outline" className="w-full text-destructive hover:text-destructive" onClick={() => onAction('remove')}>
+        <Button
+          variant="outline"
+          className="w-full text-destructive hover:text-destructive"
+          onClick={() => onAction('remove')}
+        >
           <Trash2 size={14} className="mr-1.5" />
           {t('plugins.remove')}
         </Button>
@@ -245,15 +288,29 @@ function Facts({ plugin }: { plugin: PluginCatalogEntry }) {
     ? t(only === 'business' ? 'plugins.onlyForBusiness' : 'plugins.onlyForPersonal')
     : t('plugins.detail.anyWorkspace')
   const rows: [string, React.ReactNode][] = [
-    [t('plugins.detail.type'), <span className="inline-flex flex-wrap justify-end gap-x-2"><PluginTypes entry={plugin} /></span>],
+    [
+      t('plugins.detail.type'),
+      <span className="inline-flex flex-wrap justify-end gap-x-2">
+        <PluginTypes entry={plugin} />
+      </span>,
+    ],
     [t('plugins.detail.version'), <span className="tabular-nums">{plugin.version}</span>],
     [t('plugins.detail.license'), plugin.license],
     [t('plugins.detail.requires'), <span className="tabular-nums">Securo {plugin.min_securo_version}+</span>],
     [t('plugins.detail.workspaces'), workspacesLabel],
-    ...(plugin.updated_at ? [[t('plugins.detail.updated'), relativeDate(plugin.updated_at, lang)] as [string, React.ReactNode]] : []),
-    ...(plugin.added_at ? [[t('plugins.detail.added'), relativeDate(plugin.added_at, lang)] as [string, React.ReactNode]] : []),
+    ...(plugin.updated_at
+      ? [[t('plugins.detail.updated'), relativeDate(plugin.updated_at, lang)] as [string, React.ReactNode]]
+      : []),
+    ...(plugin.added_at
+      ? [[t('plugins.detail.added'), relativeDate(plugin.added_at, lang)] as [string, React.ReactNode]]
+      : []),
     ...(locales.length
-      ? [[t('plugins.detail.languages'), locales.map((locale) => languageName(locale, lang)).join(', ')] as [string, React.ReactNode]]
+      ? [
+          [t('plugins.detail.languages'), locales.map((locale) => languageName(locale, lang)).join(', ')] as [
+            string,
+            React.ReactNode,
+          ],
+        ]
       : []),
   ]
   return (
@@ -269,7 +326,9 @@ function Facts({ plugin }: { plugin: PluginCatalogEntry }) {
       {plugin.topics.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {plugin.topics.map((topic) => (
-            <span key={topic} className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">{topic}</span>
+            <span key={topic} className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+              {topic}
+            </span>
           ))}
         </div>
       )}
@@ -341,7 +400,13 @@ function Contents({ contents }: { contents: PluginContents }) {
                 <span key={i} className="rounded-md bg-muted px-2 py-0.5">
                   <span className="text-muted-foreground">{t(ACTION_LABEL[action.op] ?? action.op)}: </span>
                   <span className="font-medium">
-                    {action.category ? <RefName item={action.category} /> : typeof action.value === 'string' ? action.value : ''}
+                    {action.category ? (
+                      <RefName item={action.category} />
+                    ) : typeof action.value === 'string' ? (
+                      action.value
+                    ) : (
+                      ''
+                    )}
                   </span>
                 </span>
               ))}

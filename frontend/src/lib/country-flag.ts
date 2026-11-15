@@ -16,7 +16,5 @@ const LETTER_A = 'A'.charCodeAt(0)
 export function countryFlag(code: string): string {
   const upper = code.trim().toUpperCase()
   if (!/^[A-Z]{2}$/.test(upper)) return ''
-  return String.fromCodePoint(
-    ...[...upper].map((letter) => REGIONAL_INDICATOR_A + letter.charCodeAt(0) - LETTER_A),
-  )
+  return String.fromCodePoint(...[...upper].map((letter) => REGIONAL_INDICATOR_A + letter.charCodeAt(0) - LETTER_A))
 }

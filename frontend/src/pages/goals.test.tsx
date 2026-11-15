@@ -29,8 +29,13 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
 
 function income(overrides: Partial<RecurringTransaction>): RecurringTransaction {
   return {
-    id: 'r', description: 'Income', amount: 1000, currency: 'BRL', type: 'credit',
-    frequency: 'monthly', is_active: true,
+    id: 'r',
+    description: 'Income',
+    amount: 1000,
+    currency: 'BRL',
+    type: 'credit',
+    frequency: 'monthly',
+    is_active: true,
     ...overrides,
   } as RecurringTransaction
 }
@@ -74,22 +79,39 @@ describe('GoalsPage salary targets', () => {
     expect(text(within(dialog).getByText(/^6 ×/))).toBe('6 × R$ 13.967,38 = R$ 83.804,28')
 
     await user.click(within(dialog).getByRole('button', { name: 'Save' }))
-    expect(api.goals.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Reserva',
-      salary_recurring_id: 'salary',
-      salary_months: 6,
-      currency: 'BRL',
-    }))
+    expect(api.goals.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Reserva',
+        salary_recurring_id: 'salary',
+        salary_months: 6,
+        currency: 'BRL',
+      }),
+    )
     expect(api.goals.create.mock.calls[0][0]).not.toHaveProperty('target_amount')
   })
 
   it('shows the target and coverage in salaries on the card', async () => {
-    api.goals.list.mockResolvedValue([{
-      id: 'g', name: 'Reserva', status: 'active', currency: 'BRL', percentage: 70,
-      current_amount: '58662.99', target_amount: '83804.28', target_date: null,
-      tracking_type: 'manual', on_track: null, monthly_contribution: null, icon: null, color: null,
-      salary_recurring_id: 'salary', salary_months: 6, salary_name: 'Salário', monthly_salary: '13967.38',
-    } as unknown as Goal])
+    api.goals.list.mockResolvedValue([
+      {
+        id: 'g',
+        name: 'Reserva',
+        status: 'active',
+        currency: 'BRL',
+        percentage: 70,
+        current_amount: '58662.99',
+        target_amount: '83804.28',
+        target_date: null,
+        tracking_type: 'manual',
+        on_track: null,
+        monthly_contribution: null,
+        icon: null,
+        color: null,
+        salary_recurring_id: 'salary',
+        salary_months: 6,
+        salary_name: 'Salário',
+        monthly_salary: '13967.38',
+      } as unknown as Goal,
+    ])
 
     renderWithProviders(<GoalsPage />)
 

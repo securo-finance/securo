@@ -11,8 +11,6 @@ import type { Transaction } from '@/types'
  * so a row that the totals keep out reads as a transfer on every screen that
  * lists it (issue #993).
  */
-export function isTransferTransaction(
-  tx: Pick<Transaction, 'transfer_pair_id' | 'category'>,
-): boolean {
+export function isTransferTransaction(tx: Pick<Transaction, 'transfer_pair_id' | 'category'>): boolean {
   return !!tx.transfer_pair_id || !!tx.category?.treat_as_transfer
 }

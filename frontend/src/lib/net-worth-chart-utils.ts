@@ -36,10 +36,7 @@ export function formatNetWorthAxisTick(
   if (tickInterval < compactUnit / 10) {
     const currencyFormat = new Intl.NumberFormat(locale, { style: 'currency', currency })
     const currencyDigits = currencyFormat.resolvedOptions().maximumFractionDigits ?? 2
-    const intervalDigits = Math.max(
-      0,
-      Math.ceil(-Math.log10(Math.max(tickInterval / 2, Number.EPSILON))),
-    )
+    const intervalDigits = Math.max(0, Math.ceil(-Math.log10(Math.max(tickInterval / 2, Number.EPSILON))))
     const fractionDigits = Math.min(
       6,
       tickInterval < 1 ? Math.max(currencyDigits, intervalDigits) : Math.min(currencyDigits, intervalDigits),

@@ -14,25 +14,13 @@ import { invoices as invoicesApi } from '@/lib/api'
  * third party. On a self-hosted install that is a request leaving the
  * building for an image the user already owns.
  */
-export function InvoiceLogoField({
-  logoId,
-  onChanged,
-}: {
-  logoId: string | null
-  onChanged: () => void
-}) {
+export function InvoiceLogoField({ logoId, onChanged }: { logoId: string | null; onChanged: () => void }) {
   // Keyed by the id so a replaced logo mounts a fresh preview rather
   // than an effect having to blank the previous one.
   return <LogoField key={logoId ?? 'none'} logoId={logoId} onChanged={onChanged} />
 }
 
-function LogoField({
-  logoId,
-  onChanged,
-}: {
-  logoId: string | null
-  onChanged: () => void
-}) {
+function LogoField({ logoId, onChanged }: { logoId: string | null; onChanged: () => void }) {
   const { t } = useTranslation()
   const fileInput = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -94,13 +82,7 @@ function LogoField({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => fileInput.current?.click()}
-          >
+          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>
             {logoId ? t('invoices.settings.logoReplace') : t('invoices.settings.logoUpload')}
           </Button>
           {logoId && (

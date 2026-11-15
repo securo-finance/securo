@@ -7,7 +7,7 @@ export function isConditionGroup(node: RuleConditionNode): node is RuleCondition
 
 /** Every leaf condition of a rule, unwrapping one level of AND/OR groups. */
 export function flattenConditions(nodes: RuleConditionNode[]): RuleCondition[] {
-  return nodes.flatMap(node => (isConditionGroup(node) ? node.conditions : [node]))
+  return nodes.flatMap((node) => (isConditionGroup(node) ? node.conditions : [node]))
 }
 
 /** True when a rule mixes AND and OR, i.e. it holds at least one group. */

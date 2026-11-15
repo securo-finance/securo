@@ -5,7 +5,15 @@ import { AlertCircle, Copy, ExternalLink, Loader2, LockKeyhole } from 'lucide-re
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { ProviderSettingsField } from '@/components/provider-settings-field'
 import { admin, type ProviderSettingStatus } from '@/lib/api'
@@ -81,7 +89,7 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
     },
     onSuccess: (updated, fieldToReset) => {
       queryClient.setQueryData<ProviderSettingStatus[]>(['admin', 'provider-settings'], (current) =>
-        current?.map((item) => item.name === updated.name ? updated : item),
+        current?.map((item) => (item.name === updated.name ? updated : item)),
       )
       void queryClient.invalidateQueries({ queryKey: ['admin', 'provider-settings'] })
       void queryClient.invalidateQueries({ queryKey: ['connections', 'providers'] })
@@ -104,13 +112,21 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
     <DialogContent
       className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-lg"
       showCloseButton={!save.isPending}
-      onInteractOutside={(event) => { if (save.isPending) event.preventDefault() }}
-      onEscapeKeyDown={(event) => { if (save.isPending) event.preventDefault() }}
+      onInteractOutside={(event) => {
+        if (save.isPending) event.preventDefault()
+      }}
+      onEscapeKeyDown={(event) => {
+        if (save.isPending) event.preventDefault()
+      }}
     >
       <DialogHeader className="border-b border-border/60 px-5 py-5 text-left sm:px-6">
-        <div className="mb-2 flex size-10 items-center justify-center rounded-lg border border-border/60 bg-muted/40">{icon}</div>
+        <div className="mb-2 flex size-10 items-center justify-center rounded-lg border border-border/60 bg-muted/40">
+          {icon}
+        </div>
         <DialogTitle className="pr-6 text-lg leading-snug">{name}</DialogTitle>
-        <DialogDescription className="leading-relaxed">{description ?? t('providerSettings.catalog.credentialsDescription')}</DialogDescription>
+        <DialogDescription className="leading-relaxed">
+          {description ?? t('providerSettings.catalog.credentialsDescription')}
+        </DialogDescription>
         {guideUrl && (
           <a
             href={guideUrl}
@@ -123,17 +139,28 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
           </a>
         )}
       </DialogHeader>
-      <form aria-label={name} onSubmit={(event) => { event.preventDefault(); if (canSave) save.mutate(undefined) }}>
+      <form
+        aria-label={name}
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (canSave) save.mutate(undefined)
+        }}
+      >
         <div className="space-y-6 px-5 py-6 sm:px-6">
           {provider.redirect_uri && <RedirectUri value={provider.redirect_uri} />}
           {!isSimplefin && (
             <div className="space-y-1.5">
               <h3 className="text-sm font-semibold">{t('providerSettings.catalog.credentialsTitle')}</h3>
-              <p className="text-sm leading-relaxed text-muted-foreground">{t('providerSettings.catalog.credentialsDescription')}</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {t('providerSettings.catalog.credentialsDescription')}
+              </p>
             </div>
           )}
           {cannotStoreSecrets && (
-            <div role="alert" className="flex gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm leading-relaxed text-destructive">
+            <div
+              role="alert"
+              className="flex gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm leading-relaxed text-destructive"
+            >
               <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <p>{t('providerSettings.secretStorageUnavailable')}</p>
             </div>
@@ -158,11 +185,19 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
           )}
         </div>
         <DialogFooter className="sticky bottom-0 border-t border-border/60 bg-background px-5 py-4 sm:px-6">
-          <Button type="button" variant="outline" className="h-10 shadow-none" disabled={save.isPending} onClick={onClose}>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 shadow-none"
+            disabled={save.isPending}
+            onClick={onClose}
+          >
             {t('common.cancel')}
           </Button>
           <Button type="submit" className="h-10" disabled={!canSave}>
-            {save.isPending && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+            {save.isPending && (
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            )}
             {t(`providerSettings.catalog.${save.isPending ? 'saving' : 'saveChanges'}`)}
           </Button>
         </DialogFooter>
@@ -171,7 +206,9 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
         <DeleteConfirmationDialog
           open
           title={t('providerSettings.removeTitle', { field: t(`providerSettings.fields.${resetField}`) })}
-          description={t(`providerSettings.${provider.fields[resetField].environment_configured ? 'removeWithFallback' : 'removeWithoutFallback'}`)}
+          description={t(
+            `providerSettings.${provider.fields[resetField].environment_configured ? 'removeWithFallback' : 'removeWithoutFallback'}`,
+          )}
           isPending={save.isPending}
           onClose={() => setResetField(null)}
           onConfirm={() => save.mutate(resetField)}

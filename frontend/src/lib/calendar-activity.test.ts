@@ -45,10 +45,14 @@ describe('dayActivity', () => {
   })
 
   it('keeps actual and projected separate on a mixed day', () => {
-    const activity = dayActivity(day({
-      actual_income: 400, actual_expense: 100,
-      projected_income: 200, projected_expense: 60,
-    }))
+    const activity = dayActivity(
+      day({
+        actual_income: 400,
+        actual_expense: 100,
+        projected_income: 200,
+        projected_expense: 60,
+      }),
+    )
     expect(activity.actualNet).toBe(300)
     expect(activity.projectedNet).toBe(140)
     expect(activity.hasActual).toBe(true)

@@ -24,9 +24,7 @@ describe('applyMask', () => {
   it('leaves the value untouched when the kind has no mask', () => {
     // The escape hatch: a document no pack describes must not be reformatted
     // into something it is not.
-    expect(applyMask('T1234567890123 (houjin bangou)', null)).toBe(
-      'T1234567890123 (houjin bangou)',
-    )
+    expect(applyMask('T1234567890123 (houjin bangou)', null)).toBe('T1234567890123 (houjin bangou)')
     expect(applyMask('DE123456789', null)).toBe('DE123456789')
   })
 

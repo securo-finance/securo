@@ -70,8 +70,7 @@ export default function AgentsListPage() {
   // server-side; we still need to refresh both queries so the badge
   // and the global-chat picker pick up the change immediately.
   const setDefaultMut = useMutation({
-    mutationFn: ({ id, value }: { id: string; value: boolean }) =>
-      agents.update(id, { is_default: value }),
+    mutationFn: ({ id, value }: { id: string; value: boolean }) => agents.update(id, { is_default: value }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agents'] })
       qc.invalidateQueries({ queryKey: ['agents-default'] })
@@ -163,9 +162,7 @@ export default function AgentsListPage() {
                         // row tells the truth instead of always saying
                         // "Instance default · —" when the agent uses a
                         // connection.
-                        const conn = a.connection_id
-                          ? connections?.find((c) => c.id === a.connection_id)
-                          : undefined
+                        const conn = a.connection_id ? connections?.find((c) => c.id === a.connection_id) : undefined
                         if (conn) {
                           const model = a.model || conn.default_model
                           return `${conn.name} · ${model || '—'}`
@@ -180,11 +177,17 @@ export default function AgentsListPage() {
                       <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{a.description}</p>
                     )}
                     <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1" title={t('agents.conversationsCount', 'Conversations')}>
+                      <span
+                        className="inline-flex items-center gap-1"
+                        title={t('agents.conversationsCount', 'Conversations')}
+                      >
                         <MessageSquare className="h-3 w-3" />
                         {a.conversation_count ?? 0}
                       </span>
-                      <span className="inline-flex items-center gap-1" title={t('agents.knowledgeCount', 'Knowledge files')}>
+                      <span
+                        className="inline-flex items-center gap-1"
+                        title={t('agents.knowledgeCount', 'Knowledge files')}
+                      >
                         <FileText className="h-3 w-3" />
                         {a.knowledge_count ?? 0}
                       </span>
@@ -207,9 +210,7 @@ export default function AgentsListPage() {
                     </span>
                     <Switch
                       checked={a.is_default}
-                      onCheckedChange={(value) =>
-                        setDefaultMut.mutate({ id: a.id, value: !!value })
-                      }
+                      onCheckedChange={(value) => setDefaultMut.mutate({ id: a.id, value: !!value })}
                       disabled={setDefaultMut.isPending}
                       aria-label={t('agents.defaultLabel', 'Default')}
                     />

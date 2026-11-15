@@ -29,11 +29,9 @@ vi.mock('@/contexts/workspace-context', () => ({
 
 const CSV_COLUMNS = ['Sym', 'TDay', 'Shrs', 'Px', 'Comm', 'Dir']
 
-const FILE = new File(
-  ['Sym,TDay,Shrs,Px,Comm,Dir', 'AAPL,2026-01-15,10,150.00,1.20,Buy'],
-  'orders.csv',
-  { type: 'text/csv' },
-)
+const FILE = new File(['Sym,TDay,Shrs,Px,Comm,Dir', 'AAPL,2026-01-15,10,150.00,1.20,Buy'], 'orders.csv', {
+  type: 'text/csv',
+})
 
 function order(row: number, ticker: string, date: string): AssetOrderImport {
   return {
@@ -93,19 +91,17 @@ describe('AssetImportPanel column mapping', () => {
   it('keeps the column mapping reachable after a successful preview', async () => {
     // Like the real backend: the preview only succeeds once every required
     // column is mapped, so the grid stays open through the whole mapping.
-    api.previewImport.mockImplementation(
-      (_file: File, opts: { column_mapping?: Record<string, string> }) => {
-        const m = opts?.column_mapping ?? {}
-        const missing = ['ticker', 'date', 'quantity', 'price'].filter((f) => !m[f])
-        if (missing.length) {
-          return Promise.resolve({
-            ...errorPreview,
-            parse_error: `Missing required column mapping: ${missing.join(', ')}`,
-          })
-        }
-        return Promise.resolve(successPreview)
-      },
-    )
+    api.previewImport.mockImplementation((_file: File, opts: { column_mapping?: Record<string, string> }) => {
+      const m = opts?.column_mapping ?? {}
+      const missing = ['ticker', 'date', 'quantity', 'price'].filter((f) => !m[f])
+      if (missing.length) {
+        return Promise.resolve({
+          ...errorPreview,
+          parse_error: `Missing required column mapping: ${missing.join(', ')}`,
+        })
+      }
+      return Promise.resolve(successPreview)
+    })
     const rendered = renderWithProviders(<AssetImportPanel />)
     const { user } = rendered
     await uploadFile(rendered)
@@ -124,9 +120,7 @@ describe('AssetImportPanel column mapping', () => {
     await screen.findByText(t('assetImport.rowsSkipped', { count: 2 }))
     expect(
       screen.getByText(
-        (content) =>
-          content.startsWith('Row 10') &&
-          content.includes(t('assetImport.reason.missing_ticker')),
+        (content) => content.startsWith('Row 10') && content.includes(t('assetImport.reason.missing_ticker')),
       ),
     ).toBeInTheDocument()
 
@@ -187,7 +181,12 @@ describe('AssetImportPanel column mapping', () => {
 
     // The next preview hangs: the orders on screen still come from the old mapping.
     let settle: (value: AssetImportPreview) => void = () => {}
-    api.previewImport.mockImplementationOnce(() => new Promise((resolve) => { settle = resolve }))
+    api.previewImport.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          settle = resolve
+        }),
+    )
     await user.click(screen.getByRole('button', { name: /Column mapping/ }))
     await user.selectOptions(await screen.findByRole('combobox', { name: /Quantity/i }), 'Comm')
 

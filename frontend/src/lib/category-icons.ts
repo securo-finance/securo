@@ -1,27 +1,95 @@
 import type { LucideIcon } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import {
-  House, UtensilsCrossed, Car, ShoppingCart, Pill, Gamepad2,
-  Smartphone, BookOpen, ArrowLeftRight, CircleHelp,
-  Wallet, CreditCard, Banknote, PiggyBank, TrendingUp, TrendingDown,
-  Receipt, ShoppingBag, Gift, Heart, Baby, Dog, Cat,
-  Plane, Train, Bus, Fuel, Bike,
-  Lightbulb, Droplets, Flame, Wifi, Tv,
-  GraduationCap, Briefcase, Building2, Landmark,
-  Dumbbell, Shirt, Scissors, Wrench, Hammer,
-  Music, Film, Coffee, Beer, Pizza, Salad,
-  Stethoscope, Syringe, Cross,
-  PartyPopper, TreePine, Umbrella, Globe, Sparkles,
-  HeartHandshake, Brain, HandCoins, Ticket, Sofa, SprayCan, Package,
-  BedDouble, Luggage, School, Trophy, Camera, Newspaper, Laptop, Monitor,
-  Trees, Croissant, Cake, IceCreamCone, Apple, Beef, Fish,
-  Motorbike, CarTaxiFront, PencilRuler, Refrigerator, PawPrint
+  House,
+  UtensilsCrossed,
+  Car,
+  ShoppingCart,
+  Pill,
+  Gamepad2,
+  Smartphone,
+  BookOpen,
+  ArrowLeftRight,
+  CircleHelp,
+  Wallet,
+  CreditCard,
+  Banknote,
+  PiggyBank,
+  TrendingUp,
+  TrendingDown,
+  Receipt,
+  ShoppingBag,
+  Gift,
+  Heart,
+  Baby,
+  Dog,
+  Cat,
+  Plane,
+  Train,
+  Bus,
+  Fuel,
+  Bike,
+  Lightbulb,
+  Droplets,
+  Flame,
+  Wifi,
+  Tv,
+  GraduationCap,
+  Briefcase,
+  Building2,
+  Landmark,
+  Dumbbell,
+  Shirt,
+  Scissors,
+  Wrench,
+  Hammer,
+  Music,
+  Film,
+  Coffee,
+  Beer,
+  Pizza,
+  Salad,
+  Stethoscope,
+  Syringe,
+  Cross,
+  PartyPopper,
+  TreePine,
+  Umbrella,
+  Globe,
+  Sparkles,
+  HeartHandshake,
+  Brain,
+  HandCoins,
+  Ticket,
+  Sofa,
+  SprayCan,
+  Package,
+  BedDouble,
+  Luggage,
+  School,
+  Trophy,
+  Camera,
+  Newspaper,
+  Laptop,
+  Monitor,
+  Trees,
+  Croissant,
+  Cake,
+  IceCreamCone,
+  Apple,
+  Beef,
+  Fish,
+  Motorbike,
+  CarTaxiFront,
+  PencilRuler,
+  Refrigerator,
+  PawPrint,
 } from 'lucide-react'
 
 export interface CategoryIconEntry {
-  name: string      // Lucide icon name (stored in DB)
-  pt: string        // Portuguese label, used as fallback when a locale has no translation
-  icon: LucideIcon  // Component reference
+  name: string // Lucide icon name (stored in DB)
+  pt: string // Portuguese label, used as fallback when a locale has no translation
+  icon: LucideIcon // Component reference
 }
 
 export const CATEGORY_ICONS: CategoryIconEntry[] = [
@@ -125,7 +193,7 @@ export const CATEGORY_ICONS: CategoryIconEntry[] = [
 
 // O(1) lookup map: icon-name → LucideIcon component
 export const ICON_MAP: Record<string, LucideIcon> = Object.fromEntries(
-  CATEGORY_ICONS.map((entry) => [entry.name, entry.icon])
+  CATEGORY_ICONS.map((entry) => [entry.name, entry.icon]),
 )
 
 // Icon labels follow the active UI language: tooltips and the picker search

@@ -2,15 +2,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  Calendar as CalendarIcon,
-  ChevronDown,
-  Package,
-  Plus,
-  Receipt,
-  Repeat,
-  Settings2,
-} from 'lucide-react'
+import { Calendar as CalendarIcon, ChevronDown, Package, Plus, Receipt, Repeat, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -25,19 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { PageHeader } from '@/components/page-header'
 import { SectionCard, Segmented, StateBadge, TH } from '@/components/invoice-ui'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
@@ -53,13 +34,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { fiscal as fiscalApi, invoices as invoicesApi, payees as payeesApi } from '@/lib/api'
-import {
-  customFieldDefs,
-  displayNumber,
-  invoiceErrorKey,
-  linesTotal,
-  AGING_BUCKETS,
-} from '@/lib/invoice-utils'
+import { customFieldDefs, displayNumber, invoiceErrorKey, linesTotal, AGING_BUCKETS } from '@/lib/invoice-utils'
 import type {
   InstallmentInput,
   Invoice,
@@ -136,15 +111,11 @@ export default function InvoicesPage() {
   const money = (value: string | number | null | undefined, code?: string) =>
     mask(formatCurrency(Number(value ?? 0), code ?? currency, locale))
 
-  const showDate = (iso: string) =>
-    new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
+  const showDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
 
   const outstanding = Number(summary?.outstanding ?? 0)
   const overdue = Number(summary?.overdue_amount ?? 0)
-  const bucketTotal = AGING_BUCKETS.reduce(
-    (sum, b) => sum + Number(summary?.buckets[b.key] ?? 0),
-    0,
-  )
+  const bucketTotal = AGING_BUCKETS.reduce((sum, b) => sum + Number(summary?.buckets[b.key] ?? 0), 0)
 
   return (
     <div>
@@ -215,23 +186,17 @@ export default function InvoicesPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3">
           <div className="lg:col-span-2 px-5 py-4">
             <p className="text-xs font-medium text-muted-foreground mb-0.5">
-              {direction === 'payable'
-                ? t('invoices.summary.owed')
-                : t('invoices.summary.outstanding')}
+              {direction === 'payable' ? t('invoices.summary.owed') : t('invoices.summary.outstanding')}
             </p>
             {summaryLoading ? (
               <Skeleton className="h-10 w-40" />
             ) : (
-              <p className="text-4xl font-bold tabular-nums leading-tight text-foreground">
-                {money(outstanding)}
-              </p>
+              <p className="text-4xl font-bold tabular-nums leading-tight text-foreground">{money(outstanding)}</p>
             )}
 
             <div className="flex flex-wrap gap-6 mt-4">
               <div>
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">
-                  {t('invoices.summary.overdue')}
-                </p>
+                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('invoices.summary.overdue')}</p>
                 <p
                   className={cn(
                     'text-sm font-bold tabular-nums',
@@ -258,9 +223,7 @@ export default function InvoicesPage() {
                 </p>
               </div>
               <div>
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">
-                  {t('invoices.summary.upcoming')}
-                </p>
+                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('invoices.summary.upcoming')}</p>
                 <p className="text-sm font-bold tabular-nums text-foreground" data-testid="summary-upcoming">
                   {summary?.upcoming.length ?? 0}
                 </p>
@@ -269,15 +232,10 @@ export default function InvoicesPage() {
           </div>
 
           <div className="px-5 py-4 border-t border-border lg:border-t-0 lg:border-l">
-            <p className="text-xs font-medium text-muted-foreground mb-2">
-              {t('invoices.summary.aging')}
-            </p>
+            <p className="text-xs font-medium text-muted-foreground mb-2">{t('invoices.summary.aging')}</p>
             {bucketTotal > 0 ? (
               <>
-                <div
-                  className="flex h-2 w-full overflow-hidden rounded-full bg-muted"
-                  data-testid="aging-bar"
-                >
+                <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted" data-testid="aging-bar">
                   {AGING_BUCKETS.map((bucket) => {
                     const amount = Number(summary?.buckets[bucket.key] ?? 0)
                     if (amount <= 0) return null
@@ -298,9 +256,7 @@ export default function InvoicesPage() {
                     return (
                       <div key={bucket.key} className="flex items-center gap-2 text-xs">
                         <span className={cn('h-2 w-2 rounded-full shrink-0', bucket.tone)} />
-                        <dt className="text-muted-foreground">
-                          {t(`invoices.bucket.${bucket.key}`)}
-                        </dt>
+                        <dt className="text-muted-foreground">{t(`invoices.bucket.${bucket.key}`)}</dt>
                         <dd className="ml-auto tabular-nums font-medium">{money(amount)}</dd>
                       </div>
                     )
@@ -346,15 +302,8 @@ export default function InvoicesPage() {
               <ChevronDown className="size-3.5 text-muted-foreground ml-auto" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="w-[180px] p-1 bg-card border border-border rounded-xl shadow-md"
-          >
-            <DropdownMenuItem
-              onClick={() => setYear(null)}
-              data-testid="invoice-year-all"
-              className="text-sm"
-            >
+          <DropdownMenuContent align="end" className="w-[180px] p-1 bg-card border border-border rounded-xl shadow-md">
+            <DropdownMenuItem onClick={() => setYear(null)} data-testid="invoice-year-all" className="text-sm">
               {t('invoices.allYears')}
             </DropdownMenuItem>
             {/* Only years that actually have an invoice. Offering an
@@ -413,23 +362,13 @@ export default function InvoicesPage() {
               <thead>
                 <tr className="border-b border-border">
                   <th className={`${TH} pl-4 sm:pl-5 text-left`}>
-                    {direction === 'payable'
-                      ? t('invoices.column.supplier')
-                      : t('invoices.column.client')}
+                    {direction === 'payable' ? t('invoices.column.supplier') : t('invoices.column.client')}
                   </th>
-                  <th className={`${TH} text-left w-24 hidden sm:table-cell`}>
-                    {t('invoices.column.number')}
-                  </th>
-                  <th className={`${TH} text-left w-32 hidden md:table-cell`}>
-                    {t('invoices.column.due')}
-                  </th>
+                  <th className={`${TH} text-left w-24 hidden sm:table-cell`}>{t('invoices.column.number')}</th>
+                  <th className={`${TH} text-left w-32 hidden md:table-cell`}>{t('invoices.column.due')}</th>
                   <th className={`${TH} text-right w-32`}>{t('invoices.column.total')}</th>
-                  <th className={`${TH} text-right w-32 hidden sm:table-cell`}>
-                    {t('invoices.column.balance')}
-                  </th>
-                  <th className={`${TH} pr-4 sm:pr-5 text-right w-28`}>
-                    {t('invoices.column.state')}
-                  </th>
+                  <th className={`${TH} text-right w-32 hidden sm:table-cell`}>{t('invoices.column.balance')}</th>
+                  <th className={`${TH} pr-4 sm:pr-5 text-right w-28`}>{t('invoices.column.state')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -454,9 +393,7 @@ export default function InvoicesPage() {
                         )}
                         {invoice.payee?.name ?? (
                           <span className="text-muted-foreground">
-                            {direction === 'payable'
-                              ? t('invoices.noSupplier')
-                              : t('invoices.noClient')}
+                            {direction === 'payable' ? t('invoices.noSupplier') : t('invoices.noClient')}
                           </span>
                         )}
                       </div>
@@ -478,7 +415,10 @@ export default function InvoicesPage() {
                         {showDate(displayDue(invoice))}
                       </span>
                       {invoice.installments.length > 0 && (
-                        <span className="ml-1.5 text-[11px] text-muted-foreground/70" data-testid="invoice-row-installments">
+                        <span
+                          className="ml-1.5 text-[11px] text-muted-foreground/70"
+                          data-testid="invoice-row-installments"
+                        >
                           {t('invoices.installments.count', { count: invoice.installments.length })}
                         </span>
                       )}
@@ -571,9 +511,7 @@ function CreateInvoiceDialog({
   // the one this user reads the app in — a freelancer in São Paulo bills
   // a client in New York in USD and is paid into a BRL account. The
   // display preference is only the starting guess.
-  const [currencyCode, setCurrencyCode] = useState(
-    user?.preferences?.currency_display ?? 'USD',
-  )
+  const [currencyCode, setCurrencyCode] = useState(user?.preferences?.currency_display ?? 'USD')
 
   const mutation = useMutation({
     mutationFn: (asDraft: boolean) =>
@@ -591,9 +529,7 @@ function CreateInvoiceDialog({
         ...(Object.keys(custom).length ? { custom_fields: custom } : {}),
       }),
     onSuccess: (invoice) => {
-      toast.success(
-        invoice.status === 'draft' ? t('invoices.draftSaved') : t('invoices.created'),
-      )
+      toast.success(invoice.status === 'draft' ? t('invoices.draftSaved') : t('invoices.created'))
       // The dialog owns the mutation, so it owns the invalidation: the
       // parent navigates away and would otherwise leave a stale list
       // behind for whenever the user comes back to it.
@@ -630,32 +566,22 @@ function CreateInvoiceDialog({
         )}
       >
         <DialogHeader>
-          <DialogTitle>
-            {direction === 'payable' ? t('invoices.newPayable') : t('invoices.new')}
-          </DialogTitle>
+          <DialogTitle>{direction === 'payable' ? t('invoices.newPayable') : t('invoices.new')}</DialogTitle>
           {/* Three fields is the whole point under the tracking preset:
               the money is already owed, and the document lives elsewhere. */}
           <DialogDescription>
-            {direction === 'payable'
-              ? t('invoices.newPayableDescription')
-              : t('invoices.newDescription')}
+            {direction === 'payable' ? t('invoices.newPayableDescription') : t('invoices.newDescription')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>
-              {direction === 'payable'
-                ? t('invoices.field.supplier')
-                : t('invoices.field.client')}
-            </Label>
+            <Label>{direction === 'payable' ? t('invoices.field.supplier') : t('invoices.field.client')}</Label>
             <Select value={payeeId} onValueChange={setPayeeId}>
               <SelectTrigger data-testid="invoice-client-select">
                 <SelectValue
                   placeholder={t(
-                    direction === 'payable'
-                      ? 'invoices.field.supplierPlaceholder'
-                      : 'invoices.field.clientPlaceholder',
+                    direction === 'payable' ? 'invoices.field.supplierPlaceholder' : 'invoices.field.clientPlaceholder',
                   )}
                 />
               </SelectTrigger>
@@ -697,7 +623,7 @@ function CreateInvoiceDialog({
                 id="invoice-due"
                 data-testid="invoice-due-input"
                 type="date"
-                value={installments ? installments[installments.length - 1]?.due_date ?? '' : dueDate}
+                value={installments ? (installments[installments.length - 1]?.due_date ?? '') : dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 // With a schedule, the due date is the last installment's.
                 disabled={installments !== null}
@@ -705,12 +631,9 @@ function CreateInvoiceDialog({
               <p className="text-[11px] text-muted-foreground">
                 {installments
                   ? t('invoices.installments.dueDerived')
-                  : t(
-                      direction === 'payable'
-                        ? 'invoices.field.dueDateHintPayable'
-                        : 'invoices.field.dueDateHint',
-                      { days: settings?.default_payment_terms_days ?? 30 },
-                    )}
+                  : t(direction === 'payable' ? 'invoices.field.dueDateHintPayable' : 'invoices.field.dueDateHint', {
+                      days: settings?.default_payment_terms_days ?? 30,
+                    })}
               </p>
             </div>
           </div>
@@ -789,13 +712,7 @@ function CreateInvoiceDialog({
   )
 }
 
-function InvoiceSettingsDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
+function InvoiceSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { data: settings } = useQuery({
@@ -832,137 +749,131 @@ function InvoiceSettingsDialog({
 
         <div className="overflow-y-auto flex-1 -mx-1 px-1 grid gap-x-8 gap-y-5 sm:grid-cols-2">
           <div className="space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('invoices.settings.groupBehaviour')}
-          </p>
-          <div className="space-y-1.5">
-            <Label>{t('invoices.settings.preset')}</Label>
-            <Select
-              value={String(value('preset') ?? 'tracking')}
-              onValueChange={(v) => setDraft({ ...draft, preset: v })}
-            >
-              <SelectTrigger data-testid="invoice-preset-select">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="tracking">{t('invoices.settings.presetTracking')}</SelectItem>
-                <SelectItem value="document">{t('invoices.settings.presetDocument')}</SelectItem>
-              </SelectContent>
-            </Select>
-            {/* Says what the choice does, because "tracking vs document"
-                means nothing until you know which one issues the paper. */}
-            <p className="text-[11px] text-muted-foreground">
-              {value('preset') === 'document'
-                ? t('invoices.settings.presetDocumentHint')
-                : t('invoices.settings.presetTrackingHint')}
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('invoices.settings.groupBehaviour')}
             </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="settings-prefix">{t('invoices.settings.numberPrefix')}</Label>
-              <Input
-                id="settings-prefix"
-                data-testid="invoice-prefix-input"
-                value={String(value('number_prefix') ?? '')}
-                onChange={(e) => setDraft({ ...draft, number_prefix: e.target.value })}
-                placeholder="FAT-"
-              />
+              <Label>{t('invoices.settings.preset')}</Label>
+              <Select
+                value={String(value('preset') ?? 'tracking')}
+                onValueChange={(v) => setDraft({ ...draft, preset: v })}
+              >
+                <SelectTrigger data-testid="invoice-preset-select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tracking">{t('invoices.settings.presetTracking')}</SelectItem>
+                  <SelectItem value="document">{t('invoices.settings.presetDocument')}</SelectItem>
+                </SelectContent>
+              </Select>
+              {/* Says what the choice does, because "tracking vs document"
+                means nothing until you know which one issues the paper. */}
+              <p className="text-[11px] text-muted-foreground">
+                {value('preset') === 'document'
+                  ? t('invoices.settings.presetDocumentHint')
+                  : t('invoices.settings.presetTrackingHint')}
+              </p>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="settings-terms">{t('invoices.settings.paymentTerms')}</Label>
-              <Input
-                id="settings-terms"
-                data-testid="invoice-terms-input"
-                type="number"
-                min={0}
-                value={String(value('default_payment_terms_days') ?? 30)}
-                onChange={(e) =>
-                  setDraft({ ...draft, default_payment_terms_days: Number(e.target.value) })
-                }
-              />
-            </div>
-          </div>
 
-          <IssuerSection />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="settings-prefix">{t('invoices.settings.numberPrefix')}</Label>
+                <Input
+                  id="settings-prefix"
+                  data-testid="invoice-prefix-input"
+                  value={String(value('number_prefix') ?? '')}
+                  onChange={(e) => setDraft({ ...draft, number_prefix: e.target.value })}
+                  placeholder="FAT-"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="settings-terms">{t('invoices.settings.paymentTerms')}</Label>
+                <Input
+                  id="settings-terms"
+                  data-testid="invoice-terms-input"
+                  type="number"
+                  min={0}
+                  value={String(value('default_payment_terms_days') ?? 30)}
+                  onChange={(e) => setDraft({ ...draft, default_payment_terms_days: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+
+            <IssuerSection />
           </div>
 
           <div className="space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('invoices.settings.groupDocument')}
-          </p>
-          <div className="space-y-1.5">
-            <Label htmlFor="settings-issuer">{t('invoices.settings.issuerName')}</Label>
-            <Input
-              id="settings-issuer"
-              data-testid="invoice-issuer-input"
-              value={String(value('issuer_display_name') ?? '')}
-              onChange={(e) => setDraft({ ...draft, issuer_display_name: e.target.value })}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>{t('invoices.settings.logo')}</Label>
-            <InvoiceLogoField
-              logoId={settings?.logo_id ?? null}
-              onChanged={() => {
-                void queryClient.invalidateQueries({ queryKey: ['invoice-settings'] })
-              }}
-            />
-            {/* The freeze rule, said out loud: people expect a logo change
-                to be retroactive, and it deliberately is not. */}
-            <p className="text-[11px] text-muted-foreground">{t('invoices.settings.logoHint')}</p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="settings-payment">{t('invoices.settings.paymentDetails')}</Label>
-            <Input
-              id="settings-payment"
-              data-testid="invoice-payment-details-input"
-              value={String(value('payment_details') ?? '')}
-              onChange={(e) => setDraft({ ...draft, payment_details: e.target.value })}
-              placeholder="Pix: …"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              {t('invoices.settings.paymentDetailsHint')}
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('invoices.settings.groupDocument')}
             </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="settings-accent">{t('invoices.settings.accentColor')}</Label>
-            <div className="flex items-center gap-2">
-              <input
-                id="settings-accent"
-                type="color"
-                data-testid="invoice-accent-input"
-                className="h-9 w-12 rounded border bg-transparent p-1"
-                value={String(value('accent_color') ?? '#111827')}
-                onChange={(e) => setDraft({ ...draft, accent_color: e.target.value })}
+            <div className="space-y-1.5">
+              <Label htmlFor="settings-issuer">{t('invoices.settings.issuerName')}</Label>
+              <Input
+                id="settings-issuer"
+                data-testid="invoice-issuer-input"
+                value={String(value('issuer_display_name') ?? '')}
+                onChange={(e) => setDraft({ ...draft, issuer_display_name: e.target.value })}
               />
-              <span className="font-mono text-xs text-muted-foreground">
-                {String(value('accent_color') ?? '#111827')}
-              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>{t('invoices.settings.logo')}</Label>
+              <InvoiceLogoField
+                logoId={settings?.logo_id ?? null}
+                onChanged={() => {
+                  void queryClient.invalidateQueries({ queryKey: ['invoice-settings'] })
+                }}
+              />
+              {/* The freeze rule, said out loud: people expect a logo change
+                to be retroactive, and it deliberately is not. */}
+              <p className="text-[11px] text-muted-foreground">{t('invoices.settings.logoHint')}</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="settings-payment">{t('invoices.settings.paymentDetails')}</Label>
+              <Input
+                id="settings-payment"
+                data-testid="invoice-payment-details-input"
+                value={String(value('payment_details') ?? '')}
+                onChange={(e) => setDraft({ ...draft, payment_details: e.target.value })}
+                placeholder="Pix: …"
+              />
+              <p className="text-[11px] text-muted-foreground">{t('invoices.settings.paymentDetailsHint')}</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="settings-accent">{t('invoices.settings.accentColor')}</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="settings-accent"
+                  type="color"
+                  data-testid="invoice-accent-input"
+                  className="h-9 w-12 rounded border bg-transparent p-1"
+                  value={String(value('accent_color') ?? '#111827')}
+                  onChange={(e) => setDraft({ ...draft, accent_color: e.target.value })}
+                />
+                <span className="font-mono text-xs text-muted-foreground">
+                  {String(value('accent_color') ?? '#111827')}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="settings-footer">{t('invoices.settings.footerNote')}</Label>
+              <Input
+                id="settings-footer"
+                data-testid="invoice-footer-input"
+                value={String(value('footer_note') ?? '')}
+                onChange={(e) => setDraft({ ...draft, footer_note: e.target.value })}
+              />
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="settings-footer">{t('invoices.settings.footerNote')}</Label>
-            <Input
-              id="settings-footer"
-              data-testid="invoice-footer-input"
-              value={String(value('footer_note') ?? '')}
-              onChange={(e) => setDraft({ ...draft, footer_note: e.target.value })}
-            />
-          </div>
-
-          </div>
-
           <div className="sm:col-span-2">
-          <LabelSection
-            template={(value('template') as InvoiceTemplate | null) ?? null}
-            onChange={(template) => setDraft({ ...draft, template })}
-          />
-
+            <LabelSection
+              template={(value('template') as InvoiceTemplate | null) ?? null}
+              onChange={(template) => setDraft({ ...draft, template })}
+            />
           </div>
         </div>
 
@@ -1127,13 +1038,9 @@ function LabelSection({
       >
         <div>
           <Label className="cursor-pointer">{t('invoices.settings.labels')}</Label>
-          <p className="text-[11px] text-muted-foreground">
-            {t('invoices.settings.labelsHint')}
-          </p>
+          <p className="text-[11px] text-muted-foreground">{t('invoices.settings.labelsHint')}</p>
         </div>
-        <ChevronDown
-          className={cn('h-4 w-4 text-muted-foreground transition-transform', open && 'rotate-180')}
-        />
+        <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (

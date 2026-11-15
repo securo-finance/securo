@@ -67,9 +67,7 @@ export interface ReportsRange {
 function readReportsTabs(): Record<string, unknown> {
   const v = read('reports')
   if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
-  return Object.fromEntries(
-    Object.entries(v).filter(([, entry]) => entry !== null && typeof entry === 'object'),
-  )
+  return Object.fromEntries(Object.entries(v).filter(([, entry]) => entry !== null && typeof entry === 'object'))
 }
 
 export function loadReportsRange(tab: string): ReportsRange | null {

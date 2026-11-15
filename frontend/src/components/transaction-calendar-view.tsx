@@ -17,10 +17,7 @@ import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { spendingPlan as spendingPlanApi } from '@/lib/api'
-import {
-  saveCalendarDateBasis,
-  type CalendarDateBasis,
-} from '@/lib/transaction-calendar'
+import { saveCalendarDateBasis, type CalendarDateBasis } from '@/lib/transaction-calendar'
 
 function parseLocalDate(value: string) {
   return new Date(`${value}T00:00:00`)
@@ -69,7 +66,6 @@ function readCalendarMetric(): CalendarMetric {
   return window.localStorage.getItem(CALENDAR_METRIC_STORAGE_KEY) === 'activity' ? 'activity' : 'balance'
 }
 
-
 export function TransactionCalendarView({
   calendar,
   isLoading,
@@ -112,7 +108,7 @@ export function TransactionCalendarView({
     queryFn: () => spendingPlanApi.timeline(),
     enabled: planApplied,
   })
-  const coveredUntil = planApplied ? planTimeline?.covered_until ?? null : null
+  const coveredUntil = planApplied ? (planTimeline?.covered_until ?? null) : null
   const isCovered = (date: string) => coveredUntil !== null && date >= today && date <= coveredUntil
 
   const accountById = useMemo(() => {
@@ -231,42 +227,44 @@ export function TransactionCalendarView({
         </div>
 
         <div className="md:hidden divide-y divide-border">
-          {calendar.days.filter((day) => day.in_month || day.date === selectedDate).map((day) => {
-            const selected = day.date === selectedDate
-            const panelId = `transaction-calendar-day-details-${day.date}`
-            return (
-              <div key={day.date}>
-                <MobileDayRow
-                  day={day}
-                  selected={selected}
-                  panelId={panelId}
-                  covered={isCovered(day.date)}
-                  currency={calendar.currency}
-                  locale={locale}
-                  dateLocale={dateLocale}
-                  mask={mask}
-                  density={density}
-                  metric={metric}
-                  onSelect={() => onSelectedDateChange(day.date)}
-                />
-                {selected && (
-                  <SelectedDayPanel
-                    id={panelId}
-                    variant="mobile"
+          {calendar.days
+            .filter((day) => day.in_month || day.date === selectedDate)
+            .map((day) => {
+              const selected = day.date === selectedDate
+              const panelId = `transaction-calendar-day-details-${day.date}`
+              return (
+                <div key={day.date}>
+                  <MobileDayRow
                     day={day}
+                    selected={selected}
+                    panelId={panelId}
+                    covered={isCovered(day.date)}
                     currency={calendar.currency}
                     locale={locale}
                     dateLocale={dateLocale}
                     mask={mask}
+                    density={density}
                     metric={metric}
-                    accountById={accountById}
-                    userCurrency={userCurrency}
-                    onOpenTransaction={onOpenTransaction}
+                    onSelect={() => onSelectedDateChange(day.date)}
                   />
-                )}
-              </div>
-            )
-          })}
+                  {selected && (
+                    <SelectedDayPanel
+                      id={panelId}
+                      variant="mobile"
+                      day={day}
+                      currency={calendar.currency}
+                      locale={locale}
+                      dateLocale={dateLocale}
+                      mask={mask}
+                      metric={metric}
+                      accountById={accountById}
+                      userCurrency={userCurrency}
+                      onOpenTransaction={onOpenTransaction}
+                    />
+                  )}
+                </div>
+              )
+            })}
         </div>
       </section>
 
@@ -476,8 +474,10 @@ function ActivityBars({
   const tooltipFor = (activity: (typeof data.days)[number]) => {
     const amount = (value: number) => mask(compactCurrency(value, currency, locale))
     const actualParts: string[] = []
-    if (activity.actualIncome > 0) actualParts.push(`${t('transactions.summaryIncome')} +${amount(activity.actualIncome)}`)
-    if (activity.actualExpense > 0) actualParts.push(`${t('transactions.summaryExpenses')} −${amount(activity.actualExpense)}`)
+    if (activity.actualIncome > 0)
+      actualParts.push(`${t('transactions.summaryIncome')} +${amount(activity.actualIncome)}`)
+    if (activity.actualExpense > 0)
+      actualParts.push(`${t('transactions.summaryExpenses')} −${amount(activity.actualExpense)}`)
     const projectedParts: string[] = []
     if (activity.projectedIncome > 0) projectedParts.push(`+${amount(activity.projectedIncome)}`)
     if (activity.projectedExpense > 0) projectedParts.push(`−${amount(activity.projectedExpense)}`)
@@ -643,7 +643,11 @@ function SegmentedToggle<T extends string>({
   label: string
 }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/30 p-0.5 text-xs" role="group" aria-label={label}>
+    <div
+      className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/30 p-0.5 text-xs"
+      role="group"
+      aria-label={label}
+    >
       {options.map((option) => (
         <button
           key={option.value}
@@ -683,8 +687,13 @@ function CalendarDateBasisToggle({
   )
 }
 
-
-function CalendarDensityToggle({ value, onChange }: { value: CalendarDensity; onChange: (value: CalendarDensity) => void }) {
+function CalendarDensityToggle({
+  value,
+  onChange,
+}: {
+  value: CalendarDensity
+  onChange: (value: CalendarDensity) => void
+}) {
   const { t } = useTranslation()
   return (
     <SegmentedToggle
@@ -699,7 +708,13 @@ function CalendarDensityToggle({ value, onChange }: { value: CalendarDensity; on
   )
 }
 
-function CalendarMetricToggle({ value, onChange }: { value: CalendarMetric; onChange: (value: CalendarMetric) => void }) {
+function CalendarMetricToggle({
+  value,
+  onChange,
+}: {
+  value: CalendarMetric
+  onChange: (value: CalendarMetric) => void
+}) {
   const { t } = useTranslation()
   return (
     <SegmentedToggle
@@ -717,7 +732,9 @@ function CalendarMetricToggle({ value, onChange }: { value: CalendarMetric; onCh
 function LegendItem({ tone, label, children }: { tone: CalendarMarkerTone; label: string; children?: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1 whitespace-nowrap">
-      <BadgeDot tone={tone} label={label}>{children}</BadgeDot>
+      <BadgeDot tone={tone} label={label}>
+        {children}
+      </BadgeDot>
       <span>{label}</span>
     </span>
   )
@@ -783,12 +800,14 @@ function DayCell({
       )}
     >
       <div className="flex items-center justify-between gap-1">
-        <span className={cn(
-          'inline-flex size-6 shrink-0 items-center justify-center rounded-full text-sm font-bold tabular-nums',
-          today && 'bg-primary text-primary-foreground',
-          !today && day.in_month && 'text-foreground',
-          !today && !day.in_month && 'text-muted-foreground',
-        )}>
+        <span
+          className={cn(
+            'inline-flex size-6 shrink-0 items-center justify-center rounded-full text-sm font-bold tabular-nums',
+            today && 'bg-primary text-primary-foreground',
+            !today && day.in_month && 'text-foreground',
+            !today && !day.in_month && 'text-muted-foreground',
+          )}
+        >
           {displayDayNumber(day.date)}
         </span>
         {/* Shown in both densities. The rows below only list the top few items, so on a
@@ -877,9 +896,11 @@ function DayPreviewRow({
           : 'bg-background/45 dark:bg-background/25',
       )}
     >
-      {item.has_category_lines
-        ? <SplitCategoryIcon size="xs" />
-        : <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="xs" />}
+      {item.has_category_lines ? (
+        <SplitCategoryIcon size="xs" />
+      ) : (
+        <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="xs" />
+      )}
       {showDescription && (
         <span className="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground">
           {previewDescription(item.description)}
@@ -943,7 +964,12 @@ function DayCellActivity({
   return (
     <div className={cn('mt-3 space-y-0.5', align === 'right' && 'mt-0 text-right')}>
       {activity.hasActual && (
-        <p className={cn('flex flex-wrap items-center gap-x-1.5 text-sm font-semibold tabular-nums', align === 'right' && 'justify-end')}>
+        <p
+          className={cn(
+            'flex flex-wrap items-center gap-x-1.5 text-sm font-semibold tabular-nums',
+            align === 'right' && 'justify-end',
+          )}
+        >
           {activity.actualIncome > 0 && (
             <span className="text-emerald-600 dark:text-emerald-400">
               {mask(`+${compactCurrency(activity.actualIncome, currency, locale)}`)}
@@ -992,15 +1018,7 @@ function CalendarBadges({ day }: { day: TransactionCalendarDay }) {
   )
 }
 
-function BadgeDot({
-  tone,
-  label,
-  children,
-}: {
-  tone: CalendarMarkerTone
-  label: string
-  children?: ReactNode
-}) {
+function BadgeDot({ tone, label, children }: { tone: CalendarMarkerTone; label: string; children?: ReactNode }) {
   return (
     <span
       title={label}
@@ -1063,7 +1081,11 @@ function MobileDayRow({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-foreground">
-            {parseLocalDate(day.date).toLocaleDateString(dateLocale, { weekday: 'short', day: 'numeric', month: 'short' })}
+            {parseLocalDate(day.date).toLocaleDateString(dateLocale, {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+            })}
           </p>
           <p className="text-xs text-muted-foreground">
             {t('transactions.calendarItemCount', { count: day.actual_count + day.projected_count })}
@@ -1071,7 +1093,12 @@ function MobileDayRow({
         </div>
         <div className="flex flex-col items-end gap-0.5 text-right">
           {metric === 'balance' ? (
-            <p className={cn('text-sm font-bold tabular-nums', day.ending_balance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+            <p
+              className={cn(
+                'text-sm font-bold tabular-nums',
+                day.ending_balance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400',
+              )}
+            >
               {mask(formatCurrency(day.ending_balance, currency, locale))}
             </p>
           ) : (
@@ -1131,16 +1158,18 @@ function SelectedDayPanel({
   if (!day) return null
   const activity = dayActivity(day)
   const headline = metric === 'balance' ? day.ending_balance : activity.actualNet
-  const headlineLabel = metric === 'balance'
-    ? mask(formatCurrency(day.ending_balance, currency, locale))
-    : mask(`${activity.actualNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.actualNet), currency, locale)}`)
+  const headlineLabel =
+    metric === 'balance'
+      ? mask(formatCurrency(day.ending_balance, currency, locale))
+      : mask(`${activity.actualNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.actualNet), currency, locale)}`)
   return (
     <aside
       id={id}
       className={cn(
         'bg-card overflow-hidden',
         variant === 'mobile' && 'mx-3 mt-2 mb-3 rounded-xl border border-border shadow-sm md:hidden',
-        variant === 'desktop' && 'hidden rounded-xl border border-border shadow-sm md:sticky md:top-4 md:max-h-[calc(100vh-7rem)] md:w-[320px] md:shrink-0 md:self-start md:flex md:flex-col lg:w-[340px]',
+        variant === 'desktop' &&
+          'hidden rounded-xl border border-border shadow-sm md:sticky md:top-4 md:max-h-[calc(100vh-7rem)] md:w-[320px] md:shrink-0 md:self-start md:flex md:flex-col lg:w-[340px]',
       )}
     >
       <div className="px-4 py-4 border-b border-border">
@@ -1150,7 +1179,11 @@ function SelectedDayPanel({
               {metric === 'balance' ? t('transactions.calendarSelectedDay') : t('transactions.calendarActualNet')}
             </p>
             <h3 className="truncate text-lg font-bold text-foreground">
-              {parseLocalDate(day.date).toLocaleDateString(dateLocale, { weekday: 'long', day: 'numeric', month: 'long' })}
+              {parseLocalDate(day.date).toLocaleDateString(dateLocale, {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+              })}
             </h3>
           </div>
           <p
@@ -1212,7 +1245,9 @@ function SelectedDayPanel({
               {activity.projectedIncome > 0 && activity.projectedExpense > 0 && (
                 <DayPanelRow
                   label={t('transactions.summaryNet')}
-                  value={mask(`${activity.projectedNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.projectedNet), currency, locale)}`)}
+                  value={mask(
+                    `${activity.projectedNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.projectedNet), currency, locale)}`,
+                  )}
                   amount={activity.projectedNet}
                 />
               )}
@@ -1289,27 +1324,25 @@ function CalendarItemRow({
 }) {
   const { t } = useTranslation()
   const interactive = isCalendarItemInteractive(item)
-  const amountColor = item.is_ignored
-    ? 'text-gray-500'
-    : item.type === 'credit'
-      ? 'text-emerald-600'
-      : 'text-rose-500'
+  const amountColor = item.is_ignored ? 'text-gray-500' : item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
   return (
     <button
       type="button"
       disabled={!interactive}
-      onClick={() => { if (item.id) onOpenTransaction(item.id) }}
+      onClick={() => {
+        if (item.id) onOpenTransaction(item.id)
+      }}
       className={cn(
         'w-full flex items-center gap-3 pl-3 pr-3 py-3 text-left',
-        interactive
-          ? 'hover:bg-muted/50 active:bg-muted/60 transition-colors'
-          : 'cursor-default opacity-80',
+        interactive ? 'hover:bg-muted/50 active:bg-muted/60 transition-colors' : 'cursor-default opacity-80',
       )}
     >
       <div className="shrink-0">
-        {item.has_category_lines
-          ? <SplitCategoryIcon size="md" />
-          : <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />}
+        {item.has_category_lines ? (
+          <SplitCategoryIcon size="md" />
+        ) : (
+          <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -1322,12 +1355,8 @@ function CalendarItemRow({
           {item.kind === 'projected' && item.source === 'recurring' && item.status !== 'pending' && (
             <ProjectedTransactionBadge />
           )}
-          {item.is_transfer && (
-            <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" />
-          )}
-          {item.is_ignored && (
-            <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
-          )}
+          {item.is_transfer && <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" />}
+          {item.is_ignored && <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />}
           {item.exclude_from_pnl && !item.is_ignored && (
             <ChartNoAxesColumn
               className="h-3 w-3 text-slate-500 shrink-0"
@@ -1354,7 +1383,9 @@ function CalendarItemRow({
       </div>
       <div className="shrink-0 text-right">
         <span className={cn('text-sm font-bold tabular-nums', amountColor)}>
-          {mask(`${item.is_ignored ? ' ' : item.type === 'credit' ? '+' : '−'}${formatCurrency(Math.abs(item.amount), item.currency, locale)}`)}
+          {mask(
+            `${item.is_ignored ? ' ' : item.type === 'credit' ? '+' : '−'}${formatCurrency(Math.abs(item.amount), item.currency, locale)}`,
+          )}
         </span>
         {item.amount_primary != null && item.currency !== userCurrency && (
           <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">

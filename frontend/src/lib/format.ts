@@ -195,11 +195,7 @@ function compactCurrencyFormatter(currency: string, locale: string): Intl.Number
  * Fraction digits are left to Intl so each currency keeps its own precision:
  * pinning two would render JPY as "￥1,000.00" and CLP as "$1.000,00".
  */
-export function formatCurrency(
-  value: number | null | undefined,
-  currency = 'USD',
-  locale = 'en-US',
-): string {
+export function formatCurrency(value: number | null | undefined, currency = 'USD', locale = 'en-US'): string {
   if (value == null) return '—'
   const formatter = currencyFormatter(currency, locale)
   // Anything that rounds to zero at the currency's own precision would render
@@ -218,11 +214,7 @@ export function formatCurrency(
  * minus sign. Compact notation keeps the tick inside its width at any
  * magnitude, and the tooltip still carries the exact amount.
  */
-export function formatCompactCurrency(
-  value: number | null | undefined,
-  currency = 'USD',
-  locale = 'en-US',
-): string {
+export function formatCompactCurrency(value: number | null | undefined, currency = 'USD', locale = 'en-US'): string {
   if (value == null) return '\u2014'
   return compactCurrencyFormatter(currency, locale).format(value)
 }
@@ -232,12 +224,7 @@ export function formatCompactCurrency(
  * a debit, in front of the magnitude. Amounts that round to zero at the
  * currency's precision carry no sign, so a zero debit never reads "-$0.00".
  */
-export function formatSignedAmount(
-  amount: number,
-  type: string,
-  currency = 'USD',
-  locale = 'en-US',
-): string {
+export function formatSignedAmount(amount: number, type: string, currency = 'USD', locale = 'en-US'): string {
   const magnitude = Math.abs(amount)
   const formatted = formatCurrency(magnitude, currency, locale)
   const factor = 10 ** (currencyFormatter(currency, locale).resolvedOptions().maximumFractionDigits ?? 2)
@@ -286,9 +273,7 @@ export function parseAmountInput(value: string, locale = 'en-US'): number | null
     text = text.slice(1)
   }
   const decimalIndex = text.lastIndexOf(decimal)
-  const integerPart = (decimalIndex >= 0 ? text.slice(0, decimalIndex) : text)
-    .split(group)
-    .join('')
+  const integerPart = (decimalIndex >= 0 ? text.slice(0, decimalIndex) : text).split(group).join('')
   const fractionPart = decimalIndex >= 0 ? text.slice(decimalIndex + 1) : ''
   if (!/^\d*$/.test(integerPart) || !/^\d*$/.test(fractionPart)) return null
   if (integerPart === '' && fractionPart === '') return null
@@ -301,11 +286,7 @@ export function parseAmountInput(value: string, locale = 'en-US'): number | null
  * separator. No grouping: a group separator inside an editable field would
  * read back as noise, and `parseAmountInput` never needs it.
  */
-export function formatAmountInput(
-  value: number,
-  locale = 'en-US',
-  maximumFractionDigits = 2,
-): string {
+export function formatAmountInput(value: number, locale = 'en-US', maximumFractionDigits = 2): string {
   try {
     return new Intl.NumberFormat(locale, {
       useGrouping: false,

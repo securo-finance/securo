@@ -103,7 +103,15 @@ describe('lineFromProduct', () => {
 
 describe('productActions', () => {
   it('archives what invoices name and deletes only what nothing names', () => {
-    expect(productActions({ active: true, invoice_count: 2 })).toEqual({ canArchive: true, canRestore: false, canDelete: false })
-    expect(productActions({ active: false, invoice_count: 0 })).toEqual({ canArchive: false, canRestore: true, canDelete: true })
+    expect(productActions({ active: true, invoice_count: 2 })).toEqual({
+      canArchive: true,
+      canRestore: false,
+      canDelete: false,
+    })
+    expect(productActions({ active: false, invoice_count: 0 })).toEqual({
+      canArchive: false,
+      canRestore: true,
+      canDelete: true,
+    })
   })
 })

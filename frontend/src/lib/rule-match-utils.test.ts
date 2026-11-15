@@ -51,7 +51,10 @@ describe('ruleSearchText', () => {
   it('ignores actions other than set_category and unknown category ids', () => {
     const noisy: Rule = {
       ...rule,
-      actions: [{ op: 'append_notes', value: '#tag' }, { op: 'set_category', value: 'missing' }],
+      actions: [
+        { op: 'append_notes', value: '#tag' },
+        { op: 'set_category', value: 'missing' },
+      ],
     }
     expect(ruleSearchText(noisy, [category])).toBe('DELIVERY IFOOD RAPPI ')
   })

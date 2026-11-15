@@ -167,11 +167,25 @@ describe('InvoiceScheduleDetailPage', () => {
     api.invoiceSchedules.get.mockResolvedValue(schedule())
     api.invoiceSchedules.invoices.mockResolvedValue([
       invoice(),
-      invoice({ id: 'inv-2', number: 13, state: 'overdue', days_overdue: 20, sequence: 2,
-        period_start: '2026-02-05', period_end: '2026-03-04', due_date: '2026-02-15', amount_paid: '0.00', balance: '3000.00' }),
+      invoice({
+        id: 'inv-2',
+        number: 13,
+        state: 'overdue',
+        days_overdue: 20,
+        sequence: 2,
+        period_start: '2026-02-05',
+        period_end: '2026-03-04',
+        due_date: '2026-02-15',
+        amount_paid: '0.00',
+        balance: '3000.00',
+      }),
     ])
     api.invoiceSchedules.periods.mockResolvedValue([])
-    api.invoices.settings.mockResolvedValue({ default_payment_terms_days: 30, tax_fields: 'hidden', number_prefix: 'INV-' })
+    api.invoices.settings.mockResolvedValue({
+      default_payment_terms_days: 30,
+      tax_fields: 'hidden',
+      number_prefix: 'INV-',
+    })
     api.invoices.list.mockResolvedValue([])
     api.payees.list.mockResolvedValue([])
   })
@@ -232,12 +246,20 @@ describe('InvoiceScheduleDetailPage', () => {
 
   it('reads an ended agreement as history: when, why, and nothing to emit', async () => {
     api.invoiceSchedules.get.mockResolvedValue(
-      schedule({ status: 'ended', ended_at: '2026-09-01', end_reason: 'canceled_by_client', next_period_start: null, monthly_amount: '0.00' }),
+      schedule({
+        status: 'ended',
+        ended_at: '2026-09-01',
+        end_reason: 'canceled_by_client',
+        next_period_start: null,
+        monthly_amount: '0.00',
+      }),
     )
     render()
     await screen.findByText('Plano Pro')
     expect(screen.getByTestId('schedule-state-ended')).toBeInTheDocument()
-    expect(screen.getByTestId('schedule-ended-line')).toHaveTextContent(t('invoices.schedules.endReason.canceled_by_client'))
+    expect(screen.getByTestId('schedule-ended-line')).toHaveTextContent(
+      t('invoices.schedules.endReason.canceled_by_client'),
+    )
     expect(screen.queryByTestId('schedule-generate')).not.toBeInTheDocument()
     expect(screen.queryByTestId('schedule-change-price')).not.toBeInTheDocument()
     expect(screen.queryByTestId('schedule-more-actions')).not.toBeInTheDocument()
@@ -271,9 +293,20 @@ describe('InvoiceScheduleDetailPage', () => {
   it('leaves a term filled from a product without refs inheriting the refs it gains later', async () => {
     api.products.list.mockResolvedValue([
       {
-        id: 'design', name: 'Design', description: null, kind: 'service', unit: null, active: true,
-        origin: 'local', external_source: null, external_id: null, custom_fields: null,
-        fiscal_refs: null, prices: [], created_at: '2026-01-01T00:00:00Z', invoice_count: 0,
+        id: 'design',
+        name: 'Design',
+        description: null,
+        kind: 'service',
+        unit: null,
+        active: true,
+        origin: 'local',
+        external_source: null,
+        external_id: null,
+        custom_fields: null,
+        fiscal_refs: null,
+        prices: [],
+        created_at: '2026-01-01T00:00:00Z',
+        invoice_count: 0,
       },
     ])
     api.invoiceSchedules.addTerm.mockResolvedValue(schedule())
@@ -285,8 +318,12 @@ describe('InvoiceScheduleDetailPage', () => {
     await user.click(screen.getByTestId('term-save'))
     const [[, payload]] = api.invoiceSchedules.addTerm.mock.calls
     expect(JSON.parse(JSON.stringify(payload.lines[0]))).toStrictEqual({
-      description: 'Design', quantity: '1', unit: null, unit_price: '3000.00',
-      product_id: 'design', price_id: null,
+      description: 'Design',
+      quantity: '1',
+      unit: null,
+      unit_price: '3000.00',
+      product_id: 'design',
+      price_id: null,
     })
   })
 })

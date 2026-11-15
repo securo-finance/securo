@@ -34,15 +34,29 @@ vi.mock('@/contexts/workspace-context', () => ({
 }))
 
 const member = (id: string, name: string, linked_user_id: string | null, is_self: boolean) => ({
-  id, group_id: 'g1', name, linked_user_id, email: null, is_self, created_at: '2026-10-01T00:00:00Z',
+  id,
+  group_id: 'g1',
+  name,
+  linked_user_id,
+  email: null,
+  is_self,
+  created_at: '2026-10-01T00:00:00Z',
 })
 
 // The server sets is_self per request: it marks the viewer's own member.
 function group(viewer: 'alice' | 'bob') {
   return {
-    id: 'g1', user_id: 'user-alice', name: 'Trip', kind: 'social', default_currency: 'USD',
-    icon: 'users', color: '#123456', is_archived: false, is_owner: viewer === 'alice',
-    notes: null, created_at: '2026-10-01T00:00:00Z',
+    id: 'g1',
+    user_id: 'user-alice',
+    name: 'Trip',
+    kind: 'social',
+    default_currency: 'USD',
+    icon: 'users',
+    color: '#123456',
+    is_archived: false,
+    is_owner: viewer === 'alice',
+    notes: null,
+    created_at: '2026-10-01T00:00:00Z',
     members: [
       member('m-alice', 'Alice', 'user-alice', viewer === 'alice'),
       member('m-bob', 'Bob', 'user-bob', viewer === 'bob'),
@@ -61,7 +75,10 @@ function groupWithoutOwnerMember(viewer: 'alice' | 'dave') {
 }
 
 const line = (member_id: string, amount: number) => ({
-  member_id, currency: 'USD', amount, amount_in_default_currency: amount,
+  member_id,
+  currency: 'USD',
+  amount,
+  amount_in_default_currency: amount,
 })
 
 function renderPage() {
@@ -90,7 +107,10 @@ describe('GroupDetailPage balances', () => {
     api.get.mockResolvedValue(group('bob'))
     // Alice paid 100 split 70/30: Bob owes Alice 30.
     api.balances.mockResolvedValue({
-      group_id: 'g1', self_member_id: 'm-bob', default_currency: 'USD', lines: [line('m-alice', -30)],
+      group_id: 'g1',
+      self_member_id: 'm-bob',
+      default_currency: 'USD',
+      lines: [line('m-alice', -30)],
     })
     const { user } = renderPage()
 
@@ -114,7 +134,10 @@ describe('GroupDetailPage balances', () => {
     auth.userId = 'user-bob'
     api.get.mockResolvedValue(group('bob'))
     api.balances.mockResolvedValue({
-      group_id: 'g1', self_member_id: 'm-bob', default_currency: 'USD', lines: [line('m-alice', 20)],
+      group_id: 'g1',
+      self_member_id: 'm-bob',
+      default_currency: 'USD',
+      lines: [line('m-alice', 20)],
     })
     renderPage()
 
@@ -128,7 +151,9 @@ describe('GroupDetailPage balances', () => {
     auth.userId = 'user-alice'
     api.get.mockResolvedValue(group('alice'))
     api.balances.mockResolvedValue({
-      group_id: 'g1', self_member_id: 'm-alice', default_currency: 'USD',
+      group_id: 'g1',
+      self_member_id: 'm-alice',
+      default_currency: 'USD',
       lines: [line('m-bob', 30), line('m-carol', -10)],
     })
     const { user } = renderPage()
@@ -148,12 +173,14 @@ describe('GroupDetailPage balances', () => {
     expect(to).toHaveValue('m-carol')
   })
 
-  it('shows a workspace member outside the group the owner\'s balances in the third person', async () => {
+  it("shows a workspace member outside the group the owner's balances in the third person", async () => {
     auth.userId = 'user-dave'
     api.get.mockResolvedValue(groupWithoutOwnerMember('dave'))
     // No member of their own: the lines come back from the owner's side.
     api.balances.mockResolvedValue({
-      group_id: 'g1', self_member_id: null, default_currency: 'USD',
+      group_id: 'g1',
+      self_member_id: null,
+      default_currency: 'USD',
       lines: [line('m-bob', 30), line('m-carol', -10)],
     })
     renderPage()
@@ -172,7 +199,9 @@ describe('GroupDetailPage balances', () => {
     auth.userId = 'user-alice'
     api.get.mockResolvedValue(groupWithoutOwnerMember('alice'))
     api.balances.mockResolvedValue({
-      group_id: 'g1', self_member_id: null, default_currency: 'USD',
+      group_id: 'g1',
+      self_member_id: null,
+      default_currency: 'USD',
       lines: [line('m-bob', 30), line('m-carol', -10)],
     })
     renderPage()

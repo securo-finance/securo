@@ -32,22 +32,102 @@ export interface ColumnDef {
 // list in registry order; visible columns render in the order the user has
 // chosen (persisted in localStorage), which defaults to registry order.
 export const COLUMN_REGISTRY: ColumnDef[] = [
-  { id: 'date',        labelKey: 'transactions.colDate',        defaultVisible: true,  sortable: true,  defaultWidth: 110, align: 'left' },
-  { id: 'description', labelKey: 'transactions.colDescription', alwaysOn: true, defaultVisible: true, sortable: true, defaultWidth: 320, align: 'left' },
-  { id: 'category',    labelKey: 'transactions.colCategory',    defaultVisible: true,  sortable: true,  defaultWidth: 180, align: 'left' },
-  { id: 'account',     labelKey: 'transactions.colAccount',     defaultVisible: true,  sortable: true,  defaultWidth: 160, align: 'left' },
-  { id: 'payee',       labelKey: 'transactions.colPayee',       defaultVisible: false, sortable: true,  defaultWidth: 160, align: 'left' },
-  { id: 'notes',       labelKey: 'transactions.colNotes',       defaultVisible: false, sortable: false, defaultWidth: 220, align: 'left' },
-  { id: 'tags',        labelKey: 'transactions.colTags',        defaultVisible: false, sortable: false, defaultWidth: 180, align: 'left' },
-  { id: 'attachments', labelKey: 'transactions.colAttachments', defaultVisible: false, sortable: false, defaultWidth: 70,  align: 'right' },
-  { id: 'type',        labelKey: 'transactions.colType',        defaultVisible: false, sortable: true,  defaultWidth: 100, align: 'left' },
-  { id: 'status',      labelKey: 'transactions.colStatus',      defaultVisible: false, sortable: true,  defaultWidth: 100, align: 'left' },
-  { id: 'amount',      labelKey: 'transactions.colAmount',      alwaysOn: true, defaultVisible: true, sortable: true, defaultWidth: 160, align: 'right' },
+  {
+    id: 'date',
+    labelKey: 'transactions.colDate',
+    defaultVisible: true,
+    sortable: true,
+    defaultWidth: 110,
+    align: 'left',
+  },
+  {
+    id: 'description',
+    labelKey: 'transactions.colDescription',
+    alwaysOn: true,
+    defaultVisible: true,
+    sortable: true,
+    defaultWidth: 320,
+    align: 'left',
+  },
+  {
+    id: 'category',
+    labelKey: 'transactions.colCategory',
+    defaultVisible: true,
+    sortable: true,
+    defaultWidth: 180,
+    align: 'left',
+  },
+  {
+    id: 'account',
+    labelKey: 'transactions.colAccount',
+    defaultVisible: true,
+    sortable: true,
+    defaultWidth: 160,
+    align: 'left',
+  },
+  {
+    id: 'payee',
+    labelKey: 'transactions.colPayee',
+    defaultVisible: false,
+    sortable: true,
+    defaultWidth: 160,
+    align: 'left',
+  },
+  {
+    id: 'notes',
+    labelKey: 'transactions.colNotes',
+    defaultVisible: false,
+    sortable: false,
+    defaultWidth: 220,
+    align: 'left',
+  },
+  {
+    id: 'tags',
+    labelKey: 'transactions.colTags',
+    defaultVisible: false,
+    sortable: false,
+    defaultWidth: 180,
+    align: 'left',
+  },
+  {
+    id: 'attachments',
+    labelKey: 'transactions.colAttachments',
+    defaultVisible: false,
+    sortable: false,
+    defaultWidth: 70,
+    align: 'right',
+  },
+  {
+    id: 'type',
+    labelKey: 'transactions.colType',
+    defaultVisible: false,
+    sortable: true,
+    defaultWidth: 100,
+    align: 'left',
+  },
+  {
+    id: 'status',
+    labelKey: 'transactions.colStatus',
+    defaultVisible: false,
+    sortable: true,
+    defaultWidth: 100,
+    align: 'left',
+  },
+  {
+    id: 'amount',
+    labelKey: 'transactions.colAmount',
+    alwaysOn: true,
+    defaultVisible: true,
+    sortable: true,
+    defaultWidth: 160,
+    align: 'right',
+  },
 ]
 
-const COL_BY_ID: Record<ColumnId, ColumnDef> = Object.fromEntries(
-  COLUMN_REGISTRY.map(c => [c.id, c]),
-) as Record<ColumnId, ColumnDef>
+const COL_BY_ID: Record<ColumnId, ColumnDef> = Object.fromEntries(COLUMN_REGISTRY.map((c) => [c.id, c])) as Record<
+  ColumnId,
+  ColumnDef
+>
 
 export function getColumn(id: ColumnId): ColumnDef {
   return COL_BY_ID[id]
@@ -75,7 +155,7 @@ function loadOrder(): ColumnId[] {
 }
 
 function defaultVisibleOrder(): ColumnId[] {
-  return COLUMN_REGISTRY.filter(c => c.defaultVisible || c.alwaysOn).map(c => c.id)
+  return COLUMN_REGISTRY.filter((c) => c.defaultVisible || c.alwaysOn).map((c) => c.id)
 }
 
 function loadWidths(): Partial<Record<ColumnId, number>> {
@@ -130,17 +210,29 @@ export function useTransactionsGridState(): TransactionsGridState {
   const [sort, setSort] = useState<{ by: ColumnId | null; dir: SortDir }>(() => loadSort())
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY_ORDER, JSON.stringify(order)) } catch { /* quota / disabled */ }
+    try {
+      localStorage.setItem(STORAGE_KEY_ORDER, JSON.stringify(order))
+    } catch {
+      /* quota / disabled */
+    }
   }, [order])
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY_WIDTHS, JSON.stringify(widths)) } catch { /* quota / disabled */ }
+    try {
+      localStorage.setItem(STORAGE_KEY_WIDTHS, JSON.stringify(widths))
+    } catch {
+      /* quota / disabled */
+    }
   }, [widths])
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY_SORT, JSON.stringify(sort)) } catch { /* quota / disabled */ }
+    try {
+      localStorage.setItem(STORAGE_KEY_SORT, JSON.stringify(sort))
+    } catch {
+      /* quota / disabled */
+    }
   }, [sort])
 
-  const visibleColumns = useMemo(() => order.map(id => COL_BY_ID[id]).filter(Boolean), [order])
-  const visibleIds = useMemo(() => visibleColumns.map(c => c.id), [visibleColumns])
+  const visibleColumns = useMemo(() => order.map((id) => COL_BY_ID[id]).filter(Boolean), [order])
+  const visibleIds = useMemo(() => visibleColumns.map((c) => c.id), [visibleColumns])
   const visibleSet = useMemo(() => new Set(visibleIds), [visibleIds])
 
   const isVisible = useCallback((id: ColumnId) => visibleSet.has(id), [visibleSet])
@@ -148,11 +240,11 @@ export function useTransactionsGridState(): TransactionsGridState {
   const toggleColumn = useCallback((id: ColumnId) => {
     const def = COL_BY_ID[id]
     if (!def || def.alwaysOn) return
-    setOrder(prev => {
-      if (prev.includes(id)) return prev.filter(x => x !== id)
+    setOrder((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id)
       // Re-insert at the position the registry suggests, so toggling on
       // a column twice doesn't drift it to the end.
-      const registryOrder = COLUMN_REGISTRY.map(c => c.id)
+      const registryOrder = COLUMN_REGISTRY.map((c) => c.id)
       const next = [...prev, id]
       next.sort((a, b) => registryOrder.indexOf(a) - registryOrder.indexOf(b))
       return next
@@ -167,7 +259,7 @@ export function useTransactionsGridState(): TransactionsGridState {
   const widthOf = useCallback((id: ColumnId) => widths[id] ?? COL_BY_ID[id]?.defaultWidth ?? 120, [widths])
   const setWidth = useCallback((id: ColumnId, width: number) => {
     const clamped = Math.max(60, Math.min(800, Math.round(width)))
-    setWidths(prev => ({ ...prev, [id]: clamped }))
+    setWidths((prev) => ({ ...prev, [id]: clamped }))
   }, [])
 
   const toggleSort = useCallback((id: ColumnId) => {
@@ -178,7 +270,7 @@ export function useTransactionsGridState(): TransactionsGridState {
     // to an unsorted state: the backend's implicit default is date-descending,
     // so a "cleared" sort was visually identical to date-desc and made the
     // header look like it toggled between the same two orders (issue #383).
-    setSort(prev => {
+    setSort((prev) => {
       if (prev.by !== id) return { by: id, dir: 'desc' }
       return { by: id, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
     })

@@ -85,8 +85,12 @@ const statement: CategoryStatementResponse = {
     totals: [-350, -300, -100, -100],
     rows: [
       row({
-        key: 'living', kind: 'group', label: 'Living', category_ids: ['food', 'dining'],
-        values: [-350, -300, -100, -100], children: [food, dining],
+        key: 'living',
+        kind: 'group',
+        label: 'Living',
+        category_ids: ['food', 'dining'],
+        values: [-350, -300, -100, -100],
+        children: [food, dining],
       }),
     ],
   },
@@ -139,18 +143,18 @@ describe('IncomeExpenseStatement', () => {
   it('requests one month beyond the visible columns and renders the totals', async () => {
     renderWithProviders(<Statement accountIds={['acc-1']} />)
 
-    await waitFor(() =>
-      expect(api.reports.categoryStatement).toHaveBeenCalledWith('2026-09', 4, ['acc-1']),
-    )
+    await waitFor(() => expect(api.reports.categoryStatement).toHaveBeenCalledWith('2026-09', 4, ['acc-1']))
     expect(await screen.findByText(t('reports.statementExpenseTotal'))).toBeInTheDocument()
     // One header per section; June is only fetched for July's change.
     expect(screen.getAllByRole('columnheader', { name: 'September 2026' })).toHaveLength(2)
     expect(screen.queryByRole('columnheader', { name: 'June 2026' })).not.toBeInTheDocument()
     // Oldest month on the left, the selected one on the right.
     const incomeHeader = screen.getAllByRole('row')[0]
-    expect(within(incomeHeader).getAllByRole('columnheader').map((th) => th.textContent)).toEqual([
-      t('reports.income'), 'July 2026', 'August 2026', 'September 2026',
-    ])
+    expect(
+      within(incomeHeader)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).toEqual([t('reports.income'), 'July 2026', 'August 2026', 'September 2026'])
     expect(screen.getByText('Living')).toBeInTheDocument()
     // Net result: 1000 - 350.
     expect(screen.getByText('$650.00')).toBeInTheDocument()
@@ -172,7 +176,11 @@ describe('IncomeExpenseStatement', () => {
     const living = (await screen.findByText('Living')).closest('tr')!
 
     // The selected month is the rightmost column.
-    await user.click(within(living).getAllByRole('button', { name: t('reports.statementViewTransactions') }).at(-1)!)
+    await user.click(
+      within(living)
+        .getAllByRole('button', { name: t('reports.statementViewTransactions') })
+        .at(-1)!,
+    )
 
     // Like the cell, the list stops at today and counts only the user's share.
     const filter = JSON.parse(screen.getByTestId('drill-down').textContent!)
@@ -185,7 +193,11 @@ describe('IncomeExpenseStatement', () => {
     })
 
     // A past month runs to its last day.
-    await user.click(within(living).getAllByRole('button', { name: t('reports.statementViewTransactions') }).at(-2)!)
+    await user.click(
+      within(living)
+        .getAllByRole('button', { name: t('reports.statementViewTransactions') })
+        .at(-2)!,
+    )
     expect(JSON.parse(screen.getByTestId('drill-down').textContent!)).toMatchObject({
       from: '2026-08-01',
       to: '2026-08-31',
@@ -197,7 +209,9 @@ describe('IncomeExpenseStatement', () => {
       ...statement,
       expenses: {
         totals: [-50, 0, 0, 0],
-        rows: [row({ key: 'uncategorized', kind: 'uncategorized', label: null, txn_type: 'debit', values: [-50, 0, 0, 0] })],
+        rows: [
+          row({ key: 'uncategorized', kind: 'uncategorized', label: null, txn_type: 'debit', values: [-50, 0, 0, 0] }),
+        ],
       },
     })
     const { user } = renderWithProviders(<Statement />)
@@ -219,7 +233,11 @@ describe('IncomeExpenseStatement', () => {
     const { user } = renderWithProviders(<Statement accountIds={['acct-1']} />)
     const living = (await screen.findByText('Living')).closest('tr')!
 
-    await user.click(within(living).getAllByRole('button', { name: t('reports.statementViewTransactions') }).at(-1)!)
+    await user.click(
+      within(living)
+        .getAllByRole('button', { name: t('reports.statementViewTransactions') })
+        .at(-1)!,
+    )
 
     expect(JSON.parse(screen.getByTestId('drill-down').textContent!)).toMatchObject({
       account_ids: ['acct-1'],
@@ -234,9 +252,7 @@ describe('IncomeExpenseStatement', () => {
     await user.click(screen.getByRole('button', { name: t('reports.statementSettings') }))
     await user.click(screen.getByRole('button', { name: '5' }))
 
-    await waitFor(() =>
-      expect(api.reports.categoryStatement).toHaveBeenLastCalledWith('2026-09', 6, undefined),
-    )
+    await waitFor(() => expect(api.reports.categoryStatement).toHaveBeenLastCalledWith('2026-09', 6, undefined))
     expect(JSON.parse(localStorage.getItem(STATEMENT_SETTINGS_KEY)!)).toMatchObject({ columns: 5 })
   })
 
@@ -247,12 +263,8 @@ describe('IncomeExpenseStatement', () => {
     await user.click(screen.getByRole('button', { name: t('reports.statementSettings') }))
     await user.click(screen.getByRole('button', { name: '1' }))
 
-    await waitFor(() =>
-      expect(api.reports.categoryStatement).toHaveBeenLastCalledWith('2026-09', 2, undefined),
-    )
-    await waitFor(() =>
-      expect(screen.queryByRole('columnheader', { name: 'August 2026' })).not.toBeInTheDocument(),
-    )
+    await waitFor(() => expect(api.reports.categoryStatement).toHaveBeenLastCalledWith('2026-09', 2, undefined))
+    await waitFor(() => expect(screen.queryByRole('columnheader', { name: 'August 2026' })).not.toBeInTheDocument())
   })
 
   it('hides the percentage change when turned off', async () => {

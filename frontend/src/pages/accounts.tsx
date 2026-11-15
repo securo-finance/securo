@@ -13,13 +13,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -90,7 +84,11 @@ export default function AccountsPage() {
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
   const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
 
-  const { data: accountsList, isLoading: accountsLoading, isFetching: accountsFetching } = useQuery({
+  const {
+    data: accountsList,
+    isLoading: accountsLoading,
+    isFetching: accountsFetching,
+  } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accounts.list(),
   })
@@ -158,9 +156,7 @@ export default function AccountsPage() {
     },
     onError: (err) => {
       queryClient.invalidateQueries({ queryKey: ['connections'] })
-      const detail = axios.isAxiosError(err)
-        ? err.response?.data?.detail
-        : null
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null
       const message = typeof detail === 'string' ? detail : detail?.message
       toast.error(message || t('accounts.syncError'))
     },
@@ -180,8 +176,7 @@ export default function AccountsPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; type: string; balance?: number; currency?: string }) =>
-      accounts.create(data),
+    mutationFn: (data: { name: string; type: string; balance?: number; currency?: string }) => accounts.create(data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
       setDialogOpen(false)
@@ -191,8 +186,7 @@ export default function AccountsPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: Partial<Account> & { id: string }) =>
-      accounts.update(id, data),
+    mutationFn: ({ id, ...data }: Partial<Account> & { id: string }) => accounts.update(id, data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
       setDialogOpen(false)
@@ -201,8 +195,11 @@ export default function AccountsPage() {
     },
     onError: (_err, variables) => {
       const original = editingAccount?.type
-      const crossesLoan = !!original && !!variables.type && variables.type !== original
-        && (variables.type === 'loan' || original === 'loan')
+      const crossesLoan =
+        !!original &&
+        !!variables.type &&
+        variables.type !== original &&
+        (variables.type === 'loan' || original === 'loan')
       toast.error(crossesLoan ? t('accounts.loanRetypeBlocked') : t('common.error'))
     },
   })
@@ -254,7 +251,10 @@ export default function AccountsPage() {
             />
             <AccountPageActions
               canWrite={canWrite}
-              onAddAccount={() => { setEditingAccount(null); setDialogOpen(true) }}
+              onAddAccount={() => {
+                setEditingAccount(null)
+                setDialogOpen(true)
+              }}
               onConnectBank={() => setConnectorSelectOpen(true)}
               onOpenCollections={() => navigate('/collections')}
             />
@@ -264,7 +264,9 @@ export default function AccountsPage() {
 
       {isLoading ? (
         <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 rounded-xl" />
+          ))}
         </div>
       ) : (
         <div className="space-y-6">
@@ -281,10 +283,13 @@ export default function AccountsPage() {
                   const isCC = acc.type === 'credit_card'
                   const dueIn = isCC ? daysUntil(acc.next_due_date) : null
                   const dueText =
-                    dueIn == null ? null
-                      : dueIn < 0 ? t('accounts.overdue')
-                      : dueIn === 0 ? t('accounts.dueToday')
-                      : t('accounts.dueIn', { count: dueIn })
+                    dueIn == null
+                      ? null
+                      : dueIn < 0
+                        ? t('accounts.overdue')
+                        : dueIn === 0
+                          ? t('accounts.dueToday')
+                          : t('accounts.dueIn', { count: dueIn })
                   const dueClass = dueIn != null && dueIn <= 3 ? 'text-amber-600' : 'text-muted-foreground'
                   const accountMask = formatAccountMask(acc)
                   return (
@@ -295,30 +300,54 @@ export default function AccountsPage() {
                           <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
                           <p className="text-xs text-muted-foreground">
                             {t(cfg.label)}
-                            {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}
-                            {acc.shared_balance_group && <> · <span>{t('accounts.sharedCreditBalance')}</span></>}
-                            {dueText && <> · <span className={dueClass}>{dueText}</span></>}
+                            {accountMask && (
+                              <>
+                                {' '}
+                                · <span className="tabular-nums">{accountMask}</span>
+                              </>
+                            )}
+                            {acc.shared_balance_group && (
+                              <>
+                                {' '}
+                                · <span>{t('accounts.sharedCreditBalance')}</span>
+                              </>
+                            )}
+                            {dueText && (
+                              <>
+                                {' '}
+                                · <span className={dueClass}>{dueText}</span>
+                              </>
+                            )}
                           </p>
                         </div>
                       </Link>
                       <div className="shrink-0 text-right">
-                        <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
+                        <p
+                          className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}
+                        >
                           {mask(formatCurrency(bal, acc.currency, locale))}
                         </p>
                         {isCC && acc.available_credit != null ? (
                           <p className="text-[10px] text-muted-foreground tabular-nums">
-                            {t('accounts.availableCredit')}: {mask(formatCurrency(Number(acc.available_credit), acc.currency, locale))}
+                            {t('accounts.availableCredit')}:{' '}
+                            {mask(formatCurrency(Number(acc.available_credit), acc.currency, locale))}
                           </p>
-                        ) : acc.balance_primary != null && acc.currency !== userCurrency && (
-                          <p className="text-[10px] text-muted-foreground tabular-nums">
-                            {mask(formatCurrency(acc.balance_primary, userCurrency, locale))}
-                          </p>
+                        ) : (
+                          acc.balance_primary != null &&
+                          acc.currency !== userCurrency && (
+                            <p className="text-[10px] text-muted-foreground tabular-nums">
+                              {mask(formatCurrency(acc.balance_primary, userCurrency, locale))}
+                            </p>
+                          )
                         )}
                       </div>
                       {canWrite && (
                         <AccountRowActions
                           accountName={getAccountName(acc)}
-                          onEdit={() => { setEditingAccount(acc); setDialogOpen(true) }}
+                          onEdit={() => {
+                            setEditingAccount(acc)
+                            setDialogOpen(true)
+                          }}
                           onClose={() => setClosingAccountId(acc.id)}
                           onDelete={() => setDeletingId(acc.id)}
                           deletePending={deleteMutation.isPending}
@@ -355,9 +384,7 @@ export default function AccountsPage() {
                       <div className="flex items-center gap-3">
                         {/* One bank's favicon would misrepresent a multi-
                             institution link — fall back to the generic icon. */}
-                        <ConnectionLogo
-                          logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
-                        />
+                        <ConnectionLogo logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url} />
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-foreground">{getConnectionName(conn, t)}</p>
@@ -406,16 +433,20 @@ export default function AccountsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className={needsReconnect
-                              ? 'relative h-8 w-8 p-0 text-amber-500 hover:bg-amber-500/10 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300'
-                              : 'h-8 w-8 p-0 text-muted-foreground hover:text-foreground'}
-                            onClick={() => needsReconnect ? handleReconnectClick(conn) : syncMutation.mutate(conn.id)}
+                            className={
+                              needsReconnect
+                                ? 'relative h-8 w-8 p-0 text-amber-500 hover:bg-amber-500/10 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300'
+                                : 'h-8 w-8 p-0 text-muted-foreground hover:text-foreground'
+                            }
+                            onClick={() => (needsReconnect ? handleReconnectClick(conn) : syncMutation.mutate(conn.id))}
                             disabled={syncPending}
-                            title={needsReconnect
-                              ? conn.status === 'expired'
-                                ? t('accounts.connectionExpired')
-                                : t('accounts.connectionError')
-                              : t('accounts.sync')}
+                            title={
+                              needsReconnect
+                                ? conn.status === 'expired'
+                                  ? t('accounts.connectionExpired')
+                                  : t('accounts.connectionError')
+                                : t('accounts.sync')
+                            }
                             aria-label={needsReconnect ? t('accounts.reconnect') : t('accounts.sync')}
                           >
                             <RefreshCw size={14} className={syncPending ? 'animate-spin' : ''} />
@@ -448,44 +479,74 @@ export default function AccountsPage() {
                           const isCC = acc.type === 'credit_card'
                           const dueIn = isCC ? daysUntil(acc.next_due_date) : null
                           const dueText =
-                            dueIn == null ? null
-                              : dueIn < 0 ? t('accounts.overdue')
-                              : dueIn === 0 ? t('accounts.dueToday')
-                              : t('accounts.dueIn', { count: dueIn })
+                            dueIn == null
+                              ? null
+                              : dueIn < 0
+                                ? t('accounts.overdue')
+                                : dueIn === 0
+                                  ? t('accounts.dueToday')
+                                  : t('accounts.dueIn', { count: dueIn })
                           const dueClass = dueIn != null && dueIn <= 3 ? 'text-amber-600' : 'text-muted-foreground'
                           const accountMask = formatAccountMask(acc)
                           return (
-                            <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
+                            <div
+                              key={acc.id}
+                              className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors"
+                            >
                               <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
                                 <AccountIcon account={acc} />
                                 <div className="min-w-0 flex-1">
                                   <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
                                   <p className="text-xs text-muted-foreground">
                                     {t(cfg.label)}
-                                    {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}
-                                    {acc.shared_balance_group && <> · <span>{t('accounts.sharedCreditBalance')}</span></>}
-                                    {dueText && <> · <span className={dueClass}>{dueText}</span></>}
+                                    {accountMask && (
+                                      <>
+                                        {' '}
+                                        · <span className="tabular-nums">{accountMask}</span>
+                                      </>
+                                    )}
+                                    {acc.shared_balance_group && (
+                                      <>
+                                        {' '}
+                                        · <span>{t('accounts.sharedCreditBalance')}</span>
+                                      </>
+                                    )}
+                                    {dueText && (
+                                      <>
+                                        {' '}
+                                        · <span className={dueClass}>{dueText}</span>
+                                      </>
+                                    )}
                                   </p>
                                 </div>
                               </Link>
                               <div className="shrink-0 text-right">
-                                <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
+                                <p
+                                  className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}
+                                >
                                   {mask(formatCurrency(bal, acc.currency, locale))}
                                 </p>
                                 {isCC && acc.available_credit != null ? (
                                   <p className="text-[10px] text-muted-foreground tabular-nums">
-                                    {t('accounts.availableCredit')}: {mask(formatCurrency(Number(acc.available_credit), acc.currency, locale))}
+                                    {t('accounts.availableCredit')}:{' '}
+                                    {mask(formatCurrency(Number(acc.available_credit), acc.currency, locale))}
                                   </p>
-                                ) : acc.balance_primary != null && acc.currency !== userCurrency && (
-                                  <p className="text-[10px] text-muted-foreground tabular-nums">
-                                    {mask(formatCurrency(acc.balance_primary, userCurrency, locale))}
-                                  </p>
+                                ) : (
+                                  acc.balance_primary != null &&
+                                  acc.currency !== userCurrency && (
+                                    <p className="text-[10px] text-muted-foreground tabular-nums">
+                                      {mask(formatCurrency(acc.balance_primary, userCurrency, locale))}
+                                    </p>
+                                  )
                                 )}
                               </div>
                               {canWrite && (
                                 <AccountRowActions
                                   accountName={getAccountName(acc)}
-                                  onEdit={() => { setEditingAccount(acc); setDialogOpen(true) }}
+                                  onEdit={() => {
+                                    setEditingAccount(acc)
+                                    setDialogOpen(true)
+                                  }}
                                   onClose={() => setClosingAccountId(acc.id)}
                                   deletePending={deleteMutation.isPending}
                                 />
@@ -554,9 +615,7 @@ export default function AccountsPage() {
           <DialogHeader>
             <DialogTitle>{t('accounts.confirmDeleteTitle')}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t('accounts.confirmDeleteDesc')}
-          </p>
+          <p className="text-sm text-muted-foreground">{t('accounts.confirmDeleteDesc')}</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeletingId(null)}>
               {t('common.cancel')}
@@ -579,7 +638,9 @@ export default function AccountsPage() {
             <DialogTitle>{t('accounts.confirmDisconnectTitle')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            {t('accounts.confirmDisconnectDesc', { institution: disconnectingConnection ? getConnectionName(disconnectingConnection, t) : '' })}
+            {t('accounts.confirmDisconnectDesc', {
+              institution: disconnectingConnection ? getConnectionName(disconnectingConnection, t) : '',
+            })}
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDisconnectingConnection(null)}>
@@ -602,13 +663,9 @@ export default function AccountsPage() {
           <DialogHeader>
             <DialogTitle>{t('accounts.close')}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t('accounts.confirmClose')}
-          </p>
-          {accountsList?.find(a => a.id === closingAccountId)?.connection_id && (
-            <p className="text-sm text-amber-600 font-medium">
-              {t('accounts.confirmCloseBank')}
-            </p>
+          <p className="text-sm text-muted-foreground">{t('accounts.confirmClose')}</p>
+          {accountsList?.find((a) => a.id === closingAccountId)?.connection_id && (
+            <p className="text-sm text-amber-600 font-medium">{t('accounts.confirmCloseBank')}</p>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setClosingAccountId(null)}>
@@ -659,7 +716,10 @@ export default function AccountsPage() {
       {/* Reconnect Dialog — widget-based (Pluggy) */}
       <BankConnectDialog
         open={!!reconnectConnId}
-        onClose={() => { setReconnectConnId(null); setReconnectItemId(null) }}
+        onClose={() => {
+          setReconnectConnId(null)
+          setReconnectItemId(null)
+        }}
         reconnectConnectionId={reconnectConnId ?? undefined}
         updateItemId={reconnectItemId ?? undefined}
       />
@@ -678,22 +738,25 @@ export default function AccountsPage() {
         onClose={() => setSettingsConnection(null)}
         connection={settingsConnection}
         supportsAssetSync={
-          settingsConnection
-            ? providersByName.get(settingsConnection.provider)?.supports_asset_sync ?? false
-            : false
+          settingsConnection ? (providersByName.get(settingsConnection.provider)?.supports_asset_sync ?? false) : false
         }
       />
 
       {/* Account Dialog */}
       <AccountDialog
         open={dialogOpen}
-        onClose={() => { setDialogOpen(false); setEditingAccount(null) }}
+        onClose={() => {
+          setDialogOpen(false)
+          setEditingAccount(null)
+        }}
         account={editingAccount}
         onSave={(data) => {
           if (editingAccount) {
             updateMutation.mutate({ id: editingAccount.id, ...data })
           } else {
-            createMutation.mutate(data as { name: string; type: string; balance?: number; balance_date?: string; currency?: string })
+            createMutation.mutate(
+              data as { name: string; type: string; balance?: number; balance_date?: string; currency?: string },
+            )
           }
         }}
         loading={createMutation.isPending || updateMutation.isPending}
@@ -811,7 +874,8 @@ export function AccountDialog({
   const properties = (assetsList ?? []).filter((asset) => LOAN_COLLATERAL_TYPES.includes(asset.type))
   // Send the link the select shows: a saved id that is no longer a listed
   // property (it changed type) would otherwise be resent and rejected.
-  const securedAssetIsListed = !!securedAssetId && (!assetsList || properties.some((asset) => asset.id === securedAssetId))
+  const securedAssetIsListed =
+    !!securedAssetId && (!assetsList || properties.some((asset) => asset.id === securedAssetId))
   const [formSource, setFormSource] = useState<{
     account: typeof account
     balanceDate: string
@@ -837,9 +901,7 @@ export function AccountDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {account ? t('accounts.editAccount') : t('accounts.addManual')}
-          </DialogTitle>
+          <DialogTitle>{account ? t('accounts.editAccount') : t('accounts.addManual')}</DialogTitle>
         </DialogHeader>
         <form
           key={account?.id ?? 'new'}
@@ -877,16 +939,17 @@ export function AccountDialog({
         >
           <div className="space-y-2">
             <Label>{t('accounts.accountName')}</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!!account?.connection_id} />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              disabled={!!account?.connection_id}
+            />
           </div>
           {account?.connection_id && (
             <div className="space-y-2">
               <Label>{t('accounts.displayName')}</Label>
-              <Input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder={name}
-              />
+              <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={name} />
               <p className="text-xs text-muted-foreground">{t('accounts.displayNameHint')}</p>
             </div>
           )}
@@ -899,7 +962,9 @@ export function AccountDialog({
                 onChange={(e) => setType(e.target.value)}
               >
                 {ACCOUNT_TYPE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+                  <option key={o.value} value={o.value}>
+                    {t(o.labelKey)}
+                  </option>
                 ))}
               </select>
               <p className="text-xs text-muted-foreground">{t('accounts.typeOverrideHint')}</p>
@@ -916,7 +981,9 @@ export function AccountDialog({
                     onChange={(e) => setType(e.target.value)}
                   >
                     {ACCOUNT_TYPE_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+                      <option key={o.value} value={o.value}>
+                        {t(o.labelKey)}
+                      </option>
                     ))}
                   </select>
                   {account && type !== account.type && (type === 'loan' || account.type === 'loan') && (
@@ -930,8 +997,14 @@ export function AccountDialog({
                     value={currency}
                     onChange={(e) => setCurrency(e.target.value)}
                   >
-                    {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map((c) => (
-                      <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
+                    {(
+                      supportedCurrencies ?? [
+                        { code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' },
+                      ]
+                    ).map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.name}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -955,17 +1028,11 @@ export function AccountDialog({
                 </div>
                 <div className="space-y-2">
                   <Label>{t('accounts.balanceDate')}</Label>
-                  <DatePickerInput
-                    value={balanceDate}
-                    onChange={setBalanceDate}
-                    className="w-full justify-start"
-                  />
+                  <DatePickerInput value={balanceDate} onChange={setBalanceDate} className="w-full justify-start" />
                 </div>
               </div>
               {type === 'credit_card' && (
-                <p className="text-xs text-muted-foreground -mt-2">
-                  {t('accounts.balanceCreditCardHint')}
-                </p>
+                <p className="text-xs text-muted-foreground -mt-2">{t('accounts.balanceCreditCardHint')}</p>
               )}
             </>
           )}
@@ -979,7 +1046,9 @@ export function AccountDialog({
               >
                 <option value="">{t('accounts.noSecuredProperty')}</option>
                 {properties.map((asset) => (
-                  <option key={asset.id} value={asset.id}>{asset.name}</option>
+                  <option key={asset.id} value={asset.id}>
+                    {asset.name}
+                  </option>
                 ))}
               </select>
               <details
@@ -991,24 +1060,47 @@ export function AccountDialog({
                 <div className="grid grid-cols-2 gap-3 pt-3">
                   <div className="space-y-1">
                     <Label>{t('accounts.loanKind')}</Label>
-                    <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary" value={loanTerms.kind} onChange={(e) => setLoanTerm('kind', e.target.value)}>
+                    <select
+                      className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      value={loanTerms.kind}
+                      onChange={(e) => setLoanTerm('kind', e.target.value)}
+                    >
                       <option value="">{t('accounts.loanKindNone')}</option>
                       {LOAN_KINDS.map((kind) => (
-                        <option key={kind} value={kind}>{t(`accounts.loanKinds.${kind}`)}</option>
+                        <option key={kind} value={kind}>
+                          {t(`accounts.loanKinds.${kind}`)}
+                        </option>
                       ))}
                     </select>
                   </div>
                   <div className="space-y-1">
                     <Label>{t('accounts.loanOriginalAmount')}</Label>
-                    <Input type="number" step="0.01" min="0.01" value={loanTerms.amount} onChange={(e) => setLoanTerm('amount', e.target.value)} />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={loanTerms.amount}
+                      onChange={(e) => setLoanTerm('amount', e.target.value)}
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label>{t('accounts.loanInterestRate')}</Label>
-                    <Input type="number" step="0.0001" min="0" max="100" value={loanTerms.rate} onChange={(e) => setLoanTerm('rate', e.target.value)} />
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      max="100"
+                      value={loanTerms.rate}
+                      onChange={(e) => setLoanTerm('rate', e.target.value)}
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label>{t('accounts.loanRatePeriod')}</Label>
-                    <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary" value={loanTerms.period} onChange={(e) => setLoanTerm('period', e.target.value as LoanRatePeriod)}>
+                    <select
+                      className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      value={loanTerms.period}
+                      onChange={(e) => setLoanTerm('period', e.target.value as LoanRatePeriod)}
+                    >
                       <option value="monthly">{t('accounts.loanRatePeriods.monthly')}</option>
                       <option value="yearly_effective">{t('accounts.loanRatePeriods.yearly_effective')}</option>
                       <option value="yearly_nominal">{t('accounts.loanRatePeriods.yearly_nominal')}</option>
@@ -1016,15 +1108,30 @@ export function AccountDialog({
                   </div>
                   <div className="space-y-1">
                     <Label>{t('accounts.loanTermMonths')}</Label>
-                    <Input type="number" step="1" min="1" max="600" value={loanTerms.term} onChange={(e) => setLoanTerm('term', e.target.value)} />
+                    <Input
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="600"
+                      value={loanTerms.term}
+                      onChange={(e) => setLoanTerm('term', e.target.value)}
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label>{t('accounts.loanFirstPayment')}</Label>
-                    <DatePickerInput value={loanTerms.firstPayment} onChange={(value) => setLoanTerm('firstPayment', value)} className="w-full justify-start" />
+                    <DatePickerInput
+                      value={loanTerms.firstPayment}
+                      onChange={(value) => setLoanTerm('firstPayment', value)}
+                      className="w-full justify-start"
+                    />
                   </div>
                   <div className="space-y-1 col-span-2">
                     <Label>{t('accounts.loanAmortization')}</Label>
-                    <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary" value={loanTerms.amortization} onChange={(e) => setLoanTerm('amortization', e.target.value as LoanAmortization)}>
+                    <select
+                      className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      value={loanTerms.amortization}
+                      onChange={(e) => setLoanTerm('amortization', e.target.value as LoanAmortization)}
+                    >
                       <option value="price">{t('accounts.loanAmortizations.price')}</option>
                       <option value="sac">{t('accounts.loanAmortizations.sac')}</option>
                     </select>

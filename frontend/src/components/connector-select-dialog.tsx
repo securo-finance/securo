@@ -3,13 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/contexts/auth-context'
 import { connections } from '@/lib/api'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Building2, Settings2 } from 'lucide-react'
 
 export interface Provider {
@@ -40,16 +34,21 @@ function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDial
 
   useEffect(() => {
     let cancelled = false
-    connections.getProviders().then((data) => {
-      if (cancelled) return
-      setProviders(data)
-      setLoading(false)
-    }).catch(() => {
-      if (cancelled) return
-      setProviders([])
-      setLoading(false)
-    })
-    return () => { cancelled = true }
+    connections
+      .getProviders()
+      .then((data) => {
+        if (cancelled) return
+        setProviders(data)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setProviders([])
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   return (
@@ -65,19 +64,22 @@ function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDial
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             </div>
           ) : providers.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              {t('accounts.noConnectorsAvailable')}
-            </p>
+            <p className="text-sm text-muted-foreground text-center py-8">{t('accounts.noConnectorsAvailable')}</p>
           ) : (
             providers.map((p) => {
               const content = (
                 <>
-                  <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5" aria-hidden="true">
+                  <div
+                    className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5"
+                    aria-hidden="true"
+                  >
                     <Building2 size={16} className="text-muted-foreground" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">{p.display_name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{t(`accounts.providers.${p.name}.description`, p.description)}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {t(`accounts.providers.${p.name}.description`, p.description)}
+                    </p>
                     {!p.configured && (
                       <p className="text-xs text-amber-700 dark:text-amber-400 mt-1.5">
                         {user?.is_superuser ? t('accounts.connectorNotConfigured') : t('accounts.connectorAskAdmin')}
@@ -91,7 +93,10 @@ function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDial
                 <button
                   key={p.name}
                   type="button"
-                  onClick={() => { onSelect(p); onClose() }}
+                  onClick={() => {
+                    onSelect(p)
+                    onClose()
+                  }}
                   className="w-full flex items-start gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:border-primary hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {content}

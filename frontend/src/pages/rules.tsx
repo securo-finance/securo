@@ -2,7 +2,13 @@ import { useRef, useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
+import {
+  categories as categoriesApi,
+  categoryGroups as categoryGroupsApi,
+  rules as rulesApi,
+  accounts as accountsApi,
+  payees as payeesApi,
+} from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -20,7 +26,20 @@ import {
 import type { Category, Payee, Rule, RuleAction, RuleExportPayload, RulePack } from '@/types'
 import { conditionSummary } from '@/lib/rule-summary'
 import { normalizeRuleMatchValue, ruleSearchText } from '@/lib/rule-match-utils'
-import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Search, Power } from 'lucide-react'
+import {
+  Trash2,
+  Plus,
+  RefreshCw,
+  Package,
+  Check,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Download,
+  Upload,
+  Search,
+  Power,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { localized } from '@/lib/localized-text'
 import { PageHeader } from '@/components/page-header'
@@ -35,11 +54,7 @@ import { reconciliation as reconciliationApi } from '@/lib/api'
 import { findCategoryReference, getRuleCategoryName } from '@/lib/category-reference-utils'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      {children}
-    </div>
-  )
+  return <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">{children}</div>
 }
 
 function SectionHeader({
@@ -66,23 +81,32 @@ function SectionHeader({
   )
 }
 
-function actionSummary(actions: RuleAction[], categories: Category[], payeesList: Payee[], t: (key: string) => string): string {
-  return actions.map(a => {
-    if (a.op === 'set_category') {
-      const cat = findCategoryReference(categories, a.value)
-      return cat ? `→ ${cat.name}` : `→ ${t('transactions.category')}`
-    }
-    if (a.op === 'set_payee') {
-      const p = payeesList.find(p => p.id === a.value)
-      return p ? `→ ${t('payees.payee')}: ${p.name}` : `→ ${t('payees.payee')}`
-    }
-    if (a.op === 'set_description') {
-      return `→ ${t('rules.fieldDescription')}: ${a.value}`
-    }
-    if (a.op === 'append_notes') return `→ ${t('rules.fieldNotes')}: ${a.value}`
-    if (a.op === 'ignore') return `→ ${t('rules.ignoreAction')}`
-    return a.op
-  }).join('  ') || t('rules.noActions')
+function actionSummary(
+  actions: RuleAction[],
+  categories: Category[],
+  payeesList: Payee[],
+  t: (key: string) => string,
+): string {
+  return (
+    actions
+      .map((a) => {
+        if (a.op === 'set_category') {
+          const cat = findCategoryReference(categories, a.value)
+          return cat ? `→ ${cat.name}` : `→ ${t('transactions.category')}`
+        }
+        if (a.op === 'set_payee') {
+          const p = payeesList.find((p) => p.id === a.value)
+          return p ? `→ ${t('payees.payee')}: ${p.name}` : `→ ${t('payees.payee')}`
+        }
+        if (a.op === 'set_description') {
+          return `→ ${t('rules.fieldDescription')}: ${a.value}`
+        }
+        if (a.op === 'append_notes') return `→ ${t('rules.fieldNotes')}: ${a.value}`
+        if (a.op === 'ignore') return `→ ${t('rules.ignoreAction')}`
+        return a.op
+      })
+      .join('  ') || t('rules.noActions')
+  )
 }
 
 const ACTION_FILTERS = [
@@ -93,7 +117,8 @@ const ACTION_FILTERS = [
   { value: 'ignore', label: 'rules.ignoreAction' },
 ] as const
 
-const FILTER_CONTROL_CLASS = 'h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]'
+const FILTER_CONTROL_CLASS =
+  'h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]'
 
 export default function RulesPage() {
   const { t } = useTranslation()
@@ -216,8 +241,7 @@ export default function RulesPage() {
   // up stays explicit: the editor's own checkbox, or "Reset and
   // reapply" in the header.
   const toggleMutation = useMutation({
-    mutationFn: (rule: Rule) =>
-      rulesApi.update(rule.id, { is_active: !rule.is_active, apply_to_existing: false }),
+    mutationFn: (rule: Rule) => rulesApi.update(rule.id, { is_active: !rule.is_active, apply_to_existing: false }),
     onSuccess: (_result, rule) => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       toast.success(t(rule.is_active ? 'rules.turnedOff' : 'rules.turnedOn'))
@@ -311,16 +335,17 @@ export default function RulesPage() {
 
   const filteredRules = useMemo(() => {
     const query = normalizeRuleMatchValue(search)
-    return (rulesList ?? []).filter(rule => {
+    return (rulesList ?? []).filter((rule) => {
       // displayCategories, not categories: the row and the sort already read
       // from it, so a rule assigning a hidden category shows that name.
       // Searching over the visible-only list made that rule unfindable by the
       // very name on screen.
       if (query && !ruleSearchText(rule, displayCategories).includes(query)) return false
-      if (filterCategory && !rule.actions.some(a => a.op === 'set_category' && a.value === filterCategory)) return false
+      if (filterCategory && !rule.actions.some((a) => a.op === 'set_category' && a.value === filterCategory))
+        return false
       if (filterStatus === 'active' && !rule.is_active) return false
       if (filterStatus === 'inactive' && rule.is_active) return false
-      if (filterAction && !rule.actions.some(a => a.op === filterAction)) return false
+      if (filterAction && !rule.actions.some((a) => a.op === filterAction)) return false
       return true
     })
   }, [rulesList, displayCategories, search, filterCategory, filterStatus, filterAction])
@@ -357,8 +382,7 @@ export default function RulesPage() {
   // landing on the rules list instead would break it.
   const [searchParams, setSearchParams] = useSearchParams()
   const requested = searchParams.get('tab')
-  const asked =
-    requested === 'queue' || requested === 'history' ? requested : 'rules'
+  const asked = requested === 'queue' || requested === 'history' ? requested : 'rules'
   const tab: 'rules' | 'queue' | 'history' = asked
   const setTab = (next: 'rules' | 'queue' | 'history') => {
     // `replace`, so the back button leaves the page rather than walking
@@ -421,180 +445,198 @@ export default function RulesPage() {
       {tab === 'history' && <ReconciliationHistory />}
 
       <div className={tab === 'rules' ? '' : 'hidden'}>
-      <SectionCard>
-        <SectionHeader
-          title={t('rules.sectionTitle')}
-          hint={t('rules.sectionHint')}
-          action={
-            canWrite ? (
-              <div className="flex gap-2">
-                <input
-                  ref={importInputRef}
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    if (file) void handleImportFile(file)
-                  }}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 h-8"
-                  onClick={() => exportMutation.mutate()}
-                  disabled={exportMutation.isPending}
-                >
-                  <Download size={12} />
-                  <span className="hidden sm:inline">{t('rules.export')}</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 h-8"
-                  onClick={() => importInputRef.current?.click()}
-                  disabled={importMutation.isPending}
-                >
-                  <Upload size={12} />
-                  <span className="hidden sm:inline">{t('rules.import')}</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 h-8"
-                  onClick={() => setPacksDialogOpen(true)}
-                >
-                  <Package size={12} />
-                  <span className="hidden sm:inline">{t('rules.packs')}</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 h-8"
-                  onClick={() => {
-                    if (window.confirm(t('rules.confirmResetAndReapplyAll', 'Reset matching transaction categories, notes, and rule-managed descriptions, then reapply all active rules?'))) {
-                      applyAllMutation.mutate()
-                    }
-                  }}
-                  disabled={applyAllMutation.isPending}
-                >
-                  <RefreshCw size={12} />
-                  <span className="hidden sm:inline">{t('rules.resetAndReapplyAll', 'Reset and reapply')}</span>
-                </Button>
-                <Button size="sm" className="gap-1.5 h-8" onClick={openCreate}>
-                  <Plus size={13} /> <span className="hidden sm:inline">{t('rules.add')}</span>
-                </Button>
-              </div>
-            ) : undefined
-          }
-        />
-        <div className="px-4 sm:px-5 py-2 bg-muted/50 border-b border-border flex flex-wrap items-center gap-2">
-          <div className="flex min-w-[10rem] flex-1 items-center gap-1.5">
-            <Search size={14} className="pointer-events-none shrink-0 text-muted-foreground/70" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('rules.searchPlaceholder')}
-              className="w-full min-w-0 rounded-sm bg-transparent text-xs text-foreground focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px] placeholder:text-muted-foreground/75"
-            />
-          </div>
-          <select
-            className={FILTER_CONTROL_CLASS}
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-          >
-            <option value="">{t('rules.filterAllCategories')}</option>
-            {/* displayCategories so a rule assigning a hidden category is
+        <SectionCard>
+          <SectionHeader
+            title={t('rules.sectionTitle')}
+            hint={t('rules.sectionHint')}
+            action={
+              canWrite ? (
+                <div className="flex gap-2">
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      if (file) void handleImportFile(file)
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 h-8"
+                    onClick={() => exportMutation.mutate()}
+                    disabled={exportMutation.isPending}
+                  >
+                    <Download size={12} />
+                    <span className="hidden sm:inline">{t('rules.export')}</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 h-8"
+                    onClick={() => importInputRef.current?.click()}
+                    disabled={importMutation.isPending}
+                  >
+                    <Upload size={12} />
+                    <span className="hidden sm:inline">{t('rules.import')}</span>
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => setPacksDialogOpen(true)}>
+                    <Package size={12} />
+                    <span className="hidden sm:inline">{t('rules.packs')}</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 h-8"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          t(
+                            'rules.confirmResetAndReapplyAll',
+                            'Reset matching transaction categories, notes, and rule-managed descriptions, then reapply all active rules?',
+                          ),
+                        )
+                      ) {
+                        applyAllMutation.mutate()
+                      }
+                    }}
+                    disabled={applyAllMutation.isPending}
+                  >
+                    <RefreshCw size={12} />
+                    <span className="hidden sm:inline">{t('rules.resetAndReapplyAll', 'Reset and reapply')}</span>
+                  </Button>
+                  <Button size="sm" className="gap-1.5 h-8" onClick={openCreate}>
+                    <Plus size={13} /> <span className="hidden sm:inline">{t('rules.add')}</span>
+                  </Button>
+                </div>
+              ) : undefined
+            }
+          />
+          <div className="px-4 sm:px-5 py-2 bg-muted/50 border-b border-border flex flex-wrap items-center gap-2">
+            <div className="flex min-w-[10rem] flex-1 items-center gap-1.5">
+              <Search size={14} className="pointer-events-none shrink-0 text-muted-foreground/70" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('rules.searchPlaceholder')}
+                className="w-full min-w-0 rounded-sm bg-transparent text-xs text-foreground focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px] placeholder:text-muted-foreground/75"
+              />
+            </div>
+            <select
+              className={FILTER_CONTROL_CLASS}
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+            >
+              <option value="">{t('rules.filterAllCategories')}</option>
+              {/* displayCategories so a rule assigning a hidden category is
                 still filterable by it, matching what the row displays. */}
-            {displayCategories.map(cat => (
-              <option key={cat.id} value={cat.id}>{cat.name}</option>
-            ))}
-          </select>
-          <select
-            className={FILTER_CONTROL_CLASS}
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as '' | 'active' | 'inactive')}
-          >
-            <option value="">{t('rules.filterAllStatuses')}</option>
-            <option value="active">{t('rules.filterActiveOnly')}</option>
-            <option value="inactive">{t('rules.filterInactiveOnly')}</option>
-          </select>
-          <select
-            className={FILTER_CONTROL_CLASS}
-            value={filterAction}
-            onChange={(e) => setFilterAction(e.target.value)}
-          >
-            <option value="">{t('rules.filterAllActions')}</option>
-            {ACTION_FILTERS.map(a => (
-              <option key={a.value} value={a.value}>{t(a.label)}</option>
-            ))}
-          </select>
-          {hasFilters && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="h-7 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              {displayCategories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className={FILTER_CONTROL_CLASS}
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value as '' | 'active' | 'inactive')}
             >
-              {t('transactions.clearFilters')}
-            </button>
-          )}
-          <span className="text-xs text-muted-foreground">{t('rules.sortLabel')}</span>
-          {(['priority', 'name', 'category'] as const).map(opt => (
-            <button
-              key={opt}
-              onClick={() => {
-                if (sortBy === opt) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-                else { setSortBy(opt); setSortDir('asc') }
-              }}
-              className={cn(
-                'flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-                sortBy === opt
-                  ? 'bg-background border border-border text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-background/60'
-              )}
+              <option value="">{t('rules.filterAllStatuses')}</option>
+              <option value="active">{t('rules.filterActiveOnly')}</option>
+              <option value="inactive">{t('rules.filterInactiveOnly')}</option>
+            </select>
+            <select
+              className={FILTER_CONTROL_CLASS}
+              value={filterAction}
+              onChange={(e) => setFilterAction(e.target.value)}
             >
-              {t(`rules.sortBy_${opt}`)}
-              {sortBy === opt
-                ? sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
-                : <ArrowUpDown size={11} className="opacity-30" />}
-            </button>
-          ))}
-        </div>
-        {sortedRules.length > 0 ? (
-          <div className="divide-y divide-border">
-            {sortedRules.map((rule) => (
-              <div
-                key={rule.id}
-                className={cn(
-                  'px-4 sm:px-5 py-3 hover:bg-muted transition-colors',
-                  canWrite && 'cursor-pointer',
-                )}
-                onClick={() => { if (canWrite) openEdit(rule) }}
+              <option value="">{t('rules.filterAllActions')}</option>
+              {ACTION_FILTERS.map((a) => (
+                <option key={a.value} value={a.value}>
+                  {t(a.label)}
+                </option>
+              ))}
+            </select>
+            {hasFilters && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="h-7 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="text-sm font-semibold text-foreground">{rule.name}</p>
-                      {!rule.is_active && (
+                {t('transactions.clearFilters')}
+              </button>
+            )}
+            <span className="text-xs text-muted-foreground">{t('rules.sortLabel')}</span>
+            {(['priority', 'name', 'category'] as const).map((opt) => (
+              <button
+                key={opt}
+                onClick={() => {
+                  if (sortBy === opt) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+                  else {
+                    setSortBy(opt)
+                    setSortDir('asc')
+                  }
+                }}
+                className={cn(
+                  'flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+                  sortBy === opt
+                    ? 'bg-background border border-border text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-background/60',
+                )}
+              >
+                {t(`rules.sortBy_${opt}`)}
+                {sortBy === opt ? (
+                  sortDir === 'asc' ? (
+                    <ArrowUp size={11} />
+                  ) : (
+                    <ArrowDown size={11} />
+                  )
+                ) : (
+                  <ArrowUpDown size={11} className="opacity-30" />
+                )}
+              </button>
+            ))}
+          </div>
+          {sortedRules.length > 0 ? (
+            <div className="divide-y divide-border">
+              {sortedRules.map((rule) => (
+                <div
+                  key={rule.id}
+                  className={cn('px-4 sm:px-5 py-3 hover:bg-muted transition-colors', canWrite && 'cursor-pointer')}
+                  onClick={() => {
+                    if (canWrite) openEdit(rule)
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-sm font-semibold text-foreground">{rule.name}</p>
+                        {!rule.is_active && (
+                          <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0 rounded-full">
+                            {t('rules.inactive')}
+                          </span>
+                        )}
                         <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0 rounded-full">
-                          {t('rules.inactive')}
+                          p:{rule.priority}
                         </span>
-                      )}
-                      <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0 rounded-full">
-                        p:{rule.priority}
-                      </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground font-mono truncate">
+                        {conditionSummary(rule.conditions, rule.conditions_op, t, (c) =>
+                          c.field === 'payee_id'
+                            ? (payees.find((p) => p.id === c.value)?.name ?? String(c.value))
+                            : undefined,
+                        )}
+                      </p>
+                      <p className="text-xs text-emerald-600 font-medium mt-0.5">
+                        {actionSummary(rule.actions, displayCategories, payees, t)}
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground font-mono truncate">
-                      {conditionSummary(rule.conditions, rule.conditions_op, t, (c) => c.field === 'payee_id' ? (payees.find(p => p.id === c.value)?.name ?? String(c.value)) : undefined)}
-                    </p>
-                    <p className="text-xs text-emerald-600 font-medium mt-0.5">
-                      {actionSummary(rule.actions, displayCategories, payees, t)}
-                    </p>
-                  </div>
-                  {canWrite && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      {/* Stopping a rule and deleting it are different
+                    {canWrite && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Stopping a rule and deleting it are different
                           decisions, and only one of them was reachable
                           from here. The other was a checkbox inside the
                           editor, so switching a rule off meant opening
@@ -602,48 +644,54 @@ export default function RulesPage() {
                           not want to change. It lives on the row now, in
                           the same place and the same shape as on a
                           matching rule below. */}
-                      <button
-                        className={cn(
-                          'p-1.5 rounded-md transition-colors hover:bg-background',
-                          rule.is_active
-                            ? 'text-emerald-600 hover:text-emerald-700'
-                            : 'text-muted-foreground hover:text-foreground',
-                        )}
-                        onClick={(e) => { e.stopPropagation(); toggleMutation.mutate(rule) }}
-                        disabled={toggleMutation.isPending}
-                        title={t(rule.is_active ? 'rules.turnOff' : 'rules.turnOn')}
-                      >
-                        <Power size={13} />
-                      </button>
-                      <button
-                        className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                        onClick={(e) => { e.stopPropagation(); setDeletingRule(rule) }}
-                        disabled={deleteMutation.isPending}
-                        title={t('common.delete')}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  )}
+                        <button
+                          className={cn(
+                            'p-1.5 rounded-md transition-colors hover:bg-background',
+                            rule.is_active
+                              ? 'text-emerald-600 hover:text-emerald-700'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleMutation.mutate(rule)
+                          }}
+                          disabled={toggleMutation.isPending}
+                          title={t(rule.is_active ? 'rules.turnOff' : 'rules.turnOn')}
+                        >
+                          <Power size={13} />
+                        </button>
+                        <button
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeletingRule(rule)
+                          }}
+                          disabled={deleteMutation.isPending}
+                          title={t('common.delete')}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground text-center py-10">
-            {hasFilters ? t('rules.noFilterResults') : t('rules.empty')}
-          </p>
-        )}
-      </SectionCard>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-10">
+              {hasFilters ? t('rules.noFilterResults') : t('rules.empty')}
+            </p>
+          )}
+        </SectionCard>
 
-      {/* Matching rules below categorization rules, because they are the
+        {/* Matching rules below categorization rules, because they are the
           same promise made twice: the software decides things about your
           money, and you get to see the decision and disagree with it.
           One card per set, and transfers leads, because that is the set
           every workspace has whether or not it ever asked for one. */}
-      <div className="mt-6 space-y-6">
-        <ReconciliationRules canWrite={canWrite} />
-      </div>
+        <div className="mt-6 space-y-6">
+          <ReconciliationRules canWrite={canWrite} />
+        </div>
       </div>
 
       <DeleteConfirmationDialog
@@ -655,10 +703,7 @@ export default function RulesPage() {
         onConfirm={() => deletingRule && deleteMutation.mutate(deletingRule.id)}
       />
 
-      <RulePacksDialog
-        open={packsDialogOpen}
-        onClose={() => setPacksDialogOpen(false)}
-      />
+      <RulePacksDialog open={packsDialogOpen} onClose={() => setPacksDialogOpen(false)} />
 
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
         <DialogContent className="max-w-md">
@@ -666,14 +711,23 @@ export default function RulesPage() {
             <DialogTitle>{t('rules.importConfirmTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm text-muted-foreground">
-            <p>{t('rules.importConfirmDescription', { count: pendingImport?.rules.length ?? 0, file: pendingImportName })}</p>
+            <p>
+              {t('rules.importConfirmDescription', {
+                count: pendingImport?.rules.length ?? 0,
+                file: pendingImportName,
+              })}
+            </p>
             <p className="font-medium text-amber-600">{t('rules.importOverwriteWarning')}</p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button
               type="button"
               variant="outline"
-              onClick={() => { setImportDialogOpen(false); setPendingImport(null); setPendingImportName('') }}
+              onClick={() => {
+                setImportDialogOpen(false)
+                setPendingImport(null)
+                setPendingImportName('')
+              }}
               disabled={importMutation.isPending}
             >
               {t('common.cancel')}
@@ -681,7 +735,9 @@ export default function RulesPage() {
             <Button
               type="button"
               variant="destructive"
-              onClick={() => { if (pendingImport) importMutation.mutate(pendingImport) }}
+              onClick={() => {
+                if (pendingImport) importMutation.mutate(pendingImport)
+              }}
               disabled={!pendingImport || importMutation.isPending}
             >
               {t('rules.confirmOverwriteImport')}
@@ -693,7 +749,10 @@ export default function RulesPage() {
       <RuleDialog
         key={dialogInstance}
         open={dialogOpen}
-        onClose={() => { setDialogOpen(false); setEditing(null) }}
+        onClose={() => {
+          setDialogOpen(false)
+          setEditing(null)
+        }}
         rule={editing}
         categories={categories}
         categoryGroups={categoryGroupsList ?? []}
@@ -767,25 +826,17 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
             onChange={(e) => setCreateMissingCategories(e.target.checked)}
             className="rounded border-border text-primary focus:ring-primary"
           />
-          <Label
-            htmlFor="create-missing-categories"
-            className="text-xs text-muted-foreground cursor-pointer"
-          >
+          <Label htmlFor="create-missing-categories" className="text-xs text-muted-foreground cursor-pointer">
             {t('rules.createMissingCategories')}
           </Label>
         </div>
         <div className="space-y-2">
           {rulePacks?.map((pack) => (
-            <div
-              key={pack.code}
-              className="flex items-center gap-3 p-3 rounded-lg border border-border"
-            >
+            <div key={pack.code} className="flex items-center gap-3 p-3 rounded-lg border border-border">
               <span className="text-2xl">{pack.flag}</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-foreground">{localized(pack.names, i18n.language)}</p>
-                <p className="text-xs text-muted-foreground">
-                  {t('rules.packRuleCount', { count: pack.rule_count })}
-                </p>
+                <p className="text-xs text-muted-foreground">{t('rules.packRuleCount', { count: pack.rule_count })}</p>
               </div>
               {pack.installed ? (
                 <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
@@ -832,7 +883,12 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
 
-  const { data: plan, isFetching, isError, refetch } = useQuery({
+  const {
+    data: plan,
+    isFetching,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ['rule-pack-removal', pack.code],
     queryFn: () => rulesApi.packRemoval(pack.code),
     // Every opening starts from a fresh preview, never a cached one.
@@ -847,9 +903,7 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
       toast.success(t('rules.packRemoved', { count: result.remove.length }), {
-        description: result.keep.length > 0
-          ? t('rules.packKeptEdited', { count: result.keep.length })
-          : undefined,
+        description: result.keep.length > 0 ? t('rules.packKeptEdited', { count: result.keep.length }) : undefined,
       })
       onClose()
     },
@@ -872,11 +926,15 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
   const kept = !failed && plan ? plan.keep : []
   // Confirm only the plan just fetched, and only if removing does something:
   // delete untouched rules, or hand edited ones over to the user.
-  const confirmable =
-    plan !== undefined && !isFetching && !isError && plan.remove.length + plan.keep.length > 0
+  const confirmable = plan !== undefined && !isFetching && !isError && plan.remove.length + plan.keep.length > 0
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !pending) onClose()
+      }}
+    >
       <DialogContent className="sm:max-w-md" showCloseButton={!pending}>
         <DialogHeader>
           <DialogTitle>{t('rules.removePackTitle', { name: localized(pack.names, i18n.language) })}</DialogTitle>
@@ -890,12 +948,12 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
         </DialogHeader>
         {kept.length > 0 && (
           <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
-            <p className="font-medium text-foreground">
-              {t('rules.removePackKeeps', { count: kept.length })}
-            </p>
+            <p className="font-medium text-foreground">{t('rules.removePackKeeps', { count: kept.length })}</p>
             <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
               {kept.slice(0, KEPT_NAMES_SHOWN).map((rule) => (
-                <li key={rule.id} className="truncate">{rule.name}</li>
+                <li key={rule.id} className="truncate">
+                  {rule.name}
+                </li>
               ))}
               {kept.length > KEPT_NAMES_SHOWN && (
                 <li>{t('rules.removePackMore', { count: kept.length - KEPT_NAMES_SHOWN })}</li>
