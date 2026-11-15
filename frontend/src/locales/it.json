@@ -3390,7 +3390,8 @@
         "type": "Tipo",
         "content": "Contenuto",
         "language": "Lingua",
-        "status": "Stato"
+        "status": "Stato",
+        "workspace": "Area di lavoro"
       },
       "view": {
         "all": "Tutti",
@@ -3437,7 +3438,9 @@
       "type": "Tipo",
       "added": "Aggiunto",
       "connections": "Connessioni",
-      "codeNote": "L'installazione mostra cosa può raggiungere e modificare prima che venga eseguito qualcosa."
+      "codeNote": "L'installazione mostra cosa può raggiungere e modificare prima che venga eseguito qualcosa.",
+      "workspaces": "Aree di lavoro",
+      "anyWorkspace": "Personale e attività"
     },
     "installedFailed": "Impossibile caricare i plugin installati.",
     "planRecordOnly": {
@@ -3527,7 +3530,9 @@
       "failed": "Impossibile completare l'accesso. Riprova.",
       "missing": "Il servizio non ha restituito l'accesso. Riprova.",
       "serviceError": "Il servizio ha segnalato un errore: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Solo aree di lavoro per attività",
+    "onlyForPersonal": "Solo aree di lavoro personali"
   },
   "library": {
     "title": "Libreria",

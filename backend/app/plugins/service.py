@@ -12,6 +12,7 @@ import hashlib
 import logging
 import uuid
 from dataclasses import dataclass
+from collections.abc import Sequence
 from typing import Any, Literal
 
 from sqlalchemy import func, select
@@ -53,6 +54,11 @@ class PluginChanged(Exception):
 class CatalogItem:
     entry: index.IndexEntry
     installed: WorkspacePlugin | None
+    workspace_kind: str | None = None
+
+    @property
+    def fits_workspace(self) -> bool:
+        return self.workspace_kind is None or self.entry.fits(self.workspace_kind)
 
     @property
     def update_available(self) -> bool:
@@ -105,7 +111,8 @@ async def catalog(session: AsyncSession, workspace_id: uuid.UUID) -> list[Catalo
     installed = await installed_plugins(session, workspace_id)
     async with index.http_client() as client:
         entries = await index.fetch_index(client)
-    return [CatalogItem(entry, installed.get(entry.id)) for entry in entries]
+    kind = await _workspace_kind(session, workspace_id)
+    return [CatalogItem(entry, installed.get(entry.id), kind) for entry in entries]
 
 
 async def details(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str) -> PluginDetails:
@@ -122,7 +129,8 @@ async def details(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str
             raise PluginNotFound
         readme = await _optional(index.fetch_readme(client, entry))
         manifest = await _optional(index.fetch_manifest(client, entry)) if entry.supported else None
-    return PluginDetails(CatalogItem(entry, installed), readme, contents(manifest) if manifest else None)
+    item = CatalogItem(entry, installed, await _workspace_kind(session, workspace_id))
+    return PluginDetails(item, readme, contents(manifest) if manifest else None)
 
 
 async def _optional(call):
@@ -446,13 +454,26 @@ async def _target(
             raise PluginUnavailable(f"needs Securo {entry.min_securo_version} or newer")
         if not entry.supported:
             raise PluginUnavailable("contributes something this Securo version can't apply")
+        kind = await _workspace_kind(session, workspace_id)
+        if not entry.fits(kind):
+            raise PluginUnavailable(_not_for(entry.workspaces))
         manifest = await index.fetch_manifest(client, entry)
     # The index's copy of the minimum is a summary; the verified manifest decides.
     if not index.is_compatible(manifest.min_securo_version):
         raise PluginUnavailable(f"needs Securo {manifest.min_securo_version} or newer")
+    if kind not in manifest.workspaces:
+        raise PluginUnavailable(_not_for(manifest.workspaces))
     if action == "update" and installed is not None and installed.commit == entry.commit:
         raise PluginUnavailable("already up to date")
     return entry.commit, manifest, entry.manifest_sha256, entry
+
+
+async def _workspace_kind(session: AsyncSession, workspace_id: uuid.UUID) -> str:
+    return await session.scalar(select(Workspace.kind).where(Workspace.id == workspace_id)) or "personal"
+
+
+def _not_for(kinds: Sequence[str]) -> str:
+    return f"only for {' and '.join(kinds)} workspaces"
 
 
 async def _has_items(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str) -> bool:

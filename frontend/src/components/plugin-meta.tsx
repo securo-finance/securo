@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowUpCircle, Ban, Check, CircleSlash } from 'lucide-react'
 
 import { TYPE_ICON } from '@/lib/plugin-format'
-import { pluginTypes } from '@/lib/plugin-catalog'
+import { onlyFor, pluginTypes } from '@/lib/plugin-catalog'
 import { cn } from '@/lib/utils'
 import type { PluginCatalogEntry } from '@/types'
 
@@ -29,9 +29,17 @@ export function PluginStatus({ entry, className }: { entry: PluginCatalogEntry; 
       {entry.compatible ? t('plugins.unavailable') : t('plugins.needsVersion', { version: entry.min_securo_version })}
     </span>
   )
+  const only = onlyFor(entry)
+  const elsewhere = !entry.fits_workspace && only ? (
+    <span className={cn(PILL, 'bg-muted text-muted-foreground', className)}>
+      <CircleSlash />
+      {t(only === 'business' ? 'plugins.onlyForBusiness' : 'plugins.onlyForPersonal')}
+    </span>
+  ) : null
   if (entry.update_available) {
-    // An update this Securo can't take says why, rather than offering nothing.
+    // An update this workspace can't take says why, rather than offering nothing.
     if (blocked) return reason
+    if (elsewhere) return elsewhere
     return (
       <span className={cn(PILL, 'bg-primary/10 text-primary', className)}>
         <ArrowUpCircle />
@@ -48,7 +56,7 @@ export function PluginStatus({ entry, className }: { entry: PluginCatalogEntry; 
     )
   }
   if (blocked) return reason
-  return null
+  return elsewhere
 }
 
 export function PluginTypes({ entry }: { entry: PluginCatalogEntry }) {

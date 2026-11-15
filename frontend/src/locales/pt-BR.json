@@ -3390,7 +3390,8 @@
         "type": "Tipo",
         "content": "Conteúdo",
         "language": "Idioma",
-        "status": "Status"
+        "status": "Status",
+        "workspace": "Workspace"
       },
       "view": {
         "all": "Todos",
@@ -3437,7 +3438,9 @@
       "type": "Tipo",
       "added": "Adicionado",
       "connections": "Conexões",
-      "codeNote": "Instalar mostra o que ele pode acessar e alterar antes de qualquer coisa rodar."
+      "codeNote": "Instalar mostra o que ele pode acessar e alterar antes de qualquer coisa rodar.",
+      "workspaces": "Workspaces",
+      "anyWorkspace": "Pessoal e negócios"
     },
     "installedFailed": "Não foi possível carregar os plugins instalados.",
     "planRecordOnly": {
@@ -3527,7 +3530,9 @@
       "failed": "Não foi possível concluir o login. Tente de novo.",
       "missing": "O serviço não devolveu o login. Tente de novo.",
       "serviceError": "O serviço informou um erro: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Só workspaces de negócios",
+    "onlyForPersonal": "Só workspaces pessoais"
   },
   "library": {
     "title": "Biblioteca",

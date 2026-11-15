@@ -3556,7 +3556,8 @@
         "type": "Typ",
         "content": "Obsah",
         "language": "Jazyk",
-        "status": "Stav"
+        "status": "Stav",
+        "workspace": "Pracovný priestor"
       },
       "view": {
         "all": "Všetko",
@@ -3603,7 +3604,9 @@
       "type": "Typ",
       "added": "Pridané",
       "connections": "Pripojenia",
-      "codeNote": "Inštalácia ukáže, k čomu sa môže pripojiť a čo môže meniť, ešte predtým, ako sa čokoľvek spustí."
+      "codeNote": "Inštalácia ukáže, k čomu sa môže pripojiť a čo môže meniť, ešte predtým, ako sa čokoľvek spustí.",
+      "workspaces": "Pracovné priestory",
+      "anyWorkspace": "Osobné aj firemné"
     },
     "installedFailed": "Nainštalované pluginy sa nepodarilo načítať.",
     "planRecordOnly": {
@@ -3693,7 +3696,9 @@
       "failed": "Prihlásenie sa nepodarilo dokončiť. Skúste to znova.",
       "missing": "Služba prihlásenie nevrátila. Skúste to znova.",
       "serviceError": "Služba nahlásila chybu: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Iba firemné pracovné priestory",
+    "onlyForPersonal": "Iba osobné pracovné priestory"
   },
   "library": {
     "title": "Knižnica",

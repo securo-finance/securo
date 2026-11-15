@@ -769,6 +769,10 @@ export interface PluginCatalogEntry {
   compatible: boolean
   /** This Securo can apply everything the plugin contributes. */
   supported: boolean
+  /** The workspace types it's meant for. */
+  workspaces: string[]
+  /** It's meant for this workspace's type. */
+  fits_workspace: boolean
   installed_version: string | null
   update_available: boolean
 }

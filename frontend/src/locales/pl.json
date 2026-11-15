@@ -3522,7 +3522,8 @@
         "type": "Typ",
         "content": "Zawartość",
         "language": "Język",
-        "status": "Status"
+        "status": "Status",
+        "workspace": "Obszar roboczy"
       },
       "view": {
         "all": "Wszystkie",
@@ -3569,7 +3570,9 @@
       "type": "Typ",
       "added": "Dodano",
       "connections": "Połączenia",
-      "codeNote": "Instalacja pokazuje, z czym wtyczka może się łączyć i co może zmieniać, zanim cokolwiek się uruchomi."
+      "codeNote": "Instalacja pokazuje, z czym wtyczka może się łączyć i co może zmieniać, zanim cokolwiek się uruchomi.",
+      "workspaces": "Obszary robocze",
+      "anyWorkspace": "Osobiste i firmowe"
     },
     "installedFailed": "Nie udało się wczytać zainstalowanych wtyczek.",
     "planRecordOnly": {
@@ -3659,7 +3662,9 @@
       "failed": "Nie udało się dokończyć logowania. Spróbuj ponownie.",
       "missing": "Usługa nie zwróciła logowania. Spróbuj ponownie.",
       "serviceError": "Usługa zgłosiła błąd: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Tylko firmowe obszary robocze",
+    "onlyForPersonal": "Tylko osobiste obszary robocze"
   },
   "library": {
     "title": "Biblioteka",

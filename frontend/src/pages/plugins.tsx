@@ -19,12 +19,14 @@ import { localized } from '@/lib/localized-text'
 import {
   NO_FILTERS,
   PLUGIN_TYPES,
+  WORKSPACE_TYPES,
   type PluginFilters,
   type PluginSort,
   contributedKinds,
   filterPlugins,
   hasFilters,
   newPlugins,
+  onlyFor,
   pluginLocales,
   sortPlugins,
   trendingPlugins,
@@ -34,7 +36,7 @@ import { cn } from '@/lib/utils'
 import type { PluginAction, PluginCatalogEntry } from '@/types'
 
 type View = 'all' | 'trending' | 'new'
-type FacetKey = 'type' | 'kind' | 'locale' | 'status'
+type FacetKey = 'type' | 'kind' | 'locale' | 'status' | 'workspace'
 
 const SORTS: PluginSort[] = ['popular', 'trending', 'updated', 'newest', 'name']
 const STATUSES = ['installed', 'updates'] as const
@@ -103,6 +105,15 @@ export default function PluginsPage() {
       options: [...new Set(list.flatMap(pluginLocales))]
         .map((locale) => ({ value: locale, label: languageName(locale, lang), count: countWith({ locale }) }))
         .sort((a, b) => a.label.localeCompare(b.label)),
+    },
+    {
+      key: 'workspace',
+      title: t('plugins.page.facet.workspace'),
+      options: WORKSPACE_TYPES.map((workspace) => ({
+        value: workspace,
+        label: t(workspace === 'business' ? 'workspace.kindBusiness' : 'workspace.kindPersonal'),
+        count: countWith({ workspace }),
+      })),
     },
     {
       key: 'status',
@@ -381,7 +392,8 @@ function PluginRow({
   const lang = i18n.language
   const summary = usePluginSummary()
   const name = localized(entry.name, lang)
-  const installable = canWrite && !entry.revoked && entry.compatible && entry.supported
+  const installable = canWrite && !entry.revoked && entry.compatible && entry.supported && entry.fits_workspace
+  const only = onlyFor(entry)
   const action: PluginAction | null = !installable ? null : entry.update_available ? 'update' : entry.installed_version ? null : 'install'
 
   return (
@@ -409,6 +421,8 @@ function PluginRow({
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <PluginTypes entry={entry} />
           <span>{summary(entry)}</span>
+          {/* When it doesn't fit, the status pill already says so. */}
+          {only && entry.fits_workspace && <span>{t(only === 'business' ? 'plugins.onlyForBusiness' : 'plugins.onlyForPersonal')}</span>}
           <span className="tabular-nums">v{entry.version}</span>
           {entry.updated_at && <span>{t('plugins.page.updated', { when: relativeDate(entry.updated_at, lang) })}</span>}
         </div>

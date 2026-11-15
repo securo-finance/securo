@@ -81,6 +81,8 @@ class PluginCatalogRead(BaseModel):
     revoked_reason: str | None
     compatible: bool = Field(description="This Securo is at least min_securo_version.")
     supported: bool = Field(description="This Securo can apply everything the plugin contributes.")
+    workspaces: list[str] = Field(description="The workspace types it's meant for.")
+    fits_workspace: bool = Field(description="It's meant for this workspace's type.")
     installed_version: str | None
     update_available: bool
 

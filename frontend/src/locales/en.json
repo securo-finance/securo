@@ -3386,7 +3386,8 @@
         "type": "Type",
         "content": "Content",
         "language": "Language",
-        "status": "Status"
+        "status": "Status",
+        "workspace": "Workspace"
       },
       "view": {
         "all": "All",
@@ -3433,7 +3434,9 @@
       "type": "Type",
       "added": "Added",
       "connections": "Connections",
-      "codeNote": "Installing shows what it may reach and change before anything runs."
+      "codeNote": "Installing shows what it may reach and change before anything runs.",
+      "workspaces": "Workspaces",
+      "anyWorkspace": "Personal and business"
     },
     "installedFailed": "Couldn't load the installed plugins.",
     "planRecordOnly": {
@@ -3523,7 +3526,9 @@
       "failed": "The sign in couldn't be finished. Try again.",
       "missing": "The service didn't send the sign in back. Try again.",
       "serviceError": "The service reported an error: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Business workspaces only",
+    "onlyForPersonal": "Personal workspaces only"
   },
   "library": {
     "title": "Library",

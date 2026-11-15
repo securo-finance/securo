@@ -3388,7 +3388,8 @@
         "type": "Type",
         "content": "Inhoud",
         "language": "Taal",
-        "status": "Status"
+        "status": "Status",
+        "workspace": "Workspace"
       },
       "view": {
         "all": "Alle",
@@ -3435,7 +3436,9 @@
       "type": "Type",
       "added": "Toegevoegd",
       "connections": "Koppelingen",
-      "codeNote": "Installeren toont wat de plugin mag bereiken en wijzigen voordat er iets draait."
+      "codeNote": "Installeren toont wat de plugin mag bereiken en wijzigen voordat er iets draait.",
+      "workspaces": "Workspaces",
+      "anyWorkspace": "Persoonlijk en zakelijk"
     },
     "installedFailed": "De geïnstalleerde plugins konden niet worden geladen.",
     "planRecordOnly": {
@@ -3525,7 +3528,9 @@
       "failed": "Het inloggen kon niet worden afgerond. Probeer het opnieuw.",
       "missing": "De dienst gaf het inloggen niet terug. Probeer het opnieuw.",
       "serviceError": "De dienst meldde een fout: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Alleen zakelijke workspaces",
+    "onlyForPersonal": "Alleen persoonlijke workspaces"
   },
   "library": {
     "title": "Bibliotheek",
