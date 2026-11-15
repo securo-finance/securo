@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import inspect, select, text, update
+from sqlalchemy import inspect, select, update
 
 from app.models.invoice import Invoice
 from app.models.invoice_attachment import InvoiceAttachment
@@ -76,10 +76,6 @@ def _migration():
 async def _migrate_existing(session):
     migration = _migration()
     connection = await session.connection()
-    schema = connection.sync_connection.get_execution_options()["schema_translate_map"][None]
-    # Alembic ALTER COLUMN emits unqualified DDL, unlike metadata's translated
-    # table operations. Keep the migration inside this fixture's schema.
-    await connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
 
     def migrate(sync_connection):
         # Start with the shipped FKs, then exercise upgrade, rollback, and
@@ -93,11 +89,11 @@ async def _migrate_existing(session):
             ):
                 operation()
                 for table in AUTHORED_TABLES:
-                    fks = inspect(sync_connection).get_foreign_keys(table, schema=schema)
+                    fks = inspect(sync_connection).get_foreign_keys(table)
                     author_fk = next(fk for fk in fks if fk["constrained_columns"] == ["user_id"])
                     assert author_fk["options"].get("ondelete") == expected, table
                 user_column = next(
-                    column for column in inspect(sync_connection).get_columns("payees", schema=schema)
+                    column for column in inspect(sync_connection).get_columns("payees")
                     if column["name"] == "user_id"
                 )
                 assert user_column["nullable"] is (expected == "SET NULL")
@@ -226,19 +222,17 @@ async def test_downgrade_refuses_to_invent_a_retained_client_creator(postgres_se
         assert await admin_service.delete_user(session, author.id, admin.id)
         migration = _migration()
         connection = await session.connection()
-        schema = connection.sync_connection.get_execution_options()["schema_translate_map"][None]
-        await connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
 
         def refuse_without_changing_schema(sync_connection):
             with Operations.context(MigrationContext.configure(sync_connection)):
                 with pytest.raises(RuntimeError, match="Reassign payees with no creator"):
                     migration.downgrade()
                 for table in AUTHORED_TABLES:
-                    foreign_keys = inspect(sync_connection).get_foreign_keys(table, schema=schema)
+                    foreign_keys = inspect(sync_connection).get_foreign_keys(table)
                     author_fk = next(fk for fk in foreign_keys if fk["constrained_columns"] == ["user_id"])
                     assert author_fk["options"].get("ondelete") == "SET NULL"
                 user_column = next(
-                    column for column in inspect(sync_connection).get_columns("payees", schema=schema)
+                    column for column in inspect(sync_connection).get_columns("payees")
                     if column["name"] == "user_id"
                 )
                 assert user_column["nullable"] is True

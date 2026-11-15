@@ -1,4 +1,4 @@
-"""Real PostgreSQL report/API/MCP checks using the shared disposable schemas."""
+"""Real PostgreSQL report/API/MCP checks using disposable per-test databases."""
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -28,7 +28,7 @@ async def session(postgres_sessions):
 
 @pytest.fixture
 def clean_db(postgres_sessions):
-    """The reused user/data fixtures start in a fresh per-test PostgreSQL schema."""
+    """The reused user/data fixtures start in a fresh per-test PostgreSQL database."""
 
 
 @pytest_asyncio.fixture
