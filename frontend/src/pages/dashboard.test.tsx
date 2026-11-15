@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
@@ -7,7 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { formatCurrency } from '@/lib/format'
 import { monthLabel } from '@/lib/month-utils'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Account, DashboardSummary } from '@/types'
+import type { Account, DashboardSummary, SpendingPlan } from '@/types'
 
 const layouts = vi.hoisted(() => ({
   saved: {} as Record<string, { id: string }[] | null>,
@@ -35,7 +35,7 @@ const api = vi.hoisted(() => ({
   payees: { list: vi.fn() },
   rules: { create: vi.fn(), list: vi.fn() },
   settings: { attachments: vi.fn() },
-  spendingPlan: { get: vi.fn(async () => null), timeline: vi.fn() },
+  spendingPlan: { get: vi.fn(async (): Promise<SpendingPlan | null> => null), timeline: vi.fn() },
   // Nobody arranged anything: Securo's default layout. Tests that need one set `layouts.saved`.
   uiLayouts: {
     get: async () => ({ dashboard: null, reports: null, ...layouts.saved }),
@@ -876,5 +876,47 @@ describe('Dashboard arranged from the library', () => {
 
     await user.click(screen.getByRole('button', { name: t('library.done') }))
     expect(screen.queryByText(t('library.editingDashboard'))).not.toBeInTheDocument()
+  })
+})
+
+describe('Dashboard daily plan strip', () => {
+  afterEach(() => {
+    api.spendingPlan.get.mockResolvedValue(null)
+  })
+
+  const renderDashboard = () => renderWithProviders(
+    <TooltipProvider delayDuration={0}>
+      <DashboardPage />
+    </TooltipProvider>,
+  )
+
+  it('shows what is left to spend today when a plan exists', async () => {
+    api.spendingPlan.get.mockResolvedValue({ daily_allowance: '30.00', balance_floor: '0.00', account_ids: null, horizon_months: 12 })
+    api.spendingPlan.timeline.mockResolvedValue({
+      currency: 'USD',
+      daily_allowance: 30,
+      balance_floor: 0,
+      horizon_end: '2027-11-12',
+      safe_daily_allowance: 40,
+      average_daily_surplus: 50,
+      covered_until: '2027-11-12',
+      covered_through_horizon: true,
+      today: { allowance: 30, spent: 10, remaining: 20 },
+      points: [],
+    })
+    renderDashboard()
+
+    const strip = (await screen.findByText(
+      t('spendingPlan.todayRemaining', { amount: formatCurrency(20, 'USD', 'en-US') }),
+    )).closest('a')!
+    expect(strip).toHaveAttribute('href', '/plan')
+  })
+
+  it('leaves the strip out without a plan', async () => {
+    renderDashboard()
+
+    await screen.findByText('Checking')
+    expect(api.spendingPlan.timeline).not.toHaveBeenCalled()
+    expect(document.querySelector('a[href="/plan"]')).toBeNull()
   })
 })
