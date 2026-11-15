@@ -176,7 +176,9 @@ export default function DashboardPage() {
 
   const prevSearchRef = useRef<string | null>(null)
   const searchParamsRef = useRef(searchParams)
-  searchParamsRef.current = searchParams
+  useEffect(() => {
+    searchParamsRef.current = searchParams
+  }, [searchParams])
 
   // Sync state from URL when navigating (e.g. back/forward button)
   useEffect(() => {

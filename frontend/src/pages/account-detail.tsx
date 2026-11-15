@@ -844,12 +844,14 @@ export default function AccountDetailPage() {
       const previous = projectedByDay.get(tx.date) ?? 0
       projectedByDay.set(tx.date, applyTransactionToBalance(previous, tx, usePrimary, displayCurrency))
     }
+    const series: { label: string; date: string; balance: number }[] = []
     let projected = 0
-    return runningBalanceSeries.map((point) => {
+    for (const point of runningBalanceSeries) {
       projected += projectedByDay.get(point.date) ?? 0
       const balance = usePrimary ? (point.balance_primary ?? point.balance) : point.balance
-      return { label: formatDateStr(point.date, dateLocale), date: point.date, balance: balance + projected }
-    })
+      series.push({ label: formatDateStr(point.date, dateLocale), date: point.date, balance: balance + projected })
+    }
+    return series
   }, [isCreditCard, cycleTxData, runningBalanceSeries, projectedRows, filterFrom, filterTo, dateLocale, usePrimary, displayCurrency, activeBill])
 
   const ccRunningTotal = useMemo((): TxWithBalance[] => {
@@ -857,16 +859,16 @@ export default function AccountDetailPage() {
     const ascending = [...cycleTxData.items].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
     )
+    const withBalance: TxWithBalance[] = []
     let running = 0
-    const withBalance = ascending.map((tx) => {
+    for (const tx of ascending) {
       if (!tx.is_ignored && tx.source !== 'opening_balance' && !tx.transfer_pair_id) {
         const amt = transactionAmountForBalance(tx, usePrimary, displayCurrency)
-        if (amt == null) return { ...tx, runningBalance: running }
-        if (tx.type === 'debit') running += amt
-        else if (tx.type === 'credit') running -= amt
+        if (tx.type === 'debit' && amt != null) running += amt
+        else if (tx.type === 'credit' && amt != null) running -= amt
       }
-      return { ...tx, runningBalance: running }
-    })
+      withBalance.push({ ...tx, runningBalance: running })
+    }
     return withBalance.reverse()
   }, [cycleTxData, isCreditCard, usePrimary, displayCurrency])
 
