@@ -1,7 +1,7 @@
 """add daily spending plans
 
-Revision ID: 102
-Revises: 101
+Revision ID: 114
+Revises: 113
 """
 
 import sqlalchemy as sa
@@ -9,8 +9,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "102"
-down_revision = "101"
+revision = "114"
+down_revision = "113"
 branch_labels = None
 depends_on = None
 
