@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { Puzzle, RefreshCw, Trash2 } from 'lucide-react'
+import { Plug, Puzzle, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -10,6 +10,7 @@ import { PluginPlanDialog, type PluginTarget } from '@/components/plugin-plan-di
 import { useWorkspace } from '@/contexts/workspace-context'
 import { plugins as pluginsApi } from '@/lib/api'
 import { localized } from '@/lib/localized-text'
+import { pluginPath } from '@/lib/plugin-format'
 
 /** Workspace settings section: installed plugins, and the way to the catalog. */
 export function PluginsSection() {
@@ -64,6 +65,12 @@ export function PluginsSection() {
                     {plugin.plugin_id} · v{plugin.version}
                   </p>
                 </div>
+                {plugin.integrations?.length > 0 && (
+                  <Button size="sm" variant="outline" onClick={() => navigate(`${pluginPath(plugin.plugin_id)}?tab=connections`)}>
+                    <Plug size={14} className="mr-1" />
+                    {t('plugins.detail.connections')}
+                  </Button>
+                )}
                 {canWrite && (
                   <Button
                     size="sm"

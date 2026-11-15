@@ -240,6 +240,33 @@ async def test_get_oauth_url_returns_consent_url(eb_keys):
 
 
 @pytest.mark.asyncio
+async def test_get_oauth_url_keeps_consent_under_the_bank_max(eb_keys):
+    """Trade Republic allows exactly 90 days of consent and EB rejects even a
+    second more, so asking for the bank's max must land safely below it."""
+    provider = EnableBankingProvider()
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        captured.update(_json.loads(request.read().decode()))
+        return httpx.Response(200, json={"url": "https://consent.enablebanking.com/abc"})
+
+    with _patch_client(provider, handler):
+        await provider.get_oauth_url(
+            "https://app.example.com/oauth/callback",
+            "state-xyz",
+            flow_params={
+                "country": "es",
+                "institution_name": "Trade Republic",
+                "valid_until_days": 90,
+            },
+        )
+    valid_until = datetime.fromisoformat(captured["access"]["valid_until"])
+    assert valid_until < datetime.now(timezone.utc) + timedelta(days=90) - timedelta(minutes=5)
+
+
+@pytest.mark.asyncio
 async def test_get_oauth_url_rejects_missing_flow_params(eb_keys):
     provider = EnableBankingProvider()
     with pytest.raises(ValueError):

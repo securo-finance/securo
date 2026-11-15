@@ -190,12 +190,16 @@ def test_a_condition_group_is_stored_the_way_the_rule_engine_reads_it():
         lambda m: m["contributes"]["category_groups"][0].update(name={"en": "Home", "pt-BR": "x" * 101}),
         lambda m: m["contributes"]["rules"][1].update(name="pet SHOP"),
         lambda m: m.update(version="1.0." + "1" * 30),
+        lambda m: m.update(workspaces=["family"]),
+        lambda m: m.update(workspaces=[]),
+        lambda m: m.update(workspaces=["business", "business"]),
     ],
     ids=[
         "code", "network", "unsupported contribution", "unknown category", "set_payee needs an id",
         "account id", "bad regex", "unknown group", "translation without en", "contributes nothing",
         "regex matching everything", "category name too long", "group translation too long",
         "duplicate rule names", "version too long",
+        "unknown workspace type", "no workspace type", "repeated workspace type",
     ],
 )
 def test_manifests_that_break_the_contract_are_rejected(change):
@@ -446,6 +450,45 @@ async def test_a_plugin_with_contributions_this_version_cannot_apply_is_listed_n
         await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
 
 
+def test_a_plugin_is_for_both_workspace_types_unless_it_says_otherwise():
+    assert parse_manifest(MANIFEST).workspaces == ["personal", "business"]
+    assert parse_manifest({**MANIFEST, "workspaces": ["business"]}).workspaces == ["business"]
+
+
+@pytest.mark.asyncio
+async def test_a_plugin_for_another_workspace_type_is_listed_not_installable(session: AsyncSession, ids, catalog):
+    workspace_id, _ = ids  # the test user's workspace is personal
+    catalog.manifests[V1]["workspaces"] = ["business"]
+    catalog.extra["workspaces"] = ["business"]
+    items = await service.catalog(session, workspace_id)
+    assert items[0].fits_workspace is False
+    with pytest.raises(service.PluginUnavailable, match="business workspaces"):
+        await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
+
+
+@pytest.mark.asyncio
+async def test_the_manifest_decides_the_workspace_type(session: AsyncSession, ids, catalog):
+    workspace_id, _ = ids
+    catalog.manifests[V1]["workspaces"] = ["business"]  # the index entry still says both
+    assert (await service.catalog(session, workspace_id))[0].fits_workspace is True
+    with pytest.raises(service.PluginUnavailable, match="business workspaces"):
+        await service.plan(session, workspace_id, PLUGIN, "install", lang="en")
+
+
+@pytest.mark.asyncio
+async def test_an_update_for_another_workspace_type_is_refused_and_removing_still_works(
+    session: AsyncSession, ids, catalog
+):
+    workspace_id, user_id = ids
+    await _install(session, workspace_id, user_id)
+    catalog.publish(V2, lambda m: m.update(workspaces=["business"]))
+    catalog.extra["workspaces"] = ["business"]
+    with pytest.raises(service.PluginUnavailable, match="business workspaces"):
+        await service.plan(session, workspace_id, PLUGIN, "update", lang="en")
+    await _install(session, workspace_id, user_id, action="remove")
+    assert await _of(session, Rule, workspace_id, source=PLUGIN) == []
+
+
 @pytest.mark.asyncio
 async def test_an_invalid_index_entry_is_skipped(session: AsyncSession, ids, catalog):
     workspace_id, _ = ids
@@ -497,6 +540,7 @@ async def test_api_catalog_plan_and_apply(client: AsyncClient, auth_headers: dic
     assert entries[0]["contributes"] == {"category_groups": 1, "categories": 2, "rules": 2}
     assert (entries[0]["owner"], entries[0]["stars"], entries[0]["stars_7d"]) == ("maria", 12, 3)
     assert entries[0]["compatible"] is True and entries[0]["supported"] is True
+    assert entries[0]["workspaces"] == ["personal", "business"] and entries[0]["fits_workspace"] is True
     assert entries[0]["installed_version"] is None
     assert "manifest_sha256" not in entries[0]
 

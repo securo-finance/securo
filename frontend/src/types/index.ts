@@ -6,6 +6,8 @@ export interface User {
   is_verified: boolean
   is_2fa_enabled: boolean
   preferences: UserPreferences
+  /** The theme picked from the library; null is Securo's own look. */
+  theme?: string | null
 }
 
 export interface AdminUser {
@@ -330,6 +332,9 @@ export interface Transaction {
   // available, cycle math otherwise). Setting it forces the tx into the
   // bill whose due_date matches.
   effective_bill_date: string | null
+  // Optional period-attribution override. The bank-provided `date` remains
+  // unchanged; null restores automatic cash/accrual bucketing.
+  reporting_date_override: string | null
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
@@ -656,12 +661,94 @@ export type LocalizedText = Record<string, string>
 export type PluginAction = 'install' | 'update' | 'remove'
 export type PluginItemKind = 'category_groups' | 'categories' | 'rules'
 
+/** One field of an integration's connection form. */
+export interface PluginField {
+  key: string
+  label: LocalizedText
+  /** Kept encrypted and never shown again. */
+  secret: boolean
+  required: boolean
+}
+
+/** A connection to an outside service that a plugin with code offers. */
+export interface PluginIntegration {
+  key: string
+  name: LocalizedText
+  description?: LocalizedText | null
+  auth: 'credentials' | 'oauth' | 'none'
+  fields: PluginField[]
+  /** How often Securo asks the plugin to sync; null for never. */
+  sync_minutes: number | null
+}
+
+/** A host a plugin with code may reach, and why. */
+export interface PluginHost {
+  host: string
+  purpose: LocalizedText
+}
+
+/** What a plugin with code may read or change in the workspace, and why. */
+export interface PluginScope {
+  scope: string
+  purpose: LocalizedText
+}
+
+/** A theme a plugin adds to the library: colors for Securo's tokens, nothing else. */
+export interface PluginTheme {
+  key: string
+  name: LocalizedText
+  light: Record<string, string>
+  dark: Record<string, string>
+  radius?: number | null
+  font?: 'sans' | 'mono' | 'serif' | null
+}
+
 export interface InstalledPlugin {
   plugin_id: string
   name: LocalizedText
   version: string
   commit: string
   installed_at: string
+  /** For plugins with code. */
+  integrations: PluginIntegration[]
+  network: PluginHost[]
+  api_scopes: PluginScope[]
+  /** For sign-in integrations: the address to register with the service. */
+  redirect_uri: string | null
+  /** Themes it adds to the library. */
+  themes?: PluginTheme[]
+}
+
+export type PluginConnectionStatus = 'pending' | 'active' | 'error' | 'needs_auth'
+
+/** A connection made through a plugin. Its secrets never come back. */
+export interface PluginConnection {
+  id: string
+  plugin_id: string
+  integration: string
+  name: string
+  status: PluginConnectionStatus
+  config: Record<string, string>
+  /** Secret fields that are set, by key. */
+  secret_fields: string[]
+  sync_minutes: number | null
+  last_sync_at: string | null
+  last_error: string | null
+  created_at: string
+}
+
+/** What the owner agrees to when adding, updating or removing a plugin with code. */
+export interface PluginCodeConsent {
+  network: PluginHost[]
+  api_scopes: PluginScope[]
+  integrations: { key: string; name: LocalizedText; auth: PluginIntegration['auth'] }[]
+  /** On an update: hosts and scopes the installed version didn't have. */
+  new_hosts: string[]
+  new_scopes: string[]
+  /** Connections in this workspace, removed along with the plugin. */
+  connections: number
+  /** An update to a version without code: its connections go, as on removal. */
+  drops_code?: boolean
 }
 
 export interface PluginCatalogEntry {
@@ -691,6 +778,10 @@ export interface PluginCatalogEntry {
   compatible: boolean
   /** This Securo can apply everything the plugin contributes. */
   supported: boolean
+  /** The workspace types it's meant for. */
+  workspaces: string[]
+  /** It's meant for this workspace's type. */
+  fits_workspace: boolean
   installed_version: string | null
   update_available: boolean
 }
@@ -720,6 +811,10 @@ export interface PluginContents {
     conditions: RuleConditionNode[]
     actions: { op: string; value?: string | boolean | null; category: PluginRef | null }[]
   }[]
+  integrations?: PluginIntegration[]
+  network?: PluginHost[]
+  api_scopes?: PluginScope[]
+  themes?: PluginTheme[]
 }
 
 /** One plugin opened from the catalog. */
@@ -755,6 +850,10 @@ export interface PluginPlan {
   existing: PluginItem[]
   unresolved: PluginItem[]
   default_categories: string[]
+  /** For plugins with code: what the owner agrees to. */
+  code?: PluginCodeConsent | null
+  /** Themes it adds to the library and takes out of it (members using one go back to Securo's own). */
+  themes?: { added: { key: string; name: LocalizedText }[]; removed: { key: string; name: LocalizedText }[] } | null
 }
 
 export interface RuleExportPayload {
@@ -1394,6 +1493,33 @@ export interface ReportResponse {
   meta: ReportMeta
   composition: ReportCompositionItem[]
   category_trend: CategoryTrendItem[]
+}
+
+// Income & expense statement: signed net amounts (credits positive, debits
+// negative) per category group, aligned with `CategoryStatementResponse.months`.
+export interface CategoryStatementRow {
+  key: string
+  kind: 'group' | 'category' | 'uncategorized'
+  label: string | null
+  icon: string | null
+  color: string | null
+  category_ids: string[]
+  txn_type: 'credit' | 'debit' | null
+  values: number[]
+  children: CategoryStatementRow[]
+}
+
+export interface CategoryStatementSection {
+  totals: number[]
+  rows: CategoryStatementRow[]
+}
+
+export interface CategoryStatementResponse {
+  currency: string
+  /** "YYYY-MM", newest first. */
+  months: string[]
+  income: CategoryStatementSection
+  expenses: CategoryStatementSection
 }
 
 // --- Invoices -------------------------------------------------------------

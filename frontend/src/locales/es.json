@@ -873,6 +873,7 @@
     "drillDownSettledTotal": "Liquidado · total resumido",
     "drillDownPendingTotal": "Pendiente de liquidación",
     "drillDownShownTotal": "Total mostrado",
+    "drillDownError": "No se pudieron cargar las transacciones. Inténtalo de nuevo.",
     "drillDownEmpty": "No se encontraron transacciones",
     "drillDownClose": "Cerrar",
     "accrualNote": "Las transacciones con tarjeta de crédito se agrupan por la fecha de vencimiento de la factura (modo acumulado).",
@@ -1000,6 +1001,7 @@
     "sortAsc": "Orden ascendente",
     "sortDesc": "Orden descendente",
     "syncedInfo": "Transacción sincronizada con el banco: el importe, la fecha y la cuenta no se pueden editar",
+    "syncedAmountDateError": "No se puede cambiar el importe ni la fecha de una transacción sincronizada",
     "uncategorized": "Sin categorizar",
     "selected": "seleccionado",
     "summaryCount": "{{count}} transacciones",
@@ -1058,7 +1060,7 @@
     "transferSameAccount": "La cuenta origen y destino deben ser diferentes",
     "transferDescription": "Descripción",
     "transferNotes": "Notas",
-    "transferInfo": "Esto es una transferencia — los cambios en descripción, fecha y notas se aplicarán a ambos lados",
+    "transferInfo": "Esto es una transferencia: los cambios en la descripción y las notas se aplican a ambos lados. Los cambios de importe y fecha también se aplican a la contrapartida manual (no sincronizada), nunca a la sincronizada.",
     "transferLinkedTo": "Vinculada a:",
     "transferOpenAccount": "Abrir la cuenta {{account}}",
     "transferTooltip": "Las transferencias están excluidas de los informes y totales del panel",
@@ -1067,6 +1069,11 @@
     "effectiveBillDate": "Fecha efectiva de la factura",
     "effectiveBillDateHint": "manual, anula el ciclo automático",
     "effectiveBillDatePlaceholder": "Vencimiento de la factura (opcional)",
+    "bankDate": "Fecha bancaria",
+    "reportingDate": "Fecha del informe",
+    "reportingDateHint": "Cambia los períodos de informe en toda la aplicación; la fecha bancaria no cambia.",
+    "reportingDatePlaceholder": "Elegir fecha (opcional)",
+    "clearReportingDate": "Restablecer fecha del informe",
     "linkAsTransfer": "Marcar como transferencia",
     "linkTransferTitle": "Marcar como transferencia",
     "linkTransferDescription": "Marcar estas dos transacciones como una sola transferencia entre cuentas. Se excluirán de los informes de gasto e ingreso.",
@@ -1309,6 +1316,7 @@
     "selectConnector": "Seleccionar conector",
     "selectConnectorDesc": "Elige un proveedor de conexión bancaria",
     "connectorNotConfigured": "Este conector requiere configuración. Configura las credenciales necesarias para activarlo.",
+    "connectorAskAdmin": "Este conector no está configurado. Pide a un administrador que lo configure.",
     "noConnectorsAvailable": "No hay conectores bancarios disponibles",
     "selectCountry": "Selecciona país",
     "selectCountryDesc": "Elige el país en el que está tu banco",
@@ -1436,6 +1444,9 @@
     "darkMode": "Modo oscuro"
   },
   "budgets": {
+    "spending": "Gastos",
+    "spendingDescription": "Incluye gastos pendientes y previstos.",
+    "spendingError": "No se pudieron cargar los gastos.",
     "title": "Presupuestos",
     "add": "Agregar presupuesto",
     "edit": "Editar presupuesto",
@@ -1452,6 +1463,17 @@
     "confirmDeleteRecurringDescription": "El presupuesto recurrente para \"{{name}}\" se eliminará permanentemente. Esta definición dejará de aplicarse en los meses posteriores. Las transacciones existentes no se ven afectadas. Esta acción no se puede deshacer.",
     "repeatEveryMonth": "Repetir cada mes",
     "recurringLabel": "Recurrente",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "Presupuestos de {{month}}",
+    "otherCategories": "Otras categorías",
+    "noCategories": "Aún no hay categorías",
+    "total": "Presupuesto {{amount}}",
+    "saved": "Presupuestos guardados",
+    "budgetFor": "Presupuesto de {{category}}",
+    "invalidAmount": "Introduce un importe válido de cero o más.",
+    "repeatEveryMonthFor": "Repetir el presupuesto de {{category}} cada mes",
+    "previousMonth": "Mes anterior",
+    "nextMonth": "Mes siguiente",
     "suggest": "Sugerir desde el historial",
     "suggestTitle": "Sugerir presupuestos",
     "suggestDescription": "Límites propuestos según tu gasto mensual medio de los últimos {{months}} meses.",
@@ -1461,7 +1483,9 @@
     "suggestCreate": "Crear presupuestos",
     "suggestCreated": "Se crearon {{count}} presupuestos",
     "suggestEmpty": "Sin historial de gastos en el período seleccionado que sugerir.",
-    "suggestError": "No se pudieron cargar las sugerencias. Inténtalo de nuevo en un momento."
+    "suggestError": "No se pudieron cargar las sugerencias. Inténtalo de nuevo en un momento.",
+    "hiddenCategory": "Oculta",
+    "average": "normalmente {{amount}}"
   },
   "goals": {
     "title": "Objetivos",
@@ -2000,6 +2024,11 @@
     "oversellWarning": "Solo tienes {{available}} unidades — no se admiten posiciones cortas.",
     "noPriceBadge": "sin precio",
     "noPriceWarning": "Añadido sin precio de compra — añade tus compras para seguir el precio medio y la rentabilidad.",
+    "exchangeRateSetupWarning": "Los tipos de cambio no están configurados. Los totales de activos en otra moneda pueden ser inexactos.",
+    "exchangeRateSetupLink": "Configurar tipos de cambio",
+    "exchangeRateSetupContactAdmin": "Pide a un administrador que configure los tipos de cambio.",
+    "exchangeRateSetupAction": "Configurar tipos de cambio de {{from}} a {{to}}",
+    "exchangeRateSetupAskAdmin": "La conversión de {{from}} a {{to}} necesita tipos de cambio. Pide a un administrador que los configure.",
     "noFxRate": "sin tipo de cambio",
     "noFxRateTitle": "No hay tipo de cambio disponible para esta moneda. El activo se muestra en su moneda original y queda fuera de los totales.",
     "fxRateMissing": "No hay tipo de cambio disponible para {{currencies}}. Esos activos se muestran en su moneda original y quedan fuera de los totales.",
@@ -2271,7 +2300,21 @@
     "range30d": "30D",
     "customRange": "Rango personalizado",
     "pickCustomRange": "Elige una fecha de inicio y fin",
-    "loadError": "No se pudo cargar el informe"
+    "loadError": "No se pudo cargar el informe",
+    "statement": "Estado de cuentas",
+    "statementIncomeTotal": "Ingresos totales",
+    "statementExpenseTotal": "Gastos totales",
+    "statementSettings": "Opciones del informe",
+    "statementSortBy": "Ordenar por",
+    "statementSortDefault": "Predeterminado",
+    "statementSortAsc": "Importe (menor primero)",
+    "statementSortDesc": "Importe (mayor primero)",
+    "statementColumns": "Número de columnas",
+    "statementShowChange": "Mostrar diferencia porcentual",
+    "statementViewTransactions": "Ver transacciones",
+    "statementUncategorizedIncome": "Ingresos sin categoría",
+    "statementUncategorizedExpense": "Gastos sin categoría",
+    "statementToggleGroup": "Mostrar categorías de {{name}}"
   },
   "payees": {
     "noPayeeFound": "No se encontró ningún beneficiario.",
@@ -3186,6 +3229,68 @@
       "recurringHint": "Cómo decidimos que un cargo es la cuenta que ya esperabas."
     }
   },
+  "providerSettings": {
+    "catalog": {
+      "connectionsTitle": "Conexiones bancarias",
+      "connectionsDescription": "Elige cómo se conectan las cuentas bancarias a esta instancia.",
+      "exchangeRatesTitle": "Tipos de cambio",
+      "exchangeRatesDescription": "Mantén actualizadas las conversiones de moneda.",
+      "configure": "Configurar",
+      "manage": "Administrar",
+      "manageProvider": "Administrar {{provider}}",
+      "configureProvider": "Configurar {{provider}}",
+      "needsAttention": "Requiere atención",
+      "credentialsTitle": "Credenciales",
+      "credentialsDescription": "Introduce solo los valores que quieras reemplazar. Las credenciales guardadas nunca se muestran.",
+      "securityNote": "Las credenciales se cifran al guardarlas.",
+      "saveChanges": "Guardar cambios",
+      "saving": "Guardando…",
+      "simplefinTitle": "Permitir conexiones SimpleFIN",
+      "simplefinDescription": "Permite que los usuarios conecten cuentas bancarias con su propio token de configuración de SimpleFIN.",
+      "notSet": "Sin configurar",
+      "savedValue": "Guardado de forma segura",
+      "environmentValue": "Definido por el entorno",
+      "replacementPlaceholder": "Introduce un valor nuevo para reemplazarlo",
+      "valuePlaceholder": "Introduce la credencial",
+      "empty": "No hay proveedores disponibles.",
+      "pluggyDescription": "Vincula cuentas mediante Pluggy Connect.",
+      "enableBankingDescription": "Conecta cuentas con autorización bancaria.",
+      "simplefinDescriptionShort": "Conecta cuentas mediante SimpleFIN Bridge.",
+      "openExchangeRatesDescription": "Tipos de cambio para conversiones de moneda.",
+      "otherTitle": "Otras integraciones",
+      "otherDescription": "Administra otros servicios de esta instancia.",
+      "setupGuide": "Guía de configuración",
+      "redirectTitle": "URL de redirección",
+      "redirectHint": "Añade esta URL a tu aplicación de Enable Banking antes de introducir sus credenciales.",
+      "copyRedirect": "Copiar URL de redirección",
+      "redirectCopied": "URL de redirección copiada",
+      "copyFailed": "No se pudo copiar. Selecciona la dirección y cópiala manualmente."
+    },
+    "title": "Configuración de proveedores",
+    "description": "Las credenciales guardadas tienen prioridad sobre los valores del entorno. Los cambios se aplican sin reiniciar. «Configurado» indica que los campos obligatorios están presentes; aquí no se verifican las credenciales.",
+    "configured": "Configurado",
+    "notConfigured": "Sin configurar",
+    "app": "Guardado en la aplicación",
+    "environment": "Del entorno",
+    "none": "Sin definir",
+    "invalid": "No se puede leer la credencial guardada. Sustitúyela o utiliza el valor del entorno.",
+    "reset": "Usar valor del entorno",
+    "remove": "Eliminar valor guardado",
+    "removeTitle": "¿Eliminar el valor guardado de {{field}}?",
+    "removeWithFallback": "Se eliminará el valor guardado. Las nuevas operaciones utilizarán el valor del entorno.",
+    "removeWithoutFallback": "No hay ningún valor en el entorno. Eliminar este valor desactivará el proveedor hasta que se configure de nuevo.",
+    "secretStorageUnavailable": "Define en el servidor un SECRET_KEY único de al menos 32 caracteres antes de guardar credenciales. La configuración existente del entorno seguirá funcionando.",
+    "secretPlaceholder": "Introduce un nuevo valor para sustituir la credencial guardada",
+    "simplefinHelp": "Activa SimpleFIN aquí y añade cada conexión con su propio token de configuración en la página de cuentas.",
+    "fields": {
+      "openexchangerates_app_id": "ID de aplicación",
+      "pluggy_client_id": "ID de cliente",
+      "pluggy_client_secret": "Secreto de cliente",
+      "enable_banking_app_id": "ID de aplicación",
+      "enable_banking_private_key": "Clave privada (PEM)",
+      "simplefin_enabled": "Activar SimpleFIN"
+    }
+  },
   "categoryLines": {
     "title": "Dividir por categoría",
     "start": "Dividir por categoría",
@@ -3241,7 +3346,7 @@
   },
   "plugins": {
     "title": "Plugins",
-    "hint": "Categorías y reglas hechas por la comunidad. Revisas cada cambio antes de aplicarlo, y nada sale de tu servidor.",
+    "hint": "Categorías, reglas, temas e integraciones hechos por la comunidad. Revisas cada cambio antes de aplicarlo.",
     "browse": "Ver catálogo",
     "noneInstalled": "No hay plugins instalados en este espacio de trabajo.",
     "remove": "Quitar plugin",
@@ -3294,7 +3399,10 @@
       "existing": "Omite {{items}} que ya tienes:",
       "unresolved": "Omite {{items}} cuya categoría no existe:",
       "defaults_one": "También crea {{count}} categoría predeterminada que usan sus reglas",
-      "defaults_other": "También crea {{count}} categorías predeterminadas que usan sus reglas"
+      "defaults_other": "También crea {{count}} categorías predeterminadas que usan sus reglas",
+      "themes": "Añade temas a la biblioteca: {{names}}",
+      "themesRemove": "Quita estos temas de la biblioteca: {{names}}",
+      "themeInUse": "Estás usando {{name}}: volverás al tema de Securo."
     },
     "page": {
       "section": "Catálogo",
@@ -3334,7 +3442,8 @@
         "type": "Tipo",
         "content": "Contenido",
         "language": "Idioma",
-        "status": "Estado"
+        "status": "Estado",
+        "workspace": "Espacio de trabajo"
       },
       "view": {
         "all": "Todos",
@@ -3358,7 +3467,9 @@
       "connectors": "Conectores bancarios",
       "parsers": "Lectores de archivos",
       "price_providers": "Proveedores de precios",
-      "agent_tools": "Herramientas del agente"
+      "agent_tools": "Herramientas del agente",
+      "integrations": "Integraciones",
+      "themes": "Temas"
     },
     "detail": {
       "overview": "Resumen",
@@ -3377,13 +3488,251 @@
       "previewNote": "Al instalar ves cada cambio antes de aplicar nada, y nada sale de tu servidor.",
       "notFound": "Este plugin no está en el catálogo.",
       "type": "Tipo",
-      "added": "Añadido"
+      "added": "Añadido",
+      "connections": "Conexiones",
+      "codeNote": "Instalar muestra a qué puede acceder y qué puede cambiar antes de que se ejecute nada.",
+      "workspaces": "Espacios de trabajo",
+      "anyWorkspace": "Personal y negocios"
     },
     "installedFailed": "No se pudieron cargar los plugins instalados.",
     "planRecordOnly": {
       "install": "Este espacio ya tiene todo lo que trae. Instalarlo lo registra, para que recibas sus actualizaciones.",
       "update": "Ningún elemento de este espacio cambia; la versión instalada pasa a {{version}}.",
       "remove": "No queda ninguno de sus elementos aquí; quitarlo solo lo saca de la lista."
+    },
+    "code": {
+      "runsCode": "Este plugin ejecuta código en tu servidor, aislado de Securo y de tus datos. Securo no revisa los plugins: instala solo código en el que confíes.",
+      "network": "Accede a",
+      "noNetwork": "Nada: ningún dato sale de tu servidor.",
+      "access": "Usa en este espacio de trabajo",
+      "noAccess": "Nada: no puede leer ni cambiar tus datos.",
+      "new": "nuevo",
+      "read": "Leer {{what}}",
+      "write": "Leer y cambiar {{what}}",
+      "ownerOnly": "Solo el propietario del espacio de trabajo puede añadir, actualizar o quitar un plugin que ejecuta código.",
+      "removeConnections": "Se eliminan sus conexiones en este espacio de trabajo ({{count}}), junto con sus claves guardadas y sus accesos.",
+      "removeNothing": "El código del plugin se borra de tu servidor cuando ningún espacio de trabajo lo usa.",
+      "auth": {
+        "credentials": "Clave o contraseña",
+        "oauth": "Iniciar sesión",
+        "none": "Sin configuración"
+      },
+      "resource": {
+        "accounts": "cuentas",
+        "connections": "conexiones bancarias",
+        "transactions": "transacciones",
+        "categories": "categorías",
+        "payees": "beneficiarios",
+        "rules": "reglas",
+        "budgets": "presupuestos",
+        "goals": "metas",
+        "recurring": "transacciones recurrentes",
+        "assets": "patrimonio",
+        "reports": "informes",
+        "invoices": "facturas"
+      },
+      "intro": {
+        "install": "Este plugin no trae datos. Revisa lo que puede hacer su código:",
+        "update": "Revisa lo que puede hacer la nueva versión:",
+        "remove": "Su código deja de ejecutarse en este espacio de trabajo."
+      }
+    },
+    "connections": {
+      "title": "Conexiones",
+      "hint": "Cada conexión une este espacio de trabajo a una cuenta del servicio. Las claves se guardan cifradas y solo se envían a este plugin.",
+      "add": "Añadir conexión",
+      "loadFailed": "No se pudieron cargar las conexiones.",
+      "none": "Aún no hay conexiones.",
+      "status": {
+        "pending": "En espera",
+        "active": "Conectada",
+        "error": "Con error",
+        "needs_auth": "Requiere iniciar sesión",
+        "keysRefused": "Clave rechazada"
+      },
+      "lastSync": "sincronizada {{when}}",
+      "neverSynced": "aún sin sincronizar",
+      "signIn": "Iniciar sesión",
+      "syncNow": "Sincronizar ahora",
+      "remove": "Quitar conexión",
+      "removeAria": "Quitar {{name}}",
+      "synced": "{{name}} sincronizada",
+      "syncFailed": "La sincronización falló.",
+      "addTitle": "Conectar {{name}}",
+      "addHint": "Completa con lo que te dio el servicio. Puedes quitar la conexión cuando quieras.",
+      "integration": "Conectar con",
+      "name": "Nombre",
+      "optional": "opcional",
+      "secretNote": "Los campos secretos se guardan cifrados y no se vuelven a mostrar.",
+      "redirectHint": "Registra esta dirección de retorno en el servicio antes de iniciar sesión:",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "continueSignIn": "Continuar al inicio de sesión",
+      "connect": "Conectar",
+      "added": "{{name}} conectada",
+      "removeTitle": "¿Quitar {{name}}?",
+      "removeHint": "Se borran sus claves guardadas y su acceso a este espacio de trabajo. Lo que ya trajo se queda.",
+      "removed": "{{name}} quitada",
+      "copyFailed": "No se pudo copiar. Selecciona la dirección y cópiala a mano."
+    },
+    "oauth": {
+      "title": "Terminando el inicio de sesión",
+      "wait": "Securo está guardando la conexión. Tarda un momento.",
+      "connected": "{{name}} conectada",
+      "failed": "No se pudo terminar el inicio de sesión. Inténtalo de nuevo.",
+      "missing": "El servicio no devolvió el inicio de sesión. Inténtalo de nuevo.",
+      "serviceError": "El servicio informó un error: {{message}}"
+    },
+    "onlyForBusiness": "Solo espacios de trabajo de negocios",
+    "onlyForPersonal": "Solo espacios de trabajo personales"
+  },
+  "library": {
+    "title": "Biblioteca",
+    "subtitle": "Elige qué muestran el panel y los informes, y el aspecto de Securo.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Informes",
+      "themes": "Temas"
+    },
+    "moreHint": {
+      "widgets": "Los plugins pueden añadir más widgets.",
+      "reports": "Los plugins pueden añadir más informes.",
+      "themes": "Los plugins pueden añadir más temas."
+    },
+    "browseCatalog": "Ver plugins",
+    "lastReport": "Mantén al menos un informe.",
+    "removeFrom": {
+      "dashboard": "Quitar {{name}} del panel",
+      "reports": "Quitar {{name}} de los informes"
+    },
+    "addTo": {
+      "dashboard": "Añadir {{name}} al panel",
+      "reports": "Añadir {{name}} a los informes"
+    },
+    "remove": "Quitar",
+    "add": "Añadir",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Océano",
+      "forest": "Bosque",
+      "sunset": "Atardecer",
+      "graphite": "Grafito",
+      "high-contrast": "Alto contraste",
+      "midnight": "Medianoche",
+      "terminal": "Terminal",
+      "nebula": "Nebulosa"
+    },
+    "saveFailed": "No se pudo guardar tu elección. Inténtalo de nuevo.",
+    "appearance": "Apariencia",
+    "emptyDashboard": "Tu panel está vacío",
+    "emptyDashboardHint": "Añade widgets de la biblioteca para elegir qué ves aquí.",
+    "addWidget": "Añadir widget",
+    "nothingToShow": "Nada que mostrar por ahora",
+    "editingDashboard": "Reordena, quita o añade widgets. Los cambios se guardan al momento.",
+    "restoreDefault": "Restaurar predeterminado",
+    "done": "Listo",
+    "customizeDashboard": "Personalizar panel",
+    "manageReports": "Elegir informes",
+    "manageReportsShort": "Gestionar",
+    "widget": {
+      "overview": "Saldo y mes",
+      "overviewHint": "Saldo disponible, ingresos, gastos, patrimonio neto y tasa de ahorro.",
+      "uncategorized": "Sin categoría",
+      "uncategorizedHint": "Transacciones que aún esperan una categoría.",
+      "spendingByCategoryHint": "A dónde fue el dinero del mes, frente a tus presupuestos.",
+      "balanceFlowHint": "Cómo se movió tu saldo este mes, comparado con otros.",
+      "goalsHint": "El progreso de tus metas.",
+      "transactionsHint": "Las transacciones del mes, en lista o calendario."
+    },
+    "report": {
+      "netWorthHint": "Cuentas, bienes y deudas a lo largo del tiempo.",
+      "incomeExpensesHint": "Entradas y salidas, por categoría.",
+      "cashFlowHint": "Hacia dónde va tu saldo.",
+      "moneyMapHint": "Cómo se reparten los ingresos entre gastos y ahorro.",
+      "statementHint": "Ingresos y gastos por categoría, mes a mes."
+    },
+    "dragToMove": "Arrastra para mover {{name}}",
+    "widthOf": "Ancho de {{name}}",
+    "widthLabel": "Ancho",
+    "width": {
+      "4": "Un tercio",
+      "6": "Mitad",
+      "8": "Dos tercios",
+      "12": "Ancho completo"
+    },
+    "needs": {
+      "assistant": "Requiere activar los agentes de IA.",
+      "invoices": "Disponible en espacios de trabajo de Negocios."
+    },
+    "fromPlugin": "De {{name}}"
+  },
+  "widgets": {
+    "budgets": "Presupuestos",
+    "viewAll": "Ver todo",
+    "spendingPace": {
+      "title": "Gastos del mes",
+      "hint": "Los gastos del mes frente a tus presupuestos, y lo que queda por día.",
+      "noBudget": "Define presupuestos para ver si tus gastos van al ritmo.",
+      "used": "{{percent}}% de los presupuestos usado",
+      "paceMark": "la marca es donde estaría un ritmo constante hoy",
+      "over": "{{amount}} por encima del presupuesto",
+      "perDay": "Gasta hasta {{amount}} al día para no pasarte",
+      "left": "{{amount}} restantes del presupuesto"
+    },
+    "distribution": {
+      "title": "Distribución de gastos",
+      "hint": "A dónde fue el dinero del mes, por categoría.",
+      "total": "Total gastado"
+    },
+    "monthResult": {
+      "title": "Resultado del mes",
+      "hint": "Ingresos menos gastos este mes, comparado con el mes pasado.",
+      "previous": "{{amount}} el mes pasado"
+    },
+    "upcoming": {
+      "title": "Próximos",
+      "hint": "Transacciones recurrentes que vencen en los próximos 30 días.",
+      "none": "Nada vence en los próximos {{days}} días."
+    },
+    "cards": {
+      "title": "Tarjetas de crédito",
+      "hint": "Lo que deben tus tarjetas, y el saldo que queda tras pagarlas.",
+      "none": "Ninguna tarjeta de crédito abierta.",
+      "afterPaying": "{{amount}} quedan tras pagarlas"
+    },
+    "assistant": {
+      "title": "Pregunta a tu agente",
+      "libraryHint": "Envía una pregunta a tu agente predeterminado sin salir del panel.",
+      "hint": "Pregunta lo que quieras sobre tu dinero. La respuesta se abre en el chat.",
+      "placeholder": "Pregunta a tu agente…",
+      "suggestion1": "¿Cuánto gasté este mes?",
+      "suggestion2": "¿Dónde puedo recortar?",
+      "suggestion3": "¿Qué pagos se acercan?",
+      "send": "Enviar",
+      "unavailable": "Activa los agentes de IA para preguntar desde aquí."
+    },
+    "loadFailed": "No se pudo cargar este widget.",
+    "receivables": {
+      "title": "Por cobrar",
+      "hint": "Lo que te deben los clientes, lo atrasado y lo que entró este mes."
+    },
+    "payables": {
+      "title": "Por pagar",
+      "hint": "Lo que debes a proveedores, lo atrasado y lo que pagaste este mes."
+    },
+    "aging": {
+      "title": "Cobros por antigüedad",
+      "hint": "Lo que deben los clientes, según cuánto se ha atrasado."
+    },
+    "invoicesDue": {
+      "title": "Facturas por vencer",
+      "hint": "Las próximas facturas que deben pagar los clientes.",
+      "none": "No hay facturas por vencer.",
+      "noClient": "Sin cliente"
+    },
+    "recurringRevenue": {
+      "title": "Ingresos recurrentes",
+      "hint": "Lo que aportan las facturas recurrentes cada mes, y lo perdido recientemente."
     }
   }
 }

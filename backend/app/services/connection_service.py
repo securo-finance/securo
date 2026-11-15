@@ -23,10 +23,13 @@ from app.models.bank_connection import BankConnection
 from app.models.account import Account
 from app.models.category import Category
 from app.models.institution import Institution
+from app.models.invoice import Invoice
+from app.models.invoice_schedule import InvoiceSchedule
 from app.models.goal import Goal
 from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
+from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
@@ -42,6 +45,7 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
 )
+from app.services.provider_settings import resolve_settings
 from app.services import oauth_state
 from app.services import admin_service
 from app.services import category_line_service, reconciliation_service, recurring_match_service
@@ -56,7 +60,11 @@ from app.services.asset_group_service import (
 )
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import merge_notes
-from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
+from app.services.rule_service import (
+    apply_rules_to_transaction,
+    preview_rules_for_transaction,
+    rule_payee_ids,
+)
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
@@ -304,23 +312,29 @@ async def enable_holding_trades(session: AsyncSession, workspace_id: uuid.UUID) 
     await session.commit()
 
 
-def _account_balance(acc_data: AccountData, deducted: set[str]) -> Decimal:
+def _account_balance(acc_data: AccountData, deducted: dict[str, Decimal]) -> Decimal:
     """Balance to store for a synced account.
 
     Some banks auto-apply idle cash to an investment and the provider reports
-    that money both inside the account balance and as a holding (issue #843).
-    The invested portion leaves the account balance only for the accounts in
-    ``deducted`` (see ``_auto_invested_deductions``); every other account
+    that money both inside the account balance and as a holding (issue #843);
+    a SimpleFIN brokerage reports its whole portfolio as the balance and the
+    positions as holdings (issue #343). The invested portion leaves the
+    account balance only for the accounts in ``deducted``, by the amount
+    recorded there (see ``_auto_invested_deductions``); every other account
     keeps the full reported balance so the money is never dropped from net
     worth.
     """
-    if acc_data.external_id not in deducted or acc_data.auto_invested_balance <= 0:
+    amount = deducted.get(acc_data.external_id)
+    if not amount or acc_data.auto_invested_balance <= 0:
         return acc_data.balance
-    return acc_data.balance - acc_data.auto_invested_balance
+    return acc_data.balance - amount
 
 
 async def _fetch_holdings(
-    connection: BankConnection, credentials: dict
+    session: AsyncSession,
+    connection: BankConnection,
+    credentials: dict,
+    provider: BankProvider | None = None,
 ) -> Optional[list[HoldingData]]:
     """Fetch the connection's holdings, or None when the provider call fails.
 
@@ -329,7 +343,9 @@ async def _fetch_holdings(
     sync), so they are logged and reported as None.
     """
     try:
-        provider = get_provider(connection.provider)
+        provider = provider or get_provider(
+            connection.provider, settings=await resolve_settings(session)
+        )
         return await provider.get_holdings(credentials)
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -475,12 +491,23 @@ def _mirrors_auto_invested(holding: _CountedHolding, acc: AccountData) -> bool:
 
 def _auto_invested_deductions(
     accounts_data: list[AccountData], counted: list[_CountedHolding]
-) -> set[str]:
-    """External ids of the accounts whose auto-invested portion is deducted.
+) -> dict[str, Decimal]:
+    """Amount deducted from each account's balance, by account external id.
 
     The deduction is per account: an account loses its auto-invested portion
     only when a counted holding is attributed to that same account, never
     because some other account of the connection has one.
+
+    With attributed holdings the amount is what stays counted for the
+    account (in its currency), capped at the reported portion. A holding the
+    user archived or sold is not counted, so its share stays in the balance
+    instead of vanishing from net worth; and the cash residual plus the
+    counted holdings add up to exactly the balance the provider reported.
+
+    Only positive, finite values are summed, the same rule the providers
+    apply to the reported portion. A negative position (a short, a written
+    option) then stays inside the cash residual, which is where the net
+    worth report counts it: the report leaves non-positive assets out.
 
     Holdings without an owning account (Pluggy's investments payload carries
     the item but no account id, so this is the normal case there) cannot say
@@ -499,15 +526,28 @@ def _auto_invested_deductions(
     the money twice but never drops it.
     """
     candidates = [acc for acc in accounts_data if acc.auto_invested_balance > 0]
-    owners = {h.account_external_id for h in counted}
-    deducted = {acc.external_id for acc in candidates if acc.external_id in owners}
+    deducted: dict[str, Decimal] = {}
+    for acc in candidates:
+        attributed = sum(
+            (
+                h.value
+                for h in counted
+                if h.account_external_id == acc.external_id
+                and h.currency == acc.currency
+                and h.value.is_finite()
+                and h.value > 0
+            ),
+            Decimal(0),
+        )
+        if attributed > 0:
+            deducted[acc.external_id] = min(attributed, acc.auto_invested_balance)
     if len(candidates) == 1:
         only = candidates[0]
-        if any(
+        if only.external_id not in deducted and any(
             h.account_external_id is None and _mirrors_auto_invested(h, only)
             for h in counted
         ):
-            deducted.add(only.external_id)
+            deducted[only.external_id] = only.auto_invested_balance
     return deducted
 
 
@@ -516,14 +556,14 @@ async def _resolve_auto_invested_deductions(
     connection: BankConnection,
     holdings: Optional[list[HoldingData]],
     accounts_data: list[AccountData],
-) -> set[str]:
-    """Accounts whose auto-invested portion leaves the stored balance.
+) -> dict[str, Decimal]:
+    """Amount each account's stored balance loses to counted holdings.
 
     Skips the database lookup when no account reports an auto-invested
     portion, which is every connection but the affected ones.
     """
     if not any(acc.auto_invested_balance > 0 for acc in accounts_data):
-        return set()
+        return {}
     counted = await _counted_holdings(session, connection, holdings, accounts_data)
     return _auto_invested_deductions(accounts_data, counted)
 
@@ -554,7 +594,7 @@ async def _sync_holdings(
     bank-account sync that just succeeded.
     """
     if holdings is None:
-        holdings = await _fetch_holdings(connection, credentials)
+        holdings = await _fetch_holdings(session, connection, credentials)
         if holdings is None:
             return
 
@@ -1461,8 +1501,9 @@ async def get_oauth_url(
     workspace_id: uuid.UUID,
     flow_params: Optional[dict] = None,
     reconnect_connection_id: Optional[uuid.UUID] = None,
+    session: AsyncSession | None = None,
 ) -> str:
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, settings=await resolve_settings(session))
     state = await oauth_state.store_state(
         {
             "user_id": str(user_id),
@@ -1486,7 +1527,7 @@ async def get_reauth_url(
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         raise ValueError("Connection not found")
-    provider = get_provider(connection.provider)
+    provider = get_provider(connection.provider, settings=await resolve_settings(session))
     state = await oauth_state.store_state(
         {
             "user_id": str(user_id),
@@ -1505,9 +1546,9 @@ async def get_reauth_url(
 
 
 async def list_provider_institutions(
-    provider_name: str, country: Optional[str] = None
+    provider_name: str, country: Optional[str] = None, session: AsyncSession | None = None
 ) -> dict:
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, settings=await resolve_settings(session))
     data = await provider.list_institutions(country)
     return {
         "countries": data.countries,
@@ -1528,9 +1569,10 @@ async def list_provider_institutions(
 
 
 async def create_connect_token(
-    provider_name: str, user_id: uuid.UUID, item_id: str | None = None
+    provider_name: str, user_id: uuid.UUID, item_id: str | None = None,
+    session: AsyncSession | None = None,
 ) -> dict:
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, settings=await resolve_settings(session))
     token_data = await provider.create_connect_token(str(user_id), item_id=item_id)
     return {"access_token": token_data.access_token}
 
@@ -1599,7 +1641,7 @@ async def handle_oauth_callback(
     if not provider_name:
         raise ValueError("OAuth callback missing provider")
 
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, settings=await resolve_settings(session))
     connection_data = await provider.handle_oauth_callback(code)
 
     if existing_reconnect:
@@ -1663,7 +1705,9 @@ async def handle_oauth_callback(
     # decided from the live synced assets already stored.
     holdings: Optional[list[HoldingData]] = None
     if _sync_assets_enabled(connection.settings):
-        holdings = await _fetch_holdings(connection, connection_data.credentials)
+        holdings = await _fetch_holdings(
+            session, connection, connection_data.credentials, provider
+        )
     auto_invested_deducted = await _resolve_auto_invested_deductions(
         session, connection, holdings, connection_data.accounts
     )
@@ -2448,11 +2492,139 @@ async def _find_synced_duplicate(
     return await _find_settled_eb_hold(session, account_id, txn_data, live_external_ids)
 
 
+def _relink_bill(
+    transaction: Transaction,
+    txn_data,
+    account: Account,
+    bills_by_external_id: dict[str, CreditCardBill],
+) -> None:
+    """Point a synced row at the bill the provider says it lands in.
+
+    A manual cycle override (effective_bill_date) wins: bill_id and
+    effective_date stay as the user set them.
+    """
+    if not txn_data.bill_external_id or transaction.effective_bill_date is not None:
+        return
+    bill = bills_by_external_id.get(txn_data.bill_external_id)
+    if bill is not None and transaction.bill_id != bill.id:
+        transaction.bill_id = bill.id
+        apply_effective_date(transaction, account, bill_due_date=bill.due_date)
+
+
+# Card purchases post within a bill cycle or two. A row still pending after
+# this is one the provider keeps pending, and counting it would widen every sync.
+_PENDING_REREAD_WINDOW = timedelta(days=90)
+
+# A row can post on an earlier date than it had while pending: Itaú dates a
+# scheduled installment on the bill's due day (the 15th) and the posted charge
+# on the day it lands in the bill, the 9th of the month before. The re-read
+# starts this far back so it still returns them; the widest gap seen is 37 days.
+_PENDING_REREAD_LOOKBACK = timedelta(days=45)
+
+# Rows older than the window can still post: a first sync may get the whole
+# history as PENDING and see it corrected later. Once per interval, a
+# connection's re-read also covers them. Some rows stay pending at the provider
+# for good, so this is not done on every sync.
+_PENDING_CATCH_UP_INTERVAL = timedelta(days=30)
+PENDING_CATCH_UP_KEY = "pending_catch_up_at"
+
+
+def _pending_catch_up_due(settings: Optional[dict], now: datetime) -> bool:
+    value = (settings or {}).get(PENDING_CATCH_UP_KEY)
+    if not isinstance(value, str):
+        return True
+    try:
+        last_catch_up = datetime.fromisoformat(value)
+    except ValueError:
+        return True
+    if last_catch_up.tzinfo is None:
+        return True
+    return now - last_catch_up >= _PENDING_CATCH_UP_INTERVAL
+
+
+async def _unseen_pending_dates(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    seen_external_ids: set[str],
+    *,
+    include_old: bool = False,
+) -> dict[str, date]:
+    """Pending synced rows the provider did not return, by external id.
+
+    Future-dated rows are skipped (scheduled installments are pending by
+    design), and so are ignored rows, which sync never changes. Rows older
+    than the window are only included with ``include_old`` (the catch-up).
+    """
+    today = app_today()
+    conditions = [
+        Transaction.account_id == account_id,
+        Transaction.source == "sync",
+        Transaction.status == "pending",
+        Transaction.is_ignored.is_(False),
+        Transaction.date <= today,
+    ]
+    if not include_old:
+        conditions.append(Transaction.date >= today - _PENDING_REREAD_WINDOW)
+    result = await session.execute(
+        select(Transaction.external_id, Transaction.date).where(*conditions)
+    )
+    return {
+        external_id: tx_date
+        for external_id, tx_date in result.all()
+        if external_id not in seen_external_ids
+    }
+
+
+async def _promote_settled_pending(
+    session: AsyncSession,
+    account: Account,
+    txn_data,
+    incoming_external_ids: set[str],
+    unseen_pending: dict[str, date],
+    bills_by_external_id: dict[str, CreditCardBill],
+) -> Optional[str]:
+    """Mark the pending row a posted `txn_data` settles as posted.
+
+    Only for the re-read by date, which also returns rows the user deleted or
+    merged long ago, so this never inserts or merges. The twin match has no
+    date bound, so only the rows the re-read was issued for are promoted.
+
+    Returns the promoted row's external id, or None when nothing changed.
+    """
+    existing = await session.execute(
+        select(Transaction)
+        .where(
+            Transaction.account_id == account.id,
+            Transaction.external_id == txn_data.external_id,
+        )
+        .order_by(Transaction.created_at)
+    )
+    transaction = existing.scalars().first()
+    rekeyed = transaction is None
+    if rekeyed:
+        transaction = await _find_synced_duplicate(
+            session, account.id, txn_data, incoming_external_ids
+        )
+    if (
+        transaction is None
+        or transaction.source != "sync"
+        or transaction.status != "pending"
+        or transaction.is_ignored
+        or transaction.external_id not in unseen_pending
+    ):
+        return None
+    transaction.status = "posted"
+    _merge_sync_metadata(transaction, txn_data, replace_external_id=rekeyed)
+    _relink_bill(transaction, txn_data, account, bills_by_external_id)
+    return transaction.external_id
+
+
 async def _cleanup_phantom_duplicates(
     session: AsyncSession,
     connection_id: uuid.UUID,
     live_external_ids: Optional[dict[uuid.UUID, set[str]]] = None,
     skip_account_ids: Optional[set[uuid.UUID]] = None,
+    promoted_external_ids: Optional[dict[uuid.UUID, set[str]]] = None,
 ) -> set[uuid.UUID]:
     """Delete synced transactions that are phantom duplicates.
 
@@ -2481,6 +2653,13 @@ async def _cleanup_phantom_duplicates(
     so a row from the missing part would look like a re-keyed twin of a
     returned sibling; they are left alone until a complete fetch.
 
+    ``promoted_external_ids`` holds the ids of the rows the pending re-read
+    promoted in this sync. The provider just reported them as posted, so they
+    are never phantoms. The other rows the re-read returns get no such pass:
+    a provider can keep a stale pending record next to the posted one it
+    re-keyed, and the posted twin the regular listing inserted is still a
+    phantom of the row already here.
+
     Returns the ids of the accounts that lost a row, so the caller can
     reconcile their opening balances against what is left.
     """
@@ -2506,6 +2685,7 @@ async def _cleanup_phantom_duplicates(
     touched: set[uuid.UUID] = set()
     for tx in unmatched:
         live = (live_external_ids or {}).get(tx.account_id)
+        promoted = (promoted_external_ids or {}).get(tx.account_id, set())
         date_lo = tx.date - timedelta(days=1)
         date_hi = tx.date + timedelta(days=1)
         sibling_result = await session.execute(
@@ -2521,6 +2701,8 @@ async def _cleanup_phantom_duplicates(
             )
         )
         for sibling in sibling_result.scalars():
+            if tx.external_id != sibling.external_id and tx.external_id in promoted:
+                continue
             if (
                 live is not None
                 and tx.external_id != sibling.external_id
@@ -2825,13 +3007,11 @@ async def sync_connection(
     # provider is a server misconfiguration, and the catch-all below would
     # wrongly stamp the (healthy) connection with status="error".
     try:
-        provider = get_provider(connection.provider)
+        provider = get_provider(connection.provider, settings=await resolve_settings(session))
     except ValueError as exc:
         raise ProviderNotConfiguredError(
-            f"Provider '{connection.provider}' is not configured in this process. "
-            "If connecting from the web app works but background sync fails, the "
-            "worker service is likely not loading the environment (.env) that "
-            "enables this provider."
+            f"Provider '{connection.provider}' is not configured. "
+            "Ask an administrator to configure it in Settings or through the environment."
         ) from exc
 
     try:
@@ -2882,6 +3062,16 @@ async def sync_connection(
         merged_count = 0
         live_txn_external_ids: dict[uuid.UUID, set[str]] = {}
         incomplete_fetch_account_ids: set[uuid.UUID] = set()
+        promoted_txn_external_ids: dict[uuid.UUID, set[str]] = {}
+        # `is True`: a provider without the property, or a test double, never
+        # re-reads by date.
+        rereads_by_date = getattr(provider, "rereads_by_date", False) is True
+        pending_catch_up = (
+            rereads_by_date
+            and connection.last_sync_at is not None
+            and _pending_catch_up_due(conn_settings, datetime.now(timezone.utc))
+        )
+        pending_catch_up_failed = False
         accounts_data = await provider.get_accounts(credentials)
         # A provider may note what it learned about the accounts in the
         # credentials (Enable Banking caches account details for background
@@ -2901,7 +3091,7 @@ async def sync_connection(
         # the deduction is decided from the live synced assets already stored.
         holdings: Optional[list[HoldingData]] = None
         if _sync_assets_enabled(conn_settings):
-            holdings = await _fetch_holdings(connection, credentials)
+            holdings = await _fetch_holdings(session, connection, credentials, provider)
         auto_invested_deducted = await _resolve_auto_invested_deductions(
             session, connection, holdings, accounts_data
         )
@@ -3057,10 +3247,11 @@ async def sync_connection(
             )
 
             # Fetch and sync transactions. The 14-day rewind is on Pluggy's
-            # `createdAt` (when their row was inserted), so it covers two
-            # cases: (1) PENDING transactions that POSTED since last sync,
-            # (2) any rows Pluggy ingested late but backdated. Dedup on
-            # external_id below handles overlap cheaply.
+            # `createdAt` (when their row was inserted), so it picks up rows
+            # Pluggy ingested late but backdated. A row keeps its `createdAt`
+            # when it posts, so pending rows older than the window are
+            # re-read by date after this loop. Dedup on external_id below
+            # handles overlap cheaply.
             since = (
                 connection.last_sync_at.date() - timedelta(days=14)
                 if connection.last_sync_at
@@ -3124,20 +3315,7 @@ async def sync_connection(
                     # first sync after the bill becomes available. Same
                     # branch covers re-bucketing if the bank moved a tx to
                     # a different bill (e.g. a chargeback).
-                    #
-                    # User's manual override wins: if effective_bill_date is
-                    # set, we don't touch bill_id or effective_date — the
-                    # user has explicitly overridden the auto bucketing.
-                    if (
-                        txn_data.bill_external_id
-                        and existing_tx.effective_bill_date is None
-                    ):
-                        bill = bills_by_external_id.get(txn_data.bill_external_id)
-                        if bill is not None and existing_tx.bill_id != bill.id:
-                            existing_tx.bill_id = bill.id
-                            apply_effective_date(
-                                existing_tx, account, bill_due_date=bill.due_date
-                            )
+                    _relink_bill(existing_tx, txn_data, account, bills_by_external_id)
                     continue
 
                 # Pass 2: Fuzzy match against manual transactions
@@ -3174,16 +3352,7 @@ async def sync_connection(
                             txn_data,
                             replace_external_id=synced_dup.source == "sync",
                         )
-                        if (
-                            txn_data.bill_external_id
-                            and synced_dup.effective_bill_date is None
-                        ):
-                            bill = bills_by_external_id.get(txn_data.bill_external_id)
-                            if bill is not None and synced_dup.bill_id != bill.id:
-                                synced_dup.bill_id = bill.id
-                                apply_effective_date(
-                                    synced_dup, account, bill_due_date=bill.due_date
-                                )
+                        _relink_bill(synced_dup, txn_data, account, bills_by_external_id)
                     elif synced_dup.external_id != txn_data.external_id:
                         # Same logical posted row re-keyed by a provider such
                         # as SimpleFIN. Keep the user's row and move its
@@ -3366,6 +3535,67 @@ async def sync_connection(
                     session, user_id, transaction, converted
                 )
 
+            # Re-read by date the pending rows the listing above no longer returns.
+            # The first sync lists everything, so it never needs this.
+            seen_ids = live_txn_external_ids[account.id]
+            unseen_pending = (
+                await _unseen_pending_dates(
+                    session, account.id, seen_ids, include_old=pending_catch_up
+                )
+                if since is not None and rereads_by_date
+                else {}
+            )
+            reread: list[TransactionData] = []
+            if unseen_pending:
+                try:
+                    reread = await provider.get_transactions_by_date(
+                        credentials,
+                        acc_data.external_id,
+                        min(unseen_pending.values()) - _PENDING_REREAD_LOOKBACK,
+                        payee_source=payee_source,
+                    )
+                except Exception as e:  # noqa: BLE001 - a failed re-read only delays promotion
+                    pending_catch_up_failed = True
+                    logger.warning(
+                        "Skipping pending re-read for account %s: %s", account.id, e
+                    )
+            if reread:
+                # Not added to live_txn_external_ids: a read from an arbitrary date can
+                # return one twin of a pair that straddles it, and the phantom cleanup
+                # would delete the other (#1038).
+                reread_ids = {t.external_id for t in reread}
+                promoted_ids = promoted_txn_external_ids.setdefault(account.id, set())
+                incoming_ids = seen_ids | reread_ids
+                # Skip rows already settled here: only a pending row, or a posted one
+                # under an id we don't have (re-keyed by the provider), can need an update.
+                known_ids = set(
+                    (
+                        await session.execute(
+                            select(Transaction.external_id).where(
+                                Transaction.account_id == account.id,
+                                Transaction.external_id.in_(reread_ids),
+                            )
+                        )
+                    ).scalars()
+                )
+                for txn_data in reread:
+                    if txn_data.status != "posted" or txn_data.external_id in seen_ids:
+                        continue
+                    if (
+                        txn_data.external_id in unseen_pending
+                        or txn_data.external_id not in known_ids
+                    ):
+                        promoted_id = await _promote_settled_pending(
+                            session,
+                            account,
+                            txn_data,
+                            incoming_ids,
+                            unseen_pending,
+                            bills_by_external_id,
+                        )
+                        if promoted_id:
+                            promoted_ids.add(promoted_id)
+
             # Reconcile the opening balance after any new transactions land so
             # SUM(all txs) keeps matching account.balance from the provider.
             await sync_opening_balance_for_connected_account(session, account)
@@ -3398,6 +3628,7 @@ async def sync_connection(
         # the real one, the orphan twin gets removed here.
         touched_account_ids = await _cleanup_phantom_duplicates(
             session, connection.id, live_txn_external_ids,
+            promoted_external_ids=promoted_txn_external_ids,
             skip_account_ids=incomplete_fetch_account_ids,
         )
 
@@ -3455,6 +3686,12 @@ async def sync_connection(
                 key: value
                 for key, value in current_settings.items()
                 if key != SYNC_BACKOFF_KEY
+            }
+        # A failed re-read leaves the catch-up due, so the next sync retries it.
+        if pending_catch_up and not pending_catch_up_failed:
+            connection.settings = {
+                **(connection.settings or {}),
+                PENDING_CATCH_UP_KEY: datetime.now(timezone.utc).isoformat(),
             }
         action_required_warnings = getattr(provider, "action_required_warnings", None)
         if isinstance(action_required_warnings, list) and action_required_warnings:
@@ -3549,6 +3786,31 @@ async def delete_connection(
             .distinct()
         )
     ).scalars().all()
+    # A payee a rule assigns stays, so the rule keeps working when the bank is
+    # connected again.
+    rules = (
+        await session.execute(select(Rule).where(Rule.workspace_id == workspace_id))
+    ).scalars().all()
+    affected_payee_ids = set(affected_payee_ids) - rule_payee_ids(rules)
+
+    # transfer_pair_id has no foreign key, so a transfer partner on an account
+    # outside this connection would stay paired with a deleted row.
+    pair_ids = (
+        select(Transaction.transfer_pair_id)
+        .join(Account, Account.id == Transaction.account_id)
+        .where(
+            Account.connection_id == connection.id,
+            Transaction.transfer_pair_id.isnot(None),
+        )
+    )
+    await session.execute(
+        update(Transaction)
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.transfer_pair_id.in_(pair_ids),
+        )
+        .values(transfer_pair_id=None)
+    )
 
     await session.delete(connection)
     await session.flush()
@@ -3563,12 +3825,20 @@ async def delete_connection(
                 PayeeMapping.id != Payee.id,
             )
         )
+        # Invoices and invoice schedules hold their payee under a RESTRICT
+        # foreign key, so deleting it would fail the whole disconnect.
+        has_invoices = exists(select(Invoice.id).where(Invoice.payee_id == Payee.id))
+        has_invoice_schedules = exists(
+            select(InvoiceSchedule.id).where(InvoiceSchedule.payee_id == Payee.id)
+        )
         await session.execute(
             delete(Payee).where(
                 Payee.workspace_id == workspace_id,
                 Payee.id.in_(affected_payee_ids),
                 ~has_transactions,
                 ~has_external_mappings,
+                ~has_invoices,
+                ~has_invoice_schedules,
             )
         )
 

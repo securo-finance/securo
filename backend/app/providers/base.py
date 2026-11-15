@@ -4,6 +4,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal, Optional
 
+from app.core.config import Settings
+
 
 # Outcome of asking a provider to pull fresh data from the underlying institution
 # before we read accounts/transactions.
@@ -91,7 +93,9 @@ class AccountData:
     institution_logo_url: Optional[str] = None
     # Part of `balance` that the bank has auto-applied to an investment which
     # the provider also reports as a holding (Pluggy
-    # `bankData.automaticallyInvestedBalance`, issue #843). Zero when unknown.
+    # `bankData.automaticallyInvestedBalance`, issue #843; a SimpleFIN
+    # brokerage, whose balance is the whole portfolio while its positions
+    # arrive as holdings, issue #343). Zero when unknown.
     # The sync subtracts it only when a live holding is counted for this
     # account (see connection_service._auto_invested_deductions), so the
     # money is counted once: as the asset when one mirrors it, as cash
@@ -303,6 +307,15 @@ class BankProvider(ABC):
     to enable bank account syncing via OAuth or widget flow.
     """
 
+    def __init__(self, settings: Settings | None = None):
+        self._configured_settings = settings
+
+    @property
+    def settings(self) -> Settings:
+        from app.core.config import get_settings
+
+        return self._configured_settings or get_settings()
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -313,6 +326,12 @@ class BankProvider(ABC):
     def flow_type(self) -> str:
         """Connection flow type: 'oauth' for redirect-based, 'widget' for embedded widget."""
         return "oauth"
+
+    @property
+    def rereads_by_date(self) -> bool:
+        """Whether ``get_transactions_by_date`` is implemented. The sync skips
+        the pending re-read, and the query behind it, when it is not."""
+        return False
 
     @property
     def redirect_uri(self) -> str:
@@ -387,6 +406,20 @@ class BankProvider(ABC):
     ) -> list[TransactionData]:
         """Fetch transactions for an account."""
         ...
+
+    async def get_transactions_by_date(
+        self, credentials: dict, account_external_id: str,
+        date_from: date, payee_source: str = "auto",
+    ) -> list[TransactionData]:
+        """Fetch every transaction dated on or after ``date_from``.
+
+        Providers whose ``get_transactions`` filters on something other than
+        the transaction date (Pluggy filters on ingestion time) override this
+        so the sync layer can re-read pending rows the incremental listing no
+        longer returns. The default returns nothing, which leaves the sync of
+        every other provider as it was.
+        """
+        return []
 
     @abstractmethod
     async def refresh_credentials(self, credentials: dict) -> dict:

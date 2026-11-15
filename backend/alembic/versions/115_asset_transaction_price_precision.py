@@ -5,8 +5,8 @@ quantities in the hundreds of thousands. Six decimals rounds those enough
 that quantity * price no longer reproduces the cash the broker reports,
 and performance uses that product as the money moved.
 
-Revision ID: 110
-Revises: 109
+Revision ID: 115
+Revises: 114
 """
 
 from typing import Sequence, Union
@@ -14,8 +14,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "110"
-down_revision: Union[str, None] = "109"
+revision: str = "115"
+down_revision: Union[str, None] = "114"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -49,6 +49,7 @@ const InvoiceDetailPage = lazy(() => import('@/pages/invoice-detail'))
 const SharedInvoicePage = lazy(() => import('@/pages/shared-invoice'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace-settings'))
 const OAuthCallbackPage = lazy(() => import('@/pages/oauth-callback'))
+const PluginOAuthCallbackPage = lazy(() => import('@/pages/plugin-oauth-callback'))
 const OIDCCallbackPage = lazy(() => import('@/pages/oidc-callback'))
 
 const queryClient = new QueryClient({
@@ -137,6 +138,7 @@ function App() {
                   <Route path="/invoices/:id" element={<ModuleRoute module="invoices"><InvoiceDetailPage /></ModuleRoute>} />
                   <Route path="/workspace/settings" element={<WorkspaceSettingsPage />} />
                   <Route path="/plugins" element={<PluginsRoute><PluginsPage /></PluginsRoute>} />
+                  <Route path="/plugins/oauth/callback" element={<PluginsRoute><PluginOAuthCallbackPage /></PluginsRoute>} />
                   <Route path="/plugins/:owner/:name" element={<PluginsRoute><PluginDetailPage /></PluginsRoute>} />
                   <Route path="/admin" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
                   <Route path="/agents" element={<AgentsRoute><AgentsListPage /></AgentsRoute>} />

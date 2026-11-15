@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
     # FX Rates
     openexchangerates_app_id: str = ""
-    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR,GEL"  # comma-separated list
+    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,PEN,UYU,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR,GEL"  # comma-separated list
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage
@@ -184,6 +184,14 @@ class Settings(BaseSettings):
     # never in the background; manifests come from the same host, checked
     # against the index's sha256. Point it at a mirror to host your own.
     plugins_index_url: str = "https://plugins.usesecuro.com/v1/index.json"
+    # Plugins with code run in the `securo-plugins` runner (Compose profile
+    # `plugins`), never in this process. Blank URL: no runner, so no plugin
+    # with code can be installed. The token is shared with the runner only.
+    plugins_runner_url: str = ""
+    plugins_runner_token: str = ""
+    # How a plugin's code reaches this API, over the internal network. Only
+    # plugins that declared `api_scopes` get a token to use it.
+    plugins_api_url: str = "http://backend:8000/api"
 
     @property
     def oidc_login_available(self) -> bool:

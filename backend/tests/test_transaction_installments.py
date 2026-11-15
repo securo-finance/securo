@@ -518,11 +518,71 @@ async def test_update_installment_amount_this_only_resyncs_series_total(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["manual", "sync"])
+@pytest.mark.parametrize("scope", ["this", "future", "all"])
+async def test_unchanged_installment_amount_preserves_series_total(
+    session: AsyncSession, test_user, test_workspace, installment_account, source, scope
+):
+    series_id = uuid.uuid4()
+    rows = [
+        _transaction(
+            installment_account,
+            workspace_id=test_workspace.id,
+            source=source,
+            installment_series_id=series_id,
+            installment_number=i,
+            total_installments=2,
+            installment_total_amount=Decimal("275.00"),
+            installment_purchase_date=date(2026, 1, 15),
+        )
+        for i in (1, 2)
+    ]
+    session.add_all(rows)
+    await session.commit()
+
+    await update_transaction(
+        session, rows[0].id, test_workspace.id, test_user.id,
+        TransactionUpdate(amount=Decimal("100.00"), notes="Updated", apply_to=scope),
+    )
+
+    for row in rows:
+        await session.refresh(row)
+        assert row.amount == Decimal("100.00")
+        assert row.installment_total_amount == Decimal("275.00")
+    assert rows[0].notes == "Updated"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["future", "all"])
+async def test_unchanged_anchor_amount_resyncs_when_sibling_changes(
+    session: AsyncSession, test_user, test_workspace, installment_account, scope
+):
+    series = await create_installment_series(
+        session, test_workspace.id, test_user.id,
+        _series_payload(installment_account, installments=2),
+    )
+    await update_transaction(
+        session, series[1].id, test_workspace.id, test_user.id,
+        TransactionUpdate(amount=Decimal("175.00")),
+    )
+
+    await update_transaction(
+        session, series[0].id, test_workspace.id, test_user.id,
+        TransactionUpdate(amount=Decimal("100.00"), apply_to=scope),
+    )
+
+    for row in series:
+        await session.refresh(row)
+        assert row.amount == Decimal("100.00")
+        assert row.installment_total_amount == Decimal("200.00")
+
+
+@pytest.mark.asyncio
 async def test_update_installment_amount_leaves_synced_total_alone(
     session: AsyncSession, test_user, test_workspace, installment_account
 ):
-    """Provider-synced rows have no series id: their total is the bank's
-    figure and must not be recomputed from our side."""
+    """Provider-synced installment amounts are provider-owned, including
+    series rows without an installment_series_id."""
     rows = [
         _transaction(
             installment_account,
@@ -538,15 +598,138 @@ async def test_update_installment_amount_leaves_synced_total_alone(
     session.add_all(rows)
     await session.commit()
 
-    await update_transaction(
-        session, rows[0].id, test_workspace.id, test_user.id,
-        TransactionUpdate(amount=Decimal("175.00")),
-    )
+    with pytest.raises(
+        ValueError, match="Cannot change amount or date on a synchronized transaction"
+    ):
+        await update_transaction(
+            session, rows[0].id, test_workspace.id, test_user.id,
+            TransactionUpdate(amount=Decimal("175.00")),
+        )
 
     for tx in rows:
         reloaded = await get_transaction(session, tx.id, test_workspace.id)
         assert reloaded is not None
         assert reloaded.installment_total_amount == Decimal("200.00")
+        assert reloaded.amount == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["all", "future"])
+async def test_scoped_installment_update_rejects_before_partial_mutation(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    installment_account,
+    scope,
+):
+    manual = _transaction(
+        installment_account,
+        workspace_id=test_workspace.id,
+        installment_number=1,
+        total_installments=2,
+        installment_total_amount=Decimal("200.00"),
+        installment_purchase_date=date(2026, 1, 15),
+    )
+    synced = _transaction(
+        installment_account,
+        workspace_id=test_workspace.id,
+        source="sync",
+        installment_number=2,
+        total_installments=2,
+        installment_total_amount=Decimal("200.00"),
+        installment_purchase_date=date(2026, 1, 15),
+    )
+    session.add_all([manual, synced])
+    await session.commit()
+
+    with pytest.raises(
+        ValueError, match="Cannot change amount or date on a synchronized transaction"
+    ):
+        await update_transaction(
+            session,
+            manual.id,
+            test_workspace.id,
+            test_user.id,
+            TransactionUpdate(
+                amount=Decimal("175.00"),
+                description="Must not partially land",
+                apply_to=scope,
+            ),
+        )
+
+    assert manual.amount == Decimal("100.00")
+    assert manual.description == "Parcela"
+    assert synced.amount == Decimal("100.00")
+    assert synced.description == "Parcela"
+    for row in (manual, synced):
+        await session.refresh(row)
+        assert row.amount == Decimal("100.00")
+        assert row.description == "Parcela"
+        assert row.installment_total_amount == Decimal("200.00")
+
+
+@pytest.mark.asyncio
+async def test_scoped_installment_update_accepts_equal_synced_amount(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    installment_account,
+):
+    manual = _transaction(
+        installment_account,
+        workspace_id=test_workspace.id,
+        installment_number=1,
+        total_installments=2,
+        installment_total_amount=Decimal("275.00"),
+        installment_purchase_date=date(2026, 1, 15),
+    )
+    synced = _transaction(
+        installment_account,
+        workspace_id=test_workspace.id,
+        source="sync",
+        amount=Decimal("175.00"),
+        amount_primary=Decimal("875.00"),
+        fx_rate_used=Decimal("5"),
+        effective_date=date(2026, 2, 20),
+        installment_number=2,
+        total_installments=2,
+        installment_total_amount=Decimal("275.00"),
+        installment_purchase_date=date(2026, 1, 15),
+    )
+    session.add_all([manual, synced])
+    await session.commit()
+    protected = (
+        synced.amount,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+        synced.installment_total_amount,
+    )
+
+    await update_transaction(
+        session,
+        manual.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(
+            amount=Decimal("175.00"),
+            description="Updated together",
+            apply_to="all",
+        ),
+    )
+    await session.refresh(manual)
+    await session.refresh(synced)
+
+    assert manual.amount == Decimal("175.00")
+    assert manual.description == "Updated together"
+    assert synced.description == "Updated together"
+    assert (
+        synced.amount,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+        synced.installment_total_amount,
+    ) == protected
 
 
 @pytest.mark.asyncio

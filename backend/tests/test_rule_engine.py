@@ -805,6 +805,36 @@ def test_an_empty_list_of_assignable_categories_blocks_every_categorization():
     assert tx.category_id is None
 
 
+def test_set_payee_skips_a_payee_that_no_longer_exists():
+    """A rule keeps its payee id inside a JSON action too, so it can outlive
+    the payee. Writing that id would fail the flush of the whole import or
+    sync batch (#1018)."""
+    gone = uuid.uuid4()
+    kept = uuid.uuid4()
+    actions = [
+        {"op": "set_payee", "value": str(gone)},
+        {"op": "append_notes", "value": "still applied"},
+    ]
+    tx = make_tx(payee_id=kept)
+
+    apply_rule_actions(
+        actions, tx, category_already_set=False, existing_payee_ids={uuid.uuid4()}
+    )
+
+    assert tx.payee_id == kept
+    assert tx.notes == "still applied"
+
+
+def test_set_payee_writes_a_payee_that_exists():
+    existing = uuid.uuid4()
+    actions = [{"op": "set_payee", "value": str(existing)}]
+    tx = make_tx()
+
+    apply_rule_actions(actions, tx, category_already_set=False, existing_payee_ids={existing})
+
+    assert tx.payee_id == existing
+
+
 # --- equals / not_equals on amounts (issue #850) ---
 #
 # Amounts are stored at a fixed scale (100.00) while the rule form submits
