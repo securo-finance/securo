@@ -79,15 +79,18 @@ jobs:
         if: steps.backend-changes.outputs.run_backend != 'false'
         run: uv run --no-sync ty check .
 
-      - name: Run tests with coverage
+      # Coverage runs only on main pushes: its tracer makes the suite ~2.5x
+      # slower, so pull requests get the fast run and main keeps the 60% gate.
+      - name: Run tests
         if: steps.backend-changes.outputs.run_backend != 'false'
         env:
           POSTGRES_TEST_URL: postgresql+asyncpg://securo_test:securo_test@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/securo_test
+          COVERAGE_ARGS: ${{ github.event_name == 'push' && '--cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=60' || '' }}
         run: |
-          uv run --no-sync pytest -n auto --dist loadfile --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=60 -ra -W error
+          uv run --no-sync pytest -n auto --dist loadfile $COVERAGE_ARGS -ra -W error
 
       - name: Upload coverage report
-        if: ${{ always() && steps.backend-changes.outputs.run_backend != 'false' }}
+        if: ${{ always() && github.event_name == 'push' && steps.backend-changes.outputs.run_backend != 'false' }}
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report
