@@ -500,9 +500,11 @@ async def test_a_plan_scoped_to_checking_still_pays_the_card_bills(
 ):
     await set_app_setting(session, "credit_card_accounting_mode", "accrual")
     purchase_due, _ = await _card_world(session, test_user.id, test_workspace.id)
-    checking = await session.scalar(
-        select(Account).where(Account.workspace_id == test_workspace.id, Account.name == "Checking")
-    )
+    checking = (
+        await session.scalars(
+            select(Account).where(Account.workspace_id == test_workspace.id, Account.name == "Checking")
+        )
+    ).one()
     await save_plan(
         session,
         test_workspace.id,
