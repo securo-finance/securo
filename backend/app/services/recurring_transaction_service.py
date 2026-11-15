@@ -262,6 +262,7 @@ async def pay_recurring_transaction(
             recurring=recurring,
         )
     else:
+        old_amount = placeholder.amount
         placeholder.source = "manual"
         placeholder.status = "posted"
         placeholder.account_id = account_id
@@ -270,6 +271,8 @@ async def pay_recurring_transaction(
         placeholder.description = description
         placeholder.date = pay_date
         apply_effective_date(placeholder, account)
+        # A split placeholder keeps its parts in proportion to the paid amount.
+        await category_line_service.rescale_lines(session, placeholder, old_amount)
         await stamp_primary_amount(session, user_id, placeholder)
         await session.commit()
         transaction = placeholder

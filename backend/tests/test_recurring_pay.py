@@ -236,3 +236,65 @@ async def test_pay_now_removes_the_occurrence_from_the_projection(
     )
     assert [p.date for p in march] == []
     assert [str(p.date) for p in april] == ["2030-04-15"]
+
+
+def _split_70_30(test_categories) -> dict:
+    food, home, _ = test_categories
+    return {
+        "share_type": "percent",
+        "lines": [
+            {"category_id": str(home.id), "share_pct": 70},
+            {"category_id": str(food.id), "share_pct": 30},
+        ],
+    }
+
+
+def _line_amounts(body) -> list[tuple[str, str]]:
+    return [(line["category_id"], str(line["amount"])) for line in body["category_lines"]]
+
+
+@pytest.mark.asyncio
+async def test_pay_now_hands_a_split_bill_its_parts(
+    client, auth_headers, session, test_user, test_workspace, account, test_categories
+):
+    food, home, _ = test_categories
+    bill = await _make_bill(
+        session, test_workspace, test_user, account,
+        category_lines=_split_70_30(test_categories),
+    )
+
+    response = await client.post(
+        f"/api/recurring-transactions/{bill.id}/pay",
+        json={"date": "2025-01-05", "amount": "200.00"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()["transaction"]
+    assert body["category_id"] is None
+    assert body["has_category_lines"] is True
+    assert _line_amounts(body) == [(str(home.id), "140.00"), (str(food.id), "60.00")]
+
+
+@pytest.mark.asyncio
+async def test_pay_now_resizes_a_split_placeholder_to_the_paid_amount(
+    client, auth_headers, session, test_user, test_workspace, test_account, test_categories
+):
+    food, home, _ = test_categories
+    bill = await _make_bill(
+        session, test_workspace, test_user, test_account,
+        category_lines=_split_70_30(test_categories),
+    )
+    bill_id = bill.id
+    assert await generate_pending(session, test_user.id, up_to=date(2025, 1, 10)) == 1
+
+    response = await client.post(
+        f"/api/recurring-transactions/{bill_id}/pay",
+        json={"date": "2025-01-11", "amount": "200.00"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()["transaction"]
+    assert body["status"] == "posted"
+    assert _line_amounts(body) == [(str(home.id), "140.00"), (str(food.id), "60.00")]

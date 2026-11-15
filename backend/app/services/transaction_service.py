@@ -1003,6 +1003,8 @@ async def create_transaction(
         # Past the pending occurrence rather than the payment date: a payment
         # dated well after an overdue occurrence still settles only that one.
         recurring_match_service.advance_past(recurring, recurring.next_occurrence)
+        # A split bill hands its parts to an uncategorized payment.
+        await category_line_service.apply_template_split(session, transaction, recurring)
 
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
