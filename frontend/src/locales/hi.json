@@ -1511,7 +1511,15 @@
     "trackingWallet": "वॉलेट",
     "wallet": "वॉलेट",
     "selectWallet": "वॉलेट चुनें",
-    "walletHint": "चयनित वॉलेट की सभी संपत्तियों के कुल मूल्य से इस लक्ष्य को ट्रैक करें।"
+    "walletHint": "चयनित वॉलेट की सभी संपत्तियों के कुल मूल्य से इस लक्ष्य को ट्रैक करें।",
+    "targetMode": "लक्ष्य",
+    "targetModeFixed": "निश्चित राशि",
+    "targetModeSalary": "शुद्ध वेतन का गुणज",
+    "salarySource": "शुद्ध वेतन",
+    "salaryMonths": "कितने महीनों का वेतन",
+    "salaryNoIncome": "वेतन के आधार पर लक्ष्य तय करने के लिए पहले एक आवर्ती आय जोड़ें।",
+    "salaryTarget": "लक्ष्य: {{months}} महीनों का शुद्ध वेतन",
+    "salaryCoverage": "{{months}} में से {{covered}} महीनों का वेतन"
   },
   "recurring": {
     "title": "आवर्ती लेन-देन",

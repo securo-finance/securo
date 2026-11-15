@@ -1512,7 +1512,15 @@
     "trackingWallet": "Portfolio",
     "wallet": "Portfolio",
     "selectWallet": "Portfolio auswählen",
-    "walletHint": "Verfolge dieses Ziel mit dem Gesamtwert aller Vermögenswerte im ausgewählten Portfolio."
+    "walletHint": "Verfolge dieses Ziel mit dem Gesamtwert aller Vermögenswerte im ausgewählten Portfolio.",
+    "targetMode": "Ziel",
+    "targetModeFixed": "Fester Betrag",
+    "targetModeSalary": "Vielfaches des Nettogehalts",
+    "salarySource": "Nettogehalt",
+    "salaryMonths": "Wie viele Gehälter",
+    "salaryNoIncome": "Lege zuerst eine wiederkehrende Einnahme an, um dieses Ziel am Gehalt auszurichten.",
+    "salaryTarget": "Ziel: {{months}} Nettogehälter",
+    "salaryCoverage": "{{covered}} von {{months}} Gehältern"
   },
   "recurring": {
     "title": "Wiederkehrende Transaktionen",

@@ -1513,7 +1513,15 @@
     "trackingWallet": "Portemonnee",
     "wallet": "Portemonnee",
     "selectWallet": "Portemonnee selecteren",
-    "walletHint": "Volg dit doel met de gecombineerde waarde van alle activa in de geselecteerde portemonnee."
+    "walletHint": "Volg dit doel met de gecombineerde waarde van alle activa in de geselecteerde portemonnee.",
+    "targetMode": "Doel",
+    "targetModeFixed": "Vast bedrag",
+    "targetModeSalary": "Veelvoud van het nettosalaris",
+    "salarySource": "Nettosalaris",
+    "salaryMonths": "Hoeveel salarissen",
+    "salaryNoIncome": "Voeg eerst een terugkerende inkomst toe om dit doel op salaris te baseren.",
+    "salaryTarget": "Doel: {{months}} nettosalarissen",
+    "salaryCoverage": "{{covered}} van {{months}} salarissen"
   },
   "recurring": {
     "title": "Terugkerende transacties",

@@ -1603,7 +1603,15 @@
     "trackingWallet": "Peněženka",
     "wallet": "Peněženka",
     "selectWallet": "Vybrat peněženku",
-    "walletHint": "Sledujte tento cíl podle celkové hodnoty všech aktiv ve vybrané peněžence."
+    "walletHint": "Sledujte tento cíl podle celkové hodnoty všech aktiv ve vybrané peněžence.",
+    "targetMode": "Cíl",
+    "targetModeFixed": "Pevná částka",
+    "targetModeSalary": "Násobek čisté mzdy",
+    "salarySource": "Čistá mzda",
+    "salaryMonths": "Kolik mezd",
+    "salaryNoIncome": "Nejprve přidejte opakovaný příjem, aby šlo cíl odvodit od mzdy.",
+    "salaryTarget": "Cíl: čistá mzda × {{months}}",
+    "salaryCoverage": "{{covered}} z {{months}} mezd"
   },
   "recurring": {
     "title": "Opakované transakce",

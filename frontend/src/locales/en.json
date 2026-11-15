@@ -1511,7 +1511,15 @@
     "trackingWallet": "Wallet",
     "wallet": "Wallet",
     "selectWallet": "Select wallet",
-    "walletHint": "Track this goal with the combined value of all assets in the selected wallet."
+    "walletHint": "Track this goal with the combined value of all assets in the selected wallet.",
+    "targetMode": "Target",
+    "targetModeFixed": "Fixed amount",
+    "targetModeSalary": "Multiple of net salary",
+    "salarySource": "Net salary",
+    "salaryMonths": "How many salaries",
+    "salaryNoIncome": "Add a recurring income first to size this goal by salary.",
+    "salaryTarget": "Target: {{months}} net salaries",
+    "salaryCoverage": "{{covered}} of {{months}} salaries"
   },
   "recurring": {
     "title": "Recurring Transactions",
