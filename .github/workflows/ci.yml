@@ -169,6 +169,10 @@ jobs:
         if: steps.frontend-changes.outputs.run_frontend != 'false'
         run: npm run lint -- --max-warnings=0
 
+      - name: Format check
+        if: steps.frontend-changes.outputs.run_frontend != 'false'
+        run: npm run format:check
+
       - name: Type check & Build
         if: steps.frontend-changes.outputs.run_frontend != 'false'
         run: npm run build

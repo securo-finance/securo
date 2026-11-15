@@ -8,6 +8,8 @@
     "build": "npm run typecheck && vite build",
     "typecheck": "node ./node_modules/@typescript/native/bin/tsc -b",
     "lint": "oxlint .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
     "preview": "vite preview",
     "dev:docker": "node ../scripts/dev-frontend.mjs",
     "test": "vitest run"
@@ -58,6 +60,7 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitejs/plugin-react": "6.1.1",
     "jsdom": "30.0.1",
+    "oxfmt": "0.78.0",
     "oxlint": "1.93.0",
     "shadcn": "^4.0.0",
     "tailwindcss": "4.3.3",
