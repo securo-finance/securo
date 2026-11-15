@@ -266,6 +266,7 @@ async def test_calendar_spends_the_allowance_only_for_the_plan_accounts(
     today = app_today()
     account = await _checking(session, test_user.id, test_workspace.id)
     savings = await _checking(session, test_user.id, test_workspace.id, "Savings", "savings")
+    card = await _checking(session, test_user.id, test_workspace.id, "Card", "credit_card")
     session.add_all([
         _tx(test_user.id, test_workspace.id, account.id, 1000, "credit", today - timedelta(days=40),
             source="opening_balance"),
@@ -285,6 +286,9 @@ async def test_calendar_spends_the_allowance_only_for_the_plan_accounts(
     savings_only = await get_transaction_calendar(
         session, test_workspace.id, test_user.id, month=today, account_ids=[savings.id]
     )
+    with_card = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=today, account_ids=[account.id, card.id]
+    )
 
     planned_today = next(d for d in planned.days if d.date == today)
     assert planned_today.projected_allowance == 10.0
@@ -293,6 +297,8 @@ async def test_calendar_spends_the_allowance_only_for_the_plan_accounts(
     assert planned_yesterday.projected_allowance == 0.0
     assert planned_yesterday.ending_balance == 1000.0
     assert planned.spending_plan_applied is True
+    # The plan always includes the cards, shown or not.
+    assert with_card.spending_plan_applied is True
     assert savings_only.spending_plan_applied is False
     assert all(d.projected_allowance == 0.0 for d in savings_only.days)
 
@@ -486,3 +492,30 @@ async def test_a_bill_payment_moves_the_money_on_the_day_it_is_paid(
 
     # Both legs land today: the payment nets to zero across the plan's accounts.
     assert {p.balance for p in timeline.points} == {1000.0}
+
+
+@pytest.mark.asyncio
+async def test_a_plan_scoped_to_checking_still_pays_the_card_bills(
+    session: AsyncSession, test_user, test_workspace
+):
+    await set_app_setting(session, "credit_card_accounting_mode", "accrual")
+    purchase_due, _ = await _card_world(session, test_user.id, test_workspace.id)
+    checking = await session.scalar(
+        select(Account).where(Account.workspace_id == test_workspace.id, Account.name == "Checking")
+    )
+    await save_plan(
+        session,
+        test_workspace.id,
+        SpendingPlanWrite(
+            daily_allowance=Decimal("0"),
+            balance_floor=Decimal("0"),
+            account_ids=[checking.id],
+            horizon_months=3,
+        ),
+    )
+
+    timeline = await get_timeline(session, test_workspace.id, test_user.id)
+    balance = {p.date: p.balance for p in timeline.points}
+
+    assert timeline.today.spent == 500.0
+    assert balance[purchase_due] <= 2500.0

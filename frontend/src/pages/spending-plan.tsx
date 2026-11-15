@@ -708,7 +708,7 @@ function PlanEditorDialog({ plan, onClose }: { plan: SpendingPlan | null; onClos
   })
 
   const planAccounts = useMemo(
-    () => sortAccountsByDisplayName((accountsList ?? []).filter((a) => !a.is_closed)),
+    () => sortAccountsByDisplayName((accountsList ?? []).filter((a) => !a.is_closed && a.type !== 'credit_card')),
     [accountsList],
   )
   const isChosen = (id: string, type: string) => (draft.account_ids === null ? type !== 'loan' : draft.account_ids.includes(id))

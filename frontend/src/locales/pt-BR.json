@@ -3204,7 +3204,7 @@
     "horizon": "Planejar para",
     "months": "{{count}} meses",
     "accounts": "Contas",
-    "accountsHint": "O dinheiro de onde o plano gasta. Empréstimos ficam de fora por padrão.",
+    "accountsHint": "O dinheiro de onde o plano gasta. Empréstimos ficam de fora por padrão. Cartões de crédito sempre contam: as compras consomem o valor do dia e a fatura sai na data de vencimento.",
     "saved": "Plano salvo",
     "remove": "Remover plano",
     "removed": "Plano removido",

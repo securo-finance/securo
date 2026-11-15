@@ -3200,7 +3200,7 @@
     "horizon": "Plan ahead for",
     "months": "{{count}} months",
     "accounts": "Accounts",
-    "accountsHint": "The money the plan spends from. Loans stay out by default.",
+    "accountsHint": "The money the plan spends from. Loans stay out by default. Credit cards always count: purchases use up the day's allowance and the bill leaves on its due date.",
     "saved": "Plan saved",
     "remove": "Remove plan",
     "removed": "Plan removed",

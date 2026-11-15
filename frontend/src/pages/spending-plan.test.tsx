@@ -45,6 +45,7 @@ describe('SpendingPlanPage', () => {
     api.accounts.list.mockResolvedValue([
       { id: 'checking', name: 'Checking', display_name: null, type: 'checking', is_closed: false },
       { id: 'car', name: 'Car loan', display_name: null, type: 'loan', is_closed: false },
+      { id: 'card', name: 'Visa', display_name: null, type: 'credit_card', is_closed: false },
     ])
     api.spendingPlan.timeline.mockResolvedValue(timeline())
   })
@@ -79,6 +80,17 @@ describe('SpendingPlanPage', () => {
       account_ids: null,
       horizon_months: 18,
     })
+  })
+
+  it('leaves credit cards out of the account checklist because they always count', async () => {
+    api.spendingPlan.get.mockResolvedValue(null)
+
+    const { user } = renderWithProviders(<SpendingPlanPage />)
+    await user.click(await screen.findByRole('button', { name: 'Create plan' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(await within(dialog).findByText('Checking')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Visa')).not.toBeInTheDocument()
   })
 
   it('simulates a purchase and compares it with the plan', async () => {

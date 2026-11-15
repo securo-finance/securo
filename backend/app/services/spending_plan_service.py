@@ -80,16 +80,23 @@ async def plan_account_ids(
     session: AsyncSession, workspace_id: uuid.UUID, plan: Optional[SpendingPlan]
 ) -> list[uuid.UUID]:
     """The open accounts the plan spends from. By default every one but loans:
-    a loan is long-term debt, not money the allowance can spend."""
+    a loan is long-term debt, not money the allowance can spend.
+
+    Every credit card is always in: a card is a deferred way of spending the
+    plan's money, so its purchases count as spent and its bills leave on the
+    due date even when the plan names only the account that pays them.
+    """
     chosen = (
-        [uuid.UUID(account_id) for account_id in plan.account_ids]
+        {uuid.UUID(account_id) for account_id in plan.account_ids}
         if plan is not None and plan.account_ids is not None
         else None
     )
-    if chosen is not None and not chosen:
-        return []
-    accounts = await _get_open_accounts(session, workspace_id, chosen)
-    return [account.id for account in accounts if chosen is not None or account.type != "loan"]
+    return [
+        account.id
+        for account in await _get_open_accounts(session, workspace_id)
+        if account.type == "credit_card"
+        or (account.type != "loan" if chosen is None else account.id in chosen)
+    ]
 
 
 async def variable_spent_on(
@@ -161,15 +168,22 @@ async def calendar_allowance(
     or None when the plan does not apply to the calendar's accounts.
 
     The allowance spends the plan's accounts, so the calendar applies it only
-    when it shows all accounts or exactly the plan's accounts. A calendar
-    filtered to, say, the savings account must not spend groceries from it.
+    when it shows all accounts or exactly the plan's accounts, with or without
+    the credit cards the plan always includes. A calendar filtered to, say,
+    the savings account must not spend groceries from it.
     """
     plan = await get_plan(session, workspace_id)
     if plan is None:
         return None
     scope = await plan_account_ids(session, workspace_id, plan)
-    if account_ids is not None and set(account_ids) != set(scope):
-        return None
+    if account_ids is not None:
+        cards = {
+            account.id
+            for account in await _get_open_accounts(session, workspace_id, scope)
+            if account.type == "credit_card"
+        }
+        if set(account_ids) not in (set(scope), set(scope) - cards):
+            return None
     spent = await variable_spent_on(session, workspace_id, primary_currency, app_today(), scope)
     return float(plan.daily_allowance), spent
 
