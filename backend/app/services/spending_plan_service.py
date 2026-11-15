@@ -108,8 +108,9 @@ async def variable_spent_on(
 ) -> float:
     """Variable spending recorded on ``day``: the expenses the allowance pays for.
 
-    Bills linked to a recurring are fixed costs the projection already holds;
-    transfers, ignored rows and refunds are not spending.
+    Bills linked to a recurring and installments after the first are fixed
+    costs the projection already holds; transfers, ignored rows and refunds
+    are not spending.
     """
     if account_ids is not None and not account_ids:
         return 0.0
@@ -125,6 +126,7 @@ async def variable_spent_on(
             Transaction.is_ignored == False,  # noqa: E712
             Transaction.exclude_from_pnl == False,  # noqa: E712
             Transaction.recurring_transaction_id.is_(None),
+            or_(Transaction.installment_number.is_(None), Transaction.installment_number <= 1),
             Transaction.transfer_pair_id.is_(None),
             Transaction.source.notin_(["transfer", "opening_balance"]),
             or_(

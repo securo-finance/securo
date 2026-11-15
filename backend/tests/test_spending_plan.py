@@ -519,3 +519,26 @@ async def test_a_plan_scoped_to_checking_still_pays_the_card_bills(
 
     assert timeline.today.spent == 500.0
     assert balance[purchase_due] <= 2500.0
+
+
+@pytest.mark.asyncio
+async def test_a_later_installment_of_an_old_purchase_is_not_todays_variable_spending(
+    session: AsyncSession, test_user, test_workspace
+):
+    today = app_today()
+    checking = await _checking(session, test_user.id, test_workspace.id)
+    session.add_all([
+        _tx(test_user.id, test_workspace.id, checking.id, 3000, "credit", today - timedelta(days=1),
+            source="opening_balance"),
+        # Parcel 3/10 was a planned cost in the projection already.
+        _tx(test_user.id, test_workspace.id, checking.id, 40, "debit", today, description="TV 3/10",
+            installment_number=3, total_installments=10, installment_total_amount=Decimal("400"),
+            installment_purchase_date=today - timedelta(days=62)),
+    ])
+    await session.commit()
+    await save_plan(session, test_workspace.id, SpendingPlanWrite(daily_allowance=Decimal("50")))
+
+    timeline = await get_timeline(session, test_workspace.id, test_user.id)
+
+    assert timeline.today.spent == 0.0
+    assert timeline.today.remaining == 50.0
