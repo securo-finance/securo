@@ -1544,7 +1544,15 @@
     "trackingWallet": "Portafoglio",
     "wallet": "Portafoglio",
     "selectWallet": "Seleziona portafoglio",
-    "walletHint": "Monitora questo obiettivo con il valore combinato di tutti gli asset nel portafoglio selezionato."
+    "walletHint": "Monitora questo obiettivo con il valore combinato di tutti gli asset nel portafoglio selezionato.",
+    "targetMode": "Obiettivo",
+    "targetModeFixed": "Importo fisso",
+    "targetModeSalary": "Multiplo dello stipendio netto",
+    "salarySource": "Stipendio netto",
+    "salaryMonths": "Quanti stipendi",
+    "salaryNoIncome": "Aggiungi prima un'entrata ricorrente per dimensionare questo obiettivo sullo stipendio.",
+    "salaryTarget": "Obiettivo: {{months}} stipendi netti",
+    "salaryCoverage": "{{covered}} su {{months}} stipendi"
   },
   "recurring": {
     "title": "Transazioni ricorrenti",

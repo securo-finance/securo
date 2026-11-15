@@ -1540,7 +1540,15 @@
     "trackingWallet": "ウォレット",
     "wallet": "ウォレット",
     "selectWallet": "ウォレットを選択",
-    "walletHint": "選択したウォレット内の全資産の合計値でこの目標を追跡します。"
+    "walletHint": "選択したウォレット内の全資産の合計値でこの目標を追跡します。",
+    "targetMode": "目標",
+    "targetModeFixed": "固定額",
+    "targetModeSalary": "手取り給与の倍数",
+    "salarySource": "手取り給与",
+    "salaryMonths": "何か月分",
+    "salaryNoIncome": "給与で目標を決めるには、先に定期収入を登録してください。",
+    "salaryTarget": "目標: 手取り給与 {{months}} か月分",
+    "salaryCoverage": "{{months}} か月分のうち {{covered}}"
   },
   "recurring": {
     "title": "定期取引",

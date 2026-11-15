@@ -1544,7 +1544,15 @@
     "trackingWallet": "Portefeuille",
     "wallet": "Portefeuille",
     "selectWallet": "Sélectionner un portefeuille",
-    "walletHint": "Suivez cet objectif avec la valeur combinée de tous les actifs du portefeuille sélectionné."
+    "walletHint": "Suivez cet objectif avec la valeur combinée de tous les actifs du portefeuille sélectionné.",
+    "targetMode": "Objectif",
+    "targetModeFixed": "Montant fixe",
+    "targetModeSalary": "Multiple du salaire net",
+    "salarySource": "Salaire net",
+    "salaryMonths": "Combien de salaires",
+    "salaryNoIncome": "Ajoutez d'abord un revenu récurrent pour dimensionner cet objectif sur le salaire.",
+    "salaryTarget": "Objectif : {{months}} salaires nets",
+    "salaryCoverage": "{{covered}} sur {{months}} salaires"
   },
   "recurring": {
     "title": "Transactions récurrentes",

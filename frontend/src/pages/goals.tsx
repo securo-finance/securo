@@ -3,7 +3,7 @@ import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { goals as goalsApi, accounts as accountsApi, assets as assetsApi, assetGroups as assetGroupsApi, currencies as currenciesApi } from '@/lib/api'
+import { goals as goalsApi, accounts as accountsApi, assets as assetsApi, assetGroups as assetGroupsApi, currencies as currenciesApi, recurring as recurringApi } from '@/lib/api'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
@@ -21,7 +21,7 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from '@/components/ui/popover'
-import type { Account, Asset, AssetGroup, Goal } from '@/types'
+import type { Account, Asset, AssetGroup, Goal, SalaryMonths } from '@/types'
 import {
   Pencil, Trash2, Plus, Pause, Play, CheckCircle2, Archive, ArchiveRestore, Target,
   ChevronDown,
@@ -33,6 +33,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
+import { SALARY_MONTHS, defaultSalary, monthlySalary, salaryCandidates, salaryTarget } from '@/lib/goal-salary'
 
 function getGoalIcon(iconKey: string | null) {
   return (iconKey && ICON_MAP[iconKey]) || Target
@@ -74,6 +75,36 @@ function LinkedResourceSelect<T extends { id: string }>({
         ))}
       </select>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  )
+}
+
+function Segmented<T extends string | number>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (value: T) => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            value === option.value
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   )
 }
@@ -150,6 +181,9 @@ export default function GoalsPage() {
   const [selectedIcon, setSelectedIcon] = useState('target')
   const [selectedColor, setSelectedColor] = useState('#3B82F6')
   const [targetDate, setTargetDate] = useState('')
+  const [targetMode, setTargetMode] = useState<'fixed' | 'salary'>('fixed')
+  const [salaryRecurringId, setSalaryRecurringId] = useState<string | null>(null)
+  const [salaryMonths, setSalaryMonths] = useState<SalaryMonths>(6)
 
   const { data: goalsList } = useQuery({
     queryKey: ['goals', statusFilter],
@@ -170,6 +204,13 @@ export default function GoalsPage() {
     queryKey: ['asset-groups'],
     queryFn: assetGroupsApi.list,
   })
+
+  const { data: recurringList } = useQuery({
+    queryKey: ['recurring'],
+    queryFn: recurringApi.list,
+  })
+  const salaryOptions = salaryCandidates(recurringList ?? [], editing?.salary_recurring_id ?? null)
+  const selectedSalary = salaryOptions.find((r) => r.id === salaryRecurringId) ?? defaultSalary(salaryOptions)
 
   const { data: supportedCurrencies } = useQuery({
     queryKey: ['currencies'],
@@ -222,6 +263,9 @@ export default function GoalsPage() {
     setSelectedIcon('target')
     setSelectedColor('#3B82F6')
     setTargetDate('')
+    setTargetMode('fixed')
+    setSalaryRecurringId(null)
+    setSalaryMonths(6)
     setDialogOpen(true)
   }
 
@@ -231,6 +275,9 @@ export default function GoalsPage() {
     setSelectedIcon(goal.icon ?? 'target')
     setSelectedColor(goal.color ?? '#3B82F6')
     setTargetDate(goal.target_date ?? '')
+    setTargetMode(goal.salary_recurring_id ? 'salary' : 'fixed')
+    setSalaryRecurringId(goal.salary_recurring_id)
+    setSalaryMonths(goal.salary_months ?? 6)
     setDialogOpen(true)
   }
 
@@ -336,6 +383,20 @@ export default function GoalsPage() {
                         {!goal.target_date && (
                           <span>{t('goals.noTargetDate')}</span>
                         )}
+                        {goal.salary_months != null && goal.monthly_salary != null && (
+                          <>
+                            <span>{t('goals.salaryTarget', { months: goal.salary_months })}</span>
+                            <span className="tabular-nums">
+                              {t('goals.salaryCoverage', {
+                                covered: (Number(goal.current_amount) / Number(goal.monthly_salary)).toLocaleString(locale, {
+                                  minimumFractionDigits: 1,
+                                  maximumFractionDigits: 1,
+                                }),
+                                months: goal.salary_months,
+                              })}
+                            </span>
+                          </>
+                        )}
                         {goal.account_name && (
                           <span>{goal.account_name}</span>
                         )}
@@ -433,10 +494,21 @@ export default function GoalsPage() {
             onSubmit={(e) => {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
+              const target = targetMode === 'salary' && selectedSalary
+                ? {
+                    salary_recurring_id: selectedSalary.id,
+                    salary_months: salaryMonths,
+                    currency: selectedSalary.currency,
+                  }
+                : {
+                    salary_recurring_id: null,
+                    salary_months: null,
+                    target_amount: parseFloat(formData.get('target_amount') as string),
+                    currency: (formData.get('currency') as string) || userCurrency,
+                  }
               const payload: Record<string, unknown> = {
                 name: formData.get('name') as string,
-                target_amount: parseFloat(formData.get('target_amount') as string),
-                currency: (formData.get('currency') as string) || userCurrency,
+                ...target,
                 tracking_type: formData.get('tracking_type') as string,
                 target_date: targetDate || null,
                 icon: selectedIcon || null,
@@ -470,32 +542,83 @@ export default function GoalsPage() {
               <Input name="name" defaultValue={editing?.name ?? ''} required />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t('goals.targetAmount')}</Label>
-                <Input
-                  name="target_amount"
-                  type="number"
-                  step="0.01"
-                  defaultValue={editing?.target_amount?.toString() ?? ''}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t('goals.currency')}</Label>
-                <select
-                  name="currency"
-                  defaultValue={editing?.currency ?? userCurrency}
-                  className={SELECT_CLASS}
-                >
-                  {supportedCurrencies?.map((c: { code: string; name: string; flag: string }) => (
-                    <option key={c.code} value={c.code}>
-                      {c.flag} {c.name} ({c.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="space-y-2">
+              <Label>{t('goals.targetMode')}</Label>
+              <Segmented
+                value={targetMode}
+                onChange={setTargetMode}
+                options={[
+                  { value: 'fixed', label: t('goals.targetModeFixed') },
+                  { value: 'salary', label: t('goals.targetModeSalary') },
+                ]}
+              />
             </div>
+
+            {targetMode === 'salary' ? (
+              selectedSalary ? (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="goal-salary-source">{t('goals.salarySource')}</Label>
+                    <select
+                      id="goal-salary-source"
+                      value={selectedSalary.id}
+                      onChange={(e) => setSalaryRecurringId(e.target.value)}
+                      className={SELECT_CLASS}
+                    >
+                      {salaryOptions.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.description} · {mask(formatCurrency(Number(r.amount), r.currency, locale))}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('goals.salaryMonths')}</Label>
+                    <Segmented
+                      value={salaryMonths}
+                      onChange={setSalaryMonths}
+                      options={SALARY_MONTHS.map((m) => ({ value: m, label: String(m) }))}
+                    />
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      {salaryMonths} × {mask(formatCurrency(monthlySalary(selectedSalary), selectedSalary.currency, locale))}
+                      {' = '}
+                      <span className="font-semibold text-foreground">
+                        {mask(formatCurrency(salaryTarget(selectedSalary, salaryMonths), selectedSalary.currency, locale))}
+                      </span>
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">{t('goals.salaryNoIncome')}</p>
+              )
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('goals.targetAmount')}</Label>
+                  <Input
+                    name="target_amount"
+                    type="number"
+                    step="0.01"
+                    defaultValue={editing?.target_amount?.toString() ?? ''}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('goals.currency')}</Label>
+                  <select
+                    name="currency"
+                    defaultValue={editing?.currency ?? userCurrency}
+                    className={SELECT_CLASS}
+                  >
+                    {supportedCurrencies?.map((c: { code: string; name: string; flag: string }) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.name} ({c.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>{t('goals.targetDate')}</Label>
@@ -620,7 +743,10 @@ export default function GoalsPage() {
               <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); setEditing(null) }}>
                 {t('common.cancel')}
               </Button>
-              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+              <Button
+                type="submit"
+                disabled={createMutation.isPending || updateMutation.isPending || (targetMode === 'salary' && !selectedSalary)}
+              >
                 {t('common.save')}
               </Button>
             </DialogFooter>

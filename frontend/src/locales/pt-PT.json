@@ -1544,7 +1544,15 @@
     "trackingWallet": "Carteira",
     "wallet": "Carteira",
     "selectWallet": "Selecionar carteira",
-    "walletHint": "Acompanha este objetivo pelo valor combinado de todos os ativos na carteira selecionada."
+    "walletHint": "Acompanha este objetivo pelo valor combinado de todos os ativos na carteira selecionada.",
+    "targetMode": "Meta",
+    "targetModeFixed": "Valor fixo",
+    "targetModeSalary": "Múltiplo do salário líquido",
+    "salarySource": "Salário líquido",
+    "salaryMonths": "Quantos salários",
+    "salaryNoIncome": "Registe primeiro uma receita recorrente para dimensionar esta meta pelo salário.",
+    "salaryTarget": "Meta: {{months}} salários líquidos",
+    "salaryCoverage": "{{covered}} de {{months}} salários"
   },
   "recurring": {
     "title": "Transações Recorrentes",

@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,8 @@ from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.goal import Goal
+from app.models.invoice_schedule import PERIODS_PER_YEAR
+from app.models.recurring_transaction import RecurringTransaction
 from app.models.user import User
 from app.schemas.goal import GoalCreate, GoalRead, GoalSummary, GoalUpdate
 from app.services.asset_service import _compute_current_value, _get_latest_value, get_asset_values_at
@@ -125,6 +127,7 @@ async def _ensure_goal_link_scope(
         (data.account_id, Account, "Linked account not found"),
         (data.asset_id, Asset, "Linked asset not found"),
         (data.asset_group_id, AssetGroup, "Linked wallet not found"),
+        (data.salary_recurring_id, RecurringTransaction, "Linked salary not found"),
     ]
     for item_id, model, error in checks:
         if not item_id:
@@ -132,6 +135,35 @@ async def _ensure_goal_link_scope(
         item = await session.get(model, item_id)
         if not item or item.workspace_id != workspace_id:
             raise ValueError(error)
+        if isinstance(item, RecurringTransaction) and item.type != "credit":
+            raise ValueError("Linked salary must be a recurring income")
+
+
+class ResolvedTarget(NamedTuple):
+    amount: Decimal
+    monthly_salary: Optional[Decimal] = None
+    salary_name: Optional[str] = None
+
+
+async def _resolve_target(session: AsyncSession, goal: Goal) -> ResolvedTarget:
+    """The goal's target in its own currency, following the linked salary.
+
+    Without a salary link, or once the linked recurring is gone, the stored
+    target_amount is the target.
+    """
+    if not goal.salary_recurring_id or not goal.salary_months:
+        return ResolvedTarget(goal.target_amount)
+    recurring = await session.get(RecurringTransaction, goal.salary_recurring_id)
+    if not recurring:
+        return ResolvedTarget(goal.target_amount)
+    monthly = recurring.amount * PERIODS_PER_YEAR[recurring.frequency] / 12
+    monthly = await _convert_amount(session, monthly, recurring.currency, goal.currency)
+    cent = Decimal("0.01")
+    return ResolvedTarget(
+        amount=(monthly * goal.salary_months).quantize(cent),
+        monthly_salary=monthly.quantize(cent),
+        salary_name=recurring.description,
+    )
 
 
 def _clear_inactive_tracking_links(goal: Goal) -> None:
@@ -208,17 +240,24 @@ def _compute_on_track(
     return "behind"
 
 
+def _compute_progress(goal: Goal, current: Decimal, target: Decimal) -> dict:
+    goal_start = goal.created_at.date() if goal.created_at else None
+    return {
+        "percentage": _compute_percentage(current, target),
+        "monthly_contribution": _compute_monthly_contribution(current, target, goal.target_date),
+        "on_track": _compute_on_track(
+            current, target, goal.target_date, goal_start, goal.initial_amount
+        ),
+    }
+
+
 async def _enrich_goal(
     session: AsyncSession, goal: Goal, user_id: uuid.UUID
 ) -> GoalRead:
     """Enrich a goal with computed fields."""
     current = await _resolve_current_amount(session, goal, user_id)
-    percentage = _compute_percentage(current, goal.target_amount)
-    monthly = _compute_monthly_contribution(current, goal.target_amount, goal.target_date)
-    goal_start = goal.created_at.date() if goal.created_at else None
-    on_track = _compute_on_track(
-        current, goal.target_amount, goal.target_date, goal_start, goal.initial_amount
-    )
+    target = await _resolve_target(session, goal)
+    progress = _compute_progress(goal, current, target.amount)
 
     account_name = await _linked_name(session, Account, goal.account_id)
     asset_name = await _linked_name(session, Asset, goal.asset_id)
@@ -229,14 +268,14 @@ async def _enrich_goal(
     target_primary = None
     current_primary = None
     if goal.currency != primary_currency:
-        target_primary = await _convert_amount(session, goal.target_amount, goal.currency, primary_currency)
+        target_primary = await _convert_amount(session, target.amount, goal.currency, primary_currency)
         current_primary = await _convert_amount(session, current, goal.currency, primary_currency)
 
     return GoalRead(
         id=goal.id,
         user_id=goal.user_id,
         name=goal.name,
-        target_amount=goal.target_amount,
+        target_amount=target.amount,
         current_amount=current,
         currency=goal.currency,
         target_amount_primary=target_primary,
@@ -253,12 +292,14 @@ async def _enrich_goal(
         metadata_json=goal.metadata_json,
         created_at=goal.created_at,
         updated_at=goal.updated_at,
-        percentage=percentage,
-        monthly_contribution=monthly,
-        on_track=on_track,
+        **progress,
         account_name=account_name,
         asset_name=asset_name,
         asset_group_name=asset_group_name,
+        salary_recurring_id=goal.salary_recurring_id,
+        salary_months=goal.salary_months,
+        salary_name=target.salary_name,
+        monthly_salary=target.monthly_salary,
     )
 
 
@@ -302,7 +343,7 @@ async def create_goal(
         user_id=user_id,
         workspace_id=workspace_id,
         name=data.name,
-        target_amount=data.target_amount,
+        target_amount=data.target_amount or Decimal("0"),
         current_amount=data.current_amount,
         currency=data.currency,
         target_date=data.target_date,
@@ -313,8 +354,11 @@ async def create_goal(
         icon=data.icon,
         color=data.color,
         metadata_json=data.metadata_json,
+        salary_recurring_id=data.salary_recurring_id,
+        salary_months=data.salary_months,
     )
     _clear_inactive_tracking_links(goal)
+    goal.target_amount = (await _resolve_target(session, goal)).amount
     # Capture the starting balance so on-track logic measures progress from baseline
     initial = await _resolve_current_amount(session, goal, user_id)
     goal.initial_amount = initial
@@ -341,6 +385,7 @@ async def update_goal(
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(goal, field, value)
     _clear_inactive_tracking_links(goal)
+    goal.target_amount = (await _resolve_target(session, goal)).amount
     await session.commit()
     await session.refresh(goal)
     return await _enrich_goal(session, goal, user_id)
@@ -377,24 +422,19 @@ async def get_goal_summary(
     summaries = []
     for goal in goals:
         current = await _resolve_current_amount(session, goal, user_id)
-        percentage = _compute_percentage(current, goal.target_amount)
-        monthly = _compute_monthly_contribution(current, goal.target_amount, goal.target_date)
-        goal_start = goal.created_at.date() if goal.created_at else None
-        on_track = _compute_on_track(
-            current, goal.target_amount, goal.target_date, goal_start, goal.initial_amount
-        )
+        target = await _resolve_target(session, goal)
         summaries.append(GoalSummary(
             id=goal.id,
             name=goal.name,
-            target_amount=goal.target_amount,
+            target_amount=target.amount,
             current_amount=current,
             currency=goal.currency,
             target_date=goal.target_date,
             status=goal.status,
             icon=goal.icon,
             color=goal.color,
-            percentage=percentage,
-            monthly_contribution=monthly,
-            on_track=on_track,
+            **_compute_progress(goal, current, target.amount),
+            salary_months=goal.salary_months,
+            monthly_salary=target.monthly_salary,
         ))
     return summaries

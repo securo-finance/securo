@@ -1599,7 +1599,15 @@
     "trackingWallet": "Portfel",
     "wallet": "Portfel",
     "selectWallet": "Wybierz portfel",
-    "walletHint": "Śledź ten cel według łącznej wartości wszystkich aktywów w wybranym portfelu."
+    "walletHint": "Śledź ten cel według łącznej wartości wszystkich aktywów w wybranym portfelu.",
+    "targetMode": "Cel",
+    "targetModeFixed": "Stała kwota",
+    "targetModeSalary": "Wielokrotność pensji netto",
+    "salarySource": "Pensja netto",
+    "salaryMonths": "Ile pensji",
+    "salaryNoIncome": "Najpierw dodaj cykliczny przychód, aby ustalić cel na podstawie pensji.",
+    "salaryTarget": "Cel: pensja netto × {{months}}",
+    "salaryCoverage": "{{covered}} z {{months}} pensji"
   },
   "recurring": {
     "title": "Transakcje cykliczne",

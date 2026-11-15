@@ -1540,7 +1540,15 @@
     "trackingWallet": "Tárca",
     "wallet": "Tárca",
     "selectWallet": "Válassz tárcát",
-    "walletHint": "A cél követése a kiválasztott tárcában lévő összes eszköz együttes értéke alapján."
+    "walletHint": "A cél követése a kiválasztott tárcában lévő összes eszköz együttes értéke alapján.",
+    "targetMode": "Cél",
+    "targetModeFixed": "Fix összeg",
+    "targetModeSalary": "A nettó fizetés többszöröse",
+    "salarySource": "Nettó fizetés",
+    "salaryMonths": "Hány havi fizetés",
+    "salaryNoIncome": "Előbb adj hozzá egy ismétlődő bevételt, hogy a célt a fizetéshez igazíthasd.",
+    "salaryTarget": "Cél: {{months}} havi nettó fizetés",
+    "salaryCoverage": "{{covered}} / {{months}} havi fizetés"
   },
   "recurring": {
     "title": "Ismétlődő tranzakciók",

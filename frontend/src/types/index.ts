@@ -1376,7 +1376,13 @@ export interface Goal {
   account_name: string | null
   asset_name: string | null
   asset_group_name: string | null
+  salary_recurring_id: string | null
+  salary_months: SalaryMonths | null
+  salary_name: string | null
+  monthly_salary: number | null
 }
+
+export type SalaryMonths = 3 | 6 | 12
 
 export interface GoalSummary {
   id: string
@@ -1391,6 +1397,8 @@ export interface GoalSummary {
   percentage: number
   monthly_contribution: number | null
   on_track: string | null
+  salary_months: SalaryMonths | null
+  monthly_salary: number | null
 }
 
 export interface PaginatedResponse<T> {

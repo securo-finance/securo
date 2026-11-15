@@ -1544,7 +1544,15 @@
     "trackingWallet": "Cartera",
     "wallet": "Cartera",
     "selectWallet": "Seleccionar cartera",
-    "walletHint": "Sigue este objetivo con el valor combinado de todos los activos en la cartera seleccionada."
+    "walletHint": "Sigue este objetivo con el valor combinado de todos los activos en la cartera seleccionada.",
+    "targetMode": "Meta",
+    "targetModeFixed": "Importe fijo",
+    "targetModeSalary": "Múltiplo del salario neto",
+    "salarySource": "Salario neto",
+    "salaryMonths": "Cuántos salarios",
+    "salaryNoIncome": "Añade primero un ingreso recurrente para dimensionar esta meta por salario.",
+    "salaryTarget": "Meta: {{months}} salarios netos",
+    "salaryCoverage": "{{covered}} de {{months}} salarios"
   },
   "recurring": {
     "title": "Transacciones recurrentes",
