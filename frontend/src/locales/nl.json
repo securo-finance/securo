@@ -2211,6 +2211,10 @@
     "performanceTradeImportAction": "Transacties importeren",
     "performanceTradeImportEnabled": "Transacties worden bij de volgende synchronisatie geïmporteerd.",
     "performanceTradeImportError": "Transactie-import kon niet worden ingeschakeld.",
+    "performanceTradeImportIssues": "De transacties van deze beleggingen konden niet worden geïmporteerd, dus hun rendement wordt geschat op basis van de waarden die de bank doorgeeft:",
+    "performanceTradeImportIncomplete": "Onvolledige geschiedenis",
+    "performanceTradeImportNoHistory": "Geen geschiedenis van de bank",
+    "performanceTradeImportRetry": "Opnieuw proberen",
     "linkedLoans": "Gekoppelde leningen",
     "propertyEquity": "Waarde {{value}} · Schuld {{debt}} · Eigen vermogen {{equity}}"
   },

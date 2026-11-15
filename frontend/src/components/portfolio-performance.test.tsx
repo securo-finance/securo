@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 
 import { PortfolioPerformance } from '@/components/portfolio-performance'
-import { assets, info } from '@/lib/api'
+import { assets, connections, info } from '@/lib/api'
 import {
   readBenchmarkSelections,
   readLastSelection,
@@ -28,6 +28,7 @@ vi.mock('@/lib/api', () => ({
     tradeImport: vi.fn(),
     enableTradeImport: vi.fn(),
   },
+  connections: { sync: vi.fn() },
   auth: { updateMe: vi.fn() },
   info: { get: vi.fn() },
 }))
@@ -140,8 +141,16 @@ describe('PortfolioPerformance', () => {
   })
 
   it('lets only an owner turn on trade import', async () => {
-    vi.mocked(assets.tradeImport).mockResolvedValue({ available: true, enabled: false })
-    vi.mocked(assets.enableTradeImport).mockResolvedValue({ available: true, enabled: true })
+    vi.mocked(assets.tradeImport).mockResolvedValue({
+      available: true,
+      enabled: false,
+      issues: [],
+    })
+    vi.mocked(assets.enableTradeImport).mockResolvedValue({
+      available: true,
+      enabled: true,
+      issues: [],
+    })
     const { user, unmount } = renderPerformance({ canManage: true })
 
     await user.click(await screen.findByRole('button', { name: 'Import trades' }))
@@ -156,6 +165,57 @@ describe('PortfolioPerformance', () => {
     await screen.findByText('+12.50%')
     expect(assets.tradeImport).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('button', { name: 'Import trades' })).not.toBeInTheDocument()
+  })
+
+  it('lists holdings whose trades could not be imported and retries their connections', async () => {
+    const issue = (
+      connection_id: string,
+      asset_id: string,
+      name: string,
+      status: 'incomplete' | 'no_history',
+    ) => ({ connection_id, asset_id, name, ticker: null, status })
+    vi.mocked(assets.tradeImport)
+      .mockResolvedValueOnce({
+        available: true,
+        enabled: true,
+        issues: [
+          issue('connection-a', 'asset-a', 'Carbon Fund', 'incomplete'),
+          issue('connection-b', 'asset-b', 'Global ETF', 'no_history'),
+          issue('connection-a', 'asset-c', 'World ETF', 'no_history'),
+        ],
+      })
+      .mockResolvedValue({ available: true, enabled: true, issues: [] })
+    vi.mocked(connections.sync).mockResolvedValue({ sync_outcome: 'refreshed' } as never)
+    const { user } = renderPerformance({ canManage: true })
+
+    expect(await screen.findByText('Carbon Fund')).toBeInTheDocument()
+    expect(screen.getByText('Global ETF').parentElement).toHaveTextContent(
+      'Global ETF · No history from the bank',
+    )
+    expect(screen.getByText('Carbon Fund').parentElement).toHaveTextContent(
+      'Carbon Fund · Incomplete history',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    // Each affected connection is synced once, asking for the histories again.
+    await waitFor(() => {
+      expect(vi.mocked(connections.sync).mock.calls).toEqual([
+        ['connection-a', { retryTradeImport: true }],
+        ['connection-b', { retryTradeImport: true }],
+      ])
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('Carbon Fund')).not.toBeInTheDocument()
+    })
+  })
+
+  it('does not list import problems to someone who cannot manage the workspace', async () => {
+    renderPerformance()
+    await screen.findByText('+12.50%')
+
+    expect(assets.tradeImport).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
   })
 
   it('hides benchmark comparison when the server has it disabled', async () => {

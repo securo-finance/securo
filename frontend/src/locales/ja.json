@@ -2209,6 +2209,10 @@
     "performanceTradeImportAction": "取引を取り込む",
     "performanceTradeImportEnabled": "取引は次回の同期で取り込まれます。",
     "performanceTradeImportError": "取引の取り込みを有効にできませんでした。",
+    "performanceTradeImportIssues": "これらの保有資産の取引をインポートできなかったため、リターンは銀行が報告する評価額から推定しています:",
+    "performanceTradeImportIncomplete": "履歴が不完全です",
+    "performanceTradeImportNoHistory": "銀行に履歴がありません",
+    "performanceTradeImportRetry": "再試行",
     "linkedLoans": "紐付けたローン",
     "propertyEquity": "評価額 {{value}} · 負債 {{debt}} · 純資産 {{equity}}"
   },

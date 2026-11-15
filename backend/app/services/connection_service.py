@@ -268,13 +268,34 @@ def _sync_assets_enabled(settings: Optional[dict]) -> bool:
 # Maps each holding whose trades did not add up to the share count they were
 # checked against, so it is not fetched again until that count changes.
 _HOLDING_TRADES = "holding_trades"
+# Why each holding in _HOLDING_TRADES could not be used, for the owner to see.
+_HOLDING_TRADE_ISSUES = "holding_trade_issues"
+
+HoldingTradeIssueStatus = Literal["incomplete", "no_history"]
+
+
+@dataclass(frozen=True)
+class HoldingTradeIssue:
+    """A connected holding whose provider trades could not be imported."""
+
+    connection_id: uuid.UUID
+    asset_id: uuid.UUID
+    name: str
+    ticker: Optional[str]
+    status: HoldingTradeIssueStatus
 
 
 async def holding_trade_import_status(
     session: AsyncSession, workspace_id: uuid.UUID
-) -> tuple[bool, bool]:
-    """Whether the workspace has synced holdings, and whether every
-    connection holding them already imports their trades."""
+) -> tuple[bool, bool, list[HoldingTradeIssue]]:
+    """Whether the workspace has synced holdings, whether every connection
+    holding them already imports their trades, and the holdings whose
+    provider history could not be reconciled with their share count.
+
+    A holding checked before reasons were recorded is reported as
+    ``incomplete``: its stored share count shows the provider's history did
+    not add up.
+    """
     connections = (
         await session.execute(
             select(BankConnection).where(
@@ -283,8 +304,45 @@ async def holding_trade_import_status(
             )
         )
     ).scalars().all()
+    if not connections:
+        return False, False, []
     enabled = all(_HOLDING_TRADES in (c.settings or {}) for c in connections)
-    return bool(connections), bool(connections) and enabled
+
+    unresolved = {
+        connection.id: (connection.settings or {}).get(_HOLDING_TRADES) or {}
+        for connection in connections
+    }
+    issues: list[HoldingTradeIssue] = []
+    if any(unresolved.values()):
+        assets = (
+            await session.execute(
+                select(Asset).where(
+                    Asset.connection_id.in_(
+                        [cid for cid, unmatched in unresolved.items() if unmatched]
+                    ),
+                    Asset.is_archived.is_(False),
+                )
+            )
+        ).scalars().all()
+        by_holding = {(asset.connection_id, asset.external_id): asset for asset in assets}
+        for connection in connections:
+            reasons = (connection.settings or {}).get(_HOLDING_TRADE_ISSUES) or {}
+            for external_id in unresolved[connection.id]:
+                asset = by_holding.get((connection.id, external_id))
+                if asset is None:
+                    continue
+                reason = reasons.get(external_id)
+                issues.append(
+                    HoldingTradeIssue(
+                        connection_id=connection.id,
+                        asset_id=asset.id,
+                        name=asset.name,
+                        ticker=asset.ticker,
+                        status=reason if reason == "no_history" else "incomplete",
+                    )
+                )
+    issues.sort(key=lambda issue: (issue.name.casefold(), str(issue.asset_id)))
+    return True, enabled, issues
 
 
 async def enable_holding_trades(session: AsyncSession, workspace_id: uuid.UUID) -> None:
@@ -574,11 +632,14 @@ async def _sync_holdings(
     connection: BankConnection,
     credentials: dict,
     holdings: Optional[list[HoldingData]] = None,
+    retry_unresolved_trades: bool = False,
 ) -> None:
     """Fetch investment holdings from the provider and upsert them as Assets.
 
     ``holdings`` lets a caller pass a payload it already fetched with
     ``_fetch_holdings``; when omitted the provider is called here.
+    ``retry_unresolved_trades`` asks the provider again for trade histories
+    that did not add up last time (see ``_sync_holding_trades``).
 
     Each holding becomes one Asset (type="investment") keyed by
     (workspace_id, source, external_id). Every sync appends an AssetValue row
@@ -976,6 +1037,7 @@ async def _sync_holdings(
             credentials,
             holdings,
             synced_assets,
+            retry_unresolved=retry_unresolved_trades,
         )
 
     # Sync owns its wallets: drop any it emptied by re-attribution above
@@ -1075,6 +1137,7 @@ async def _sync_holding_trades(
     credentials: dict,
     holdings: list[HoldingData],
     synced_assets: dict[str, Asset],
+    retry_unresolved: bool = False,
 ) -> None:
     """Mirror each holding's provider trades into its asset ledger.
 
@@ -1084,13 +1147,17 @@ async def _sync_holding_trades(
     reports: before its first import, or after a purchase, a redemption or its
     closure. A sync where no position moved therefore makes no requests. One
     whose trades still do not add up is not fetched again until its share
-    count changes. Stored trades are combined with the fetched ones in case
-    the provider only returns recent history. Only provider-sourced rows are
-    touched; trades the user entered stay.
+    count changes, unless the owner asks to retry (``retry_unresolved``),
+    since a provider can complete a history without the position moving.
+    Why each one failed is kept for the Performance tab to show. Stored
+    trades are combined with the fetched ones in case the provider only
+    returns recent history. Only provider-sourced rows are touched; trades
+    the user entered stay.
     """
     source = connection.provider
     settings = connection.settings or {}
     unmatched: dict[str, str] = dict(settings.get(_HOLDING_TRADES) or {})
+    issues: dict[str, HoldingTradeIssueStatus] = dict(settings.get(_HOLDING_TRADE_ISSUES) or {})
     # Without a share count there is nothing to check the trades against.
     holdings = [
         holding
@@ -1121,6 +1188,8 @@ async def _sync_holding_trades(
     }
 
     def checked_at_this_count(holding: HoldingData) -> bool:
+        if retry_unresolved:
+            return False
         count = unmatched.get(holding.external_id)
         return count is not None and Decimal(count) == _trade_target(holding)
 
@@ -1156,6 +1225,7 @@ async def _sync_holding_trades(
                 asset.id,
             )
             unmatched[holding.external_id] = str(_trade_target(holding))
+            issues[holding.external_id] = "incomplete" if trades else "no_history"
             continue
         unmatched.pop(holding.external_id, None)
         existing = stored.get(asset.id, {})
@@ -1181,8 +1251,15 @@ async def _sync_holding_trades(
 
     current = {holding.external_id for holding in holdings}
     unmatched = {key: count for key, count in unmatched.items() if key in current}
-    if unmatched != settings.get(_HOLDING_TRADES):
-        connection.settings = {**settings, _HOLDING_TRADES: unmatched}
+    issues = {key: status for key, status in issues.items() if key in unmatched}
+    if unmatched != settings.get(_HOLDING_TRADES) or issues != (
+        settings.get(_HOLDING_TRADE_ISSUES) or {}
+    ):
+        connection.settings = {
+            **settings,
+            _HOLDING_TRADES: unmatched,
+            _HOLDING_TRADE_ISSUES: issues,
+        }
 
 
 async def _upsert_asset_from_holding(
@@ -2975,6 +3052,7 @@ async def sync_connection(
     workspace_id: uuid.UUID,
     requesting_user_id: uuid.UUID,
     trigger_provider_refresh: bool = False,
+    retry_trade_import: bool = False,
 ) -> tuple[BankConnection, int, SyncOutcome]:
     connection = await get_connection(
         session, connection_id, workspace_id, for_update=True
@@ -3652,7 +3730,14 @@ async def sync_connection(
         # don't fail the sync; a bank connector that doesn't expose
         # /investments shouldn't block the transaction sync that just succeeded.
         if holdings is not None:
-            await _sync_holdings(session, user_id, connection, credentials, holdings)
+            await _sync_holdings(
+                session,
+                user_id,
+                connection,
+                credentials,
+                holdings,
+                retry_unresolved_trades=retry_trade_import,
+            )
 
         # Reap institution rows referenced by nothing. Id-carrying servers
         # never orphan a row (renames update in place), but a name-only

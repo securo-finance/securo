@@ -2333,6 +2333,10 @@
     "performanceTradeImportAction": "Importovať obchody",
     "performanceTradeImportEnabled": "Obchody sa naimportujú pri ďalšej synchronizácii.",
     "performanceTradeImportError": "Import obchodov sa nepodarilo zapnúť.",
+    "performanceTradeImportIssues": "Transakcie týchto investícií sa nepodarilo importovať, preto sa ich výnos odhaduje z hodnôt, ktoré hlási banka:",
+    "performanceTradeImportIncomplete": "Neúplná história",
+    "performanceTradeImportNoHistory": "Banka neposkytla históriu",
+    "performanceTradeImportRetry": "Skúsiť znova",
     "linkedLoans": "Prepojené úvery",
     "propertyEquity": "Hodnota {{value}} · Dlh {{debt}} · Vlastný kapitál {{equity}}"
   },

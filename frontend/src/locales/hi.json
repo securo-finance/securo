@@ -2209,6 +2209,10 @@
     "performanceTradeImportAction": "ट्रेड आयात करें",
     "performanceTradeImportEnabled": "ट्रेड अगले सिंक में आयात किए जाएंगे।",
     "performanceTradeImportError": "ट्रेड आयात चालू नहीं किया जा सका।",
+    "performanceTradeImportIssues": "इन निवेशों के लेन-देन आयात नहीं हो सके, इसलिए इनका रिटर्न बैंक द्वारा बताए गए मूल्यों से अनुमानित है:",
+    "performanceTradeImportIncomplete": "अधूरा इतिहास",
+    "performanceTradeImportNoHistory": "बैंक से कोई इतिहास नहीं",
+    "performanceTradeImportRetry": "फिर से कोशिश करें",
     "linkedLoans": "जुड़े हुए ऋण",
     "propertyEquity": "मूल्य {{value}} · ऋण {{debt}} · इक्विटी {{equity}}"
   },

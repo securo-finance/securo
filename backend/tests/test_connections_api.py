@@ -305,6 +305,29 @@ async def test_sync_connection_success_reports_refreshed_outcome(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("params", "retry"), [({}, False), ({"retry_trade_import": "true"}, True)])
+async def test_sync_connection_retries_trade_import_only_when_asked(
+    client: AsyncClient, auth_headers, test_connection: BankConnection, params, retry
+):
+    """A manual sync keeps the request-saving rule; only the Performance
+    tab's retry asks for unresolved trade histories again."""
+    with patch(
+        "app.services.connection_service.sync_connection",
+        new_callable=AsyncMock,
+        return_value=(test_connection, 0, "refreshed"),
+    ) as mock_sync:
+        resp = await client.post(
+            f"/api/connections/{test_connection.id}/sync",
+            params=params,
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    assert mock_sync.await_args is not None
+    assert mock_sync.await_args.kwargs["retry_trade_import"] is retry
+
+
+@pytest.mark.asyncio
 async def test_sync_connection_rate_limited_reports_outcome(
     client: AsyncClient, auth_headers, test_connection: BankConnection
 ):

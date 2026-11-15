@@ -179,6 +179,7 @@ async def get_reauth_url(
 async def sync_connection(
     connection_id: uuid.UUID,
     request: Request,
+    retry_trade_import: bool = False,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -194,6 +195,9 @@ async def sync_connection(
                 ctx.workspace.id,
                 ctx.user_id,
                 trigger_provider_refresh=True,
+                # Asked for from the Performance tab: fetch trade histories
+                # that did not add up last time, even if no position moved.
+                retry_trade_import=retry_trade_import,
             )
         result = BankConnectionRead.model_validate(connection)
         return {

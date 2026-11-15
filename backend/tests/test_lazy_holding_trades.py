@@ -76,6 +76,7 @@ class _TradesProvider(BankProvider):
     holdings: list[HoldingData] = []
     requests: list[list[str]] = []
     short: set[str] = set()  # holdings whose trades leave out a purchase
+    empty: set[str] = set()  # holdings the provider has no trades for
     failing: set[str] = set()  # holdings whose request fails
 
     @property
@@ -106,7 +107,9 @@ class _TradesProvider(BankProvider):
         _TradesProvider.requests.append(sorted(h.external_id for h in holdings))
         return {
             holding.external_id: (
-                _partial(holding)
+                []
+                if holding.external_id in _TradesProvider.empty
+                else _partial(holding)
                 if holding.external_id in _TradesProvider.short
                 else _adds_up(holding)
             )
@@ -121,6 +124,7 @@ def _register_provider():
     _TradesProvider.holdings = []
     _TradesProvider.requests = []
     _TradesProvider.short = set()
+    _TradesProvider.empty = set()
     _TradesProvider.failing = set()
 
 
@@ -161,9 +165,21 @@ def _fund(
     )
 
 
-async def _sync(session: AsyncSession, user: User, connection: BankConnection, *holdings):
+async def _sync(
+    session: AsyncSession,
+    user: User,
+    connection: BankConnection,
+    *holdings,
+    retry: bool = False,
+):
     _TradesProvider.holdings = list(holdings)
-    await _sync_holdings(session, user.id, connection, {"item_id": "item-trades"})
+    await _sync_holdings(
+        session,
+        user.id,
+        connection,
+        {"item_id": "item-trades"},
+        retry_unresolved_trades=retry,
+    )
     await session.commit()
 
 
@@ -229,6 +245,42 @@ async def test_trades_that_do_not_add_up_wait_for_the_share_count_to_change(
     _TradesProvider.short = set()
     await _sync(session, test_user, connection, _fund("a", "12", "127"))
     assert (connection.settings or {})["holding_trades"] == {}
+    assert (connection.settings or {})["holding_trade_issues"] == {}
+
+
+@pytest.mark.asyncio
+async def test_a_retry_asks_again_without_a_share_count_change(
+    session: AsyncSession, test_user: User, test_workspace, connection: BankConnection
+):
+    """A provider can complete a history without the position moving."""
+    await enable_holding_trades(session, test_workspace.id)
+    _TradesProvider.short = {"a"}
+    await _sync(session, test_user, connection, _fund("a", "10"), _fund("b", "5"))
+    await _sync(session, test_user, connection, _fund("a", "10"), _fund("b", "5"))
+    assert _TradesProvider.requests == [["a", "b"]]
+
+    # Only the unresolved holding is asked for again, not the one that adds up.
+    _TradesProvider.short = set()
+    await _sync(session, test_user, connection, _fund("a", "10"), _fund("b", "5"), retry=True)
+    assert _TradesProvider.requests == [["a", "b"], ["a"]]
+    assert (connection.settings or {})["holding_trades"] == {}
+    assert (connection.settings or {})["holding_trade_issues"] == {}
+
+
+@pytest.mark.asyncio
+async def test_a_failed_retry_keeps_the_holding_unresolved(
+    session: AsyncSession, test_user: User, test_workspace, connection: BankConnection
+):
+    await enable_holding_trades(session, test_workspace.id)
+    _TradesProvider.empty = {"a"}
+    await _sync(session, test_user, connection, _fund("a", "10"))
+
+    _TradesProvider.failing = {"a"}
+    await _sync(session, test_user, connection, _fund("a", "10"), retry=True)
+
+    assert _TradesProvider.requests == [["a"], ["a"]]
+    assert (connection.settings or {})["holding_trades"] == {"a": "10"}
+    assert (connection.settings or {})["holding_trade_issues"] == {"a": "no_history"}
 
 
 @pytest.mark.asyncio
@@ -294,11 +346,53 @@ async def test_trade_import_is_available_once_a_connection_has_holdings(
 ):
     endpoint = "/api/assets/performance/trade-import"
     response = await client.get(endpoint, headers=auth_headers)
-    assert response.json() == {"available": False, "enabled": False}
+    assert response.json() == {"available": False, "enabled": False, "issues": []}
 
     await _sync(session, test_user, connection, _fund("a", "10"))
     response = await client.get(endpoint, headers=auth_headers)
-    assert response.json() == {"available": True, "enabled": False}
+    assert response.json() == {"available": True, "enabled": False, "issues": []}
+
+
+@pytest.mark.asyncio
+async def test_trade_import_lists_the_holdings_it_could_not_import(
+    client: AsyncClient,
+    auth_headers: dict,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    connection: BankConnection,
+):
+    await enable_holding_trades(session, test_workspace.id)
+    _TradesProvider.short = {"b"}
+    _TradesProvider.empty = {"c"}
+    await _sync(session, test_user, connection, _fund("a", "10"), _fund("b", "5"), _fund("c", "3"))
+
+    response = await client.get("/api/assets/performance/trade-import", headers=auth_headers)
+
+    body = response.json()
+    assert body["enabled"] is True
+    assert [(issue["name"], issue["status"]) for issue in body["issues"]] == [
+        ("Fund b", "incomplete"),
+        ("Fund c", "no_history"),
+    ]
+    assert {issue["connection_id"] for issue in body["issues"]} == {str(connection.id)}
+
+
+@pytest.mark.asyncio
+async def test_a_holding_checked_before_reasons_were_kept_shows_as_incomplete(
+    client: AsyncClient,
+    auth_headers: dict,
+    session: AsyncSession,
+    test_user: User,
+    connection: BankConnection,
+):
+    await _sync(session, test_user, connection, _fund("a", "10"))
+    connection.settings = {**(connection.settings or {}), "holding_trades": {"a": "10"}}
+    await session.commit()
+
+    response = await client.get("/api/assets/performance/trade-import", headers=auth_headers)
+
+    assert [issue["status"] for issue in response.json()["issues"]] == ["incomplete"]
 
 
 @pytest.mark.asyncio
@@ -314,7 +408,7 @@ async def test_owner_turns_trade_import_on(
     response = await client.post("/api/assets/performance/trade-import", headers=auth_headers)
 
     assert response.status_code == 200
-    assert response.json() == {"available": True, "enabled": True}
+    assert response.json() == {"available": True, "enabled": True, "issues": []}
     await session.refresh(connection)
     assert (connection.settings or {})["holding_trades"] == {}
 

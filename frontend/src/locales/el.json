@@ -2209,6 +2209,10 @@
     "performanceTradeImportAction": "Εισαγωγή συναλλαγών",
     "performanceTradeImportEnabled": "Οι συναλλαγές θα εισαχθούν στον επόμενο συγχρονισμό.",
     "performanceTradeImportError": "Δεν ήταν δυνατή η ενεργοποίηση της εισαγωγής συναλλαγών.",
+    "performanceTradeImportIssues": "Δεν ήταν δυνατή η εισαγωγή των συναλλαγών αυτών των επενδύσεων, οπότε η απόδοσή τους εκτιμάται από τις αξίες που αναφέρει η τράπεζα:",
+    "performanceTradeImportIncomplete": "Ελλιπές ιστορικό",
+    "performanceTradeImportNoHistory": "Χωρίς ιστορικό από την τράπεζα",
+    "performanceTradeImportRetry": "Δοκιμάστε ξανά",
     "linkedLoans": "Συνδεδεμένα δάνεια",
     "propertyEquity": "Αξία {{value}} · Χρέος {{debt}} · Καθαρή αξία {{equity}}"
   },

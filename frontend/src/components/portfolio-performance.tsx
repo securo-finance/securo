@@ -12,6 +12,7 @@ import {
   Plus,
   Search,
   Trash2,
+  TriangleAlert,
   Wallet,
   X,
 } from 'lucide-react'
@@ -27,9 +28,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { assets, auth as authApi } from '@/lib/api'
+import { assets, auth as authApi, connections } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { invalidateConnectionSyncQueries } from '@/lib/invalidate-queries'
 import {
   MAX_PERFORMANCE_BENCHMARKS,
   type PerformanceView,
@@ -208,6 +210,31 @@ export function PortfolioPerformance({
       toast.success(t('assets.performanceTradeImportEnabled'))
     },
     onError: () => toast.error(t('assets.performanceTradeImportError')),
+  })
+  const tradeImportIssues = tradeImport.data?.issues ?? []
+  // Sync each affected connection, asking for the unresolved histories again.
+  // One at a time, so a provider's rate limit isn't hit by our own burst.
+  const retryTradeImport = useMutation({
+    mutationFn: async () => {
+      const connectionIds = [...new Set(tradeImportIssues.map((issue) => issue.connection_id))]
+      let rateLimited = false
+      let failed = false
+      for (const connectionId of connectionIds) {
+        try {
+          const result = await connections.sync(connectionId, { retryTradeImport: true })
+          rateLimited ||= result.sync_outcome === 'rate_limited'
+        } catch {
+          failed = true
+        }
+      }
+      return { rateLimited, failed }
+    },
+    onSuccess: ({ rateLimited, failed }) => {
+      if (failed) toast.error(t('accounts.syncError'))
+      else if (rateLimited) toast.warning(t('accounts.syncRateLimited'))
+      else toast.success(t('accounts.syncDone'))
+    },
+    onSettled: () => invalidateConnectionSyncQueries(queryClient),
   })
 
   const holdingsByGroup = useMemo(() => {
@@ -1209,6 +1236,50 @@ export function PortfolioPerformance({
             onClick={() => enableTradeImport.mutate()}
           >
             {t('assets.performanceTradeImportAction')}
+          </Button>
+        </div>
+      )}
+      {canManage && tradeImport.data?.enabled && tradeImportIssues.length > 0 && (
+        <div className="flex flex-wrap items-start gap-3 border-t border-border px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 flex-1 basis-64 items-start gap-2">
+            <TriangleAlert
+              size={15}
+              className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+              aria-hidden="true"
+            />
+            <div className="min-w-0">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {t('assets.performanceTradeImportIssues')}
+              </p>
+              <ul className="mt-1.5 max-h-32 space-y-0.5 overflow-y-auto text-xs">
+                {tradeImportIssues.map((issue) => (
+                  <li key={issue.asset_id} className="flex min-w-0 gap-1.5">
+                    <span className="truncate font-medium text-foreground" title={issue.name}>
+                      {issue.name}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {' · '}
+                      {t(
+                        issue.status === 'no_history'
+                          ? 'assets.performanceTradeImportNoHistory'
+                          : 'assets.performanceTradeImportIncomplete',
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={retryTradeImport.isPending}
+            onClick={() => retryTradeImport.mutate()}
+          >
+            {retryTradeImport.isPending && (
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+            )}
+            {t('assets.performanceTradeImportRetry')}
           </Button>
         </div>
       )}

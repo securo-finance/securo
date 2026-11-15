@@ -1320,6 +1320,18 @@ export interface BenchmarkPerformance {
 export interface HoldingTradeImport {
   available: boolean
   enabled: boolean
+  // Connected holdings whose provider trades couldn't be imported.
+  issues: HoldingTradeImportIssue[]
+}
+
+export interface HoldingTradeImportIssue {
+  connection_id: string
+  asset_id: string
+  name: string
+  ticker: string | null
+  // incomplete: the history doesn't add up to the share count reported now.
+  // no_history: the provider returned no trades at all.
+  status: 'incomplete' | 'no_history'
 }
 
 export interface PortfolioPerformance {

@@ -481,8 +481,14 @@ export const connections = {
     const { data } = await api.post(`/connections/${connectionId}/oauth/reauth-url`, undefined, readOnly)
     return data.url
   },
-  sync: async (id: string): Promise<SyncResult> => {
-    const { data } = await api.post(`/connections/${id}/sync`)
+  // retryTradeImport asks the provider again for holdings whose trade
+  // history didn't add up last time, even if no position moved.
+  sync: async (id: string, options?: { retryTradeImport?: boolean }): Promise<SyncResult> => {
+    const { data } = await api.post(
+      `/connections/${id}/sync`,
+      undefined,
+      options?.retryTradeImport ? { params: { retry_trade_import: true } } : undefined,
+    )
     return data
   },
   getReconnectToken: async (connectionId: string): Promise<string> => {
