@@ -24,3 +24,25 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['reports'] })
   queryClient.invalidateQueries({ queryKey: ['drill-down'] })
 }
+
+// A connection sync (or a new connection) can change cash accounts and the
+// investment side: holdings, their values and, once trade import is on, each
+// holding's trade ledger and the Performance tab built from it. Refresh all of
+// them so nothing waits for staleTime or a reload.
+export function invalidateConnectionSyncQueries(queryClient: QueryClient) {
+  invalidateFinancialQueries(queryClient)
+  for (const key of [
+    'connections',
+    'assets',
+    'asset-groups',
+    'asset-values',
+    'asset-trend',
+    'asset-transactions',
+    'portfolio-trend',
+    'asset-performance',
+    'holding-trade-import',
+    'import-logs',
+  ]) {
+    queryClient.invalidateQueries({ queryKey: [key] })
+  }
+}

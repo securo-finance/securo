@@ -5,7 +5,7 @@ import axios from 'axios'
 import { useAuth } from '@/contexts/auth-context'
 import { connections } from '@/lib/api'
 import { isGatewayTimeout, waitForNewConnection } from '@/lib/await-new-connection'
-import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { invalidateConnectionSyncQueries } from '@/lib/invalidate-queries'
 import {
   Dialog,
   DialogContent,
@@ -59,8 +59,7 @@ export function TokenConnectDialog({
     if (!token.trim()) return
     setSubmitting(true)
     const onConnected = () => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      invalidateConnectionSyncQueries(queryClient)
       toast.success(t(isReconnect ? 'accounts.reconnected' : 'accounts.connected'))
       onClose()
     }
