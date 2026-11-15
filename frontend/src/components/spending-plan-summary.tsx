@@ -29,7 +29,7 @@ export function SpendingPlanSummary() {
   const remaining = timeline.today.remaining
   // Red when the money runs out before the horizon's floor, amber when only
   // today went over, green when both are fine.
-  const tone = timeline.covered_until === null ? 'bad' : remaining < 0 ? 'warn' : 'good'
+  const tone = !timeline.covered_through_horizon ? 'bad' : remaining < 0 ? 'warn' : 'good'
   return (
     <Link
       to="/plan"

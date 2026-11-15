@@ -51,6 +51,17 @@ describe('SpendingPlanSummary', () => {
     expect(screen.getByRole('link')).toHaveAttribute('href', '/plan')
   })
 
+  it('is red when the money runs out before the horizon', async () => {
+    api.spendingPlan.get.mockResolvedValue(plan)
+    api.spendingPlan.timeline.mockResolvedValue(timeline({ covered_until: '2026-12-01', covered_through_horizon: false }))
+
+    renderWithProviders(<SpendingPlanSummary />)
+
+    await screen.findByText('Covered until Dec 1, 2026')
+    expect(screen.getByRole('link').className).toContain('bg-rose-50')
+    expect(screen.getByRole('link').className).not.toContain('bg-emerald-50')
+  })
+
   it('says how much today went over', async () => {
     api.spendingPlan.get.mockResolvedValue(plan)
     api.spendingPlan.timeline.mockResolvedValue(
