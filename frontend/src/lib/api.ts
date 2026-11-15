@@ -1445,11 +1445,13 @@ export const spendingPlan = {
   remove: async (): Promise<void> => {
     await api.delete('/spending-plan')
   },
-  // `dailyAllowance` previews another allowance without saving it.
-  timeline: async (dailyAllowance?: number): Promise<SpendingPlanTimeline> => {
-    const { data } = await api.get('/spending-plan/timeline', {
-      params: dailyAllowance === undefined ? {} : { daily_allowance: dailyAllowance },
-    })
+  timeline: async (): Promise<SpendingPlanTimeline> => {
+    const { data } = await api.get('/spending-plan/timeline')
+    return data
+  },
+  // The timeline for a plan being edited. Saves nothing.
+  preview: async (draft: SpendingPlanInput): Promise<SpendingPlanTimeline> => {
+    const { data } = await api.post('/spending-plan/preview', draft)
     return data
   },
   // The timeline after hypothetical purchases. Saves nothing.

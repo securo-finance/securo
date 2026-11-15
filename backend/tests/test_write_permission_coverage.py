@@ -81,6 +81,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # is which existing transactions it would match. Reads rules' own scope.
     ("POST", "/api/rules/preview"): "evaluates an unsaved rule against transactions; writes nothing",
     ("POST", "/api/spending-plan/simulate"): "projects hypothetical purchases on the balance; writes nothing",
+    ("POST", "/api/spending-plan/preview"): "projects a plan being edited; writes nothing",
     # A read that has to be a POST: the backup password belongs in a body,
     # not in a query string. Same read permission as GET /api/export/backup.
     ("POST", "/api/export/backup"): "exports the workspace it can already read; writes nothing",
@@ -123,7 +124,7 @@ PUBLIC_ROUTES = {
 WORKSPACE_READ_ROUTES = {
     ("POST", path) for path in (
         "/api/transactions/import/preview", "/api/assets/import/preview",
-        "/api/rules/preview", "/api/export/backup", "/api/spending-plan/simulate",
+        "/api/rules/preview", "/api/export/backup", "/api/spending-plan/simulate", "/api/spending-plan/preview",
     )
 }
 

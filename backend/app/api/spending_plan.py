@@ -1,7 +1,6 @@
-from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -48,12 +47,21 @@ async def delete_spending_plan(
 
 @router.get("/timeline", response_model=SpendingPlanTimeline)
 async def get_spending_plan_timeline(
-    daily_allowance: Optional[Decimal] = Query(None, ge=0),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    return await spending_plan_service.get_timeline(session, ctx.workspace.id, ctx.user_id)
+
+
+@router.post("/preview", response_model=SpendingPlanTimeline)
+async def preview_spending_plan(
+    data: SpendingPlanWrite,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The timeline for a plan being edited. Saves nothing."""
     return await spending_plan_service.get_timeline(
-        session, ctx.workspace.id, ctx.user_id, daily_allowance
+        session, ctx.workspace.id, ctx.user_id, draft=data
     )
 
 

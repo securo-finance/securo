@@ -22,6 +22,7 @@ from app.services.balance_projection import (
     safe_daily_allowance,
     walk,
 )
+from app.services.loan_schedule import add_months
 from app.services.spending_plan_service import get_timeline, purchase_installments, save_plan
 from app.services.transaction_calendar_service import get_transaction_calendar
 
@@ -562,3 +563,46 @@ async def test_average_daily_surplus_counts_todays_salary(
     timeline = await get_timeline(session, test_workspace.id, test_user.id)
 
     assert timeline.average_daily_surplus == round(3650 / len(timeline.points), 2)
+
+
+@pytest.mark.asyncio
+async def test_preview_projects_the_draft_not_the_saved_plan(
+    session: AsyncSession, test_user, test_workspace
+):
+    today = app_today()
+    checking = await _checking(session, test_user.id, test_workspace.id)
+    savings = await _checking(session, test_user.id, test_workspace.id, "Savings", "savings")
+    session.add_all([
+        _tx(test_user.id, test_workspace.id, checking.id, 1000, "credit", today - timedelta(days=1),
+            source="opening_balance"),
+        _tx(test_user.id, test_workspace.id, savings.id, 9000, "credit", today - timedelta(days=1),
+            source="opening_balance"),
+    ])
+    await save_plan(session, test_workspace.id, SpendingPlanWrite(
+        daily_allowance=Decimal("10"), balance_floor=Decimal("0"), horizon_months=12,
+    ))
+
+    timeline = await get_timeline(session, test_workspace.id, test_user.id, draft=SpendingPlanWrite(
+        daily_allowance=Decimal("20"), balance_floor=Decimal("500"), account_ids=[checking.id],
+        horizon_months=1,
+    ))
+
+    assert timeline.daily_allowance == 20.0
+    assert timeline.balance_floor == 500.0
+    assert timeline.horizon_end == add_months(today, 1)
+    assert timeline.points[0].balance == 980.0
+
+
+@pytest.mark.asyncio
+async def test_preview_api_saves_nothing(client: AsyncClient, auth_headers: dict):
+    response = await client.post(
+        "/api/spending-plan/preview",
+        headers=auth_headers,
+        json={"daily_allowance": "15", "balance_floor": "100", "horizon_months": 2},
+    )
+    saved = await client.get("/api/spending-plan", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["daily_allowance"] == 15.0
+    assert response.json()["balance_floor"] == 100.0
+    assert saved.json() is None

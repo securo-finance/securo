@@ -210,23 +210,36 @@ def purchase_installments(
     return charges
 
 
+def _unsaved(workspace_id: uuid.UUID, draft: SpendingPlanWrite) -> SpendingPlan:
+    return SpendingPlan(
+        workspace_id=workspace_id,
+        daily_allowance=draft.daily_allowance,
+        balance_floor=draft.balance_floor,
+        account_ids=None if draft.account_ids is None else [str(i) for i in draft.account_ids],
+        horizon_months=draft.horizon_months,
+    )
+
+
 async def get_timeline(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     daily_allowance: Optional[Decimal] = None,
     purchases: Sequence[SimulatedPurchase] = (),
+    *,
+    draft: Optional[SpendingPlanWrite] = None,
 ) -> SpendingPlanTimeline:
     """Project the plan's accounts day by day through the plan's horizon.
 
     ``daily_allowance`` previews another allowance and ``purchases`` previews
-    purchases, both without saving anything. Without a saved plan the
+    purchases, both without saving anything. ``draft`` stands in for the
+    saved plan, so the editor previews the settings being edited. Without a saved plan the
     timeline still answers, with no allowance and the default horizon, so
     the setup screen can suggest a safe value.
     """
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
-    plan = await get_plan(session, workspace_id)
+    plan = await get_plan(session, workspace_id) if draft is None else _unsaved(workspace_id, draft)
     allowance = float(
         daily_allowance
         if daily_allowance is not None

@@ -674,11 +674,10 @@ function PlanEditorDialog({ plan, onClose }: { plan: SpendingPlan | null; onClos
   const [allowanceText, setAllowanceText] = useState(() => (plan ? String(Number(plan.daily_allowance)) : ''))
   const [floorText, setFloorText] = useState(() => (plan && Number(plan.balance_floor) ? String(Number(plan.balance_floor)) : ''))
 
-  // Previews the amount being typed. Floor, horizon and accounts apply on save.
-  const previewAllowance = useDeferredValue(draft.daily_allowance)
+  const previewDraft = useDeferredValue(draft)
   const { data: preview } = useQuery({
-    queryKey: ['dashboard', 'spending-plan', 'timeline', previewAllowance],
-    queryFn: () => spendingPlanApi.timeline(previewAllowance),
+    queryKey: ['dashboard', 'spending-plan', 'preview', previewDraft],
+    queryFn: () => spendingPlanApi.preview(previewDraft),
     placeholderData: (previous) => previous,
   })
   const money = (value: number) => mask(formatCurrency(value, preview?.currency ?? 'BRL', locale))

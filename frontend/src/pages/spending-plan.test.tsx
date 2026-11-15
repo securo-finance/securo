@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { renderWithProviders } from '@/test/utils'
 import SpendingPlanPage from './spending-plan'
 import type { SpendingPlanTimeline } from '@/types'
 
 const api = vi.hoisted(() => ({
-  spendingPlan: { get: vi.fn(), save: vi.fn(), remove: vi.fn(), timeline: vi.fn(), simulate: vi.fn() },
+  spendingPlan: { get: vi.fn(), save: vi.fn(), remove: vi.fn(), timeline: vi.fn(), preview: vi.fn(), simulate: vi.fn() },
   accounts: { list: vi.fn() },
 }))
 vi.mock('@/lib/api', () => api)
@@ -48,6 +48,7 @@ describe('SpendingPlanPage', () => {
       { id: 'card', name: 'Visa', display_name: null, type: 'credit_card', is_closed: false },
     ])
     api.spendingPlan.timeline.mockResolvedValue(timeline())
+    api.spendingPlan.preview.mockResolvedValue(timeline())
   })
 
   it('shows today, the safe amount and the coverage of a saved plan', async () => {
@@ -80,6 +81,20 @@ describe('SpendingPlanPage', () => {
       account_ids: null,
       horizon_months: 18,
     })
+  })
+
+  it('previews the floor and horizon being edited, not the saved ones', async () => {
+    api.spendingPlan.get.mockResolvedValue(null)
+
+    const { user } = renderWithProviders(<SpendingPlanPage />)
+    await user.click(await screen.findByRole('button', { name: 'Create plan' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Balance floor'), '300')
+    await user.selectOptions(within(dialog).getByLabelText('Plan ahead for'), '18')
+
+    await waitFor(() => expect(api.spendingPlan.preview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ balance_floor: 300, horizon_months: 18 }),
+    ))
   })
 
   it('leaves credit cards out of the account checklist because they always count', async () => {
