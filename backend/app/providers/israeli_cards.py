@@ -209,11 +209,14 @@ class IsraeliCardProvider(BankProvider):
 
         # The ordinal that disambiguates two otherwise-identical charges
         # (same date, amount, description, no identifier) must come from the
-        # sidecar's full history, counted here before any pending/since
-        # filtering. Counting only the rows a particular sync's `since` keeps
+        # sidecar's full history, counted here before the `since` filtering
+        # below. Counting only the rows a particular sync's `since` keeps
         # would shift the ordinal as an earlier occurrence ages out of the
         # window, handing a later sync's row the id already used for a
-        # different occurrence.
+        # different occurrence. Pending rows are excluded from the count,
+        # not just skipped at emission: a pending row is never itself
+        # emitted, and it can vanish between syncs once it posts or drops,
+        # which must not shift a posted row's ordinal.
         seen: dict[str, int] = {}
         ordinals: list[int] = []
         identifiers: list[Optional[str]] = []
@@ -222,6 +225,9 @@ class IsraeliCardProvider(BankProvider):
             if identifier is not None and str(identifier).split("_")[0] in ("", "undefined", "null"):
                 identifier = None
             identifiers.append(identifier)
+            if raw.get("status") == "pending":
+                ordinals.append(0)  # never used: the emission loop skips this row
+                continue
             key = IsraeliCardProvider._fallback_key(raw, identifier)
             seen[key] = seen.get(key, 0) + 1
             ordinals.append(seen[key])

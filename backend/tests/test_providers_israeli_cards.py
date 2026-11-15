@@ -243,6 +243,20 @@ def test_duplicate_fallback_ids_stay_stable_as_the_cutoff_moves():
     assert later[0].external_id == initial[1].external_id
 
 
+def test_pending_rows_do_not_shift_posted_fallback_ids():
+    # A pending row is never itself emitted and can vanish between syncs
+    # once it posts or drops, so it must not count toward a posted row's
+    # ordinal: [pending, posted] and [posted] alone must give the posted
+    # charge the same external_id.
+    posted = _charge(identifier=None)
+    pending = _charge(status="pending", identifier=None)
+
+    with_pending = IsracardProvider.build_transactions({**CARD, "txns": [pending, posted]})
+    without_pending = IsracardProvider.build_transactions({**CARD, "txns": [posted]})
+    assert len(with_pending) == 1
+    assert with_pending[0].external_id == without_pending[0].external_id
+
+
 @pytest.mark.asyncio
 async def test_transactions_read_through_the_stored_login():
     seen: list[dict] = []
