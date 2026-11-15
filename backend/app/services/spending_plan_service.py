@@ -131,10 +131,24 @@ async def variable_spent_on(
         stmt = stmt.where(Transaction.account_id.in_(account_ids))
     total = 0.0
     for tx in (await session.execute(stmt)).scalars():
-        total += await positive_primary_amount(
+        total += _spending_share(tx) * await positive_primary_amount(
             session, tx.amount, tx.currency, primary_currency, tx.amount_primary
         )
     return round(total, 2)
+
+
+def _spending_share(tx: Transaction) -> float:
+    """The part of a row split across categories that is spending: its
+    transfer-like and ignored parts are not."""
+    total = abs(float(tx.amount or 0))
+    if not tx.has_category_lines or not tx.category_lines or not total:
+        return 1.0
+    spent = sum(
+        float(line.amount)
+        for line in tx.category_lines
+        if not (line.category and (line.category.is_ignored or line.category.treat_as_transfer))
+    )
+    return spent / total
 
 
 async def calendar_allowance(

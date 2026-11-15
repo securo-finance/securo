@@ -12,6 +12,7 @@ from app.models.account import Account
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
+from app.models.transaction_category_line import TransactionCategoryLine
 from app.schemas.spending_plan import SimulatedPurchase, SpendingPlanWrite
 from app.services.admin_service import set_app_setting
 from app.services.credit_card_service import compute_effective_date
@@ -197,6 +198,41 @@ async def test_timeline_counts_bills_and_only_variable_spending_today(
     assert timeline.covered_until is not None
     assert timeline.covered_until < timeline.horizon_end
     assert timeline.covered_through_horizon is False
+
+
+@pytest.mark.asyncio
+async def test_only_the_spending_parts_of_a_split_row_count_as_spent_today(
+    session: AsyncSession, test_user, test_workspace
+):
+    today = app_today()
+    account = await _checking(session, test_user.id, test_workspace.id)
+    groceries = Category(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="Groceries")
+    savings = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="Savings",
+        treat_as_transfer=True,
+    )
+    session.add_all([groceries, savings])
+    await session.flush()
+    split = _tx(test_user.id, test_workspace.id, account.id, 100, "debit", today, has_category_lines=True)
+    session.add(split)
+    await session.flush()
+    session.add_all([
+        TransactionCategoryLine(
+            workspace_id=test_workspace.id, transaction_id=split.id, category_id=groceries.id,
+            amount=Decimal("60"), position=0,
+        ),
+        TransactionCategoryLine(
+            workspace_id=test_workspace.id, transaction_id=split.id, category_id=savings.id,
+            amount=Decimal("40"), position=1,
+        ),
+    ])
+    await session.commit()
+    await save_plan(session, test_workspace.id, SpendingPlanWrite(daily_allowance=Decimal("50")))
+
+    timeline = await get_timeline(session, test_workspace.id, test_user.id)
+
+    assert timeline.today.spent == 60.0
+    assert timeline.today.remaining == -10.0
 
 
 @pytest.mark.asyncio
