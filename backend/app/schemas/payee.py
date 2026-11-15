@@ -68,7 +68,7 @@ class PayeeUpdate(BaseModel):
 
 class PayeeRead(BaseModel):
     id: uuid.UUID
-    user_id: uuid.UUID
+    user_id: Optional[uuid.UUID]
     name: str
     type: Optional[PayeeType] = None
 

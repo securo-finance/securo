@@ -4,8 +4,6 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    ColumnElement,
-    Select,
     and_,
     case,
     delete,
@@ -33,7 +31,11 @@ from app.services._query_filters import (
     is_inside_provider_snapshot,
     is_not_future,
     is_not_ignored,
+    line_amount,
+    line_category_id,
+    line_primary_or_amount,
     reporting_date_col,
+    with_category_lines,
 )
 from app.services import loan_schedule, mortgage_service
 from app.services.credit_card_service import (
@@ -1002,10 +1004,9 @@ async def get_account_summary(
     if account.type in LIABILITY_ACCOUNT_TYPES and account.connection_id:
         current_balance = -current_balance
 
-    # Bucketing date: for credit-card txs the user can override which cycle
-    # a tx belongs to via `effective_bill_date`. We honor that first so the
-    # totals card and bar chart agree with the transactions list (issue #92).
-    bucket_date = func.coalesce(Transaction.effective_bill_date, Transaction.date)
+    # Reporting attribution may be corrected independently of the immutable
+    # transaction list while balance reconstruction above stays on bank dates.
+    bucket_date = reporting_date_col("cash")
 
     # Bill-based membership for the plain (cycle-math) window: when the
     # caller sent a window that is exactly one bill cycle of this credit
@@ -1134,9 +1135,24 @@ async def get_account_summary(
     # that the reporting filter drops. Every other account type keeps the
     # reporting view. See `counts_on_bill` for why the bill cannot simply
     # reuse `counts_as_pnl`.
-    summary_filter = (
-        counts_on_bill() if account.type == "credit_card" else counts_as_pnl()
-    )
+    #
+    # The reporting view reads a split transaction part by part, so a part in
+    # a transfer-like category drops out alone; the bill reads whole rows.
+    if account.type == "credit_card":
+        summary_filter = counts_on_bill()
+        summary_amount = effective_amount
+
+        def summary_select(column):
+            return select(column)
+    else:
+        summary_filter = counts_as_pnl(line_category_id())
+        summary_amount = case(
+            (Transaction.currency == account.currency, line_amount()),
+            else_=line_primary_or_amount(),
+        )
+
+        def summary_select(column):
+            return with_category_lines(select(column).select_from(Transaction))
 
     # Intermediate payments into the card (the credit leg of a paired
     # transfer) reduce the bill total, but only by what is left after
@@ -1204,7 +1220,7 @@ async def get_account_summary(
     # Income = SUM of credit transactions in window (excluding opening_balance
     # and paired transfers).
     income_result = await session.execute(
-        _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(
+        _scope(summary_select(func.coalesce(func.sum(summary_amount), 0)).where(
             Transaction.account_id == account_id,
             Transaction.type == "credit",
             Transaction.source != "opening_balance",
@@ -1229,7 +1245,7 @@ async def get_account_summary(
             else_=func.abs(effective_amount),
         )
         expenses_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(signed_for_bill), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.source != "opening_balance",
                 bucket_date <= today,
@@ -1239,7 +1255,7 @@ async def get_account_summary(
         )
     else:
         expenses_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(func.abs(summary_amount)), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.type == "debit",
                 bucket_date <= today,
@@ -1259,7 +1275,7 @@ async def get_account_summary(
         bucket_date > today,
     )
     forecast_income_result = await session.execute(
-        _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(
+        _scope(summary_select(func.coalesce(func.sum(summary_amount), 0)).where(
             Transaction.account_id == account_id,
             Transaction.type == "credit",
             Transaction.source != "opening_balance",
@@ -1271,7 +1287,7 @@ async def get_account_summary(
 
     if account.type == "credit_card":
         forecast_expense_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(signed_for_bill), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.source != "opening_balance",
                 forecast_condition,
@@ -1280,7 +1296,7 @@ async def get_account_summary(
         )
     else:
         forecast_expense_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+            _scope(summary_select(func.coalesce(func.sum(func.abs(summary_amount)), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.type == "debit",
                 forecast_condition,
@@ -1559,20 +1575,33 @@ async def _running_balance_seed(
 
 
 async def get_running_balances(
-    session: AsyncSession, account: Account, filtered_ids: Select, order_col: ColumnElement,
+    session: AsyncSession, account: Account,
     date_from: _Date, row_ids: list[uuid.UUID], primary_currency: str,
 ) -> dict[uuid.UUID, tuple[float, Optional[float]]]:
-    """Balance right after each of `row_ids`, walking the whole filtered list.
+    """Ledger balance right after each requested row, regardless of placement.
 
-    `filtered_ids` selects the ids of every row the list matched, not just the
-    page, so a row's value does not depend on which page it was loaded on
-    (#1202). The window orders by the exact reverse of the list's default
-    order, so the newest row carries the balance at the end of the range.
+    Reporting dates decide which rows the list displays, not which movements
+    affect their balances. Seed before the earliest requested bank date, then
+    walk every ledger row in bank-date/created-at/id order, including rows
+    moved outside the reporting window. Pagination cannot change the result.
     """
-    opening, opening_primary = await _running_balance_seed(
-        session, account, date_from, primary_currency,
+    if not row_ids:
+        return {}
+    bounds = await session.execute(
+        select(func.min(Transaction.date), func.max(Transaction.date)).where(
+            Transaction.account_id == account.id,
+            Transaction.workspace_id == account.workspace_id,
+            Transaction.id.in_(row_ids),
+        )
     )
-    order_by = (order_col.asc(), Transaction.created_at.asc(), Transaction.id.asc())
+    earliest, latest = bounds.one()
+    if earliest is None:
+        return {}
+    ledger_start = min(date_from, earliest)
+    opening, opening_primary = await _running_balance_seed(
+        session, account, ledger_start, primary_currency,
+    )
+    order_by = (Transaction.date.asc(), Transaction.created_at.asc(), Transaction.id.asc())
     columns = [
         Transaction.id,
         func.sum(_running_balance_delta(account.currency))
@@ -1585,7 +1614,12 @@ async def get_running_balances(
             .over(order_by=order_by, rows=(None, 0))
             .label("walk_primary")
         )
-    walk = select(*columns).where(Transaction.id.in_(filtered_ids)).subquery()
+    walk = select(*columns).where(
+        Transaction.account_id == account.id,
+        Transaction.workspace_id == account.workspace_id,
+        Transaction.date >= ledger_start,
+        Transaction.date <= latest,
+    ).subquery()
     result = await session.execute(select(walk).where(walk.c.id.in_(row_ids)))
 
     balances: dict[uuid.UUID, tuple[float, Optional[float]]] = {}
@@ -1603,14 +1637,13 @@ async def get_running_balances(
 async def get_account_running_balance(
     session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID,
     primary_currency: str, date_from: _Date, date_to: _Date,
-    accounting_mode: Optional[str] = None,
 ) -> Optional[list[dict]]:
     """End-of-day balance for every day in [date_from, date_to] (#1202).
 
-    The same walk as the list's `running_balance` over the unfiltered account
-    list for that range, opening row included, so the last point equals the
-    newest row's value. Unlike `get_account_balance_history`, pending and
-    future-dated rows count: this is the account page's projected balance.
+    Balance movement always follows the bank date. A reporting-date override
+    changes period attribution and list placement, but cannot move money in the
+    account ledger. Pending and future-dated rows count because this is the
+    account page's projected balance.
     """
     account = await get_account(session, account_id, workspace_id)
     if not account:
@@ -1622,9 +1655,7 @@ async def get_account_running_balance(
     opening, opening_primary = await _running_balance_seed(
         session, account, date_from, primary_currency,
     )
-    # Bucket by the list's date column so each row lands on the day it is
-    # listed under.
-    date_col = reporting_date_col(accounting_mode or "cash")
+    date_col = Transaction.date
     result = await session.execute(
         select(
             date_col,

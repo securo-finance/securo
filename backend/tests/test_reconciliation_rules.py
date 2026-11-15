@@ -2961,3 +2961,49 @@ async def test_a_broken_file_leaves_the_rules_it_could_not_replace(
     # still off, rather than back on because everything was wiped.
     after = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
     assert find(after, INVOICE_NODE, "same_client_exact")["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_accepting_a_suggestion_is_refused_once_the_payment_was_used_elsewhere(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee,
+    business_ws, test_user,
+):
+    """The suggestion was made while all 1500 were free. Linking 1000 of it
+    by hand to another invoice in the meantime leaves 500, so accepting
+    the 1500 suggestion must not write it in full."""
+    invoice = await an_invoice(client, biz_headers, client_payee)
+    payment = await a_payment(client, biz_headers, account, client_payee, amount="1500.00")
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    assert len(queue) == 1
+    assert Decimal(queue[0]["amount"]) == Decimal("1500.00")
+
+    other_payee = Payee(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=uuid.UUID(business_ws["id"]),
+        name="Beta Servicos",
+        source="manual",
+    )
+    session.add(other_payee)
+    await session.commit()
+    other = await an_invoice(client, biz_headers, other_payee, total="1000.00")
+    by_hand = await client.post(
+        f"/api/invoices/{other['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": payment["id"]},
+    )
+    assert by_hand.status_code == 201, by_hand.text
+
+    accepted = await client.post(
+        f"/api/reconciliation/suggestions/{queue[0]['id']}/accept", headers=biz_headers
+    )
+    assert accepted.status_code == 400, accepted.text
+    assert accepted.json()["detail"]["code"] == "transaction_over_allocation"
+
+    untouched = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    assert untouched["state"] == "open"
+    assert Decimal(untouched["balance"]) == Decimal("3000.00")

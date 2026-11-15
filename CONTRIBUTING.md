@@ -59,6 +59,17 @@ The same applies to issues. An issue produced by pointing a model at the reposit
 5. Commit with a clear message (see below)
 6. Push your branch and open a Pull Request
 
+If you have [mise](https://mise.jdx.dev/) installed, it can set up and drive both sides for you:
+
+```bash
+mise //...:install    # installs the pinned Python (.python-version) plus all backend and frontend deps
+mise backend:install  # backend tools and deps only
+mise backend:test     # backend tests
+mise frontend:install # frontend deps
+mise frontend:lint    # frontend lint
+mise frontend:build   # frontend type check + build
+```
+
 Optional but recommended, so you catch lint and type errors before CI does:
 
 ```bash
@@ -155,6 +166,11 @@ If another migration lands on `main` while your PR is open, your number is
 taken and you have to renumber. CI catches this: the Migration Chain job runs
 against your branch merged with `main`, so a clash fails there rather than on
 someone's `alembic upgrade head` after both are merged.
+
+In the Docker stack, migrations run in the one-shot `migrate` service, and
+the backend, workers and MCP server refuse to start until the database is at
+head. Restarting the backend does not apply a new migration; run
+`docker compose run --rm migrate`.
 
 ## Pull Request Guidelines
 

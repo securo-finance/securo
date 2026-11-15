@@ -3,7 +3,10 @@ import { render, screen } from '@testing-library/react'
 import { MobileTransactionRow } from './mobile-transaction-row'
 import type { Account, Category, Transaction } from '@/types'
 
-vi.mock('react-i18next', () => ({
+// Partial: the split badge reads the display locale, whose module sets up
+// i18next with `initReactI18next` from this package.
+vi.mock('react-i18next', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
 }))
 
@@ -57,6 +60,7 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     splits: [],
     is_ignored: false,
     ...overrides,
+    reporting_date_override: overrides.reporting_date_override ?? null,
   }
 }
 
@@ -126,5 +130,18 @@ describe('MobileTransactionRow transfer indicator', () => {
     const category = makeCategory({ treat_as_transfer: false })
     renderRow(makeTx({ category_id: category.id, category }))
     expect(screen.queryByLabelText('transactions.transfer')).not.toBeInTheDocument()
+  })
+})
+
+describe('MobileTransactionRow reporting date indicator', () => {
+  it('shows reporting and original bank dates for moved rows', () => {
+    renderRow(makeTx({ reporting_date_override: '2026-09-30' }))
+    expect(screen.getByText(/^transactions.reportingDate:/)).toHaveTextContent('9/30/2026')
+    expect(screen.getByText(/^· transactions.bankDate:/)).toHaveTextContent('10/20/2026')
+  })
+
+  it('does not mark an unchanged date as moved', () => {
+    renderRow(makeTx({ reporting_date_override: '2026-10-20' }))
+    expect(screen.queryByText(/^transactions.reportingDate:/)).not.toBeInTheDocument()
   })
 })

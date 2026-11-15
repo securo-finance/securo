@@ -37,6 +37,9 @@ from app.services.recurring_transaction_service import (
 )
 
 
+RecurringItem = tuple[TransactionCalendarItem, float, list[tuple[bool, float]]]
+
+
 @dataclass(frozen=True)
 class ProjectionBase:
     """Every known balance move on ``[start, end)``, before any daily allowance."""
@@ -47,9 +50,10 @@ class ProjectionBase:
     # recurring occurrences that fall between today and ``start``.
     seed: float
     deltas: dict[date, float]
-    # The rows behind the forecast and recurring deltas, for callers that list them.
-    forecast_rows: list[Transaction]
-    recurring_items: list[tuple[TransactionCalendarItem, float]]
+    # The virtual recurring occurrences behind the recurring deltas, for
+    # callers that list them: (item, signed primary delta, parts), where each
+    # part is (is_transfer, share of the template).
+    recurring_items: list[RecurringItem]
 
 
 @dataclass(frozen=True)
@@ -98,10 +102,9 @@ async def load_projection_base(
         primary_currency_hint=primary_currency,
         account_ids=account_ids,
     )
-    forecast_rows = await _get_forecast_transactions(
+    for tx in await _get_forecast_transactions(
         session, workspace_id, start, end, account_ids
-    )
-    for tx in forecast_rows:
+    ):
         # Forecast rows are excluded from the posted deltas but belong to the
         # projected walk.
         if not is_ignored_row(tx):
@@ -125,7 +128,6 @@ async def load_projection_base(
         end=end,
         seed=seed + carried,
         deltas=deltas,
-        forecast_rows=forecast_rows,
         recurring_items=recurring_items,
     )
 
@@ -146,7 +148,7 @@ async def _move_card_charges_to_due_dates(
     end: date,
     account_ids: Optional[list[uuid.UUID]],
     deltas: dict[date, float],
-    recurring_items: list[tuple[TransactionCalendarItem, float]],
+    recurring_items: list[RecurringItem],
 ) -> float:
     """Re-date card charges from their purchase date to their bill's due date.
 
@@ -204,7 +206,7 @@ async def _move_card_charges_to_due_dates(
             )
         )).scalars()
     }
-    for item, signed_delta in recurring_items:
+    for item, signed_delta, _parts in recurring_items:
         card = cards.get(item.account_id) if item.account_id else None
         if card is None or item.is_ignored or item.is_transfer:
             continue
@@ -371,7 +373,7 @@ async def project_recurring_items(
     start: date,
     end: date,
     account_ids: Optional[list[uuid.UUID]],
-) -> tuple[list[tuple[TransactionCalendarItem, float]], dict[date, float], float]:
+) -> tuple[list[RecurringItem], dict[date, float], float]:
     stmt = (
         select(RecurringTransaction)
         .join(Account, RecurringTransaction.account_id == Account.id)
@@ -392,7 +394,7 @@ async def project_recurring_items(
     result = await session.execute(stmt)
     recurring_rows = list(result.scalars().all())
 
-    items: list[tuple[TransactionCalendarItem, float]] = []
+    items: list[RecurringItem] = []
     deltas: dict[date, float] = {}
     carried_delta = 0.0
     for rec in recurring_rows:
@@ -415,6 +417,16 @@ async def project_recurring_items(
         signed_delta = amount_primary if rec.type == "credit" else -amount_primary
         is_transfer = bool(category and category.treat_as_transfer)
         is_ignored = bool(category and category.is_ignored)
+        template_total = abs(float(rec.amount or 0))
+        if rec.has_category_lines and rec.category_lines and template_total:
+            parts = [
+                (bool(line.category and line.category.treat_as_transfer), float(line.amount) / template_total)
+                for line in rec.category_lines
+                if not (line.category and line.category.is_ignored)
+            ]
+            is_transfer = all(part_is_transfer for part_is_transfer, _ in parts)
+        else:
+            parts = [(is_transfer, 1.0)]
         if not is_ignored:
             carried_delta += _count_occurrences_before(rec, start) * signed_delta
         for occ_date in occurrences:
@@ -436,8 +448,9 @@ async def project_recurring_items(
                 source="recurring",
                 is_transfer=is_transfer,
                 is_ignored=is_ignored,
+                has_category_lines=bool(rec.has_category_lines),
             )
-            items.append((item, signed_delta))
+            items.append((item, signed_delta, parts))
             # The row is still listed, but an ignored occurrence never moves the
             # projected balance: _daily_balance_deltas_by_date already leaves the
             # posted version out, so counting the projection here would promise a

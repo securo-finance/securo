@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { useTranslation } from 'react-i18next'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -46,8 +47,11 @@ import {
   ShieldCheck,
   Sparkles,
   Fingerprint,
+  Palette,
+  Puzzle,
 } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
+import { useLibrary } from '@/contexts/library-context'
 import {
   WORKSPACE_KINDS,
   WORKSPACE_KIND_ICON,
@@ -114,7 +118,9 @@ export function WorkspaceSwitcher({
   collapsed = false,
 }: AccountMenuProps) {
   const { t, i18n } = useTranslation()
+  const { openLibrary } = useLibrary()
   const navigate = useNavigate()
+  const { pluginsEnabled } = useFeatureFlags()
   const { current, workspaces, switchWorkspace, refresh } = useWorkspace()
   const { user, logout } = useAuth()
   const [createOpen, setCreateOpen] = useState(false)
@@ -291,6 +297,16 @@ export function WorkspaceSwitcher({
             </DropdownMenuItem>
           )}
 
+          {pluginsEnabled && (
+            <DropdownMenuItem
+              onClick={() => navigate('/plugins')}
+              className="flex items-center gap-2"
+            >
+              <Puzzle size={14} />
+              {t('plugins.title')}
+            </DropdownMenuItem>
+          )}
+
           <DropdownMenuItem
             onClick={onUpdateAvailable}
             className="flex items-center gap-2"
@@ -304,6 +320,14 @@ export function WorkspaceSwitcher({
           >
             <BookOpen size={14} />
             {t('nav.documentation')}
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => openLibrary('themes')}
+            className="flex items-center gap-2"
+          >
+            <Palette size={14} />
+            {t('library.appearance')}
           </DropdownMenuItem>
 
           {/* Language sub-menu */}

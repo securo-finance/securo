@@ -328,7 +328,6 @@
       "start_after_invoice": "契約をこの請求書より後に開始することはできません。",
       "invoice_not_found": "請求書が見つかりません。",
       "no_term": "この期間に有効な条件がありません。",
-      "no_author": "この契約には請求書を発行する作成者がいません。",
       "negative_discount": "割引を負の値にすることはできません。",
       "first_term": "開始時から有効な料金は移動も削除もできません。変更するか、より後の日付から新しい料金を追加してください。",
       "not_receivable": "契約に含められるのは、あなたが発行した請求書のみです。",
@@ -350,7 +349,8 @@
       "installment_amount_not_positive": "各分割には金額が必要です。",
       "installment_due_required": "各分割には期日が必要です。",
       "invalid_deduction_kind": "不明な控除の種類です。",
-      "deduction_not_found": "控除が見つかりません。"
+      "deduction_not_found": "控除が見つかりません。",
+      "transaction_over_allocation": "この取引で紐付けできる残額を超えています。"
     },
     "comingNext": "クライアントに請求し、支払い済みのものと未払いのものを管理します。現在開発中の次の機能です。",
     "document": {
@@ -843,8 +843,6 @@
     "monthlyTrend": "月間推移",
     "budgetVsActual": "予算と実績",
     "balanceFlow": "残高推移",
-    "balanceFlowVsMedian": "{{day}}日目: 通常({{median}})との差 {{delta}}",
-    "balanceFlowVsMonth": "{{day}}日目: {{month}}との差 {{delta}}",
     "balanceMedianLegend": "選択した月の中央値",
     "compareMonths": "月を比較",
     "selectComparisonMonths": "比較する月を選択",
@@ -885,7 +883,14 @@
     "fxRateUsed": "為替レート: {{rate}}",
     "refreshRates": "為替レートを更新",
     "ratesRefreshed": "為替レートを更新しました",
-    "ratesError": "為替レートの更新に失敗しました"
+    "ratesError": "為替レートの更新に失敗しました",
+    "balanceFlowVsMedian_above": "{{day}}日目：累積変動は中央値（{{median}}）を{{delta}}上回っています。",
+    "balanceFlowVsMedian_below": "{{day}}日目：累積変動は中央値（{{median}}）を{{delta}}下回っています。",
+    "balanceFlowVsMedian_equal": "{{day}}日目：累積変動は中央値（{{median}}）と同じです。",
+    "balanceFlowVsMonth_above": "{{day}}日目：累積変動は{{month}}（{{median}}）を{{delta}}上回っています。",
+    "balanceFlowVsMonth_below": "{{day}}日目：累積変動は{{month}}（{{median}}）を{{delta}}下回っています。",
+    "balanceFlowVsMonth_equal": "{{day}}日目：累積変動は{{month}}（{{median}}）と同じです。",
+    "drillDownError": "取引を読み込めませんでした。もう一度お試しください。"
   },
   "transactions": {
     "title": "取引",
@@ -1056,7 +1061,7 @@
     "transferSameAccount": "振替元と振替先は異なる口座にしてください",
     "transferDescription": "摘要",
     "transferNotes": "メモ",
-    "transferInfo": "これは振替です — 摘要・日付・メモの変更は両方の取引に適用されます",
+    "transferInfo": "これは振替です。摘要・メモの変更は両方の取引に適用されます。金額と日付の変更は、相手側が手動で登録された（同期されていない）取引の場合のみ反映され、同期された取引には反映されません。",
     "transferLinkedTo": "紐付け先:",
     "transferOpenAccount": "{{account}} 口座を開く",
     "transferTooltip": "振替はレポートやダッシュボードの合計から除外されます",
@@ -1171,7 +1176,13 @@
     "invoiceBadgeTooltip": "この取引は請求書を決済しています。開く。",
     "suggestionBadge": "要確認",
     "suggestionBadgeTooltip": "これが何かを消し込む可能性があります。キューを開いて回答してください。",
-    "clearGroupFilter": "グループフィルターを解除"
+    "clearGroupFilter": "グループフィルターを解除",
+    "syncedAmountDateError": "同期された取引の金額や日付は変更できません",
+    "bankDate": "銀行日付",
+    "reportingDate": "レポート日付",
+    "reportingDateHint": "アプリ全体のレポート期間を変更します。銀行日付は変更されません。",
+    "reportingDatePlaceholder": "日付を選択（任意）",
+    "clearReportingDate": "レポート日付をリセット"
   },
   "accounts": {
     "title": "口座",
@@ -1357,7 +1368,8 @@
       "active": "有効",
       "error": "エラー",
       "expired": "期限切れ"
-    }
+    },
+    "connectorAskAdmin": "このコネクタは未設定です。管理者に設定を依頼してください。"
   },
   "loans": {
     "title": "ローン契約",
@@ -1393,7 +1405,8 @@
     "adjustPreviewFell": "債務が {{amount}} 減りました: 収入には含めずに残高を修正します。",
     "adjustPreviewMatches": "残高はすでに金融機関と一致しています。",
     "adjustRecorded": "残高を更新しました: {{amount}} を記録",
-    "adjustMatched": "残高はすでに一致していたため、何も記録されませんでした"
+    "adjustMatched": "残高はすでに一致していたため、何も記録されませんでした",
+    "progress": "{{total}}回中{{paid}}回支払い済み"
   },
   "connections": {
     "settings": "接続設定",
@@ -1453,7 +1466,23 @@
     "suggestCreate": "予算を作成",
     "suggestCreated": "{{count}}件の予算を作成しました",
     "suggestEmpty": "選択した期間に支出の履歴がありません。",
-    "suggestError": "候補を読み込めませんでした。しばらくしてからもう一度お試しください。"
+    "suggestError": "候補を読み込めませんでした。しばらくしてからもう一度お試しください。",
+    "spending": "支出",
+    "spendingDescription": "保留中および予測支出を含みます。",
+    "spendingError": "支出を読み込めませんでした。",
+    "settingsTitle": "Budget settings",
+    "monthBudgets": "{{month}}の予算",
+    "otherCategories": "その他のカテゴリ",
+    "noCategories": "カテゴリはまだありません",
+    "total": "予算 {{amount}}",
+    "saved": "予算を保存しました",
+    "budgetFor": "{{category}}の予算",
+    "invalidAmount": "0以上の有効な金額を入力してください。",
+    "repeatEveryMonthFor": "{{category}}の予算を毎月繰り返す",
+    "previousMonth": "前月",
+    "nextMonth": "翌月",
+    "hiddenCategory": "非表示",
+    "average": "通常 {{amount}}"
   },
   "goals": {
     "title": "目標",
@@ -1679,7 +1708,22 @@
       "rules": "ルール",
       "queue": "要対応",
       "history": "履歴"
-    }
+    },
+    "removePack": "パックを削除",
+    "removePackAria": "{{name}} パックを削除",
+    "removePackTitle": "{{name}} パックを削除しますか？",
+    "removePackSummary_one": "このパックのルール {{count}} 件を削除します。取引のカテゴリはそのまま残ります。",
+    "removePackSummary_other": "このパックのルール {{count}} 件を削除します。取引のカテゴリはそのまま残ります。",
+    "removePackKeeps_one": "編集したルール {{count}} 件はあなたのルールとして残ります:",
+    "removePackKeeps_other": "編集したルール {{count}} 件はあなたのルールとして残ります:",
+    "removePackMore": "ほか {{count}} 件",
+    "removePackConfirm": "パックを削除",
+    "removePackChanged": "このプレビューの後にパックのルールが変更されました。削除する前にもう一度確認してください。",
+    "removePackPreviewFailed": "このパックを削除した場合の内容を読み込めませんでした。",
+    "packRemoved_one": "ルール {{count}} 件を削除しました",
+    "packRemoved_other": "ルール {{count}} 件を削除しました",
+    "packKeptEdited_one": "編集済みのルール {{count}} 件を残しました",
+    "packKeptEdited_other": "編集済みのルール {{count}} 件を残しました"
   },
   "categories": {
     "title": "カテゴリ",
@@ -2114,7 +2158,12 @@
     "confirmRegenerate": "増加パラメータが変更されました。自動生成されたすべての価値が削除され再計算されます。手動入力の価値は保持されます。",
     "regenerate": "再生成",
     "linkedLoans": "紐付けたローン",
-    "propertyEquity": "評価額 {{value}} · 負債 {{debt}} · 純資産 {{equity}}"
+    "propertyEquity": "評価額 {{value}} · 負債 {{debt}} · 純資産 {{equity}}",
+    "exchangeRateSetupWarning": "為替レートが設定されていません。別の通貨の資産合計が正確でない場合があります。",
+    "exchangeRateSetupLink": "為替レートを設定",
+    "exchangeRateSetupContactAdmin": "管理者に為替レートの設定を依頼してください。",
+    "exchangeRateSetupAction": "{{from}}から{{to}}への為替レートを設定",
+    "exchangeRateSetupAskAdmin": "{{from}}から{{to}}への換算には為替レートが必要です。管理者に設定を依頼してください。"
   },
   "reports": {
     "section": "分析",
@@ -2200,7 +2249,21 @@
     "range30d": "30日",
     "customRange": "期間を指定",
     "pickCustomRange": "開始日と終了日を選択",
-    "loadError": "レポートの読み込みに失敗しました"
+    "loadError": "レポートの読み込みに失敗しました",
+    "statement": "収支明細",
+    "statementIncomeTotal": "収入合計",
+    "statementExpenseTotal": "支出合計",
+    "statementSettings": "レポートのオプション",
+    "statementSortBy": "並べ替え",
+    "statementSortDefault": "デフォルト",
+    "statementSortAsc": "金額（小さい順）",
+    "statementSortDesc": "金額（大きい順）",
+    "statementColumns": "列数",
+    "statementShowChange": "変化率を表示",
+    "statementViewTransactions": "取引を表示",
+    "statementUncategorizedIncome": "未分類の収入",
+    "statementUncategorizedExpense": "未分類の支出",
+    "statementToggleGroup": "{{name}} のカテゴリを表示"
   },
   "payees": {
     "noPayeeFound": "取引相手が見つかりません。",
@@ -2430,9 +2493,6 @@
     "allSettled": "精算が完了しています。",
     "owesYou": "{{name}}があなたに未払い",
     "youOwe": "あなたは{{name}}に未払い",
-    "ownerOwesYou": "{{name}}があなたに未払い",
-    "thirdPartyOwes": "{{name}}が{{owner}}に未払い",
-    "thirdPartyOwed": "{{owner}}が{{name}}に未払い",
     "ownerBadge": "オーナー",
     "settleUp": "精算する",
     "payNow": "今すぐ支払う",
@@ -2474,7 +2534,9 @@
       "project": "プロジェクト",
       "client": "クライアント",
       "other": "その他"
-    }
+    },
+    "owesGroupOwner": "{{name}}がグループのオーナーに未払い",
+    "groupOwnerOwes": "グループのオーナーが{{name}}に未払い"
   },
   "privacy": {
     "hide": "金額を隠す",
@@ -3168,5 +3230,512 @@
     "surplusLabel": "1日あたりの平均残り",
     "surplusCaption": "日々の支出の前",
     "floorCaption": "下限 {{floor}} · {{horizon}}"
+  },
+  "providerSettings": {
+    "catalog": {
+      "setupGuide": "設定ガイド",
+      "connectionsTitle": "銀行接続",
+      "connectionsDescription": "銀行口座をこのインスタンスに接続する方法を選択します。",
+      "exchangeRatesTitle": "為替レート",
+      "exchangeRatesDescription": "通貨換算に使用するレートを最新に保ちます。",
+      "configure": "設定",
+      "manage": "管理",
+      "manageProvider": "{{provider}}を管理",
+      "configureProvider": "{{provider}}を設定",
+      "needsAttention": "要確認",
+      "credentialsTitle": "認証情報",
+      "credentialsDescription": "変更する値のみ入力してください。保存済みの認証情報は表示されません。",
+      "securityNote": "認証情報は保存時に暗号化されます。",
+      "saveChanges": "変更を保存",
+      "saving": "保存中…",
+      "simplefinTitle": "SimpleFIN接続を許可",
+      "simplefinDescription": "ユーザーが各自のSimpleFINセットアップトークンで銀行口座を接続できるようにします。",
+      "notSet": "未設定",
+      "savedValue": "安全に保存済み",
+      "environmentValue": "環境変数で設定済み",
+      "replacementPlaceholder": "置き換える新しい値を入力",
+      "valuePlaceholder": "認証情報を入力",
+      "empty": "利用可能なプロバイダーがありません。",
+      "pluggyDescription": "Pluggy Connectで口座を接続します。",
+      "enableBankingDescription": "銀行の認可を利用して口座を接続します。",
+      "simplefinDescriptionShort": "SimpleFIN Bridgeで口座を接続します。",
+      "openExchangeRatesDescription": "通貨換算に使用する為替レートです。",
+      "otherTitle": "その他の連携",
+      "otherDescription": "このインスタンスの追加サービスを管理します。",
+      "redirectTitle": "リダイレクトURL",
+      "redirectHint": "認証情報を入力する前に、このURLをEnable Bankingのアプリケーションに登録してください。",
+      "copyRedirect": "リダイレクトURLをコピー",
+      "redirectCopied": "リダイレクトURLをコピーしました",
+      "copyFailed": "コピーできませんでした。アドレスを選択して手動でコピーしてください。"
+    },
+    "title": "プロバイダー設定",
+    "description": "保存した認証情報は環境変数の値より優先されます。変更は再起動せずに反映されます。「設定済み」は必須項目が入力されていることを示し、認証情報の有効性はここでは確認しません。",
+    "configured": "設定済み",
+    "notConfigured": "未設定",
+    "app": "アプリに保存済み",
+    "environment": "環境変数から取得",
+    "none": "未設定",
+    "invalid": "保存した認証情報を読み取れません。新しい値に置き換えるか、環境変数の値を使用してください。",
+    "reset": "環境変数の値を使用",
+    "remove": "保存した値を削除",
+    "removeTitle": "保存した「{{field}}」の値を削除しますか？",
+    "removeWithFallback": "保存した値が削除されます。新しい処理では環境変数の値が使用されます。",
+    "removeWithoutFallback": "環境変数の値がありません。削除すると、再設定するまでプロバイダーが無効になります。",
+    "secretStorageUnavailable": "認証情報を保存する前に、サーバーで32文字以上の固有のSECRET_KEYを設定してください。既存の環境変数による設定は引き続き使用できます。",
+    "secretPlaceholder": "保存した認証情報を置き換える新しい値を入力",
+    "simplefinHelp": "ここでSimpleFINを有効にし、口座ページで各接続専用のセットアップトークンを使って接続を追加してください。",
+    "fields": {
+      "openexchangerates_app_id": "アプリID",
+      "pluggy_client_id": "クライアントID",
+      "pluggy_client_secret": "クライアントシークレット",
+      "enable_banking_app_id": "アプリID",
+      "enable_banking_private_key": "秘密鍵（PEM）",
+      "simplefin_enabled": "SimpleFINを有効にする"
+    }
+  },
+  "categoryLines": {
+    "title": "カテゴリーで分割",
+    "start": "カテゴリーで分割",
+    "badge": "分割 · {{count}}",
+    "badgeShort": "分割",
+    "byAmount": "金額",
+    "byPercent": "%",
+    "pickCategory": "カテゴリーを選択",
+    "partAmount": "内訳の金額",
+    "partPercent": "内訳の割合",
+    "removePart": "内訳を削除",
+    "addPart": "カテゴリーを追加",
+    "allAllocated": "すべて配分済み",
+    "remaining": "残り {{value}}",
+    "fillRemaining": "残りを入れる",
+    "over": "金額を {{value}} 超過",
+    "needsCategory": "各内訳にカテゴリーが必要です。",
+    "needsValue": "各内訳には0より大きい金額が必要です。",
+    "hint": "レポートは各内訳をそれぞれのカテゴリーで集計します。",
+    "importUnresolved": "ここに見つかりません: {{names}}。分割なしで取り込みます。",
+    "importAmbiguous": "{{names}} という名前のカテゴリーが複数あります。分割なしで取り込みます。",
+    "undo": "分割を取り消す",
+    "partOf": "{{value}} の一部",
+    "bulkSkipped_one": "分割された取引 {{count}} 件はそのままにしました",
+    "bulkSkipped_other": "分割された取引 {{count}} 件はそのままにしました",
+    "errors": {
+      "tooFewLines": "分割には少なくとも2つのカテゴリーが必要です。",
+      "duplicateCategory": "各カテゴリーは分割内で一度だけ使えます。",
+      "invalidLines": "各内訳には正の値が必要です。",
+      "amountMismatch": "内訳の合計は取引金額と一致する必要があります。",
+      "percentMismatch": "割合の合計は100である必要があります。",
+      "tooSmall": "この金額ではこのように分割できません。",
+      "ignoredCategory": "無視されたカテゴリーには取引の一部を割り当てられません。",
+      "hiddenCategory": "非表示のカテゴリーには取引の一部を割り当てられません。",
+      "cardCreditTransfer": "カードへの入金には振替カテゴリーの内訳を含められません。",
+      "transfer": "振替はカテゴリーで分割できません。",
+      "ignoredTransaction": "無視された取引はカテゴリーで分割できません。",
+      "notSplittable": "この取引はカテゴリーで分割できません。",
+      "noAmount": "金額のない取引は分割できません。",
+      "hasGroupSplit": "カテゴリーで分割する前に、人との割り勘を解除してください。",
+      "hasMortgage": "カテゴリーで分割する前に、住宅ローンの内訳を削除してください。",
+      "installments": "分割払いのシリーズはまだカテゴリーで分割できません。",
+      "installmentScope": "このシリーズの分割払いはカテゴリーで分割されています。個別に編集してください。",
+      "categoryAndLines": "1つのカテゴリーかカテゴリー分割のどちらかを選んでください。",
+      "undoFirstCategory": "1つのカテゴリーを選ぶ前に分割を取り消してください。",
+      "amountNeedsLines": "金額と一緒に内訳も変更してください。",
+      "undoFirstTransfer": "振替としてリンクする前に分割を取り消してください。",
+      "undoFirstGroupSplit": "人と割り勘する前に分割を取り消してください。",
+      "undoFirstMortgage": "住宅ローンの内訳を追加する前に分割を取り消してください。",
+      "categoryInUse": "このカテゴリーには分割された取引の内訳があります。先にそれらの分割を変更してください。",
+      "destinationInvalid": "分割された取引の内訳は、無視または非表示のカテゴリーに移せません。"
+    }
+  },
+  "plugins": {
+    "title": "プラグイン",
+    "hint": "コミュニティが作ったカテゴリ、ルール、テーマ、連携。適用前にすべての変更を確認できます。",
+    "browse": "カタログを見る",
+    "noneInstalled": "このワークスペースにインストールされたプラグインはありません。",
+    "remove": "プラグインを削除",
+    "removeAria": "{{name}} を削除",
+    "catalogFailed": "カタログを読み込めませんでした。",
+    "catalogEmpty": "カタログにはまだプラグインがありません。",
+    "viewSource": "ソースを見る",
+    "revoked": "取り消し済み",
+    "unavailable": "利用不可",
+    "needsVersion": "Securo {{version}} が必要",
+    "updateAvailable": "アップデートあり",
+    "installed": "インストール済み",
+    "install": "インストール",
+    "update": "アップデート",
+    "andMore": "ほか {{count}} 件",
+    "planTitle": {
+      "install": "{{name}} をインストールしますか？",
+      "update": "{{name}} をアップデートしますか？",
+      "remove": "{{name}} を削除しますか？"
+    },
+    "planIntro": "このワークスペースで変わる内容:",
+    "planFailed": "変更内容を読み込めませんでした。",
+    "planChanged": "このプレビューの後に変更がありました。もう一度確認してください。",
+    "privacy": "このプラグインはこのワークスペースにデータを追加するだけです。どこにも送信されません。",
+    "history": "取引は現在のカテゴリを保持します。",
+    "confirm": {
+      "install": "インストール",
+      "update": "アップデート",
+      "remove": "削除"
+    },
+    "done": {
+      "install": "{{name}} をインストールしました",
+      "update": "{{name}} をアップデートしました",
+      "remove": "{{name}} を削除しました"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} グループ",
+      "category_groups_other": "{{count}} グループ",
+      "categories_one": "{{count}} カテゴリ",
+      "categories_other": "{{count}} カテゴリ",
+      "rules_one": "{{count}} ルール",
+      "rules_other": "{{count}} ルール"
+    },
+    "plan": {
+      "create": "追加: {{items}}",
+      "update": "更新: {{items}}",
+      "delete": "削除: {{items}}",
+      "keep": "編集済みのためそのまま: {{items}}:",
+      "release": "あなたに引き継ぎ (編集済みまたは使用中): {{items}}:",
+      "existing": "既にあるためスキップ: {{items}}:",
+      "unresolved": "カテゴリがないためスキップ: {{items}}:",
+      "defaults_one": "ルール用のデフォルトカテゴリも {{count}} 件作成します",
+      "defaults_other": "ルール用のデフォルトカテゴリも {{count}} 件作成します",
+      "themes": "ライブラリにテーマを追加します：{{names}}",
+      "themesRemove": "これらのテーマをライブラリから外します：{{names}}",
+      "themeInUse": "{{name}} を使用中です。Securo のテーマに戻ります。"
+    },
+    "page": {
+      "section": "カタログ",
+      "notice": "プラグインは Securo によって審査されていません。適用する前に何が変わるかを正確に確認でき、データはサーバーの外に出ません。",
+      "search": "プラグインを検索",
+      "type": {
+        "data": "データ",
+        "interface": "インターフェース",
+        "code": "コード"
+      },
+      "status": {
+        "installed": "インストール済み",
+        "updates": "アップデートあり"
+      },
+      "clear": "フィルターを解除",
+      "trendingHint": "規模に対して最も伸びているもの",
+      "newestHint": "過去30日間に追加",
+      "sortBy": "並べ替え",
+      "sort": {
+        "popular": "人気",
+        "trending": "トレンド",
+        "updated": "最近更新",
+        "newest": "新しい順",
+        "name": "名前"
+      },
+      "noResults": "条件に一致するプラグインはありません。",
+      "byOwner": "作成者: {{owner}}",
+      "updated": "{{when}}に更新",
+      "count_one": "{{count}} 件のプラグイン",
+      "count_other": "{{count}} 件のプラグイン",
+      "stars_one": "スター {{count}}",
+      "stars_other": "スター {{count}}",
+      "authors_one": "{{count}} 人の作者",
+      "authors_other": "{{count}} 人の作者",
+      "clearSearch": "検索をクリア",
+      "facet": {
+        "type": "種類",
+        "content": "内容",
+        "language": "言語",
+        "status": "状態",
+        "workspace": "ワークスペース"
+      },
+      "view": {
+        "all": "すべて",
+        "trending": "トレンド",
+        "new": "新着"
+      },
+      "any": "すべて",
+      "trendingEmpty": "今週スターを獲得したプラグインはありません。",
+      "newEmpty": "過去 30 日間に追加されたプラグインはありません。"
+    },
+    "kindName": {
+      "category_groups": "カテゴリグループ",
+      "categories": "カテゴリ",
+      "rules": "ルール",
+      "csv_presets": "CSV プリセット",
+      "fiscal_jurisdictions": "税務管轄",
+      "invoice_labels": "請求書ラベル",
+      "widgets": "ウィジェット",
+      "reports": "レポート",
+      "dashboard_layouts": "ダッシュボードのレイアウト",
+      "connectors": "銀行コネクタ",
+      "parsers": "ファイルリーダー",
+      "price_providers": "価格プロバイダー",
+      "agent_tools": "エージェントツール",
+      "integrations": "連携",
+      "themes": "テーマ"
+    },
+    "detail": {
+      "overview": "概要",
+      "inside": "含まれるもの",
+      "insideHint": "このプラグインがワークスペースに追加するすべての項目。インストール時に既存のものを確認できます。",
+      "noReadme": "作者はまだこのプラグインの README を書いていません。",
+      "loadFailed": "プラグインの詳細を読み込めませんでした。",
+      "contentsUnavailable": "この Securo のバージョンではこのプラグインの内容を表示できません。",
+      "version": "バージョン",
+      "license": "ライセンス",
+      "requires": "必要条件",
+      "updated": "更新",
+      "languages": "言語",
+      "builtIn": "既定",
+      "when": "条件",
+      "previewNote": "インストール前にすべての変更を確認でき、データがサーバーの外に出ることはありません。",
+      "notFound": "このプラグインはカタログにありません。",
+      "type": "種類",
+      "added": "追加日",
+      "connections": "接続",
+      "codeNote": "インストールすると、何かが実行される前に、接続先と変更できる内容が表示されます。",
+      "workspaces": "ワークスペース",
+      "anyWorkspace": "個人用とビジネス用"
+    },
+    "installedFailed": "インストール済みのプラグインを読み込めませんでした。",
+    "planRecordOnly": {
+      "install": "このワークスペースには既にすべての項目があります。インストールすると記録され、更新を受け取れます。",
+      "update": "ワークスペースの項目は変わりません。インストール済みのバージョンが {{version}} になります。",
+      "remove": "項目はもう残っていません。削除するとリストから外れるだけです。"
+    },
+    "code": {
+      "runsCode": "このプラグインはサーバー上でコードを実行します。Securo やデータからは隔離されています。プラグインは Securo の審査を受けていません。信頼できるコードだけをインストールしてください。",
+      "network": "接続先",
+      "noNetwork": "なし：データがサーバーの外に出ることはありません。",
+      "access": "このワークスペースで使うもの",
+      "noAccess": "なし：データの読み取りも変更もできません。",
+      "new": "新規",
+      "read": "{{what}}の読み取り",
+      "write": "{{what}}の読み取りと変更",
+      "ownerOnly": "コードを実行するプラグインの追加、更新、削除はワークスペースのオーナーのみが行えます。",
+      "removeConnections": "このワークスペースの接続（{{count}} 件）は、保存されたキーやアクセス権とともに削除されます。",
+      "removeNothing": "どのワークスペースでも使われなくなると、プラグインのコードはサーバーから削除されます。",
+      "auth": {
+        "credentials": "キーまたはパスワード",
+        "oauth": "サインイン",
+        "none": "設定不要"
+      },
+      "resource": {
+        "accounts": "口座",
+        "connections": "銀行接続",
+        "transactions": "取引",
+        "categories": "カテゴリ",
+        "payees": "取引先",
+        "rules": "ルール",
+        "budgets": "予算",
+        "goals": "目標",
+        "recurring": "定期取引",
+        "assets": "資産",
+        "reports": "レポート",
+        "invoices": "請求書"
+      },
+      "intro": {
+        "install": "このプラグインはデータを追加しません。コードにできることを確認してください：",
+        "update": "新しいバージョンにできることを確認してください：",
+        "remove": "このワークスペースでのコードの実行が止まります。"
+      }
+    },
+    "connections": {
+      "title": "接続",
+      "hint": "各接続は、このワークスペースとサービスのアカウントを結び付けます。キーは暗号化して保存され、このプラグインにのみ送信されます。",
+      "add": "接続を追加",
+      "loadFailed": "接続を読み込めませんでした。",
+      "none": "まだ接続はありません。",
+      "status": {
+        "pending": "待機中",
+        "active": "接続済み",
+        "error": "失敗",
+        "needs_auth": "サインインが必要",
+        "keysRefused": "キーが拒否されました"
+      },
+      "lastSync": "{{when}}に同期",
+      "neverSynced": "未同期",
+      "signIn": "サインイン",
+      "syncNow": "今すぐ同期",
+      "remove": "接続を削除",
+      "removeAria": "{{name}} を削除",
+      "synced": "{{name}} を同期しました",
+      "syncFailed": "同期に失敗しました。",
+      "addTitle": "{{name}} を接続",
+      "addHint": "サービスから発行された情報を入力してください。接続はいつでも削除できます。",
+      "integration": "接続方法",
+      "name": "名前",
+      "optional": "任意",
+      "secretNote": "秘密の項目は暗号化して保存され、再表示されることはありません。",
+      "redirectHint": "サインインの前に、このリダイレクト先をサービスに登録してください：",
+      "copy": "コピー",
+      "copied": "コピーしました",
+      "continueSignIn": "サインインへ進む",
+      "connect": "接続",
+      "added": "{{name}} を接続しました",
+      "removeTitle": "{{name}} を削除しますか？",
+      "removeHint": "保存されたキーとこのワークスペースへのアクセス権は削除されます。取り込み済みのデータは残ります。",
+      "removed": "{{name}} を削除しました",
+      "copyFailed": "コピーできませんでした。アドレスを選択して手動でコピーしてください。"
+    },
+    "oauth": {
+      "title": "サインインを完了しています",
+      "wait": "Securo が接続を保存しています。少々お待ちください。",
+      "connected": "{{name}} を接続しました",
+      "failed": "サインインを完了できませんでした。もう一度お試しください。",
+      "missing": "サービスからサインインの結果が返されませんでした。もう一度お試しください。",
+      "serviceError": "サービスがエラーを返しました：{{message}}"
+    },
+    "onlyForBusiness": "ビジネス用ワークスペースのみ",
+    "onlyForPersonal": "個人用ワークスペースのみ"
+  },
+  "library": {
+    "title": "ライブラリ",
+    "subtitle": "ダッシュボードとレポートに表示する内容と、Securoの見た目を選べます。",
+    "kind": {
+      "widgets": "ウィジェット",
+      "reports": "レポート",
+      "themes": "テーマ"
+    },
+    "moreHint": {
+      "widgets": "プラグインでウィジェットを追加できます。",
+      "reports": "プラグインでレポートを追加できます。",
+      "themes": "プラグインでテーマを追加できます。"
+    },
+    "browseCatalog": "プラグインを見る",
+    "lastReport": "レポートを少なくとも1つ残してください。",
+    "removeFrom": {
+      "dashboard": "{{name}}をダッシュボードから外す",
+      "reports": "{{name}}をレポートから外す"
+    },
+    "addTo": {
+      "dashboard": "{{name}}をダッシュボードに追加",
+      "reports": "{{name}}をレポートに追加"
+    },
+    "remove": "外す",
+    "add": "追加",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "オーシャン",
+      "forest": "フォレスト",
+      "sunset": "サンセット",
+      "graphite": "グラファイト",
+      "high-contrast": "ハイコントラスト",
+      "midnight": "ミッドナイト",
+      "terminal": "ターミナル",
+      "nebula": "ネビュラ"
+    },
+    "saveFailed": "選択を保存できませんでした。もう一度お試しください。",
+    "appearance": "外観",
+    "emptyDashboard": "ダッシュボードは空です",
+    "emptyDashboardHint": "ライブラリからウィジェットを追加して、ここに表示する内容を選びましょう。",
+    "addWidget": "ウィジェットを追加",
+    "nothingToShow": "今は表示するものがありません",
+    "editingDashboard": "ウィジェットの並べ替え、削除、追加ができます。変更はすぐに保存されます。",
+    "restoreDefault": "デフォルトに戻す",
+    "done": "完了",
+    "customizeDashboard": "ダッシュボードをカスタマイズ",
+    "manageReports": "レポートを選ぶ",
+    "manageReportsShort": "管理",
+    "widget": {
+      "overview": "残高と今月",
+      "overviewHint": "利用可能残高、収入、支出、純資産、貯蓄率。",
+      "spendingPlanHint": "今日あといくら使えるか、そしてお金がいつまで持つか。",
+      "uncategorized": "未分類",
+      "uncategorizedHint": "まだカテゴリが必要な取引。",
+      "spendingByCategoryHint": "今月のお金の使い道と予算の比較。",
+      "balanceFlowHint": "今月の残高の動きを他の月と比較。",
+      "goalsHint": "目標の進捗。",
+      "transactionsHint": "今月の取引をリストまたはカレンダーで。"
+    },
+    "report": {
+      "netWorthHint": "口座、資産、負債の推移。",
+      "incomeExpensesHint": "カテゴリ別の入出金。",
+      "cashFlowHint": "残高の見通し。",
+      "moneyMapHint": "収入が支出と貯蓄にどう分かれるか。",
+      "statementHint": "カテゴリ別の収入と支出を月ごとに表示します。"
+    },
+    "dragToMove": "ドラッグして{{name}}を移動",
+    "widthOf": "{{name}}の幅",
+    "widthLabel": "幅",
+    "width": {
+      "4": "3分の1",
+      "6": "半分",
+      "8": "3分の2",
+      "12": "全幅"
+    },
+    "needs": {
+      "assistant": "AIエージェントを有効にする必要があります。",
+      "invoices": "ビジネスワークスペースで利用できます。"
+    },
+    "fromPlugin": "{{name}} より"
+  },
+  "widgets": {
+    "budgets": "予算",
+    "viewAll": "すべて表示",
+    "spendingPace": {
+      "title": "今月の支出",
+      "hint": "今月の支出を予算と比べ、1日あたりの残りを表示します。",
+      "noBudget": "予算を設定すると、支出のペースを確認できます。",
+      "used": "予算の{{percent}}%を使用",
+      "paceMark": "目印は今日時点の均等なペースです",
+      "over": "予算を{{amount}}超過",
+      "perDay": "予算内に収めるには1日{{amount}}まで",
+      "left": "予算の残り{{amount}}"
+    },
+    "distribution": {
+      "title": "支出の内訳",
+      "hint": "今月のお金の使い道をカテゴリ別に。",
+      "total": "支出合計"
+    },
+    "monthResult": {
+      "title": "今月の収支",
+      "hint": "今月の収入から支出を引いた額を先月と比較します。",
+      "previous": "先月 {{amount}}"
+    },
+    "upcoming": {
+      "title": "今後の予定",
+      "hint": "今後30日間に予定されている定期取引。",
+      "none": "今後{{days}}日間に予定はありません。"
+    },
+    "cards": {
+      "title": "クレジットカード",
+      "hint": "カードの未払い額と、支払い後に残る残高。",
+      "none": "利用中のクレジットカードはありません。",
+      "afterPaying": "支払い後の残り {{amount}}"
+    },
+    "assistant": {
+      "title": "エージェントに質問",
+      "libraryHint": "ダッシュボードから既定のエージェントに質問を送れます。",
+      "hint": "お金について何でも聞いてください。回答はチャットで開きます。",
+      "placeholder": "エージェントに質問…",
+      "suggestion1": "今月はいくら使った？",
+      "suggestion2": "どこを節約できる？",
+      "suggestion3": "近く支払う請求は？",
+      "send": "送信",
+      "unavailable": "ここから質問するにはAIエージェントを有効にしてください。"
+    },
+    "loadFailed": "このウィジェットを読み込めませんでした。",
+    "receivables": {
+      "title": "売掛金",
+      "hint": "顧客からの未回収額、延滞分、今月の入金。"
+    },
+    "payables": {
+      "title": "買掛金",
+      "hint": "仕入先への未払額、延滞分、今月の支払い。"
+    },
+    "aging": {
+      "title": "売掛金の年齢",
+      "hint": "顧客の未回収額を延滞期間別に表示。"
+    },
+    "invoicesDue": {
+      "title": "まもなく期日の請求書",
+      "hint": "顧客が次に支払う請求書。",
+      "none": "期日が近い請求書はありません。",
+      "noClient": "顧客なし"
+    },
+    "recurringRevenue": {
+      "title": "定期収益",
+      "hint": "定期請求書による毎月の収益と、最近失われた分。"
+    }
   }
 }

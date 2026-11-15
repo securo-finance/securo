@@ -33,7 +33,6 @@ def _base(seed: float, deltas: dict[int, float], start: date = TODAY, days: int 
         end=start + timedelta(days=days),
         seed=seed,
         deltas={TODAY + timedelta(days=offset): delta for offset, delta in deltas.items()},
-        forecast_rows=[],
         recurring_items=[],
     )
 

@@ -31,7 +31,7 @@ export function lineFromProduct(
   product: Product,
   price: ProductPrice | null,
 ): InvoiceLineInput {
-  return {
+  const line: InvoiceLineInput = {
     ...current,
     description: product.name,
     unit: product.unit ?? current.unit ?? null,
@@ -40,6 +40,11 @@ export function lineFromProduct(
     product_id: product.id,
     price_id: price?.id ?? null,
   }
+  // Omitted, not copied or nulled: the server fills an omitted field from
+  // the product, and an agreement term keeps inheriting whatever refs the
+  // product has at each emission. Null on a term reads as an explicit clear.
+  delete line.fiscal_refs
+  return line
 }
 
 /** Which actions a product offers. A product an invoice names is

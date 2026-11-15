@@ -42,6 +42,10 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         },
     )
 
+    # The appearance this person chose (a theme id from the library). None is
+    # Securo's own look, with the instance's accent colors if an admin set them.
+    theme: Mapped[Optional[str]] = mapped_column(String(160), nullable=True, default=None)
+
     totp_secret: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, default=None)
     is_2fa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     oidc_issuer: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)

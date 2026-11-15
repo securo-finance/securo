@@ -540,3 +540,38 @@ async def test_legacy_request_with_an_unsupported_version_header_is_refused(test
         )
     assert r.status_code == 400
     assert r.json()["error"]["code"] == -32022
+
+
+@pytest.mark.asyncio
+async def test_a_denied_call_is_a_readable_tool_error_without_a_traceback(test_user, monkeypatch, caplog):
+    """Losing access is expected, not a bug: the agent reads why, and the
+    server doesn't log it as a failure."""
+    import logging
+
+    import mcp_server.main as mcp_main
+    from mcp_server.auth import ToolAccessDenied
+
+    async def _denied(session, ctx, name, arguments):
+        raise ToolAccessDenied("Your role in this workspace is read-only, so changes can't be applied.")
+
+    class _Session:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(mcp_main, "call_tool", _denied)
+    monkeypatch.setattr(mcp_main, "async_session_maker", lambda: _Session())
+
+    with caplog.at_level(logging.INFO, logger=mcp_main.logger.name):
+        async with _client() as cli:
+            r = await cli.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "list_categories"}},
+                headers=_auth(test_user.id),
+            )
+    result = r.json()["result"]
+    assert result["isError"] is True
+    assert result["content"][0]["text"].startswith("Access denied: ")
+    assert not [rec for rec in caplog.records if rec.levelno >= logging.ERROR]
