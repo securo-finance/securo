@@ -374,3 +374,128 @@ async def test_a_failed_write_is_retried_from_the_same_cursor(
     connection = await session.get(PluginConnection, connection.id)
     assert connection.status == "error" and connection.state == {}
     assert "RuntimeError" in connection.last_error and "database went away" not in connection.last_error
+
+
+# --- Disconnecting, removing and updating ------------------------------------------
+
+from httpx import AsyncClient  # noqa: E402
+
+from tests.test_code_plugins import V2  # noqa: E402
+
+
+def _publish(catalog, commit: str, change) -> None:
+    manifest = copy.deepcopy(catalog.manifests[catalog.commit])
+    change(manifest)
+    catalog.manifests[commit] = manifest
+    catalog.archives[commit] = _tarball(PROVIDER_SOURCE + "\n# " + commit)
+    catalog.commit = commit
+
+
+async def _synced(session, ids) -> tuple[PluginConnection, uuid.UUID, uuid.UUID]:
+    """A provider connection after one sync: its bank connection id and its asset id."""
+    connection = await _provider_connection(session, ids)
+    await connections.sync(session, connection)
+    bank_id = connection.bank_connection_id
+    assert bank_id is not None
+    (asset,) = await _rows(session, Asset, connection_id=bank_id)
+    return connection, bank_id, asset.id
+
+
+async def _disconnected_like_a_bank(session, bank_id: uuid.UUID, asset_id: uuid.UUID) -> None:
+    session.expire_all()
+    assert await session.get(BankConnection, bank_id) is None
+    assert await _rows(session, Account, connection_id=bank_id) == []
+    asset = await session.get(Asset, asset_id)
+    # Archived and kept, as a native disconnect leaves it (Postgres also clears its connection_id).
+    assert asset is not None and asset.is_archived
+
+
+@pytest.mark.asyncio
+async def test_removing_the_connection_disconnects_its_bank(session: AsyncSession, ids, provider_catalog, plugin_runner):
+    connection, bank_id, asset_id = await _synced(session, ids)
+    await connections.delete(session, connection)
+    await _disconnected_like_a_bank(session, bank_id, asset_id)
+
+
+@pytest.mark.asyncio
+async def test_removing_the_plugin_disconnects_its_banks(session: AsyncSession, ids, provider_catalog, plugin_runner):
+    _, bank_id, asset_id = await _synced(session, ids)
+    await _apply(session, *ids, "remove")
+    await _disconnected_like_a_bank(session, bank_id, asset_id)
+    assert await session.scalar(select(PluginConnection.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_an_update_that_stops_providing_removes_the_connection(
+    session: AsyncSession, ids, provider_catalog, plugin_runner
+):
+    _, bank_id, asset_id = await _synced(session, ids)
+    _publish(provider_catalog, V2, lambda m: m["contributes"]["integrations"][0].pop("provides"))
+    await _apply(session, *ids, "update")
+    await _disconnected_like_a_bank(session, bank_id, asset_id)
+    assert await session.scalar(select(PluginConnection.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_an_update_that_starts_providing_adds_the_bank_connection(session: AsyncSession, ids, catalog, plugin_runner):
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    connection, _ = await _connect(session, workspace_id, user_id)
+    assert connection.bank_connection_id is None
+    _publish(catalog, V2, lambda m: m["contributes"]["integrations"][0].update(provides=["accounts"]))
+    await _apply(session, workspace_id, user_id, "update")
+    await session.refresh(connection)
+    bank = await _bank(session, connection)
+    assert bank.provider == provider_name(PLUGIN)
+
+
+@pytest.mark.asyncio
+async def test_bank_connections_api_syncs_and_disconnects_through_the_plugin(
+    client: AsyncClient, auth_headers: dict, provider_catalog, plugin_runner, monkeypatch
+):
+    monkeypatch.setattr("app.api.plugins._queue_sync", lambda connection_id: None)
+    plan = (await client.get(f"/api/plugins/{PLUGIN}/plan", params={"action": "install"}, headers=auth_headers)).json()
+    body = {"action": "install", "commit": plan["commit"], "token": plan["token"]}
+    assert (await client.post(f"/api/plugins/{PLUGIN}/apply", json=body, headers=auth_headers)).status_code == 200
+    created = await client.post(
+        "/api/plugins/connections",
+        json={"plugin_id": PLUGIN, "integration": "keys", "name": "Main", "values": {"api_key": "sk_live_9"}},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201, created.text
+
+    (bank,) = (await client.get("/api/connections", headers=auth_headers)).json()
+    assert bank["provider"] == provider_name(PLUGIN) and bank["display_name"] == "Main"
+    synced = await client.post(f"/api/connections/{bank['id']}/sync", headers=auth_headers)
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["sync_outcome"] == "refreshed" and synced.json()["last_sync_at"]
+    accounts = (await client.get("/api/accounts", headers=auth_headers)).json()
+    assert [a["name"] for a in accounts if a.get("connection_id") == bank["id"]] == ["Broker Cash (USD)"]
+
+    assert (await client.delete(f"/api/connections/{bank['id']}", headers=auth_headers)).status_code == 204
+    assert (await client.get("/api/connections", headers=auth_headers)).json() == []
+    assert (await client.get("/api/plugins/connections", headers=auth_headers)).json() == []
+
+
+@pytest.mark.asyncio
+async def test_bank_connections_api_reports_a_plugin_that_needs_sign_in(
+    client: AsyncClient, auth_headers: dict, provider_catalog, plugin_runner, monkeypatch
+):
+    monkeypatch.setattr("app.api.plugins._queue_sync", lambda connection_id: None)
+    plan = (await client.get(f"/api/plugins/{PLUGIN}/plan", params={"action": "install"}, headers=auth_headers)).json()
+    body = {"action": "install", "commit": plan["commit"], "token": plan["token"]}
+    await client.post(f"/api/plugins/{PLUGIN}/apply", json=body, headers=auth_headers)
+    await client.post(
+        "/api/plugins/connections",
+        json={"plugin_id": PLUGIN, "integration": "keys", "values": {"api_key": "k", "account": "expired"}},
+        headers=auth_headers,
+    )
+    (bank,) = (await client.get("/api/connections", headers=auth_headers)).json()
+    synced = await client.post(f"/api/connections/{bank['id']}/sync", headers=auth_headers)
+    assert synced.status_code == 410
+    (bank,) = (await client.get("/api/connections", headers=auth_headers)).json()
+    assert bank["status"] == "expired"
+
+    monkeypatch.setenv("PLUGINS_ENABLED", "false")
+    off = await client.post(f"/api/connections/{bank['id']}/sync", headers=auth_headers)
+    assert off.status_code == 503 and "turned off" in off.json()["detail"]

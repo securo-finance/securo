@@ -3499,8 +3499,13 @@ async def sync_connection(
 
 
 async def delete_connection(
-    session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID
+    session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID, *, commit: bool = True
 ) -> bool:
+    """Disconnect: archive the connection's assets and delete it, with its accounts.
+
+    `commit=False` leaves the commit to the caller (a plugin being removed
+    disconnects its connections inside the removal's transaction).
+    """
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         return False
@@ -3585,5 +3590,8 @@ async def delete_connection(
             )
         )
 
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return True

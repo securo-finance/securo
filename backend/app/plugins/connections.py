@@ -162,22 +162,7 @@ async def create(
         created_by=user_id,
     )
     if integration.is_provider:
-        # Listed under Bank Connections from the start, like a native connection.
-        bank = BankConnection(
-            id=uuid.uuid4(),
-            user_id=user_id,
-            workspace_id=workspace_id,
-            provider=provider_name(plugin_id),
-            external_id=str(connection.id),
-            institution_name=localized(integration.name, lang)[:255],
-            display_name=connection.name,
-            credentials={},
-            settings={},
-            status=BANK_STATUS[connection.status],
-        )
-        session.add(bank)
-        await session.flush()
-        connection.bank_connection_id = bank.id
+        await _add_bank(session, connection, integration, user_id, lang)
     session.add(connection)
     await session.commit()
     await session.refresh(connection)
@@ -190,6 +175,49 @@ async def create(
             await delete(session, connection)
             raise
     return connection, link
+
+
+async def _add_bank(
+    session: AsyncSession, connection: PluginConnection, integration: Integration, user_id: uuid.UUID, lang: str
+) -> None:
+    """The bank connection a provider integration syncs into, listed under Bank Connections from the start."""
+    bank = BankConnection(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=connection.workspace_id,
+        provider=provider_name(connection.plugin_id),
+        external_id=str(connection.id),
+        institution_name=localized(integration.name, lang)[:255],
+        display_name=connection.name,
+        credentials={},
+        settings={},
+        status=BANK_STATUS.get(connection.status, "error"),
+    )
+    session.add(bank)
+    await session.flush()
+    connection.bank_connection_id = bank.id
+
+
+async def _drop_bank(session: AsyncSession, connection: PluginConnection) -> None:
+    """Disconnect the connection's bank connection exactly as a native one is (not committed)."""
+    if connection.bank_connection_id is None:
+        return
+    from app.services import connection_service
+
+    bank_id, connection.bank_connection_id = connection.bank_connection_id, None
+    await connection_service.delete_connection(session, bank_id, connection.workspace_id, commit=False)
+
+
+async def for_bank_connection(
+    session: AsyncSession, workspace_id: uuid.UUID, bank_connection_id: uuid.UUID
+) -> PluginConnection | None:
+    """The plugin connection that syncs a bank connection, if a plugin does."""
+    return await session.scalar(
+        select(PluginConnection).where(
+            PluginConnection.workspace_id == workspace_id,
+            PluginConnection.bank_connection_id == bank_connection_id,
+        )
+    )
 
 
 def _split(integration: Integration, values: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -519,6 +547,7 @@ def due(connection: PluginConnection, now: datetime | None = None) -> bool:
 
 
 async def delete(session: AsyncSession, connection: PluginConnection) -> None:
+    await _drop_bank(session, connection)
     await _revoke_token(session, connection)
     await session.delete(connection)
     await session.commit()
@@ -533,6 +562,7 @@ async def delete_all(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: 
     )
     count = 0
     for connection in rows.all():
+        await _drop_bank(session, connection)
         await _revoke_token(session, connection)
         await session.delete(connection)
         count += 1
@@ -544,7 +574,9 @@ async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manife
 
     Each connection's token gets exactly the manifest's scopes. A plugin that
     starts declaring scopes gets a token per connection; one that stops has
-    its tokens revoked.
+    its tokens revoked. A connection whose integration starts providing
+    records gets its bank connection; one whose integration stops is removed,
+    as is one whose integration is gone.
     """
     scopes = [s.scope for s in manifest.api_scopes]
     rows = await session.scalars(
@@ -555,11 +587,15 @@ async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manife
     integrations = {i.key: i for i in manifest.contributes.integrations}
     for connection in rows.all():
         integration = integrations.get(connection.integration)
-        if integration is None:
-            # The new version dropped this integration: nothing can run it anymore.
+        if integration is None or (connection.bank_connection_id is not None and not integration.is_provider):
+            # The new version dropped this integration, or no longer syncs it
+            # as a bank: nothing can run it as it was set up anymore.
+            await _drop_bank(session, connection)
             await _revoke_token(session, connection)
             await session.delete(connection)
             continue
+        if integration.is_provider and connection.bank_connection_id is None and connection.created_by is not None:
+            await _add_bank(session, connection, integration, connection.created_by, lang)
         connection.sync_minutes = integration.sync_minutes
         token = await session.get(AccessToken, connection.access_token_id) if connection.access_token_id else None
         if token is not None and token.revoked_at is None and scopes:
