@@ -49,6 +49,11 @@ async def setup_2fa(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
+    # Replacing the secret of an enrolled account has to go through /2fa/disable,
+    # which checks the password and a current code.
+    if user.is_2fa_enabled:
+        raise HTTPException(status_code=409, detail="2FA is already enabled")
+
     secret = pyotp.random_base32()
     user.totp_secret = secret
     session.add(user)
