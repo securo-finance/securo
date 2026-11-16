@@ -291,7 +291,7 @@ async def test_connecting_a_provider_integration_adds_a_bank_connection(
     connection = await _provider_connection(session, ids)
     bank = await _bank(session, connection)
     assert (bank.provider, bank.external_id, bank.status) == (provider_name(PLUGIN), str(connection.id), "active")
-    assert bank.institution_name == "Ledger (API key)" and bank.credentials == {}
+    assert bank.institution_name == "Ledger" and bank.credentials == {}
     assert bank.workspace_id == connection.workspace_id and bank.user_id == ids[1]
 
 

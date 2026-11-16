@@ -162,7 +162,7 @@ async def create(
         created_by=user_id,
     )
     if integration.is_provider:
-        await _add_bank(session, connection, integration, user_id, lang)
+        await _add_bank(session, connection, localized(manifest.name, lang), user_id)
     session.add(connection)
     await session.commit()
     await session.refresh(connection)
@@ -177,17 +177,19 @@ async def create(
     return connection, link
 
 
-async def _add_bank(
-    session: AsyncSession, connection: PluginConnection, integration: Integration, user_id: uuid.UUID, lang: str
-) -> None:
-    """The bank connection a provider integration syncs into, listed under Bank Connections from the start."""
+async def _add_bank(session: AsyncSession, connection: PluginConnection, institution: str, user_id: uuid.UUID) -> None:
+    """The bank connection a provider integration syncs into, listed under Bank Connections from the start.
+
+    The institution is named after the plugin (an "Interactive Brokers"
+    plugin), as a native connection is named after its bank.
+    """
     bank = BankConnection(
         id=uuid.uuid4(),
         user_id=user_id,
         workspace_id=connection.workspace_id,
         provider=provider_name(connection.plugin_id),
         external_id=str(connection.id),
-        institution_name=localized(integration.name, lang)[:255],
+        institution_name=institution[:255],
         display_name=connection.name,
         credentials={},
         settings={},
@@ -634,7 +636,7 @@ async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manife
             await session.delete(connection)
             continue
         if integration.is_provider and connection.bank_connection_id is None and connection.created_by is not None:
-            await _add_bank(session, connection, integration, connection.created_by, lang)
+            await _add_bank(session, connection, localized(manifest.name, lang), connection.created_by)
         connection.sync_minutes = integration.sync_minutes
         token = await session.get(AccessToken, connection.access_token_id) if connection.access_token_id else None
         if token is not None and token.revoked_at is None and scopes:
