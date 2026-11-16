@@ -1002,6 +1002,35 @@ async def test_get_account_summary_bill_payment_of_prior_debt_leaves_cycle_total
 
 
 @pytest.mark.asyncio
+async def test_get_account_summary_bill_ignores_unconverted_foreign_prior_debt(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A foreign purchase before the window must not read 1:1 as older debt.
+
+    Left at face value it swallows the cycle's payments, so the bill total
+    stays inflated while the card balance already ignores the same purchase
+    (#1263)."""
+    account = await _make_account(
+        session, test_user.id, "CC Foreign Prior", acc_type="credit_card"
+    )
+    today = date.today()
+    last_month = today.replace(day=1) - timedelta(days=1)
+
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "debit", last_month,
+        currency="CLP",
+    )
+    await _add_txn(session, test_user.id, account.id, 1000, "debit", today)
+    await _add_txn(session, test_user.id, account.id, 400, "credit", today,
+                   transfer_pair_id=uuid.uuid4())
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    # No older debt survives conversion, so the whole 400 nets this cycle.
+    assert summary["monthly_expenses"] == pytest.approx(600.0)
+
+
+@pytest.mark.asyncio
 async def test_get_account_summary_bill_linked_pre_window_payment_is_not_prior_debt(
     session: AsyncSession, test_user, test_workspace
 ):

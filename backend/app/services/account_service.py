@@ -754,7 +754,7 @@ async def sync_opening_balance_for_connected_account(
     # Only count a cross-currency row once it has a primary-currency value.
     # The provider balance is the target, so an unconverted foreign row must
     # not be treated as 1:1 and inflate the synthetic opening balance (issue
-    # #353). This mirrors signed_amount_expr.
+    # #353).
     signed_amount = signed_amount_expr(account.currency)
 
     sum_result = await session.execute(
@@ -952,7 +952,9 @@ async def get_account_summary(
     if not date_to:
         date_to = today
 
-    # Use amount_primary only when tx currency differs from account currency
+    # P/L surfaces (the summary totals and the bill's income/expense) still
+    # read an unconverted cross-currency row 1:1. That fallback belongs to the
+    # reporting rework, not to the balance helpers, so leave it here.
     effective_amount = case(
         (Transaction.currency == account.currency, Transaction.amount),
         else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
@@ -1156,10 +1158,7 @@ async def get_account_summary(
     if account.type == "credit_card":
         prior_result = await session.execute(
             select(func.coalesce(func.sum(
-                case(
-                    (Transaction.type == "credit", effective_amount),
-                    else_=-effective_amount,
-                )
+                signed_amount_expr(account.currency)
             ), 0)).where(
                 Transaction.account_id == account_id,
                 _before_window(),
