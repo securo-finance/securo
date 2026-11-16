@@ -164,7 +164,7 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
       )}
 
       {adding && (
-        <AddConnectionDialog plugin={plugin} onClose={() => setAdding(false)} onDone={() => void refresh()} />
+        <PluginConnectionDialog plugin={plugin} onClose={() => setAdding(false)} onDone={() => void refresh()} />
       )}
       {removing && (
         <RemoveConnectionDialog connection={removing} onClose={() => setRemoving(null)} onDone={() => void refresh()} />
@@ -173,45 +173,72 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
   )
 }
 
-function AddConnectionDialog({
+/**
+ * The form of a plugin's integration: a new connection, or (with `connection`)
+ * new values for one, to reconnect after a password change. `integration`
+ * preselects one, as when it's picked from Connect Bank.
+ */
+export function PluginConnectionDialog({
   plugin,
+  integration: preselected,
+  connection,
   onClose,
   onDone,
 }: {
   plugin: InstalledPlugin
+  integration?: string
+  connection?: PluginConnection | null
   onClose: () => void
   onDone: () => void
 }) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language
-  const [key, setKey] = useState(plugin.integrations[0]?.key ?? '')
-  const [name, setName] = useState('')
+  const [key, setKey] = useState(connection?.integration ?? preselected ?? plugin.integrations[0]?.key ?? '')
+  const [name, setName] = useState(connection?.name ?? '')
   const [values, setValues] = useState<Record<string, string>>({})
   const integration: PluginIntegration | undefined = plugin.integrations.find((i) => i.key === key)
   const redirectUri = plugin.redirect_uri ?? `${window.location.origin}/plugins/oauth/callback`
+  const choosing = !connection && !preselected && plugin.integrations.length > 1
+  // Reconnecting: a field already set can stay blank, it keeps its value.
+  const isSet = (field: string) =>
+    !!connection && (field in (connection.config ?? {}) || connection.secret_fields.includes(field))
 
   const mutation = useMutation({
-    mutationFn: () => pluginsApi.connect({ plugin_id: plugin.plugin_id, integration: key, name, values }),
-    onSuccess: ({ connection, authorize_url }) => {
+    mutationFn: async (): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
+      if (!connection) {
+        return pluginsApi.connect({ plugin_id: plugin.plugin_id, integration: key, name, values })
+      }
+      const updated = await pluginsApi.updateValues(connection.id, { name, values })
+      if (integration?.auth !== 'oauth') return { connection: updated, authorize_url: null }
+      const { authorize_url } = await pluginsApi.authorize(connection.id)
+      return { connection: updated, authorize_url }
+    },
+    onSuccess: ({ connection: saved, authorize_url }) => {
       onDone()
       if (authorize_url) {
         window.location.assign(authorize_url)
         return
       }
-      toast.success(t('plugins.connections.added', { name: connection.name }))
+      toast.success(t(connection ? 'plugins.connections.updated' : 'plugins.connections.added', { name: saved.name }))
       onClose()
     },
     onError: (err) => toast.error(errorMessage(err, t('common.error'))),
   })
 
-  const missing = integration?.fields.some((f) => f.required && !values[f.key]?.trim()) ?? true
+  const missing = integration?.fields.some((f) => f.required && !values[f.key]?.trim() && !isSet(f.key)) ?? true
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !mutation.isPending) onClose() }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{t('plugins.connections.addTitle', { name: localized(plugin.name, lang) })}</DialogTitle>
-          <DialogDescription>{t('plugins.connections.addHint')}</DialogDescription>
+          <DialogTitle>
+            {connection
+              ? t('plugins.connections.editTitle', { name: connection.name })
+              : t('plugins.connections.addTitle', { name: localized(plugin.name, lang) })}
+          </DialogTitle>
+          <DialogDescription>
+            {connection ? t('plugins.connections.editHint') : t('plugins.connections.addHint')}
+          </DialogDescription>
         </DialogHeader>
 
         <form
@@ -222,7 +249,7 @@ function AddConnectionDialog({
             if (!missing) mutation.mutate()
           }}
         >
-          {plugin.integrations.length > 1 && (
+          {choosing && (
             <div className="space-y-2">
               <Label>{t('plugins.connections.integration')}</Label>
               <div className="grid gap-2">
@@ -267,6 +294,11 @@ function AddConnectionDialog({
                 id={`plugin-field-${field.key}`}
                 type={field.secret ? 'password' : 'text'}
                 autoComplete="off"
+                placeholder={
+                  isSet(field.key)
+                    ? field.secret ? '••••••••' : String(connection?.config?.[field.key] ?? '')
+                    : undefined
+                }
                 value={values[field.key] ?? ''}
                 onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))}
               />
@@ -274,7 +306,9 @@ function AddConnectionDialog({
           ))}
 
           {integration?.fields.some((f) => f.secret) && (
-            <p className="text-xs text-muted-foreground">{t('plugins.connections.secretNote')}</p>
+            <p className="text-xs text-muted-foreground">
+              {connection ? t('plugins.connections.keepBlank') : t('plugins.connections.secretNote')}
+            </p>
           )}
 
           {integration?.auth === 'oauth' && (
@@ -311,7 +345,9 @@ function AddConnectionDialog({
             {t('common.cancel')}
           </Button>
           <Button type="submit" form="plugin-connection-form" disabled={mutation.isPending || missing || !integration}>
-            {integration?.auth === 'oauth' ? t('plugins.connections.continueSignIn') : t('plugins.connections.connect')}
+            {integration?.auth === 'oauth'
+              ? t('plugins.connections.continueSignIn')
+              : connection ? t('common.save') : t('plugins.connections.connect')}
           </Button>
         </DialogFooter>
       </DialogContent>

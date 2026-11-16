@@ -1421,7 +1421,9 @@
       "active": "Aktywne",
       "error": "Błąd",
       "expired": "Wygasłe"
-    }
+    },
+    "pluginConnectors": "Z twoich wtyczek",
+    "pluginUnavailable": "Wtyczka tego połączenia nie jest już zainstalowana ani dostępna."
   },
   "loans": {
     "title": "Umowa kredytu",
@@ -3662,7 +3664,11 @@
       "removeTitle": "Usunąć {{name}}?",
       "removeHint": "Zapisane klucze i dostęp do tego obszaru roboczego zostaną usunięte. To, co już zostało pobrane, zostaje.",
       "removed": "Usunięto: {{name}}",
-      "copyFailed": "Nie udało się skopiować. Zaznacz adres i skopiuj go ręcznie."
+      "copyFailed": "Nie udało się skopiować. Zaznacz adres i skopiuj go ręcznie.",
+      "editTitle": "Połącz ponownie {{name}}",
+      "editHint": "Zaktualizuj to, co się zmieniło, np. nowe hasło lub token. Potem połączenie zsynchronizuje się ponownie.",
+      "keepBlank": "Zostaw pole puste, aby zachować obecną wartość.",
+      "updated": "Zaktualizowano {{name}}"
     },
     "oauth": {
       "title": "Kończenie logowania",

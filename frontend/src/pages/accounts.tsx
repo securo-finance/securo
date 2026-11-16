@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatAccountMask, getAccountLabel, getAccountName } from '@/lib/account-utils'
 import { getConnectionName } from '@/lib/connection-utils'
 import { Link, useNavigate } from 'react-router-dom'
@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { accounts, assets, connections, currencies } from '@/lib/api'
+import { accounts, assets, connections, currencies, plugins as pluginsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -23,7 +23,7 @@ import {
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { Account, BankConnection, LoanAmortization, LoanRatePeriod } from '@/types'
+import type { Account, BankConnection, InstalledPlugin, LoanAmortization, LoanRatePeriod, PluginConnection } from '@/types'
 import { RefreshCw, TriangleAlert, Unlink, Settings } from 'lucide-react'
 import { AccountIcon, ConnectionLogo } from '@/components/account-icon'
 import { getAccountTypeConfig } from '@/lib/account-type-config'
@@ -33,6 +33,11 @@ import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
+import { pluginConnectors } from '@/lib/plugin-connectors'
+import { PluginAvatar } from '@/components/plugin-avatar'
+import { PluginConnectionDialog } from '@/components/plugin-connections'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { localized } from '@/lib/localized-text'
 import { OAuthConnectDialog } from '@/components/oauth-connect-dialog'
 import { TokenConnectDialog } from '@/components/token-connect-dialog'
 import { ConnectionSettingsDialog } from '@/components/connection-settings-dialog'
@@ -64,7 +69,7 @@ function daysUntil(dateStr: string | null): number | null {
 }
 
 export default function AccountsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
@@ -89,6 +94,13 @@ export default function AccountsPage() {
   const [reconnectConnId, setReconnectConnId] = useState<string | null>(null)
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
   const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
+  // A plugin's form: a new connection from Connect Bank, or new values to reconnect one.
+  const [pluginForm, setPluginForm] = useState<{
+    plugin: InstalledPlugin
+    integration?: string
+    connection?: PluginConnection
+  } | null>(null)
+  const { pluginsEnabled } = useFeatureFlags()
 
   const { data: accountsList, isLoading: accountsLoading, isFetching: accountsFetching } = useQuery({
     queryKey: ['accounts'],
@@ -106,6 +118,35 @@ export default function AccountsPage() {
     staleTime: 1000 * 60 * 10,
   })
 
+  const { data: installedPlugins } = useQuery({
+    queryKey: ['plugins', 'installed'],
+    queryFn: pluginsApi.installed,
+    enabled: pluginsEnabled,
+  })
+  const pluginsById = useMemo(
+    () => new Map((installedPlugins ?? []).map((plugin) => [plugin.plugin_id, plugin])),
+    [installedPlugins],
+  )
+  const hasPluginConnections = (connectionsList ?? []).some((c) => c.plugin_connection_id)
+  // A plugin's connection syncs in the background: follow it until it settles,
+  // then show what it brought in.
+  const { data: pluginConnectionsList } = useQuery({
+    queryKey: ['plugin-connections'],
+    queryFn: pluginsApi.connections,
+    enabled: pluginsEnabled && hasPluginConnections,
+    refetchInterval: (query) => (query.state.data?.some((c) => c.status === 'pending') ? 3000 : false),
+  })
+  const pluginSyncing = (pluginConnectionsList ?? []).some((c) => c.status === 'pending')
+  const wasPluginSyncing = useRef(false)
+  useEffect(() => {
+    if (wasPluginSyncing.current && !pluginSyncing) {
+      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
+      invalidateFinancialQueries(queryClient)
+    }
+    wasPluginSyncing.current = pluginSyncing
+  }, [pluginSyncing, queryClient])
+
   const providersByName = useMemo(() => {
     const map = new Map<string, Provider>()
     for (const p of providersList ?? []) map.set(p.name, p as Provider)
@@ -113,6 +154,16 @@ export default function AccountsPage() {
   }, [providersList])
 
   const handleReconnectClick = async (conn: BankConnection) => {
+    if (conn.plugin_connection_id) {
+      const plugin = conn.plugin_id ? pluginsById.get(conn.plugin_id) : undefined
+      const pluginConnection = (pluginConnectionsList ?? []).find((c) => c.id === conn.plugin_connection_id)
+      if (!plugin || !pluginConnection) {
+        toast.error(t('accounts.pluginUnavailable'))
+        return
+      }
+      setPluginForm({ plugin, connection: pluginConnection })
+      return
+    }
     const providerInfo = providersByName.get(conn.provider)
     if (providerInfo?.flow_type === 'oauth') {
       try {
@@ -355,9 +406,17 @@ export default function AccountsPage() {
                       <div className="flex items-center gap-3">
                         {/* One bank's favicon would misrepresent a multi-
                             institution link — fall back to the generic icon. */}
-                        <ConnectionLogo
-                          logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
-                        />
+                        {conn.plugin_id && !conn.logo_url ? (
+                          <PluginAvatar
+                            seed={conn.plugin_id}
+                            label={localized(pluginsById.get(conn.plugin_id)?.name ?? { en: conn.institution_name }, i18n.language)}
+                            className="h-8 w-8 rounded-lg text-[11px]"
+                          />
+                        ) : (
+                          <ConnectionLogo
+                            logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
+                          />
+                        )}
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-foreground">{getConnectionName(conn, t)}</p>
@@ -630,7 +689,23 @@ export default function AccountsPage() {
         open={connectorSelectOpen}
         onClose={() => setConnectorSelectOpen(false)}
         onSelect={(provider) => setSelectedProvider(provider)}
+        plugins={pluginConnectors(installedPlugins)}
+        onSelectPlugin={({ plugin, integration }) => setPluginForm({ plugin, integration: integration.key })}
       />
+
+      {/* A plugin's form — a new connection, or new values to reconnect one */}
+      {pluginForm && (
+        <PluginConnectionDialog
+          plugin={pluginForm.plugin}
+          integration={pluginForm.integration}
+          connection={pluginForm.connection}
+          onClose={() => setPluginForm(null)}
+          onDone={() => {
+            queryClient.invalidateQueries({ queryKey: ['connections'] })
+            queryClient.invalidateQueries({ queryKey: ['plugin-connections'] })
+          }}
+        />
+      )}
 
       {/* Bank Connect Dialog — widget-based (Pluggy) */}
       <BankConnectDialog

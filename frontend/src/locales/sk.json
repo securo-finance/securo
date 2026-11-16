@@ -1436,7 +1436,9 @@
       "active": "Aktívne",
       "error": "Chyba",
       "expired": "Vypršané"
-    }
+    },
+    "pluginConnectors": "Z vašich pluginov",
+    "pluginUnavailable": "Plugin tohto pripojenia už nie je nainštalovaný ani dostupný."
   },
   "loans": {
     "title": "Úverová zmluva",
@@ -3696,7 +3698,11 @@
       "removeTitle": "Odstrániť {{name}}?",
       "removeHint": "Uložené kľúče a prístup k tomuto pracovnému priestoru sa vymažú. Čo už bolo načítané, zostane.",
       "removed": "{{name}}: odstránené",
-      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne."
+      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne.",
+      "editTitle": "Znovu pripojiť {{name}}",
+      "editHint": "Aktualizujte, čo sa zmenilo, napríklad nové heslo alebo token. Potom sa pripojenie znova synchronizuje.",
+      "keepBlank": "Nechajte pole prázdne, aby sa zachovala jeho súčasná hodnota.",
+      "updated": "{{name}} aktualizované"
     },
     "oauth": {
       "title": "Dokončuje sa prihlásenie",

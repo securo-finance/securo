@@ -1368,7 +1368,9 @@
       "active": "Aktív",
       "error": "Hiba",
       "expired": "Lejárt"
-    }
+    },
+    "pluginConnectors": "A bővítményeidből",
+    "pluginUnavailable": "A kapcsolat bővítménye már nincs telepítve vagy nem érhető el."
   },
   "loans": {
     "title": "Hitelszerződés",
@@ -3526,7 +3528,11 @@
       "removeTitle": "Eltávolítod: {{name}}?",
       "removeHint": "A mentett kulcsok és a munkaterülethez való hozzáférés törlődik. Amit már behozott, megmarad.",
       "removed": "{{name}} eltávolítva",
-      "copyFailed": "Nem sikerült másolni. Jelöld ki a címet, és másold kézzel."
+      "copyFailed": "Nem sikerült másolni. Jelöld ki a címet, és másold kézzel.",
+      "editTitle": "{{name}} újracsatlakoztatása",
+      "editHint": "Frissítsd, ami megváltozott, például egy új jelszót vagy tokent. Utána a kapcsolat újra szinkronizál.",
+      "keepBlank": "Hagyd üresen a mezőt, hogy megmaradjon a jelenlegi értéke.",
+      "updated": "{{name}} frissítve"
     },
     "oauth": {
       "title": "Bejelentkezés befejezése",

@@ -1368,7 +1368,9 @@
       "active": "Active",
       "error": "Error",
       "expired": "Expired"
-    }
+    },
+    "pluginConnectors": "From your plugins",
+    "pluginUnavailable": "The plugin behind this connection isn't installed or available anymore."
   },
   "loans": {
     "title": "Loan contract",
@@ -3526,7 +3528,11 @@
       "removeTitle": "Remove {{name}}?",
       "removeHint": "Its saved keys and its access to this workspace are deleted. What it already brought in stays.",
       "removed": "{{name}} removed",
-      "copyFailed": "Couldn't copy. Select the address and copy it by hand."
+      "copyFailed": "Couldn't copy. Select the address and copy it by hand.",
+      "editTitle": "Reconnect {{name}}",
+      "editHint": "Update what changed, such as a new password or token. The connection syncs again afterwards.",
+      "keepBlank": "Leave a field blank to keep its current value.",
+      "updated": "{{name}} updated"
     },
     "oauth": {
       "title": "Finishing the sign in",

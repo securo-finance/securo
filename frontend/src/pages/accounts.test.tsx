@@ -9,6 +9,8 @@ const api = vi.hoisted(() => ({
   accountsList: vi.fn(),
   connectionsList: vi.fn(),
   sync: vi.fn(),
+  pluginsInstalled: vi.fn(),
+  pluginConnections: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -22,6 +24,8 @@ vi.mock('@/lib/api', () => ({
     getReauthUrl: vi.fn(),
   },
   currencies: { list: vi.fn().mockResolvedValue([]) },
+  info: { get: vi.fn().mockResolvedValue({ features: { plugins: true } }) },
+  plugins: { installed: api.pluginsInstalled, connections: api.pluginConnections },
 }))
 
 vi.mock('@/contexts/auth-context', () => ({
@@ -108,6 +112,8 @@ describe('AccountsPage connection row actions', () => {
     )
     api.connectionsList.mockResolvedValue([])
     api.sync.mockResolvedValue({ sync_outcome: 'success', merged_count: 0 })
+    api.pluginsInstalled.mockResolvedValue([])
+    api.pluginConnections.mockResolvedValue([])
   })
 
   it('offers a retry next to reconnect for a connection in the error state', async () => {
@@ -166,3 +172,52 @@ describe('AccountDialog account types', () => {
     expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'loan' }))
   })
 })
+
+describe('AccountsPage connections a plugin syncs', () => {
+  const plugin = {
+    plugin_id: 'acme/ledger',
+    name: { en: 'Ledger' },
+    version: '1.0.0',
+    commit: '1'.repeat(40),
+    installed_at: '2026-11-12T00:00:00Z',
+    integrations: [{
+      key: 'keys',
+      name: { en: 'Ledger (API key)' },
+      auth: 'credentials' as const,
+      fields: [{ key: 'api_key', label: { en: 'API key' }, secret: true, required: true }],
+      sync_minutes: 60,
+      provides: ['accounts' as const],
+    }],
+    network: [],
+    api_scopes: [],
+    redirect_uri: null,
+  }
+  const pluginConnection = {
+    id: 'pc-1', plugin_id: 'acme/ledger', integration: 'keys', name: 'Main', status: 'needs_auth' as const,
+    config: {}, secret_fields: ['api_key'], sync_minutes: 60, last_sync_at: null, last_error: 'NeedsAuth: sign in',
+    created_at: '2026-11-12T00:00:00Z',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.accountsList.mockResolvedValue([])
+    api.pluginsInstalled.mockResolvedValue([plugin])
+    api.pluginConnections.mockResolvedValue([pluginConnection])
+    api.connectionsList.mockResolvedValue([makeConnection({
+      id: 'bank-1', provider: 'plugin:acme/ledger', status: 'expired', display_name: 'Main',
+      plugin_connection_id: 'pc-1', plugin_id: 'acme/ledger', integration: 'keys',
+    })])
+  })
+
+  it('shows the plugin and reconnects through its form', async () => {
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    expect(await screen.findByText('Main')).toBeInTheDocument()
+    expect(await screen.findByText('LE')).toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.reconnect') }))
+    expect(await screen.findByText(t('plugins.connections.editTitle', { name: 'Main' }))).toBeInTheDocument()
+    expect(screen.getByText(t('plugins.connections.keepBlank'))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('common.save') })).toBeEnabled()
+  })
+})
+

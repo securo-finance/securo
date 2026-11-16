@@ -1372,7 +1372,9 @@
       "active": "Activa",
       "error": "Error",
       "expired": "Caducada"
-    }
+    },
+    "pluginConnectors": "De tus plugins",
+    "pluginUnavailable": "El plugin de esta conexión ya no está instalado o disponible."
   },
   "loans": {
     "title": "Contrato del préstamo",
@@ -3530,7 +3532,11 @@
       "removeTitle": "¿Quitar {{name}}?",
       "removeHint": "Se borran sus claves guardadas y su acceso a este espacio de trabajo. Lo que ya trajo se queda.",
       "removed": "{{name}} quitada",
-      "copyFailed": "No se pudo copiar. Selecciona la dirección y cópiala a mano."
+      "copyFailed": "No se pudo copiar. Selecciona la dirección y cópiala a mano.",
+      "editTitle": "Reconectar {{name}}",
+      "editHint": "Actualiza lo que cambió, como una nueva contraseña o token. Después, la conexión se vuelve a sincronizar.",
+      "keepBlank": "Deja un campo en blanco para mantener su valor actual.",
+      "updated": "{{name}} actualizada"
     },
     "oauth": {
       "title": "Terminando el inicio de sesión",

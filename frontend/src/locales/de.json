@@ -1369,7 +1369,9 @@
       "active": "Aktiv",
       "error": "Fehler",
       "expired": "Abgelaufen"
-    }
+    },
+    "pluginConnectors": "Aus deinen Plugins",
+    "pluginUnavailable": "Das Plugin dieser Verbindung ist nicht mehr installiert oder verfügbar."
   },
   "loans": {
     "title": "Kreditvertrag",
@@ -3527,7 +3529,11 @@
       "removeTitle": "{{name}} entfernen?",
       "removeHint": "Die gespeicherten Schlüssel und der Zugriff auf diesen Arbeitsbereich werden gelöscht. Was bereits übernommen wurde, bleibt.",
       "removed": "{{name}} entfernt",
-      "copyFailed": "Kopieren nicht möglich. Markiere die Adresse und kopiere sie von Hand."
+      "copyFailed": "Kopieren nicht möglich. Markiere die Adresse und kopiere sie von Hand.",
+      "editTitle": "{{name}} neu verbinden",
+      "editHint": "Aktualisiere, was sich geändert hat, etwa ein neues Passwort oder Token. Danach wird die Verbindung erneut synchronisiert.",
+      "keepBlank": "Lass ein Feld leer, um den aktuellen Wert zu behalten.",
+      "updated": "{{name}} aktualisiert"
     },
     "oauth": {
       "title": "Anmeldung wird abgeschlossen",

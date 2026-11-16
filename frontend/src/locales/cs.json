@@ -1452,7 +1452,9 @@
       "active": "Aktivní",
       "error": "Chyba",
       "expired": "Vypršelo"
-    }
+    },
+    "pluginConnectors": "Z vašich pluginů",
+    "pluginUnavailable": "Plugin tohoto připojení už není nainstalován ani dostupný."
   },
   "loans": {
     "title": "Úvěrová smlouva",
@@ -3712,7 +3714,11 @@
       "removeTitle": "Odebrat {{name}}?",
       "removeHint": "Uložené klíče a přístup k tomuto pracovnímu prostoru budou smazány. Co už bylo načteno, zůstane.",
       "removed": "{{name}}: odebráno",
-      "copyFailed": "Kopírování se nezdařilo. Označte adresu a zkopírujte ji ručně."
+      "copyFailed": "Kopírování se nezdařilo. Označte adresu a zkopírujte ji ručně.",
+      "editTitle": "Znovu připojit {{name}}",
+      "editHint": "Aktualizujte, co se změnilo, například nové heslo nebo token. Poté se připojení znovu synchronizuje.",
+      "keepBlank": "Ponechte pole prázdné, aby se zachovala jeho současná hodnota.",
+      "updated": "{{name}} aktualizováno"
     },
     "oauth": {
       "title": "Dokončování přihlášení",

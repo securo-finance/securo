@@ -149,6 +149,10 @@ export interface BankConnection {
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
   institutions: ConnectionInstitution[]
+  /** Set when a plugin syncs this connection: it is managed through that plugin connection. */
+  plugin_connection_id?: string | null
+  plugin_id?: string | null
+  integration?: string | null
 }
 
 export interface ConnectionSettings {
