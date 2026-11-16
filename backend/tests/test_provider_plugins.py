@@ -74,7 +74,7 @@ async def test_the_consent_shows_what_an_integration_provides(session: AsyncSess
 # --- The payload as a provider --------------------------------------------------
 
 import uuid  # noqa: E402
-from datetime import datetime, timezone  # noqa: E402
+from datetime import datetime, timedelta, timezone  # noqa: E402
 from decimal import Decimal  # noqa: E402
 
 from sqlalchemy import select  # noqa: E402
@@ -229,3 +229,148 @@ async def test_the_bank_sync_schedule_leaves_plugin_connections_to_their_plugin(
     monkeypatch.setattr(sync_tasks, "_sync_one", synced)
     await sync_tasks._sync_all()
     assert [call.args[1] for call in synced.await_args_list] == [native.id]
+
+
+# --- Syncing a provider plugin through the runner ------------------------------------
+
+import json  # noqa: E402
+
+from app.models.plugin_connection import PluginConnection  # noqa: E402
+from app.plugins import connections, vault  # noqa: E402
+from tests.test_code_plugins import V1, _apply, _connect, _tarball  # noqa: E402
+
+PROVIDER_SOURCE = (
+    "import json\n"
+    f"PAYLOAD = json.loads({json.dumps(json.dumps(payload_data()))})\n"
+    '''
+class Plugin:
+    def sync(self, params, context):
+        mode = context.config.get("account") or "ok"
+        runs = params["state"].get("runs", 0)
+        if mode == "limited":
+            raise type("RateLimited", (Exception,), {})("slow down")
+        if mode == "expired":
+            raise type("NeedsAuth", (Exception,), {})("sign in again")
+        state = {"runs": runs + 1, "since": params.get("since")}
+        if mode == "pending":
+            return {"state": state, "data": None}
+        data = {"contract": 1, "accounts": [{"external_id": "x"}]} if mode == "invalid" else PAYLOAD
+        return {"state": state, "secrets": {"refreshed": str(runs + 1)}, "data": data}
+
+plugin = Plugin()
+'''
+)
+
+
+@pytest.fixture
+def provider_catalog(catalog):
+    catalog.manifests[V1] = _provider_manifest()
+    catalog.archives[V1] = _tarball(PROVIDER_SOURCE)
+    return catalog
+
+
+async def _provider_connection(session, ids, mode="ok") -> PluginConnection:
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    values = {"api_key": "sk_live_1"} if mode == "ok" else {"api_key": "sk_live_1", "account": mode}
+    connection, _ = await _connect(session, workspace_id, user_id, **values)
+    return connection
+
+
+async def _bank(session, connection) -> BankConnection:
+    bank = await session.get(BankConnection, connection.bank_connection_id)
+    assert bank is not None
+    await session.refresh(bank)
+    return bank
+
+
+@pytest.mark.asyncio
+async def test_connecting_a_provider_integration_adds_a_bank_connection(
+    session: AsyncSession, ids, provider_catalog, plugin_runner
+):
+    connection = await _provider_connection(session, ids)
+    bank = await _bank(session, connection)
+    assert (bank.provider, bank.external_id, bank.status) == (provider_name(PLUGIN), str(connection.id), "active")
+    assert bank.institution_name == "Ledger (API key)" and bank.credentials == {}
+    assert bank.workspace_id == connection.workspace_id and bank.user_id == ids[1]
+
+
+@pytest.mark.asyncio
+async def test_a_sync_writes_the_records_and_keeps_the_cursor(session: AsyncSession, ids, provider_catalog, plugin_runner):
+    connection = await _provider_connection(session, ids)
+    await connections.sync(session, connection)
+    assert (connection.status, connection.last_error, connection.state["runs"]) == ("active", None, 1)
+    assert connection.state["since"] is None
+    bank = await _bank(session, connection)
+    assert bank.status == "active" and bank.last_sync_at is not None
+    (account,) = await _rows(session, Account, connection_id=bank.id)
+    account_id, first_sync = account.id, bank.last_sync_at
+    assert len(await _rows(session, Transaction, account_id=account_id)) == 2
+    assert len(await _rows(session, Asset, connection_id=bank.id)) == 1
+
+    await connections.sync(session, connection)
+    assert connection.state["runs"] == 2
+    assert connection.state["since"] == (first_sync.date() - timedelta(days=14)).isoformat()
+    assert len(await _rows(session, Transaction, account_id=account_id)) == 2
+    assert vault.unseal(connection.secrets)["refreshed"] == "2"
+
+
+@pytest.mark.asyncio
+async def test_nothing_fetched_keeps_the_cursor_and_writes_nothing(
+    session: AsyncSession, ids, provider_catalog, plugin_runner
+):
+    connection = await _provider_connection(session, ids, "pending")
+    await connections.sync(session, connection)
+    assert (connection.status, connection.state["runs"]) == ("active", 1)
+    bank = await _bank(session, connection)
+    assert await _rows(session, Account, connection_id=bank.id) == []
+    assert bank.last_sync_at is None
+
+
+@pytest.mark.asyncio
+async def test_invalid_data_is_a_failure_that_keeps_secrets_but_not_the_cursor(
+    session: AsyncSession, ids, provider_catalog, plugin_runner
+):
+    connection = await _provider_connection(session, ids, "invalid")
+    await connections.sync(session, connection)
+    assert connection.status == "error" and connection.failures == 1
+    assert "invalid data from the plugin" in connection.last_error
+    assert connection.state == {}
+    assert vault.unseal(connection.secrets)["refreshed"] == "1"
+    bank = await _bank(session, connection)
+    assert bank.status == "error"
+    assert await _rows(session, Account, connection_id=bank.id) == []
+
+
+@pytest.mark.asyncio
+async def test_a_signed_out_service_asks_to_reconnect(session: AsyncSession, ids, provider_catalog, plugin_runner):
+    connection = await _provider_connection(session, ids, "expired")
+    await connections.sync(session, connection)
+    assert connection.status == "needs_auth"
+    assert (await _bank(session, connection)).status == "expired"
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_service_is_no_failure(session: AsyncSession, ids, provider_catalog, plugin_runner):
+    connection = await _provider_connection(session, ids, "limited")
+    await connections.sync(session, connection)
+    assert (connection.status, connection.failures, connection.state) == ("active", 0, {})
+    assert "slow down" in connection.last_error
+    assert not connections.due(connection)
+    assert (await _bank(session, connection)).status == "active"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_write_is_retried_from_the_same_cursor(
+    session: AsyncSession, ids, provider_catalog, plugin_runner, monkeypatch
+):
+    connection = await _provider_connection(session, ids)
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("database went away")
+
+    monkeypatch.setattr(connection_service, "sync_connection", broken)
+    await connections.sync(session, connection)
+    connection = await session.get(PluginConnection, connection.id)
+    assert connection.status == "error" and connection.state == {}
+    assert "RuntimeError" in connection.last_error and "database went away" not in connection.last_error
