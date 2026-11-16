@@ -8,6 +8,7 @@
 - **Asynchronous Task Scheduler**: Runs Celery workers and a Celery beat singleton for automated background processing (such as bank syncs, recurring transactions, and exchange rate updates).
 - **Databases**: Easily configure connections to your external PostgreSQL and Redis instances.
 - **Gateway API & Ingress**: Native support for standard Kubernetes Ingress or the modern Kubernetes Gateway API (`HTTPRoute`).
+- **Plugins with code (optional)**: Runs plugin code in a separate container that reaches the internet only through an egress proxy which refuses private addresses and hosts the plugin did not declare.
 
 ## Prerequisites
 
@@ -53,6 +54,29 @@ global:
 ```
 
 The secret must contain the corresponding keys (e.g., `secretKey`, `databaseUrl`, `agentsOpenaiApiKey`).
+
+### Plugins with code
+
+Data plugins (categories, rules and themes) only need `config.pluginsEnabled: "true"`. Plugins that ship code also need a runner and an egress proxy, both created by the chart:
+
+```yaml
+config:
+  pluginsEnabled: "true"
+
+plugins:
+  runner:
+    enabled: true
+```
+
+The chart creates a Secret with a random runner token and egress secret, kept across upgrades. To bring your own, set `plugins.runner.existingSecret` to a Secret with `PLUGINS_RUNNER_TOKEN` and `PLUGINS_EGRESS_SECRET`, each at least 32 characters.
+
+To rotate the generated pair, delete the `-plugins` Secret and run `helm upgrade`: the chart creates a new one and the checksum rolls the runner, the backend and the worker.
+
+The runner starts plugin processes as their own unprivileged users, with a read-only root filesystem, `/tmp` on tmpfs and a PID and memory limit. Plugin code leaves the namespace only through `plugins-egress`, which checks each plugin's signed pass against the hosts it declared and refuses private addresses.
+
+Enabling the runner turns `PLUGINS_ENABLED` on and keeps it on, even if `config.pluginsEnabled` says otherwise. Its namespace needs the `baseline` Pod Security Standard or looser: the runner runs as root so it can give each plugin its own uid.
+
+Set `plugins.networkPolicy.enabled: true` on a cluster whose CNI enforces `NetworkPolicy` to also stop the runner from reaching other pods. The proxy still refuses private addresses while it is off, but the runner can then open connections to anything the cluster allows.
 
 ## Uninstalling the Chart
 

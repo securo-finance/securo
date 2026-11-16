@@ -1,0 +1,19 @@
+{{- if and .Values.plugins.runner.enabled .Values.plugins.egress.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins-egress
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins-egress
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.plugins.egress.port }}
+      targetPort: proxy
+      protocol: TCP
+      name: proxy
+  selector:
+    {{- include "securo.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins-egress
+{{- end }}

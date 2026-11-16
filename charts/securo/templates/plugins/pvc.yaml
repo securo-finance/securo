@@ -1,0 +1,22 @@
+{{- if and .Values.plugins.runner.enabled .Values.plugins.runner.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins-data
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins
+spec:
+  accessModes:
+    - {{ .Values.plugins.runner.persistence.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.plugins.runner.persistence.size | quote }}
+  {{- if .Values.plugins.runner.persistence.storageClass }}
+  {{- if (eq "-" .Values.plugins.runner.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: "{{ .Values.plugins.runner.persistence.storageClass }}"
+  {{- end }}
+  {{- end }}
+{{- end }}

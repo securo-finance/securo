@@ -61,6 +61,28 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Secret that holds the plugin runner token and the egress secret. Either the one
+the chart creates or the user's existingSecret.
+*/}}
+{{- define "securo.pluginsSecretName" -}}
+{{- if .Values.plugins.runner.existingSecret }}
+{{- .Values.plugins.runner.existingSecret }}
+{{- else }}
+{{- printf "%s-plugins" (include "securo.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{/*
+Image for the plugin runner and the egress proxy: the backend image unless the
+user pointed them somewhere else.
+*/}}
+{{- define "securo.pluginsImage" -}}
+{{- $repository := .Values.plugins.runner.image.repository | default .Values.backend.image.repository }}
+{{- $tag := .Values.plugins.runner.image.tag | default .Values.backend.image.tag }}
+{{- printf "%s:%s" $repository $tag }}
+{{- end }}
+
+{{/*
 Compute the frontend URL based on global.domain and global.tls
 */}}
 {{- define "securo.frontendUrl" -}}
