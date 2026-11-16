@@ -32,6 +32,7 @@ from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
+from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
 from app.providers.base import (
     AccountData,
@@ -293,6 +294,9 @@ async def _fetch_holdings(
         provider = provider or get_provider(
             connection.provider, settings=await resolve_settings(session)
         )
+        # A plugin's payload may leave holdings out of a run: nothing to sync.
+        if getattr(provider, "holdings_fetched", True) is False:
+            return None
         return await provider.get_holdings(credentials)
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -2705,13 +2709,22 @@ async def sync_connection(
     workspace_id: uuid.UUID,
     requesting_user_id: uuid.UUID,
     trigger_provider_refresh: bool = False,
+    provider: BankProvider | None = None,
 ) -> tuple[BankConnection, int, SyncOutcome]:
+    """Sync a connection from its provider.
+
+    `provider` is given for a plugin's connection: the plugin already fetched,
+    and the provider serves what it returned (`app.plugins.provider`). Its
+    credentials stay sealed with the plugin connection, so there are none here.
+    """
     connection = await get_connection(
         session, connection_id, workspace_id, for_update=True
     )
     if not connection:
         raise ValueError("Connection not found")
-    if not connection.credentials:
+    if provider is None and is_plugin_provider(connection.provider):
+        raise ProviderNotConfiguredError("This connection is synced by its plugin.")
+    if provider is None and not connection.credentials:
         raise ValueError("Credentials not found")
 
     # Authorization is workspace-scoped and happens before this service is
@@ -2737,7 +2750,7 @@ async def sync_connection(
     # provider is a server misconfiguration, and the catch-all below would
     # wrongly stamp the (healthy) connection with status="error".
     try:
-        provider = get_provider(connection.provider, settings=await resolve_settings(session))
+        provider = provider or get_provider(connection.provider, settings=await resolve_settings(session))
     except ValueError as exc:
         raise ProviderNotConfiguredError(
             f"Provider '{connection.provider}' is not configured. "
@@ -2746,7 +2759,7 @@ async def sync_connection(
 
     try:
         # Refresh credentials if needed
-        credentials = await provider.refresh_credentials(connection.credentials)
+        credentials = await provider.refresh_credentials(connection.credentials or {})
         connection.credentials = credentials
 
         # Backfill the institution logo for connections linked before logo
