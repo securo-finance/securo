@@ -6,6 +6,7 @@ Populates the database with realistic data for performance benchmarking and manu
 
 The stack must be running:
 
+
 ```bash
 docker compose up -d
 ```
