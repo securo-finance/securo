@@ -38,6 +38,7 @@ const FAILURE_KEYS: Record<PasskeyFailure, string> = {
 const NO_PASSKEYS: Passkey[] = []
 
 const PASSKEYS_QUERY_KEY = ['passkeys'] as const
+let nextPasskeySessionId = 0
 
 export function PasskeyManagementDialog(props: PasskeyManagementDialogProps) {
   return props.open ? <PasskeyManagementSession {...props} /> : null
@@ -46,6 +47,7 @@ export function PasskeyManagementDialog(props: PasskeyManagementDialogProps) {
 function PasskeyManagementSession({ open, onClose, localAuthEnabled = true }: PasskeyManagementDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const [queryKey] = useState(() => [...PASSKEYS_QUERY_KEY, ++nextPasskeySessionId] as const)
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -61,7 +63,7 @@ function PasskeyManagementSession({ open, onClose, localAuthEnabled = true }: Pa
     isError: loadFailed,
     refetch: loadPasskeys,
   } = useQuery({
-    queryKey: PASSKEYS_QUERY_KEY,
+    queryKey,
     queryFn: auth.listPasskeys,
     enabled: open,
     staleTime: 0,
@@ -88,7 +90,7 @@ function PasskeyManagementSession({ open, onClose, localAuthEnabled = true }: Pa
       const options = await auth.registerPasskeyOptions(passkeyName)
       const credential = await startPasskeyRegistration(options.options)
       const created = await auth.verifyPasskeyRegistration(options.challenge_id, passkeyName, credential)
-      queryClient.setQueryData<Passkey[]>(PASSKEYS_QUERY_KEY, (current) => [...(current ?? []), created])
+      queryClient.setQueryData<Passkey[]>(queryKey, (current) => [...(current ?? []), created])
       setName('')
       toast.success(t('auth.passkeyAdded'))
     } catch (err) {
@@ -102,7 +104,7 @@ function PasskeyManagementSession({ open, onClose, localAuthEnabled = true }: Pa
     setDeletingId(passkey.id)
     try {
       await auth.deletePasskey(passkey.id)
-      queryClient.setQueryData<Passkey[]>(PASSKEYS_QUERY_KEY, (current) => (current ?? []).filter((item) => item.id !== passkey.id))
+      queryClient.setQueryData<Passkey[]>(queryKey, (current) => (current ?? []).filter((item) => item.id !== passkey.id))
       setConfirmDeleteId(null)
       toast.success(t('auth.passkeyDeleted'))
     } catch {
