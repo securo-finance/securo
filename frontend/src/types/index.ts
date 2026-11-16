@@ -1073,6 +1073,19 @@ export interface SimulatedPurchase {
   first_date: string
 }
 
+export type SpendingPlanEventSource = 'recurring' | 'planned' | 'card' | 'other' | 'scenario'
+
+/** One move behind the projected balance. A card charge sits on its bill's due date. */
+export interface SpendingPlanEvent {
+  date: string
+  /** Null for "other": the part of a day's move no row names. */
+  description: string | null
+  /** Signed, in the primary currency. */
+  amount: number
+  source: SpendingPlanEventSource
+  account_name: string | null
+}
+
 export interface SpendingPlanTimeline {
   currency: string
   daily_allowance: number
@@ -1082,8 +1095,14 @@ export interface SpendingPlanTimeline {
   average_daily_surplus: number
   covered_until: string | null
   covered_through_horizon: boolean
+  /** Balance at the close of yesterday, before today's moves. */
+  opening_balance: number
+  /** The day the safe allowance is computed through: the tightest one ahead. */
+  binding_date: string | null
   today: { allowance: number; spent: number; remaining: number }
   points: { date: string; balance: number }[]
+  /** The events on a day sum to that day's change in balance before the allowance. */
+  events: SpendingPlanEvent[]
 }
 
 export interface DashboardSummary {

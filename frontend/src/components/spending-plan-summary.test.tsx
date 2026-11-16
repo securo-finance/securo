@@ -27,7 +27,10 @@ function timeline(overrides: Partial<SpendingPlanTimeline>): SpendingPlanTimelin
     covered_until: '2027-03-05',
     covered_through_horizon: false,
     today: { allowance: 50, spent: 12.5, remaining: 37.5 },
+    opening_balance: 0,
+    binding_date: null,
     points: [],
+    events: [],
     ...overrides,
   }
 }
