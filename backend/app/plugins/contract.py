@@ -24,7 +24,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
 
-from app.providers.base import AccountData, BillData, HoldingData, TransactionData
+from app.providers.base import AccountData, BillData, HoldingData, HoldingTradeData, TransactionData
 
 CONTRACT_VERSION = 1
 MAX_ACCOUNTS = 500
@@ -137,6 +137,9 @@ class Trade(_Model):
     """Per unit, in the asset's currency."""
     fee: Positive = Decimal(0)
 
+    def to_data(self) -> HoldingTradeData:
+        return HoldingTradeData(**self.model_dump())
+
 
 class Holding(_Model):
     external_id: ExternalId
@@ -162,7 +165,8 @@ class Holding(_Model):
         return self
 
     def to_data(self) -> HoldingData:
-        return HoldingData(**self.model_dump(exclude={"trades"}))
+        trades = [trade.to_data() for trade in self.trades] if self.trades is not None else None
+        return HoldingData(**self.model_dump(exclude={"trades"}), trades=trades)
 
 
 class Payload(_Model):

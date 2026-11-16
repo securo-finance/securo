@@ -17,6 +17,7 @@ from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
+from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.account import Account
@@ -38,6 +39,7 @@ from app.providers.base import (
     AccountData,
     BankProvider,
     HoldingData,
+    HoldingTradeData,
     ProviderNotConfiguredError,
     ProviderRateLimited,
     ProviderUserActionRequired,
@@ -809,6 +811,8 @@ async def _sync_holdings(
         and (asset.connection_id == connection.id or asset.connection_id is None)
     }
     seen: set[str] = set()
+    # Every asset this sync wrote, for the holdings' trades below.
+    synced_assets: dict[str, Asset] = {}
 
     for holding in holdings:
         seen.add(holding.external_id)
@@ -845,6 +849,7 @@ async def _sync_holdings(
                 withdrawn_metadata[_PROVIDER_SELL_DATE_METADATA_KEY] = provider_sell_date
             existing.external_metadata = withdrawn_metadata or None
             existing.connection_id = connection.id
+            synced_assets[holding.external_id] = existing
             continue
 
         # A provider-reported closure is reversible. The prior raw status is
@@ -859,6 +864,7 @@ async def _sync_holdings(
             session, existing, holding, user_id, connection.id, source,
             workspace_id=connection.workspace_id,
         )
+        synced_assets[holding.external_id] = asset
         if asset.group_id is not None:
             existing_group = await session.get(AssetGroup, asset.group_id)
             if (
@@ -909,6 +915,8 @@ async def _sync_holdings(
         if ext_id not in seen and not asset.is_archived:
             asset.is_archived = True
 
+    await _sync_holding_trades(session, source, holdings, synced_assets)
+
     # Sync owns its wallets: drop any it emptied by re-attribution above
     # (e.g. the single connection-named wallet that predates per-institution
     # ones). Wallets still holding assets — or used this run — are kept, and
@@ -937,6 +945,126 @@ async def _sync_holdings(
             emptied = await session.get(AssetGroup, gid)
             if emptied is not None:
                 await session.delete(emptied)
+
+
+def _trade_target(holding: HoldingData) -> Optional[Decimal]:
+    """The quantity a holding's trades must add up to, when known."""
+    return Decimal("0") if holding.is_withdrawn else holding.quantity
+
+
+def _reconciled_trades(
+    holding: HoldingData, trades: list[HoldingTradeData]
+) -> Optional[list[HoldingTradeData]]:
+    """`trades` in ledger order, if they add up to the holding's position.
+
+    Replaying every buy and sell must land on the quantity the provider
+    reports now (zero once withdrawn) without ever going below zero. Each
+    trade's quantity may carry the provider's rounding, so the check allows
+    one millionth of the largest lot (at least 0.0001).
+    """
+    target = _trade_target(holding)
+    if target is None or not trades:
+        return None
+    ordered = sorted(trades, key=lambda t: (t.date, t.kind != "buy", t.external_id))
+    largest = max([abs(target), *(trade.quantity for trade in trades)])
+    tolerance = max(Decimal("0.0001"), largest * Decimal("0.000001"))
+    position = Decimal("0")
+    for trade in ordered:
+        position += trade.quantity if trade.kind == "buy" else -trade.quantity
+        if position < -tolerance:
+            return None
+    return ordered if abs(position - target) <= tolerance else None
+
+
+def _trade_from_row(tx: AssetTransaction) -> HoldingTradeData:
+    return HoldingTradeData(
+        external_id=tx.external_id or "",
+        kind="buy" if tx.kind == "buy" else "sell",
+        date=tx.date,
+        quantity=Decimal(str(tx.quantity)),
+        price=Decimal(str(tx.price)),
+        fee=Decimal(str(tx.fee or 0)),
+    )
+
+
+async def _sync_holding_trades(
+    session: AsyncSession,
+    source: str,
+    holdings: list[HoldingData],
+    synced_assets: dict[str, Asset],
+) -> None:
+    """Mirror the trades a provider reports into each asset's ledger.
+
+    The ledger lets performance count what was bought and sold instead of
+    inferring it from value changes. Stored trades of this connection's
+    source are overlaid with the reported ones by `external_id` (the reported
+    one wins, it may be a correction), so a provider that only reports recent
+    trades keeps the older ones; failing that, the reported trades alone are
+    tried. A set that doesn't add up to the reported position is not used and
+    the stored ledger stays. Trades of any other source (entered by hand,
+    imported) are never touched, and `units` stays the reported quantity.
+    """
+    from app.services.asset_transaction_service import recompute_and_cache
+
+    reported = [
+        holding
+        for holding in holdings
+        if holding.trades is not None
+        and (asset := synced_assets.get(holding.external_id)) is not None
+        and asset.valuation_method != "market_price"
+        and _trade_target(holding) is not None
+    ]
+    if not reported:
+        return
+    await session.flush()
+    for holding in reported:
+        asset = synced_assets[holding.external_id]
+        rows = (
+            await session.execute(
+                select(AssetTransaction).where(
+                    AssetTransaction.asset_id == asset.id,
+                    AssetTransaction.source == source,
+                )
+            )
+        ).scalars().all()
+        stored = {tx.external_id: tx for tx in rows if tx.external_id}
+        merged = {external_id: _trade_from_row(tx) for external_id, tx in stored.items()}
+        merged.update((trade.external_id, trade) for trade in holding.trades or [])
+        reconciled = _reconciled_trades(holding, list(merged.values())) or _reconciled_trades(
+            holding, list(holding.trades or [])
+        )
+        if reconciled is None:
+            if holding.trades:
+                logger.warning(
+                    "Trades for asset %s don't add up to the reported position; keeping its ledger",
+                    asset.id,
+                )
+            continue
+        wanted = {trade.external_id for trade in reconciled}
+        for tx in rows:
+            if tx.external_id not in wanted:
+                await session.delete(tx)
+        for trade in reconciled:
+            tx = stored.get(trade.external_id)
+            if tx is None:
+                tx = AssetTransaction(
+                    asset_id=asset.id,
+                    workspace_id=asset.workspace_id,
+                    source=source,
+                    external_id=trade.external_id,
+                )
+                session.add(tx)
+            tx.kind = trade.kind
+            tx.quantity = trade.quantity
+            tx.price = trade.price
+            tx.fee = trade.fee
+            tx.date = trade.date
+        await session.flush()
+        # Average price, realized gain and cost basis come from the ledger;
+        # the position stays what the provider reports.
+        await recompute_and_cache(session, asset)
+        if holding.quantity is not None and not holding.is_withdrawn:
+            asset.units = holding.quantity
 
 
 async def _upsert_asset_from_holding(

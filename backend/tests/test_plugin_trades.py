@@ -1,0 +1,125 @@
+"""Trades a provider reports for its holdings, mirrored into the asset ledger (#1461)."""
+from __future__ import annotations
+
+import copy
+from datetime import date
+from decimal import Decimal
+from typing import Any
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.asset import Asset
+from app.models.asset_transaction import AssetTransaction
+from app.plugins.provider import provider_name
+from tests import test_provider_plugins as provider_plugins
+from tests.test_code_plugins import PLUGIN
+from tests.test_provider_plugins import _pipeline, _rows, payload_data
+
+bank_connection = provider_plugins.bank_connection
+
+SOURCE = provider_name(PLUGIN)
+
+
+def _trade(external_id: str, kind: str, day: int, quantity: str, price: str = "100", fee: str = "0") -> dict[str, Any]:
+    return {"external_id": external_id, "kind": kind, "date": f"2026-11-{day:02d}", "quantity": quantity,
+            "price": price, "fee": fee}
+
+
+def holding(quantity: str, trades: Any, **extra: Any) -> dict[str, Any]:
+    data = payload_data()
+    data["holdings"][0].update(quantity=quantity, trades=copy.deepcopy(trades), **extra)
+    return data
+
+
+async def _asset(session, connection) -> Asset:
+    (asset,) = await _rows(session, Asset, connection_id=connection.id)
+    await session.refresh(asset)
+    return asset
+
+
+async def _ledger(session, asset) -> dict[str, tuple[str, Decimal, Decimal, str]]:
+    rows = await _rows(session, AssetTransaction, asset_id=asset.id)
+    return {
+        tx.external_id or "": (tx.kind, Decimal(str(tx.quantity)).normalize(), Decimal(str(tx.price)).normalize(), tx.source)
+        for tx in rows
+    }
+
+
+@pytest.mark.asyncio
+async def test_trades_that_add_up_fill_the_ledger(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10", "98.5", "1")]), test_user)
+    asset = await _asset(session, bank_connection)
+    assert await _ledger(session, asset) == {"b1": ("buy", Decimal("10"), Decimal("98.5"), SOURCE)}
+    assert asset.units == Decimal("10")
+    assert Decimal(str(asset.average_price)) == Decimal("98.6")
+    assert asset.purchase_date == date(2026, 11, 2)
+
+
+@pytest.mark.asyncio
+async def test_later_trades_join_the_stored_ones(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10", "100")]), test_user)
+    await _pipeline(session, bank_connection, holding("6", [_trade("s1", "sell", 9, "4", "110")]), test_user)
+    asset = await _asset(session, bank_connection)
+    assert set(await _ledger(session, asset)) == {"b1", "s1"}
+    assert asset.units == Decimal("6")
+    assert Decimal(str(asset.realized_gain)) == Decimal("40.00")
+
+
+@pytest.mark.asyncio
+async def test_trades_that_do_not_add_up_leave_the_ledger(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10")]), test_user)
+    await _pipeline(session, bank_connection, holding("12", [_trade("b1", "buy", 2, "10"), _trade("s1", "sell", 3, "5")]), test_user)
+    asset = await _asset(session, bank_connection)
+    assert set(await _ledger(session, asset)) == {"b1"}
+    assert asset.units == Decimal("12")
+
+
+@pytest.mark.asyncio
+async def test_a_set_that_goes_below_zero_is_refused(session: AsyncSession, bank_connection, test_user):
+    trades = [_trade("s1", "sell", 2, "5"), _trade("b1", "buy", 3, "5")]
+    await _pipeline(session, bank_connection, holding("0", trades), test_user)
+    asset = await _asset(session, bank_connection)
+    assert await _ledger(session, asset) == {}
+
+
+@pytest.mark.asyncio
+async def test_a_reported_trade_corrects_the_stored_one(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10", "100")]), test_user)
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10", "101")]), test_user)
+    asset = await _asset(session, bank_connection)
+    assert await _ledger(session, asset) == {"b1": ("buy", Decimal("10"), Decimal("101"), SOURCE)}
+
+
+@pytest.mark.asyncio
+async def test_trades_entered_by_hand_are_never_touched(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("10", None), test_user)
+    asset = await _asset(session, bank_connection)
+    session.add(AssetTransaction(asset_id=asset.id, workspace_id=asset.workspace_id, kind="buy",
+                                 quantity=Decimal("3"), price=Decimal("50"), fee=Decimal("0"),
+                                 date=date(2026, 10, 1), source="manual"))
+    await session.commit()
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10")]), test_user)
+    asset = await _asset(session, bank_connection)
+    ledger = await _ledger(session, asset)
+    assert ledger[""] == ("buy", Decimal("3"), Decimal("50"), "manual") and "b1" in ledger
+    assert asset.units == Decimal("10")
+
+
+@pytest.mark.asyncio
+async def test_trades_not_reported_leave_the_ledger(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10")]), test_user)
+    await _pipeline(session, bank_connection, holding("10", None), test_user)
+    asset = await _asset(session, bank_connection)
+    assert set(await _ledger(session, asset)) == {"b1"}
+
+
+@pytest.mark.asyncio
+async def test_a_closed_position_realizes_its_gain(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10", "100")]), test_user)
+    closed = holding("0", [_trade("s1", "sell", 9, "10", "120")], is_withdrawn=True)
+    await _pipeline(session, bank_connection, closed, test_user)
+    asset = await _asset(session, bank_connection)
+    assert set(await _ledger(session, asset)) == {"b1", "s1"}
+    assert Decimal(str(asset.realized_gain)) == Decimal("200.00")
+    assert asset.sell_date == date(2026, 11, 9)
