@@ -6,7 +6,14 @@ import SpendingPlanPage from './spending-plan'
 import type { SpendingPlanEvent, SpendingPlanTimeline } from '@/types'
 
 const api = vi.hoisted(() => ({
-  spendingPlan: { get: vi.fn(), save: vi.fn(), remove: vi.fn(), timeline: vi.fn(), preview: vi.fn(), simulate: vi.fn() },
+  spendingPlan: {
+    get: vi.fn(),
+    save: vi.fn(),
+    remove: vi.fn(),
+    timeline: vi.fn(),
+    preview: vi.fn(),
+    simulate: vi.fn(),
+  },
   accounts: { list: vi.fn() },
 }))
 vi.mock('@/lib/api', () => api)
@@ -25,7 +32,13 @@ const TODAY = '2026-11-12'
 const HORIZON = '2026-12-31'
 const plan = { daily_allowance: '30.00', balance_floor: '200.00', account_ids: null, horizon_months: 12 }
 
-function event(date: string, description: string | null, amount: number, source: SpendingPlanEvent['source'], account_name: string | null = null): SpendingPlanEvent {
+function event(
+  date: string,
+  description: string | null,
+  amount: number,
+  source: SpendingPlanEvent['source'],
+  account_name: string | null = null,
+): SpendingPlanEvent {
   return { date, description, amount, source, account_name }
 }
 
@@ -113,16 +126,21 @@ describe('SpendingPlanPage', () => {
   })
 
   it('counts a what-if only while it is on', async () => {
-    window.localStorage.setItem('spendingPlan.whatIf.ws-1', JSON.stringify([
-      { id: 'tv', label: 'TV', amount: 1200, first_date: '2026-12-01', installments: 3, enabled: true },
-    ]))
+    window.localStorage.setItem(
+      'spendingPlan.whatIf.ws-1',
+      JSON.stringify([
+        { id: 'tv', label: 'TV', amount: 1200, first_date: '2026-12-01', installments: 3, enabled: true },
+      ]),
+    )
     api.spendingPlan.get.mockResolvedValue(plan)
 
     const { user } = renderWithProviders(<SpendingPlanPage />)
-    await waitFor(() => expect(api.spendingPlan.simulate).toHaveBeenCalledWith(
-      [{ description: 'TV', amount: 1200, installments: 3, first_date: '2026-12-01' }],
-      undefined,
-    ))
+    await waitFor(() =>
+      expect(api.spendingPlan.simulate).toHaveBeenCalledWith(
+        [{ description: 'TV', amount: 1200, installments: 3, first_date: '2026-12-01' }],
+        undefined,
+      ),
+    )
 
     await user.click(await screen.findByRole('switch', { name: /TV/ }))
 
@@ -139,10 +157,12 @@ describe('SpendingPlanPage', () => {
     await user.type(screen.getByLabelText('Amount'), '3000')
     await user.click(screen.getAllByRole('button', { name: 'Add' }).at(-1)!)
 
-    await waitFor(() => expect(api.spendingPlan.simulate).toHaveBeenLastCalledWith(
-      [{ description: 'IPVA', amount: 3000, installments: 1, first_date: expect.any(String) }],
-      undefined,
-    ))
+    await waitFor(() =>
+      expect(api.spendingPlan.simulate).toHaveBeenLastCalledWith(
+        [{ description: 'IPVA', amount: 3000, installments: 1, first_date: expect.any(String) }],
+        undefined,
+      ),
+    )
   })
 
   it('explains the safe amount with a receipt that adds up to it', async () => {
@@ -155,7 +175,11 @@ describe('SpendingPlanPage', () => {
     const free = screen.getByText('Free for day-to-day spending').closest('tr')!
     expect(free).toHaveTextContent('$2,050.00')
     expect(screen.getByText('Why until 12/20/26 and not 12/31/26?')).toBeInTheDocument()
-    expect(screen.getByText(`Each $1,000.00 spent before 12/20/26 costs $${(1000 / daysThrough(TODAY, '2026-12-20')).toFixed(2)} a day.`)).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        `Each $1,000.00 spent before 12/20/26 costs $${(1000 / daysThrough(TODAY, '2026-12-20')).toFixed(2)} a day.`,
+      ),
+    ).toBeInTheDocument()
   })
 
   it('switches the month between the calendar and the spreadsheet', async () => {
@@ -194,7 +218,12 @@ describe('SpendingPlanPage', () => {
 
   it('saves every field typed in the dialog, not just the last one', async () => {
     api.spendingPlan.get.mockResolvedValue(null)
-    api.spendingPlan.save.mockResolvedValue({ daily_allowance: '45.00', balance_floor: '300.00', account_ids: null, horizon_months: 18 })
+    api.spendingPlan.save.mockResolvedValue({
+      daily_allowance: '45.00',
+      balance_floor: '300.00',
+      account_ids: null,
+      horizon_months: 18,
+    })
 
     const { user } = renderWithProviders(<SpendingPlanPage />)
     await user.click(await screen.findByRole('button', { name: 'Create plan' }))
@@ -221,9 +250,11 @@ describe('SpendingPlanPage', () => {
     await user.type(within(dialog).getByLabelText('Balance floor'), '300')
     await user.selectOptions(within(dialog).getByLabelText('Plan ahead for'), '18')
 
-    await waitFor(() => expect(api.spendingPlan.preview).toHaveBeenLastCalledWith(
-      expect.objectContaining({ balance_floor: 300, horizon_months: 18 }),
-    ))
+    await waitFor(() =>
+      expect(api.spendingPlan.preview).toHaveBeenLastCalledWith(
+        expect.objectContaining({ balance_floor: 300, horizon_months: 18 }),
+      ),
+    )
   })
 
   it('leaves credit cards out of the account checklist because they always count', async () => {

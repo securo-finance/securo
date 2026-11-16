@@ -26,17 +26,23 @@ export function BalanceLookup({
   const waterfall = waterfallFor(timeline, date)
   const shortcutLabel = (key: LookupShortcut, shortcutDate: string) => {
     switch (key) {
-      case 'monthEnd': return t('spendingPlan.shortcutMonthEnd')
-      case 'yearEnd': return format.dayMonth(shortcutDate)
-      case 'threeMonths': return t('spendingPlan.months', { count: 3 })
-      case 'sixMonths': return t('spendingPlan.months', { count: 6 })
-      case 'horizon': return t('spendingPlan.shortcutHorizon')
+      case 'monthEnd':
+        return t('spendingPlan.shortcutMonthEnd')
+      case 'yearEnd':
+        return format.dayMonth(shortcutDate)
+      case 'threeMonths':
+        return t('spendingPlan.months', { count: 3 })
+      case 'sixMonths':
+        return t('spendingPlan.months', { count: 6 })
+      case 'horizon':
+        return t('spendingPlan.shortcutHorizon')
     }
   }
-  const topItems = (bucket: Bucket) => bucket.items
-    .slice(0, TOP_ITEMS)
-    .map((item) => `${item.label ?? t('spendingPlan.otherMoves')} ${format.signedCompact(item.amount)}`)
-    .join(' · ')
+  const topItems = (bucket: Bucket) =>
+    bucket.items
+      .slice(0, TOP_ITEMS)
+      .map((item) => `${item.label ?? t('spendingPlan.otherMoves')} ${format.signedCompact(item.amount)}`)
+      .join(' · ')
 
   return (
     <Card className="gap-0 p-4 lg:sticky lg:top-4">
@@ -68,22 +74,50 @@ export function BalanceLookup({
             <tbody className="[&_td]:border-b [&_td]:border-dashed [&_td]:border-border [&_td]:py-1.5 [&_td]:align-top">
               <WaterfallRow label={t('spendingPlan.receiptOpening')} amount={waterfall.opening} format={format} />
               {waterfall.income.items.length > 0 && (
-                <WaterfallRow label={t('spendingPlan.groupIncome')} amount={waterfall.income.total} detail={topItems(waterfall.income)} format={format} />
+                <WaterfallRow
+                  label={t('spendingPlan.groupIncome')}
+                  amount={waterfall.income.total}
+                  detail={topItems(waterfall.income)}
+                  format={format}
+                />
               )}
               {waterfall.fixed.items.length > 0 && (
-                <WaterfallRow label={t('spendingPlan.groupFixed')} amount={waterfall.fixed.total} detail={topItems(waterfall.fixed)} format={format} />
+                <WaterfallRow
+                  label={t('spendingPlan.groupFixed')}
+                  amount={waterfall.fixed.total}
+                  detail={topItems(waterfall.fixed)}
+                  format={format}
+                />
               )}
               {waterfall.card.items.length > 0 && (
-                <WaterfallRow label={t('spendingPlan.cardBills')} amount={waterfall.card.total} detail={topItems(waterfall.card)} format={format} />
+                <WaterfallRow
+                  label={t('spendingPlan.cardBills')}
+                  amount={waterfall.card.total}
+                  detail={topItems(waterfall.card)}
+                  format={format}
+                />
               )}
               {waterfall.scenario.items.length > 0 && (
-                <WaterfallRow label={t('spendingPlan.whatIf')} amount={waterfall.scenario.total} detail={topItems(waterfall.scenario)} format={format} />
+                <WaterfallRow
+                  label={t('spendingPlan.whatIf')}
+                  amount={waterfall.scenario.total}
+                  detail={topItems(waterfall.scenario)}
+                  format={format}
+                />
               )}
               {Math.round(waterfall.other * 100) !== 0 && (
-                <WaterfallRow label={t('spendingPlan.otherMoves')} amount={waterfall.other} detail={t('spendingPlan.otherHint')} format={format} />
+                <WaterfallRow
+                  label={t('spendingPlan.otherMoves')}
+                  amount={waterfall.other}
+                  detail={t('spendingPlan.otherHint')}
+                  format={format}
+                />
               )}
               <WaterfallRow
-                label={t('spendingPlan.dailyTimes', { count: waterfall.days, amount: format.money(timeline.daily_allowance) })}
+                label={t('spendingPlan.dailyTimes', {
+                  count: waterfall.days,
+                  amount: format.money(timeline.daily_allowance),
+                })}
                 amount={waterfall.daily}
                 format={format}
               />
@@ -117,14 +151,26 @@ export function BalanceLookup({
   )
 }
 
-function WaterfallRow({ label, amount, detail, format }: { label: ReactNode; amount: number; detail?: string; format: PlanFormat }) {
+function WaterfallRow({
+  label,
+  amount,
+  detail,
+  format,
+}: {
+  label: ReactNode
+  amount: number
+  detail?: string
+  format: PlanFormat
+}) {
   return (
     <tr>
       <td className="pr-2">
         {label}
         {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
       </td>
-      <td className={cn('whitespace-nowrap text-right tabular-nums', amount > 0 && INCOME_TEXT)}>{format.signed(amount)}</td>
+      <td className={cn('whitespace-nowrap text-right tabular-nums', amount > 0 && INCOME_TEXT)}>
+        {format.signed(amount)}
+      </td>
     </tr>
   )
 }

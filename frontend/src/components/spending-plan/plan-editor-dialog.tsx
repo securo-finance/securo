@@ -11,19 +11,14 @@ import { AccountIcon } from '@/components/account-icon'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 import type { SpendingPlan, SpendingPlanInput } from '@/types'
 import { invalidatePlanQueries } from './plan-queries'
 
-const SELECT_CLASS = 'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
+const SELECT_CLASS =
+  'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 const HORIZONS = [6, 12, 18, 24, 36]
 
 function parseAmount(value: string) {
@@ -53,7 +48,9 @@ export function PlanEditorDialog({ plan, onClose }: { plan: SpendingPlan | null;
   })
   const [draft, setDraft] = useState<SpendingPlanInput>(() => draftFrom(plan))
   const [allowanceText, setAllowanceText] = useState(() => (plan ? String(Number(plan.daily_allowance)) : ''))
-  const [floorText, setFloorText] = useState(() => (plan && Number(plan.balance_floor) ? String(Number(plan.balance_floor)) : ''))
+  const [floorText, setFloorText] = useState(() =>
+    plan && Number(plan.balance_floor) ? String(Number(plan.balance_floor)) : '',
+  )
 
   const previewDraft = useDeferredValue(draft)
   const { data: preview } = useQuery({
@@ -87,14 +84,21 @@ export function PlanEditorDialog({ plan, onClose }: { plan: SpendingPlan | null;
     () => sortAccountsByDisplayName((accountsList ?? []).filter((a) => !a.is_closed && a.type !== 'credit_card')),
     [accountsList],
   )
-  const isChosen = (id: string, type: string) => (draft.account_ids === null ? type !== 'loan' : draft.account_ids.includes(id))
-  const toggleAccount = (id: string) => setDraft((current) => {
-    const base = current.account_ids ?? planAccounts.filter((a) => a.type !== 'loan').map((a) => a.id)
-    return { ...current, account_ids: base.includes(id) ? base.filter((x) => x !== id) : [...base, id] }
-  })
+  const isChosen = (id: string, type: string) =>
+    draft.account_ids === null ? type !== 'loan' : draft.account_ids.includes(id)
+  const toggleAccount = (id: string) =>
+    setDraft((current) => {
+      const base = current.account_ids ?? planAccounts.filter((a) => a.type !== 'loan').map((a) => a.id)
+      return { ...current, account_ids: base.includes(id) ? base.filter((x) => x !== id) : [...base, id] }
+    })
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{plan ? t('spendingPlan.editPlan') : t('spendingPlan.createPlan')}</DialogTitle>
@@ -172,7 +176,9 @@ export function PlanEditorDialog({ plan, onClose }: { plan: SpendingPlan | null;
                 }}
               >
                 {HORIZONS.map((months) => (
-                  <option key={months} value={months}>{t('spendingPlan.months', { count: months })}</option>
+                  <option key={months} value={months}>
+                    {t('spendingPlan.months', { count: months })}
+                  </option>
                 ))}
               </select>
             </div>
@@ -209,10 +215,16 @@ export function PlanEditorDialog({ plan, onClose }: { plan: SpendingPlan | null;
               >
                 {t('spendingPlan.remove')}
               </Button>
-            ) : <span />}
+            ) : (
+              <span />
+            )}
             <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-              <Button type="submit" disabled={save.isPending}>{t('common.save')}</Button>
+              <Button type="button" variant="outline" onClick={onClose}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" disabled={save.isPending}>
+                {t('common.save')}
+              </Button>
             </div>
           </DialogFooter>
         </form>

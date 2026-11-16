@@ -14,7 +14,13 @@ import {
   waterfallFor,
 } from './spending-plan'
 
-function event(date: string, description: string | null, amount: number, source: SpendingPlanEvent['source'], account_name: string | null = null): SpendingPlanEvent {
+function event(
+  date: string,
+  description: string | null,
+  amount: number,
+  source: SpendingPlanEvent['source'],
+  account_name: string | null = null,
+): SpendingPlanEvent {
   return { date, description, amount, source, account_name }
 }
 
@@ -100,11 +106,17 @@ describe('waterfallFor', () => {
       income: { total: 3000, items: [{ label: 'Salário', amount: 3000 }] },
       fixed: {
         total: -1700,
-        items: [{ label: 'Aluguel', amount: -1500 }, { label: 'Dentista', amount: -200 }],
+        items: [
+          { label: 'Aluguel', amount: -1500 },
+          { label: 'Dentista', amount: -200 },
+        ],
       },
       card: {
         total: -170,
-        items: [{ label: 'Visa', amount: -150 }, { label: 'Nubank', amount: -20 }],
+        items: [
+          { label: 'Visa', amount: -150 },
+          { label: 'Nubank', amount: -20 },
+        ],
       },
       scenario: { total: -400, items: [{ label: 'TV', amount: -400 }] },
       other: -10,
@@ -138,7 +150,13 @@ describe('planReceipt', () => {
         { key: 'income', bucket: { total: 3000, items: [{ label: 'Salário', amount: 3000 }] } },
         {
           key: 'fixed',
-          bucket: { total: -1700, items: [{ label: 'Aluguel', amount: -1500 }, { label: 'Dentista', amount: -200 }] },
+          bucket: {
+            total: -1700,
+            items: [
+              { label: 'Aluguel', amount: -1500 },
+              { label: 'Dentista', amount: -200 },
+            ],
+          },
         },
         {
           key: 'card',
@@ -181,7 +199,9 @@ describe('planReceipt', () => {
 
 describe('firstDayBelowFloor', () => {
   it('is the day after the coverage ends', () => {
-    expect(firstDayBelowFloor({ ...timeline, covered_through_horizon: false, covered_until: '2026-11-13' })).toBe('2026-11-14')
+    expect(firstDayBelowFloor({ ...timeline, covered_through_horizon: false, covered_until: '2026-11-13' })).toBe(
+      '2026-11-14',
+    )
     expect(firstDayBelowFloor({ ...timeline, covered_through_horizon: false, covered_until: null })).toBe('2026-11-12')
     expect(firstDayBelowFloor(timeline)).toBeNull()
   })

@@ -54,30 +54,39 @@ export function PlanSheet({
               >
                 <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">
                   <button type="button" aria-pressed={day === selected} aria-label={format.longDate(day)}>
-                    <span className="text-muted-foreground">{format.weekdayShort(weekday(day))}</span> {format.dayMonth(day)}
+                    <span className="text-muted-foreground">{format.weekdayShort(weekday(day))}</span>{' '}
+                    {format.dayMonth(day)}
                   </button>
                 </td>
                 <td className="px-2 py-1.5">
                   {entries.length === 0 ? (
                     <span className="text-muted-foreground">—</span>
-                  ) : entries.map((entry, index) => (
-                    <span
-                      key={index}
-                      className={entry.kind === 'event' && entry.event.source === 'scenario' ? SCENARIO_TEXT : undefined}
-                    >
-                      {index > 0 && ', '}
-                      {entryLabel(entry, t)}
-                    </span>
-                  ))}
+                  ) : (
+                    entries.map((entry, index) => (
+                      <span
+                        key={index}
+                        className={
+                          entry.kind === 'event' && entry.event.source === 'scenario' ? SCENARIO_TEXT : undefined
+                        }
+                      >
+                        {index > 0 && ', '}
+                        {entryLabel(entry, t)}
+                      </span>
+                    ))
+                  )}
                 </td>
                 <td className={cn('whitespace-nowrap px-2 py-1.5 text-right tabular-nums', INCOME_TEXT)}>
                   {income ? format.signed(income) : ''}
                 </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{out ? format.signed(out) : ''}</td>
+                <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
+                  {out ? format.signed(out) : ''}
+                </td>
                 <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                   {format.signed(-dailyOn(day))}
                 </td>
-                <td className={cn('whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums', TONE_TEXT[tone])}>
+                <td
+                  className={cn('whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums', TONE_TEXT[tone])}
+                >
                   {format.money(balance)}
                 </td>
                 <td aria-hidden="true" className="px-2">

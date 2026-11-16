@@ -20,12 +20,18 @@ function storageKey(workspaceId: string | undefined) {
 function isItem(value: unknown): value is WhatIfItem {
   if (typeof value !== 'object' || value === null) return false
   const item = value as Record<string, unknown>
-  return typeof item.id === 'string'
-    && typeof item.label === 'string'
-    && typeof item.amount === 'number' && item.amount > 0
-    && typeof item.first_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.first_date)
-    && Number.isInteger(item.installments) && (item.installments as number) >= 1 && (item.installments as number) <= 120
-    && typeof item.enabled === 'boolean'
+  return (
+    typeof item.id === 'string' &&
+    typeof item.label === 'string' &&
+    typeof item.amount === 'number' &&
+    item.amount > 0 &&
+    typeof item.first_date === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(item.first_date) &&
+    Number.isInteger(item.installments) &&
+    (item.installments as number) >= 1 &&
+    (item.installments as number) <= 120 &&
+    typeof item.enabled === 'boolean'
+  )
 }
 
 function load(key: string): WhatIfItem[] {
@@ -42,10 +48,13 @@ export function useWhatIfItems(workspaceId: string | undefined) {
   const key = storageKey(workspaceId)
   const [state, setState] = useState(() => ({ key, items: load(key) }))
   if (state.key !== key) setState({ key, items: load(key) })
-  const setItems = useCallback((next: WhatIfItem[]) => {
-    window.localStorage.setItem(key, JSON.stringify(next))
-    setState({ key, items: next })
-  }, [key])
+  const setItems = useCallback(
+    (next: WhatIfItem[]) => {
+      window.localStorage.setItem(key, JSON.stringify(next))
+      setState({ key, items: next })
+    },
+    [key],
+  )
   return [state.items, setItems] as const
 }
 

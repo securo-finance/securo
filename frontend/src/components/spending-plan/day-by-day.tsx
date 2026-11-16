@@ -1,14 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import {
-  allowanceOn,
-  COMFORT_MARGIN,
-  endOfMonth,
-  eventsByDate,
-  monthsBetween,
-  planToday,
-} from '@/lib/spending-plan'
+import { allowanceOn, COMFORT_MARGIN, endOfMonth, eventsByDate, monthsBetween, planToday } from '@/lib/spending-plan'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'

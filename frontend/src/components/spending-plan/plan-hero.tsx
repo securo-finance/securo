@@ -45,11 +45,19 @@ export function PlanHero({
     <Card className="mb-5 grid gap-6 p-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
       <div className="min-w-0">
         <p className="text-sm text-muted-foreground">{t('spendingPlan.todayCanSpend')}</p>
-        <p className={cn('text-4xl font-bold tracking-tight tabular-nums', remaining < 0 ? 'text-rose-500' : 'text-foreground')}>
+        <p
+          className={cn(
+            'text-4xl font-bold tracking-tight tabular-nums',
+            remaining < 0 ? 'text-rose-500' : 'text-foreground',
+          )}
+        >
           {money(remaining)}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {t('spendingPlan.todayCaption', { spent: money(timeline.today.spent), allowance: money(timeline.today.allowance) })}
+          {t('spendingPlan.todayCaption', {
+            spent: money(timeline.today.spent),
+            allowance: money(timeline.today.allowance),
+          })}
         </p>
         <p
           className={cn(
@@ -59,25 +67,31 @@ export function PlanHero({
               : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400',
           )}
         >
-          {belowOn === null ? <Check size={16} className="mt-0.5 shrink-0" /> : <X size={16} className="mt-0.5 shrink-0" />}
+          {belowOn === null ? (
+            <Check size={16} className="mt-0.5 shrink-0" />
+          ) : (
+            <X size={16} className="mt-0.5 shrink-0" />
+          )}
           {belowOn === null
             ? t('spendingPlan.coverageOk', {
-              amount: money(timeline.daily_allowance),
-              floor: money(timeline.balance_floor),
-              date: format.shortDate(timeline.horizon_end),
-            })
+                amount: money(timeline.daily_allowance),
+                floor: money(timeline.balance_floor),
+                date: format.shortDate(timeline.horizon_end),
+              })
             : t('spendingPlan.coverageBreak', {
-              amount: money(timeline.daily_allowance),
-              floor: money(timeline.balance_floor),
-              date: format.shortDate(belowOn),
-            })}
+                amount: money(timeline.daily_allowance),
+                floor: money(timeline.balance_floor),
+                date: format.shortDate(belowOn),
+              })}
         </p>
       </div>
 
       <div className="min-w-0 space-y-4">
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-sm">
-            <label htmlFor="plan-slider" className="text-muted-foreground">{t('spendingPlan.dailyAllowance')}</label>
+            <label htmlFor="plan-slider" className="text-muted-foreground">
+              {t('spendingPlan.dailyAllowance')}
+            </label>
             <span>
               {t('spendingPlan.safeShort')} <span className="font-semibold tabular-nums">{money(safe)}</span>{' '}
               {difference !== 0 && (

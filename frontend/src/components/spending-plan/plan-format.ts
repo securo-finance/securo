@@ -35,7 +35,12 @@ export function usePlanFormat(currency: string) {
       dayMonth: (iso: string) => asDate(iso).toLocaleDateString(dateLocale, { day: '2-digit', month: '2-digit' }),
       /** "qua., 20 de janeiro de 2027". */
       longDate: (iso: string) =>
-        asDate(iso).toLocaleDateString(dateLocale, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }),
+        asDate(iso).toLocaleDateString(dateLocale, {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        }),
       /** "Novembro de 2026". */
       monthTitle: (month: string) => {
         const title = asDate(`${month}-01`).toLocaleDateString(dateLocale, { month: 'long', year: 'numeric' })

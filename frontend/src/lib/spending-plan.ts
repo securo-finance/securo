@@ -93,7 +93,8 @@ export function monthGrid(month: string): (string | null)[] {
 export function gridFrom(month: string, today: string): (string | null)[] {
   const grid = monthGrid(month)
   let start = 0
-  while (start + 7 <= grid.length && grid.slice(start, start + 7).every((day) => day === null || day < today)) start += 7
+  while (start + 7 <= grid.length && grid.slice(start, start + 7).every((day) => day === null || day < today))
+    start += 7
   return grid.slice(start)
 }
 
@@ -256,14 +257,24 @@ export function waterfallFor(timeline: SpendingPlanTimeline, date: string): Wate
   const parts = buckets(events)
   const days = daysThrough(today, date)
   const daily = -(cents(allowanceOn(today, timeline)) + cents(timeline.daily_allowance) * (days - 1)) / 100
-  const named = [timeline.opening_balance, parts.income.total, parts.fixed.total, parts.card.total, parts.scenario.total, daily]
+  const named = [
+    timeline.opening_balance,
+    parts.income.total,
+    parts.fixed.total,
+    parts.card.total,
+    parts.scenario.total,
+    daily,
+  ]
   return {
     date,
     opening: timeline.opening_balance,
     ...parts,
     card: {
       total: parts.card.total,
-      items: byLabel(events.filter((event) => event.source === 'card'), (event) => event.account_name),
+      items: byLabel(
+        events.filter((event) => event.source === 'card'),
+        (event) => event.account_name,
+      ),
     },
     other: (cents(balance) - named.reduce((total, value) => total + cents(value), 0)) / 100,
     days,
@@ -297,9 +308,9 @@ export function planReceipt(timeline: SpendingPlanTimeline): Receipt | null {
   const through = timeline.binding_date
   if (!through) return null
   const parts = buckets(timeline.events.filter((event) => event.date <= through))
-  const groups = RECEIPT_ORDER
-    .map((key) => ({ key, bucket: parts[key] }))
-    .filter(({ key, bucket }) => (key === 'other' ? cents(bucket.total) !== 0 : bucket.items.length > 0))
+  const groups = RECEIPT_ORDER.map((key) => ({ key, bucket: parts[key] })).filter(({ key, bucket }) =>
+    key === 'other' ? cents(bucket.total) !== 0 : bucket.items.length > 0,
+  )
   const days = daysThrough(planToday(timeline), through)
   const free = sumCents([
     timeline.opening_balance,

@@ -49,7 +49,9 @@ export function WhatIfList({
             key={item.id}
             className={cn(
               'inline-flex items-center gap-2 rounded-full border py-1 pl-2 pr-1 text-xs',
-              item.enabled ? 'border-amber-400/70 bg-amber-50 dark:bg-amber-500/10' : 'border-border text-muted-foreground',
+              item.enabled
+                ? 'border-amber-400/70 bg-amber-50 dark:bg-amber-500/10'
+                : 'border-border text-muted-foreground',
             )}
           >
             <Switch
@@ -76,7 +78,13 @@ export function WhatIfList({
         ))}
         {!adding && (
           <li>
-            <Button type="button" size="xs" variant="outline" className="rounded-full border-dashed" onClick={() => setAdding(true)}>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="rounded-full border-dashed"
+              onClick={() => setAdding(true)}
+            >
               <Plus /> {t('spendingPlan.whatIfAdd')}
             </Button>
           </li>
@@ -88,20 +96,25 @@ export function WhatIfList({
           onSubmit={(event) => {
             event.preventDefault()
             if (!valid) return
-            onChange([...items, {
-              id: crypto.randomUUID(),
-              label: form.label.trim(),
-              amount,
-              first_date: form.firstDate || addDays(today, 30),
-              installments,
-              enabled: true,
-            }])
+            onChange([
+              ...items,
+              {
+                id: crypto.randomUUID(),
+                label: form.label.trim(),
+                amount,
+                first_date: form.firstDate || addDays(today, 30),
+                installments,
+                enabled: true,
+              },
+            ])
             setForm(EMPTY_FORM)
             setAdding(false)
           }}
         >
           <div className="col-span-2 space-y-1 sm:col-span-1">
-            <Label htmlFor="what-if-label" className="text-xs">{t('spendingPlan.whatIfLabel')}</Label>
+            <Label htmlFor="what-if-label" className="text-xs">
+              {t('spendingPlan.whatIfLabel')}
+            </Label>
             <Input
               id="what-if-label"
               value={form.label}
@@ -111,7 +124,9 @@ export function WhatIfList({
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="what-if-amount" className="text-xs">{t('spendingPlan.whatIfAmount')}</Label>
+            <Label htmlFor="what-if-amount" className="text-xs">
+              {t('spendingPlan.whatIfAmount')}
+            </Label>
             <Input
               id="what-if-amount"
               inputMode="decimal"
@@ -129,7 +144,9 @@ export function WhatIfList({
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="what-if-installments" className="text-xs">{t('spendingPlan.whatIfInstallments')}</Label>
+            <Label htmlFor="what-if-installments" className="text-xs">
+              {t('spendingPlan.whatIfInstallments')}
+            </Label>
             <Input
               id="what-if-installments"
               type="number"
@@ -140,10 +157,20 @@ export function WhatIfList({
             />
           </div>
           <div className="col-span-2 flex justify-end gap-2 sm:col-span-4">
-            <Button type="button" size="xs" variant="ghost" onClick={() => { setAdding(false); setForm(EMPTY_FORM) }}>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={() => {
+                setAdding(false)
+                setForm(EMPTY_FORM)
+              }}
+            >
               {t('common.cancel')}
             </Button>
-            <Button type="submit" size="xs" disabled={!valid}>{t('spendingPlan.whatIfAdd')}</Button>
+            <Button type="submit" size="xs" disabled={!valid}>
+              {t('spendingPlan.whatIfAdd')}
+            </Button>
           </div>
         </form>
       )}

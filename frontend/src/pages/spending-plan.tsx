@@ -45,12 +45,13 @@ export default function SpendingPlanPage() {
   const format = usePlanFormat(timeline?.currency ?? 'BRL')
 
   const saveAllowance = useMutation({
-    mutationFn: (current: SpendingPlan) => spendingPlanApi.save({
-      daily_allowance: allowance,
-      balance_floor: Number(current.balance_floor),
-      account_ids: current.account_ids,
-      horizon_months: current.horizon_months,
-    }),
+    mutationFn: (current: SpendingPlan) =>
+      spendingPlanApi.save({
+        daily_allowance: allowance,
+        balance_floor: Number(current.balance_floor),
+        account_ids: current.account_ids,
+        horizon_months: current.horizon_months,
+      }),
     onSuccess: (saved) => {
       queryClient.setQueryData(['spending-plan'], saved)
       setDraftAllowance(null)
@@ -62,7 +63,12 @@ export default function SpendingPlanPage() {
 
   const [editorOpen, setEditorOpen] = useState(false)
   const editButton = canWrite ? (
-    <Button size="sm" variant={plan ? 'outline' : 'default'} className="gap-1.5 h-8" onClick={() => setEditorOpen(true)}>
+    <Button
+      size="sm"
+      variant={plan ? 'outline' : 'default'}
+      className="gap-1.5 h-8"
+      onClick={() => setEditorOpen(true)}
+    >
       {plan ? <Pencil size={13} /> : <Plus size={13} />}
       {plan ? t('spendingPlan.editPlan') : t('spendingPlan.createPlan')}
     </Button>
@@ -111,9 +117,7 @@ export default function SpendingPlanPage() {
         </>
       )}
 
-      {editorOpen && (
-        <PlanEditorDialog plan={plan ?? null} onClose={() => setEditorOpen(false)} />
-      )}
+      {editorOpen && <PlanEditorDialog plan={plan ?? null} onClose={() => setEditorOpen(false)} />}
     </div>
   )
 }

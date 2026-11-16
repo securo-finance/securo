@@ -31,7 +31,10 @@ export function PlanCalendar({ today, floor, month, selected, balances, eventsOn
         const balance = balances.get(day)
         if (day < today || balance === undefined) {
           return (
-            <div key={day} className="min-h-20 rounded-lg border border-border p-1.5 text-xs text-muted-foreground opacity-50">
+            <div
+              key={day}
+              className="min-h-20 rounded-lg border border-border p-1.5 text-xs text-muted-foreground opacity-50"
+            >
               {dayNumber}
             </div>
           )
