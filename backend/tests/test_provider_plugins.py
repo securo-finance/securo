@@ -334,7 +334,7 @@ async def test_invalid_data_is_a_failure_that_keeps_secrets_but_not_the_cursor(
     connection = await _provider_connection(session, ids, "invalid")
     await connections.sync(session, connection)
     assert connection.status == "error" and connection.failures == 1
-    assert "invalid data from the plugin" in connection.last_error
+    assert "invalid data from the plugin" in (connection.last_error or "")
     assert connection.state == {}
     assert vault.unseal(connection.secrets)["refreshed"] == "1"
     bank = await _bank(session, connection)
@@ -355,7 +355,7 @@ async def test_a_rate_limited_service_is_no_failure(session: AsyncSession, ids, 
     connection = await _provider_connection(session, ids, "limited")
     await connections.sync(session, connection)
     assert (connection.status, connection.failures, connection.state) == ("active", 0, {})
-    assert "slow down" in connection.last_error
+    assert "slow down" in (connection.last_error or "")
     assert not connections.due(connection)
     assert (await _bank(session, connection)).status == "active"
 
@@ -371,9 +371,10 @@ async def test_a_failed_write_is_retried_from_the_same_cursor(
 
     monkeypatch.setattr(connection_service, "sync_connection", broken)
     await connections.sync(session, connection)
-    connection = await session.get(PluginConnection, connection.id)
-    assert connection.status == "error" and connection.state == {}
-    assert "RuntimeError" in connection.last_error and "database went away" not in connection.last_error
+    failed = await session.get(PluginConnection, connection.id)
+    assert failed is not None and failed.status == "error" and failed.state == {}
+    message = failed.last_error or ""
+    assert "RuntimeError" in message and "database went away" not in message
 
 
 # --- Disconnecting, removing and updating ------------------------------------------
@@ -420,7 +421,7 @@ async def test_removing_the_connection_disconnects_its_bank(session: AsyncSessio
 @pytest.mark.asyncio
 async def test_removing_the_plugin_disconnects_its_banks(session: AsyncSession, ids, provider_catalog, plugin_runner):
     _, bank_id, asset_id = await _synced(session, ids)
-    await _apply(session, *ids, "remove")
+    await _apply(session, ids[0], ids[1], "remove")
     await _disconnected_like_a_bank(session, bank_id, asset_id)
     assert await session.scalar(select(PluginConnection.id)) is None
 
@@ -431,7 +432,7 @@ async def test_an_update_that_stops_providing_removes_the_connection(
 ):
     _, bank_id, asset_id = await _synced(session, ids)
     _publish(provider_catalog, V2, lambda m: m["contributes"]["integrations"][0].pop("provides"))
-    await _apply(session, *ids, "update")
+    await _apply(session, ids[0], ids[1], "update")
     await _disconnected_like_a_bank(session, bank_id, asset_id)
     assert await session.scalar(select(PluginConnection.id)) is None
 

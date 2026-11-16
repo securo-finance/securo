@@ -53,8 +53,9 @@ def _payload(change=None) -> dict[str, Any]:
 
 def test_a_payload_becomes_the_provider_dataclasses():
     payload = parse_payload(_payload(), ALL)
-    assert payload is not None
+    assert payload is not None and payload.accounts and payload.holdings
     account = payload.accounts[0]
+    assert account.transactions and payload.holdings[0].trades
     data = account.to_data()
     assert (data.external_id, data.type, data.balance, data.currency) == ("A1:USD", "investment", Decimal("1234.56"), "USD")
     first, second = (t.to_data() for t in account.transactions)
