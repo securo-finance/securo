@@ -8,7 +8,7 @@ plan both read balances through here, so the two never disagree.
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal, Optional, cast
@@ -39,6 +39,22 @@ from app.services.recurring_transaction_service import (
 
 RecurringItem = tuple[TransactionCalendarItem, float, list[tuple[bool, float]]]
 
+EventSource = Literal["recurring", "planned", "card", "other", "scenario"]
+
+
+@dataclass(frozen=True)
+class ProjectionEvent:
+    """One named move behind the deltas, for callers that explain the balance."""
+
+    # The day it moves the balance: a card charge sits on its bill's due date.
+    date: date
+    # None for the "other" remainder.
+    description: Optional[str]
+    # Signed, in the primary currency.
+    amount: float
+    source: EventSource
+    account_name: Optional[str]
+
 
 @dataclass(frozen=True)
 class ProjectionBase:
@@ -54,6 +70,10 @@ class ProjectionBase:
     # callers that list them: (item, signed primary delta, parts), where each
     # part is (is_transfer, share of the template).
     recurring_items: list[RecurringItem]
+    # The deltas broken into named moves. The events on a day always sum to
+    # that day's delta: whatever no forecast row, recurring occurrence or card
+    # charge explains (today's posted rows, rounding) is an "other" event.
+    events: list[ProjectionEvent]
 
 
 @dataclass(frozen=True)
@@ -102,25 +122,44 @@ async def load_projection_base(
         primary_currency_hint=primary_currency,
         account_ids=account_ids,
     )
+    cards = await _credit_cards(session, workspace_id, account_ids)
+    events = _EventLog()
     for tx in await _get_forecast_transactions(
         session, workspace_id, start, end, account_ids
     ):
         # Forecast rows are excluded from the posted deltas but belong to the
         # projected walk.
         if not is_ignored_row(tx):
-            deltas[tx.date] = deltas.get(tx.date, 0.0) + await signed_balance_delta_primary(
-                session, tx, primary_currency
-            )
+            amount = await signed_balance_delta_primary(session, tx, primary_currency)
+            deltas[tx.date] = deltas.get(tx.date, 0.0) + amount
+            events.by_tx[tx.id] = events.add(ProjectionEvent(
+                date=tx.date,
+                description=tx.description,
+                amount=amount,
+                source="card" if tx.account_id in cards else "planned",
+                account_name=_account_name(tx.account),
+            ))
 
     recurring_items, recurring_deltas, carried = await project_recurring_items(
         session, workspace_id, primary_currency, start, end, account_ids
     )
     for delta_date, delta in recurring_deltas.items():
         deltas[delta_date] = deltas.get(delta_date, 0.0) + delta
+    for item, signed_delta, _parts in recurring_items:
+        if item.is_ignored or item.recurring_id is None:
+            continue
+        events.by_occurrence[(item.recurring_id, item.date)] = events.add(ProjectionEvent(
+            date=item.date,
+            description=item.description,
+            amount=signed_delta,
+            source="card" if item.account_id in cards else "recurring",
+            account_name=item.account_name,
+        ))
 
     if await get_credit_card_accounting_mode(session) == "accrual":
         seed += await _move_card_charges_to_due_dates(
-            session, workspace_id, primary_currency, start, end, account_ids, deltas, recurring_items
+            session, workspace_id, primary_currency, start, end, account_ids, deltas,
+            recurring_items, cards, events,
         )
 
     return ProjectionBase(
@@ -129,7 +168,64 @@ async def load_projection_base(
         seed=seed + carried,
         deltas=deltas,
         recurring_items=recurring_items,
+        events=events.explaining(deltas, start, end),
     )
+
+
+class _EventLog:
+    """Events indexed by the forecast row or recurring occurrence behind them,
+    so a card charge moved to its due date can take its event along."""
+
+    def __init__(self) -> None:
+        self.events: list[ProjectionEvent] = []
+        self.by_tx: dict[uuid.UUID, int] = {}
+        self.by_occurrence: dict[tuple[uuid.UUID, date], int] = {}
+
+    def add(self, event: ProjectionEvent) -> int:
+        self.events.append(event)
+        return len(self.events) - 1
+
+    def move(self, index: Optional[int], due: date) -> bool:
+        if index is None:
+            return False
+        self.events[index] = replace(self.events[index], date=due, source="card")
+        return True
+
+    def explaining(
+        self, deltas: dict[date, float], start: date, end: date
+    ) -> list[ProjectionEvent]:
+        """The events inside the range, plus an "other" event per day for the
+        part of its delta no event names."""
+        placed = [event for event in self.events if start <= event.date < end]
+        named: dict[date, float] = {}
+        for event in placed:
+            named[event.date] = named.get(event.date, 0.0) + event.amount
+        for day, delta in deltas.items():
+            rest = delta - named.get(day, 0.0)
+            if abs(rest) >= 0.005:
+                placed.append(ProjectionEvent(
+                    date=day, description=None, amount=rest, source="other", account_name=None
+                ))
+        return sorted(placed, key=lambda event: event.date)
+
+
+def _account_name(account: Optional[Account]) -> Optional[str]:
+    return (account.display_name or account.name) if account else None
+
+
+async def _credit_cards(
+    session: AsyncSession, workspace_id: uuid.UUID, account_ids: Optional[list[uuid.UUID]]
+) -> dict[uuid.UUID, Account]:
+    return {
+        account.id: account
+        for account in (await session.execute(
+            select(Account).where(
+                Account.workspace_id == workspace_id,
+                Account.type == "credit_card",
+                *([Account.id.in_(account_ids)] if account_ids is not None else []),
+            )
+        )).scalars()
+    }
 
 
 def _moves_on_due_date(tx: Transaction) -> bool:
@@ -149,6 +245,8 @@ async def _move_card_charges_to_due_dates(
     account_ids: Optional[list[uuid.UUID]],
     deltas: dict[date, float],
     recurring_items: list[RecurringItem],
+    cards: dict[uuid.UUID, Account],
+    events: _EventLog,
 ) -> float:
     """Re-date card charges from their purchase date to their bill's due date.
 
@@ -160,7 +258,9 @@ async def _move_card_charges_to_due_dates(
     ``effective_date`` (cycle math, the bank's bill, or a manual override);
     virtual recurring occurrences get it from the card's cycle days.
 
-    Mutates ``deltas`` and returns the change to the seed.
+    Mutates ``deltas`` and ``events`` and returns the change to the seed. A
+    moved posted row had no event of its own (its delta was unnamed), so it
+    gains a card event on its due date.
     """
     seed_change = 0.0
 
@@ -195,17 +295,15 @@ async def _move_card_charges_to_due_dates(
         amount = await signed_balance_delta_primary(session, tx, primary_currency)
         place(tx.date, -amount)
         place(tx.effective_date, amount)
+        if not events.move(events.by_tx.get(tx.id), tx.effective_date):
+            events.add(ProjectionEvent(
+                date=tx.effective_date,
+                description=tx.description,
+                amount=amount,
+                source="card",
+                account_name=_account_name(tx.account),
+            ))
 
-    cards = {
-        account.id: account
-        for account in (await session.execute(
-            select(Account).where(
-                Account.workspace_id == workspace_id,
-                Account.type == "credit_card",
-                *([Account.id.in_(account_ids)] if account_ids is not None else []),
-            )
-        )).scalars()
-    }
     for item, signed_delta, _parts in recurring_items:
         card = cards.get(item.account_id) if item.account_id else None
         if card is None or item.is_ignored or item.is_transfer:
@@ -214,6 +312,8 @@ async def _move_card_charges_to_due_dates(
         if due != item.date:
             place(item.date, -signed_delta)
             place(due, signed_delta)
+            if item.recurring_id is not None:
+                events.move(events.by_occurrence.get((item.recurring_id, item.date)), due)
     return seed_change
 
 
@@ -275,6 +375,31 @@ def safe_daily_allowance(
         else:
             high = middle - 1
     return low / 100
+
+
+def binding_day(
+    base: ProjectionBase, today: date, floor: float, spent_today: float = 0.0
+) -> Optional[date]:
+    """The day that limits the safe allowance: the one leaving the least money
+    per day for the days from today through it, at the floor.
+
+    Every day ``d`` allows at most (balance before any allowance on ``d`` -
+    floor + spent today) / days through ``d``, the spent part because today's
+    allowance only covers what is left of it. The safe allowance is the
+    smallest of those, so the day that gives it is the one the plan hinges on.
+    An allowance below today's spending adds nothing more today, so in that
+    case the safe allowance comes out a little above this bound.
+    """
+    running = base.seed
+    best: Optional[tuple[float, date]] = None
+    for day in date_range(base.start, base.end):
+        running += base.deltas.get(day, 0.0)
+        if day < today:
+            continue
+        per_day = (running - floor + spent_today) / ((day - today).days + 1)
+        if best is None or per_day < best[0]:
+            best = (per_day, day)
+    return best[1] if best else None
 
 
 def covered_until(points: list[DayPoint], today: date, floor: float) -> Optional[date]:

@@ -1,7 +1,7 @@
 import uuid
 from datetime import date as _Date
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,12 +31,24 @@ class SimulatedPurchase(BaseModel):
 
 class SpendingPlanSimulation(BaseModel):
     daily_allowance: Optional[Decimal] = Field(default=None, ge=0)
-    purchases: list[SimulatedPurchase] = Field(min_length=1, max_length=20)
+    purchases: list[SimulatedPurchase] = Field(max_length=20)
 
 
 class SpendingPlanPoint(BaseModel):
     date: _Date
     balance: float
+
+
+class SpendingPlanEvent(BaseModel):
+    #: The day it moves the balance. A card charge sits on its bill's due date.
+    date: _Date
+    #: None for "other": the part of a day's move no row names, such as
+    #: today's posted rows.
+    description: Optional[str] = None
+    #: Signed, in the primary currency.
+    amount: float
+    source: Literal["recurring", "planned", "card", "other", "scenario"]
+    account_name: Optional[str] = None
 
 
 class SpendingPlanToday(BaseModel):
@@ -60,5 +72,13 @@ class SpendingPlanTimeline(BaseModel):
     #: already below it.
     covered_until: Optional[_Date] = None
     covered_through_horizon: bool
+    #: Balance at the close of yesterday, before today's moves.
+    opening_balance: float
+    #: The day the balance comes closest to the floor per day ahead of it: the
+    #: safe allowance is what fits from today through this day.
+    binding_date: Optional[_Date] = None
     today: SpendingPlanToday
     points: list[SpendingPlanPoint]
+    #: Every move behind the points. The events on a day sum to that day's
+    #: change in balance before the allowance.
+    events: list[SpendingPlanEvent]
