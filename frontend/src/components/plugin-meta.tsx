@@ -16,7 +16,10 @@ export function PluginStatus({ entry, className }: { entry: PluginCatalogEntry; 
   const { t } = useTranslation()
   if (entry.revoked) {
     return (
-      <span className={cn(PILL, 'bg-destructive/10 text-destructive', className)} title={entry.revoked_reason ?? undefined}>
+      <span
+        className={cn(PILL, 'bg-destructive/10 text-destructive', className)}
+        title={entry.revoked_reason ?? undefined}
+      >
         <Ban />
         {t('plugins.revoked')}
       </span>
@@ -30,12 +33,13 @@ export function PluginStatus({ entry, className }: { entry: PluginCatalogEntry; 
     </span>
   )
   const only = onlyFor(entry)
-  const elsewhere = !entry.fits_workspace && only ? (
-    <span className={cn(PILL, 'bg-muted text-muted-foreground', className)}>
-      <CircleSlash />
-      {t(only === 'business' ? 'plugins.onlyForBusiness' : 'plugins.onlyForPersonal')}
-    </span>
-  ) : null
+  const elsewhere =
+    !entry.fits_workspace && only ? (
+      <span className={cn(PILL, 'bg-muted text-muted-foreground', className)}>
+        <CircleSlash />
+        {t(only === 'business' ? 'plugins.onlyForBusiness' : 'plugins.onlyForPersonal')}
+      </span>
+    ) : null
   if (entry.update_available) {
     // An update this workspace can't take says why, rather than offering nothing.
     if (blocked) return reason

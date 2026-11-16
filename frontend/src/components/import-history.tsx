@@ -79,17 +79,31 @@ export function ImportHistory({ entity }: ImportHistoryProps) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                <th className="px-3 py-3 text-left font-medium text-muted-foreground sm:px-4">{t('import.historyDate')}</th>
-                <th className="px-3 py-3 text-left font-medium text-muted-foreground sm:px-4">{t('import.historyFile')}</th>
-                <th className="hidden px-4 py-3 text-left font-medium text-muted-foreground lg:table-cell">{t('import.historyFormat')}</th>
+                <th className="px-3 py-3 text-left font-medium text-muted-foreground sm:px-4">
+                  {t('import.historyDate')}
+                </th>
+                <th className="px-3 py-3 text-left font-medium text-muted-foreground sm:px-4">
+                  {t('import.historyFile')}
+                </th>
+                <th className="hidden px-4 py-3 text-left font-medium text-muted-foreground lg:table-cell">
+                  {t('import.historyFormat')}
+                </th>
                 {isStatement && (
-                  <th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">{t('import.historyAccount')}</th>
+                  <th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
+                    {t('import.historyAccount')}
+                  </th>
                 )}
-                <th className="px-3 py-3 text-right font-medium text-muted-foreground sm:px-4">{t('import.historyCount')}</th>
+                <th className="px-3 py-3 text-right font-medium text-muted-foreground sm:px-4">
+                  {t('import.historyCount')}
+                </th>
                 {isStatement && (
                   <>
-                    <th className="hidden px-4 py-3 text-right font-medium text-muted-foreground sm:table-cell">{t('import.historyCredit')}</th>
-                    <th className="hidden px-4 py-3 text-right font-medium text-muted-foreground sm:table-cell">{t('import.historyDebit')}</th>
+                    <th className="hidden px-4 py-3 text-right font-medium text-muted-foreground sm:table-cell">
+                      {t('import.historyCredit')}
+                    </th>
+                    <th className="hidden px-4 py-3 text-right font-medium text-muted-foreground sm:table-cell">
+                      {t('import.historyDebit')}
+                    </th>
                   </>
                 )}
                 <th className="px-3 py-3 sm:px-4" aria-label={t('common.more')}></th>

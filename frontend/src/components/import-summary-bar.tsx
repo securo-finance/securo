@@ -12,11 +12,11 @@ export function ImportSummaryBar({ transactions, userCurrency, locale }: ImportS
   const { t } = useTranslation()
 
   const total = transactions.length
-  const included = transactions.filter(t => !t.excluded).length
+  const included = transactions.filter((t) => !t.excluded).length
   const excluded = total - included
 
   const balanceImpact = transactions
-    .filter(t => !t.excluded)
+    .filter((t) => !t.excluded)
     .reduce((sum, t) => sum + (t.type === 'credit' ? Number(t.amount) : -Number(t.amount)), 0)
 
   return (
@@ -33,7 +33,7 @@ export function ImportSummaryBar({ transactions, userCurrency, locale }: ImportS
         </span>
       )}
       <span className="ml-auto text-xs text-muted-foreground">
-        {t('import.balanceImpact')}: {' '}
+        {t('import.balanceImpact')}:{' '}
         <span className={balanceImpact >= 0 ? 'text-emerald-600 font-medium' : 'text-rose-500 font-medium'}>
           {formatCurrency(balanceImpact, userCurrency, locale)}
         </span>

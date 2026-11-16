@@ -1,24 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import {
-  Check,
-  Copy,
-  Download,
-  Info,
-  Sparkles,
-  Bug,
-  Server,
-  CheckCircle2,
-  BellOff,
-} from 'lucide-react'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { Check, Copy, Download, Info, Sparkles, Bug, Server, CheckCircle2, BellOff } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { APP_VERSION } from '@/lib/build-info'
@@ -33,10 +17,7 @@ interface UpdateAvailableDialogProps {
   onClose: () => void
 }
 
-export function UpdateAvailableDialog({
-  open,
-  onClose,
-}: UpdateAvailableDialogProps) {
+export function UpdateAvailableDialog({ open, onClose }: UpdateAvailableDialogProps) {
   const { t } = useTranslation()
   const { enabled, setEnabled } = useAutoUpdateCheck()
   const { data, isFetching } = useLatestRelease()
@@ -63,9 +44,7 @@ export function UpdateAvailableDialog({
             <DialogTitle>{t('update.title')}</DialogTitle>
             <span className="inline-flex items-center gap-1.5 rounded-full border bg-muted/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
               <Server size={12} />
-              <span className="tabular-nums font-semibold text-foreground">
-                {APP_VERSION}
-              </span>
+              <span className="tabular-nums font-semibold text-foreground">{APP_VERSION}</span>
               <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
               <span>{t('update.runningLabel')}</span>
             </span>
@@ -90,8 +69,7 @@ export function UpdateAvailableDialog({
             <div className="flex items-center gap-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
               <CheckCircle2 size={18} className="shrink-0" />
               <span className="flex-1">
-                {t('update.upToDate')}{' '}
-                <span className="tabular-nums font-bold">{data.tagName}</span>
+                {t('update.upToDate')} <span className="tabular-nums font-bold">{data.tagName}</span>
               </span>
             </div>
           )}
@@ -101,23 +79,15 @@ export function UpdateAvailableDialog({
               <div className="flex items-center gap-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-3 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
                 <Download size={18} className="shrink-0" />
                 <span className="flex-1">
-                  {t('update.newVersionAvailable')}{' '}
-                  <span className="font-bold tabular-nums">
-                    {data.tagName}
-                  </span>
+                  {t('update.newVersionAvailable')} <span className="font-bold tabular-nums">{data.tagName}</span>
                 </span>
               </div>
 
               <div className="space-y-3">
-                <p className="text-sm text-foreground/80">
-                  {t('update.description')}
-                </p>
+                <p className="text-sm text-foreground/80">{t('update.description')}</p>
                 <ul className="space-y-2 text-sm text-foreground/80">
                   <li className="flex items-start gap-2.5">
-                    <Sparkles
-                      size={15}
-                      className="text-primary shrink-0 mt-0.5"
-                    />
+                    <Sparkles size={15} className="text-primary shrink-0 mt-0.5" />
                     <span>{t('update.reasonFeatures')}</span>
                   </li>
                   <li className="flex items-start gap-2.5">
@@ -148,9 +118,7 @@ export function UpdateAvailableDialog({
                   {t('update.commandLabel')}
                 </div>
                 <code className="block rounded-md border bg-muted/50 px-3 py-2.5 font-mono text-xs text-foreground break-all">
-                  <span className="select-none text-muted-foreground mr-2">
-                    $
-                  </span>
+                  <span className="select-none text-muted-foreground mr-2">$</span>
                   {UPGRADE_COMMAND}
                 </code>
               </div>
@@ -158,17 +126,10 @@ export function UpdateAvailableDialog({
           )}
 
           <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3.5 py-2.5">
-            <label
-              htmlFor="auto-update-check"
-              className="text-sm font-medium cursor-pointer select-none"
-            >
+            <label htmlFor="auto-update-check" className="text-sm font-medium cursor-pointer select-none">
               {t('update.autoCheckToggle')}
             </label>
-            <Switch
-              id="auto-update-check"
-              checked={enabled}
-              onCheckedChange={setEnabled}
-            />
+            <Switch id="auto-update-check" checked={enabled} onCheckedChange={setEnabled} />
           </div>
         </div>
 

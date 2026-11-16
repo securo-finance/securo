@@ -166,11 +166,7 @@ export default function AgentConnectionsPage() {
       <McpExternalPanel />
 
       <ConnectionFormDialog open={createOpen} onOpenChange={setCreateOpen} />
-      <ConnectionFormDialog
-        open={!!editing}
-        onOpenChange={(o) => !o && setEditing(null)}
-        connection={editing}
-      />
+      <ConnectionFormDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} connection={editing} />
     </div>
   )
 }

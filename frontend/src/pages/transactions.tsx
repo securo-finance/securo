@@ -8,7 +8,18 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi, rules as rulesApi, reconciliation as reconciliationApi } from '@/lib/api'
+import {
+  transactions,
+  categories as categoriesApi,
+  categoryGroups as categoryGroupsApi,
+  accounts as accountsApi,
+  recurring,
+  payees as payeesApi,
+  admin,
+  groups as groupsApi,
+  rules as rulesApi,
+  reconciliation as reconciliationApi,
+} from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -31,24 +42,36 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
-import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
+import {
+  AlertTriangle,
+  ArrowLeftRight,
+  ArrowUp,
+  ArrowDown,
+  Check,
+  Clock,
+  HelpCircle,
+  Info,
+  Paperclip,
+  TagIcon,
+  Trash2,
+  Users,
+  X,
+  EyeClosed,
+  ChartNoAxesColumn,
+  SlidersHorizontal,
+  Receipt,
+} from 'lucide-react'
+import type {
+  Transaction,
+  Rule,
+  InstallmentSeriesInput,
+  TransactionApplyScope,
+  TransactionEditPayload,
+  ReconciliationSuggestion,
+} from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
@@ -167,9 +190,9 @@ export default function TransactionsPage() {
   // Manual installment-series scoped delete. Scoped edits are handled by the
   // shared TransactionDialog so account detail and dashboard behave the same.
   const [pendingSeriesDeleteId, setPendingSeriesDeleteId] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<'list' | 'calendar'>(() => (
-    searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
-  ))
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>(() =>
+    searchParams.get('view') === 'calendar' ? 'calendar' : 'list',
+  )
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
   const [calendarDateBasis, setCalendarDateBasis] = useState(readCalendarDateBasis)
   const [filterPayee, setFilterPayee] = useState<string>(searchParams.get('payee_id') ?? '')
@@ -214,11 +237,11 @@ export default function TransactionsPage() {
 
   const addTagFilter = (tag: string) => {
     const normalized = tag.startsWith('#') ? tag : `#${tag}`
-    setTagFilters(prev => (prev.includes(normalized) ? prev : [...prev, normalized]))
+    setTagFilters((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]))
     setPage(1)
   }
   const removeTagFilter = (tag: string) => {
-    setTagFilters(prev => prev.filter(t => t !== tag))
+    setTagFilters((prev) => prev.filter((t) => t !== tag))
     setPage(1)
   }
   const clearTagFilters = () => {
@@ -263,19 +286,19 @@ export default function TransactionsPage() {
     setCalendarSelectedDate(searchParams.get('day') ?? '')
     setSearchInput(nextQ)
     setSearchQuery(nextQ)
-    const tags = searchParams.get('tags');
-    setTagFilters(tags ? tags.split(',') : []);
+    const tags = searchParams.get('tags')
+    setTagFilters(tags ? tags.split(',') : [])
     setFilterPayee(searchParams.get('payee_id') ?? '')
     setFilterGroupId(searchParams.get('group_id') ?? '')
     setFilterType(searchParams.get('type') ?? '')
     setFilterStatus(searchParams.get('status') ?? '')
     const urlHideIgnored = searchParams.get('hide_ignored')
     if (urlHideIgnored !== null) setHideIgnored(urlHideIgnored === 'true')
-    const categories = searchParams.get('category_id');
-    setFilterCategoryIds(categories ? categories.split(',') : []);
-    setFilterUncategorized(searchParams.get('uncategorized') === '1');
-    const accounts = searchParams.get('account_id');
-    setFilterAccountIds(accounts ? accounts.split(',') : []);
+    const categories = searchParams.get('category_id')
+    setFilterCategoryIds(categories ? categories.split(',') : [])
+    setFilterUncategorized(searchParams.get('uncategorized') === '1')
+    const accounts = searchParams.get('account_id')
+    setFilterAccountIds(accounts ? accounts.split(',') : [])
     const urlFrom = searchParams.get('from')
     const urlTo = searchParams.get('to')
     if (urlFrom || urlTo) {
@@ -288,8 +311,8 @@ export default function TransactionsPage() {
       setFilterFrom('')
       setFilterTo('')
     }
-    setFilterMinAmount(searchParams.get('min_amount') ?? '');
-    setFilterMaxAmount(searchParams.get('max_amount') ?? '');
+    setFilterMinAmount(searchParams.get('min_amount') ?? '')
+    setFilterMaxAmount(searchParams.get('max_amount') ?? '')
     setPage(1)
   }, [searchParams])
 
@@ -315,13 +338,9 @@ export default function TransactionsPage() {
         ['max_amount', filterMaxAmount],
         ['hide_ignored', hideIgnored ? 'true' : ''],
       ].filter(([, v]) => v.length),
-    );
+    )
 
-    window.history.replaceState(
-      null,
-      '',
-      params.size ? `?${params}` : window.location.pathname,
-    );
+    window.history.replaceState(null, '', params.size ? `?${params}` : window.location.pathname)
   }, [
     searchQuery,
     viewMode,
@@ -339,7 +358,7 @@ export default function TransactionsPage() {
     filterMinAmount,
     filterMaxAmount,
     hideIgnored,
-  ]);
+  ])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -347,7 +366,9 @@ export default function TransactionsPage() {
       setSearchQuery(searchInput)
       setPage(1)
     }, 300)
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
   }, [searchInput])
 
   // Clear selection on page/filter change
@@ -355,11 +376,24 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [
+    page,
+    filterAccountIds,
+    filterCategoryIds,
+    filterUncategorized,
+    filterPayee,
+    filterType,
+    filterStatus,
+    filterFrom,
+    filterTo,
+    filterMinAmount,
+    filterMaxAmount,
+    searchQuery,
+  ])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
-      setFilterAccountIds((prev) => prev.length > 1 ? [] : prev)
+      setFilterAccountIds((prev) => (prev.length > 1 ? [] : prev))
       setSelectedIds(new Set())
       setLastSelectedId(null)
       setBulkCategory('')
@@ -395,17 +429,34 @@ export default function TransactionsPage() {
   // Merge the global active-collection filter with the page's own account
   // filter (issue #105): an explicit on-page account selection wins; otherwise
   // scope to the active collection's accounts. null collection = all accounts.
-  const effectiveAccountIds = filterAccountIds.length > 0
-    ? filterAccountIds
-    : (activeAccountIds ?? [])
+  const effectiveAccountIds = filterAccountIds.length > 0 ? filterAccountIds : (activeAccountIds ?? [])
   // Wallet-only collection active (zero accounts) and no explicit on-page
   // account filter → there are no matching transactions; show empty rather
   // than falling back to all accounts.
-  const noAccounts = filterAccountIds.length === 0
-    && activeAccountIds !== null && activeAccountIds.length === 0
+  const noAccounts = filterAccountIds.length === 0 && activeAccountIds !== null && activeAccountIds.length === 0
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+    queryKey: [
+      'transactions',
+      page,
+      limit,
+      effectiveAccountIds,
+      filterCategoryIds,
+      filterUncategorized,
+      filterPayee,
+      filterGroupId,
+      filterType,
+      filterStatus,
+      filterFrom,
+      filterTo,
+      filterMinAmount,
+      filterMaxAmount,
+      hideIgnored,
+      searchQuery,
+      tagFilters,
+      isMobile ? 'date' : grid.sortBy,
+      isMobile ? 'desc' : grid.sortDir,
+    ],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -433,14 +484,20 @@ export default function TransactionsPage() {
 
   const calendarMonth = steppedMonth
   const calendarAccountIds = filterAccountIds.length === 1 ? filterAccountIds : []
-  const { data: calendarData, isLoading: calendarLoading, isFetching: calendarFetching, refetch: refetchCalendar } = useQuery({
+  const {
+    data: calendarData,
+    isLoading: calendarLoading,
+    isFetching: calendarFetching,
+    refetch: refetchCalendar,
+  } = useQuery({
     queryKey: ['transactions', 'calendar', calendarMonth, calendarAccountIds, calendarDateBasis],
     enabled: viewMode === 'calendar',
-    queryFn: () => transactions.calendar({
-      month: `${calendarMonth}-01`,
-      account_ids: calendarAccountIds.length === 1 ? calendarAccountIds : undefined,
-      date_basis: calendarDateBasis,
-    }),
+    queryFn: () =>
+      transactions.calendar({
+        month: `${calendarMonth}-01`,
+        account_ids: calendarAccountIds.length === 1 ? calendarAccountIds : undefined,
+        date_basis: calendarDateBasis,
+      }),
   })
 
   // Publish the active filters + result count to the global chat panel.
@@ -471,9 +528,10 @@ export default function TransactionsPage() {
     {
       path: '/transactions',
       label: 'Transactions',
-      summary: data?.total != null
-        ? `${data.total} transaction(s) match the active filters (showing page ${page}, ${limit} per page).`
-        : 'Transactions list with active filters.',
+      summary:
+        data?.total != null
+          ? `${data.total} transaction(s) match the active filters (showing page ${page}, ${limit} per page).`
+          : 'Transactions list with active filters.',
       filters: ctxFilters,
     },
     ctxKey,
@@ -511,10 +569,7 @@ export default function TransactionsPage() {
     queryKey: ['recurring'],
     queryFn: recurring.list,
   })
-  const recurringById = useMemo(
-    () => new Map((recurringList ?? []).map(item => [item.id, item])),
-    [recurringList],
-  )
+  const recurringById = useMemo(() => new Map((recurringList ?? []).map((item) => [item.id, item])), [recurringList])
 
   // Every open question, indexed by the money it is about. One request
   // for the page rather than one per row: the queue is small by design,
@@ -531,12 +586,7 @@ export default function TransactionsPage() {
     enabled: hasModule('invoices') || hasModule('recurring'),
   })
   const suggestionsByTransaction = useMemo(
-    () =>
-      new Map(
-        (openQuestions ?? [])
-          .filter((s) => s.transaction?.id)
-          .map((s) => [s.transaction!.id, s]),
-      ),
+    () => new Map((openQuestions ?? []).filter((s) => s.transaction?.id).map((s) => [s.transaction!.id, s])),
     [openQuestions],
   )
 
@@ -559,8 +609,7 @@ export default function TransactionsPage() {
   } = useCreateTransaction({ onDone: () => setDialogOpen(false) })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: TransactionUpdatePayload & { id: string }) =>
-      transactions.update(id, data),
+    mutationFn: ({ id, ...data }: TransactionUpdatePayload & { id: string }) => transactions.update(id, data),
     onSuccess: () => {
       invalidateAfterTxMutation()
       setDialogOpen(false)
@@ -617,8 +666,7 @@ export default function TransactionsPage() {
   })
 
   const bulkAddTagsMutation = useMutation({
-    mutationFn: ({ ids, tags }: { ids: string[]; tags: string[] }) =>
-      transactions.bulkAddTags(ids, tags),
+    mutationFn: ({ ids, tags }: { ids: string[]; tags: string[] }) => transactions.bulkAddTags(ids, tags),
     onSuccess: (result) => {
       invalidateAfterTxMutation()
       setSelectedIds(new Set())
@@ -631,8 +679,7 @@ export default function TransactionsPage() {
   })
 
   const bulkRemoveTagsMutation = useMutation({
-    mutationFn: ({ ids, tags }: { ids: string[]; tags: string[] }) =>
-      transactions.bulkRemoveTags(ids, tags),
+    mutationFn: ({ ids, tags }: { ids: string[]; tags: string[] }) => transactions.bulkRemoveTags(ids, tags),
     onSuccess: (result) => {
       invalidateAfterTxMutation()
       setSelectedIds(new Set())
@@ -767,9 +814,7 @@ export default function TransactionsPage() {
   })
 
   const handleCreateRuleFromTransaction = (tx: Transaction) => {
-    const conditions = [
-      { field: 'description', op: 'contains', value: tx.description },
-    ]
+    const conditions = [{ field: 'description', op: 'contains', value: tx.description }]
     if (tx.payee_id) {
       conditions.push({ field: 'payee_id', op: 'equals', value: tx.payee_id })
     }
@@ -785,8 +830,8 @@ export default function TransactionsPage() {
   }
 
   const toggleSelect = (id: string, isShiftKey: boolean = false) => {
-    setSelectedIds(prev =>
-      calculateRangeSelection(prev, lastSelectedId, id, filteredItems, isShiftKey, tx => !tx.is_shared)
+    setSelectedIds((prev) =>
+      calculateRangeSelection(prev, lastSelectedId, id, filteredItems, isShiftKey, (tx) => !tx.is_shared),
     )
     setLastSelectedId(id)
   }
@@ -794,7 +839,7 @@ export default function TransactionsPage() {
   // Tag filtering is now applied server-side, so the visible list and the
   // page count both reflect the same filtered total — issue #88.
   const filteredItems = useMemo(() => data?.items ?? [], [data?.items])
-  const selectableItems = filteredItems.filter(tx => !tx.is_shared)
+  const selectableItems = filteredItems.filter((tx) => !tx.is_shared)
 
   // Group transactions by date for the mobile card view
   const groupedByDate = useMemo(() => {
@@ -829,16 +874,16 @@ export default function TransactionsPage() {
 
   const toggleSelectAll = () => {
     if (!selectableItems.length) return
-    const allSelected = selectableItems.every(tx => selectedIds.has(tx.id))
+    const allSelected = selectableItems.every((tx) => selectedIds.has(tx.id))
     if (allSelected) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(selectableItems.map(tx => tx.id)))
+      setSelectedIds(new Set(selectableItems.map((tx) => tx.id)))
     }
   }
 
-  const allSelected = selectableItems.length > 0 && selectableItems.every(tx => selectedIds.has(tx.id))
-  const someSelected = selectableItems.some(tx => selectedIds.has(tx.id)) && !allSelected
+  const allSelected = selectableItems.length > 0 && selectableItems.every((tx) => selectedIds.has(tx.id))
+  const someSelected = selectableItems.some((tx) => selectedIds.has(tx.id)) && !allSelected
 
   // Net total of the currently-selected rows (issue #185). Selection is
   // always page-scoped (cleared on page/filter change), so summing the
@@ -859,12 +904,12 @@ export default function TransactionsPage() {
   // (wrong count, same account, same type, or already linked).
   const linkablePair = useMemo(() => {
     if (selectedIds.size !== 2) return null
-    const selected = (data?.items ?? []).filter(tx => selectedIds.has(tx.id))
+    const selected = (data?.items ?? []).filter((tx) => selectedIds.has(tx.id))
     if (selected.length !== 2) return null
-    if (selected.some(tx => tx.transfer_pair_id)) return null
+    if (selected.some((tx) => tx.transfer_pair_id)) return null
     if (selected[0].account_id === selected[1].account_id) return null
-    const debit = selected.find(tx => tx.type === 'debit')
-    const credit = selected.find(tx => tx.type === 'credit')
+    const debit = selected.find((tx) => tx.type === 'debit')
+    const credit = selected.find((tx) => tx.type === 'credit')
     if (!debit || !credit) return null
     return { debit, credit }
   }, [selectedIds, data?.items])
@@ -873,7 +918,7 @@ export default function TransactionsPage() {
   // selected, the user can search for its counterpart across all accounts.
   const linkAnchor = useMemo(() => {
     if (selectedIds.size !== 1) return null
-    const selected = (data?.items ?? []).find(tx => selectedIds.has(tx.id))
+    const selected = (data?.items ?? []).find((tx) => selectedIds.has(tx.id))
     if (!selected) return null
     if (selected.transfer_pair_id) return null
     return selected
@@ -881,9 +926,7 @@ export default function TransactionsPage() {
 
   const canOpenLinkDialog = !!linkablePair || !!linkAnchor
   const linkDisabledTooltip =
-    !canOpenLinkDialog && selectedIds.size >= 2
-      ? t('transactions.linkTransferInvalidPair')
-      : undefined
+    !canOpenLinkDialog && selectedIds.size >= 2 ? t('transactions.linkTransferInvalidPair') : undefined
 
   const totalPages = data ? Math.ceil(data.total / limit) : 0
 
@@ -1040,7 +1083,7 @@ export default function TransactionsPage() {
 
   const renderHeaderCell = (col: ColumnDef) => {
     const isSorted = grid.sortBy === col.id
-    const sortIndicator = isSorted ? (grid.sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : null
+    const sortIndicator = isSorted ? grid.sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} /> : null
     const alignClass = col.align === 'right' ? 'text-right' : 'text-left'
     const justify = col.align === 'right' ? 'justify-end' : 'justify-start'
     const cursorClass = col.sortable ? 'cursor-pointer select-none hover:text-foreground' : ''
@@ -1052,7 +1095,9 @@ export default function TransactionsPage() {
         key={col.id}
         style={{ width: grid.widthOf(col.id), minWidth: grid.widthOf(col.id) }}
         className={`relative text-xs font-medium text-muted-foreground py-3 ${alignClass} ${padX}`}
-        onClick={() => { if (col.sortable) grid.toggleSort(col.id) }}
+        onClick={() => {
+          if (col.sortable) grid.toggleSort(col.id)
+        }}
       >
         <div className={`flex items-center gap-1 ${justify} ${cursorClass}`}>
           <span className="truncate">{t(col.labelKey)}</span>
@@ -1071,14 +1116,12 @@ export default function TransactionsPage() {
   const stripHashtags = (notes: string) => notes.replace(/#[\wÀ-ž-]+/g, '').trim()
 
   const renderAmountCell = (tx: Transaction) => {
-    const displayAmount = tx.is_shared && tx.viewer_share != null
-      ? Number(tx.viewer_share)
-      : Number(tx.amount)
+    const displayAmount = tx.is_shared && tx.viewer_share != null ? Number(tx.viewer_share) : Number(tx.amount)
     return (
       <>
         <span
           className={`text-xs md:text-sm font-bold tabular-nums ${
-            tx.is_ignored ? 'text-gray-500': tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
+            tx.is_ignored ? 'text-gray-500' : tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
           }`}
         >
           {mask(
@@ -1096,18 +1139,21 @@ export default function TransactionsPage() {
             })}
           </p>
         )}
-        {!tx.is_shared && tx.viewer_share != null
-          && Math.abs(Number(tx.viewer_share)) !== Math.abs(Number(tx.amount)) && (
-          <p className="text-[10px] text-muted-foreground tabular-nums">
-            {t('splitGroups.ownerRowYourShare', {
-              share: formatCurrency(Math.abs(Number(tx.viewer_share)), tx.currency, locale),
-            })}
-          </p>
-        )}
+        {!tx.is_shared &&
+          tx.viewer_share != null &&
+          Math.abs(Number(tx.viewer_share)) !== Math.abs(Number(tx.amount)) && (
+            <p className="text-[10px] text-muted-foreground tabular-nums">
+              {t('splitGroups.ownerRowYourShare', {
+                share: formatCurrency(Math.abs(Number(tx.viewer_share)), tx.currency, locale),
+              })}
+            </p>
+          )}
         {tx.amount_primary != null && tx.currency !== userCurrency && (
           <div className="flex items-center justify-end gap-1">
             {tx.fx_fallback && (
-              <span title={t('transactions.fxFallbackTooltip')}><AlertTriangle size={11} className="text-amber-500 shrink-0" /></span>
+              <span title={t('transactions.fxFallbackTooltip')}>
+                <AlertTriangle size={11} className="text-amber-500 shrink-0" />
+              </span>
             )}
             <span className="text-[10px] text-muted-foreground tabular-nums">
               {mask(formatCurrency(Math.abs(tx.amount_primary), userCurrency, locale))}
@@ -1156,7 +1202,9 @@ export default function TransactionsPage() {
                 className="inline-flex max-w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full"
                 title={t('splitGroups.sharedRowTooltip')}
               >
-                <span className="truncate" title={groupBadgeLabel}>{groupBadgeLabel}</span>
+                <span className="truncate" title={groupBadgeLabel}>
+                  {groupBadgeLabel}
+                </span>
               </span>
             )}
             {/* The invoice this settles. Same badge shape as the split
@@ -1219,18 +1267,20 @@ export default function TransactionsPage() {
                     {tx.transfer_counterpart.account_name}
                   </Link>
                 )}
-                <span className="shrink-0" title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+                <span className="shrink-0" title={t('transactions.transferTooltip')}>
+                  <HelpCircle className="h-3 w-3 text-blue-400" />
+                </span>
               </span>
             )}
-            {tx.is_ignored &&
-              (
+            {tx.is_ignored && (
               <span className="inline-flex max-w-full items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
                 <EyeClosed className="h-3 w-3 shrink-0" />
                 <span className="truncate">{t('transactions.ignored')}</span>
-                <span className="shrink-0" title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+                <span className="shrink-0" title={t('transactions.ignoreTransferHint')}>
+                  <HelpCircle className="h-3 w-3 text-blue-400" />
+                </span>
               </span>
-                            )
-            }
+            )}
             {/* Distinct from Ignored on purpose: this row still moves the
                 balance, so its amount keeps its colour and sign and only
                 the badge marks it. Ignored greys the amount out instead. */}
@@ -1238,7 +1288,9 @@ export default function TransactionsPage() {
               <span className="inline-flex max-w-full items-center gap-1 text-xs text-slate-600 font-normal bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 dark:text-slate-300 dark:bg-slate-500/15 dark:border-slate-500/30">
                 <ChartNoAxesColumn className="h-3 w-3 shrink-0" />
                 <span className="truncate">{t('transactions.excludedFromReports')}</span>
-                <span className="shrink-0" title={t('transactions.excludeFromReportsHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+                <span className="shrink-0" title={t('transactions.excludeFromReportsHint')}>
+                  <HelpCircle className="h-3 w-3 text-blue-400" />
+                </span>
               </span>
             )}
             {tx.recurring_transaction_id != null && (
@@ -1252,9 +1304,14 @@ export default function TransactionsPage() {
             {tx.installment_number != null && tx.total_installments != null && (
               <span
                 className="inline-flex shrink-0 items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full"
-                title={tx.installment_total_amount != null
-                  ? t('transactions.installmentTooltip', { count: tx.total_installments, total: tx.installment_total_amount })
-                  : undefined}
+                title={
+                  tx.installment_total_amount != null
+                    ? t('transactions.installmentTooltip', {
+                        count: tx.total_installments,
+                        total: tx.installment_total_amount,
+                      })
+                    : undefined
+                }
               >
                 {tx.installment_number}/{tx.total_installments}
               </span>
@@ -1274,13 +1331,13 @@ export default function TransactionsPage() {
               canWrite={canWrite}
               onPostToday={(id) => postTodayMutation.mutate(id)}
             />
-            {(tx.attachment_count ?? 0) > 0 && (
-              <Paperclip size={12} className="text-muted-foreground shrink-0" />
-            )}
+            {(tx.attachment_count ?? 0) > 0 && <Paperclip size={12} className="text-muted-foreground shrink-0" />}
           </div>
           <ReportingDateBadge tx={tx} locale={dateLocale} />
           {showInlineDate && (
-            <p className="text-xs text-muted-foreground mt-0.5">{new Date((tx.reporting_date_override ?? tx.date) + 'T00:00:00').toLocaleDateString(dateLocale)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {new Date((tx.reporting_date_override ?? tx.date) + 'T00:00:00').toLocaleDateString(dateLocale)}
+            </p>
           )}
           {(showInlineNotes || showInlineTags) && tx.notes && (
             <div className="mt-1 space-y-0.5">
@@ -1293,7 +1350,10 @@ export default function TransactionsPage() {
                     <span
                       key={tag}
                       className="inline-block text-[11px] font-medium bg-primary/5 text-primary border border-primary/10 px-1.5 py-0 rounded-full leading-5 cursor-pointer hover:bg-primary/10 transition-colors"
-                      onClick={(e) => { e.stopPropagation(); addTagFilter(tag) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        addTagFilter(tag)
+                      }}
                     >
                       {tag}
                     </span>
@@ -1314,7 +1374,11 @@ export default function TransactionsPage() {
     switch (col.id) {
       case 'date':
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground tabular-nums`}>
+          <TableCell
+            key={col.id}
+            style={widthStyle}
+            className={`${baseClass} text-sm text-muted-foreground tabular-nums`}
+          >
             {new Date((tx.reporting_date_override ?? tx.date) + 'T00:00:00').toLocaleDateString(dateLocale)}
           </TableCell>
         )
@@ -1360,7 +1424,11 @@ export default function TransactionsPage() {
       case 'notes': {
         const text = tx.notes ? stripHashtags(tx.notes) : ''
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-xs text-muted-foreground italic max-w-0 truncate`}>
+          <TableCell
+            key={col.id}
+            style={widthStyle}
+            className={`${baseClass} text-xs text-muted-foreground italic max-w-0 truncate`}
+          >
             {text || <span className="not-italic">—</span>}
           </TableCell>
         )
@@ -1377,7 +1445,10 @@ export default function TransactionsPage() {
                   <span
                     key={tag}
                     className="inline-block text-[11px] font-medium bg-primary/5 text-primary border border-primary/10 px-1.5 py-0 rounded-full leading-5 cursor-pointer hover:bg-primary/10"
-                    onClick={(e) => { e.stopPropagation(); addTagFilter(tag) }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      addTagFilter(tag)
+                    }}
                   >
                     {tag}
                   </span>
@@ -1389,12 +1460,19 @@ export default function TransactionsPage() {
       }
       case 'attachments':
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pr-5 text-sm text-muted-foreground tabular-nums`}>
+          <TableCell
+            key={col.id}
+            style={widthStyle}
+            className={`${baseClass} pr-5 text-sm text-muted-foreground tabular-nums`}
+          >
             {(tx.attachment_count ?? 0) > 0 ? (
               <span className="inline-flex items-center gap-1 justify-end w-full">
-                <Paperclip size={12} />{tx.attachment_count}
+                <Paperclip size={12} />
+                {tx.attachment_count}
               </span>
-            ) : <span>—</span>}
+            ) : (
+              <span>—</span>
+            )}
           </TableCell>
         )
       case 'type':
@@ -1407,10 +1485,12 @@ export default function TransactionsPage() {
         )
       case 'status':
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground capitalize`}>
-            {tx.status === 'pending'
-              ? t('transactions.statusPending')
-              : t('transactions.statusPosted')}
+          <TableCell
+            key={col.id}
+            style={widthStyle}
+            className={`${baseClass} text-sm text-muted-foreground capitalize`}
+          >
+            {tx.status === 'pending' ? t('transactions.statusPending') : t('transactions.statusPosted')}
           </TableCell>
         )
     }
@@ -1419,12 +1499,10 @@ export default function TransactionsPage() {
   // A single non-shared, non-transfer row selected can be duplicated; shared
   // and transfer rows can't (issue #158). Computed once for both the desktop
   // button and the mobile overflow menu.
-  const selectedSingleTx = canWrite && selectedIds.size === 1
-    ? filteredItems.find(tx => selectedIds.has(tx.id))
-    : undefined
-  const duplicableTx = selectedSingleTx && !selectedSingleTx.is_shared && !selectedSingleTx.transfer_pair_id
-    ? selectedSingleTx
-    : null
+  const selectedSingleTx =
+    canWrite && selectedIds.size === 1 ? filteredItems.find((tx) => selectedIds.has(tx.id)) : undefined
+  const duplicableTx =
+    selectedSingleTx && !selectedSingleTx.is_shared && !selectedSingleTx.transfer_pair_id ? selectedSingleTx : null
   const exportLabel = exporting
     ? t('transactions.exporting')
     : selectedIds.size > 0
@@ -1458,17 +1536,28 @@ export default function TransactionsPage() {
             exportLabel={exportLabel}
             exporting={exporting}
             onExport={handleExport}
-            onAdd={canWrite ? () => { setEditingTx(null); setDialogOpen(true) } : undefined}
+            onAdd={
+              canWrite
+                ? () => {
+                    setEditingTx(null)
+                    setDialogOpen(true)
+                  }
+                : undefined
+            }
             onDuplicate={duplicableTx ? () => handleDuplicateTransaction(duplicableTx) : undefined}
             onTransfer={canWrite ? () => setTransferDialogOpen(true) : undefined}
-            onRefresh={noAccounts ? undefined : () => {
-              void refreshTransactionsView({
-                viewMode,
-                refetchList: refetch,
-                refetchCalendar,
-                onError: (message) => toast.error(message),
-              })
-            }}
+            onRefresh={
+              noAccounts
+                ? undefined
+                : () => {
+                    void refreshTransactionsView({
+                      viewMode,
+                      refetchList: refetch,
+                      refetchCalendar,
+                      onError: (message) => toast.error(message),
+                    })
+                  }
+            }
             refreshing={viewMode === 'calendar' ? calendarFetching : isFetching}
             testId="transactions-page-actions"
           />
@@ -1486,35 +1575,64 @@ export default function TransactionsPage() {
           // Enter required). Non-`#` text remains as the free-text search
           // query (issue #88).
           const tokens = trimmed.split(/\s+/).filter(Boolean)
-          const tags = tokens.filter(t => t.startsWith('#'))
-          const text = tokens.filter(t => !t.startsWith('#')).join(' ')
+          const tags = tokens.filter((t) => t.startsWith('#'))
+          const text = tokens.filter((t) => !t.startsWith('#')).join(' ')
           tags.forEach(addTagFilter)
           setSearchInput(text)
           setSearchQuery(text)
         }}
         filterAccountIds={filterAccountIds}
-        onAccountIdsChange={(v) => { setFilterAccountIds(viewMode === 'calendar' ? v.slice(0, 1) : v); setPage(1) }}
+        onAccountIdsChange={(v) => {
+          setFilterAccountIds(viewMode === 'calendar' ? v.slice(0, 1) : v)
+          setPage(1)
+        }}
         accountSelectionMode={viewMode === 'calendar' ? 'single' : 'multiple'}
         filterCategoryIds={filterCategoryIds}
-        onCategoryIdsChange={(v) => { setFilterCategoryIds(v); setPage(1) }}
+        onCategoryIdsChange={(v) => {
+          setFilterCategoryIds(v)
+          setPage(1)
+        }}
         filterUncategorized={filterUncategorized}
-        onUncategorizedChange={(v) => { setFilterUncategorized(v); setPage(1) }}
+        onUncategorizedChange={(v) => {
+          setFilterUncategorized(v)
+          setPage(1)
+        }}
         filterPayee={filterPayee}
-        onPayeeChange={(v) => { setFilterPayee(v); setPage(1) }}
+        onPayeeChange={(v) => {
+          setFilterPayee(v)
+          setPage(1)
+        }}
         filterGroupId={filterGroupId}
-        onGroupIdChange={(v) => { setFilterGroupId(v); setPage(1) }}
+        onGroupIdChange={(v) => {
+          setFilterGroupId(v)
+          setPage(1)
+        }}
         filterType={filterType}
-        onTypeChange={(v) => { setFilterType(v); setPage(1) }}
+        onTypeChange={(v) => {
+          setFilterType(v)
+          setPage(1)
+        }}
         filterStatus={filterStatus}
-        onStatusChange={(v) => { setFilterStatus(v); setPage(1) }}
+        onStatusChange={(v) => {
+          setFilterStatus(v)
+          setPage(1)
+        }}
         hideIgnored={hideIgnored}
         onHideIgnoredChange={handleHideIgnoredChange}
         filterFrom={filterFrom}
         filterTo={filterTo}
-        onDateRangeChange={(from, to) => { setFilterFrom(from); setFilterTo(to); setPage(1) }}
+        onDateRangeChange={(from, to) => {
+          setFilterFrom(from)
+          setFilterTo(to)
+          setPage(1)
+        }}
         filterMinAmount={filterMinAmount}
         filterMaxAmount={filterMaxAmount}
-        onAmountRangeChange={(min, max) => { setFilterMinAmount(min); setFilterMaxAmount(max); setPage(1) }}
+        onAmountRangeChange={(min, max) => {
+          setFilterMinAmount(min)
+          setFilterMaxAmount(max)
+          setPage(1)
+        }}
         onClearAll={() => {
           setFilterFrom('')
           setFilterTo('')
@@ -1545,7 +1663,10 @@ export default function TransactionsPage() {
           <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
             {t('splitGroups.title')}: {filterGroup?.name ?? '…'}
             <button
-              onClick={() => { setFilterGroupId(''); setPage(1) }}
+              onClick={() => {
+                setFilterGroupId('')
+                setPage(1)
+              }}
               className="ml-0.5 text-primary/60 hover:text-primary"
               aria-label={t('transactions.clearGroupFilter')}
             >
@@ -1556,7 +1677,7 @@ export default function TransactionsPage() {
       )}
       {tagFilters.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-1.5">
-          {tagFilters.map(tag => (
+          {tagFilters.map((tag) => (
             <span
               key={tag}
               className="inline-flex items-center gap-1.5 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-xs font-medium text-primary"
@@ -1599,213 +1720,278 @@ export default function TransactionsPage() {
 
       {/* Table / Mobile Cards */}
       {viewMode === 'list' && (
-      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden mb-4">
-        {isLoading ? (
-          <div className="p-6 space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 w-full" />
-            ))}
-          </div>
-        ) : isMobile ? (
-          /* ── Mobile card view: grouped by date ── */
-          <div>
-            {groupedByDate.map((group) => (
-              <div key={group.date}>
-                <div className="bg-muted/80 px-4 py-1.5 border-b border-border">
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    {group.label}
-                  </span>
-                </div>
-                {group.items.map((tx) => (
-                  <MobileTransactionRow
-                    key={tx.id}
-                    tx={tx}
-                    account={tx.account_id ? accountById.get(tx.account_id) : undefined}
-                    groupName={tx.group_id ? groupNameById.get(tx.group_id) : undefined}
-                    selected={selectedIds.has(tx.id)}
-                    selectable={canWrite && !tx.is_shared}
-                    canWrite={canWrite}
-                    highlighted={tx.id === highlightId}
-                    highlightedRowRef={tx.id === highlightId ? highlightedRowRef : undefined}
-                    locale={locale}
-                    dateLocale={dateLocale}
-                    userCurrency={userCurrency}
-                    onSelect={toggleSelect}
-                    onClick={(t) => {
-                      if (t.is_shared) {
-                        if (t.group_id) navigate(`/groups/${t.group_id}`)
-                        return
-                      }
-                      setEditingTx(t)
-                      setDialogOpen(true)
-                    }}
-                  />
-                ))}
-              </div>
-            ))}
-            {filteredItems.length === 0 && (
-              <div className="text-center py-16 text-muted-foreground">
-                {t('transactions.noResults')}
-              </div>
-            )}
-          </div>
-        ) : (
-          /* ── Desktop table view ── */
-          <div className="overflow-x-auto">
-          <Table style={{ tableLayout: 'fixed' }}>
-            <TableHeader>
-              <TableRow className="border-b border-border hover:bg-transparent">
-                <TableHead style={{ width: 40, minWidth: 40 }} className="py-3 pl-4 pr-0">
-                  {canWrite && (
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      ref={(el) => { if (el) el.indeterminate = someSelected }}
-                      onChange={toggleSelectAll}
-                      className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
-                    />
-                  )}
-                </TableHead>
-                {grid.visibleColumns.map(renderHeaderCell)}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredItems.map((tx) => (
-                <ContextMenu key={`${tx.id}:${menuEpoch}`}>
-                  <ContextMenuTrigger asChild disabled={!canWrite || tx.is_shared}>
-                    <TableRow
-                      ref={tx.id === highlightId ? highlightedRowRef : undefined}
-                      onContextMenu={() => {
-                        if (canWrite && !tx.is_shared && !selectedIds.has(tx.id)) {
-                          setSelectedIds(new Set([tx.id]))
-                          setLastSelectedId(tx.id)
-                        }
-                      }}
-                      className={`hover:bg-muted border-b border-border last:border-0 ${
-                        selectedIds.has(tx.id) ? 'bg-primary/5' : ''
-                      } ${tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer'}`}
-                      onClick={() => {
-                        if (tx.is_shared) {
-                          // Owned by another user — view in the group context instead.
-                          if (tx.group_id) navigate(`/groups/${tx.group_id}`)
+        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden mb-4">
+          {isLoading ? (
+            <div className="p-6 space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full" />
+              ))}
+            </div>
+          ) : isMobile ? (
+            /* ── Mobile card view: grouped by date ── */
+            <div>
+              {groupedByDate.map((group) => (
+                <div key={group.date}>
+                  <div className="bg-muted/80 px-4 py-1.5 border-b border-border">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      {group.label}
+                    </span>
+                  </div>
+                  {group.items.map((tx) => (
+                    <MobileTransactionRow
+                      key={tx.id}
+                      tx={tx}
+                      account={tx.account_id ? accountById.get(tx.account_id) : undefined}
+                      groupName={tx.group_id ? groupNameById.get(tx.group_id) : undefined}
+                      selected={selectedIds.has(tx.id)}
+                      selectable={canWrite && !tx.is_shared}
+                      canWrite={canWrite}
+                      highlighted={tx.id === highlightId}
+                      highlightedRowRef={tx.id === highlightId ? highlightedRowRef : undefined}
+                      locale={locale}
+                      dateLocale={dateLocale}
+                      userCurrency={userCurrency}
+                      onSelect={toggleSelect}
+                      onClick={(t) => {
+                        if (t.is_shared) {
+                          if (t.group_id) navigate(`/groups/${t.group_id}`)
                           return
                         }
-                        if (!canWrite) return
-                        setEditingTx(tx)
+                        setEditingTx(t)
                         setDialogOpen(true)
                       }}
-                    >
-                      <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0">
-                        {/* Bulk operations are scoped to user.id so they
+                    />
+                  ))}
+                </div>
+              ))}
+              {filteredItems.length === 0 && (
+                <div className="text-center py-16 text-muted-foreground">{t('transactions.noResults')}</div>
+              )}
+            </div>
+          ) : (
+            /* ── Desktop table view ── */
+            <div className="overflow-x-auto">
+              <Table style={{ tableLayout: 'fixed' }}>
+                <TableHeader>
+                  <TableRow className="border-b border-border hover:bg-transparent">
+                    <TableHead style={{ width: 40, minWidth: 40 }} className="py-3 pl-4 pr-0">
+                      {canWrite && (
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = someSelected
+                          }}
+                          onChange={toggleSelectAll}
+                          className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                        />
+                      )}
+                    </TableHead>
+                    {grid.visibleColumns.map(renderHeaderCell)}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredItems.map((tx) => (
+                    <ContextMenu key={`${tx.id}:${menuEpoch}`}>
+                      <ContextMenuTrigger asChild disabled={!canWrite || tx.is_shared}>
+                        <TableRow
+                          ref={tx.id === highlightId ? highlightedRowRef : undefined}
+                          onContextMenu={() => {
+                            if (canWrite && !tx.is_shared && !selectedIds.has(tx.id)) {
+                              setSelectedIds(new Set([tx.id]))
+                              setLastSelectedId(tx.id)
+                            }
+                          }}
+                          className={`hover:bg-muted border-b border-border last:border-0 ${
+                            selectedIds.has(tx.id) ? 'bg-primary/5' : ''
+                          } ${tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer'}`}
+                          onClick={() => {
+                            if (tx.is_shared) {
+                              // Owned by another user — view in the group context instead.
+                              if (tx.group_id) navigate(`/groups/${tx.group_id}`)
+                              return
+                            }
+                            if (!canWrite) return
+                            setEditingTx(tx)
+                            setDialogOpen(true)
+                          }}
+                        >
+                          <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0">
+                            {/* Bulk operations are scoped to user.id so they
                             silently skip shared rows — hide the checkbox
                             on those to avoid the dead-end UX. */}
-                        {canWrite && !tx.is_shared && (
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(tx.id)}
-                            onChange={() => {}}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              toggleSelect(tx.id, e.shiftKey)
-                            }}
-                            className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
-                          />
-                        )}
-                      </TableCell>
-                      {grid.visibleColumns.map(col => renderBodyCell(col, tx))}
-                    </TableRow>
-                  </ContextMenuTrigger>
-                  <ContextMenuPortal>
-                    <ContextMenuContent className="w-64">
-                      <ContextMenuItem
-                        disabled={!canOpenLinkDialog}
-                        onSelect={() => setLinkTransferDialogOpen(true)}
-                      >
-                        <ArrowLeftRight className="mr-2 h-4 w-4" />
-                        {t('transactions.linkAsTransfer')}
-                      </ContextMenuItem>
+                            {canWrite && !tx.is_shared && (
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(tx.id)}
+                                onChange={() => {}}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleSelect(tx.id, e.shiftKey)
+                                }}
+                                className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                              />
+                            )}
+                          </TableCell>
+                          {grid.visibleColumns.map((col) => renderBodyCell(col, tx))}
+                        </TableRow>
+                      </ContextMenuTrigger>
+                      <ContextMenuPortal>
+                        <ContextMenuContent className="w-64">
+                          <ContextMenuItem
+                            disabled={!canOpenLinkDialog}
+                            onSelect={() => setLinkTransferDialogOpen(true)}
+                          >
+                            <ArrowLeftRight className="mr-2 h-4 w-4" />
+                            {t('transactions.linkAsTransfer')}
+                          </ContextMenuItem>
 
-                      <ContextMenuSub>
-                        <ContextMenuSubTrigger>
-                          <TagIcon className="mr-2 h-4 w-4" />
-                          {t('transactions.selectCategory')}
-                        </ContextMenuSubTrigger>
-                        <ContextMenuPortal>
-                          <ContextMenuSubContent className="w-64 p-0">
-                            {/* A text field inside a Radix menu would have its arrow keys
+                          <ContextMenuSub>
+                            <ContextMenuSubTrigger>
+                              <TagIcon className="mr-2 h-4 w-4" />
+                              {t('transactions.selectCategory')}
+                            </ContextMenuSubTrigger>
+                            <ContextMenuPortal>
+                              <ContextMenuSubContent className="w-64 p-0">
+                                {/* A text field inside a Radix menu would have its arrow keys
                                 and typing (typeahead) handled as menu navigation, so keep
                                 the key events inside the picker. Escape still closes the
                                 menu, as it is handled on the document. */}
-                            <div onKeyDown={(e) => e.stopPropagation()}>
-                              <CategoryPicker
-                                value={null}
-                                onChange={(categoryId) => {
-                                  bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: categoryId || null })
-                                  // Radix's context menu can't be closed from outside and
-                                  // picker rows are not menu items, so remount it to dismiss.
-                                  setMenuEpoch((n) => n + 1)
-                                }}
-                                categories={categoriesList ?? []}
-                                groups={categoryGroupsList ?? []}
-                                allowNone
-                                autoFocus
-                              />
-                            </div>
-                          </ContextMenuSubContent>
-                        </ContextMenuPortal>
-                      </ContextMenuSub>
+                                <div onKeyDown={(e) => e.stopPropagation()}>
+                                  <CategoryPicker
+                                    value={null}
+                                    onChange={(categoryId) => {
+                                      bulkCategorizeMutation.mutate({
+                                        ids: Array.from(selectedIds),
+                                        categoryId: categoryId || null,
+                                      })
+                                      // Radix's context menu can't be closed from outside and
+                                      // picker rows are not menu items, so remount it to dismiss.
+                                      setMenuEpoch((n) => n + 1)
+                                    }}
+                                    categories={categoriesList ?? []}
+                                    groups={categoryGroupsList ?? []}
+                                    allowNone
+                                    autoFocus
+                                  />
+                                </div>
+                              </ContextMenuSubContent>
+                            </ContextMenuPortal>
+                          </ContextMenuSub>
 
-                      <ContextMenuItem onSelect={() => setBulkAddToGroupOpen(true)}>
-                        <Users className="mr-2 h-4 w-4" />
-                        {t('transactions.addToGroup')}
-                      </ContextMenuItem>
+                          <ContextMenuItem onSelect={() => setBulkAddToGroupOpen(true)}>
+                            <Users className="mr-2 h-4 w-4" />
+                            {t('transactions.addToGroup')}
+                          </ContextMenuItem>
 
-                      <ContextMenuItem onSelect={handleFocusTagInput}>
-                        <TagIcon className="mr-2 h-4 w-4" />
-                        {t('transactions.bulkAddTags')}
-                      </ContextMenuItem>
+                          <ContextMenuItem onSelect={handleFocusTagInput}>
+                            <TagIcon className="mr-2 h-4 w-4" />
+                            {t('transactions.bulkAddTags')}
+                          </ContextMenuItem>
 
-                      {selectedSingleTx && (
-                        <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
-                          <SlidersHorizontal className="mr-2 h-4 w-4" />
-                          {t('transactions.createRule')}
-                        </ContextMenuItem>
-                      )}
+                          {selectedSingleTx && (
+                            <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
+                              <SlidersHorizontal className="mr-2 h-4 w-4" />
+                              {t('transactions.createRule')}
+                            </ContextMenuItem>
+                          )}
 
-                      <ContextMenuSeparator />
-                      <ContextMenuItem
-                        variant="destructive"
-                        disabled={bulkDeleteMutation.isPending}
-                        onSelect={() => setBulkDeleteConfirmOpen(true)}
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            variant="destructive"
+                            disabled={bulkDeleteMutation.isPending}
+                            onSelect={() => setBulkDeleteConfirmOpen(true)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {t('common.delete')}
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenuPortal>
+                    </ContextMenu>
+                  ))}
+                  {filteredItems.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={grid.visibleColumns.length + 1}
+                        className="text-center py-16 text-muted-foreground"
                       >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        {t('common.delete')}
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenuPortal>
-                </ContextMenu>
-              ))}
-              {filteredItems.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={grid.visibleColumns.length + 1} className="text-center py-16 text-muted-foreground">
-                    {t('transactions.noResults')}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-          </div>
-        )}
-        {/* Filtered summary (issue #185): income / expenses / net across
+                        {t('transactions.noResults')}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          {/* Filtered summary (issue #185): income / expenses / net across
             ALL rows matching the active filters — not just this page. */}
-        {!isLoading && data?.summary && filteredItems.length > 0 && (
-          <div className="flex flex-col sm:flex-row flex-wrap sm:items-center gap-x-5 gap-y-1 border-t border-border bg-muted/30 px-4 py-2.5">
-            {/* Mobile: count + saldo on first line */}
-            <div className="flex items-center justify-between sm:hidden">
-              <span className="text-xs text-muted-foreground">
+          {!isLoading && data?.summary && filteredItems.length > 0 && (
+            <div className="flex flex-col sm:flex-row flex-wrap sm:items-center gap-x-5 gap-y-1 border-t border-border bg-muted/30 px-4 py-2.5">
+              {/* Mobile: count + saldo on first line */}
+              <div className="flex items-center justify-between sm:hidden">
+                <span className="text-xs text-muted-foreground">
+                  {t('transactions.summaryCount', { count: data.total })}
+                </span>
+                <span className="flex items-baseline gap-1.5 text-xs">
+                  <span className="text-muted-foreground">{t('transactions.summaryNet')}</span>
+                  <span
+                    className={`text-sm font-bold tabular-nums ${
+                      data.summary.net >= 0 ? 'text-emerald-600' : 'text-rose-500'
+                    }`}
+                  >
+                    {mask(formatCurrency(data.summary.net, data.summary.currency, locale))}
+                  </span>
+                </span>
+              </div>
+              {/* Mobile: receitas + despesas on second line */}
+              <div className="flex items-center justify-between sm:hidden">
+                <span className="flex items-baseline gap-1.5 text-xs">
+                  <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
+                  <span className="text-sm font-semibold tabular-nums text-emerald-600">
+                    {mask(formatCurrency(data.summary.income, data.summary.currency, locale))}
+                  </span>
+                </span>
+                <span className="flex items-baseline gap-1.5 text-xs">
+                  <span className="text-muted-foreground">{t('transactions.summaryExpenses')}</span>
+                  <span className="text-sm font-semibold tabular-nums text-rose-500">
+                    {mask(formatCurrency(data.summary.expense, data.summary.currency, locale))}
+                  </span>
+                </span>
+              </div>
+              {/* Mobile: excluido on third line */}
+              {data.summary.excluded > 0 && (
+                <span className="flex items-baseline gap-1.5 text-xs sm:hidden">
+                  <span className="text-muted-foreground">{t('transactions.summaryExcluded')}</span>
+                  <span className="text-sm font-semibold tabular-nums text-muted-foreground">
+                    {mask(formatCurrency(data.summary.excluded, data.summary.currency, locale))}
+                  </span>
+                </span>
+              )}
+              {/* Desktop: original horizontal layout */}
+              <span className="mr-auto text-xs text-muted-foreground hidden sm:inline">
                 {t('transactions.summaryCount', { count: data.total })}
               </span>
-              <span className="flex items-baseline gap-1.5 text-xs">
+              {data.summary.excluded > 0 && (
+                <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
+                  <span className="text-muted-foreground">{t('transactions.summaryExcluded')}</span>
+                  <span className="text-sm font-semibold tabular-nums text-muted-foreground">
+                    {mask(formatCurrency(data.summary.excluded, data.summary.currency, locale))}
+                  </span>
+                </span>
+              )}
+              <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
+                <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
+                <span className="text-sm font-semibold tabular-nums text-emerald-600">
+                  {mask(formatCurrency(data.summary.income, data.summary.currency, locale))}
+                </span>
+              </span>
+              <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
+                <span className="text-muted-foreground">{t('transactions.summaryExpenses')}</span>
+                <span className="text-sm font-semibold tabular-nums text-rose-500">
+                  {mask(formatCurrency(data.summary.expense, data.summary.currency, locale))}
+                </span>
+              </span>
+              <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
                 <span className="text-muted-foreground">{t('transactions.summaryNet')}</span>
                 <span
                   className={`text-sm font-bold tabular-nums ${
@@ -1816,92 +2002,25 @@ export default function TransactionsPage() {
                 </span>
               </span>
             </div>
-            {/* Mobile: receitas + despesas on second line */}
-            <div className="flex items-center justify-between sm:hidden">
-              <span className="flex items-baseline gap-1.5 text-xs">
-                <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
-                <span className="text-sm font-semibold tabular-nums text-emerald-600">
-                  {mask(formatCurrency(data.summary.income, data.summary.currency, locale))}
-                </span>
-              </span>
-              <span className="flex items-baseline gap-1.5 text-xs">
-                <span className="text-muted-foreground">{t('transactions.summaryExpenses')}</span>
-                <span className="text-sm font-semibold tabular-nums text-rose-500">
-                  {mask(formatCurrency(data.summary.expense, data.summary.currency, locale))}
-                </span>
-              </span>
-            </div>
-            {/* Mobile: excluido on third line */}
-            {data.summary.excluded > 0 && (
-              <span className="flex items-baseline gap-1.5 text-xs sm:hidden">
-                <span className="text-muted-foreground">{t('transactions.summaryExcluded')}</span>
-                <span className="text-sm font-semibold tabular-nums text-muted-foreground">
-                  {mask(formatCurrency(data.summary.excluded, data.summary.currency, locale))}
-                </span>
-              </span>
-            )}
-            {/* Desktop: original horizontal layout */}
-            <span className="mr-auto text-xs text-muted-foreground hidden sm:inline">
-              {t('transactions.summaryCount', { count: data.total })}
-            </span>
-            {data.summary.excluded > 0 && (
-              <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
-                <span className="text-muted-foreground">{t('transactions.summaryExcluded')}</span>
-                <span className="text-sm font-semibold tabular-nums text-muted-foreground">
-                  {mask(formatCurrency(data.summary.excluded, data.summary.currency, locale))}
-                </span>
-              </span>
-            )}
-            <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
-              <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
-              <span className="text-sm font-semibold tabular-nums text-emerald-600">
-                {mask(formatCurrency(data.summary.income, data.summary.currency, locale))}
-              </span>
-            </span>
-            <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
-              <span className="text-muted-foreground">{t('transactions.summaryExpenses')}</span>
-              <span className="text-sm font-semibold tabular-nums text-rose-500">
-                {mask(formatCurrency(data.summary.expense, data.summary.currency, locale))}
-              </span>
-            </span>
-            <span className="hidden sm:flex items-baseline gap-1.5 text-xs">
-              <span className="text-muted-foreground">{t('transactions.summaryNet')}</span>
-              <span
-                className={`text-sm font-bold tabular-nums ${
-                  data.summary.net >= 0 ? 'text-emerald-600' : 'text-rose-500'
-                }`}
-              >
-                {mask(formatCurrency(data.summary.net, data.summary.currency, locale))}
-              </span>
-            </span>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
       )}
 
       {/* Pagination */}
       {viewMode === 'list' && data && data.total > 10 && (
-        <div className={`flex flex-col sm:flex-row items-center justify-between gap-4 py-4 ${selectedIds.size > 0 ? 'pb-20' : ''}`}>
+        <div
+          className={`flex flex-col sm:flex-row items-center justify-between gap-4 py-4 ${selectedIds.size > 0 ? 'pb-20' : ''}`}
+        >
           <div className="hidden sm:block w-32" />
           {totalPages > 1 ? (
             <div className="flex items-center justify-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-              >
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
                 {t('transactions.previous')}
               </Button>
               <span className="text-sm text-muted-foreground">
                 {page} / {totalPages}
               </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage(page + 1)}
-              >
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
                 {t('transactions.next')}
               </Button>
             </div>
@@ -1944,219 +2063,236 @@ export default function TransactionsPage() {
           collapsed state (240px expanded / 64px collapsed) so it stays
           centered when the nav is collapsed (issue #1027). */}
       {viewMode === 'list' && selectedIds.size > 0 && (
-        <div className={cn(
-          "fixed bottom-0 left-0 right-0 z-50",
-          "transition-[left] duration-300 ease-in-out motion-reduce:transition-none",
-          sidebarCollapsed ? 'lg:left-16' : 'lg:left-60',
-        )}>
-        <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
-          <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2 transition-all duration-500">
-            <MobileBulkSelectionActions
-              selectedCount={selectedIds.size}
-              categoryValue={bulkCategory}
-              categories={categoriesList ?? []}
-              categoryGroups={categoryGroupsList ?? []}
-              categoryPending={bulkCategorizeMutation.isPending}
-              groupPending={bulkAddToGroupMutation.isPending}
-              tagInput={bulkTagInput}
-              addTagsPending={bulkAddTagsMutation.isPending}
-              removeTagsPending={bulkRemoveTagsMutation.isPending}
-              transferDisabled={!canOpenLinkDialog}
-              transferTitle={linkDisabledTooltip ?? t('transactions.linkAsTransfer')}
-              onCategoryChange={(next) => {
-                setBulkCategory(next)
-                if (next) bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
-              }}
-              onOpenGroup={() => setBulkAddToGroupOpen(true)}
-              onOpenTransfer={() => setLinkTransferDialogOpen(true)}
-              onCreateRule={selectedSingleTx && !selectedSingleTx.is_shared
-                ? () => handleCreateRuleFromTransaction(selectedSingleTx)
-                : undefined}
-              onTagInputChange={setBulkTagInput}
-              onAddTags={(tags) => bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
-              onRemoveTags={(tags) => bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
-              onBulkDelete={() => setBulkDeleteConfirmOpen(true)}
-              onClear={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
-            />
+        <div
+          className={cn(
+            'fixed bottom-0 left-0 right-0 z-50',
+            'transition-[left] duration-300 ease-in-out motion-reduce:transition-none',
+            sidebarCollapsed ? 'lg:left-16' : 'lg:left-60',
+          )}
+        >
+          <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
+            <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2 transition-all duration-500">
+              <MobileBulkSelectionActions
+                selectedCount={selectedIds.size}
+                categoryValue={bulkCategory}
+                categories={categoriesList ?? []}
+                categoryGroups={categoryGroupsList ?? []}
+                categoryPending={bulkCategorizeMutation.isPending}
+                groupPending={bulkAddToGroupMutation.isPending}
+                tagInput={bulkTagInput}
+                addTagsPending={bulkAddTagsMutation.isPending}
+                removeTagsPending={bulkRemoveTagsMutation.isPending}
+                transferDisabled={!canOpenLinkDialog}
+                transferTitle={linkDisabledTooltip ?? t('transactions.linkAsTransfer')}
+                onCategoryChange={(next) => {
+                  setBulkCategory(next)
+                  if (next) bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
+                }}
+                onOpenGroup={() => setBulkAddToGroupOpen(true)}
+                onOpenTransfer={() => setLinkTransferDialogOpen(true)}
+                onCreateRule={
+                  selectedSingleTx && !selectedSingleTx.is_shared
+                    ? () => handleCreateRuleFromTransaction(selectedSingleTx)
+                    : undefined
+                }
+                onTagInputChange={setBulkTagInput}
+                onAddTags={(tags) => bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
+                onRemoveTags={(tags) => bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
+                onBulkDelete={() => setBulkDeleteConfirmOpen(true)}
+                onClear={() => {
+                  setSelectedIds(new Set())
+                  setBulkCategory('')
+                  setBulkTagInput('')
+                }}
+              />
 
-            <div className="hidden w-full items-center gap-1.5 sm:flex">
-            {/* Selection count + net total — stacked vertically so the
+              <div className="hidden w-full items-center gap-1.5 sm:flex">
+                {/* Selection count + net total — stacked vertically so the
                 sum (issue #185) adds no horizontal width to an already
                 crowded bar. The sum is hidden below sm where only the
                 count pill shows. */}
-            <div className="flex items-center gap-2.5 pl-3 pr-4 whitespace-nowrap">
-              <span className="inline-flex items-center justify-center size-6 rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">
-                {selectedIds.size}
-              </span>
-              <div className="hidden sm:flex flex-col leading-tight">
-                <span className="text-[11px] font-medium text-muted-foreground">
-                  {t('transactions.selected')}
-                </span>
-                <span
-                  className={`text-sm font-bold tabular-nums ${
-                    selectedNet >= 0 ? 'text-emerald-600' : 'text-rose-500'
-                  }`}
-                >
-                  {mask(
-                    `${selectedNet >= 0 ? '+' : '−'}${formatCurrency(
-                      Math.abs(selectedNet),
-                      userCurrency,
-                      locale,
-                    )}`,
-                  )}
-                </span>
-              </div>
-            </div>
+                <div className="flex items-center gap-2.5 pl-3 pr-4 whitespace-nowrap">
+                  <span className="inline-flex items-center justify-center size-6 rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">
+                    {selectedIds.size}
+                  </span>
+                  <div className="hidden sm:flex flex-col leading-tight">
+                    <span className="text-[11px] font-medium text-muted-foreground">{t('transactions.selected')}</span>
+                    <span
+                      className={`text-sm font-bold tabular-nums ${
+                        selectedNet >= 0 ? 'text-emerald-600' : 'text-rose-500'
+                      }`}
+                    >
+                      {mask(
+                        `${selectedNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(selectedNet), userCurrency, locale)}`,
+                      )}
+                    </span>
+                  </div>
+                </div>
 
-            <div className="w-px bg-border/60 self-stretch" />
+                <div className="w-px bg-border/60 self-stretch" />
 
-            {/* Categorize — fires on selection, no separate Apply button */}
-            <CategorySelect
-              key={bulkCategory}
-              value={bulkCategory}
-              onChange={(next) => {
-                setBulkCategory(next)
-                if (next) {
-                  bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
-                }
-              }}
-              categories={categoriesList ?? []}
-              groups={categoryGroupsList ?? []}
-              placeholder={t('transactions.selectCategory')}
-              disabled={bulkCategorizeMutation.isPending}
-              className="w-44 md:w-56 h-auto py-2 border-transparent bg-transparent hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-0"
-              contentProps={{ side: 'top', sideOffset: 8 }}
-            />
+                {/* Categorize — fires on selection, no separate Apply button */}
+                <CategorySelect
+                  key={bulkCategory}
+                  value={bulkCategory}
+                  onChange={(next) => {
+                    setBulkCategory(next)
+                    if (next) {
+                      bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
+                    }
+                  }}
+                  categories={categoriesList ?? []}
+                  groups={categoryGroupsList ?? []}
+                  placeholder={t('transactions.selectCategory')}
+                  disabled={bulkCategorizeMutation.isPending}
+                  className="w-44 md:w-56 h-auto py-2 border-transparent bg-transparent hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-0"
+                  contentProps={{ side: 'top', sideOffset: 8 }}
+                />
 
-            <div className="w-px bg-border/60 self-stretch" />
+                <div className="w-px bg-border/60 self-stretch" />
 
-            {/* Add to group — opens a dialog to configure share type and
+                {/* Add to group — opens a dialog to configure share type and
                 members. Mirrors the per-tx splits options (issue #156). */}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={bulkAddToGroupMutation.isPending}
-              onClick={() => setBulkAddToGroupOpen(true)}
-              title={t('transactions.addToGroup')}
-              className="h-8 px-3 shrink-0 text-sm"
-            >
-              <Users size={15} className="lg:mr-1.5" />
-              <span className="hidden lg:inline">{t('transactions.addToGroup')}</span>
-            </Button>
-
-            <div className="w-px bg-border/60 self-stretch" />
-
-            {/* Add tags inline */}
-            <div
-              className={`flex items-center gap-1 px-1 rounded-xl transition-all duration-300 ${
-                isBulkBarPulsing ? 'ring-2 ring-primary ring-offset-2 scale-[1.05] bg-primary/5' : ''
-              }`}>
-              <input
-                ref={bulkTagInputRef}
-                type="text"
-                value={bulkTagInput}
-                onChange={(e) => setBulkTagInput(e.target.value)}
-                placeholder={t('transactions.addTagsPlaceholder')}
-                className="rounded-lg px-2.5 py-2 text-sm bg-transparent text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:bg-muted/60 w-28 md:w-40"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && bulkTagInput.trim()) {
-                    e.preventDefault()
-                    const tagList = bulkTagInput.trim().split(/[\s,]+/).filter(Boolean)
-                    bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={!bulkTagInput.trim() || bulkAddTagsMutation.isPending}
-                onClick={() => {
-                  const tagList = bulkTagInput.trim().split(/[\s,]+/).filter(Boolean)
-                  if (tagList.length === 0) return
-                  bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
-                }}
-                className="h-8 w-8 px-0 shrink-0"
-                title={t('transactions.bulkAddTags')}
-              >
-                <Check size={15} />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={!bulkTagInput.trim() || bulkRemoveTagsMutation.isPending}
-                onClick={() => {
-                  const tagList = bulkTagInput.trim().split(/[\s,]+/).filter(Boolean)
-                  if (tagList.length === 0) return
-                  bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
-                }}
-                className="h-8 w-8 px-0 shrink-0"
-                title={t('transactions.bulkRemoveTags', 'Remove tags')}
-              >
-                <X size={15} />
-              </Button>
-            </div>
-
-            <div className="w-px bg-border/60 self-stretch" />
-
-            {/* Link transfer */}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!canOpenLinkDialog}
-              title={linkDisabledTooltip ?? t('transactions.linkAsTransfer')}
-              onClick={() => setLinkTransferDialogOpen(true)}
-              className="h-8 px-3 shrink-0 text-sm"
-            >
-              <ArrowLeftRight size={15} className="mr-1.5" />
-              <span className="hidden lg:inline">{t('transactions.linkAsTransfer')}</span>
-            </Button>
-
-            <div className="w-px bg-border/60 self-stretch" />
-
-            {/* Create Rule — only when exactly one non-shared transaction is selected */}
-            {selectedIds.size === 1 && (() => {
-              const selectedTx = filteredItems.find(tx => selectedIds.has(tx.id))
-              if (!selectedTx || selectedTx.is_shared) return null
-              return (
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => handleCreateRuleFromTransaction(selectedTx)}
+                  disabled={bulkAddToGroupMutation.isPending}
+                  onClick={() => setBulkAddToGroupOpen(true)}
+                  title={t('transactions.addToGroup')}
                   className="h-8 px-3 shrink-0 text-sm"
-                  title={t('transactions.createRule')}
                 >
-                  <SlidersHorizontal size={15} className="lg:mr-1.5" />
-                  <span className="hidden lg:inline">{t('transactions.createRule')}</span>
+                  <Users size={15} className="lg:mr-1.5" />
+                  <span className="hidden lg:inline">{t('transactions.addToGroup')}</span>
                 </Button>
-              )
-            })()}
 
-            {/* Bulk Delete */}
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => setBulkDeleteConfirmOpen(true)}
-              disabled={bulkDeleteMutation.isPending}
-              className="h-8 px-3 shrink-0 text-sm"
-            >
-              <Trash2 size={15} className="lg:mr-1.5" />
-              <span className="hidden lg:inline">{t('common.delete')}</span>
-            </Button>
+                <div className="w-px bg-border/60 self-stretch" />
 
-            <div className="ml-auto" />
+                {/* Add tags inline */}
+                <div
+                  className={`flex items-center gap-1 px-1 rounded-xl transition-all duration-300 ${
+                    isBulkBarPulsing ? 'ring-2 ring-primary ring-offset-2 scale-[1.05] bg-primary/5' : ''
+                  }`}
+                >
+                  <input
+                    ref={bulkTagInputRef}
+                    type="text"
+                    value={bulkTagInput}
+                    onChange={(e) => setBulkTagInput(e.target.value)}
+                    placeholder={t('transactions.addTagsPlaceholder')}
+                    className="rounded-lg px-2.5 py-2 text-sm bg-transparent text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:bg-muted/60 w-28 md:w-40"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && bulkTagInput.trim()) {
+                        e.preventDefault()
+                        const tagList = bulkTagInput
+                          .trim()
+                          .split(/[\s,]+/)
+                          .filter(Boolean)
+                        bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
+                      }
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!bulkTagInput.trim() || bulkAddTagsMutation.isPending}
+                    onClick={() => {
+                      const tagList = bulkTagInput
+                        .trim()
+                        .split(/[\s,]+/)
+                        .filter(Boolean)
+                      if (tagList.length === 0) return
+                      bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
+                    }}
+                    className="h-8 w-8 px-0 shrink-0"
+                    title={t('transactions.bulkAddTags')}
+                  >
+                    <Check size={15} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!bulkTagInput.trim() || bulkRemoveTagsMutation.isPending}
+                    onClick={() => {
+                      const tagList = bulkTagInput
+                        .trim()
+                        .split(/[\s,]+/)
+                        .filter(Boolean)
+                      if (tagList.length === 0) return
+                      bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
+                    }}
+                    className="h-8 w-8 px-0 shrink-0"
+                    title={t('transactions.bulkRemoveTags', 'Remove tags')}
+                  >
+                    <X size={15} />
+                  </Button>
+                </div>
 
-            {/* Close */}
-            <button
-              onClick={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
-              className="text-muted-foreground hover:text-foreground p-2 shrink-0 self-center rounded-lg hover:bg-muted/60"
-              title={t('common.close', 'Close')}
-            >
-              <X size={16} />
-            </button>
+                <div className="w-px bg-border/60 self-stretch" />
+
+                {/* Link transfer */}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={!canOpenLinkDialog}
+                  title={linkDisabledTooltip ?? t('transactions.linkAsTransfer')}
+                  onClick={() => setLinkTransferDialogOpen(true)}
+                  className="h-8 px-3 shrink-0 text-sm"
+                >
+                  <ArrowLeftRight size={15} className="mr-1.5" />
+                  <span className="hidden lg:inline">{t('transactions.linkAsTransfer')}</span>
+                </Button>
+
+                <div className="w-px bg-border/60 self-stretch" />
+
+                {/* Create Rule — only when exactly one non-shared transaction is selected */}
+                {selectedIds.size === 1 &&
+                  (() => {
+                    const selectedTx = filteredItems.find((tx) => selectedIds.has(tx.id))
+                    if (!selectedTx || selectedTx.is_shared) return null
+                    return (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleCreateRuleFromTransaction(selectedTx)}
+                        className="h-8 px-3 shrink-0 text-sm"
+                        title={t('transactions.createRule')}
+                      >
+                        <SlidersHorizontal size={15} className="lg:mr-1.5" />
+                        <span className="hidden lg:inline">{t('transactions.createRule')}</span>
+                      </Button>
+                    )
+                  })()}
+
+                {/* Bulk Delete */}
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => setBulkDeleteConfirmOpen(true)}
+                  disabled={bulkDeleteMutation.isPending}
+                  className="h-8 px-3 shrink-0 text-sm"
+                >
+                  <Trash2 size={15} className="lg:mr-1.5" />
+                  <span className="hidden lg:inline">{t('common.delete')}</span>
+                </Button>
+
+                <div className="ml-auto" />
+
+                {/* Close */}
+                <button
+                  onClick={() => {
+                    setSelectedIds(new Set())
+                    setBulkCategory('')
+                    setBulkTagInput('')
+                  }}
+                  className="text-muted-foreground hover:text-foreground p-2 shrink-0 self-center rounded-lg hover:bg-muted/60"
+                  title={t('common.close', 'Close')}
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* Bulk Add-to-Group Dialog */}
@@ -2164,9 +2300,7 @@ export default function TransactionsPage() {
         open={bulkAddToGroupOpen}
         onClose={() => setBulkAddToGroupOpen(false)}
         selectedCount={selectedIds.size}
-        onSubmit={(payload) =>
-          bulkAddToGroupMutation.mutate({ ids: Array.from(selectedIds), payload })
-        }
+        onSubmit={(payload) => bulkAddToGroupMutation.mutate({ ids: Array.from(selectedIds), payload })}
         isPending={bulkAddToGroupMutation.isPending}
       />
 
@@ -2216,20 +2350,22 @@ export default function TransactionsPage() {
         categoryGroups={categoryGroupsList ?? []}
         accounts={accountsList ?? []}
         recurringMatch={
-          editingTx?.recurring_transaction_id
-            ? recurringById.get(editingTx.recurring_transaction_id)
-            : undefined
+          editingTx?.recurring_transaction_id ? recurringById.get(editingTx.recurring_transaction_id) : undefined
         }
         onSave={handleTransactionSave}
-        onDelete={editingTx ? () => {
-          if (isManualInstallmentSeriesRow(editingTx)) {
-            // Deleting one row of a manual series — ask the user
-            // whether to drop this, this+future, or all installments.
-            setPendingSeriesDeleteId(editingTx.id)
-          } else {
-            deleteMutation.mutate({ id: editingTx.id })
-          }
-        } : undefined}
+        onDelete={
+          editingTx
+            ? () => {
+                if (isManualInstallmentSeriesRow(editingTx)) {
+                  // Deleting one row of a manual series — ask the user
+                  // whether to drop this, this+future, or all installments.
+                  setPendingSeriesDeleteId(editingTx.id)
+                } else {
+                  deleteMutation.mutate({ id: editingTx.id })
+                }
+              }
+            : undefined
+        }
         onUnlinkTransfer={(pairId) => unlinkTransferMutation.mutate(pairId)}
         onIgnoreChanged={invalidateAfterTxMutation}
         onCreateRule={(tx) => {
@@ -2237,8 +2373,17 @@ export default function TransactionsPage() {
           setEditingTx(null)
           handleCreateRuleFromTransaction(tx)
         }}
-        loading={createMutation.isPending || updateMutation.isPending || deleteMutation.isPending || unlinkTransferMutation.isPending}
-        error={createMutation.error || updateMutation.error ? extractApiError(createMutation.error || updateMutation.error) : null}
+        loading={
+          createMutation.isPending ||
+          updateMutation.isPending ||
+          deleteMutation.isPending ||
+          unlinkTransferMutation.isPending
+        }
+        error={
+          createMutation.error || updateMutation.error
+            ? extractApiError(createMutation.error || updateMutation.error)
+            : null
+        }
         isSynced={editingTx?.source === 'sync'}
       />
 
@@ -2252,9 +2397,7 @@ export default function TransactionsPage() {
           <DialogHeader>
             <DialogTitle>{t('transactions.confirmTransferCategoryTitle')}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t('transactions.confirmTransferCategoryDesc')}
-          </p>
+          <p className="text-sm text-muted-foreground">{t('transactions.confirmTransferCategoryDesc')}</p>
           <DialogFooter className="flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-2">
             <Button
               className="w-full sm:w-auto"
@@ -2276,9 +2419,7 @@ export default function TransactionsPage() {
               onClick={() => submitPendingTransferCategoryUpdate(true)}
               disabled={updateMutation.isPending}
             >
-              {updateMutation.isPending
-                ? t('common.loading')
-                : t('transactions.confirmTransferCategoryBoth')}
+              {updateMutation.isPending ? t('common.loading') : t('transactions.confirmTransferCategoryBoth')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2296,9 +2437,7 @@ export default function TransactionsPage() {
           <DialogHeader>
             <DialogTitle>{t('transactions.installmentScopeTitle')}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t('transactions.installmentScopeDeleteDesc')}
-          </p>
+          <p className="text-sm text-muted-foreground">{t('transactions.installmentScopeDeleteDesc')}</p>
           <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2">
             <Button
               autoFocus
@@ -2335,9 +2474,7 @@ export default function TransactionsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('transactions.bulkDeleteTitle', { count: selectedIds.size })}</DialogTitle>
-            <DialogDescription>
-              {t('transactions.bulkDeleteDescription')}
-            </DialogDescription>
+            <DialogDescription>{t('transactions.bulkDeleteDescription')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setBulkDeleteConfirmOpen(false)}>
@@ -2358,7 +2495,10 @@ export default function TransactionsPage() {
       <RuleDialog
         key={createRuleOpen ? 'rule-open' : 'rule-closed'}
         open={createRuleOpen}
-        onClose={() => { setCreateRuleOpen(false); setCreateRuleInitialData(undefined) }}
+        onClose={() => {
+          setCreateRuleOpen(false)
+          setCreateRuleInitialData(undefined)
+        }}
         rule={null}
         categories={categoriesList ?? []}
         categoryGroups={categoryGroupsList ?? []}

@@ -5,13 +5,7 @@ import { CategorySelect } from '@/components/category-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
-import {
-  checkLines,
-  emptyRow,
-  rowBasisPoints,
-  rowCents,
-  type CategoryLineRow,
-} from '@/lib/category-lines'
+import { checkLines, emptyRow, rowBasisPoints, rowCents, type CategoryLineRow } from '@/lib/category-lines'
 import { formatAmountInput, formatCurrency } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { Category, CategoryGroup, CategoryLineShareType } from '@/types'
@@ -58,9 +52,16 @@ export function TransactionCategoryLinesSection({
   }))
 
   const update = (key: string, patch: Partial<CategoryLineRow>) =>
-    onChange(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)), shareType)
+    onChange(
+      rows.map((r) => (r.key === key ? { ...r, ...patch } : r)),
+      shareType,
+    )
 
-  const remove = (key: string) => onChange(rows.filter((r) => r.key !== key), shareType)
+  const remove = (key: string) =>
+    onChange(
+      rows.filter((r) => r.key !== key),
+      shareType,
+    )
 
   const add = () => onChange([...rows, emptyRow()], shareType)
 
@@ -99,9 +100,11 @@ export function TransactionCategoryLinesSection({
   // Put what is left into the last part without a share, or the last part.
   const fillRemaining = () => {
     if (check.remaining <= 0) return
-    const target = [...rows].reverse().find((r) =>
-      shareType === 'exact' ? !rowCents(r.amount, locale) : !rowBasisPoints(r.percent),
-    ) ?? rows[rows.length - 1]
+    const target =
+      [...rows]
+        .reverse()
+        .find((r) => (shareType === 'exact' ? !rowCents(r.amount, locale) : !rowBasisPoints(r.percent))) ??
+      rows[rows.length - 1]
     if (!target) return
     if (shareType === 'exact') {
       const current = rowCents(target.amount, locale) ?? 0
@@ -150,61 +153,59 @@ export function TransactionCategoryLinesSection({
         {rows.map((row) => {
           // A category holds one part of a split; the ones other parts
           // already use are left out of this part's picker.
-          const taken = new Set(
-            rows.filter((r) => r.key !== row.key && r.categoryId).map((r) => r.categoryId),
-          )
+          const taken = new Set(rows.filter((r) => r.key !== row.key && r.categoryId).map((r) => r.categoryId))
           // A part keeps its own category listed even when a saved split
           // repeats it, so the picker shows it rather than "hidden".
           taken.delete(row.categoryId)
           return (
-          <div key={row.key} className="flex items-center gap-2">
-            <div className="flex-1 min-w-0">
-              <CategorySelect
-                value={row.categoryId}
-                onChange={(value) => update(row.key, { categoryId: value })}
-                categories={usable.filter((c) => !taken.has(c.id))}
-                groups={usableGroups.map((group) => ({
-                  ...group,
-                  categories: group.categories.filter((c) => !taken.has(c.id)),
-                }))}
-                currentCategory={row.category}
-                placeholder={t('categoryLines.pickCategory')}
-                className="bg-card"
-              />
-            </div>
-            {shareType === 'exact' ? (
-              <Input
-                type="text"
-                inputMode="decimal"
-                aria-label={t('categoryLines.partAmount')}
-                className="w-28 bg-card text-right tabular-nums"
-                value={hideAmounts ? '•••••' : row.amount}
-                readOnly={hideAmounts}
-                onChange={(e) => update(row.key, { amount: e.target.value })}
-              />
-            ) : (
-              <div className="flex items-center gap-1">
+            <div key={row.key} className="flex items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <CategorySelect
+                  value={row.categoryId}
+                  onChange={(value) => update(row.key, { categoryId: value })}
+                  categories={usable.filter((c) => !taken.has(c.id))}
+                  groups={usableGroups.map((group) => ({
+                    ...group,
+                    categories: group.categories.filter((c) => !taken.has(c.id)),
+                  }))}
+                  currentCategory={row.category}
+                  placeholder={t('categoryLines.pickCategory')}
+                  className="bg-card"
+                />
+              </div>
+              {shareType === 'exact' ? (
                 <Input
                   type="text"
                   inputMode="decimal"
-                  aria-label={t('categoryLines.partPercent')}
-                  className="w-20 bg-card text-right tabular-nums"
-                  value={row.percent}
-                  onChange={(e) => update(row.key, { percent: e.target.value })}
+                  aria-label={t('categoryLines.partAmount')}
+                  className="w-28 bg-card text-right tabular-nums"
+                  value={hideAmounts ? '•••••' : row.amount}
+                  readOnly={hideAmounts}
+                  onChange={(e) => update(row.key, { amount: e.target.value })}
                 />
-                <span className="text-xs text-muted-foreground">%</span>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => remove(row.key)}
-              disabled={rows.length <= 2}
-              aria-label={t('categoryLines.removePart')}
-              className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed shrink-0 cursor-pointer"
-            >
-              <X size={14} />
-            </button>
-          </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    aria-label={t('categoryLines.partPercent')}
+                    className="w-20 bg-card text-right tabular-nums"
+                    value={row.percent}
+                    onChange={(e) => update(row.key, { percent: e.target.value })}
+                  />
+                  <span className="text-xs text-muted-foreground">%</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => remove(row.key)}
+                disabled={rows.length <= 2}
+                aria-label={t('categoryLines.removePart')}
+                className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed shrink-0 cursor-pointer"
+              >
+                <X size={14} />
+              </button>
+            </div>
           )
         })}
       </div>
@@ -219,8 +220,8 @@ export function TransactionCategoryLinesSection({
           {t('categoryLines.addPart')}
         </Button>
         <div className="flex items-center gap-2 text-xs">
-          {!hideAmounts && (
-            check.remaining === 0 ? (
+          {!hideAmounts &&
+            (check.remaining === 0 ? (
               check.valid && (
                 <span className="text-emerald-600 dark:text-emerald-400">{t('categoryLines.allAllocated')}</span>
               )
@@ -241,8 +242,7 @@ export function TransactionCategoryLinesSection({
               <span className="text-red-600 dark:text-red-400">
                 {t('categoryLines.over', { value: remainingLabel })}
               </span>
-            )
-          )}
+            ))}
         </div>
       </div>
 

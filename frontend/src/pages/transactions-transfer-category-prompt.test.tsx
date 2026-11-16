@@ -8,17 +8,30 @@ import type * as WorkspaceContextModule from '@/contexts/workspace-context'
 
 const api = vi.hoisted(() => ({
   transactions: {
-    list: vi.fn(), update: vi.fn(), delete: vi.fn(), create: vi.fn(),
-    transferPair: vi.fn(), toggleIgnore: vi.fn(), unlinkRecurring: vi.fn(),
+    list: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    create: vi.fn(),
+    transferPair: vi.fn(),
+    toggleIgnore: vi.fn(),
+    unlinkRecurring: vi.fn(),
     attachments: {
-      list: vi.fn(), upload: vi.fn(), delete: vi.fn(), rename: vi.fn(), downloadUrl: vi.fn(),
+      list: vi.fn(),
+      upload: vi.fn(),
+      delete: vi.fn(),
+      rename: vi.fn(),
+      downloadUrl: vi.fn(),
     },
   },
   categories: { list: vi.fn(), listIncludingHidden: vi.fn(), create: vi.fn() },
   categoryGroups: { list: vi.fn(), listIncludingHidden: vi.fn() },
   accounts: {
-    get: vi.fn(), list: vi.fn(), bills: vi.fn(), summary: vi.fn(),
-    update: vi.fn(), runningBalance: vi.fn(),
+    get: vi.fn(),
+    list: vi.fn(),
+    bills: vi.fn(),
+    summary: vi.fn(),
+    update: vi.fn(),
+    runningBalance: vi.fn(),
   },
   recurring: { list: vi.fn() },
   payees: { list: vi.fn(), create: vi.fn() },
@@ -50,52 +63,115 @@ vi.mock('@/contexts/workspace-context', async (importOriginal) => {
 })
 vi.mock('@/contexts/collection-filter-context', () => ({
   useCollectionFilter: () => ({
-    collections: [], activeCollectionId: null, activeCollection: null,
-    setActiveCollectionId: () => {}, activeAccountIds: null, activeWalletIds: null,
+    collections: [],
+    activeCollectionId: null,
+    activeCollection: null,
+    setActiveCollectionId: () => {},
+    activeAccountIds: null,
+    activeWalletIds: null,
   }),
 }))
 
 const oldCategory: Category = {
-  id: 'category-old', user_id: 'user-1', group_id: 'group-1', name: 'Old category',
-  icon: 'circle', color: '#111111', is_system: false, is_hidden: false,
-  treat_as_transfer: false, is_ignored: false,
+  id: 'category-old',
+  user_id: 'user-1',
+  group_id: 'group-1',
+  name: 'Old category',
+  icon: 'circle',
+  color: '#111111',
+  is_system: false,
+  is_hidden: false,
+  treat_as_transfer: false,
+  is_ignored: false,
 }
 const newCategory: Category = {
-  ...oldCategory, id: 'category-new', name: 'New category', color: '#222222',
+  ...oldCategory,
+  id: 'category-new',
+  name: 'New category',
+  color: '#222222',
 }
 const categoryGroup: CategoryGroup = {
-  id: 'group-1', user_id: 'user-1', name: 'Everyday', icon: 'circle', color: '#333333',
-  position: 0, is_system: false, is_hidden: false, categories: [oldCategory, newCategory],
+  id: 'group-1',
+  user_id: 'user-1',
+  name: 'Everyday',
+  icon: 'circle',
+  color: '#333333',
+  position: 0,
+  is_system: false,
+  is_hidden: false,
+  categories: [oldCategory, newCategory],
 }
 const checkingAccount = {
-  id: 'account-1', user_id: 'user-1', connection_id: null, external_id: null,
-  name: 'Checking', display_name: null, masked_number: null, institution_name: null,
-  institution_logo_url: null, type: 'checking', currency: 'USD', balance: 100,
-  initial_balance: 0, initial_balance_date: null, is_archived: false, is_active: true,
+  id: 'account-1',
+  user_id: 'user-1',
+  connection_id: null,
+  external_id: null,
+  name: 'Checking',
+  display_name: null,
+  masked_number: null,
+  institution_name: null,
+  institution_logo_url: null,
+  type: 'checking',
+  currency: 'USD',
+  balance: 100,
+  initial_balance: 0,
+  initial_balance_date: null,
+  is_archived: false,
+  is_active: true,
 } as unknown as Account
 const counterpartAccount = {
-  ...checkingAccount, id: 'account-2', name: 'Savings', type: 'savings',
+  ...checkingAccount,
+  id: 'account-2',
+  name: 'Savings',
+  type: 'savings',
 } as Account
 const transaction: Transaction = {
-  id: 'transaction-1', user_id: 'user-1', account_id: checkingAccount.id,
-  category_id: oldCategory.id, category: oldCategory, external_id: null,
-  description: 'Linked transfer', original_description: null, amount: 25, currency: 'USD',
-  date: '2026-10-20', type: 'debit', source: 'manual', status: 'posted', payee: null,
-  payee_id: null, payee_name: null, notes: null, transfer_pair_id: 'pair-1',
+  id: 'transaction-1',
+  user_id: 'user-1',
+  account_id: checkingAccount.id,
+  category_id: oldCategory.id,
+  category: oldCategory,
+  external_id: null,
+  description: 'Linked transfer',
+  original_description: null,
+  amount: 25,
+  currency: 'USD',
+  date: '2026-10-20',
+  type: 'debit',
+  source: 'manual',
+  status: 'posted',
+  payee: null,
+  payee_id: null,
+  payee_name: null,
+  notes: null,
+  transfer_pair_id: 'pair-1',
   transfer_counterpart: { account_id: counterpartAccount.id, account_name: counterpartAccount.name },
-  amount_primary: null, fx_rate_used: null, fx_fallback: false, installment_number: null,
-  total_installments: null, installment_total_amount: null, installment_purchase_date: null,
-  installment_series_id: null, bill_id: null, effective_bill_date: null,
-  reporting_date_override: null, splits: [], is_ignored: false,
+  amount_primary: null,
+  fx_rate_used: null,
+  fx_fallback: false,
+  installment_number: null,
+  total_installments: null,
+  installment_total_amount: null,
+  installment_purchase_date: null,
+  installment_series_id: null,
+  bill_id: null,
+  effective_bill_date: null,
+  reporting_date_override: null,
+  splits: [],
+  is_ignored: false,
 }
 const counterpart: Transaction = {
-  ...transaction, id: 'transaction-2', account_id: counterpartAccount.id,
-  type: 'credit', description: 'Linked transfer counterpart',
+  ...transaction,
+  id: 'transaction-2',
+  account_id: counterpartAccount.id,
+  type: 'credit',
+  description: 'Linked transfer counterpart',
 }
 
 async function openCategoryPrompt() {
   const view = renderWithProviders(<TransactionsPage />, {
-    route: '/transactions', path: '/transactions',
+    route: '/transactions',
+    path: '/transactions',
   })
 
   await view.user.click(await screen.findByText(transaction.description))
@@ -111,15 +187,19 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.setSystemTime(new Date('2026-10-20T12:00:00'))
   api.transactions.list.mockImplementation(async () => ({
-    items: [api.transactions.update.mock.calls.length > 0
-      ? { ...transaction, category_id: newCategory.id, category: newCategory }
-      : transaction],
+    items: [
+      api.transactions.update.mock.calls.length > 0
+        ? { ...transaction, category_id: newCategory.id, category: newCategory }
+        : transaction,
+    ],
     total: 1,
     page: 1,
     limit: 50,
   }))
   api.transactions.update.mockResolvedValue({
-    ...transaction, category_id: newCategory.id, category: newCategory,
+    ...transaction,
+    category_id: newCategory.id,
+    category: newCategory,
   })
   api.transactions.transferPair.mockResolvedValue(counterpart)
   api.transactions.attachments.list.mockResolvedValue([])
@@ -136,7 +216,9 @@ beforeEach(() => {
   api.reconciliation.suggestions.mockResolvedValue([])
   api.currencies.list.mockResolvedValue([{ code: 'USD', symbol: '$', name: 'US Dollar', flag: '🇺🇸' }])
   api.settings.attachments.mockResolvedValue({
-    allowed_extensions: [], max_file_size_mb: 10, max_attachments_per_transaction: 10,
+    allowed_extensions: [],
+    max_file_size_mb: 10,
+    max_attachments_per_transaction: 10,
   })
 })
 
@@ -151,7 +233,9 @@ describe('paired-transfer category confirmation', () => {
     await user.click(screen.getByRole('button', { name: t('common.cancel') }))
 
     expect(api.transactions.update).not.toHaveBeenCalled()
-    expect(screen.queryByRole('heading', { name: t('transactions.confirmTransferCategoryTitle') })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: t('transactions.confirmTransferCategoryTitle') }),
+    ).not.toBeInTheDocument()
   })
 
   it.each([
@@ -162,13 +246,15 @@ describe('paired-transfer category confirmation', () => {
 
     await user.click(screen.getByRole('button', { name: t(actionKey) }))
 
-    await waitFor(() => expect(api.transactions.update).toHaveBeenCalledWith(
-      transaction.id,
-      expect.objectContaining({
-        category_id: newCategory.id,
-        apply_to_transfer_pair: applyToTransferPair,
-      }),
-    ))
+    await waitFor(() =>
+      expect(api.transactions.update).toHaveBeenCalledWith(
+        transaction.id,
+        expect.objectContaining({
+          category_id: newCategory.id,
+          apply_to_transfer_pair: applyToTransferPair,
+        }),
+      ),
+    )
 
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: t('common.edit') })).not.toBeInTheDocument()

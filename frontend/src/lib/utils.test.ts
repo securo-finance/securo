@@ -59,8 +59,6 @@ describe('normalizeText', () => {
   })
 
   it('produces a value that substring matching can use directly', () => {
-    expect(normalizeText('Conta Corrente').includes(normalizeText('corrente'))).toBe(
-      true,
-    )
+    expect(normalizeText('Conta Corrente').includes(normalizeText('corrente'))).toBe(true)
   })
 })

@@ -17,24 +17,16 @@ describe('PageHeader', () => {
     // content; the section line above it is not a heading.
     renderWithProviders(<PageHeader section="Money" title="Transactions" />)
 
-    expect(
-      screen.getByRole('heading', { level: 1, name: 'Transactions' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Transactions' })).toBeInTheDocument()
     expect(screen.getAllByRole('heading')).toHaveLength(1)
   })
 
   it('renders the optional action', () => {
     renderWithProviders(
-      <PageHeader
-        section="Money"
-        title="Transactions"
-        action={<button type="button">New transaction</button>}
-      />,
+      <PageHeader section="Money" title="Transactions" action={<button type="button">New transaction</button>} />,
     )
 
-    expect(
-      screen.getByRole('button', { name: 'New transaction' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New transaction' })).toBeInTheDocument()
   })
 
   it('renders without an action', () => {

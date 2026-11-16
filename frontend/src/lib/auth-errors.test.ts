@@ -5,9 +5,9 @@ import { isServerUnreachable } from '@/lib/auth-errors'
 
 /** Minimal stand-in for the shape the auth screens actually branch on. */
 function axiosError(status?: number): AxiosError {
-  return (status === undefined
-    ? { isAxiosError: true, response: undefined }
-    : { isAxiosError: true, response: { status } }) as AxiosError
+  return (
+    status === undefined ? { isAxiosError: true, response: undefined } : { isAxiosError: true, response: { status } }
+  ) as AxiosError
 }
 
 describe('isServerUnreachable', () => {

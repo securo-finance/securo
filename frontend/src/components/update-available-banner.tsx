@@ -28,10 +28,7 @@ export function UpdateAvailableBanner({ onOpen }: UpdateAvailableBannerProps) {
       >
         <Download size={14} className="shrink-0 text-sidebar-muted" />
         <span className="flex-1 truncate">{t('app.updateAvailable')}</span>
-        <span
-          aria-hidden="true"
-          className="h-2 w-2 shrink-0 rounded-full bg-emerald-500"
-        />
+        <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
       </button>
     </div>
   )

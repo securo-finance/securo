@@ -80,10 +80,18 @@ class MockResizeObserver {
   observe(target: Element) {
     const contentRect = target.getBoundingClientRect()
     const size = [{ inlineSize: contentRect.width, blockSize: contentRect.height }]
-    this.callback([{
-      target, contentRect, borderBoxSize: size, contentBoxSize: size,
-      devicePixelContentBoxSize: size,
-    }], this)
+    this.callback(
+      [
+        {
+          target,
+          contentRect,
+          borderBoxSize: size,
+          contentBoxSize: size,
+          devicePixelContentBoxSize: size,
+        },
+      ],
+      this,
+    )
   }
 
   unobserve() {}
@@ -91,8 +99,7 @@ class MockResizeObserver {
 }
 
 globalThis.ResizeObserver = MockResizeObserver
-globalThis.IntersectionObserver =
-  MockObserver as unknown as typeof IntersectionObserver
+globalThis.IntersectionObserver = MockObserver as unknown as typeof IntersectionObserver
 
 // Radix Select and DropdownMenu move focus with these three. jsdom implements
 // none of them, and the omission surfaces as "target.hasPointerCapture is not

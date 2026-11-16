@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getConnectionName } from './connection-utils'
 
-const t = (key: string, opts?: Record<string, unknown>) =>
-  `${key}:${opts?.provider}:${opts?.count}`
+const t = (key: string, opts?: Record<string, unknown>) => `${key}:${opts?.provider}:${opts?.count}`
 
 describe('getConnectionName', () => {
   it('a user rename always wins', () => {
@@ -55,9 +54,7 @@ describe('getConnectionName', () => {
   })
 
   it('no institutions falls back to the connection label (Pluggy/Enable)', () => {
-    expect(
-      getConnectionName({ provider: 'pluggy', institution_name: 'Nubank', institutions: [] }, t),
-    ).toBe('Nubank')
+    expect(getConnectionName({ provider: 'pluggy', institution_name: 'Nubank', institutions: [] }, t)).toBe('Nubank')
     expect(getConnectionName({ institution_name: 'Nubank' }, t)).toBe('Nubank')
   })
 })

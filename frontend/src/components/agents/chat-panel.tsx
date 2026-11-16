@@ -43,12 +43,25 @@ interface DraftMessage {
   id: string
   role: 'user' | 'assistant'
   text: string
-  tools: { name: string; args: Record<string, unknown>; result?: { ok?: boolean; data?: unknown; text?: string | null } }[]
+  tools: {
+    name: string
+    args: Record<string, unknown>
+    result?: { ok?: boolean; data?: unknown; text?: string | null }
+  }[]
   error?: string
   pending?: boolean
 }
 
-export function ChatPanel({ agent, conversationId, onConversationCreated, focusSignal, getPageContext, onConversationMissing, initialMessage, onInitialMessageSent }: Props) {
+export function ChatPanel({
+  agent,
+  conversationId,
+  onConversationCreated,
+  focusSignal,
+  getPageContext,
+  onConversationMissing,
+  initialMessage,
+  onInitialMessageSent,
+}: Props) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [input, setInput] = useState('')
@@ -263,15 +276,13 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
             the optimistic bubble once history already contains a
             matching user message. */}
         {pendingUser &&
-          !(history ?? []).some(
-            (m) => m.role === 'user' && (m.content ?? '').trim() === pendingUser.text.trim(),
-          ) && (
-          <div className="flex justify-end">
-            <div className="max-w-[80%] rounded-lg px-3 py-2 bg-primary text-primary-foreground">
-              <div className="whitespace-pre-wrap text-sm">{pendingUser.text}</div>
+          !(history ?? []).some((m) => m.role === 'user' && (m.content ?? '').trim() === pendingUser.text.trim()) && (
+            <div className="flex justify-end">
+              <div className="max-w-[80%] rounded-lg px-3 py-2 bg-primary text-primary-foreground">
+                <div className="whitespace-pre-wrap text-sm">{pendingUser.text}</div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
         {draft && (
           <div className="space-y-2">
             {draft.tools.map((tool, i) => {
@@ -443,7 +454,6 @@ function HistoryView({ agent, history }: { agent: Agent; history: AgentMessage[]
   )
 }
 
-
 /** Shown in a fresh conversation (no history, no draft). Centers the
  *  Securo mark + agent name and surfaces ~6 randomized example prompts
  *  pulled from i18n. Picking one fills the textarea and focuses it
@@ -492,9 +502,7 @@ function ChatEmptyState({ agent, onPick }: { agent: Agent; onPick: (text: string
       hash = (hash * 31 + agent.id.charCodeAt(i)) | 0
     }
     const start = Math.abs(hash) % allPrompts.length
-    return Array.from({ length: Math.min(3, allPrompts.length) }, (_, i) =>
-      allPrompts[(start + i) % allPrompts.length],
-    )
+    return Array.from({ length: Math.min(3, allPrompts.length) }, (_, i) => allPrompts[(start + i) % allPrompts.length])
   }, [allPrompts, agent.id])
 
   return (
@@ -504,9 +512,7 @@ function ChatEmptyState({ agent, onPick }: { agent: Agent; onPick: (text: string
       <ShellLogo size={56} className="text-primary opacity-90" />
       <div className="space-y-1 px-6">
         <div className="text-base font-semibold">{agent.name}</div>
-        {agent.description && (
-          <p className="text-xs text-muted-foreground line-clamp-2">{agent.description}</p>
-        )}
+        {agent.description && <p className="text-xs text-muted-foreground line-clamp-2">{agent.description}</p>}
         {connectorLabel && (
           <div className="text-[11px] text-muted-foreground/80 mt-1.5">
             {t('agents.emptyState.connectedVia', 'via')} <span className="font-mono">{connectorLabel}</span>

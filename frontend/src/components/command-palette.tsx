@@ -55,19 +55,102 @@ type StaticItem = {
 }
 
 const NAV_ITEMS: StaticItem[] = [
-  { id: 'nav-dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard, path: '/', keywords: ['home', 'inicio', 'início'] },
-  { id: 'nav-transactions', labelKey: 'nav.transactions', icon: ArrowLeftRight, path: '/transactions', keywords: ['tx', 'transacoes', 'transações'], module: 'transactions' },
-  { id: 'nav-invoices', labelKey: 'nav.invoices', icon: Receipt, path: '/invoices', keywords: ['cobrancas', 'cobranças', 'faturas', 'clientes', 'recebimentos'], module: 'invoices' },
-  { id: 'nav-accounts', labelKey: 'nav.accounts', icon: Building2, path: '/accounts', keywords: ['contas'], module: 'accounts' },
-  { id: 'nav-import', labelKey: 'nav.import', icon: Upload, path: '/import', keywords: ['csv', 'ofx', 'importar'], module: 'import' },
-  { id: 'nav-reports', labelKey: 'nav.reports', icon: BarChart3, path: '/reports', keywords: ['relatorios', 'relatórios', 'charts'], module: 'reports' },
-  { id: 'nav-assets', labelKey: 'nav.assets', icon: Landmark, path: '/assets', keywords: ['patrimonio', 'patrimônio'], module: 'assets' },
-  { id: 'nav-budgets', labelKey: 'nav.budgets', icon: PiggyBank, path: '/budgets', keywords: ['orcamentos', 'orçamentos'], module: 'budgets' },
+  {
+    id: 'nav-dashboard',
+    labelKey: 'nav.dashboard',
+    icon: LayoutDashboard,
+    path: '/',
+    keywords: ['home', 'inicio', 'início'],
+  },
+  {
+    id: 'nav-transactions',
+    labelKey: 'nav.transactions',
+    icon: ArrowLeftRight,
+    path: '/transactions',
+    keywords: ['tx', 'transacoes', 'transações'],
+    module: 'transactions',
+  },
+  {
+    id: 'nav-invoices',
+    labelKey: 'nav.invoices',
+    icon: Receipt,
+    path: '/invoices',
+    keywords: ['cobrancas', 'cobranças', 'faturas', 'clientes', 'recebimentos'],
+    module: 'invoices',
+  },
+  {
+    id: 'nav-accounts',
+    labelKey: 'nav.accounts',
+    icon: Building2,
+    path: '/accounts',
+    keywords: ['contas'],
+    module: 'accounts',
+  },
+  {
+    id: 'nav-import',
+    labelKey: 'nav.import',
+    icon: Upload,
+    path: '/import',
+    keywords: ['csv', 'ofx', 'importar'],
+    module: 'import',
+  },
+  {
+    id: 'nav-reports',
+    labelKey: 'nav.reports',
+    icon: BarChart3,
+    path: '/reports',
+    keywords: ['relatorios', 'relatórios', 'charts'],
+    module: 'reports',
+  },
+  {
+    id: 'nav-assets',
+    labelKey: 'nav.assets',
+    icon: Landmark,
+    path: '/assets',
+    keywords: ['patrimonio', 'patrimônio'],
+    module: 'assets',
+  },
+  {
+    id: 'nav-budgets',
+    labelKey: 'nav.budgets',
+    icon: PiggyBank,
+    path: '/budgets',
+    keywords: ['orcamentos', 'orçamentos'],
+    module: 'budgets',
+  },
   { id: 'nav-goals', labelKey: 'nav.goals', icon: Target, path: '/goals', keywords: ['metas'], module: 'goals' },
-  { id: 'nav-recurring', labelKey: 'nav.recurring', icon: Repeat, path: '/recurring', keywords: ['recorrentes'], module: 'recurring' },
-  { id: 'nav-categories', labelKey: 'nav.categories', icon: Tag, path: '/categories', keywords: ['categorias'], module: 'categories' },
-  { id: 'nav-payees', labelKey: 'nav.payees', icon: Users, path: '/payees', keywords: ['beneficiarios', 'beneficiários'], module: 'payees' },
-  { id: 'nav-rules', labelKey: 'nav.rules', icon: SlidersHorizontal, path: '/rules', keywords: ['regras'], module: 'rules' },
+  {
+    id: 'nav-recurring',
+    labelKey: 'nav.recurring',
+    icon: Repeat,
+    path: '/recurring',
+    keywords: ['recorrentes'],
+    module: 'recurring',
+  },
+  {
+    id: 'nav-categories',
+    labelKey: 'nav.categories',
+    icon: Tag,
+    path: '/categories',
+    keywords: ['categorias'],
+    module: 'categories',
+  },
+  {
+    id: 'nav-payees',
+    labelKey: 'nav.payees',
+    icon: Users,
+    path: '/payees',
+    keywords: ['beneficiarios', 'beneficiários'],
+    module: 'payees',
+  },
+  {
+    id: 'nav-rules',
+    labelKey: 'nav.rules',
+    icon: SlidersHorizontal,
+    path: '/rules',
+    keywords: ['regras'],
+    module: 'rules',
+  },
 ]
 
 const QUICK_ACTIONS: StaticItem[] = [
@@ -111,7 +194,10 @@ const QUICK_ACTIONS: StaticItem[] = [
 // Entity type → icon + accent color
 // ---------------------------------------------------------------------------
 
-const ENTITY_META: Record<SearchHitType, { icon: React.ElementType; tintClass: string; bgClass: string; labelKey: string; pathFor: (hit: SearchHit) => string }> = {
+const ENTITY_META: Record<
+  SearchHitType,
+  { icon: React.ElementType; tintClass: string; bgClass: string; labelKey: string; pathFor: (hit: SearchHit) => string }
+> = {
   transaction: {
     icon: Receipt,
     tintClass: 'text-indigo-500 dark:text-indigo-300',
@@ -245,7 +331,6 @@ function formatHitDate(iso: string | null, locale: string): string | null {
   }
 }
 
-
 function matchesQuery(query: string, haystacks: Array<string | undefined>): boolean {
   const q = normalizeText(query.trim())
   if (!q) return true
@@ -290,7 +375,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       }
       onOpenChange(next)
     },
-    [onOpenChange]
+    [onOpenChange],
   )
 
   // Debounce query → debounced (150ms)
@@ -324,20 +409,23 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     // destination the workspace doesn't show.
     const available = NAV_ITEMS.filter((n) => !n.module || hasModule(n.module))
     if (debounced.trim().length === 0) return available
-    return available.filter((n) =>
-      matchesQuery(debounced, [t(n.labelKey), n.path, ...(n.keywords ?? [])])
-    )
+    return available.filter((n) => matchesQuery(debounced, [t(n.labelKey), n.path, ...(n.keywords ?? [])]))
   }, [debounced, t, hasModule])
 
   const filteredQuickActions = useMemo(() => {
     if (debounced.trim().length === 0) return QUICK_ACTIONS
-    return QUICK_ACTIONS.filter((a) =>
-      matchesQuery(debounced, [t(a.labelKey), ...(a.keywords ?? [])])
-    )
+    return QUICK_ACTIONS.filter((a) => matchesQuery(debounced, [t(a.labelKey), ...(a.keywords ?? [])]))
   }, [debounced, t])
 
   const runAndClose = useCallback(
-    (item: { id: string; label: string; path: string; iconName: string; sublabel?: string | null; source?: RecentItem['source'] }) => {
+    (item: {
+      id: string
+      label: string
+      path: string
+      iconName: string
+      sublabel?: string | null
+      source?: RecentItem['source']
+    }) => {
       saveRecent({
         id: item.id,
         label: item.label,
@@ -350,13 +438,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       // Slight delay so dialog closes before navigation animation
       setTimeout(() => navigate(item.path), 0)
     },
-    [navigate, handleOpenChange]
+    [navigate, handleOpenChange],
   )
 
   const showEmptyHome = debounced.trim().length === 0
   const hasAnyResults = searchResults.length > 0
-  const hasAnyLocalMatch =
-    filteredNavItems.length > 0 || filteredQuickActions.length > 0
+  const hasAnyLocalMatch = filteredNavItems.length > 0 || filteredQuickActions.length > 0
   const showEmptyState = !showEmptyHome && !hasAnyResults && !hasAnyLocalMatch
 
   return (
@@ -366,7 +453,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           className={cn(
             'fixed inset-0 z-50 backdrop-blur-[3px] bg-background/40',
             'data-[state=open]:animate-in data-[state=closed]:animate-out',
-            'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0'
+            'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
           )}
         />
         <DialogPrimitive.Content
@@ -376,7 +463,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
             'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',
             'data-[state=open]:slide-in-from-top-4 data-[state=closed]:slide-out-to-top-4',
-            'duration-150 outline-none'
+            'duration-150 outline-none',
           )}
         >
           <DialogPrimitive.Title className="sr-only">{t('cmdk.title')}</DialogPrimitive.Title>
@@ -388,7 +475,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             className={cn(
               'relative overflow-hidden rounded-2xl border border-border/80 bg-card',
               'shadow-[0_30px_80px_-20px_rgba(15,23,42,0.35)] dark:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)]',
-              'ring-1 ring-black/[0.02] dark:ring-white/[0.04]'
+              'ring-1 ring-black/[0.02] dark:ring-white/[0.04]',
             )}
           >
             {/* Decorative gradient rim */}
@@ -408,7 +495,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 className={cn(
                   'flex-1 bg-transparent text-[14.5px] text-foreground outline-none',
                   'placeholder:text-muted-foreground/70',
-                  'caret-primary'
+                  'caret-primary',
                 )}
               />
               {isFetching && debounced && (
@@ -421,19 +508,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
             {/* Scrollable results area */}
             <Command.List
-              className={cn(
-                'max-h-[min(480px,60vh)] overflow-y-auto overscroll-contain px-2 py-2',
-                'scrollbar-thin'
-              )}
+              className={cn('max-h-[min(480px,60vh)] overflow-y-auto overscroll-contain px-2 py-2', 'scrollbar-thin')}
             >
               {/* HOME (no query): recents → quick actions → navigation */}
               {showEmptyHome ? (
                 <>
                   {recents.length > 0 && (
-                    <Group
-                      icon={<History size={11} />}
-                      labelKey="cmdk.groups.recent"
-                    >
+                    <Group icon={<History size={11} />} labelKey="cmdk.groups.recent">
                       {recents.map((r) => (
                         <Command.Item
                           key={`recent-${r.id}`}
@@ -454,12 +535,17 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                             <Compass size={14} />
                           </ItemIcon>
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-[13.5px] text-foreground">{transactionDescription(r.label, r.icon === 'transaction' ? r.source : undefined, t)}</div>
+                            <div className="truncate text-[13.5px] text-foreground">
+                              {transactionDescription(r.label, r.icon === 'transaction' ? r.source : undefined, t)}
+                            </div>
                             {r.sublabel && (
                               <div className="truncate text-[11.5px] text-muted-foreground">{r.sublabel}</div>
                             )}
                           </div>
-                          <ArrowUpRight size={13} className="text-muted-foreground/50 group-data-[selected=true]:text-primary" />
+                          <ArrowUpRight
+                            size={13}
+                            className="text-muted-foreground/50 group-data-[selected=true]:text-primary"
+                          />
                         </Command.Item>
                       ))}
                     </Group>
@@ -487,7 +573,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-[13.5px] text-foreground">{t(a.labelKey)}</div>
                             </div>
-                            <CornerDownLeft size={12} className="text-muted-foreground/40 group-data-[selected=true]:text-primary" />
+                            <CornerDownLeft
+                              size={12}
+                              className="text-muted-foreground/40 group-data-[selected=true]:text-primary"
+                            />
                           </Command.Item>
                         )
                       })}
@@ -547,19 +636,23 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     const meta = ENTITY_META[type]
                     const GroupIcon = meta.icon
                     return (
-                      <Group
-                        key={type}
-                        icon={<GroupIcon size={11} />}
-                        labelKey={meta.labelKey}
-                      >
+                      <Group key={type} icon={<GroupIcon size={11} />} labelKey={meta.labelKey}>
                         {items.map((hit) => {
-                          const source = hit.type === 'transaction' && hit.meta?.source === 'opening_balance'
-                            ? 'opening_balance' : undefined
+                          const source =
+                            hit.type === 'transaction' && hit.meta?.source === 'opening_balance'
+                              ? 'opening_balance'
+                              : undefined
                           const label = transactionDescription(hit.label, source, t)
                           const amount = formatHitAmount(hit.amount, hit.currency, locale)
                           const dateLabel = formatHitDate(hit.date, locale)
-                          const isPositive = (hit.amount ?? 0) > 0 && hit.type === 'transaction' && (hit.meta?.tx_type === 'credit' || hit.amount! > 0)
-                          const isNegative = hit.type === 'transaction' && hit.amount !== null && (hit.meta?.tx_type === 'debit' || hit.amount! < 0)
+                          const isPositive =
+                            (hit.amount ?? 0) > 0 &&
+                            hit.type === 'transaction' &&
+                            (hit.meta?.tx_type === 'credit' || hit.amount! > 0)
+                          const isNegative =
+                            hit.type === 'transaction' &&
+                            hit.amount !== null &&
+                            (hit.meta?.tx_type === 'debit' || hit.amount! < 0)
                           return (
                             <Command.Item
                               key={`${hit.type}-${hit.id}`}
@@ -576,7 +669,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                               }
                               className={itemClasses()}
                             >
-                              <ItemIcon tintClass={meta.tintClass} bgClass={meta.bgClass} style={hit.color ? { backgroundColor: `${hit.color}1A`, color: hit.color } : undefined}>
+                              <ItemIcon
+                                tintClass={meta.tintClass}
+                                bgClass={meta.bgClass}
+                                style={hit.color ? { backgroundColor: `${hit.color}1A`, color: hit.color } : undefined}
+                              >
                                 <GroupIcon size={14} />
                               </ItemIcon>
                               <div className="min-w-0 flex-1">
@@ -595,7 +692,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                                     'shrink-0 tabular-nums text-[12.5px] font-medium',
                                     isNegative && 'text-rose-500 dark:text-rose-400',
                                     isPositive && 'text-emerald-500 dark:text-emerald-400',
-                                    !isNegative && !isPositive && 'text-muted-foreground'
+                                    !isNegative && !isPositive && 'text-muted-foreground',
                                   )}
                                 >
                                   {amount}
@@ -631,7 +728,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-[13.5px] text-foreground">{t(a.labelKey)}</div>
                             </div>
-                            <CornerDownLeft size={12} className="text-muted-foreground/40 group-data-[selected=true]:text-primary" />
+                            <CornerDownLeft
+                              size={12}
+                              className="text-muted-foreground/40 group-data-[selected=true]:text-primary"
+                            />
                           </Command.Item>
                         )
                       })}
@@ -710,15 +810,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 // Subcomponents
 // ---------------------------------------------------------------------------
 
-function Group({
-  icon,
-  labelKey,
-  children,
-}: {
-  icon: React.ReactNode
-  labelKey: string
-  children: React.ReactNode
-}) {
+function Group({ icon, labelKey, children }: { icon: React.ReactNode; labelKey: string; children: React.ReactNode }) {
   const { t } = useTranslation()
   return (
     <Command.Group
@@ -743,7 +835,7 @@ function itemClasses() {
     'transition-colors',
     'data-[selected=true]:bg-primary/[0.08] data-[selected=true]:text-foreground',
     'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
-    'hover:bg-muted/40'
+    'hover:bg-muted/40',
   )
 }
 
@@ -760,11 +852,7 @@ function ItemIcon({
 }) {
   return (
     <div
-      className={cn(
-        'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
-        bgClass,
-        tintClass
-      )}
+      className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-md', bgClass, tintClass)}
       style={style}
     >
       {children}
@@ -782,11 +870,10 @@ function Kbd({ children }: { children: React.ReactNode }) {
       className={cn(
         'inline-flex h-[17px] min-w-[17px] items-center justify-center rounded border border-border/80',
         'bg-background px-1 font-mono text-[9.5px] font-medium text-muted-foreground/90',
-        'shadow-[0_1px_0_rgba(0,0,0,0.05)]'
+        'shadow-[0_1px_0_rgba(0,0,0,0.05)]',
       )}
     >
       {children}
     </kbd>
   )
 }
-

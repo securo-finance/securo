@@ -4,7 +4,13 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { formatCurrency } from '@/lib/format'
 
 /** Shared spending-versus-budget bar for Overview and Budgets. */
-export function BudgetSpendingProgress({ percentage, budgetAmount, currency, categoryName, showBudgetLabel = true }: {
+export function BudgetSpendingProgress({
+  percentage,
+  budgetAmount,
+  currency,
+  categoryName,
+  showBudgetLabel = true,
+}: {
   percentage: number
   budgetAmount: number
   currency: string
@@ -32,9 +38,13 @@ export function BudgetSpendingProgress({ percentage, budgetAmount, currency, cat
           style={{ width: `${Math.min(Math.max(percentage, 0), 100)}%` }}
         />
       </div>
-      {showBudgetLabel && <span className={`text-[11px] tabular-nums font-medium shrink-0 ${percentage > 100 ? 'text-rose-500' : percentage >= 80 ? 'text-amber-500' : 'text-muted-foreground'}`}>
-        {mask(t('dashboard.ofBudget', { budget: formatCurrency(budgetAmount, currency, locale) }))}
-      </span>}
+      {showBudgetLabel && (
+        <span
+          className={`text-[11px] tabular-nums font-medium shrink-0 ${percentage > 100 ? 'text-rose-500' : percentage >= 80 ? 'text-amber-500' : 'text-muted-foreground'}`}
+        >
+          {mask(t('dashboard.ofBudget', { budget: formatCurrency(budgetAmount, currency, locale) }))}
+        </span>
+      )}
     </div>
   )
 }

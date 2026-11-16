@@ -3,8 +3,18 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, Ban, Link2, MoreHorizontal, Pause, Pencil, Play, Plus, Receipt,
-  Repeat, Trash2, Zap,
+  ArrowLeft,
+  Ban,
+  Link2,
+  MoreHorizontal,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Receipt,
+  Repeat,
+  Trash2,
+  Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -20,19 +30,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { IconAction, SectionCard, SectionHeader, StateBadge, TH } from '@/components/invoice-ui'
 import { EndConditionFields, ScheduleBadge } from '@/components/invoice-schedule-ui'
@@ -171,8 +170,7 @@ export default function InvoiceScheduleDetailPage() {
   const actions = scheduleActions(schedule)
   // An ended agreement with invoices under it has no decision left to
   // take, and an empty menu is worse than none.
-  const hasMenu =
-    actions.canEdit || actions.canPause || actions.canResume || actions.canEnd || actions.canDelete
+  const hasMenu = actions.canEdit || actions.canPause || actions.canResume || actions.canEnd || actions.canDelete
   const money = (value: string | number | null | undefined) =>
     mask(formatCurrency(Number(value ?? 0), schedule.currency, locale))
   const showDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
@@ -203,7 +201,12 @@ export default function InvoiceScheduleDetailPage() {
           canWrite ? (
             <div className="flex flex-wrap items-center gap-2">
               {actions.canChangePrice && (
-                <Button size="sm" variant="outline" onClick={() => setTermTarget('new')} data-testid="schedule-change-price">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setTermTarget('new')}
+                  data-testid="schedule-change-price"
+                >
                   <Pencil className="h-4 w-4 mr-1.5" />
                   {t('invoices.schedules.action.changePrice')}
                 </Button>
@@ -220,50 +223,73 @@ export default function InvoiceScheduleDetailPage() {
                 </Button>
               )}
               {hasMenu && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={t('invoices.moreActions')}
-                    data-testid="schedule-more-actions"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/80 bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={t('invoices.moreActions')}
+                      data-testid="schedule-more-actions"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/80 bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-[220px] p-1 bg-card border border-border rounded-xl shadow-md"
                   >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-[220px] p-1 bg-card border border-border rounded-xl shadow-md">
-                  {actions.canEdit && (
-                    <DropdownMenuItem onClick={() => setEditOpen(true)} data-testid="schedule-edit" className="gap-2 text-sm">
-                      <Pencil className="h-4 w-4 text-muted-foreground" />
-                      {t('common.edit')}
-                    </DropdownMenuItem>
-                  )}
-                  {actions.canPause && (
-                    <DropdownMenuItem onClick={() => pauseMutation.mutate()} data-testid="schedule-pause" className="gap-2 text-sm">
-                      <Pause className="h-4 w-4 text-muted-foreground" />
-                      {t('invoices.schedules.action.pause')}
-                    </DropdownMenuItem>
-                  )}
-                  {actions.canResume && (
-                    <DropdownMenuItem onClick={() => resumeMutation.mutate()} data-testid="schedule-resume" className="gap-2 text-sm">
-                      <Play className="h-4 w-4 text-muted-foreground" />
-                      {t('invoices.schedules.action.resume')}
-                    </DropdownMenuItem>
-                  )}
-                  {actions.canEnd && (
-                    <DropdownMenuItem onClick={() => setEndOpen(true)} data-testid="schedule-end" className="gap-2 text-sm text-destructive focus:text-destructive">
-                      <Ban className="h-4 w-4" />
-                      {t('invoices.schedules.action.end')}
-                    </DropdownMenuItem>
-                  )}
-                  {actions.canDelete && (
-                    <DropdownMenuItem onClick={() => deleteMutation.mutate()} data-testid="schedule-delete" className="gap-2 text-sm text-destructive focus:text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                      {t('common.delete')}
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    {actions.canEdit && (
+                      <DropdownMenuItem
+                        onClick={() => setEditOpen(true)}
+                        data-testid="schedule-edit"
+                        className="gap-2 text-sm"
+                      >
+                        <Pencil className="h-4 w-4 text-muted-foreground" />
+                        {t('common.edit')}
+                      </DropdownMenuItem>
+                    )}
+                    {actions.canPause && (
+                      <DropdownMenuItem
+                        onClick={() => pauseMutation.mutate()}
+                        data-testid="schedule-pause"
+                        className="gap-2 text-sm"
+                      >
+                        <Pause className="h-4 w-4 text-muted-foreground" />
+                        {t('invoices.schedules.action.pause')}
+                      </DropdownMenuItem>
+                    )}
+                    {actions.canResume && (
+                      <DropdownMenuItem
+                        onClick={() => resumeMutation.mutate()}
+                        data-testid="schedule-resume"
+                        className="gap-2 text-sm"
+                      >
+                        <Play className="h-4 w-4 text-muted-foreground" />
+                        {t('invoices.schedules.action.resume')}
+                      </DropdownMenuItem>
+                    )}
+                    {actions.canEnd && (
+                      <DropdownMenuItem
+                        onClick={() => setEndOpen(true)}
+                        data-testid="schedule-end"
+                        className="gap-2 text-sm text-destructive focus:text-destructive"
+                      >
+                        <Ban className="h-4 w-4" />
+                        {t('invoices.schedules.action.end')}
+                      </DropdownMenuItem>
+                    )}
+                    {actions.canDelete && (
+                      <DropdownMenuItem
+                        onClick={() => deleteMutation.mutate()}
+                        data-testid="schedule-delete"
+                        className="gap-2 text-sm text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {t('common.delete')}
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           ) : undefined
@@ -321,9 +347,7 @@ export default function InvoiceScheduleDetailPage() {
                 <p className={cn('text-lg font-semibold tracking-tight tabular-nums', 'tone' in figure && figure.tone)}>
                   {figure.value}
                 </p>
-                {'hint' in figure && figure.hint && (
-                  <p className="text-[11px] text-amber-600">{figure.hint}</p>
-                )}
+                {'hint' in figure && figure.hint && <p className="text-[11px] text-amber-600">{figure.hint}</p>}
               </div>
             ))}
           </div>
@@ -340,7 +364,11 @@ export default function InvoiceScheduleDetailPage() {
               const editable = upcoming && (!billedUpTo || term.effective_from > billedUpTo)
               const isCurrent = term.id === currentId
               return (
-                <div key={term.id} className="flex items-center gap-3 px-4 sm:px-5 py-3" data-testid="schedule-term-row">
+                <div
+                  key={term.id}
+                  className="flex items-center gap-3 px-4 sm:px-5 py-3"
+                  data-testid="schedule-term-row"
+                >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium tabular-nums">
@@ -393,7 +421,12 @@ export default function InvoiceScheduleDetailPage() {
             description={t('invoices.schedules.invoices.description')}
             action={
               canWrite && schedule.status !== 'ended' ? (
-                <Button size="sm" variant="outline" onClick={() => setLinkOpen(true)} data-testid="schedule-link-invoice">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setLinkOpen(true)}
+                  data-testid="schedule-link-invoice"
+                >
                   <Link2 className="h-4 w-4 mr-1.5" />
                   {t('invoices.schedules.action.linkInvoice')}
                 </Button>
@@ -553,15 +586,18 @@ function EditScheduleDialog({
         <DialogHeader>
           <DialogTitle>{t('invoices.schedules.editTitle')}</DialogTitle>
           <DialogDescription>
-            {calendarLocked
-              ? t('invoices.schedules.editLockedDescription')
-              : t('invoices.schedules.editDescription')}
+            {calendarLocked ? t('invoices.schedules.editLockedDescription') : t('invoices.schedules.editDescription')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="edit-schedule-name">{t('invoices.schedules.field.name')}</Label>
-            <Input id="edit-schedule-name" data-testid="edit-schedule-name" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              id="edit-schedule-name"
+              data-testid="edit-schedule-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </div>
           <div className="space-y-1.5">
             <Label>{t('invoices.field.client')}</Label>
@@ -571,7 +607,9 @@ function EditScheduleDialog({
               </SelectTrigger>
               <SelectContent>
                 {clients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -579,22 +617,42 @@ function EditScheduleDialog({
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label>{t('invoices.schedules.field.frequency')}</Label>
-              <Select value={frequency} onValueChange={(v) => setFrequency(v as InvoiceScheduleFrequency)} disabled={calendarLocked}>
-                <SelectTrigger data-testid="edit-schedule-frequency"><SelectValue /></SelectTrigger>
+              <Select
+                value={frequency}
+                onValueChange={(v) => setFrequency(v as InvoiceScheduleFrequency)}
+                disabled={calendarLocked}
+              >
+                <SelectTrigger data-testid="edit-schedule-frequency">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   {FREQUENCIES.map((value) => (
-                    <SelectItem key={value} value={value}>{t(`invoices.schedules.frequency.${value}`)}</SelectItem>
+                    <SelectItem key={value} value={value}>
+                      {t(`invoices.schedules.frequency.${value}`)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-schedule-start">{t('invoices.schedules.field.startDate')}</Label>
-              <Input id="edit-schedule-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={calendarLocked} />
+              <Input
+                id="edit-schedule-start"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                disabled={calendarLocked}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-schedule-terms">{t('invoices.schedules.field.paymentTerms')}</Label>
-              <Input id="edit-schedule-terms" type="number" min={0} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} />
+              <Input
+                id="edit-schedule-terms"
+                type="number"
+                min={0}
+                value={paymentTerms}
+                onChange={(e) => setPaymentTerms(e.target.value)}
+              />
             </div>
           </div>
           <EndConditionFields
@@ -602,7 +660,11 @@ function EditScheduleDialog({
             endType={endType}
             endDate={endDate}
             endCount={endCount}
-            onChange={(next) => { setEndType(next.endType); setEndDate(next.endDate); setEndCount(next.endCount) }}
+            onChange={(next) => {
+              setEndType(next.endType)
+              setEndDate(next.endDate)
+              setEndCount(next.endCount)
+            }}
           />
           <div className="space-y-1.5">
             <Label htmlFor="edit-schedule-notes">{t('invoices.field.notes')}</Label>
@@ -610,8 +672,14 @@ function EditScheduleDialog({
           </div>
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-          <Button onClick={() => mutation.mutate()} disabled={!name.trim() || mutation.isPending} data-testid="edit-schedule-save">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!name.trim() || mutation.isPending}
+            data-testid="edit-schedule-save"
+          >
             {t('common.save')}
           </Button>
         </DialogFooter>
@@ -659,22 +727,39 @@ function EndScheduleDialog({
           <div className="space-y-1.5">
             <Label>{t('invoices.schedules.field.endReason')}</Label>
             <Select value={reason} onValueChange={(v) => setReason(v as InvoiceScheduleEndReason)}>
-              <SelectTrigger data-testid="end-schedule-reason"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="end-schedule-reason">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {END_REASONS.map((value) => (
-                  <SelectItem key={value} value={value}>{t(`invoices.schedules.endReason.${value}`)}</SelectItem>
+                  <SelectItem key={value} value={value}>
+                    {t(`invoices.schedules.endReason.${value}`)}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="end-schedule-date">{t('invoices.schedules.field.endedAt')}</Label>
-            <Input id="end-schedule-date" data-testid="end-schedule-date" type="date" value={endedAt} onChange={(e) => setEndedAt(e.target.value)} />
+            <Input
+              id="end-schedule-date"
+              data-testid="end-schedule-date"
+              type="date"
+              value={endedAt}
+              onChange={(e) => setEndedAt(e.target.value)}
+            />
           </div>
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-          <Button variant="destructive" onClick={() => mutation.mutate()} disabled={mutation.isPending} data-testid="end-schedule-confirm">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            data-testid="end-schedule-confirm"
+          >
             {t('invoices.schedules.action.end')}
           </Button>
         </DialogFooter>
@@ -707,9 +792,7 @@ function TermDialog({
     enabled: open,
   })
   const source = term ?? schedule.next_term ?? schedule.current_term
-  const [effectiveFrom, setEffectiveFrom] = useState(
-    term?.effective_from ?? schedule.next_period_start ?? localToday(),
-  )
+  const [effectiveFrom, setEffectiveFrom] = useState(term?.effective_from ?? schedule.next_period_start ?? localToday())
   const [lines, setLines] = useState<InvoiceLineInput[]>(
     source ? source.lines.map((line) => ({ ...line })) : [{ description: '', quantity: '1', unit_price: '0' }],
   )
@@ -719,9 +802,7 @@ function TermDialog({
   const mutation = useMutation({
     mutationFn: () => {
       const payload = { effective_from: effectiveFrom, lines, discount: discount || null }
-      return term
-        ? schedulesApi.updateTerm(schedule.id, term.id, payload)
-        : schedulesApi.addTerm(schedule.id, payload)
+      return term ? schedulesApi.updateTerm(schedule.id, term.id, payload) : schedulesApi.addTerm(schedule.id, payload)
     },
     onSuccess: () => {
       toast.success(t('invoices.schedules.termSaved'))
@@ -748,7 +829,13 @@ function TermDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="term-from">{t('invoices.schedules.terms.effectiveFrom')}</Label>
-              <Input id="term-from" data-testid="term-from-input" type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
+              <Input
+                id="term-from"
+                data-testid="term-from-input"
+                type="date"
+                value={effectiveFrom}
+                onChange={(e) => setEffectiveFrom(e.target.value)}
+              />
               {schedule.next_period_start && (
                 <p className="text-[11px] text-muted-foreground">
                   {t('invoices.schedules.terms.nextPeriodHint', {
@@ -759,7 +846,14 @@ function TermDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="term-discount">{t('invoices.schedules.terms.discount')}</Label>
-              <Input id="term-discount" data-testid="term-discount-input" inputMode="decimal" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0.00" />
+              <Input
+                id="term-discount"
+                data-testid="term-discount-input"
+                inputMode="decimal"
+                value={discount}
+                onChange={(e) => setDiscount(e.target.value)}
+                placeholder="0.00"
+              />
             </div>
           </div>
           <InvoiceLineEditor
@@ -777,8 +871,14 @@ function TermDialog({
           </p>
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-          <Button onClick={() => mutation.mutate()} disabled={perPeriod <= 0 || !effectiveFrom || mutation.isPending} data-testid="term-save">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={perPeriod <= 0 || !effectiveFrom || mutation.isPending}
+            data-testid="term-save"
+          >
             {t('common.save')}
           </Button>
         </DialogFooter>
@@ -824,8 +924,7 @@ function LinkInvoiceDialog({
       }),
     select: (rows) =>
       rows.filter(
-        (invoice) =>
-          !invoice.schedule_id && invoice.status !== 'void' && invoice.currency === schedule.currency,
+        (invoice) => !invoice.schedule_id && invoice.status !== 'void' && invoice.currency === schedule.currency,
       ),
     enabled: open,
   })
@@ -890,8 +989,14 @@ function LinkInvoiceDialog({
           </div>
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-          <Button onClick={() => mutation.mutate()} disabled={!invoiceId || !periodStart || mutation.isPending} data-testid="link-invoice-submit">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!invoiceId || !periodStart || mutation.isPending}
+            data-testid="link-invoice-submit"
+          >
             <Plus className="h-4 w-4 mr-1.5" />
             {t('invoices.schedules.action.link')}
           </Button>

@@ -21,8 +21,12 @@ const api = vi.hoisted(() => ({
   categories: { list: vi.fn(), listIncludingHidden: vi.fn() },
   categoryGroups: { list: vi.fn() },
   accounts: {
-    get: vi.fn(), list: vi.fn(), bills: vi.fn(), summary: vi.fn(),
-    update: vi.fn(), runningBalance: vi.fn(),
+    get: vi.fn(),
+    list: vi.fn(),
+    bills: vi.fn(),
+    summary: vi.fn(),
+    update: vi.fn(),
+    runningBalance: vi.fn(),
   },
   recurring: { list: vi.fn() },
   payees: { list: vi.fn() },
@@ -65,8 +69,12 @@ vi.mock('@/contexts/workspace-context', async (importOriginal) => {
 })
 vi.mock('@/contexts/collection-filter-context', () => ({
   useCollectionFilter: () => ({
-    collections: [], activeCollectionId: null, activeCollection: null,
-    setActiveCollectionId: () => {}, activeAccountIds: null, activeWalletIds: null,
+    collections: [],
+    activeCollectionId: null,
+    activeCollection: null,
+    setActiveCollectionId: () => {},
+    activeAccountIds: null,
+    activeWalletIds: null,
   }),
 }))
 
@@ -74,15 +82,36 @@ const TOOLTIP = 'Transfers are excluded from report and dashboard totals'
 
 function tx(over: Partial<Transaction> & { id: string; description: string }): Transaction {
   return {
-    user_id: 'user-1', account_id: 'acc-1', category_id: null, category: null,
-    external_id: null, original_description: null, amount: 1, currency: 'BRL',
-    date: '2026-10-08', type: 'debit', source: 'manual', status: 'posted',
-    payee: null, payee_id: null, payee_name: null, notes: null,
-    transfer_pair_id: null, transfer_counterpart: null, amount_primary: null,
-    fx_rate_used: null, fx_fallback: false, installment_number: null,
-    total_installments: null, installment_total_amount: null,
-    installment_purchase_date: null, installment_series_id: null, bill_id: null,
-    effective_bill_date: null, splits: [], is_ignored: false,
+    user_id: 'user-1',
+    account_id: 'acc-1',
+    category_id: null,
+    category: null,
+    external_id: null,
+    original_description: null,
+    amount: 1,
+    currency: 'BRL',
+    date: '2026-10-08',
+    type: 'debit',
+    source: 'manual',
+    status: 'posted',
+    payee: null,
+    payee_id: null,
+    payee_name: null,
+    notes: null,
+    transfer_pair_id: null,
+    transfer_counterpart: null,
+    amount_primary: null,
+    fx_rate_used: null,
+    fx_fallback: false,
+    installment_number: null,
+    total_installments: null,
+    installment_total_amount: null,
+    installment_purchase_date: null,
+    installment_series_id: null,
+    bill_id: null,
+    effective_bill_date: null,
+    splits: [],
+    is_ignored: false,
     ...over,
     reporting_date_override: over.reporting_date_override ?? null,
   }
@@ -91,11 +120,15 @@ function tx(over: Partial<Transaction> & { id: string; description: string }): T
 const pair = 'pair-1'
 const rows: Transaction[] = [
   tx({
-    id: 'tx-out', description: 'Transfer out', transfer_pair_id: pair,
+    id: 'tx-out',
+    description: 'Transfer out',
+    transfer_pair_id: pair,
     transfer_counterpart: { account_id: 'acc-2', account_name: 'Savings' },
   }),
   tx({
-    id: 'tx-in', description: 'Transfer in', type: 'credit',
+    id: 'tx-in',
+    description: 'Transfer in',
+    type: 'credit',
     transfer_pair_id: pair,
     transfer_counterpart: { account_id: 'acc-1', account_name: 'Checking' },
   }),

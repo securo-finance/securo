@@ -109,9 +109,7 @@ describe('deleting a category', () => {
     await waitFor(() => expect(confirm).toBeEnabled())
 
     await user.click(confirm)
-    await waitFor(() =>
-      expect(api.categories.delete).toHaveBeenCalledWith('food', 'transport'),
-    )
+    await waitFor(() => expect(api.categories.delete).toHaveBeenCalledWith('food', 'transport'))
   })
 
   it('does not offer the category being deleted as its own destination', async () => {

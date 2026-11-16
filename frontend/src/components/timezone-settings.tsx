@@ -83,9 +83,7 @@ export function TimezoneSettings() {
       <div className="px-5 py-4 border-b border-border/40">
         <div className="flex items-center gap-2 mb-0.5">
           <CalendarClock size={15} className="text-muted-foreground" />
-          <h2 className="text-sm font-semibold text-foreground">
-            {t('admin.settings.timezoneTitle')}
-          </h2>
+          <h2 className="text-sm font-semibold text-foreground">{t('admin.settings.timezoneTitle')}</h2>
         </div>
       </div>
       <div className="p-5 space-y-3">
@@ -103,7 +101,9 @@ export function TimezoneSettings() {
             </Button>
           </div>
         ) : !setting ? (
-          <p role="status" className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          <p role="status" className="text-sm text-muted-foreground">
+            {t('common.loading')}
+          </p>
         ) : (
           <>
             {savedIsBroken && (

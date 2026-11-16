@@ -69,14 +69,16 @@ describe('useCreateTransaction', () => {
     act(() => result.current.create(tx, { frequency: 'monthly' }))
 
     await waitFor(() => expect(onDone).toHaveBeenCalled())
-    expect(api.recurring.create).toHaveBeenCalledWith(expect.objectContaining({
-      description: 'Coffee',
-      currency: 'BRL',
-      frequency: 'monthly',
-      start_date: '2026-09-23',
-      account_id: 'acc-1',
-      skip_first: true,
-    }))
+    expect(api.recurring.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: 'Coffee',
+        currency: 'BRL',
+        frequency: 'monthly',
+        start_date: '2026-09-23',
+        account_id: 'acc-1',
+        skip_first: true,
+      }),
+    )
   })
 
   it('creates an installment series and attaches files to its first row', async () => {

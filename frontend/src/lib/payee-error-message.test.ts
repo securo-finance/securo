@@ -16,13 +16,11 @@ describe('payeeErrorMessage', () => {
   })
 
   it('leads with the document that failed validation', () => {
-    expect(payeeErrorMessage(apiError('invalid_tax_id:cpf:checksum'), t))
-      .toBe('CPF: payees.invalidTaxId')
+    expect(payeeErrorMessage(apiError('invalid_tax_id:cpf:checksum'), t)).toBe('CPF: payees.invalidTaxId')
   })
 
   it('leads with the document that is already on the person', () => {
-    expect(payeeErrorMessage(apiError('duplicate_tax_id:cnpj'), t))
-      .toBe('CNPJ: payees.duplicateTaxId')
+    expect(payeeErrorMessage(apiError('duplicate_tax_id:cnpj'), t)).toBe('CNPJ: payees.duplicateTaxId')
   })
 
   it('falls back to the caller for a code it does not know', () => {

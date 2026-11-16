@@ -1,0 +1,11 @@
+# Supply-chain hardening. See CONTRIBUTING.md.
+
+[install]
+# Pin what we add to an exact version instead of a caret range, so the range
+# can't widen into a release nobody reviewed.
+exact = true
+
+# Cooldown, in seconds (7 days): only resolve versions that have been public
+# long enough for a compromised release to be caught and unpublished. Applies
+# when a version is chosen (`bun add`), not when one is replayed from bun.lock.
+minimumReleaseAge = 604800

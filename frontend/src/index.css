@@ -1,89 +1,89 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap');
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: #F8F9FB;
-  --foreground: #0F172A;
-  --card: #FFFFFF;
-  --card-foreground: #0F172A;
-  --popover: #FFFFFF;
-  --popover-foreground: #0F172A;
-  --primary: #6366F1;
-  --primary-foreground: #FFFFFF;
-  --secondary: #F1F5F9;
-  --secondary-foreground: #0F172A;
-  --muted: #F1F5F9;
-  --muted-foreground: #64748B;
-  --accent: #EEF2FF;
-  --accent-foreground: #4F46E5;
-  --destructive: #F43F5E;
-  --destructive-foreground: #FFFFFF;
-  --border: #E8ECF1;
-  --input: #E8ECF1;
-  --ring: #6366F1;
+  --background: #f8f9fb;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #eef2ff;
+  --accent-foreground: #4f46e5;
+  --destructive: #f43f5e;
+  --destructive-foreground: #ffffff;
+  --border: #e8ecf1;
+  --input: #e8ecf1;
+  --ring: #6366f1;
   --radius: 0.625rem;
   /* Series in charts, in order; a theme can replace them. */
-  --chart-1: #6366F1;
-  --chart-2: #F59E0B;
-  --chart-3: #10B981;
-  --chart-4: #EC4899;
-  --chart-5: #0EA5E9;
-  --chart-6: #8B5CF6;
-  --chart-7: #F97316;
-  --chart-8: #14B8A6;
-  --chart-9: #84CC16;
-  --chart-10: #D946EF;
-  --chart-11: #F43F5E;
-  --chart-12: #06B6D4;
+  --chart-1: #6366f1;
+  --chart-2: #f59e0b;
+  --chart-3: #10b981;
+  --chart-4: #ec4899;
+  --chart-5: #0ea5e9;
+  --chart-6: #8b5cf6;
+  --chart-7: #f97316;
+  --chart-8: #14b8a6;
+  --chart-9: #84cc16;
+  --chart-10: #d946ef;
+  --chart-11: #f43f5e;
+  --chart-12: #06b6d4;
   /* "Other", a comparison or a range: present but not the subject. */
-  --chart-muted: #94A3B8;
+  --chart-muted: #94a3b8;
   /* Money in and money out, wherever a chart draws them. */
-  --chart-income: #10B981;
-  --chart-expense: #F43F5E;
-  --sidebar: #FFFFFF;
-  --sidebar-foreground: #0F172A;
-  --sidebar-primary: #6366F1;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F1F5F9;
-  --sidebar-accent-foreground: #4F46E5;
-  --sidebar-border: #E8ECF1;
-  --sidebar-ring: #6366F1;
-  --sidebar-muted: #64748B;
+  --chart-income: #10b981;
+  --chart-expense: #f43f5e;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #6366f1;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #4f46e5;
+  --sidebar-border: #e8ecf1;
+  --sidebar-ring: #6366f1;
+  --sidebar-muted: #64748b;
 }
 
 .dark {
-  --background: #0C0D12;
-  --foreground: #F0F0F5;
-  --card: #16171F;
-  --card-foreground: #F0F0F5;
-  --popover: #16171F;
-  --popover-foreground: #F0F0F5;
-  --primary: #818CF8;
-  --primary-foreground: #FFFFFF;
+  --background: #0c0d12;
+  --foreground: #f0f0f5;
+  --card: #16171f;
+  --card-foreground: #f0f0f5;
+  --popover: #16171f;
+  --popover-foreground: #f0f0f5;
+  --primary: #818cf8;
+  --primary-foreground: #ffffff;
   --secondary: #252836;
-  --secondary-foreground: #F0F0F5;
+  --secondary-foreground: #f0f0f5;
   --muted: #252836;
-  --muted-foreground: #8A8F9E;
-  --accent: #1E1B4B;
-  --accent-foreground: #A5B4FC;
-  --destructive: #FB7185;
-  --destructive-foreground: #0C0D12;
-  --border: #2A2D3A;
-  --input: #2A2D3A;
-  --ring: #818CF8;
-  --sidebar: #16171F;
-  --sidebar-foreground: #F0F0F5;
-  --sidebar-primary: #818CF8;
-  --sidebar-primary-foreground: #FFFFFF;
+  --muted-foreground: #8a8f9e;
+  --accent: #1e1b4b;
+  --accent-foreground: #a5b4fc;
+  --destructive: #fb7185;
+  --destructive-foreground: #0c0d12;
+  --border: #2a2d3a;
+  --input: #2a2d3a;
+  --ring: #818cf8;
+  --sidebar: #16171f;
+  --sidebar-foreground: #f0f0f5;
+  --sidebar-primary: #818cf8;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #252836;
-  --sidebar-accent-foreground: #A5B4FC;
-  --sidebar-border: #2A2D3A;
-  --sidebar-ring: #818CF8;
-  --sidebar-muted: #8A8F9E;
+  --sidebar-accent-foreground: #a5b4fc;
+  --sidebar-border: #2a2d3a;
+  --sidebar-ring: #818cf8;
+  --sidebar-muted: #8a8f9e;
 }
 
 @theme inline {
@@ -138,11 +138,13 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--app-font, 'Geist', 'Inter', system-ui, -apple-system, sans-serif);
-    font-feature-settings: "cv02","cv03","cv04","cv11";
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  h1, h2, h3 {
+  h1,
+  h2,
+  h3 {
     letter-spacing: -0.035em;
   }
 }
@@ -182,16 +184,31 @@
    blobs over a deep indigo base — slow enough to feel alive, not busy.
    Only transform/opacity animate, never layout. */
 @keyframes securo-aurora-1 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(7%, 10%, 0) scale(1.18); }
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(7%, 10%, 0) scale(1.18);
+  }
 }
 @keyframes securo-aurora-2 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1.12); }
-  50% { transform: translate3d(-9%, -7%, 0) scale(1); }
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.12);
+  }
+  50% {
+    transform: translate3d(-9%, -7%, 0) scale(1);
+  }
 }
 @keyframes securo-aurora-3 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(6%, -11%, 0) scale(1.22); }
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6%, -11%, 0) scale(1.22);
+  }
 }
 
 .securo-aurora {

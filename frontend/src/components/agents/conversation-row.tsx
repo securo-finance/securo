@@ -107,17 +107,8 @@ export function ConversationRow({ conv, agentId, active, onPick, onDeleted }: Pr
   }
 
   return (
-    <div
-      className={cn(
-        'group flex items-center px-3 py-2 text-sm hover:bg-muted',
-        active && 'bg-muted',
-      )}
-    >
-      <button
-        type="button"
-        onClick={onPick}
-        className="flex-1 min-w-0 flex items-center gap-2 text-left"
-      >
+    <div className={cn('group flex items-center px-3 py-2 text-sm hover:bg-muted', active && 'bg-muted')}>
+      <button type="button" onClick={onPick} className="flex-1 min-w-0 flex items-center gap-2 text-left">
         <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="flex-1 min-w-0 truncate">{conv.title || t('agents.detail.untitled')}</span>
         <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums group-hover:opacity-0 transition-opacity">

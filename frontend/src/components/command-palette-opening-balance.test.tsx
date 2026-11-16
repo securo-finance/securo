@@ -13,8 +13,15 @@ vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ hasModul
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US' }))
 
 const opening: SearchHit = {
-  type: 'transaction', id: 'opening', label: 'Saldo inicial', subtitle: 'Synthetic',
-  amount: 100, currency: 'BRL', date: '2026-09-12', icon: null, color: null,
+  type: 'transaction',
+  id: 'opening',
+  label: 'Saldo inicial',
+  subtitle: 'Synthetic',
+  amount: 100,
+  currency: 'BRL',
+  date: '2026-09-12',
+  icon: null,
+  color: null,
   meta: { source: 'opening_balance', account_id: 'acc-1', tx_type: 'credit' },
 }
 const hits: SearchHit[] = [
@@ -27,7 +34,12 @@ const hits: SearchHit[] = [
 
 function Harness() {
   const [open, setOpen] = useState(true)
-  return <><button onClick={() => setOpen(true)}>Open palette</button><CommandPalette open={open} onOpenChange={setOpen} /></>
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>Open palette</button>
+      <CommandPalette open={open} onOpenChange={setOpen} />
+    </>
+  )
 }
 
 beforeEach(async () => {
@@ -48,9 +60,13 @@ it('translates only source-qualified transaction hits and keeps future recents l
     expect(within(option(subtitle)).getByText('Saldo inicial')).toBeVisible()
   }
   const amount = within(option('Synthetic')).getByText(/100\.00/).textContent
-  await act(async () => { await i18n.changeLanguage('pt-BR') })
+  await act(async () => {
+    await i18n.changeLanguage('pt-BR')
+  })
   expect(within(option('Synthetic')).getByText('Saldo inicial')).toBeVisible()
-  await act(async () => { await i18n.changeLanguage('nl') })
+  await act(async () => {
+    await i18n.changeLanguage('nl')
+  })
   expect(within(option('Synthetic')).getByText('Openingsbalans')).toBeVisible()
   expect(within(option('Synthetic')).getByText(/100\.00/).textContent).toBe(amount)
   await user.click(option('Synthetic'))
@@ -59,19 +75,25 @@ it('translates only source-qualified transaction hits and keeps future recents l
   expect(recent).toMatchObject({ label: 'Saldo inicial', source: 'opening_balance', icon: 'transaction' })
   await user.click(screen.getByRole('button', { name: 'Open palette' }))
   expect(screen.getByText('Openingsbalans')).toBeVisible()
-  await act(async () => { await i18n.changeLanguage('en') })
+  await act(async () => {
+    await i18n.changeLanguage('en')
+  })
   expect(screen.getByText('Opening balance')).toBeVisible()
   // Re-selecting a recent must not lose its provenance or freeze its translation.
   await user.click(screen.getByText('Opening balance'))
   await user.click(screen.getByRole('button', { name: 'Open palette' }))
-  await act(async () => { await i18n.changeLanguage('pt-BR') })
+  await act(async () => {
+    await i18n.changeLanguage('pt-BR')
+  })
   expect(screen.getByText('Saldo inicial')).toBeVisible()
   // A legacy result with no provenance remains raw when saved as a recent.
   await user.type(screen.getByRole('combobox'), 'saldo')
   await waitFor(() => expect(screen.getByRole('option', { name: /Legacy/ })).toBeVisible())
   await user.click(screen.getByRole('option', { name: /Legacy/ }))
   await user.click(screen.getByRole('button', { name: 'Open palette' }))
-  await act(async () => { await i18n.changeLanguage('nl') })
+  await act(async () => {
+    await i18n.changeLanguage('nl')
+  })
   expect(within(screen.getByRole('option', { name: /Legacy/ })).getByText('Saldo inicial')).toBeVisible()
   expect(screen.getByText('Openingsbalans')).toBeVisible()
   await user.type(screen.getByRole('combobox'), 'saldo')

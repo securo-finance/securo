@@ -28,13 +28,17 @@ import { IconPicker } from '@/components/icon-picker'
 import { useWorkspace } from '@/contexts/workspace-context'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      {children}
-    </div>
-  )
+  return <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">{children}</div>
 }
-function SectionHeader({ title, titleExtra, action }: { title: string; titleExtra?: React.ReactNode; action?: React.ReactNode }) {
+function SectionHeader({
+  title,
+  titleExtra,
+  action,
+}: {
+  title: string
+  titleExtra?: React.ReactNode
+  action?: React.ReactNode
+}) {
   return (
     <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
       <div className="flex items-center gap-3">
@@ -63,14 +67,15 @@ export default function CategoriesPage() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [deletingCategory, setDeletingCategory] = useState<Category | null>(null)
   const [deletingGroup, setDeletingGroup] = useState<CategoryGroup | null>(null)
-  const [hidingCategory, setHidingCategory] = useState<
-    { category: Category; rules: { id: string; name: string }[] } | null
-  >(null)
+  const [hidingCategory, setHidingCategory] = useState<{
+    category: Category
+    rules: { id: string; name: string }[]
+  } | null>(null)
   // Set when the category being deleted still holds something. The deletion
   // then waits for a destination instead of going through.
-  const [transferringCategory, setTransferringCategory] = useState<
-    { category: Category; usage: CategoryUsage } | null
-  >(null)
+  const [transferringCategory, setTransferringCategory] = useState<{ category: Category; usage: CategoryUsage } | null>(
+    null,
+  )
   const [transferTargetId, setTransferTargetId] = useState('')
 
   const { data: groups } = useQuery({
@@ -89,11 +94,20 @@ export default function CategoriesPage() {
 
   const createCatMutation = useMutation({
     mutationFn: (cat: Partial<Category>) => categoriesApi.create(cat),
-    onSuccess: () => { invalidateAll(); setCatDialogOpen(false); toast.success(t('categories.created')) },
+    onSuccess: () => {
+      invalidateAll()
+      setCatDialogOpen(false)
+      toast.success(t('categories.created'))
+    },
   })
   const updateCatMutation = useMutation({
     mutationFn: ({ id, ...data }: Partial<Category> & { id: string }) => categoriesApi.update(id, data),
-    onSuccess: () => { invalidateAll(); setCatDialogOpen(false); setEditingCat(null); toast.success(t('categories.updated')) },
+    onSuccess: () => {
+      invalidateAll()
+      setCatDialogOpen(false)
+      setEditingCat(null)
+      toast.success(t('categories.updated'))
+    },
     onError: (err: unknown) => toast.error(extractApiError(err, t('common.error'))),
   })
 
@@ -134,8 +148,7 @@ export default function CategoriesPage() {
     }
   }
   const deleteCatMutation = useMutation({
-    mutationFn: ({ id, transferToId }: { id: string; transferToId?: string }) =>
-      categoriesApi.delete(id, transferToId),
+    mutationFn: ({ id, transferToId }: { id: string; transferToId?: string }) => categoriesApi.delete(id, transferToId),
     onSuccess: (_data, variables) => {
       invalidateAll()
       setDeletingCategory(null)
@@ -170,10 +183,7 @@ export default function CategoriesPage() {
         staleTime: 0,
       })
       const isUsed =
-        usage.transactions > 0
-        || usage.budgets > 0
-        || usage.recurring_transactions > 0
-        || usage.rules.length > 0
+        usage.transactions > 0 || usage.budgets > 0 || usage.recurring_transactions > 0 || usage.rules.length > 0
       if (!isUsed) {
         setDeletingCategory(cat)
         return
@@ -189,9 +199,7 @@ export default function CategoriesPage() {
   // on its way out, kept in its groups so it reads like the pickers elsewhere.
   const transferOptions = useMemo(() => {
     const sourceId = transferringCategory?.category.id
-    const available = (categoriesList ?? []).filter(
-      (cat) => !cat.is_hidden && cat.id !== sourceId,
-    )
+    const available = (categoriesList ?? []).filter((cat) => !cat.is_hidden && cat.id !== sourceId)
     const availableIds = new Set(available.map((cat) => cat.id))
     return {
       categories: available,
@@ -207,16 +215,31 @@ export default function CategoriesPage() {
 
   const createGroupMutation = useMutation({
     mutationFn: (g: Partial<CategoryGroup>) => groupsApi.create(g),
-    onSuccess: () => { invalidateAll(); setGroupDialogOpen(false); toast.success(t('groups.created')) },
+    onSuccess: () => {
+      invalidateAll()
+      setGroupDialogOpen(false)
+      toast.success(t('groups.created'))
+    },
   })
   const updateGroupMutation = useMutation({
     mutationFn: ({ id, ...data }: Partial<CategoryGroup> & { id: string }) => groupsApi.update(id, data),
-    onSuccess: () => { invalidateAll(); setGroupDialogOpen(false); setEditingGroup(null); toast.success(t('groups.updated')) },
-    onError: () => { toast.error(t('common.error')) },
+    onSuccess: () => {
+      invalidateAll()
+      setGroupDialogOpen(false)
+      setEditingGroup(null)
+      toast.success(t('groups.updated'))
+    },
+    onError: () => {
+      toast.error(t('common.error'))
+    },
   })
   const deleteGroupMutation = useMutation({
     mutationFn: (id: string) => groupsApi.delete(id),
-    onSuccess: () => { invalidateAll(); setDeletingGroup(null); toast.success(t('groups.deleted')) },
+    onSuccess: () => {
+      invalidateAll()
+      setDeletingGroup(null)
+      toast.success(t('groups.deleted'))
+    },
     onError: (err: unknown) => {
       toast.error(extractApiError(err, t('common.error')))
     },
@@ -256,7 +279,10 @@ export default function CategoriesPage() {
   )
 
   const renderCategoryItem = (cat: Category) => (
-    <div key={cat.id} className={`flex items-center gap-3 px-4 sm:px-5 pl-6 sm:pl-12 py-2.5 border-b border-border last:border-0 hover:bg-muted transition-colors ${cat.is_hidden ? 'opacity-60' : ''}`}>
+    <div
+      key={cat.id}
+      className={`flex items-center gap-3 px-4 sm:px-5 pl-6 sm:pl-12 py-2.5 border-b border-border last:border-0 hover:bg-muted transition-colors ${cat.is_hidden ? 'opacity-60' : ''}`}
+    >
       <CategoryIcon icon={cat.icon} color={cat.color} size="md" />
       <div className="flex-1 min-w-0 flex items-center gap-2">
         <span className="text-sm font-medium text-foreground truncate">{cat.name}</span>
@@ -279,7 +305,10 @@ export default function CategoriesPage() {
         )}
       </div>
       <div className="hidden sm:flex items-center gap-2 shrink-0">
-        <span className="inline-block w-3.5 h-3.5 rounded-full border border-black/10" style={{ backgroundColor: cat.color }} />
+        <span
+          className="inline-block w-3.5 h-3.5 rounded-full border border-black/10"
+          style={{ backgroundColor: cat.color }}
+        />
         <span className="text-xs text-muted-foreground font-mono">{cat.color}</span>
       </div>
       {canWrite && (
@@ -327,9 +356,7 @@ export default function CategoriesPage() {
         }
       />
 
-      <p className="mb-4 text-sm text-muted-foreground">
-        {t('categories.hiddenScopeDescription')}
-      </p>
+      <p className="mb-4 text-sm text-muted-foreground">{t('categories.hiddenScopeDescription')}</p>
 
       <SectionCard>
         <SectionHeader
@@ -348,7 +375,9 @@ export default function CategoriesPage() {
               }}
             >
               <ChevronsUpDown size={13} />
-              {groups && groups.every((g) => collapsedGroups.has(g.id)) ? t('categories.expandAll') : t('categories.collapseAll')}
+              {groups && groups.every((g) => collapsedGroups.has(g.id))
+                ? t('categories.expandAll')
+                : t('categories.collapseAll')}
             </button>
           }
           action={
@@ -374,9 +403,15 @@ export default function CategoriesPage() {
                     className="flex items-center gap-2 flex-1 min-w-0 text-left"
                     onClick={() => toggleCollapse(group.id)}
                   >
-                    {isCollapsed ? <ChevronRight size={14} className="text-muted-foreground shrink-0" /> : <ChevronDown size={14} className="text-muted-foreground shrink-0" />}
+                    {isCollapsed ? (
+                      <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+                    ) : (
+                      <ChevronDown size={14} className="text-muted-foreground shrink-0" />
+                    )}
                     <CategoryIcon icon={group.icon} color={group.color} size="md" />
-                    <span className="text-sm font-semibold" style={{ color: group.color }}>{group.name}</span>
+                    <span className="text-sm font-semibold" style={{ color: group.color }}>
+                      {group.name}
+                    </span>
                     {group.is_hidden && renderHiddenBadge(t('groups.hiddenBadge'))}
                     <span className="text-xs text-muted-foreground">({group.categories.length})</span>
                   </button>
@@ -426,7 +461,13 @@ export default function CategoriesPage() {
       </SectionCard>
 
       {/* Category Dialog */}
-      <Dialog open={catDialogOpen} onOpenChange={() => { setCatDialogOpen(false); setEditingCat(null) }}>
+      <Dialog
+        open={catDialogOpen}
+        onOpenChange={() => {
+          setCatDialogOpen(false)
+          setEditingCat(null)
+        }}
+      >
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>{editingCat ? t('categories.editCategory') : t('categories.newCategory')}</DialogTitle>
@@ -442,7 +483,7 @@ export default function CategoriesPage() {
                 color: formData.get('color') as string,
                 group_id: (formData.get('group_id') as string) || null,
                 treat_as_transfer: formTreatAsTransfer,
-                is_ignored: formIgnoreTransfer
+                is_ignored: formIgnoreTransfer,
               }
               if (editingCat) {
                 updateCatMutation.mutate({ id: editingCat.id, ...data })
@@ -465,16 +506,26 @@ export default function CategoriesPage() {
                   className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   <option value="">{t('categories.noGroup')}</option>
-                  {groups?.filter((g) => !g.is_hidden || g.id === editingCat?.group_id).map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}{g.is_hidden ? ` (${t('groups.hiddenBadge')})` : ''}
-                    </option>
-                  ))}
+                  {groups
+                    ?.filter((g) => !g.is_hidden || g.id === editingCat?.group_id)
+                    .map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                        {g.is_hidden ? ` (${t('groups.hiddenBadge')})` : ''}
+                      </option>
+                    ))}
                 </select>
               </div>
               <div className="space-y-2">
                 <Label>{t('groups.color')}</Label>
-                <Input name="color" type="color" value={formColor} onChange={(e) => setFormColor(e.target.value)} required className="h-9 px-2 py-1" />
+                <Input
+                  name="color"
+                  type="color"
+                  value={formColor}
+                  onChange={(e) => setFormColor(e.target.value)}
+                  required
+                  className="h-9 px-2 py-1"
+                />
               </div>
               <div className="space-y-2">
                 <Label>{t('groups.icon')}</Label>
@@ -509,7 +560,14 @@ export default function CategoriesPage() {
               </div>
             </div>
             <DialogFooter className="mt-2 shrink-0 border-t pt-4">
-              <Button type="button" variant="outline" onClick={() => { setCatDialogOpen(false); setEditingCat(null) }}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCatDialogOpen(false)
+                  setEditingCat(null)
+                }}
+              >
                 {t('common.cancel')}
               </Button>
               <Button type="submit">{t('common.save')}</Button>
@@ -519,7 +577,13 @@ export default function CategoriesPage() {
       </Dialog>
 
       {/* Group Dialog */}
-      <Dialog open={groupDialogOpen} onOpenChange={() => { setGroupDialogOpen(false); setEditingGroup(null) }}>
+      <Dialog
+        open={groupDialogOpen}
+        onOpenChange={() => {
+          setGroupDialogOpen(false)
+          setEditingGroup(null)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingGroup ? t('groups.edit') : t('groups.new')}</DialogTitle>
@@ -553,7 +617,14 @@ export default function CategoriesPage() {
             </div>
             <div className="space-y-2">
               <Label>{t('groups.color')}</Label>
-              <Input name="color" type="color" value={groupFormColor} onChange={(e) => setGroupFormColor(e.target.value)} required className="h-9 px-2 py-1" />
+              <Input
+                name="color"
+                type="color"
+                value={groupFormColor}
+                onChange={(e) => setGroupFormColor(e.target.value)}
+                required
+                className="h-9 px-2 py-1"
+              />
             </div>
             <div className="space-y-2">
               <Label>{t('groups.icon')}</Label>
@@ -561,7 +632,14 @@ export default function CategoriesPage() {
               <input type="hidden" name="icon" value={groupFormIcon} />
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setGroupDialogOpen(false); setEditingGroup(null) }}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setGroupDialogOpen(false)
+                  setEditingGroup(null)
+                }}
+              >
                 {t('common.cancel')}
               </Button>
               <Button type="submit">{t('common.save')}</Button>
@@ -576,9 +654,7 @@ export default function CategoriesPage() {
         description={t('categories.confirmDeleteDescription', { name: deletingCategory?.name })}
         isPending={deleteCatMutation.isPending}
         onClose={() => setDeletingCategory(null)}
-        onConfirm={() =>
-          deletingCategory && deleteCatMutation.mutate({ id: deletingCategory.id })
-        }
+        onConfirm={() => deletingCategory && deleteCatMutation.mutate({ id: deletingCategory.id })}
       />
 
       <DeleteConfirmationDialog
@@ -598,25 +674,22 @@ export default function CategoriesPage() {
       >
         <DialogContent className="sm:max-w-md" showCloseButton={!deleteCatMutation.isPending}>
           <DialogHeader>
-            <DialogTitle>
-              {t('categories.deleteInUseTitle', { name: transferringCategory?.category.name })}
-            </DialogTitle>
+            <DialogTitle>{t('categories.deleteInUseTitle', { name: transferringCategory?.category.name })}</DialogTitle>
             <DialogDescription>{t('categories.deleteInUseDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <ul className="rounded-lg border border-border divide-y divide-border">
-              {([
-                ['nav.transactions', transferringCategory?.usage.transactions ?? 0],
-                ['nav.budgets', transferringCategory?.usage.budgets ?? 0],
-                ['nav.recurring', transferringCategory?.usage.recurring_transactions ?? 0],
-                ['nav.rules', transferringCategory?.usage.rules.length ?? 0],
-              ] as const)
+              {(
+                [
+                  ['nav.transactions', transferringCategory?.usage.transactions ?? 0],
+                  ['nav.budgets', transferringCategory?.usage.budgets ?? 0],
+                  ['nav.recurring', transferringCategory?.usage.recurring_transactions ?? 0],
+                  ['nav.rules', transferringCategory?.usage.rules.length ?? 0],
+                ] as const
+              )
                 .filter(([, count]) => count > 0)
                 .map(([label, count]) => (
-                  <li
-                    key={label}
-                    className="flex items-center justify-between px-3 py-2 text-sm"
-                  >
+                  <li key={label} className="flex items-center justify-between px-3 py-2 text-sm">
                     <span className="text-muted-foreground">{t(label)}</span>
                     <span className="font-medium text-foreground tabular-nums">{count}</span>
                   </li>
@@ -644,8 +717,8 @@ export default function CategoriesPage() {
               variant="destructive"
               disabled={!transferTargetId || deleteCatMutation.isPending}
               onClick={() =>
-                transferringCategory
-                && deleteCatMutation.mutate({
+                transferringCategory &&
+                deleteCatMutation.mutate({
                   id: transferringCategory.category.id,
                   transferToId: transferTargetId,
                 })
@@ -661,9 +734,7 @@ export default function CategoriesPage() {
       <Dialog open={!!hidingCategory} onOpenChange={(open) => !open && setHidingCategory(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>
-              {t('categories.hideWithRulesTitle', { name: hidingCategory?.category.name })}
-            </DialogTitle>
+            <DialogTitle>{t('categories.hideWithRulesTitle', { name: hidingCategory?.category.name })}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
@@ -678,19 +749,14 @@ export default function CategoriesPage() {
             </ul>
           </div>
           <DialogFooter className="gap-2 sm:justify-between">
-            <Button
-              variant="ghost"
-              onClick={() => setHidingCategory(null)}
-              disabled={hideCatMutation.isPending}
-            >
+            <Button variant="ghost" onClick={() => setHidingCategory(null)} disabled={hideCatMutation.isPending}>
               {t('common.cancel')}
             </Button>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 onClick={() =>
-                  hidingCategory
-                  && hideCatMutation.mutate({ id: hidingCategory.category.id, deactivateRules: false })
+                  hidingCategory && hideCatMutation.mutate({ id: hidingCategory.category.id, deactivateRules: false })
                 }
                 disabled={hideCatMutation.isPending}
               >
@@ -698,8 +764,7 @@ export default function CategoriesPage() {
               </Button>
               <Button
                 onClick={() =>
-                  hidingCategory
-                  && hideCatMutation.mutate({ id: hidingCategory.category.id, deactivateRules: true })
+                  hidingCategory && hideCatMutation.mutate({ id: hidingCategory.category.id, deactivateRules: true })
                 }
                 disabled={hideCatMutation.isPending}
               >

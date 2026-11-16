@@ -161,18 +161,10 @@ export function AppLayout() {
   // a configuration surface (KB upload, providers, default selection),
   // not a daily destination. Moved to the user menu (Change password,
   // 2FA, Backups, AI agents).
-  const finalNavItems: NavItem[] = useMemo(
-    () => visibleNavItems(navItems, hasModule),
-    [hasModule],
-  )
-  const isMac =
-    typeof navigator !== 'undefined' &&
-    /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+  const finalNavItems: NavItem[] = useMemo(() => visibleNavItems(navItems, hasModule), [hasModule])
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 
-  const showTour =
-    user &&
-    !user.preferences?.onboarding_completed &&
-    !localStorage.getItem('onboarding_completed')
+  const showTour = user && !user.preferences?.onboarding_completed && !localStorage.getItem('onboarding_completed')
 
   const handleTourComplete = useCallback(async () => {
     localStorage.setItem('onboarding_completed', 'true')
@@ -214,459 +206,469 @@ export function AppLayout() {
   const allAccounts = sidebarAccounts(accountsList ?? [])
   // When a collection is active, the sidebar list + total reflect only its
   // accounts (issue #105). null = all accounts.
-  const visibleAccounts = activeAccountIds
-    ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
-    : allAccounts
+  const visibleAccounts = activeAccountIds ? allAccounts.filter((a) => activeAccountIds.includes(a.id)) : allAccounts
   const totalBalance = sumAccountsTotal(visibleAccounts)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
     <AssistantContext.Provider value={assistant}>
-    <LibraryProvider>
-    <div className="min-h-screen bg-background">
-      {/* Mobile header */}
-      <header className="sticky top-0 z-40 flex h-14 items-center gap-3 bg-sidebar border-b border-sidebar-border px-4 lg:hidden">
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="text-sidebar-muted hover:text-sidebar-foreground transition-colors"
-          aria-label={t('app.toggleMenu')}
-        >
-          <Menu size={20} />
-        </button>
-        <Link
-          to="/"
-          className="flex items-center gap-2 -mx-1 px-1 py-1 rounded-md hover:bg-sidebar-accent transition-colors"
-          aria-label={t('app.name')}
-          title={t('nav.dashboard')}
-        >
-          <ShellLogo size={22} className="text-primary shrink-0" />
-          <span className="font-bold text-sidebar-foreground">
-            {t('app.name')}
-          </span>
-        </Link>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => setPaletteOpen(true)}
-            className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
-            title={t('cmdk.triggerAria')}
-            aria-label={t('cmdk.triggerAria')}
-          >
-            <Search size={18} />
-          </button>
-          <button
-            onClick={togglePrivacyMode}
-            className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
-            title={privacyMode ? t('privacy.show') : t('privacy.hide')}
-          >
-            {privacyMode ? <EyeOff size={18} /> : <Eye size={18} />}
-          </button>
-          <button
-            onClick={toggleTheme}
-            className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
-            title={themeButtonLabel}
-            aria-label={themeButtonLabel}
-          >
-            <ThemeIcon size={18} />
-          </button>
-          {/* AI chat — opens the global slide-over (also reachable via
-              ⌘J). Sits next to the theme toggle so the icon is always
-              within thumb reach on mobile too. */}
-          {chatAvailable && (
+      <LibraryProvider>
+        <div className="min-h-screen bg-background">
+          {/* Mobile header */}
+          <header className="sticky top-0 z-40 flex h-14 items-center gap-3 bg-sidebar border-b border-sidebar-border px-4 lg:hidden">
             <button
-              onClick={() => setChatOpen(true)}
-              className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
-              title={`${t('agents.globalChat.title', 'Chat')} (${isMac ? '⌘J' : 'Ctrl+J'})`}
-              aria-label={t('agents.globalChat.openHint', 'Open chat (⌘J)')}
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="text-sidebar-muted hover:text-sidebar-foreground transition-colors"
+              aria-label={t('app.toggleMenu')}
             >
-              <Bot size={18} />
+              <Menu size={20} />
             </button>
-          )}
-          <UserMenu
-            userInitial={userInitial}
-            logout={logout}
-            onChangePassword={() => setChangePasswordOpen(true)}
-            onTwoFactor={() => setTwoFactorOpen(true)}
-            onPasskeys={() => setPasskeysOpen(true)}
-            localAuthEnabled={localAuthEnabled}
-            agentsEnabled={agentsEnabled}
-            onBackup={() => setBackupOpen(true)}
-            dark
-            isAdmin={user?.is_superuser}
-          />
-        </div>
-      </header>
-
-      <div className="flex">
-        {/* Sidebar overlay for mobile */}
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-
-        {/* Sidebar */}
-        <aside
-          data-collapsed={desktopSidebarCollapsed}
-          className={cn(
-            'group/sidebar fixed inset-y-0 left-0 z-50 w-60 bg-sidebar border-r border-sidebar-border flex flex-col transform transition-[transform,width] duration-300 ease-in-out motion-reduce:transition-none lg:translate-x-0 shrink-0',
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full',
-            desktopSidebarCollapsed ? 'lg:w-16' : 'lg:w-60',
-          )}
-        >
-          {/* Logo — clickable link to the dashboard. Replaces the
-              dedicated 'Painel' nav item so the sidebar stays focused
-              on the main destinations. */}
-          {/* Collapsed on desktop, the header becomes a column: logo on
-              top, then the same privacy / chat / theme buttons stacked,
-              so nothing the expanded header offers goes missing in the
-              rail. */}
-          <div className={cn(
-            'flex h-16 min-h-16 items-center justify-between px-5 border-b border-sidebar-border shrink-0',
-            desktopSidebarCollapsed && 'lg:h-auto lg:min-h-0 lg:flex-col lg:justify-center lg:gap-2 lg:px-0 lg:py-3',
-          )}>
             <Link
               to="/"
-              className="flex items-center gap-2.5 -mx-1 px-1 py-1 rounded-md hover:bg-sidebar-accent transition-colors"
-              onClick={() => setSidebarOpen(false)}
+              className="flex items-center gap-2 -mx-1 px-1 py-1 rounded-md hover:bg-sidebar-accent transition-colors"
               aria-label={t('app.name')}
               title={t('nav.dashboard')}
             >
-              <ShellLogo size={24} className="text-primary shrink-0" />
-              <span className={cn(
-                'font-bold text-lg text-sidebar-foreground tracking-tight',
-                desktopSidebarCollapsed && 'lg:hidden',
-              )}>
-                {t('app.name')}
-              </span>
+              <ShellLogo size={22} className="text-primary shrink-0" />
+              <span className="font-bold text-sidebar-foreground">{t('app.name')}</span>
             </Link>
-            <div className={cn(
-              'flex items-center gap-0.5',
-              desktopSidebarCollapsed && 'lg:flex-col lg:gap-1',
-            )}>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={() => setPaletteOpen(true)}
+                className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
+                title={t('cmdk.triggerAria')}
+                aria-label={t('cmdk.triggerAria')}
+              >
+                <Search size={18} />
+              </button>
               <button
                 onClick={togglePrivacyMode}
-                className={cn(
-                  'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
-                  desktopSidebarCollapsed && 'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
-                )}
+                className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
                 title={privacyMode ? t('privacy.show') : t('privacy.hide')}
-                aria-label={privacyMode ? t('privacy.show') : t('privacy.hide')}
               >
-                {privacyMode ? <EyeOff size={16} /> : <Eye size={16} />}
+                {privacyMode ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
-              {/* AI chat — same trigger as the mobile bar, ⌘J also
-                  works. Lives in the sidebar header so the entry point
-                  is visible even on first load (no floating button). */}
-              {chatAvailable && (
-                <button
-                  onClick={() => setChatOpen(true)}
-                  className={cn(
-                    'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
-                    desktopSidebarCollapsed && 'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
-                  )}
-                  title={`${t('agents.globalChat.title', 'Chat')} (${isMac ? '⌘J' : 'Ctrl+J'})`}
-                  aria-label={t('agents.globalChat.openHint', 'Open chat (⌘J)')}
-                >
-                  <Bot size={16} />
-                </button>
-              )}
               <button
                 onClick={toggleTheme}
-                className={cn(
-                  'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
-                  desktopSidebarCollapsed && 'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
-                )}
+                className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
                 title={themeButtonLabel}
                 aria-label={themeButtonLabel}
               >
-                <ThemeIcon size={16} />
+                <ThemeIcon size={18} />
               </button>
-            </div>
-          </div>
-
-          {/* The collapse handle sits on the sidebar's edge, halfway out,
-              vertically centred in the viewport: the border is the thing
-              that moves, so that is where the control lives. Shown on
-              hover and on keyboard focus so it never crowds the header. */}
-          <button
-            type="button"
-            onClick={toggleDesktopSidebar}
-            className="hidden lg:flex absolute top-1/2 -right-3 -translate-y-1/2 h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/sidebar:opacity-100"
-            title={desktopSidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
-            aria-label={desktopSidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
-            aria-expanded={!desktopSidebarCollapsed}
-          >
-            {desktopSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
-
-          {/* Command palette trigger */}
-          <div className={cn('px-3 pt-3', desktopSidebarCollapsed && 'lg:px-2')}>
-            <button
-              type="button"
-              onClick={() => setPaletteOpen(true)}
-              className={cn(
-                'group flex w-full items-center gap-2 rounded-lg border border-sidebar-border/80 bg-sidebar-accent/40 px-3 py-2',
-                'text-[12.5px] text-sidebar-muted transition-all',
-                'hover:bg-sidebar-accent hover:text-sidebar-foreground hover:border-sidebar-border',
-                desktopSidebarCollapsed && 'lg:justify-center lg:px-0',
-              )}
-              aria-label={t('cmdk.triggerAria')}
-            >
-              <Search size={13} className="shrink-0" />
-              <span className={cn('flex-1 text-left', desktopSidebarCollapsed && 'lg:hidden')}>{t('cmdk.triggerLabel')}</span>
-              <kbd className={cn('hidden lg:inline-flex h-[17px] items-center rounded border border-sidebar-border bg-sidebar px-1 font-mono text-[9.5px] font-semibold text-sidebar-muted/80', desktopSidebarCollapsed && 'lg:hidden')}>
-                {isMac ? '⌘' : 'Ctrl'}&nbsp;K
-              </kbd>
-            </button>
-          </div>
-
-          <div className="flex-1 min-h-0 overflow-y-auto">
-          {/* Nav */}
-          <nav className={cn('flex flex-col gap-0.5 px-3 pt-1 pb-3', desktopSidebarCollapsed && 'lg:items-center lg:gap-1 lg:px-0 lg:pt-3')} data-tour="sidebar">
-            {/* Which modules this workspace shows is resolved server-side,
-                so until the workspace list lands there is no honest answer
-                — a placeholder beats both an empty sidebar and a guess. */}
-            {workspaceLoading && <NavSkeleton />}
-            {!workspaceLoading && finalNavItems.map((item, idx) => {
-              if (item.type === 'separator') {
-                // The first separator sits right below the search bar
-                // — without trimming the top padding it leaves a wide
-                // gap that makes the section header feel disconnected
-                // from the search trigger.
-                const isFirstSep = idx === 0
-                return (
-                  <div key={`sep-${idx}`} className={cn(
-                    isFirstSep ? 'pt-1 pb-1 px-3' : 'pt-3 pb-1 px-3',
-                    desktopSidebarCollapsed && 'lg:hidden',
-                  )}>
-                    <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted/50">
-                      {t(item.labelKey)}
-                    </span>
-                  </div>
-                )
-              }
-
-              const isActive =
-                item.path === '/'
-                  ? location.pathname === '/'
-                  : location.pathname.startsWith(item.path)
-              const Icon = item.icon
-              const showQuickAdd = item.key === 'transactions' && canWrite
-              const link = (
-                <Link
-                  key={item.key}
-                  to={item.path}
-                  data-tour={`nav-${item.key}`}
-                  onClick={() => setSidebarOpen(false)}
-                  title={t(`nav.${item.key}`)}
-                  aria-label={t(`nav.${item.key}`)}
-                  className={cn(
-                    'flex items-center gap-3 text-[13px] font-medium transition-all rounded-lg px-3 py-2',
-                    isActive
-                      ? 'bg-primary/[0.08] text-primary border-l-[3px] border-primary pl-[9px]'
-                      : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                    desktopSidebarCollapsed && 'lg:h-10 lg:w-10 lg:justify-center lg:border-l-0 lg:px-0 lg:pl-0',
-                  )}
+              {/* AI chat — opens the global slide-over (also reachable via
+              ⌘J). Sits next to the theme toggle so the icon is always
+              within thumb reach on mobile too. */}
+              {chatAvailable && (
+                <button
+                  onClick={() => setChatOpen(true)}
+                  className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
+                  title={`${t('agents.globalChat.title', 'Chat')} (${isMac ? '⌘J' : 'Ctrl+J'})`}
+                  aria-label={t('agents.globalChat.openHint', 'Open chat (⌘J)')}
                 >
-                  <Icon
-                    size={17}
+                  <Bot size={18} />
+                </button>
+              )}
+              <UserMenu
+                userInitial={userInitial}
+                logout={logout}
+                onChangePassword={() => setChangePasswordOpen(true)}
+                onTwoFactor={() => setTwoFactorOpen(true)}
+                onPasskeys={() => setPasskeysOpen(true)}
+                localAuthEnabled={localAuthEnabled}
+                agentsEnabled={agentsEnabled}
+                onBackup={() => setBackupOpen(true)}
+                dark
+                isAdmin={user?.is_superuser}
+              />
+            </div>
+          </header>
+
+          <div className="flex">
+            {/* Sidebar overlay for mobile */}
+            {sidebarOpen && (
+              <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />
+            )}
+
+            {/* Sidebar */}
+            <aside
+              data-collapsed={desktopSidebarCollapsed}
+              className={cn(
+                'group/sidebar fixed inset-y-0 left-0 z-50 w-60 bg-sidebar border-r border-sidebar-border flex flex-col transform transition-[transform,width] duration-300 ease-in-out motion-reduce:transition-none lg:translate-x-0 shrink-0',
+                sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+                desktopSidebarCollapsed ? 'lg:w-16' : 'lg:w-60',
+              )}
+            >
+              {/* Logo — clickable link to the dashboard. Replaces the
+              dedicated 'Painel' nav item so the sidebar stays focused
+              on the main destinations. */}
+              {/* Collapsed on desktop, the header becomes a column: logo on
+              top, then the same privacy / chat / theme buttons stacked,
+              so nothing the expanded header offers goes missing in the
+              rail. */}
+              <div
+                className={cn(
+                  'flex h-16 min-h-16 items-center justify-between px-5 border-b border-sidebar-border shrink-0',
+                  desktopSidebarCollapsed &&
+                    'lg:h-auto lg:min-h-0 lg:flex-col lg:justify-center lg:gap-2 lg:px-0 lg:py-3',
+                )}
+              >
+                <Link
+                  to="/"
+                  className="flex items-center gap-2.5 -mx-1 px-1 py-1 rounded-md hover:bg-sidebar-accent transition-colors"
+                  onClick={() => setSidebarOpen(false)}
+                  aria-label={t('app.name')}
+                  title={t('nav.dashboard')}
+                >
+                  <ShellLogo size={24} className="text-primary shrink-0" />
+                  <span
                     className={cn(
-                      'shrink-0',
-                      isActive ? 'text-primary' : 'text-sidebar-muted',
-                      desktopSidebarCollapsed && 'lg:h-5 lg:w-5',
-                    )}
-                  />
-                  <span className={cn(desktopSidebarCollapsed && 'lg:hidden')}>{t(`nav.${item.key}`)}</span>
-                </Link>
-              )
-              if (!showQuickAdd) return link
-              return (
-                <div key={item.key} className="relative flex items-center">
-                  <div className="min-w-0 flex-1">{link}</div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSidebarOpen(false)
-                      setQuickAddOpen(true)
-                    }}
-                    title={t('transactions.addManual')}
-                    aria-label={t('transactions.addManual')}
-                    className={cn(
-                      'absolute right-2 flex h-6 w-6 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                      'font-bold text-lg text-sidebar-foreground tracking-tight',
                       desktopSidebarCollapsed && 'lg:hidden',
                     )}
                   >
-                    <Plus size={14} />
-                  </button>
-                </div>
-              )
-            })}
-          </nav>
-
-          {/* Account list in sidebar */}
-          {allAccounts.length > 0 && (
-            <div className={cn('px-3 pb-2 mt-2', desktopSidebarCollapsed && 'lg:hidden')}>
-              <button
-                onClick={() => setAccountsExpanded(!accountsExpanded)}
-                className="flex items-center justify-between w-full px-3 py-2 hover:text-sidebar-foreground transition-colors"
-              >
-                <span className="text-[11px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted">
-                  {t('accounts.title')}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`tabular-nums font-medium text-xs ${totalBalance < 0 ? 'text-rose-400' : 'text-sidebar-muted'}`}
-                  >
-                    {mask(formatCurrency(totalBalance, userCurrency, locale))}
+                    {t('app.name')}
                   </span>
-                  <ChevronRight
-                    size={12}
+                </Link>
+                <div className={cn('flex items-center gap-0.5', desktopSidebarCollapsed && 'lg:flex-col lg:gap-1')}>
+                  <button
+                    onClick={togglePrivacyMode}
                     className={cn(
-                      'text-sidebar-muted transition-transform',
-                      accountsExpanded && 'rotate-90',
+                      'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
+                      desktopSidebarCollapsed &&
+                        'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
                     )}
-                  />
-                </div>
-              </button>
-              {accountsExpanded && (
-                <div className="mt-1 space-y-0.5">
-                  {sortAccountsByAbsoluteBalance(visibleAccounts, (a) => sidebarAccountBalance(a).amount).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
-                    const { amount: balance, isPrimary: balanceIsPrimary } = sidebarAccountBalance(acc)
-                    const balanceCurrency = balanceIsPrimary ? userCurrency : acc.currency
-                    const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
-
-                    return (
-                      <Link
-                        key={acc.id}
-                        to={`/accounts/${acc.id}`}
-                        onClick={() => setSidebarOpen(false)}
-                        className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
-                      >
-                        <div className="truncate min-w-0">
-                          <span className="block truncate font-medium">{getAccountName(acc)}</span>
-                          <span className="block text-[10px] text-sidebar-muted/60">
-                            {t(`accounts.type${typeKey}`)}
-                            {acc.shared_balance_group && ` · ${t('accounts.sharedCreditBalance')}`}
-                          </span>
-                        </div>
-                        <div className="text-right shrink-0 ml-2">
-                          <span className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}>
-                            {mask(formatCurrency(balance, balanceCurrency, locale))}
-                          </span>
-                        </div>
-                      </Link>
-                    )
-                  })}
-                  {visibleAccounts.length > 3 && (
+                    title={privacyMode ? t('privacy.show') : t('privacy.hide')}
+                    aria-label={privacyMode ? t('privacy.show') : t('privacy.hide')}
+                  >
+                    {privacyMode ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                  {/* AI chat — same trigger as the mobile bar, ⌘J also
+                  works. Lives in the sidebar header so the entry point
+                  is visible even on first load (no floating button). */}
+                  {chatAvailable && (
                     <button
-                      onClick={() => setAccountsShowAll(!accountsShowAll)}
-                      className="w-full px-3 py-1.5 text-[11px] font-medium text-sidebar-muted/70 hover:text-sidebar-foreground transition-colors text-center"
+                      onClick={() => setChatOpen(true)}
+                      className={cn(
+                        'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
+                        desktopSidebarCollapsed &&
+                          'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
+                      )}
+                      title={`${t('agents.globalChat.title', 'Chat')} (${isMac ? '⌘J' : 'Ctrl+J'})`}
+                      aria-label={t('agents.globalChat.openHint', 'Open chat (⌘J)')}
                     >
-                      {accountsShowAll
-                        ? t('common.showLess', { defaultValue: 'Show less' })
-                        : t('common.showMore', {
-                            count: visibleAccounts.length - 3,
-                            defaultValue: `+${visibleAccounts.length - 3} more`,
-                          })}
+                      <Bot size={16} />
                     </button>
                   )}
+                  <button
+                    onClick={toggleTheme}
+                    className={cn(
+                      'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
+                      desktopSidebarCollapsed &&
+                        'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
+                    )}
+                    title={themeButtonLabel}
+                    aria-label={themeButtonLabel}
+                  >
+                    <ThemeIcon size={16} />
+                  </button>
                 </div>
-              )}
-            </div>
-          )}
-          </div>
+              </div>
 
-          <div className={cn(desktopSidebarCollapsed && 'lg:hidden')}>
-            <UpdateAvailableBanner onOpen={() => setUpdateDialogOpen(true)} />
-          </div>
+              {/* The collapse handle sits on the sidebar's edge, halfway out,
+              vertically centred in the viewport: the border is the thing
+              that moves, so that is where the control lives. Shown on
+              hover and on keyboard focus so it never crowds the header. */}
+              <button
+                type="button"
+                onClick={toggleDesktopSidebar}
+                className="hidden lg:flex absolute top-1/2 -right-3 -translate-y-1/2 h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/sidebar:opacity-100"
+                title={desktopSidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+                aria-label={desktopSidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+                aria-expanded={!desktopSidebarCollapsed}
+              >
+                {desktopSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+              </button>
 
-          {/* Merged account + workspace menu — one trigger at the
+              {/* Command palette trigger */}
+              <div className={cn('px-3 pt-3', desktopSidebarCollapsed && 'lg:px-2')}>
+                <button
+                  type="button"
+                  onClick={() => setPaletteOpen(true)}
+                  className={cn(
+                    'group flex w-full items-center gap-2 rounded-lg border border-sidebar-border/80 bg-sidebar-accent/40 px-3 py-2',
+                    'text-[12.5px] text-sidebar-muted transition-all',
+                    'hover:bg-sidebar-accent hover:text-sidebar-foreground hover:border-sidebar-border',
+                    desktopSidebarCollapsed && 'lg:justify-center lg:px-0',
+                  )}
+                  aria-label={t('cmdk.triggerAria')}
+                >
+                  <Search size={13} className="shrink-0" />
+                  <span className={cn('flex-1 text-left', desktopSidebarCollapsed && 'lg:hidden')}>
+                    {t('cmdk.triggerLabel')}
+                  </span>
+                  <kbd
+                    className={cn(
+                      'hidden lg:inline-flex h-[17px] items-center rounded border border-sidebar-border bg-sidebar px-1 font-mono text-[9.5px] font-semibold text-sidebar-muted/80',
+                      desktopSidebarCollapsed && 'lg:hidden',
+                    )}
+                  >
+                    {isMac ? '⌘' : 'Ctrl'}&nbsp;K
+                  </kbd>
+                </button>
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                {/* Nav */}
+                <nav
+                  className={cn(
+                    'flex flex-col gap-0.5 px-3 pt-1 pb-3',
+                    desktopSidebarCollapsed && 'lg:items-center lg:gap-1 lg:px-0 lg:pt-3',
+                  )}
+                  data-tour="sidebar"
+                >
+                  {/* Which modules this workspace shows is resolved server-side,
+                so until the workspace list lands there is no honest answer
+                — a placeholder beats both an empty sidebar and a guess. */}
+                  {workspaceLoading && <NavSkeleton />}
+                  {!workspaceLoading &&
+                    finalNavItems.map((item, idx) => {
+                      if (item.type === 'separator') {
+                        // The first separator sits right below the search bar
+                        // — without trimming the top padding it leaves a wide
+                        // gap that makes the section header feel disconnected
+                        // from the search trigger.
+                        const isFirstSep = idx === 0
+                        return (
+                          <div
+                            key={`sep-${idx}`}
+                            className={cn(
+                              isFirstSep ? 'pt-1 pb-1 px-3' : 'pt-3 pb-1 px-3',
+                              desktopSidebarCollapsed && 'lg:hidden',
+                            )}
+                          >
+                            <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted/50">
+                              {t(item.labelKey)}
+                            </span>
+                          </div>
+                        )
+                      }
+
+                      const isActive =
+                        item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)
+                      const Icon = item.icon
+                      const showQuickAdd = item.key === 'transactions' && canWrite
+                      const link = (
+                        <Link
+                          key={item.key}
+                          to={item.path}
+                          data-tour={`nav-${item.key}`}
+                          onClick={() => setSidebarOpen(false)}
+                          title={t(`nav.${item.key}`)}
+                          aria-label={t(`nav.${item.key}`)}
+                          className={cn(
+                            'flex items-center gap-3 text-[13px] font-medium transition-all rounded-lg px-3 py-2',
+                            isActive
+                              ? 'bg-primary/[0.08] text-primary border-l-[3px] border-primary pl-[9px]'
+                              : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                            desktopSidebarCollapsed &&
+                              'lg:h-10 lg:w-10 lg:justify-center lg:border-l-0 lg:px-0 lg:pl-0',
+                          )}
+                        >
+                          <Icon
+                            size={17}
+                            className={cn(
+                              'shrink-0',
+                              isActive ? 'text-primary' : 'text-sidebar-muted',
+                              desktopSidebarCollapsed && 'lg:h-5 lg:w-5',
+                            )}
+                          />
+                          <span className={cn(desktopSidebarCollapsed && 'lg:hidden')}>{t(`nav.${item.key}`)}</span>
+                        </Link>
+                      )
+                      if (!showQuickAdd) return link
+                      return (
+                        <div key={item.key} className="relative flex items-center">
+                          <div className="min-w-0 flex-1">{link}</div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSidebarOpen(false)
+                              setQuickAddOpen(true)
+                            }}
+                            title={t('transactions.addManual')}
+                            aria-label={t('transactions.addManual')}
+                            className={cn(
+                              'absolute right-2 flex h-6 w-6 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                              desktopSidebarCollapsed && 'lg:hidden',
+                            )}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                </nav>
+
+                {/* Account list in sidebar */}
+                {allAccounts.length > 0 && (
+                  <div className={cn('px-3 pb-2 mt-2', desktopSidebarCollapsed && 'lg:hidden')}>
+                    <button
+                      onClick={() => setAccountsExpanded(!accountsExpanded)}
+                      className="flex items-center justify-between w-full px-3 py-2 hover:text-sidebar-foreground transition-colors"
+                    >
+                      <span className="text-[11px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted">
+                        {t('accounts.title')}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`tabular-nums font-medium text-xs ${totalBalance < 0 ? 'text-rose-400' : 'text-sidebar-muted'}`}
+                        >
+                          {mask(formatCurrency(totalBalance, userCurrency, locale))}
+                        </span>
+                        <ChevronRight
+                          size={12}
+                          className={cn('text-sidebar-muted transition-transform', accountsExpanded && 'rotate-90')}
+                        />
+                      </div>
+                    </button>
+                    {accountsExpanded && (
+                      <div className="mt-1 space-y-0.5">
+                        {sortAccountsByAbsoluteBalance(visibleAccounts, (a) => sidebarAccountBalance(a).amount)
+                          .slice(0, accountsShowAll ? visibleAccounts.length : 3)
+                          .map((acc) => {
+                            const { amount: balance, isPrimary: balanceIsPrimary } = sidebarAccountBalance(acc)
+                            const balanceCurrency = balanceIsPrimary ? userCurrency : acc.currency
+                            const typeKey = acc.type
+                              .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+                              .replace(/^./, (c) => c.toUpperCase())
+
+                            return (
+                              <Link
+                                key={acc.id}
+                                to={`/accounts/${acc.id}`}
+                                onClick={() => setSidebarOpen(false)}
+                                className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
+                              >
+                                <div className="truncate min-w-0">
+                                  <span className="block truncate font-medium">{getAccountName(acc)}</span>
+                                  <span className="block text-[10px] text-sidebar-muted/60">
+                                    {t(`accounts.type${typeKey}`)}
+                                    {acc.shared_balance_group && ` · ${t('accounts.sharedCreditBalance')}`}
+                                  </span>
+                                </div>
+                                <div className="text-right shrink-0 ml-2">
+                                  <span
+                                    className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}
+                                  >
+                                    {mask(formatCurrency(balance, balanceCurrency, locale))}
+                                  </span>
+                                </div>
+                              </Link>
+                            )
+                          })}
+                        {visibleAccounts.length > 3 && (
+                          <button
+                            onClick={() => setAccountsShowAll(!accountsShowAll)}
+                            className="w-full px-3 py-1.5 text-[11px] font-medium text-sidebar-muted/70 hover:text-sidebar-foreground transition-colors text-center"
+                          >
+                            {accountsShowAll
+                              ? t('common.showLess', { defaultValue: 'Show less' })
+                              : t('common.showMore', {
+                                  count: visibleAccounts.length - 3,
+                                  defaultValue: `+${visibleAccounts.length - 3} more`,
+                                })}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className={cn(desktopSidebarCollapsed && 'lg:hidden')}>
+                <UpdateAvailableBanner onOpen={() => setUpdateDialogOpen(true)} />
+              </div>
+
+              {/* Merged account + workspace menu — one trigger at the
               bottom of the sidebar shows the active workspace as the
               primary identity, the user email + role as the secondary
               line, and combines workspace switching with all the
               account actions that used to live in a separate dropdown. */}
-          <div className={cn('px-3 pt-1', desktopSidebarCollapsed && 'lg:px-2')}>
-            <WorkspaceSwitcher
-              onChangePassword={() => setChangePasswordOpen(true)}
-              onTwoFactor={() => setTwoFactorOpen(true)}
-              onPasskeys={() => setPasskeysOpen(true)}
-              localAuthEnabled={localAuthEnabled}
-              onBackup={() => setBackupOpen(true)}
-              onUpdateAvailable={() => setUpdateDialogOpen(true)}
-              agentsEnabled={agentsEnabled}
-              collapsed={desktopSidebarCollapsed}
-            />
-          </div>
+              <div className={cn('px-3 pt-1', desktopSidebarCollapsed && 'lg:px-2')}>
+                <WorkspaceSwitcher
+                  onChangePassword={() => setChangePasswordOpen(true)}
+                  onTwoFactor={() => setTwoFactorOpen(true)}
+                  onPasskeys={() => setPasskeysOpen(true)}
+                  localAuthEnabled={localAuthEnabled}
+                  onBackup={() => setBackupOpen(true)}
+                  onUpdateAvailable={() => setUpdateDialogOpen(true)}
+                  agentsEnabled={agentsEnabled}
+                  collapsed={desktopSidebarCollapsed}
+                />
+              </div>
 
-          <div className={cn('px-3 pb-3 pt-1', desktopSidebarCollapsed && 'lg:hidden')}>
-            <div
-              className="text-[11px] leading-4 text-sidebar-muted/70 text-center"
-              role="note"
+              <div className={cn('px-3 pb-3 pt-1', desktopSidebarCollapsed && 'lg:hidden')}>
+                <div className="text-[11px] leading-4 text-sidebar-muted/70 text-center" role="note">
+                  <span className="sr-only">{versionA11yLabel}</span>
+                  <span aria-hidden="true" className="block break-all line-clamp-2">
+                    {t('app.versionLabel', { version: APP_VERSION })}
+                  </span>
+                </div>
+              </div>
+            </aside>
+
+            {/* Main content */}
+            <main
+              className={cn(
+                'flex-1 min-h-screen overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
+                desktopSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60',
+              )}
             >
-              <span className="sr-only">{versionA11yLabel}</span>
-              <span aria-hidden="true" className="block break-all line-clamp-2">
-                {t('app.versionLabel', { version: APP_VERSION })}
-              </span>
-            </div>
-          </div>
-        </aside>
-
-        {/* Main content */}
-        <main className={cn(
-          'flex-1 min-h-screen overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
-          desktopSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60',
-        )}>
-          <div className="p-6 max-w-7xl mx-auto">
-            {/* Active-collection filter (issue #105): sticky bar above the
+              <div className="p-6 max-w-7xl mx-auto">
+                {/* Active-collection filter (issue #105): sticky bar above the
                 content so the scope is visible right where the data is. */}
-            <CollectionSelector variant="header" />
-            <Outlet />
+                <CollectionSelector variant="header" />
+                <Outlet />
+              </div>
+            </main>
           </div>
-        </main>
-      </div>
 
-      {showTour && <OnboardingTour onComplete={handleTourComplete} />}
-      {localAuthEnabled && (
-        <ChangePasswordDialog
-          open={changePasswordOpen}
-          onClose={() => setChangePasswordOpen(false)}
-        />
-      )}
-      <TwoFactorSetup
-        open={twoFactorOpen}
-        onClose={() => setTwoFactorOpen(false)}
-        localAuthEnabled={localAuthEnabled}
-      />
-      <PasskeyManagementDialog
-        open={passkeysOpen}
-        onClose={() => setPasskeysOpen(false)}
-        localAuthEnabled={localAuthEnabled}
-      />
-      <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
-      {quickAddOpen && (
-        <Suspense fallback={null}>
-          <QuickAddTransaction open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
-        </Suspense>
-      )}
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-      {/* Slide-over global chat — opened from the sidebar pill or via
+          {showTour && <OnboardingTour onComplete={handleTourComplete} />}
+          {localAuthEnabled && (
+            <ChangePasswordDialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} />
+          )}
+          <TwoFactorSetup
+            open={twoFactorOpen}
+            onClose={() => setTwoFactorOpen(false)}
+            localAuthEnabled={localAuthEnabled}
+          />
+          <PasskeyManagementDialog
+            open={passkeysOpen}
+            onClose={() => setPasskeysOpen(false)}
+            localAuthEnabled={localAuthEnabled}
+          />
+          <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
+          {quickAddOpen && (
+            <Suspense fallback={null}>
+              <QuickAddTransaction open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+            </Suspense>
+          )}
+          <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+          {/* Slide-over global chat — opened from the sidebar pill or via
           ⌘J. The previous floating bottom-right button was removed
           since the entry point now lives in the sidebar next to ⌘K. */}
-      {chatAvailable && (
-        <GlobalChatPanel
-          open={chatOpen}
-          onOpenChange={setChatOpen}
-          initialMessage={chatMessage}
-          onInitialMessageSent={() => setChatMessage(null)}
-        />
-      )}
-      <UpdateAvailableDialog
-        open={updateDialogOpen}
-        onClose={() => setUpdateDialogOpen(false)}
-      />
-    </div>
-    </LibraryProvider>
+          {chatAvailable && (
+            <GlobalChatPanel
+              open={chatOpen}
+              onOpenChange={setChatOpen}
+              initialMessage={chatMessage}
+              onInitialMessageSent={() => setChatMessage(null)}
+            />
+          )}
+          <UpdateAvailableDialog open={updateDialogOpen} onClose={() => setUpdateDialogOpen(false)} />
+        </div>
+      </LibraryProvider>
     </AssistantContext.Provider>
   )
 }
@@ -720,10 +722,7 @@ function UserMenu({
       <DropdownMenuContent align="end">
         {isAdmin && (
           <>
-            <DropdownMenuItem
-              onClick={() => nav('/admin')}
-              className="flex items-center gap-2"
-            >
+            <DropdownMenuItem onClick={() => nav('/admin')} className="flex items-center gap-2">
               <Shield size={14} />
               {t('nav.groupAdmin')}
             </DropdownMenuItem>
@@ -731,10 +730,7 @@ function UserMenu({
           </>
         )}
         {localAuthEnabled && (
-          <DropdownMenuItem
-            onClick={onChangePassword}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={onChangePassword} className="flex items-center gap-2">
             <KeyRound size={14} />
             {t('auth.changePassword')}
           </DropdownMenuItem>
@@ -743,50 +739,32 @@ function UserMenu({
             entries would strand the user with a factor and no way to remove
             it, since the product has no recovery codes. */}
         {(localAuthEnabled || user?.is_2fa_enabled) && (
-          <DropdownMenuItem
-            onClick={onTwoFactor}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={onTwoFactor} className="flex items-center gap-2">
             <ShieldCheck size={14} />
             {t(localAuthEnabled ? 'auth.twoFactorTitle' : 'auth.disable2fa')}
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem
-          onClick={onPasskeys}
-          className="flex items-center gap-2"
-        >
+        <DropdownMenuItem onClick={onPasskeys} className="flex items-center gap-2">
           <Fingerprint size={14} />
           {t('auth.passkeysTitle')}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={onBackup}
-          className="flex items-center gap-2"
-        >
+        <DropdownMenuItem onClick={onBackup} className="flex items-center gap-2">
           <HardDriveDownload size={14} />
           {t('backup.button')}
         </DropdownMenuItem>
         {agentsEnabled && (
-          <DropdownMenuItem
-            onClick={() => nav('/agents')}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={() => nav('/agents')} className="flex items-center gap-2">
             <Sparkles size={14} />
             {t('nav.aiAgents')}
           </DropdownMenuItem>
         )}
         {pluginsEnabled && (
-          <DropdownMenuItem
-            onClick={() => nav('/plugins')}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={() => nav('/plugins')} className="flex items-center gap-2">
             <Puzzle size={14} />
             {t('plugins.title')}
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem
-          onClick={() => openLibrary('themes')}
-          className="flex items-center gap-2"
-        >
+        <DropdownMenuItem onClick={() => openLibrary('themes')} className="flex items-center gap-2">
           <Palette size={14} />
           {t('library.appearance')}
         </DropdownMenuItem>
@@ -803,167 +781,79 @@ function UserMenu({
               <DropdownMenuLabel className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
                 {t('setup.language')}
               </DropdownMenuLabel>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('ru')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('ru')} className="flex items-center gap-2">
                 <span className="flex-1">Русский</span>
-                {currentLang === 'ru' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'ru' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('de')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('de')} className="flex items-center gap-2">
                 <span className="flex-1">Deutsch</span>
-                {currentLang === 'de' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'de' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('uk')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('uk')} className="flex items-center gap-2">
                 <span className="flex-1">Українська</span>
-                {currentLang === 'uk' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'uk' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('pt-BR')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('pt-BR')} className="flex items-center gap-2">
                 <span className="flex-1">Português (BR)</span>
-                {currentLang === 'pt-BR' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'pt-BR' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('pt-PT')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('pt-PT')} className="flex items-center gap-2">
                 <span className="flex-1">Português (PT)</span>
-                {currentLang === 'pt-PT' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'pt-PT' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('en')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('en')} className="flex items-center gap-2">
                 <span className="flex-1">English</span>
-                {currentLang === 'en' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'en' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('es')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('es')} className="flex items-center gap-2">
                 <span className="flex-1">Español</span>
-                {currentLang === 'es' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'es' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('hi')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('hi')} className="flex items-center gap-2">
                 <span className="flex-1">हिन्दी</span>
-                {currentLang === 'hi' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'hi' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('pl')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('pl')} className="flex items-center gap-2">
                 <span className="flex-1">Polski</span>
-                {currentLang === 'pl' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'pl' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('it')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('it')} className="flex items-center gap-2">
                 <span className="flex-1">Italiano</span>
-                {currentLang === 'it' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'it' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('fr')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('fr')} className="flex items-center gap-2">
                 <span className="flex-1">Français</span>
-                {currentLang === 'fr' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'fr' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('nl')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('nl')} className="flex items-center gap-2">
                 <span className="flex-1">Nederlands</span>
-                {currentLang === 'nl' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'nl' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('cs')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('cs')} className="flex items-center gap-2">
                 <span className="flex-1">Čeština</span>
-                {currentLang === 'cs' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'cs' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('sk')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('sk')} className="flex items-center gap-2">
                 <span className="flex-1">Slovenčina</span>
-                {currentLang === 'sk' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'sk' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('hu')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('hu')} className="flex items-center gap-2">
                 <span className="flex-1">Magyar</span>
-                {currentLang === 'hu' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'hu' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('el')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('el')} className="flex items-center gap-2">
                 <span className="flex-1">Ελληνικά</span>
-                {currentLang === 'el' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'el' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => i18n.changeLanguage('ja')}
-                className="flex items-center gap-2"
-              >
+              <DropdownMenuItem onClick={() => i18n.changeLanguage('ja')} className="flex items-center gap-2">
                 <span className="flex-1">日本語</span>
-                {currentLang === 'ja' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'ja' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuPortal>
         </DropdownMenuSub>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={logout}
-          className="text-rose-600 focus:text-rose-600"
-        >
+        <DropdownMenuItem onClick={logout} className="text-rose-600 focus:text-rose-600">
           {t('auth.logout')}
         </DropdownMenuItem>
       </DropdownMenuContent>

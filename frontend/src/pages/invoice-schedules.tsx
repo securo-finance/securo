@@ -17,13 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { SectionCard, Segmented, TH } from '@/components/invoice-ui'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
@@ -198,9 +192,7 @@ export default function InvoiceSchedulesPage() {
           <div className="px-5 py-14 text-center" data-testid="schedules-empty">
             <Repeat className="h-8 w-8 mx-auto text-muted-foreground/50" />
             <p className="mt-3 text-sm text-muted-foreground max-w-sm mx-auto">
-              {filter === 'all'
-                ? t('invoices.schedules.empty')
-                : t('invoices.schedules.emptyFiltered')}
+              {filter === 'all' ? t('invoices.schedules.empty') : t('invoices.schedules.emptyFiltered')}
             </p>
             {filter === 'all' && canWrite && (
               <Button size="sm" className="mt-4" onClick={() => setCreateOpen(true)}>
@@ -215,19 +207,13 @@ export default function InvoiceSchedulesPage() {
               <thead>
                 <tr className="border-b border-border">
                   <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('invoices.schedules.column.name')}</th>
-                  <th className={`${TH} text-left hidden md:table-cell`}>
-                    {t('invoices.schedules.column.cadence')}
-                  </th>
+                  <th className={`${TH} text-left hidden md:table-cell`}>{t('invoices.schedules.column.cadence')}</th>
                   <th className={`${TH} text-right w-32 pr-6`}>{t('invoices.schedules.column.monthly')}</th>
-                  <th className={`${TH} text-left w-36 hidden sm:table-cell`}>
-                    {t('invoices.schedules.column.next')}
-                  </th>
+                  <th className={`${TH} text-left w-36 hidden sm:table-cell`}>{t('invoices.schedules.column.next')}</th>
                   <th className={`${TH} text-right w-20 hidden lg:table-cell`}>
                     {t('invoices.schedules.column.invoices')}
                   </th>
-                  <th className={`${TH} pr-4 sm:pr-5 text-right w-28`}>
-                    {t('invoices.schedules.column.status')}
-                  </th>
+                  <th className={`${TH} pr-4 sm:pr-5 text-right w-28`}>{t('invoices.schedules.column.status')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -254,9 +240,11 @@ export default function InvoiceSchedulesPage() {
                       )}
                     </td>
                     <td className="py-3 pr-6 text-right text-sm font-bold tabular-nums">
-                      {schedule.status === 'active'
-                        ? money(schedule.monthly_amount, schedule.currency)
-                        : <span className="text-muted-foreground font-medium">—</span>}
+                      {schedule.status === 'active' ? (
+                        money(schedule.monthly_amount, schedule.currency)
+                      ) : (
+                        <span className="text-muted-foreground font-medium">—</span>
+                      )}
                     </td>
                     <td className="py-3 hidden sm:table-cell text-xs text-muted-foreground tabular-nums">
                       {schedule.status === 'active' && schedule.next_period_start
@@ -287,17 +275,7 @@ export default function InvoiceSchedulesPage() {
   )
 }
 
-function Stat({
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  label: string
-  value: string
-  hint?: string
-  tone?: string
-}) {
+function Stat({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: string }) {
   return (
     <div>
       <p className="text-xs font-medium text-muted-foreground mb-0.5">{label}</p>
@@ -341,9 +319,7 @@ function CreateScheduleDialog({
   const [paymentTerms, setPaymentTerms] = useState('')
   const [notes, setNotes] = useState('')
   const [currencyCode, setCurrencyCode] = useState(user?.preferences?.currency_display ?? 'USD')
-  const [lines, setLines] = useState<InvoiceLineInput[]>([
-    { description: '', quantity: '1', unit_price: '0' },
-  ])
+  const [lines, setLines] = useState<InvoiceLineInput[]>([{ description: '', quantity: '1', unit_price: '0' }])
 
   const perPeriod = linesTotal(lines)
   const monthly = monthlyEquivalent(perPeriod, frequency)

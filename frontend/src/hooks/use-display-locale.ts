@@ -57,10 +57,5 @@ export function useDateLocale(): string {
   })
 
   const language = resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language)
-  return resolveDateLocale(
-    dateData?.format,
-    numberData?.format,
-    user?.preferences?.currency_display,
-    language,
-  )
+  return resolveDateLocale(dateData?.format, numberData?.format, user?.preferences?.currency_display, language)
 }

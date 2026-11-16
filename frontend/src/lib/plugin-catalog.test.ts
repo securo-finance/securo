@@ -62,9 +62,15 @@ describe('plugin catalog', () => {
 
   it('filters by type, content, language and status', () => {
     const data = entry({ id: 'a/data' })
-    const code = entry({ id: 'b/code', contributes: { connectors: 1 }, installed_version: '1.0.0', update_available: true })
+    const code = entry({
+      id: 'b/code',
+      contributes: { connectors: 1 },
+      installed_version: '1.0.0',
+      update_available: true,
+    })
     const plugins = [data, code]
-    const ids = (filters: Partial<typeof NO_FILTERS>) => filterPlugins(plugins, { ...NO_FILTERS, ...filters }).map((e) => e.id)
+    const ids = (filters: Partial<typeof NO_FILTERS>) =>
+      filterPlugins(plugins, { ...NO_FILTERS, ...filters }).map((e) => e.id)
     expect(ids({ type: 'code' })).toEqual(['b/code'])
     expect(ids({ kind: 'rules' })).toEqual(['a/data'])
     expect(ids({ locale: 'pt-BR' })).toEqual(['a/data', 'b/code'])
@@ -86,8 +92,20 @@ describe('plugin catalog', () => {
   })
 
   it('sorts by stars, recency and name', () => {
-    const old = entry({ id: 'a/old', name: { en: 'Alpha' }, stars: 50, added_at: '2026-01-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' })
-    const fresh = entry({ id: 'b/new', name: { en: 'Beta' }, stars: 5, added_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-02T00:00:00Z' })
+    const old = entry({
+      id: 'a/old',
+      name: { en: 'Alpha' },
+      stars: 50,
+      added_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-10-01T00:00:00Z',
+    })
+    const fresh = entry({
+      id: 'b/new',
+      name: { en: 'Beta' },
+      stars: 5,
+      added_at: '2026-11-01T00:00:00Z',
+      updated_at: '2026-11-02T00:00:00Z',
+    })
     expect(sortPlugins([fresh, old], 'popular', name).map((e) => e.id)).toEqual(['a/old', 'b/new'])
     expect(sortPlugins([old, fresh], 'newest', name).map((e) => e.id)).toEqual(['b/new', 'a/old'])
     expect(sortPlugins([old, fresh], 'updated', name).map((e) => e.id)).toEqual(['b/new', 'a/old'])

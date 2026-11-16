@@ -20,7 +20,7 @@ describe('rule condition helpers', () => {
 
   it('flattens one level of groups into their leaves', () => {
     const nodes: RuleConditionNode[] = [leaf, group]
-    expect(flattenConditions(nodes).map(c => c.value)).toEqual(['UBER', 'IFOOD', 'RAPPI'])
+    expect(flattenConditions(nodes).map((c) => c.value)).toEqual(['UBER', 'IFOOD', 'RAPPI'])
   })
 
   it('leaves flat rules untouched when flattening', () => {

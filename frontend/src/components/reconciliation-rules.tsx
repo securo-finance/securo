@@ -15,21 +15,12 @@
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  reconciliation as reconciliationApi,
-  accounts as accountsApi,
-  payees as payeesApi,
-} from '@/lib/api'
+import { reconciliation as reconciliationApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type {
   Account,
   Payee,
@@ -106,13 +97,8 @@ function swap(rules: ReconciliationRule[], from: number, to: number): string[] {
   return ids
 }
 
-
 function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      {children}
-    </div>
-  )
+  return <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">{children}</div>
 }
 
 /** One rule in a sentence, built from the signals it actually consults.
@@ -251,35 +237,25 @@ function conditionSummary(
   if (when.accounts?.in?.length) {
     parts.push(
       t('reconciliation.cond.accounts', {
-        names: when.accounts.in
-          .map((id) => names.accounts.find((a) => a.id === id)?.name ?? '?')
-          .join(', '),
+        names: when.accounts.in.map((id) => names.accounts.find((a) => a.id === id)?.name ?? '?').join(', '),
       }),
     )
   }
   if (when.payees?.in?.length) {
     parts.push(
       t('reconciliation.cond.payees', {
-        names: when.payees.in
-          .map((id) => names.payees.find((p) => p.id === id)?.name ?? '?')
-          .join(', '),
+        names: when.payees.in.map((id) => names.payees.find((p) => p.id === id)?.name ?? '?').join(', '),
       }),
     )
   }
   if (when.direction && when.direction !== 'any') {
-    parts.push(
-      t(when.direction === 'credit'
-        ? 'reconciliation.cond.moneyIn'
-        : 'reconciliation.cond.moneyOut'),
-    )
+    parts.push(t(when.direction === 'credit' ? 'reconciliation.cond.moneyIn' : 'reconciliation.cond.moneyOut'))
   }
   if (when.currency?.foreign) parts.push(t('reconciliation.cond.foreign'))
-  if (when.currency?.in?.length)
-    parts.push(t('reconciliation.cond.currencyIn', { codes: when.currency.in.join(', ') }))
+  if (when.currency?.in?.length) parts.push(t('reconciliation.cond.currencyIn', { codes: when.currency.in.join(', ') }))
   if (when.amount?.min) parts.push(t('reconciliation.cond.atLeast', { value: when.amount.min }))
   if (when.amount?.max) parts.push(t('reconciliation.cond.atMost', { value: when.amount.max }))
-  if (when.text?.contains)
-    parts.push(t('reconciliation.cond.textContains', { text: joinWords(when.text.contains) }))
+  if (when.text?.contains) parts.push(t('reconciliation.cond.textContains', { text: joinWords(when.text.contains) }))
   if (when.text?.not_contains)
     parts.push(t('reconciliation.cond.textExcludes', { text: joinWords(when.text.not_contains) }))
 
@@ -289,25 +265,18 @@ function conditionSummary(
   if (when.account_types?.length)
     parts.push(
       t('reconciliation.cond.accountTypes', {
-        kinds: when.account_types
-          .map((kind) => t(ACCOUNT_TYPE_CONFIG[kind]?.label ?? kind))
-          .join(', '),
+        kinds: when.account_types.map((kind) => t(ACCOUNT_TYPE_CONFIG[kind]?.label ?? kind)).join(', '),
       }),
     )
-  if (when.account_name_in_description)
-    parts.push(t('reconciliation.cond.accountNamed'))
+  if (when.account_name_in_description) parts.push(t('reconciliation.cond.accountNamed'))
 
   if (when.amount?.match === 'exact') parts.push(t('reconciliation.cond.amountExact'))
   else if (when.amount?.match === 'tolerance')
     parts.push(t('reconciliation.cond.amountTolerance', { percent: when.amount.percent }))
-  else if (when.amount?.match === 'ratio')
-    parts.push(t('reconciliation.cond.amountRatio'))
-  else if (when.amount?.match === 'partial')
-    parts.push(t('reconciliation.cond.amountPartial'))
+  else if (when.amount?.match === 'ratio') parts.push(t('reconciliation.cond.amountRatio'))
+  else if (when.amount?.match === 'partial') parts.push(t('reconciliation.cond.amountPartial'))
   else if (when.amount?.match === 'set')
-    parts.push(
-      t('reconciliation.cond.amountSet', { count: when.amount.max_invoices ?? 6 }),
-    )
+    parts.push(t('reconciliation.cond.amountSet', { count: when.amount.max_invoices ?? 6 }))
 
   if (when.date)
     parts.push(
@@ -318,9 +287,7 @@ function conditionSummary(
     )
 
   if (when.description_similarity)
-    parts.push(
-      t('reconciliation.cond.similarity', { min: when.description_similarity.min }),
-    )
+    parts.push(t('reconciliation.cond.similarity', { min: when.description_similarity.min }))
 
   // Last, because both answer the same question and it is the one asked
   // after everything else has already fitted: several candidates got
@@ -381,7 +348,6 @@ function Step({
   )
 }
 
-
 /** Pick none, one, or several: accounts or clients.
  *
  *  Checkboxes rather than a multi-select control because the list is short
@@ -402,23 +368,14 @@ function MultiPicker({
   if (options.length === 0) return null
   return (
     <div className="mt-0.5 max-h-32 overflow-y-auto rounded-md border border-input divide-y divide-border">
-      {selected.length === 0 && (
-        <p className="px-3 py-1.5 text-xs text-muted-foreground italic">{empty}</p>
-      )}
+      {selected.length === 0 && <p className="px-3 py-1.5 text-xs text-muted-foreground italic">{empty}</p>}
       {options.map((option) => (
-        <label
-          key={option.id}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-muted"
-        >
+        <label key={option.id} className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-muted">
           <input
             type="checkbox"
             checked={selected.includes(option.id)}
             onChange={(e) =>
-              onChange(
-                e.target.checked
-                  ? [...selected, option.id]
-                  : selected.filter((id) => id !== option.id),
-              )
+              onChange(e.target.checked ? [...selected, option.id] : selected.filter((id) => id !== option.id))
             }
           />
           <span className="truncate">{option.label}</span>
@@ -427,7 +384,6 @@ function MultiPicker({
     </div>
   )
 }
-
 
 interface EditorProps {
   open: boolean
@@ -483,9 +439,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
   // A transfer rule runs at any moment, because both its legs are money
   // moving. Seeding a new one with 'both' keeps the field it cannot show
   // from sending a value that would quietly narrow it.
-  const [trigger, setTrigger] = useState<Trigger>(
-    rule?.trigger ?? (node === TRANSFER_NODE ? 'both' : 'money_arrives'),
-  )
+  const [trigger, setTrigger] = useState<Trigger>(rule?.trigger ?? (node === TRANSFER_NODE ? 'both' : 'money_arrives'))
   const [when, setWhen] = useState<ReconciliationConditions>(rule?.when ?? blankFor(node))
 
   // The dialog is mounted once and reused, so it has to be re-seeded
@@ -532,11 +486,15 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
     </div>
   )
 
-  const inputClass =
-    'w-full px-3 py-2 text-sm border border-input rounded-md bg-background'
+  const inputClass = 'w-full px-3 py-2 text-sm border border-input rounded-md bg-background'
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
       {/* Capped and scrolled, with the actions outside the scrolling part.
           A rule with every section open is taller than a laptop viewport,
           and a dialog whose Save button is below the fold with nothing to
@@ -578,37 +536,33 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                 the right answer. */}
             {node !== TRANSFER_NODE &&
               field(
-              t('reconciliation.field.trigger'),
-              t('reconciliation.field.triggerHint'),
-              <div className="space-y-1.5">
-                {(['money_arrives', 'invoice_issued', 'both'] as const).map((value) => (
-                  <label
-                    key={value}
-                    className={cn(
-                      'flex items-start gap-2 px-3 py-2 rounded-md border cursor-pointer transition-colors',
-                      trigger === value
-                        ? 'border-primary bg-primary/5'
-                        : 'border-input hover:bg-muted',
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      className="mt-1"
-                      checked={trigger === value}
-                      onChange={() => setTrigger(value)}
-                    />
-                    <span>
-                      <span className="text-sm font-medium block">
-                        {t(`reconciliation.trigger.${value}`)}
+                t('reconciliation.field.trigger'),
+                t('reconciliation.field.triggerHint'),
+                <div className="space-y-1.5">
+                  {(['money_arrives', 'invoice_issued', 'both'] as const).map((value) => (
+                    <label
+                      key={value}
+                      className={cn(
+                        'flex items-start gap-2 px-3 py-2 rounded-md border cursor-pointer transition-colors',
+                        trigger === value ? 'border-primary bg-primary/5' : 'border-input hover:bg-muted',
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        className="mt-1"
+                        checked={trigger === value}
+                        onChange={() => setTrigger(value)}
+                      />
+                      <span>
+                        <span className="text-sm font-medium block">{t(`reconciliation.trigger.${value}`)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {t(`reconciliation.trigger.${value}Hint`)}
+                        </span>
                       </span>
-                      <span className="text-xs text-muted-foreground">
-                        {t(`reconciliation.trigger.${value}Hint`)}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </div>,
-            )}
+                    </label>
+                  ))}
+                </div>,
+              )}
 
             {field(
               t('reconciliation.field.outcome'),
@@ -626,31 +580,21 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                         : 'bg-background border-input text-muted-foreground hover:text-foreground',
                     )}
                   >
-                    {t(
-                      value === 'link'
-                        ? 'reconciliation.outcome.link'
-                        : 'reconciliation.outcome.suggest',
-                    )}
+                    {t(value === 'link' ? 'reconciliation.outcome.link' : 'reconciliation.outcome.suggest')}
                   </button>
                 ))}
               </div>,
             )}
           </Step>
 
-          <Step
-            index={2}
-            title={t('reconciliation.step.which')}
-            hint={t('reconciliation.step.whichHint')}
-          >
+          <Step index={2} title={t('reconciliation.step.which')} hint={t('reconciliation.step.whichHint')}>
             {field(
               t('reconciliation.field.accounts'),
               null,
               <MultiPicker
                 options={accountList.map((a) => ({ id: a.id, label: a.name }))}
                 selected={when.accounts?.in ?? []}
-                onChange={(ids) =>
-                  setWhen({ ...when, accounts: ids.length ? { in: ids } : undefined })
-                }
+                onChange={(ids) => setWhen({ ...when, accounts: ids.length ? { in: ids } : undefined })}
                 empty={t('reconciliation.field.anyAccount')}
               />,
             )}
@@ -661,9 +605,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
               <MultiPicker
                 options={payeeList.map((p) => ({ id: p.id, label: p.name }))}
                 selected={when.payees?.in ?? []}
-                onChange={(ids) =>
-                  setWhen({ ...when, payees: ids.length ? { in: ids } : undefined })
-                }
+                onChange={(ids) => setWhen({ ...when, payees: ids.length ? { in: ids } : undefined })}
                 empty={t('reconciliation.field.anyPayee')}
               />,
             )}
@@ -773,21 +715,15 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                   className={inputClass}
                   placeholder={t('reconciliation.field.textContains')}
                   value={when.text?.contains}
-                  onChange={(next) =>
-                    setWhen({ ...when, text: { ...when.text, contains: next } })
-                  }
+                  onChange={(next) => setWhen({ ...when, text: { ...when.text, contains: next } })}
                 />
                 <WordsInput
                   className={`${inputClass} mt-1.5`}
                   placeholder={t('reconciliation.field.textExcludes')}
                   value={when.text?.not_contains}
-                  onChange={(next) =>
-                    setWhen({ ...when, text: { ...when.text, not_contains: next } })
-                  }
+                  onChange={(next) => setWhen({ ...when, text: { ...when.text, not_contains: next } })}
                 />
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  {t('reconciliation.field.textHint')}
-                </p>
+                <p className="text-[11px] text-muted-foreground mt-1">{t('reconciliation.field.textHint')}</p>
               </>,
             )}
           </Step>
@@ -847,34 +783,30 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                     {t('reconciliation.cond.uniqueCandidate')}
                   </label>
                   <div className="pt-1">
-                    <p className="text-xs text-muted-foreground mb-1">
-                      {t('reconciliation.field.accountTypes')}
-                    </p>
+                    <p className="text-xs text-muted-foreground mb-1">{t('reconciliation.field.accountTypes')}</p>
                     <div className="flex flex-wrap gap-x-3 gap-y-1">
-                      {(Object.keys(ACCOUNT_TYPE_CONFIG) as (keyof typeof ACCOUNT_TYPE_CONFIG)[]).map(
-                        (kind) => (
-                          <label
-                            key={kind}
-                            className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!!when.account_types?.includes(kind as never)}
-                              onChange={(e) => {
-                                const current = when.account_types ?? []
-                                const next = e.target.checked
-                                  ? [...current, kind as never]
-                                  : current.filter((item) => item !== kind)
-                                setWhen({
-                                  ...when,
-                                  account_types: next.length ? next : undefined,
-                                })
-                              }}
-                            />
-                            {t(ACCOUNT_TYPE_CONFIG[kind].label)}
-                          </label>
-                        ),
-                      )}
+                      {(Object.keys(ACCOUNT_TYPE_CONFIG) as (keyof typeof ACCOUNT_TYPE_CONFIG)[]).map((kind) => (
+                        <label
+                          key={kind}
+                          className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!when.account_types?.includes(kind as never)}
+                            onChange={(e) => {
+                              const current = when.account_types ?? []
+                              const next = e.target.checked
+                                ? [...current, kind as never]
+                                : current.filter((item) => item !== kind)
+                              setWhen({
+                                ...when,
+                                account_types: next.length ? next : undefined,
+                              })
+                            }}
+                          />
+                          {t(ACCOUNT_TYPE_CONFIG[kind].label)}
+                        </label>
+                      ))}
                     </div>
                   </div>
                 </div>,
@@ -882,35 +814,32 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
 
             {node !== TRANSFER_NODE &&
               field(
-              t('reconciliation.field.counterparty'),
-              null,
-              <select
-                className={inputClass}
-                value={when.counterparty ?? 'any'}
-                onChange={(e) =>
-                  setWhen({ ...when, counterparty: e.target.value as 'any' | 'same_payee' })
-                }
-              >
-                <option value="any">{t('reconciliation.counterparty.any')}</option>
-                <option value="same_payee">{t('reconciliation.counterparty.samePayee')}</option>
-              </select>,
-            )}
+                t('reconciliation.field.counterparty'),
+                null,
+                <select
+                  className={inputClass}
+                  value={when.counterparty ?? 'any'}
+                  onChange={(e) => setWhen({ ...when, counterparty: e.target.value as 'any' | 'same_payee' })}
+                >
+                  <option value="any">{t('reconciliation.counterparty.any')}</option>
+                  <option value="same_payee">{t('reconciliation.counterparty.samePayee')}</option>
+                </select>,
+              )}
 
             {field(
               t('reconciliation.field.amountMatch'),
-              t(node === TRANSFER_NODE ? 'reconciliation.field.amountMatchHintTransfer' : 'reconciliation.field.amountMatchHint'),
+              t(
+                node === TRANSFER_NODE
+                  ? 'reconciliation.field.amountMatchHintTransfer'
+                  : 'reconciliation.field.amountMatchHint',
+              ),
               <>
                 <div className="flex gap-2">
                   <select
                     className={inputClass}
                     value={amountMatch}
                     onChange={(e) => {
-                      const match = e.target.value as
-                        | 'exact'
-                        | 'tolerance'
-                        | 'ratio'
-                        | 'partial'
-                        | 'set'
+                      const match = e.target.value as 'exact' | 'tolerance' | 'ratio' | 'partial' | 'set'
                       const kept = { min: when.amount?.min, max: when.amount?.max }
                       setWhen({
                         ...when,
@@ -966,20 +895,14 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                   )}
                 </div>
                 {amountMatch === 'partial' && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t('reconciliation.amount.partialHint')}
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('reconciliation.amount.partialHint')}</p>
                 )}
                 {amountMatch === 'set' && (
                   <div className="mt-1.5 space-y-1.5">
-                    <p className="text-xs text-muted-foreground">
-                      {t('reconciliation.amount.setHint')}
-                    </p>
+                    <p className="text-xs text-muted-foreground">{t('reconciliation.amount.setHint')}</p>
                     <div className="flex gap-2 items-end">
                       <label className="flex-1">
-                        <span className="text-xs text-muted-foreground">
-                          {t('reconciliation.amount.setMax')}
-                        </span>
+                        <span className="text-xs text-muted-foreground">{t('reconciliation.amount.setMax')}</span>
                         <input
                           type="number"
                           min={2}
@@ -999,9 +922,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                         />
                       </label>
                       <label className="flex-1">
-                        <span className="text-xs text-muted-foreground">
-                          {t('reconciliation.amount.setFee')}
-                        </span>
+                        <span className="text-xs text-muted-foreground">{t('reconciliation.amount.setFee')}</span>
                         <div className="flex items-center gap-1 mt-0.5">
                           <input
                             type="number"
@@ -1025,15 +946,11 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                         </div>
                       </label>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {t('reconciliation.amount.setFeeHint')}
-                    </p>
+                    <p className="text-xs text-muted-foreground">{t('reconciliation.amount.setFeeHint')}</p>
                   </div>
                 )}
                 {amountMatch === 'ratio' && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t('reconciliation.amount.ratioHint')}
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('reconciliation.amount.ratioHint')}</p>
                 )}
               </>,
             )}
@@ -1043,9 +960,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
               t(node === TRANSFER_NODE ? 'reconciliation.field.windowHintTransfer' : 'reconciliation.field.windowHint'),
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <span className="text-xs text-muted-foreground">
-                    {t('reconciliation.field.beforeDays')}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{t('reconciliation.field.beforeDays')}</span>
                   <input
                     type="number"
                     min={0}
@@ -1064,9 +979,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                   />
                 </div>
                 <div className="flex-1">
-                  <span className="text-xs text-muted-foreground">
-                    {t('reconciliation.field.afterDays')}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{t('reconciliation.field.afterDays')}</span>
                   <input
                     type="number"
                     min={0}
@@ -1101,9 +1014,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                 onChange={(e) =>
                   setWhen({
                     ...when,
-                    description_similarity: e.target.value
-                      ? { min: e.target.value }
-                      : undefined,
+                    description_similarity: e.target.value ? { min: e.target.value } : undefined,
                   })
                 }
               />,
@@ -1127,9 +1038,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
 export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [editing, setEditing] = useState<{ node: string; rule: ReconciliationRule | null } | null>(
-    null,
-  )
+  const [editing, setEditing] = useState<{ node: string; rule: ReconciliationRule | null } | null>(null)
   const [deleting, setDeleting] = useState<{
     node: string
     rule: ReconciliationRule
@@ -1173,15 +1082,13 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
   // where we shipped them reads correctly today and rearranges itself the
   // day a default is inserted.
   const move = useMutation({
-    mutationFn: ({ node, ids }: { node: string; ids: string[] }) =>
-      reconciliationApi.reorderRules(node, ids),
+    mutationFn: ({ node, ids }: { node: string; ids: string[] }) => reconciliationApi.reorderRules(node, ids),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reconciliation-rules'] }),
     onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
   const reset = useMutation({
-    mutationFn: ({ node, id }: { node: string; id: string }) =>
-      reconciliationApi.resetRule(node, id),
+    mutationFn: ({ node, id }: { node: string; id: string }) => reconciliationApi.resetRule(node, id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['reconciliation-rules'] })
       toast.success(t('reconciliation.reset'))
@@ -1190,8 +1097,7 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
   })
 
   const remove = useMutation({
-    mutationFn: ({ node, id }: { node: string; id: string }) =>
-      reconciliationApi.deleteRule(node, id),
+    mutationFn: ({ node, id }: { node: string; id: string }) => reconciliationApi.deleteRule(node, id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['reconciliation-rules'] })
       setDeleting(null)
@@ -1306,11 +1212,7 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
               {canWrite && (
                 // Last and solid, the same place, shape and word as on
                 // the categorization card above.
-                <Button
-                  size="sm"
-                  className="gap-1.5 h-8"
-                  onClick={() => setEditing({ node: group.node, rule: null })}
-                >
+                <Button size="sm" className="gap-1.5 h-8" onClick={() => setEditing({ node: group.node, rule: null })}>
                   <Plus size={13} />
                   <span className="hidden sm:inline">{t('rules.add')}</span>
                 </Button>
@@ -1327,7 +1229,9 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                   canWrite && 'cursor-pointer',
                   !rule.enabled && 'opacity-55',
                 )}
-                onClick={() => { if (canWrite) setEditing({ node: group.node, rule }) }}
+                onClick={() => {
+                  if (canWrite) setEditing({ node: group.node, rule })
+                }}
               >
                 <div className="flex items-start justify-between gap-4">
                   {/* The position, shown because it *is* the mechanism: the
@@ -1341,17 +1245,12 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                       {index + 1}
                     </span>
                     {canWrite && group.rules.length > 1 && (
-                      <div
-                        className="flex flex-col -space-y-1 mt-0.5"
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <div className="flex flex-col -space-y-1 mt-0.5" onClick={(e) => e.stopPropagation()}>
                         <button
                           className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:hover:text-muted-foreground"
                           disabled={index === 0 || move.isPending}
                           title={t('reconciliation.moveUp')}
-                          onClick={() =>
-                            move.mutate({ node: group.node, ids: swap(group.rules, index, index - 1) })
-                          }
+                          onClick={() => move.mutate({ node: group.node, ids: swap(group.rules, index, index - 1) })}
                         >
                           <ChevronUp size={13} />
                         </button>
@@ -1359,9 +1258,7 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                           className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:hover:text-muted-foreground"
                           disabled={index === group.rules.length - 1 || move.isPending}
                           title={t('reconciliation.moveDown')}
-                          onClick={() =>
-                            move.mutate({ node: group.node, ids: swap(group.rules, index, index + 1) })
-                          }
+                          onClick={() => move.mutate({ node: group.node, ids: swap(group.rules, index, index + 1) })}
                         >
                           <ChevronDown size={13} />
                         </button>
@@ -1377,11 +1274,7 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                       <OutcomeBadge outcome={rule.outcome} />
                       {rule.customised && (
                         <span className="text-[10px] font-semibold bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300 px-1.5 py-0.5 rounded-full">
-                          {t(
-                            rule.origin === 'custom'
-                              ? 'reconciliation.yours'
-                              : 'reconciliation.changed',
-                          )}
+                          {t(rule.origin === 'custom' ? 'reconciliation.yours' : 'reconciliation.changed')}
                         </span>
                       )}
                       {!rule.enabled && (
@@ -1396,10 +1289,7 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                   </div>
 
                   {canWrite && (
-                    <div
-                      className="flex items-center gap-1 shrink-0"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                       {/* Two slots, in this order, on every rule in both
                           lists: stop it, then get rid of it. The same
                           icons in the same places, because a
@@ -1469,9 +1359,7 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
               nothing left to click. */}
           {group.discarded.length > 0 && (
             <div className="px-4 sm:px-5 py-2.5 bg-muted/30 border-t border-border flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-[11px] text-muted-foreground">
-                {t('reconciliation.discarded')}
-              </span>
+              <span className="text-[11px] text-muted-foreground">{t('reconciliation.discarded')}</span>
               {group.discarded.map((gone) => (
                 <button
                   key={gone.id}
@@ -1508,22 +1396,23 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
         open={deleting !== null}
         title={t('reconciliation.confirmDeleteTitle')}
         description={t('reconciliation.confirmDeleteDescription', {
-          name:
-            deleting?.rule.name ||
-            t(SHIPPED_NAME[deleting?.rule.id ?? ''] ?? 'reconciliation.rule.unknown'),
+          name: deleting?.rule.name || t(SHIPPED_NAME[deleting?.rule.id ?? ''] ?? 'reconciliation.rule.unknown'),
         })}
         isPending={remove.isPending}
         onClose={() => setDeleting(null)}
-        onConfirm={() =>
-          deleting && remove.mutate({ node: deleting.node, id: deleting.rule.id })
-        }
+        onConfirm={() => deleting && remove.mutate({ node: deleting.node, id: deleting.rule.id })}
       />
 
       {/* Asked rather than assumed. Importing replaces the matching rules
           this workspace has now (order is the mechanism here, and there
           is no correct way to interleave two orderings), so a policy
           somebody tuned is not something to overwrite on a mis-click. */}
-      <Dialog open={pending !== null} onOpenChange={(open) => { if (!open) setPending(null) }}>
+      <Dialog
+        open={pending !== null}
+        onOpenChange={(open) => {
+          if (!open) setPending(null)
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{t('reconciliation.importConfirmTitle')}</DialogTitle>
@@ -1531,10 +1420,7 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
               {t('reconciliation.importConfirmDescription', {
-                count: (pending?.file.nodes ?? []).reduce(
-                  (sum, node) => sum + node.rules.length,
-                  0,
-                ),
+                count: (pending?.file.nodes ?? []).reduce((sum, node) => sum + node.rules.length, 0),
                 file: pending?.name ?? '',
               })}
             </p>
@@ -1543,12 +1429,7 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setPending(null)}
-              disabled={importing.isPending}
-            >
+            <Button type="button" variant="outline" onClick={() => setPending(null)} disabled={importing.isPending}>
               {t('common.cancel')}
             </Button>
             <Button

@@ -15,9 +15,7 @@ const baseProps = {
 
 describe('DeleteConfirmationDialog', () => {
   it('renders nothing while closed', () => {
-    renderWithProviders(
-      <DeleteConfirmationDialog {...baseProps} open={false} />,
-    )
+    renderWithProviders(<DeleteConfirmationDialog {...baseProps} open={false} />)
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -27,9 +25,7 @@ describe('DeleteConfirmationDialog', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByText('Delete category')).toBeInTheDocument()
-    expect(
-      screen.getByText('Groceries will be removed from 12 transactions.'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Groceries will be removed from 12 transactions.')).toBeInTheDocument()
   })
 
   it('labels its actions with the shipped copy', () => {
@@ -49,22 +45,16 @@ describe('DeleteConfirmationDialog', () => {
 
   it('confirms through onConfirm', async () => {
     const onConfirm = vi.fn()
-    const { user } = renderWithProviders(
-      <DeleteConfirmationDialog {...baseProps} onConfirm={onConfirm} />,
-    )
+    const { user } = renderWithProviders(<DeleteConfirmationDialog {...baseProps} onConfirm={onConfirm} />)
 
-    await user.click(
-      screen.getByRole('button', { name: new RegExp(t('common.delete')) }),
-    )
+    await user.click(screen.getByRole('button', { name: new RegExp(t('common.delete')) }))
 
     expect(onConfirm).toHaveBeenCalledTimes(1)
   })
 
   it('cancels through onClose when no explicit onCancel is given', async () => {
     const onClose = vi.fn()
-    const { user } = renderWithProviders(
-      <DeleteConfirmationDialog {...baseProps} onClose={onClose} />,
-    )
+    const { user } = renderWithProviders(<DeleteConfirmationDialog {...baseProps} onClose={onClose} />)
 
     await user.click(screen.getByRole('button', { name: t('common.cancel') }))
 
@@ -77,11 +67,7 @@ describe('DeleteConfirmationDialog', () => {
     const onClose = vi.fn()
     const onCancel = vi.fn()
     const { user } = renderWithProviders(
-      <DeleteConfirmationDialog
-        {...baseProps}
-        onClose={onClose}
-        onCancel={onCancel}
-      />,
+      <DeleteConfirmationDialog {...baseProps} onClose={onClose} onCancel={onCancel} />,
     )
 
     await user.click(screen.getByRole('button', { name: t('common.cancel') }))
@@ -92,9 +78,7 @@ describe('DeleteConfirmationDialog', () => {
 
   it('closes on Escape while idle', async () => {
     const onClose = vi.fn()
-    const { user } = renderWithProviders(
-      <DeleteConfirmationDialog {...baseProps} onClose={onClose} />,
-    )
+    const { user } = renderWithProviders(<DeleteConfirmationDialog {...baseProps} onClose={onClose} />)
 
     await user.keyboard('{Escape}')
 
@@ -107,18 +91,14 @@ describe('DeleteConfirmationDialog', () => {
     renderWithProviders(<DeleteConfirmationDialog {...baseProps} isPending />)
 
     expect(screen.getByRole('button', { name: t('common.cancel') })).toBeDisabled()
-    expect(
-      screen.getByRole('button', { name: new RegExp(t('common.delete')) }),
-    ).toBeDisabled()
+    expect(screen.getByRole('button', { name: new RegExp(t('common.delete')) })).toBeDisabled()
   })
 
   it('refuses to close on Escape while the delete is in flight', async () => {
     // The dialog is the only progress indicator the user has; dismissing it
     // mid-request leaves them unsure whether the row was deleted.
     const onClose = vi.fn()
-    const { user } = renderWithProviders(
-      <DeleteConfirmationDialog {...baseProps} isPending onClose={onClose} />,
-    )
+    const { user } = renderWithProviders(<DeleteConfirmationDialog {...baseProps} isPending onClose={onClose} />)
 
     await user.keyboard('{Escape}')
 
@@ -138,16 +118,10 @@ describe('DeleteConfirmationDialog', () => {
     const onConfirm = vi.fn()
     const onClose = vi.fn()
     const { user } = renderWithProviders(
-      <DeleteConfirmationDialog
-        {...baseProps}
-        onConfirm={onConfirm}
-        onClose={onClose}
-      />,
+      <DeleteConfirmationDialog {...baseProps} onConfirm={onConfirm} onClose={onClose} />,
     )
 
-    await user.click(
-      screen.getByRole('button', { name: new RegExp(t('common.delete')) }),
-    )
+    await user.click(screen.getByRole('button', { name: new RegExp(t('common.delete')) }))
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()

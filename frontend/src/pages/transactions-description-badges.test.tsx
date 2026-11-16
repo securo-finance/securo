@@ -26,8 +26,12 @@ const api = vi.hoisted(() => ({
   categories: { list: vi.fn(), listIncludingHidden: vi.fn() },
   categoryGroups: { list: vi.fn() },
   accounts: {
-    get: vi.fn(), list: vi.fn(), bills: vi.fn(), summary: vi.fn(),
-    update: vi.fn(), runningBalance: vi.fn(),
+    get: vi.fn(),
+    list: vi.fn(),
+    bills: vi.fn(),
+    summary: vi.fn(),
+    update: vi.fn(),
+    runningBalance: vi.fn(),
   },
   recurring: { list: vi.fn() },
   payees: { list: vi.fn() },
@@ -70,8 +74,12 @@ vi.mock('@/contexts/workspace-context', async (importOriginal) => {
 })
 vi.mock('@/contexts/collection-filter-context', () => ({
   useCollectionFilter: () => ({
-    collections: [], activeCollectionId: null, activeCollection: null,
-    setActiveCollectionId: () => {}, activeAccountIds: null, activeWalletIds: null,
+    collections: [],
+    activeCollectionId: null,
+    activeCollection: null,
+    setActiveCollectionId: () => {},
+    activeAccountIds: null,
+    activeWalletIds: null,
   }),
 }))
 
@@ -79,25 +87,48 @@ vi.mock('@/contexts/collection-filter-context', () => ({
 // installments and kept out of the reports, so three badges land on the
 // same line as the description.
 const crowded: Transaction = {
-  id: 'tx-crowded', user_id: 'user-1', account_id: 'acc-1',
+  id: 'tx-crowded',
+  user_id: 'user-1',
+  account_id: 'acc-1',
   // Deliberately free of the badge words: an assertion on the badges below
   // would otherwise pass on the description's own text.
   description: 'Payment to Vinicius in 18 parts',
   category_id: 'cat-1',
   category: {
-    id: 'cat-1', name: 'Transfers', icon: 'arrow-left-right',
-    color: '#6B7280', treat_as_transfer: true,
+    id: 'cat-1',
+    name: 'Transfers',
+    icon: 'arrow-left-right',
+    color: '#6B7280',
+    treat_as_transfer: true,
   } as Transaction['category'],
-  external_id: null, original_description: null, amount: 180, currency: 'BRL',
-  date: '2026-10-08', type: 'debit', source: 'manual', status: 'posted',
-  payee: null, payee_id: null, payee_name: null, notes: null,
+  external_id: null,
+  original_description: null,
+  amount: 180,
+  currency: 'BRL',
+  date: '2026-10-08',
+  type: 'debit',
+  source: 'manual',
+  status: 'posted',
+  payee: null,
+  payee_id: null,
+  payee_name: null,
+  notes: null,
   transfer_pair_id: null,
   transfer_counterpart: null,
-  amount_primary: null, fx_rate_used: null, fx_fallback: false,
-  installment_number: 18, total_installments: 18, installment_total_amount: 3240,
-  installment_purchase_date: '2025-05-08', installment_series_id: 'series-1',
-  bill_id: null, effective_bill_date: null, reporting_date_override: null,
-  splits: [], is_ignored: false, exclude_from_pnl: true,
+  amount_primary: null,
+  fx_rate_used: null,
+  fx_fallback: false,
+  installment_number: 18,
+  total_installments: 18,
+  installment_total_amount: 3240,
+  installment_purchase_date: '2025-05-08',
+  installment_series_id: 'series-1',
+  bill_id: null,
+  effective_bill_date: null,
+  reporting_date_override: null,
+  splits: [],
+  is_ignored: false,
+  exclude_from_pnl: true,
 }
 
 beforeEach(() => {

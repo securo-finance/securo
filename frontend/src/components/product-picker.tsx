@@ -4,14 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PackageSearch } from 'lucide-react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { products as productsApi } from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
 import { priceFor } from '@/lib/product-utils'
@@ -96,9 +89,7 @@ export function ProductPicker({
           />
           <CommandList>
             <CommandEmpty>
-              {products.length === 0
-                ? t('invoices.products.emptyPicker')
-                : t('invoices.products.noneFound')}
+              {products.length === 0 ? t('invoices.products.emptyPicker') : t('invoices.products.noneFound')}
             </CommandEmpty>
             <CommandGroup>
               {rows.map(({ product, price }) => (
@@ -117,9 +108,7 @@ export function ProductPicker({
                   <span className="flex-1 min-w-0">
                     <span className="block truncate">{product.name}</span>
                     {product.description && (
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        {product.description}
-                      </span>
+                      <span className="block truncate text-[11px] text-muted-foreground">{product.description}</span>
                     )}
                   </span>
                   {/* The price in this invoice's currency, or a quiet

@@ -30,7 +30,8 @@ const KNOWN_MESSAGES: Record<string, string> = {
   'Remove the split among people before splitting across categories': 'categoryLines.errors.hasGroupSplit',
   'Remove the mortgage breakdown before splitting across categories': 'categoryLines.errors.hasMortgage',
   'An installment series cannot be split across categories': 'categoryLines.errors.installments',
-  'An installment in this series is split across categories; edit it on its own': 'categoryLines.errors.installmentScope',
+  'An installment in this series is split across categories; edit it on its own':
+    'categoryLines.errors.installmentScope',
   'Choose either a category or a split across categories': 'categoryLines.errors.categoryAndLines',
   'Undo the split across categories before choosing a single category': 'categoryLines.errors.undoFirstCategory',
   'Send the category lines along with the new amount': 'categoryLines.errors.amountNeedsLines',

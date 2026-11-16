@@ -150,9 +150,7 @@ it.each(['desktop', 'mobile'])(
     await waitFor(() => expect(state.auth.oidcConfig).toHaveBeenCalled())
 
     await user.click(openMenu(surface))
-    expect(
-      screen.queryByRole('menuitem', { name: t('auth.changePassword') }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: t('auth.changePassword') })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('menuitem', { name: t('auth.disable2fa') }))
     const twoFactorDialog = screen.getByRole('dialog')
@@ -182,23 +180,20 @@ it.each(['desktop', 'mobile'])(
   },
 )
 
-it.each(['desktop', 'mobile'])(
-  'still offers the full local credential menu on the %s surface',
-  async (surface) => {
-    state.auth.oidcConfig.mockResolvedValue({ enabled: false, local_auth_enabled: true })
-    state.user = { ...state.user, is_2fa_enabled: false }
-    const { user } = renderWithProviders(<AppLayout />)
-    await waitFor(() => expect(state.auth.oidcConfig).toHaveBeenCalled())
+it.each(['desktop', 'mobile'])('still offers the full local credential menu on the %s surface', async (surface) => {
+  state.auth.oidcConfig.mockResolvedValue({ enabled: false, local_auth_enabled: true })
+  state.user = { ...state.user, is_2fa_enabled: false }
+  const { user } = renderWithProviders(<AppLayout />)
+  await waitFor(() => expect(state.auth.oidcConfig).toHaveBeenCalled())
 
-    await user.click(openMenu(surface))
-    expect(screen.getByRole('menuitem', { name: t('auth.changePassword') })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: t('auth.twoFactorTitle') })).toBeInTheDocument()
+  await user.click(openMenu(surface))
+  expect(screen.getByRole('menuitem', { name: t('auth.changePassword') })).toBeInTheDocument()
+  expect(screen.getByRole('menuitem', { name: t('auth.twoFactorTitle') })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('menuitem', { name: t('auth.passkeysTitle') }))
-    await screen.findByText('Saved key')
-    expect(screen.getByRole('button', { name: t('auth.addPasskey') })).toBeInTheDocument()
-  },
-)
+  await user.click(screen.getByRole('menuitem', { name: t('auth.passkeysTitle') }))
+  await screen.findByText('Saved key')
+  expect(screen.getByRole('button', { name: t('auth.addPasskey') })).toBeInTheDocument()
+})
 
 it('never offers TOTP enrollment once the enrolled factor is gone', () => {
   state.user = { ...state.user, is_2fa_enabled: false }

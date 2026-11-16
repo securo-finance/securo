@@ -10,11 +10,7 @@ const info = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/lib/api', () => ({ info }))
 
 function wrapper({ children }: { children: ReactNode }) {
-  return (
-    <QueryClientProvider client={createTestQueryClient()}>
-      {children}
-    </QueryClientProvider>
-  )
+  return <QueryClientProvider client={createTestQueryClient()}>{children}</QueryClientProvider>
 }
 
 beforeEach(() => {

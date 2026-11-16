@@ -1,0 +1,4 @@
+# Bulk formatting commits. Use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style(frontend): format with oxfmt
+05983cc28bce1b7c298f2bcbbbf314c110c99205

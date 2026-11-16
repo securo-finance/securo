@@ -17,23 +17,14 @@ interface DatePickerInputProps {
   align?: 'start' | 'center' | 'end'
 }
 
-function DatePickerInput({
-  value,
-  onChange,
-  placeholder,
-  className,
-  disabled,
-  align = 'start',
-}: DatePickerInputProps) {
+function DatePickerInput({ value, onChange, placeholder, className, disabled, align = 'start' }: DatePickerInputProps) {
   const { i18n } = useTranslation()
   const [open, setOpen] = useState(false)
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const dateLocale = useDateLocale()
 
   const selectedDate = value ? new Date(value + 'T00:00:00') : undefined
-  const displayText = selectedDate
-    ? selectedDate.toLocaleDateString(dateLocale)
-    : placeholder || 'dd/mm/yyyy'
+  const displayText = selectedDate ? selectedDate.toLocaleDateString(dateLocale) : placeholder || 'dd/mm/yyyy'
 
   return (
     <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>

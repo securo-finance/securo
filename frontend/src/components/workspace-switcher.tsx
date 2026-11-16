@@ -52,11 +52,7 @@ import {
 } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { useLibrary } from '@/contexts/library-context'
-import {
-  WORKSPACE_KINDS,
-  WORKSPACE_KIND_ICON,
-  WORKSPACE_KIND_LABEL_KEY,
-} from '@/lib/workspace-kinds'
+import { WORKSPACE_KINDS, WORKSPACE_KIND_ICON, WORKSPACE_KIND_LABEL_KEY } from '@/lib/workspace-kinds'
 import type { Workspace, WorkspaceKind } from '@/types'
 
 const ROLE_LABEL_KEY: Record<string, string> = {
@@ -157,9 +153,7 @@ export function WorkspaceSwitcher({
   if (!current || !user) return null
 
   const hasMultipleWorkspaces = workspaces.length > 1
-  const roleLabel = current.role && ROLE_LABEL_KEY[current.role]
-    ? t(ROLE_LABEL_KEY[current.role])
-    : null
+  const roleLabel = current.role && ROLE_LABEL_KEY[current.role] ? t(ROLE_LABEL_KEY[current.role]) : null
 
   return (
     <>
@@ -183,9 +177,7 @@ export function WorkspaceSwitcher({
               <p className="text-xs font-semibold truncate">{current.name}</p>
               <p className="text-[10px] text-sidebar-muted/70 truncate">
                 {user.email}
-                {roleLabel && (
-                  <span className="ml-1 uppercase tracking-wide">· {roleLabel}</span>
-                )}
+                {roleLabel && <span className="ml-1 uppercase tracking-wide">· {roleLabel}</span>}
               </p>
             </div>
             <ChevronsUpDown size={13} className={cn('text-sidebar-muted/60 shrink-0', collapsed && 'lg:hidden')} />
@@ -206,12 +198,7 @@ export function WorkspaceSwitcher({
                     onClick={() => void switchWorkspace(w.id)}
                     className="flex items-center gap-2"
                   >
-                    <CategoryIcon
-                      icon={workspaceIcon(w)}
-                      color={workspaceColor(w)}
-                      size="sm"
-                      className="shrink-0"
-                    />
+                    <CategoryIcon icon={workspaceIcon(w)} color={workspaceColor(w)} size="sm" className="shrink-0" />
                     <span className="flex-1 truncate">{w.name}</span>
                     <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                       {w.role && ROLE_LABEL_KEY[w.role] && t(ROLE_LABEL_KEY[w.role])}
@@ -225,17 +212,11 @@ export function WorkspaceSwitcher({
           )}
 
           {/* Workspace actions */}
-          <DropdownMenuItem
-            onClick={() => navigate('/workspace/settings')}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={() => navigate('/workspace/settings')} className="flex items-center gap-2">
             <Settings size={14} />
             <span className="flex-1">{t('workspace.settingsMenu', 'Workspace settings')}</span>
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => setCreateOpen(true)}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={() => setCreateOpen(true)} className="flex items-center gap-2">
             <Plus size={14} />
             <span className="flex-1">{t('workspace.create', 'New workspace')}</span>
           </DropdownMenuItem>
@@ -244,10 +225,7 @@ export function WorkspaceSwitcher({
 
           {/* Admin */}
           {user.is_superuser && (
-            <DropdownMenuItem
-              onClick={() => navigate('/admin')}
-              className="flex items-center gap-2"
-            >
+            <DropdownMenuItem onClick={() => navigate('/admin')} className="flex items-center gap-2">
               <Shield size={14} />
               {t('nav.groupAdmin')}
             </DropdownMenuItem>
@@ -255,62 +233,41 @@ export function WorkspaceSwitcher({
 
           {/* Account actions */}
           {localAuthEnabled && (
-            <DropdownMenuItem
-              onClick={onChangePassword}
-              className="flex items-center gap-2"
-            >
+            <DropdownMenuItem onClick={onChangePassword} className="flex items-center gap-2">
               <KeyRound size={14} />
               {t('auth.changePassword')}
             </DropdownMenuItem>
           )}
           {(localAuthEnabled || user.is_2fa_enabled) && (
-            <DropdownMenuItem
-              onClick={onTwoFactor}
-              className="flex items-center gap-2"
-            >
+            <DropdownMenuItem onClick={onTwoFactor} className="flex items-center gap-2">
               <ShieldCheck size={14} />
               {t(localAuthEnabled ? 'auth.twoFactorTitle' : 'auth.disable2fa')}
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem
-            onClick={onPasskeys}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={onPasskeys} className="flex items-center gap-2">
             <Fingerprint size={14} />
             {t('auth.passkeysTitle')}
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={onBackup}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={onBackup} className="flex items-center gap-2">
             <HardDriveDownload size={14} />
             {t('backup.button')}
           </DropdownMenuItem>
 
           {agentsEnabled && (
-            <DropdownMenuItem
-              onClick={() => navigate('/agents')}
-              className="flex items-center gap-2"
-            >
+            <DropdownMenuItem onClick={() => navigate('/agents')} className="flex items-center gap-2">
               <Sparkles size={14} />
               {t('nav.aiAgents')}
             </DropdownMenuItem>
           )}
 
           {pluginsEnabled && (
-            <DropdownMenuItem
-              onClick={() => navigate('/plugins')}
-              className="flex items-center gap-2"
-            >
+            <DropdownMenuItem onClick={() => navigate('/plugins')} className="flex items-center gap-2">
               <Puzzle size={14} />
               {t('plugins.title')}
             </DropdownMenuItem>
           )}
 
-          <DropdownMenuItem
-            onClick={onUpdateAvailable}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={onUpdateAvailable} className="flex items-center gap-2">
             <Download size={14} />
             {t('update.menuItem')}
           </DropdownMenuItem>
@@ -322,10 +279,7 @@ export function WorkspaceSwitcher({
             {t('nav.documentation')}
           </DropdownMenuItem>
 
-          <DropdownMenuItem
-            onClick={() => openLibrary('themes')}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={() => openLibrary('themes')} className="flex items-center gap-2">
             <Palette size={14} />
             {t('library.appearance')}
           </DropdownMenuItem>
@@ -344,122 +298,71 @@ export function WorkspaceSwitcher({
                 <DropdownMenuLabel className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
                   {t('setup.language')}
                 </DropdownMenuLabel>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('ru')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('ru')} className="flex items-center gap-2">
                   <span className="flex-1">Русский</span>
                   {currentLang === 'ru' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('de')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('de')} className="flex items-center gap-2">
                   <span className="flex-1">Deutsch</span>
                   {currentLang === 'de' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('uk')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('uk')} className="flex items-center gap-2">
                   <span className="flex-1">Українська</span>
                   {currentLang === 'uk' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('pt-BR')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('pt-BR')} className="flex items-center gap-2">
                   <span className="flex-1">Português (BR)</span>
                   {currentLang === 'pt-BR' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('pt-PT')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('pt-PT')} className="flex items-center gap-2">
                   <span className="flex-1">Português (PT)</span>
                   {currentLang === 'pt-PT' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('en')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('en')} className="flex items-center gap-2">
                   <span className="flex-1">English</span>
                   {currentLang === 'en' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('es')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('es')} className="flex items-center gap-2">
                   <span className="flex-1">Español</span>
                   {currentLang === 'es' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('hi')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('hi')} className="flex items-center gap-2">
                   <span className="flex-1">हिन्दी</span>
                   {currentLang === 'hi' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('pl')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('pl')} className="flex items-center gap-2">
                   <span className="flex-1">Polski</span>
                   {currentLang === 'pl' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('it')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('it')} className="flex items-center gap-2">
                   <span className="flex-1">Italiano</span>
                   {currentLang === 'it' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('fr')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('fr')} className="flex items-center gap-2">
                   <span className="flex-1">Français</span>
                   {currentLang === 'fr' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('nl')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('nl')} className="flex items-center gap-2">
                   <span className="flex-1">Nederlands</span>
                   {currentLang === 'nl' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('cs')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('cs')} className="flex items-center gap-2">
                   <span className="flex-1">Čeština</span>
                   {currentLang === 'cs' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('sk')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('sk')} className="flex items-center gap-2">
                   <span className="flex-1">Slovenčina</span>
                   {currentLang === 'sk' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('hu')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('hu')} className="flex items-center gap-2">
                   <span className="flex-1">Magyar</span>
                   {currentLang === 'hu' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('el')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('el')} className="flex items-center gap-2">
                   <span className="flex-1">Ελληνικά</span>
                   {currentLang === 'el' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('ja')}
-                  className="flex items-center gap-2"
-                >
+                <DropdownMenuItem onClick={() => i18n.changeLanguage('ja')} className="flex items-center gap-2">
                   <span className="flex-1">日本語</span>
                   {currentLang === 'ja' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
@@ -469,10 +372,7 @@ export function WorkspaceSwitcher({
 
           <DropdownMenuSeparator />
 
-          <DropdownMenuItem
-            onClick={logout}
-            className="flex items-center gap-2 text-rose-600 focus:text-rose-600"
-          >
+          <DropdownMenuItem onClick={logout} className="flex items-center gap-2 text-rose-600 focus:text-rose-600">
             <LogOut size={14} />
             {t('auth.logout')}
           </DropdownMenuItem>
@@ -518,9 +418,7 @@ export function WorkspaceSwitcher({
                       onClick={() => setNewKind(kind)}
                       aria-pressed={isSelected}
                       className={`flex items-center gap-2.5 rounded-lg border p-3 text-left transition-colors ${
-                        isSelected
-                          ? 'border-primary bg-primary/5'
-                          : 'border-input hover:bg-muted/40'
+                        isSelected ? 'border-primary bg-primary/5' : 'border-input hover:bg-muted/40'
                       }`}
                     >
                       <CategoryIcon
@@ -529,27 +427,18 @@ export function WorkspaceSwitcher({
                         size="sm"
                         className="shrink-0"
                       />
-                      <span className="text-[13px] font-medium leading-tight">
-                        {t(WORKSPACE_KIND_LABEL_KEY[kind])}
-                      </span>
+                      <span className="text-[13px] font-medium leading-tight">{t(WORKSPACE_KIND_LABEL_KEY[kind])}</span>
                     </button>
                   )
                 })}
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                {t(
-                  'workspace.kindHint',
-                  "Pick what this workspace tracks. This can't be changed later.",
-                )}
+                {t('workspace.kindHint', "Pick what this workspace tracks. This can't be changed later.")}
               </p>
             </div>
           </div>
           <DialogFooter className="mt-2">
-            <Button
-              variant="outline"
-              onClick={() => setCreateOpen(false)}
-              className="rounded-lg"
-            >
+            <Button variant="outline" onClick={() => setCreateOpen(false)} className="rounded-lg">
               {t('common.cancel')}
             </Button>
             <Button

@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  findCategoryReference,
-  getRuleCategoryId,
-  getRuleCategoryName,
-} from './category-reference-utils'
+import { findCategoryReference, getRuleCategoryId, getRuleCategoryName } from './category-reference-utils'
 
 const hiddenCategory = {
   id: 'hidden-category',

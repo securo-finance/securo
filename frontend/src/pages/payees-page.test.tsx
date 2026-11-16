@@ -44,14 +44,36 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
 
 const payees = [
   {
-    id: 'alpha', user_id: 'user-1', name: 'Alpha', type: 'person', source: 'manual', is_favorite: false,
-    notes: null, email: null, phone: null, address: null, website: null, tax_ids: [],
-    created_at: '2026-01-01T00:00:00Z', transaction_count: 1,
+    id: 'alpha',
+    user_id: 'user-1',
+    name: 'Alpha',
+    type: 'person',
+    source: 'manual',
+    is_favorite: false,
+    notes: null,
+    email: null,
+    phone: null,
+    address: null,
+    website: null,
+    tax_ids: [],
+    created_at: '2026-01-01T00:00:00Z',
+    transaction_count: 1,
   },
   {
-    id: 'zeta', user_id: 'user-1', name: 'Zeta', type: 'company', source: 'manual', is_favorite: false,
-    notes: null, email: null, phone: null, address: null, website: null, tax_ids: [],
-    created_at: '2026-01-01T00:00:00Z', transaction_count: 3,
+    id: 'zeta',
+    user_id: 'user-1',
+    name: 'Zeta',
+    type: 'company',
+    source: 'manual',
+    is_favorite: false,
+    notes: null,
+    email: null,
+    phone: null,
+    address: null,
+    website: null,
+    tax_ids: [],
+    created_at: '2026-01-01T00:00:00Z',
+    transaction_count: 3,
   },
 ]
 
@@ -76,16 +98,20 @@ describe('PayeesPage sorting', () => {
     expect(within(firstPayeeRow()).getByText('Zeta')).toBeInTheDocument()
     expect(transactionsHeader).toHaveAccessibleName(t('payees.transactionCount'))
     expect(transactionsHeader.closest('th')).toHaveAttribute('aria-sort', 'descending')
-    await waitFor(() => expect(localStorage.getItem(PAYEE_SORT_STORAGE_KEY)).toBe(
-      JSON.stringify({ by: 'transaction_count', direction: 'desc' }),
-    ))
+    await waitFor(() =>
+      expect(localStorage.getItem(PAYEE_SORT_STORAGE_KEY)).toBe(
+        JSON.stringify({ by: 'transaction_count', direction: 'desc' }),
+      ),
+    )
 
     await user.click(transactionsHeader)
 
     expect(within(firstPayeeRow()).getByText('Alpha')).toBeInTheDocument()
     expect(transactionsHeader.closest('th')).toHaveAttribute('aria-sort', 'ascending')
-    await waitFor(() => expect(localStorage.getItem(PAYEE_SORT_STORAGE_KEY)).toBe(
-      JSON.stringify({ by: 'transaction_count', direction: 'asc' }),
-    ))
+    await waitFor(() =>
+      expect(localStorage.getItem(PAYEE_SORT_STORAGE_KEY)).toBe(
+        JSON.stringify({ by: 'transaction_count', direction: 'asc' }),
+      ),
+    )
   })
 })

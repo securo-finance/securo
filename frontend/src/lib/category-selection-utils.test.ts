@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Category } from '../types'
-import {
-  isCategoryHiddenFromSelection,
-  resolveSelectedCategory,
-} from './category-selection-utils'
+import { isCategoryHiddenFromSelection, resolveSelectedCategory } from './category-selection-utils'
 
 const category = (overrides: Partial<Category>): Category => ({
   id: 'category-id',

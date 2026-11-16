@@ -281,9 +281,7 @@ describe('cross-tab sync', () => {
     await waitFor(() => expect(result.current.user).toEqual(USER))
 
     act(() => {
-      window.dispatchEvent(
-        new StorageEvent('storage', { key: 'token', newValue: null }),
-      )
+      window.dispatchEvent(new StorageEvent('storage', { key: 'token', newValue: null }))
     })
 
     await waitFor(() => expect(result.current.token).toBeNull())
@@ -298,9 +296,7 @@ describe('cross-tab sync', () => {
     await waitFor(() => expect(result.current.user).toEqual(USER))
 
     act(() => {
-      window.dispatchEvent(
-        new StorageEvent('storage', { key: 'theme', newValue: 'light' }),
-      )
+      window.dispatchEvent(new StorageEvent('storage', { key: 'theme', newValue: 'light' }))
     })
 
     expect(result.current.token).toBe('jwt')
@@ -309,8 +305,6 @@ describe('cross-tab sync', () => {
 
 describe('useAuth', () => {
   it('refuses to be used outside the provider', () => {
-    expect(() => renderHook(() => useAuth())).toThrow(
-      'useAuth must be used within an AuthProvider',
-    )
+    expect(() => renderHook(() => useAuth())).toThrow('useAuth must be used within an AuthProvider')
   })
 })

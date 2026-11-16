@@ -10,7 +10,7 @@ describe('calculateRangeSelection', () => {
     { id: '5', name: 'Item 5', is_shared: false },
   ]
 
-  const isSelectable = (item: typeof items[number]) => !item.is_shared
+  const isSelectable = (item: (typeof items)[number]) => !item.is_shared
 
   it('performs normal toggle selection (selects if unchecked)', () => {
     const selected = new Set<string>()
@@ -45,7 +45,7 @@ describe('calculateRangeSelection', () => {
     const selected = new Set<string>(['1'])
     // lastSelectedId = '1', clickedId = '5', isShiftKey = true, clickedId is not selected
     const result = calculateRangeSelection(selected, '1', '5', items, true, isSelectable)
-    
+
     expect(result.has('1')).toBe(true)
     expect(result.has('2')).toBe(true)
     expect(result.has('3')).toBe(false) // skipped (not selectable/shared)
@@ -58,7 +58,7 @@ describe('calculateRangeSelection', () => {
     const selected = new Set<string>(['1', '2', '4', '5'])
     // lastSelectedId = '1', clickedId = '5', isShiftKey = true, clickedId is already selected
     const result = calculateRangeSelection(selected, '1', '5', items, true, isSelectable)
-    
+
     expect(result.has('1')).toBe(false)
     expect(result.has('2')).toBe(false)
     expect(result.has('4')).toBe(false)

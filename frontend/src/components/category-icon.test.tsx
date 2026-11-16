@@ -9,9 +9,7 @@ describe('CategoryIcon', () => {
     // Asserting only that an svg exists would also pass on the fallback,
     // which is the failure this test is here to catch. Lucide stamps the
     // icon name into the class list, so pin that.
-    const { container } = renderWithProviders(
-      <CategoryIcon icon="shopping-cart" color="#22c55e" />,
-    )
+    const { container } = renderWithProviders(<CategoryIcon icon="shopping-cart" color="#22c55e" />)
 
     expect(container.querySelector('svg')).toHaveClass('lucide-shopping-cart')
   })
@@ -24,21 +22,15 @@ describe('CategoryIcon', () => {
 
   it('falls back to a placeholder icon for an unknown name', () => {
     // A renamed icon in a future lucide release must not blank the row.
-    const { container } = renderWithProviders(
-      <CategoryIcon icon="not-a-real-icon" color="#22c55e" />,
-    )
+    const { container } = renderWithProviders(<CategoryIcon icon="not-a-real-icon" color="#22c55e" />)
 
     // CircleHelp renders as circle-question-mark: lucide renamed the icon and
     // kept the old export as an alias.
-    expect(container.querySelector('svg')).toHaveClass(
-      'lucide-circle-question-mark',
-    )
+    expect(container.querySelector('svg')).toHaveClass('lucide-circle-question-mark')
   })
 
   it('survives a category with no icon or colour at all', () => {
-    const { container } = renderWithProviders(
-      <CategoryIcon icon={null} color={null} />,
-    )
+    const { container } = renderWithProviders(<CategoryIcon icon={null} color={null} />)
 
     expect(container.querySelector('svg')).toBeInTheDocument()
     expect(container.firstElementChild).toHaveStyle({
@@ -47,9 +39,7 @@ describe('CategoryIcon', () => {
   })
 
   it('paints the category colour as the background', () => {
-    const { container } = renderWithProviders(
-      <CategoryIcon icon="shopping-cart" color="#22c55e" />,
-    )
+    const { container } = renderWithProviders(<CategoryIcon icon="shopping-cart" color="#22c55e" />)
 
     expect(container.firstElementChild).toHaveStyle({
       backgroundColor: 'rgb(34, 197, 94)',
@@ -57,23 +47,17 @@ describe('CategoryIcon', () => {
   })
 
   it('grows with the requested size', () => {
-    const { container: small } = renderWithProviders(
-      <CategoryIcon icon="shopping-cart" color="#22c55e" size="xs" />,
-    )
+    const { container: small } = renderWithProviders(<CategoryIcon icon="shopping-cart" color="#22c55e" size="xs" />)
     expect(small.firstElementChild).toHaveClass('w-4', 'h-4')
 
-    const { container: large } = renderWithProviders(
-      <CategoryIcon icon="shopping-cart" color="#22c55e" size="xl" />,
-    )
+    const { container: large } = renderWithProviders(<CategoryIcon icon="shopping-cart" color="#22c55e" size="xl" />)
     expect(large.firstElementChild).toHaveClass('w-11', 'h-11')
   })
 
   it('never shrinks inside a flex row', () => {
     // Category icons sit next to variable-length names in the transaction
     // list; without shrink-0 a long payee squashes the icon.
-    const { container } = renderWithProviders(
-      <CategoryIcon icon="shopping-cart" color="#22c55e" />,
-    )
+    const { container } = renderWithProviders(<CategoryIcon icon="shopping-cart" color="#22c55e" />)
 
     expect(container.firstElementChild).toHaveClass('shrink-0')
   })

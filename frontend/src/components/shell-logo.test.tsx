@@ -36,9 +36,7 @@ describe('ShellLogo', () => {
   })
 
   it('accepts a className', () => {
-    const { container } = renderWithProviders(
-      <ShellLogo className="text-primary" />,
-    )
+    const { container } = renderWithProviders(<ShellLogo className="text-primary" />)
 
     expect(container.querySelector('svg')).toHaveClass('text-primary')
   })

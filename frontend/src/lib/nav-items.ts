@@ -59,10 +59,7 @@ export const navItems: NavItem[] = [
  * with nothing under it. Without the second pass, hiding a section's
  * only link leaves a floating heading.
  */
-export function visibleNavItems(
-  items: NavItem[],
-  hasModule: (id: ModuleId) => boolean,
-): NavItem[] {
+export function visibleNavItems(items: NavItem[], hasModule: (id: ModuleId) => boolean): NavItem[] {
   const kept = items.filter((item) => item.type !== 'link' || hasModule(item.module))
   return kept.filter((item, index) => {
     if (item.type !== 'separator') return true

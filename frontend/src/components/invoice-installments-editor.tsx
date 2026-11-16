@@ -5,13 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { cn } from '@/lib/utils'
@@ -66,9 +60,7 @@ export function InvoiceInstallmentsEditor({
         <Switch
           id="installments-toggle"
           checked={enabled}
-          onCheckedChange={(on) =>
-            onChange(on ? splitEvenly(total, 2, firstDueDate) : null)
-          }
+          onCheckedChange={(on) => onChange(on ? splitEvenly(total, 2, firstDueDate) : null)}
         />
       </div>
 
@@ -162,7 +154,9 @@ export function InvoiceInstallmentsEditor({
           <div
             className={cn(
               'flex items-center justify-between px-3 py-2 text-xs border-t border-border',
-              mismatch ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400' : 'bg-muted/40 text-muted-foreground',
+              mismatch
+                ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400'
+                : 'bg-muted/40 text-muted-foreground',
             )}
             data-testid="installments-check"
           >

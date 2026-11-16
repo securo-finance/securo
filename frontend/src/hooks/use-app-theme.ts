@@ -61,7 +61,10 @@ export function useAppTheme() {
             if (seq !== themeWrites.latest) return
             toast.error(t('library.saveFailed'))
             // Back to what the server has, which a failed save didn't change.
-            authApi.me().then(updateUser).catch(() => {})
+            authApi
+              .me()
+              .then(updateUser)
+              .catch(() => {})
           },
         )
     },

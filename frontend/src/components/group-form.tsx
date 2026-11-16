@@ -46,11 +46,7 @@ export function GroupForm({
     <div className="space-y-4">
       <div className="space-y-2">
         <Label>{t('splitGroups.name')}</Label>
-        <Input
-          placeholder={t('splitGroups.name')}
-          value={name}
-          onChange={(e) => onChangeName(e.target.value)}
-        />
+        <Input placeholder={t('splitGroups.name')} value={name} onChange={(e) => onChangeName(e.target.value)} />
       </div>
       <div className="space-y-2">
         <Label>{t('splitGroups.kindLabel')}</Label>
@@ -74,9 +70,9 @@ export function GroupForm({
           value={defaultCurrency}
           onChange={(e) => onChangeDefaultCurrency(e.target.value)}
         >
-          {(supportedCurrencies ?? [
-            { code: defaultCurrency, symbol: defaultCurrency, name: defaultCurrency, flag: '' },
-          ]).map((c) => (
+          {(
+            supportedCurrencies ?? [{ code: defaultCurrency, symbol: defaultCurrency, name: defaultCurrency, flag: '' }]
+          ).map((c) => (
             <option key={c.code} value={c.code}>
               {c.flag} {c.name}
             </option>

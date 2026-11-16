@@ -3,8 +3,24 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, Ban, Check, CheckCircle2, CircleSlash, Copy, Download, FileText, Link2,
-  MinusCircle, MoreHorizontal, Pencil, Repeat, RotateCcw, Send, Share2, Trash2, Unlink,
+  ArrowLeft,
+  Ban,
+  Check,
+  CheckCircle2,
+  CircleSlash,
+  Copy,
+  Download,
+  FileText,
+  Link2,
+  MinusCircle,
+  MoreHorizontal,
+  Pencil,
+  Repeat,
+  RotateCcw,
+  Send,
+  Share2,
+  Trash2,
+  Unlink,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -20,28 +36,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { InvoiceSuggestions } from '@/components/invoice-suggestions'
-import {
-  IconAction,
-  SectionCard,
-  SectionHeader,
-  Segmented,
-  StateBadge,
-} from '@/components/invoice-ui'
+import { IconAction, SectionCard, SectionHeader, Segmented, StateBadge } from '@/components/invoice-ui'
 import { InvoiceDocumentView } from '@/components/invoice-document'
 import { InvoiceDocumentBrowser } from '@/components/invoice-documents'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
@@ -65,11 +64,7 @@ import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
-import {
-  invoices as invoicesApi,
-  payees as payeesApi,
-  transactions as transactionsApi,
-} from '@/lib/api'
+import { invoices as invoicesApi, payees as payeesApi, transactions as transactionsApi } from '@/lib/api'
 import {
   allocationOrigin,
   availableActions,
@@ -166,9 +161,7 @@ export default function InvoiceDetailPage() {
 
   const issueMutation = useMutation(decision(() => invoicesApi.issue(id), 'invoices.issued'))
   const voidMutation = useMutation(decision(() => invoicesApi.void(id), 'invoices.voided'))
-  const writeOffMutation = useMutation(
-    decision(() => invoicesApi.writeOff(id), 'invoices.writtenOff'),
-  )
+  const writeOffMutation = useMutation(decision(() => invoicesApi.writeOff(id), 'invoices.writtenOff'))
   const reopenMutation = useMutation(decision(() => invoicesApi.reopen(id), 'invoices.reopened'))
   const deleteMutation = useMutation({
     mutationFn: () => invoicesApi.remove(id),
@@ -282,9 +275,7 @@ export default function InvoiceDetailPage() {
   const customFields = customFieldDefs(settings?.template)
     .map((def) => ({ ...def, value: invoice.custom_fields?.[def.key] }))
     .filter((field): field is typeof field & { value: string } => Boolean(field.value))
-  const shareUrl = invoice.share_token
-    ? `${window.location.origin}/i/${invoice.share_token}`
-    : null
+  const shareUrl = invoice.share_token ? `${window.location.origin}/i/${invoice.share_token}` : null
   // "Repeat this": an issued receivable that is not already a period of
   // an agreement. A draft has nothing agreed yet, and a bill received is
   // the supplier's to repeat.
@@ -295,10 +286,7 @@ export default function InvoiceDetailPage() {
     !invoice.schedule_id
   // Only for what we issued: a draft was sent to nobody, and a bill we
   // received is the supplier's to state.
-  const canStatement =
-    invoice.direction === 'receivable' &&
-    invoice.status !== 'draft' &&
-    invoice.origin !== 'imported'
+  const canStatement = invoice.direction === 'receivable' && invoice.status !== 'draft' && invoice.origin !== 'imported'
   const hasDeductions = Number(invoice.amount_deducted) > 0
   // Once money has moved, the invoice PDF (frozen at issue) no longer says
   // everything: what was paid and deducted since is on the statement, and
@@ -317,20 +305,14 @@ export default function InvoiceDetailPage() {
 
       <PageHeader
         section={
-          invoice.payee?.name ??
-          t(invoice.direction === 'payable' ? 'invoices.noSupplier' : 'invoices.noClient')
+          invoice.payee?.name ?? t(invoice.direction === 'payable' ? 'invoices.noSupplier' : 'invoices.noClient')
         }
         title={number ?? t('invoices.draftTitle')}
         action={
           canWrite ? (
             <div className="flex flex-wrap items-center gap-2">
               {actions.canEdit && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setEditOpen(true)}
-                  data-testid="invoice-edit"
-                >
+                <Button size="sm" variant="outline" onClick={() => setEditOpen(true)} data-testid="invoice-edit">
                   <Pencil className="h-4 w-4 mr-1.5" />
                   {t('common.edit')}
                 </Button>
@@ -373,7 +355,9 @@ export default function InvoiceDetailPage() {
                           className="flex-col items-start gap-0.5 text-sm"
                         >
                           <span>{t('invoices.statement.asIssued')}</span>
-                          <span className="text-[11px] text-muted-foreground">{t('invoices.statement.asIssuedHint')}</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {t('invoices.statement.asIssuedHint')}
+                          </span>
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => statementMutation.mutate()}
@@ -386,39 +370,33 @@ export default function InvoiceDetailPage() {
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  ) : (invoice.origin !== 'imported' || hasFiledDocument) && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => downloadMutation.mutate()}
-                      disabled={downloadMutation.isPending}
-                      data-testid="invoice-download-pdf"
-                    >
-                      <Download className="h-4 w-4 mr-1.5" />
-                      {t('invoices.action.downloadPdf')}
-                    </Button>
+                  ) : (
+                    (invoice.origin !== 'imported' || hasFiledDocument) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => downloadMutation.mutate()}
+                        disabled={downloadMutation.isPending}
+                        data-testid="invoice-download-pdf"
+                      >
+                        <Download className="h-4 w-4 mr-1.5" />
+                        {t('invoices.action.downloadPdf')}
+                      </Button>
+                    )
                   )}
                   {/* Sharing is for sending your invoice to your client.
                       A bill you received belongs to your supplier and has
                       nobody to be sent to. */}
                   {invoice.direction === 'receivable' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      invoice.share_token ? unshareMutation.mutate() : shareMutation.mutate()
-                    }
-                    data-testid={invoice.share_token ? 'invoice-unshare' : 'invoice-share'}
-                  >
-                    {copied ? (
-                      <Check className="h-4 w-4 mr-1.5" />
-                    ) : (
-                      <Share2 className="h-4 w-4 mr-1.5" />
-                    )}
-                    {invoice.share_token
-                      ? t('invoices.action.revokeLink')
-                      : t('invoices.action.share')}
-                  </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => (invoice.share_token ? unshareMutation.mutate() : shareMutation.mutate())}
+                      data-testid={invoice.share_token ? 'invoice-unshare' : 'invoice-share'}
+                    >
+                      {copied ? <Check className="h-4 w-4 mr-1.5" /> : <Share2 className="h-4 w-4 mr-1.5" />}
+                      {invoice.share_token ? t('invoices.action.revokeLink') : t('invoices.action.share')}
+                    </Button>
                   )}
                 </>
               )}
@@ -619,26 +597,22 @@ export default function InvoiceDetailPage() {
               {[
                 { label: t('invoices.column.total'), value: money(invoice.total) },
                 {
-                  label:
-                    invoice.direction === 'payable'
-                      ? t('invoices.field.paidOut')
-                      : t('invoices.field.paid'),
+                  label: invoice.direction === 'payable' ? t('invoices.field.paidOut') : t('invoices.field.paid'),
                   value: money(invoice.amount_paid),
                 },
                 ...(hasDeductions
-                  ? [{
-                      label: t('invoices.deductions.figure'),
-                      value: money(invoice.amount_deducted),
-                      testId: 'invoice-deducted',
-                    }]
+                  ? [
+                      {
+                        label: t('invoices.deductions.figure'),
+                        value: money(invoice.amount_deducted),
+                        testId: 'invoice-deducted',
+                      },
+                    ]
                   : []),
                 {
                   label: t('invoices.column.balance'),
                   value: money(invoice.balance),
-                  tone:
-                    Number(invoice.balance) > 0
-                      ? 'text-foreground'
-                      : 'text-emerald-600',
+                  tone: Number(invoice.balance) > 0 ? 'text-foreground' : 'text-emerald-600',
                   testId: 'invoice-balance',
                 },
                 {
@@ -649,12 +623,7 @@ export default function InvoiceDetailPage() {
               ].map((figure) => (
                 <div key={figure.label} className="px-4 sm:px-5 py-4" data-testid={figure.testId}>
                   <p className="text-xs font-medium text-muted-foreground mb-0.5">{figure.label}</p>
-                  <p
-                    className={cn(
-                      'text-lg font-bold tabular-nums',
-                      figure.tone ?? 'text-foreground',
-                    )}
-                  >
+                  <p className={cn('text-lg font-bold tabular-nums', figure.tone ?? 'text-foreground')}>
                     {figure.value}
                   </p>
                 </div>
@@ -671,7 +640,11 @@ export default function InvoiceDetailPage() {
               <table className="w-full" data-testid="invoice-installments">
                 <tbody>
                   {invoice.installments.map((row, index) => (
-                    <tr key={row.id} className="border-b border-border last:border-0" data-testid="invoice-installment-row">
+                    <tr
+                      key={row.id}
+                      className="border-b border-border last:border-0"
+                      data-testid="invoice-installment-row"
+                    >
                       <td className="py-2.5 pl-4 sm:pl-5 text-sm">
                         {row.label ?? `${index + 1}/${invoice.installments.length}`}
                       </td>
@@ -689,10 +662,14 @@ export default function InvoiceDetailPage() {
                           data-testid={`installment-state-${row.state}`}
                           className={cn(
                             'text-[11px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap',
-                            row.state === 'paid' && 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20',
-                            row.state === 'overdue' && 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20',
-                            row.state === 'partial' && 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20',
-                            !['paid', 'overdue', 'partial'].includes(row.state) && 'bg-muted text-muted-foreground border-border',
+                            row.state === 'paid' &&
+                              'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20',
+                            row.state === 'overdue' &&
+                              'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20',
+                            row.state === 'partial' &&
+                              'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20',
+                            !['paid', 'overdue', 'partial'].includes(row.state) &&
+                              'bg-muted text-muted-foreground border-border',
                           )}
                         >
                           {t(`invoices.installments.state.${row.state}`)}
@@ -727,9 +704,7 @@ export default function InvoiceDetailPage() {
                   <div className="flex flex-wrap gap-x-8 gap-y-2">
                     {customFields.map((field) => (
                       <div key={field.key}>
-                        <p className="text-xs font-medium text-muted-foreground mb-0.5">
-                          {field.label}
-                        </p>
+                        <p className="text-xs font-medium text-muted-foreground mb-0.5">{field.label}</p>
                         <p className="text-sm">{field.value}</p>
                       </div>
                     ))}
@@ -754,9 +729,7 @@ export default function InvoiceDetailPage() {
                   </table>
                 )}
 
-                {invoice.notes && (
-                  <p className="text-sm text-muted-foreground">{invoice.notes}</p>
-                )}
+                {invoice.notes && <p className="text-sm text-muted-foreground">{invoice.notes}</p>}
               </div>
             </SectionCard>
           )}
@@ -774,7 +747,12 @@ export default function InvoiceDetailPage() {
                   <div className="flex items-center gap-2">
                     {/* The other way a debt closes: without money. Quieter
                         than the payment button, because it is the exception. */}
-                    <Button size="sm" variant="ghost" onClick={() => setDeductionOpen(true)} data-testid="invoice-record-deduction">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDeductionOpen(true)}
+                      data-testid="invoice-record-deduction"
+                    >
                       <MinusCircle className="h-3.5 w-3.5 mr-1.5" />
                       {t('invoices.deductions.action')}
                     </Button>
@@ -790,7 +768,11 @@ export default function InvoiceDetailPage() {
               <table className="w-full border-b border-border" data-testid="invoice-deductions">
                 <tbody>
                   {invoice.deductions.map((deduction) => (
-                    <tr key={deduction.id} data-testid="invoice-deduction" className="border-b border-border last:border-0 bg-muted/20">
+                    <tr
+                      key={deduction.id}
+                      data-testid="invoice-deduction"
+                      className="border-b border-border last:border-0 bg-muted/20"
+                    >
                       <td className="py-3 pl-4 sm:pl-5">
                         <div className="text-sm font-medium text-foreground truncate">
                           {t(`invoices.deductions.kind.${deduction.kind}`)}
@@ -843,9 +825,7 @@ export default function InvoiceDetailPage() {
                           {allocation.transaction?.description ?? t('invoices.linkedPayment')}
                         </div>
                         <div className="text-xs text-muted-foreground tabular-nums mt-0.5">
-                          {allocation.transaction?.date
-                            ? showDate(allocation.transaction.date)
-                            : ''}
+                          {allocation.transaction?.date ? showDate(allocation.transaction.date) : ''}
                           {' · '}
                           {(() => {
                             const origin = allocationOrigin(allocation.method)
@@ -855,9 +835,7 @@ export default function InvoiceDetailPage() {
                             // and becomes a readable one when the policy
                             // is fetchable, without this line changing.
                             return (
-                              <span title={origin.strategyId ?? undefined}>
-                                {t('invoices.linkedAutomatically')}
-                              </span>
+                              <span title={origin.strategyId ?? undefined}>{t('invoices.linkedAutomatically')}</span>
                             )
                           })()}
                         </div>
@@ -895,7 +873,6 @@ export default function InvoiceDetailPage() {
       />
 
       <MakeRecurringDialog
-
         key={recurringOpen ? 'recurring-open' : 'recurring-closed'}
 
         open={recurringOpen}
@@ -905,13 +882,10 @@ export default function InvoiceDetailPage() {
         invoice={invoice}
 
         onCreated={(scheduleId) => {
-
           refresh()
 
           navigate(`/invoices/schedules/${scheduleId}`)
-
         }}
-
       />
 
       <LinkPaymentDialog
@@ -1002,10 +976,14 @@ function RecordDeductionDialog({
           <div className="space-y-1.5">
             <Label>{t('invoices.deductions.kindLabel')}</Label>
             <Select value={kind} onValueChange={(v) => setKind(v as DeductionKind)}>
-              <SelectTrigger data-testid="deduction-kind"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="deduction-kind">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {DEDUCTION_KINDS.map((k) => (
-                  <SelectItem key={k} value={k}>{t(`invoices.deductions.kind.${k}`)}</SelectItem>
+                  <SelectItem key={k} value={k}>
+                    {t(`invoices.deductions.kind.${k}`)}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1013,7 +991,13 @@ function RecordDeductionDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="deduction-amount">{t('invoices.deductions.amount')}</Label>
-              <Input id="deduction-amount" data-testid="deduction-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <Input
+                id="deduction-amount"
+                data-testid="deduction-amount"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
               <p className="text-[11px] text-muted-foreground">
                 {t('invoices.deductions.amountHint', { balance: formatCurrency(Number(balance), currency, locale) })}
               </p>
@@ -1021,18 +1005,37 @@ function RecordDeductionDialog({
             {kind === 'withholding_tax' && (
               <div className="space-y-1.5">
                 <Label htmlFor="deduction-tax-kind">{t('invoices.deductions.taxKind')}</Label>
-                <Input id="deduction-tax-kind" data-testid="deduction-tax-kind" value={taxKind} onChange={(e) => setTaxKind(e.target.value)} placeholder={t('invoices.deductions.taxKindPlaceholder')} maxLength={30} />
+                <Input
+                  id="deduction-tax-kind"
+                  data-testid="deduction-tax-kind"
+                  value={taxKind}
+                  onChange={(e) => setTaxKind(e.target.value)}
+                  placeholder={t('invoices.deductions.taxKindPlaceholder')}
+                  maxLength={30}
+                />
               </div>
             )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="deduction-note">{t('invoices.deductions.note')}</Label>
-            <Input id="deduction-note" data-testid="deduction-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
+            <Input
+              id="deduction-note"
+              data-testid="deduction-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={500}
+            />
           </div>
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-          <Button onClick={() => mutation.mutate()} disabled={!(Number(amount) > 0) || mutation.isPending} data-testid="deduction-submit">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!(Number(amount) > 0) || mutation.isPending}
+            data-testid="deduction-submit"
+          >
             {t('invoices.deductions.action')}
           </Button>
         </DialogFooter>
@@ -1110,9 +1113,7 @@ export function LinkPaymentDialog({
   const target = Number(settleTarget ?? balance)
   // What the server links when no amount is typed: the smaller of the
   // balance and what this payment has not already given to other invoices.
-  const applied = amount
-    ? Number(amount)
-    : Math.min(Number(balance), selectedTx ? unspentOf(selectedTx) : 0)
+  const applied = amount ? Number(amount) : Math.min(Number(balance), selectedTx ? unspentOf(selectedTx) : 0)
   const difference = selectedTx ? Math.round((target - applied) * 100) / 100 : 0
 
   // Linking and deducting are two requests. Once the first has landed
@@ -1164,9 +1165,7 @@ export function LinkPaymentDialog({
         </DialogHeader>
 
         <div className="space-y-3 max-h-72 overflow-y-auto">
-          {candidates.length === 0 && (
-            <p className="text-sm text-muted-foreground">{t('invoices.noCandidates')}</p>
-          )}
+          {candidates.length === 0 && <p className="text-sm text-muted-foreground">{t('invoices.noCandidates')}</p>}
           {candidates.map((tx) => (
             <button
               key={tx.id}
@@ -1207,17 +1206,24 @@ export function LinkPaymentDialog({
         </div>
 
         {selectedTx && difference > 0 && (
-          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 space-y-2" data-testid="invoice-difference">
+          <div
+            className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 space-y-2"
+            data-testid="invoice-difference"
+          >
             <p className="text-sm font-medium">
               {t('invoices.deductions.differenceTitle', { difference: formatCurrency(difference, currency, locale) })}
             </p>
             <p className="text-[11px] text-muted-foreground">{t('invoices.deductions.differenceHint')}</p>
             <Select value={differenceKind} onValueChange={(v) => setDifferenceKind(v as DeductionKind | 'none')}>
-              <SelectTrigger data-testid="invoice-difference-kind"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="invoice-difference-kind">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">{t('invoices.deductions.differenceNone')}</SelectItem>
                 {DEDUCTION_KINDS.map((k) => (
-                  <SelectItem key={k} value={k}>{t(`invoices.deductions.kind.${k}`)}</SelectItem>
+                  <SelectItem key={k} value={k}>
+                    {t(`invoices.deductions.kind.${k}`)}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1315,11 +1321,7 @@ export function EditDraftDialog({
         // does, because omitting the key means "leave them alone" — so
         // deleting every row used to save successfully and change
         // nothing, and the rows came back on the next read.
-        ...(lines.length
-          ? { lines }
-          : invoice.lines.length
-            ? { lines: [], total }
-            : { total }),
+        ...(lines.length ? { lines } : invoice.lines.length ? { lines: [], total } : { total }),
       }),
     onSuccess: () => {
       toast.success(t('invoices.updated'))
@@ -1338,10 +1340,7 @@ export function EditDraftDialog({
           room, and without it the row overflows and the remove button
           falls off the right edge. */}
       <DialogContent
-        className={cn(
-          'flex flex-col max-h-[calc(100dvh-2rem)]',
-          lines.length ? 'sm:max-w-3xl' : 'sm:max-w-lg',
-        )}
+        className={cn('flex flex-col max-h-[calc(100dvh-2rem)]', lines.length ? 'sm:max-w-3xl' : 'sm:max-w-lg')}
       >
         <DialogHeader>
           <DialogTitle>{t('invoices.editDraft')}</DialogTitle>
@@ -1383,19 +1382,14 @@ export function EditDraftDialog({
                 id="edit-due"
                 data-testid="edit-due-input"
                 type="date"
-                value={installments ? installments[installments.length - 1]?.due_date ?? '' : dueDate}
+                value={installments ? (installments[installments.length - 1]?.due_date ?? '') : dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 disabled={installments !== null}
               />
             </div>
           </div>
 
-          <InvoiceLineEditor
-            lines={lines}
-            onChange={setLines}
-            currency={currency}
-            showTax={showTax}
-          />
+          <InvoiceLineEditor lines={lines} onChange={setLines} currency={currency} showTax={showTax} />
 
           <InvoiceInstallmentsEditor
             value={installments}
@@ -1423,7 +1417,12 @@ export function EditDraftDialog({
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || (installments !== null && Math.abs(installmentsTotal(installments) - (lines.length ? linesTotal(lines) : Number(total || 0))) >= 0.005)}
+            disabled={
+              mutation.isPending ||
+              (installments !== null &&
+                Math.abs(installmentsTotal(installments) - (lines.length ? linesTotal(lines) : Number(total || 0))) >=
+                  0.005)
+            }
             data-testid="edit-submit"
           >
             {t('common.save')}
@@ -1551,7 +1550,11 @@ function MakeRecurringDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={() => mutation.mutate()} disabled={!ready || mutation.isPending} data-testid="recurring-submit">
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!ready || mutation.isPending}
+            data-testid="recurring-submit"
+          >
             <Repeat className="h-4 w-4 mr-1.5" />
             {t('invoices.schedules.action.makeRecurring')}
           </Button>

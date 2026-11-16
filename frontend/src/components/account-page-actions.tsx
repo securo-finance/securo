@@ -1,12 +1,7 @@
 import { Layers, MoreHorizontal, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 export type AccountPageActionsProps = {
   canWrite: boolean
@@ -45,9 +40,15 @@ function MobileSecondaryMenu(props: AccountPageActionsProps) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onSelect={props.onOpenCollections}>
-          <Layers size={16} />{t('collections.title')}
+          <Layers size={16} />
+          {t('collections.title')}
         </DropdownMenuItem>
-        {props.canWrite && <DropdownMenuItem onSelect={props.onConnectBank}><Plus size={16} />{t('accounts.connectBank')}</DropdownMenuItem>}
+        {props.canWrite && (
+          <DropdownMenuItem onSelect={props.onConnectBank}>
+            <Plus size={16} />
+            {t('accounts.connectBank')}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -62,7 +63,12 @@ export function AccountPageActions(props: AccountPageActionsProps) {
   return (
     <div className="flex w-full items-center gap-2 sm:w-auto" data-testid={props.testId}>
       <DesktopSecondaryActions {...props} />
-      {props.canWrite && <Button onClick={props.onAddAccount} className="flex-1 gap-1.5 sm:flex-none"><Plus size={16} />{t('accounts.addManual')}</Button>}
+      {props.canWrite && (
+        <Button onClick={props.onAddAccount} className="flex-1 gap-1.5 sm:flex-none">
+          <Plus size={16} />
+          {t('accounts.addManual')}
+        </Button>
+      )}
       <MobileSecondaryMenu {...props} />
     </div>
   )

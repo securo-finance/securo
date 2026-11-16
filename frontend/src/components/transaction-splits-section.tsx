@@ -296,9 +296,7 @@ export function TransactionSplitsSection({
         <div className="space-y-3 pl-6">
           {!groups || groups.length === 0 ? (
             <div className="space-y-2 py-2">
-              <p className="text-xs text-muted-foreground font-semibold">
-                {t('splitGroups.splitNoGroups')}
-              </p>
+              <p className="text-xs text-muted-foreground font-semibold">{t('splitGroups.splitNoGroups')}</p>
               <p className="text-xs text-muted-foreground">
                 {t('splitGroups.splitNoGroupsLinkPrefix')}
                 <button
@@ -384,9 +382,7 @@ export function TransactionSplitsSection({
                   )}
                   {group.members.length === 0 ? (
                     <div className="py-2 text-center">
-                      <p className="text-xs text-muted-foreground mb-2">
-                        {t('splitGroups.splitNoMembers')}
-                      </p>
+                      <p className="text-xs text-muted-foreground mb-2">{t('splitGroups.splitNoMembers')}</p>
                       <Button
                         type="button"
                         variant="outline"
@@ -415,7 +411,7 @@ export function TransactionSplitsSection({
                               ? absAmount / selectedCount
                               : null
                             : shareType === 'percent'
-                              ? (parseFloat(row.percent) || 0) * absAmount / 100
+                              ? ((parseFloat(row.percent) || 0) * absAmount) / 100
                               : null
                         return (
                           <div key={m.id} className="flex items-center gap-2">
@@ -423,17 +419,13 @@ export function TransactionSplitsSection({
                               <input
                                 type="checkbox"
                                 checked={row.selected}
-                                onChange={(e) =>
-                                  updateRow(m.id, { selected: e.target.checked })
-                                }
+                                onChange={(e) => updateRow(m.id, { selected: e.target.checked })}
                                 className="h-4 w-4 rounded border-border accent-primary"
                               />
                               <span className="text-sm flex-1 min-w-0 truncate">
                                 {m.name}
                                 {m.is_self && (
-                                  <span className="ml-1.5 text-xs text-primary">
-                                    ({t('splitGroups.you')})
-                                  </span>
+                                  <span className="ml-1.5 text-xs text-primary">({t('splitGroups.you')})</span>
                                 )}
                               </span>
                             </label>
@@ -479,11 +471,7 @@ export function TransactionSplitsSection({
                     </span>
                   ) : shareType === 'exact' ? (
                     <span
-                      className={
-                        Math.abs(total - Math.abs(amount)) < 0.005
-                          ? 'text-emerald-600'
-                          : 'text-amber-600'
-                      }
+                      className={Math.abs(total - Math.abs(amount)) < 0.005 ? 'text-emerald-600' : 'text-amber-600'}
                     >
                       {t('splitGroups.amountSum', {
                         total: total.toFixed(2),

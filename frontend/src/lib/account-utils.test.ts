@@ -15,11 +15,7 @@ describe('sortAccountsByDisplayName', () => {
       { id: '3', name: 'Checking', display_name: 'Bills' },
     ]
 
-    expect(sortAccountsByDisplayName(accounts).map((account) => account.id)).toEqual([
-      '3',
-      '1',
-      '2',
-    ])
+    expect(sortAccountsByDisplayName(accounts).map((account) => account.id)).toEqual(['3', '1', '2'])
   })
 
   it('does not mutate the API account list', () => {
@@ -53,8 +49,9 @@ describe('sortAccountsByAbsoluteBalance', () => {
       { id: 'converted', current_balance: '500', balance_primary: 100 },
     ]
 
-    expect(sortAccountsByAbsoluteBalance(accounts, (a) => a.balance_primary ?? a.current_balance)
-      .map((a) => a.id)).toEqual(['no-conversion', 'null-conversion', 'converted', 'converted-zero'])
+    expect(
+      sortAccountsByAbsoluteBalance(accounts, (a) => a.balance_primary ?? a.current_balance).map((a) => a.id),
+    ).toEqual(['no-conversion', 'null-conversion', 'converted', 'converted-zero'])
   })
 
   it('orders positive and negative balances by magnitude', () => {
@@ -121,9 +118,7 @@ describe('sidebarAccountBalance', () => {
   })
 
   it('shows a shared card own open bill instead of the line balance', () => {
-    const { amount, isPrimary } = sidebarAccountBalance(
-      sharedCard({ open_bill_total: 820.5 }),
-    )
+    const { amount, isPrimary } = sidebarAccountBalance(sharedCard({ open_bill_total: 820.5 }))
 
     expect(amount).toBe(-820.5)
     expect(isPrimary).toBe(false)

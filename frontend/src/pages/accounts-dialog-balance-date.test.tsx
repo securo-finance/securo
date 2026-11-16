@@ -33,9 +33,7 @@ const manual = {
 
 function renderDialog(account: Account | null) {
   const onSave = vi.fn()
-  renderWithProviders(
-    <AccountDialog open onClose={vi.fn()} account={account} onSave={onSave} loading={false} />,
-  )
+  renderWithProviders(<AccountDialog open onClose={vi.fn()} account={account} onSave={onSave} loading={false} />)
   return onSave
 }
 

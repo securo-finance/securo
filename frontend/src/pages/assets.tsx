@@ -9,13 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
@@ -42,15 +36,7 @@ import {
   AlertTriangle,
   Upload,
 } from 'lucide-react'
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip as RechartsTooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
 import { ExchangeRateSetupAction, ExchangeRateSetupIcon } from '@/components/exchange-rate-setup-notice'
@@ -94,12 +80,7 @@ function AssetIcon({
       }`}
     >
       {showImage ? (
-        <img
-          src={logoUrl!}
-          alt=""
-          className="w-full h-full object-contain"
-          onError={() => setErrored(true)}
-        />
+        <img src={logoUrl!} alt="" className="w-full h-full object-contain" onError={() => setErrored(true)} />
       ) : (
         <Icon size={size} className={colorClass} />
       )}
@@ -490,8 +471,10 @@ export default function AssetsPage() {
       let next: Date
       if (formGrowthFrequency === 'daily') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
       else if (formGrowthFrequency === 'weekly') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)
-      else if (formGrowthFrequency === 'monthly') next = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), 28))
-      else if (formGrowthFrequency === 'yearly') next = new Date(d.getFullYear() + 1, d.getMonth(), d.getMonth() === 1 ? Math.min(d.getDate(), 28) : d.getDate())
+      else if (formGrowthFrequency === 'monthly')
+        next = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), 28))
+      else if (formGrowthFrequency === 'yearly')
+        next = new Date(d.getFullYear() + 1, d.getMonth(), d.getMonth() === 1 ? Math.min(d.getDate(), 28) : d.getDate())
       else break
       if (next > today) break
       if (formGrowthType === 'percentage') {
@@ -503,10 +486,18 @@ export default function AssetsPage() {
       iterations++
     }
     return Math.round(current * 100) / 100
-  }, [formMethod, formPurchasePrice, formGrowthRate, formGrowthType, formGrowthFrequency, formGrowthStartDate, formPurchaseDate])
+  }, [
+    formMethod,
+    formPurchasePrice,
+    formGrowthRate,
+    formGrowthType,
+    formGrowthFrequency,
+    formGrowthStartDate,
+    formPurchaseDate,
+  ])
 
-  const activeAssets = useMemo(() => assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? [], [assetsList])
-  const soldAssets = assetsList?.filter(a => a.sell_date) ?? []
+  const activeAssets = useMemo(() => assetsList?.filter((a) => !a.sell_date && !a.is_archived) ?? [], [assetsList])
+  const soldAssets = assetsList?.filter((a) => a.sell_date) ?? []
   // Denominator for the "% of portfolio" column: current holdings only, in the
   // user's primary currency, so the active rows add up to 100%. Assets with
   // no resolvable FX rate are left out of the denominator (their rows show
@@ -595,7 +586,6 @@ export default function AssetsPage() {
     setTickerSearchLoading(false)
   }
 
-
   function openCreate() {
     setEditingAsset(null)
     setFormName('')
@@ -654,9 +644,10 @@ export default function AssetsPage() {
 
   // Holdings driven by the transactions ledger: quantity, buy date and cost
   // basis come from the transactions, not from this form.
-  const editingIsLedgerBacked = !!editingAsset
-    && editingAsset.valuation_method === 'market_price'
-    && (editingAsset.average_price != null || (editingAsset.transaction_count ?? 0) > 0)
+  const editingIsLedgerBacked =
+    !!editingAsset &&
+    editingAsset.valuation_method === 'market_price' &&
+    (editingAsset.average_price != null || (editingAsset.transaction_count ?? 0) > 0)
 
   function buildPayload() {
     const isMarket = formMethod === 'market_price'
@@ -709,7 +700,6 @@ export default function AssetsPage() {
       }
     }
 
-
     if (!editingAsset && formCurrentValue) {
       payload.current_value = parseFloat(formCurrentValue)
     }
@@ -746,9 +736,9 @@ export default function AssetsPage() {
 
   function confirmRegenerateGrowth() {
     if (!editingAsset || !pendingGrowthSave) return
-    updateMutation.mutate(
-      { id: editingAsset.id, ...pendingGrowthSave, _regenerateGrowth: true } as Partial<Asset> & { id: string },
-    )
+    updateMutation.mutate({ id: editingAsset.id, ...pendingGrowthSave, _regenerateGrowth: true } as Partial<Asset> & {
+      id: string
+    })
     setPendingGrowthSave(null)
   }
 
@@ -786,10 +776,19 @@ export default function AssetsPage() {
         >
           {/* Ativo */}
           <div className="flex items-center gap-2.5 min-w-0">
-            <AssetIcon logoUrl={asset.logo_url} Icon={Icon} colorClass={config.color} bgClass={config.bg} size={16} tile="w-8 h-8" />
+            <AssetIcon
+              logoUrl={asset.logo_url}
+              Icon={Icon}
+              colorClass={config.color}
+              bgClass={config.bg}
+              size={16}
+              tile="w-8 h-8"
+            />
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-foreground truncate">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.ticker : asset.name}</span>
+                <span className="font-semibold text-foreground truncate">
+                  {asset.ticker && !asset.ticker.startsWith('TD:') ? asset.ticker : asset.name}
+                </span>
                 {needsBuys && (
                   <Badge
                     variant="outline"
@@ -811,13 +810,25 @@ export default function AssetsPage() {
                   </Badge>
                 )}
                 {asset.sell_date && (
-                  <Badge variant="outline" className="text-[9px] px-1 py-0 text-rose-600 border-rose-200">{t('assets.sold')}</Badge>
+                  <Badge variant="outline" className="text-[9px] px-1 py-0 text-rose-600 border-rose-200">
+                    {t('assets.sold')}
+                  </Badge>
                 )}
                 {isSynced && !isMarketPriced && (
-                  <Badge variant="outline" className="text-[9px] px-1 py-0 text-sky-600 border-sky-200">{t('assets.synced')}</Badge>
+                  <Badge variant="outline" className="text-[9px] px-1 py-0 text-sky-600 border-sky-200">
+                    {t('assets.synced')}
+                  </Badge>
                 )}
               </div>
-              <span className="text-[11px] text-muted-foreground truncate block">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.name : (asset.ticker?.startsWith('TD:') ? 'Tesouro Direto' : t(`assets.type${asset.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())}`))}</span>
+              <span className="text-[11px] text-muted-foreground truncate block">
+                {asset.ticker && !asset.ticker.startsWith('TD:')
+                  ? asset.name
+                  : asset.ticker?.startsWith('TD:')
+                    ? 'Tesouro Direto'
+                    : t(
+                        `assets.type${asset.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, (c) => c.toUpperCase())}`,
+                      )}
+              </span>
             </div>
           </div>
           {/* Quant. */}
@@ -826,15 +837,20 @@ export default function AssetsPage() {
           </div>
           {/* Preço Médio */}
           <div className="text-right tabular-nums">
-            {asset.average_price != null ? mask(formatCurrency(asset.average_price, asset.currency, locale)) : (
-              needsBuys && canWrite ? (
-                <button
-                  onClick={(e) => { e.stopPropagation(); openAddTransaction(asset.id) }}
-                  className="text-[11px] font-medium text-primary hover:underline"
-                >
-                  + {t('assets.addBuys')}
-                </button>
-              ) : <span className="text-muted-foreground">—</span>
+            {asset.average_price != null ? (
+              mask(formatCurrency(asset.average_price, asset.currency, locale))
+            ) : needsBuys && canWrite ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openAddTransaction(asset.id)
+                }}
+                className="text-[11px] font-medium text-primary hover:underline"
+              >
+                + {t('assets.addBuys')}
+              </button>
+            ) : (
+              <span className="text-muted-foreground">—</span>
             )}
           </div>
           {/* Preço Atual */}
@@ -846,32 +862,48 @@ export default function AssetsPage() {
             {profit ? (
               <span className={profit.amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
                 <span className="block">
-                  {profit.amount >= 0 ? '+' : ''}{mask(formatCurrency(profit.amount, asset.currency, locale))}
+                  {profit.amount >= 0 ? '+' : ''}
+                  {mask(formatCurrency(profit.amount, asset.currency, locale))}
                 </span>
                 {profit.percentage != null && (
                   <span className="block text-[10px]">
-                    {profit.percentage >= 0 ? '+' : ''}{profit.percentage.toFixed(1)}%
+                    {profit.percentage >= 0 ? '+' : ''}
+                    {profit.percentage.toFixed(1)}%
                   </span>
                 )}
               </span>
-            ) : <span className="text-muted-foreground">—</span>}
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
           </div>
           {/* Saldo */}
           <div className="text-right tabular-nums">
             {asset.current_value != null ? (
               <>
                 <span className="inline-flex items-center justify-end gap-1">
-                  <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
-                  {needsExchangeRate && <ExchangeRateSetupIcon from={asset.currency} to={userCurrency} isAdmin={Boolean(user?.is_superuser)} />}
+                  <span className="font-semibold text-foreground">
+                    {mask(formatCurrency(asset.current_value, asset.currency, locale))}
+                  </span>
+                  {needsExchangeRate && (
+                    <ExchangeRateSetupIcon
+                      from={asset.currency}
+                      to={userCurrency}
+                      isAdmin={Boolean(user?.is_superuser)}
+                    />
+                  )}
                 </span>
                 {asset.current_value_primary != null && asset.currency !== userCurrency && (
-                  <span className="block text-[10px] text-muted-foreground">{mask(formatCurrency(asset.current_value_primary, userCurrency, locale))}</span>
+                  <span className="block text-[10px] text-muted-foreground">
+                    {mask(formatCurrency(asset.current_value_primary, userCurrency, locale))}
+                  </span>
                 )}
                 {unconverted && (
                   <span className="block text-[10px] text-amber-600 dark:text-amber-400">{t('assets.noFxRate')}</span>
                 )}
               </>
-            ) : <span className="text-muted-foreground">—</span>}
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
           </div>
           {/* % carteira */}
           <div className="text-right tabular-nums text-muted-foreground">
@@ -881,49 +913,95 @@ export default function AssetsPage() {
           <div className="flex items-center justify-end gap-0.5">
             {canWrite && (
               <>
-                <button onClick={(e) => { e.stopPropagation(); setMovingAsset(asset) }} title={t('assets.moveToWallet')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setMovingAsset(asset)
+                  }}
+                  title={t('assets.moveToWallet')}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
                   <FolderInput size={13} />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) openEdit(asset) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.edit')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (!isProviderOwned) openEdit(asset)
+                  }}
+                  disabled={isProviderOwned}
+                  title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.edit')}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
                   <Pencil size={13} />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) setDeletingId(asset.id) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (!isProviderOwned) setDeletingId(asset.id)
+                  }}
+                  disabled={isProviderOwned}
+                  title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.delete')}
+                  className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
                   <Trash2 size={13} />
                 </button>
               </>
             )}
-            {isExpanded ? <ChevronUp size={15} className="text-muted-foreground" /> : <ChevronDown size={15} className="text-muted-foreground" />}
+            {isExpanded ? (
+              <ChevronUp size={15} className="text-muted-foreground" />
+            ) : (
+              <ChevronDown size={15} className="text-muted-foreground" />
+            )}
           </div>
         </div>
 
         {isExpanded && (
           <>
-          {LOAN_COLLATERAL_TYPES.includes(asset.type) && (
-            <PropertyEquitySummary
-              asset={asset}
-              loans={accountsList ?? []}
-              currency={userCurrency}
-              locale={locale}
-              mask={mask}
-            />
-          )}
-          {isMarketPriced ? (
-            <>
-              {/* Value-evolution chart on top, then the buy/sell ledger. */}
-              <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} chartOnly />
-              <HoldingLedger
+            {LOAN_COLLATERAL_TYPES.includes(asset.type) && (
+              <PropertyEquitySummary
                 asset={asset}
+                loans={accountsList ?? []}
+                currency={userCurrency}
+                locale={locale}
+                mask={mask}
+              />
+            )}
+            {isMarketPriced ? (
+              <>
+                {/* Value-evolution chart on top, then the buy/sell ledger. */}
+                <AssetDetail
+                  assetId={asset.id}
+                  currency={asset.currency}
+                  locale={locale}
+                  dateLocale={dateLocale}
+                  purchasePrice={asset.purchase_price}
+                  purchaseDate={asset.purchase_date}
+                  valuationMethod={asset.valuation_method}
+                  canWrite={canWrite}
+                  chartOnly
+                />
+                <HoldingLedger
+                  asset={asset}
+                  locale={locale}
+                  dateLocale={dateLocale}
+                  mask={mask}
+                  canWrite={canWrite}
+                  onAdd={() => openAddTransaction(asset.id)}
+                  onChanged={refetchAssetViews}
+                />
+              </>
+            ) : (
+              <AssetDetail
+                assetId={asset.id}
+                currency={asset.currency}
                 locale={locale}
                 dateLocale={dateLocale}
-                mask={mask}
+                purchasePrice={asset.purchase_price}
+                purchaseDate={asset.purchase_date}
+                valuationMethod={asset.valuation_method}
                 canWrite={canWrite}
-                onAdd={() => openAddTransaction(asset.id)}
-                onChanged={refetchAssetViews}
               />
-            </>
-          ) : (
-            <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} />
-          )}
+            )}
           </>
         )}
       </div>
@@ -982,7 +1060,7 @@ export default function AssetsPage() {
   const ungroupedAssets = assetsByGroup.get(null) ?? []
 
   function toggleWalletCollapse(id: string) {
-    setCollapsedWallets(prev => {
+    setCollapsedWallets((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -1039,8 +1117,7 @@ export default function AssetsPage() {
     // additional information — if the user hasn't renamed the wallet,
     // name and institution are identical and the subtitle would be
     // redundant noise.
-    const showInstitutionSubtitle =
-      !!wallet.institution_name && wallet.institution_name !== wallet.name
+    const showInstitutionSubtitle = !!wallet.institution_name && wallet.institution_name !== wallet.name
 
     return (
       <div key={wallet.id} className="space-y-2">
@@ -1106,15 +1183,9 @@ export default function AssetsPage() {
             </>
           )}
         </div>
-        {!isCollapsed && walletAssets.length > 0 && (
-          <div className="pl-4">
-            {renderHoldingsTable(walletAssets)}
-          </div>
-        )}
+        {!isCollapsed && walletAssets.length > 0 && <div className="pl-4">{renderHoldingsTable(walletAssets)}</div>}
         {!isCollapsed && walletAssets.length === 0 && (
-          <div className="pl-4 py-3 text-xs text-muted-foreground italic">
-            {t('assets.emptyWallet')}
-          </div>
+          <div className="pl-4 py-3 text-xs text-muted-foreground italic">{t('assets.emptyWallet')}</div>
         )}
       </div>
     )
@@ -1172,78 +1243,83 @@ export default function AssetsPage() {
           onChanged={refetchAssetViews}
         />
       ) : (
-      <>
-      {/* Assets that have no resolvable FX rate are left out of the totals
+        <>
+          {/* Assets that have no resolvable FX rate are left out of the totals
           below; explain that so the numbers do not look wrong (issue #574).
           One warning only: when no rate provider is configured, the same
           box says so and offers the way to set it up. */}
-      {(unconvertedCurrencies.length > 0 || exchangeRatesNeedSetup) && (
-        <div role="status" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-            <span>
-              {unconvertedCurrencies.length > 0
-                ? t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })
-                : t('assets.exchangeRateSetupWarning')}
-            </span>
-            {exchangeRatesNeedSetup && <ExchangeRateSetupAction isAdmin={Boolean(user?.is_superuser)} />}
-          </div>
-        </div>
-      )}
+          {(unconvertedCurrencies.length > 0 || exchangeRatesNeedSetup) && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+            >
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                <span>
+                  {unconvertedCurrencies.length > 0
+                    ? t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })
+                    : t('assets.exchangeRateSetupWarning')}
+                </span>
+                {exchangeRatesNeedSetup && <ExchangeRateSetupAction isAdmin={Boolean(user?.is_superuser)} />}
+              </div>
+            </div>
+          )}
 
-      {/* Portfolio Chart */}
-      {portfolioData && portfolioData.trend.length > 0 && (
-        <PortfolioChart
-          data={portfolioData}
-          wallets={sortedWallets}
-          currency={userCurrency}
-          locale={locale}
-          dateLocale={dateLocale}
-          mask={mask}
-        />
-      )}
+          {/* Portfolio Chart */}
+          {portfolioData && portfolioData.trend.length > 0 && (
+            <PortfolioChart
+              data={portfolioData}
+              wallets={sortedWallets}
+              currency={userCurrency}
+              locale={locale}
+              dateLocale={dateLocale}
+              mask={mask}
+            />
+          )}
 
-      {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {/* Wallets (active assets grouped) */}
-          {(sortedWallets.length > 0 || ungroupedAssets.length > 0) && (
-            <div className="space-y-4">
-              {sortedWallets.map(w => renderWalletSection(w, assetsByGroup.get(w.id) ?? []))}
+          {isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 rounded-xl" />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Wallets (active assets grouped) */}
+              {(sortedWallets.length > 0 || ungroupedAssets.length > 0) && (
+                <div className="space-y-4">
+                  {sortedWallets.map((w) => renderWalletSection(w, assetsByGroup.get(w.id) ?? []))}
 
-              {ungroupedAssets.length > 0 && (
+                  {ungroupedAssets.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                        {sortedWallets.length > 0 ? t('assets.ungrouped') : t('assets.activeAssets')}
+                      </h3>
+                      {renderHoldingsTable(ungroupedAssets)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sold Assets */}
+              {soldAssets.length > 0 && (
                 <div className="space-y-2">
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
-                    {sortedWallets.length > 0 ? t('assets.ungrouped') : t('assets.activeAssets')}
+                    {t('assets.soldAssets')}
                   </h3>
-                  {renderHoldingsTable(ungroupedAssets)}
+                  {renderHoldingsTable(soldAssets)}
+                </div>
+              )}
+
+              {activeAssets.length === 0 && soldAssets.length === 0 && (
+                <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-center py-16 text-muted-foreground">
+                  <Package size={32} className="mx-auto mb-2 opacity-50" />
+                  <p>{t('assets.noAssets')}</p>
                 </div>
               )}
             </div>
           )}
-
-          {/* Sold Assets */}
-          {soldAssets.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
-                {t('assets.soldAssets')}
-              </h3>
-              {renderHoldingsTable(soldAssets)}
-            </div>
-          )}
-
-          {activeAssets.length === 0 && soldAssets.length === 0 && (
-            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-center py-16 text-muted-foreground">
-              <Package size={32} className="mx-auto mb-2 opacity-50" />
-              <p>{t('assets.noAssets')}</p>
-            </div>
-          )}
-        </div>
-      )}
-      </>
+        </>
       )}
 
       {/* Create/Edit Dialog */}
@@ -1256,7 +1332,7 @@ export default function AssetsPage() {
             {/* Name */}
             <div className="space-y-2">
               <Label>{t('assets.name')}</Label>
-              <Input value={formName} onChange={e => setFormName(e.target.value)} />
+              <Input value={formName} onChange={(e) => setFormName(e.target.value)} />
             </div>
 
             {/* Wallet picker — lets users place the asset in a specific
@@ -1280,11 +1356,13 @@ export default function AssetsPage() {
               <select
                 className="bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary px-3 py-2 rounded-lg text-foreground text-sm w-full"
                 value={formGroupId}
-                onChange={e => setFormGroupId(e.target.value)}
+                onChange={(e) => setFormGroupId(e.target.value)}
               >
                 <option value="">{t('assets.noWallet')}</option>
-                {sortedWallets.map(w => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
+                {sortedWallets.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1296,11 +1374,13 @@ export default function AssetsPage() {
                 <select
                   className="bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary px-3 py-2 rounded-lg text-foreground text-sm w-full"
                   value={formType}
-                  onChange={e => setFormType(e.target.value)}
+                  onChange={(e) => setFormType(e.target.value)}
                 >
-                  {ASSET_TYPES.map(at => (
+                  {ASSET_TYPES.map((at) => (
                     <option key={at} value={at}>
-                      {t(`assets.type${at.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())}`)}
+                      {t(
+                        `assets.type${at.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, (c) => c.toUpperCase())}`,
+                      )}
                     </option>
                   ))}
                 </select>
@@ -1311,10 +1391,14 @@ export default function AssetsPage() {
                   className="bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary px-3 py-2 rounded-lg text-foreground text-sm w-full disabled:opacity-60 disabled:cursor-not-allowed"
                   value={formCurrency}
                   disabled={formMethod === 'market_price'}
-                  onChange={e => setFormCurrency(e.target.value)}
+                  onChange={(e) => setFormCurrency(e.target.value)}
                 >
-                  {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map((c) => (
-                    <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
+                  {(
+                    supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]
+                  ).map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.flag} {c.name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -1324,7 +1408,7 @@ export default function AssetsPage() {
             <div className="space-y-2">
               <Label>{t('assets.valuationMethod')}</Label>
               <div className="grid gap-2 grid-cols-3">
-                {VALUATION_METHODS.map(m => (
+                {VALUATION_METHODS.map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -1356,7 +1440,7 @@ export default function AssetsPage() {
                       placeholder={t('assets.tickerPlaceholder')}
                       value={formTickerQuery}
                       disabled={!!editingAsset}
-                      onChange={e => {
+                      onChange={(e) => {
                         setFormTickerQuery(e.target.value)
                         // Clear the quote so we don't keep the old preview
                         // while the user is editing the symbol — prevents
@@ -1368,27 +1452,29 @@ export default function AssetsPage() {
                     />
                     {tickerMatches.length > 0 && !editingAsset && (
                       <div className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
-                        {tickerMatches.map(match => {
+                        {tickerMatches.map((match) => {
                           // Tesouro bonds carry an internal TD:* symbol — show
                           // the readable name instead of the hash for those.
                           const isBond = match.symbol.startsWith('TD:')
                           return (
-                          <button
-                            key={`${match.symbol}-${match.exchange ?? ''}`}
-                            type="button"
-                            onClick={() => pickTickerMatch(match)}
-                            className="flex flex-col w-full text-left px-3 py-2 hover:bg-muted transition-colors"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-semibold text-sm truncate">{isBond ? (match.name ?? match.symbol) : match.symbol}</span>
-                              {match.exchange && (
-                                <span className="text-xs text-muted-foreground shrink-0">{match.exchange}</span>
+                            <button
+                              key={`${match.symbol}-${match.exchange ?? ''}`}
+                              type="button"
+                              onClick={() => pickTickerMatch(match)}
+                              className="flex flex-col w-full text-left px-3 py-2 hover:bg-muted transition-colors"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-semibold text-sm truncate">
+                                  {isBond ? (match.name ?? match.symbol) : match.symbol}
+                                </span>
+                                {match.exchange && (
+                                  <span className="text-xs text-muted-foreground shrink-0">{match.exchange}</span>
+                                )}
+                              </div>
+                              {match.name && !isBond && (
+                                <span className="text-xs text-muted-foreground truncate">{match.name}</span>
                               )}
-                            </div>
-                            {match.name && !isBond && (
-                              <span className="text-xs text-muted-foreground truncate">{match.name}</span>
-                            )}
-                          </button>
+                            </button>
                           )
                         })}
                       </div>
@@ -1405,7 +1491,11 @@ export default function AssetsPage() {
                   <div className="rounded-lg border border-border bg-card p-3 text-sm">
                     <div className="flex items-center justify-between">
                       <div className="flex flex-col min-w-0">
-                        <span className="font-semibold truncate">{selectedQuote.symbol.startsWith('TD:') ? (selectedQuote.name ?? selectedQuote.symbol) : selectedQuote.symbol}</span>
+                        <span className="font-semibold truncate">
+                          {selectedQuote.symbol.startsWith('TD:')
+                            ? (selectedQuote.name ?? selectedQuote.symbol)
+                            : selectedQuote.symbol}
+                        </span>
                         {selectedQuote.name && !selectedQuote.symbol.startsWith('TD:') && (
                           <span className="text-xs text-muted-foreground truncate">{selectedQuote.name}</span>
                         )}
@@ -1414,7 +1504,9 @@ export default function AssetsPage() {
                             during create because the quote is inline-live. */}
                         {editingAsset?.last_price_at && (
                           <span className="text-[10px] text-muted-foreground mt-0.5">
-                            {t('assets.lastUpdated', { when: formatRelativeTime(editingAsset.last_price_at, dateLocale) })}
+                            {t('assets.lastUpdated', {
+                              when: formatRelativeTime(editingAsset.last_price_at, dateLocale),
+                            })}
                           </span>
                         )}
                       </div>
@@ -1440,10 +1532,7 @@ export default function AssetsPage() {
                             title={t('assets.refreshPrice')}
                             className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            <RefreshCw
-                              size={14}
-                              className={refreshPriceMutation.isPending ? 'animate-spin' : ''}
-                            />
+                            <RefreshCw size={14} className={refreshPriceMutation.isPending ? 'animate-spin' : ''} />
                           </button>
                         )}
                       </div>
@@ -1460,7 +1549,7 @@ export default function AssetsPage() {
                         step="any"
                         min="0"
                         value={formUnits}
-                        onChange={e => setFormUnits(e.target.value)}
+                        onChange={(e) => setFormUnits(e.target.value)}
                         placeholder="10"
                       />
                     </div>
@@ -1471,7 +1560,7 @@ export default function AssetsPage() {
                         step="any"
                         min="0"
                         value={formUnitPrice}
-                        onChange={e => setFormUnitPrice(e.target.value)}
+                        onChange={(e) => setFormUnitPrice(e.target.value)}
                         placeholder={selectedQuote ? String(selectedQuote.price) : '0.00'}
                       />
                     </div>
@@ -1479,7 +1568,15 @@ export default function AssetsPage() {
                 ) : (
                   <div className="space-y-2">
                     <Label>{t('assets.quantity')}</Label>
-                    <Input type="number" step="any" min="0" value={formUnits} onChange={e => setFormUnits(e.target.value)} placeholder="10" disabled={editingIsLedgerBacked} />
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={formUnits}
+                      onChange={(e) => setFormUnits(e.target.value)}
+                      placeholder="10"
+                      disabled={editingIsLedgerBacked}
+                    />
                   </div>
                 )}
 
@@ -1487,9 +1584,7 @@ export default function AssetsPage() {
                     the value matches the Add-transaction dialog exactly. */}
                 {!editingAsset && formUnits && parseFloat(formUnits) > 0 && (selectedQuote || formUnitPrice) && (
                   <div className="flex items-center justify-between p-3 rounded-lg border border-primary/30 bg-primary/10">
-                    <span className="text-xs font-medium text-primary/80">
-                      {t('assets.txTotal')}
-                    </span>
+                    <span className="text-xs font-medium text-primary/80">{t('assets.txTotal')}</span>
                     <span className="text-lg font-bold tabular-nums text-primary">
                       {formatCurrency(
                         (parseFloat(formUnitPrice) || selectedQuote?.price || 0) * parseFloat(formUnits),
@@ -1500,12 +1595,9 @@ export default function AssetsPage() {
                   </div>
                 )}
 
-                {quoteLoading && (
-                  <div className="text-xs text-muted-foreground">{t('common.loading')}</div>
-                )}
+                {quoteLoading && <div className="text-xs text-muted-foreground">{t('common.loading')}</div>}
               </div>
             )}
-
 
             {/* Growth Rule Settings */}
             {formMethod === 'growth_rule' && (
@@ -1516,19 +1608,29 @@ export default function AssetsPage() {
                     <select
                       className="bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary px-3 py-2 rounded-lg text-foreground text-sm w-full"
                       value={formGrowthType}
-                      onChange={e => setFormGrowthType(e.target.value)}
+                      onChange={(e) => setFormGrowthType(e.target.value)}
                     >
-                      {GROWTH_TYPES.map(gt => (
-                        <option key={gt} value={gt}>{t(`assets.${gt}`)}</option>
+                      {GROWTH_TYPES.map((gt) => (
+                        <option key={gt} value={gt}>
+                          {t(`assets.${gt}`)}
+                        </option>
                       ))}
                     </select>
                   </div>
                   <div className="space-y-2">
                     <Label>{t('assets.growthRate')}</Label>
                     <div className="relative">
-                      <Input type="number" step="any" value={formGrowthRate} onChange={e => setFormGrowthRate(e.target.value)} className={formGrowthType === 'percentage' ? 'pr-8' : ''} />
+                      <Input
+                        type="number"
+                        step="any"
+                        value={formGrowthRate}
+                        onChange={(e) => setFormGrowthRate(e.target.value)}
+                        className={formGrowthType === 'percentage' ? 'pr-8' : ''}
+                      />
                       {formGrowthType === 'percentage' && (
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
+                          %
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1539,10 +1641,12 @@ export default function AssetsPage() {
                     <select
                       className="bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary px-3 py-2 rounded-lg text-foreground text-sm w-full"
                       value={formGrowthFrequency}
-                      onChange={e => setFormGrowthFrequency(e.target.value)}
+                      onChange={(e) => setFormGrowthFrequency(e.target.value)}
                     >
-                      {GROWTH_FREQUENCIES.map(gf => (
-                        <option key={gf} value={gf}>{t(`assets.${gf}`)}</option>
+                      {GROWTH_FREQUENCIES.map((gf) => (
+                        <option key={gf} value={gf}>
+                          {t(`assets.${gf}`)}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -1560,12 +1664,21 @@ export default function AssetsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t('assets.purchaseDate')}</Label>
-                <DatePickerInput value={formPurchaseDate} onChange={setFormPurchaseDate} disabled={editingIsLedgerBacked} />
+                <DatePickerInput
+                  value={formPurchaseDate}
+                  onChange={setFormPurchaseDate}
+                  disabled={editingIsLedgerBacked}
+                />
               </div>
               {formMethod !== 'market_price' && (
                 <div className="space-y-2">
                   <Label>{t('assets.purchasePrice')}</Label>
-                  <Input type="number" step="0.01" value={formPurchasePrice} onChange={e => setFormPurchasePrice(e.target.value)} />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formPurchasePrice}
+                    onChange={(e) => setFormPurchasePrice(e.target.value)}
+                  />
                 </div>
               )}
             </div>
@@ -1580,7 +1693,12 @@ export default function AssetsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>{t('assets.sellPrice')}</Label>
-                  <Input type="number" step="0.01" value={formSellPrice} onChange={e => setFormSellPrice(e.target.value)} />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formSellPrice}
+                    onChange={(e) => setFormSellPrice(e.target.value)}
+                  />
                 </div>
               </div>
             )}
@@ -1593,32 +1711,39 @@ export default function AssetsPage() {
                   type="number"
                   step="any"
                   value={formCurrentValue}
-                  onChange={e => setFormCurrentValue(e.target.value)}
+                  onChange={(e) => setFormCurrentValue(e.target.value)}
                 />
               </div>
             )}
 
             {/* Projected Value — growth rule preview */}
-            {formMethod === 'growth_rule' && projectedGrowthValue != null && (() => {
-              const base = parseFloat(formPurchasePrice) || 0
-              const isLoss = projectedGrowthValue < base
-              const diff = projectedGrowthValue - base
-              return (
-                <div className={`flex items-center justify-between p-3.5 rounded-xl border ${isLoss ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800' : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800'}`}>
-                  <div>
-                    <span className="text-xs font-medium text-muted-foreground">{t('assets.currentValue')}</span>
-                    {base > 0 && (
-                      <p className={`text-[11px] tabular-nums font-medium mt-0.5 ${isLoss ? 'text-rose-500' : 'text-emerald-600'}`}>
-                        {diff >= 0 ? '+' : ''}{formatCurrency(diff, formCurrency, locale)}
-                      </p>
-                    )}
+            {formMethod === 'growth_rule' &&
+              projectedGrowthValue != null &&
+              (() => {
+                const base = parseFloat(formPurchasePrice) || 0
+                const isLoss = projectedGrowthValue < base
+                const diff = projectedGrowthValue - base
+                return (
+                  <div
+                    className={`flex items-center justify-between p-3.5 rounded-xl border ${isLoss ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800' : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800'}`}
+                  >
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground">{t('assets.currentValue')}</span>
+                      {base > 0 && (
+                        <p
+                          className={`text-[11px] tabular-nums font-medium mt-0.5 ${isLoss ? 'text-rose-500' : 'text-emerald-600'}`}
+                        >
+                          {diff >= 0 ? '+' : ''}
+                          {formatCurrency(diff, formCurrency, locale)}
+                        </p>
+                      )}
+                    </div>
+                    <span className={`text-xl font-bold tabular-nums ${isLoss ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {formatCurrency(projectedGrowthValue, formCurrency, locale)}
+                    </span>
                   </div>
-                  <span className={`text-xl font-bold tabular-nums ${isLoss ? 'text-rose-600' : 'text-emerald-600'}`}>
-                    {formatCurrency(projectedGrowthValue, formCurrency, locale)}
-                  </span>
-                </div>
-              )
-            })()}
+                )
+              })()}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
@@ -1627,13 +1752,13 @@ export default function AssetsPage() {
             <Button
               onClick={handleSave}
               disabled={
-                !formName
-                || createMutation.isPending
-                || updateMutation.isPending
+                !formName ||
+                createMutation.isPending ||
+                updateMutation.isPending ||
                 // Market-price guard: must have a resolved ticker + quantity.
-                || (formMethod === 'market_price'
-                  && !editingAsset
-                  && (!selectedQuote || !formUnits || parseFloat(formUnits) <= 0))
+                (formMethod === 'market_price' &&
+                  !editingAsset &&
+                  (!selectedQuote || !formUnits || parseFloat(formUnits) <= 0))
               }
             >
               {t('common.save')}
@@ -1653,10 +1778,7 @@ export default function AssetsPage() {
             <Button variant="outline" onClick={() => setPendingGrowthSave(null)}>
               {t('common.cancel')}
             </Button>
-            <Button
-              onClick={confirmRegenerateGrowth}
-              disabled={updateMutation.isPending}
-            >
+            <Button onClick={confirmRegenerateGrowth} disabled={updateMutation.isPending}>
               {t('assets.regenerate')}
             </Button>
           </DialogFooter>
@@ -1689,16 +1811,14 @@ export default function AssetsPage() {
       <Dialog open={walletDialogOpen} onOpenChange={setWalletDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {editingWallet ? t('assets.editWallet') : t('assets.newWallet')}
-            </DialogTitle>
+            <DialogTitle>{editingWallet ? t('assets.editWallet') : t('assets.newWallet')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>{t('assets.walletName')}</Label>
               <Input
                 value={walletFormName}
-                onChange={e => setWalletFormName(e.target.value)}
+                onChange={(e) => setWalletFormName(e.target.value)}
                 placeholder={t('assets.walletNamePlaceholder')}
                 autoFocus
               />
@@ -1714,7 +1834,7 @@ export default function AssetsPage() {
               <Input
                 type="color"
                 value={walletFormColor}
-                onChange={e => setWalletFormColor(e.target.value)}
+                onChange={(e) => setWalletFormColor(e.target.value)}
                 className="h-9 w-20 px-1 py-1"
               />
             </div>
@@ -1772,7 +1892,7 @@ export default function AssetsPage() {
               </div>
               <span className="text-sm text-foreground">{t('assets.noWallet')}</span>
             </button>
-            {sortedWallets.map(w => (
+            {sortedWallets.map((w) => (
               <button
                 key={w.id}
                 onClick={() => movingAsset && moveAssetMutation.mutate({ id: movingAsset.id, groupId: w.id })}
@@ -1790,9 +1910,7 @@ export default function AssetsPage() {
               </button>
             ))}
             {sortedWallets.length === 0 && (
-              <p className="text-xs text-muted-foreground italic px-3 py-2">
-                {t('assets.noWalletsHint')}
-              </p>
+              <p className="text-xs text-muted-foreground italic px-3 py-2">{t('assets.noWalletsHint')}</p>
             )}
           </div>
         </DialogContent>
@@ -1815,8 +1933,19 @@ export default function AssetsPage() {
 // The theme's series colors, as every chart uses them.
 const PORTFOLIO_COLORS = Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`)
 
-function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: dateLoc, mask }: {
-  data: { assets: { id: string; name: string; type: string; group_id: string | null; first_date: string | null }[]; trend: Record<string, unknown>[]; total: number }
+function PortfolioChart({
+  data,
+  wallets,
+  currency,
+  locale: loc,
+  dateLocale: dateLoc,
+  mask,
+}: {
+  data: {
+    assets: { id: string; name: string; type: string; group_id: string | null; first_date: string | null }[]
+    trend: Record<string, unknown>[]
+    total: number
+  }
   wallets: AssetGroup[]
   currency: string
   locale: string
@@ -1874,8 +2003,8 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
     // wallets that show up in the data but aren't in the wallets list
     // (e.g. race conditions between queries).
     const orderedGroupIds = [
-      ...wallets.map(w => w.id).filter(id => groupBuckets.has(id)),
-      ...Array.from(groupBuckets.keys()).filter(id => !walletById.has(id)),
+      ...wallets.map((w) => w.id).filter((id) => groupBuckets.has(id)),
+      ...Array.from(groupBuckets.keys()).filter((id) => !walletById.has(id)),
     ]
 
     const s: { key: string; name: string; color: string; sourceAssetIds: string[] }[] = []
@@ -1891,7 +2020,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
       })
     }
     for (const aid of ungroupedAssetIds) {
-      const asset = data.assets.find(a => a.id === aid)
+      const asset = data.assets.find((a) => a.id === aid)
       s.push({
         key: aid,
         name: asset?.name ?? aid,
@@ -1900,7 +2029,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
       })
     }
 
-    const newTrend = data.trend.map(row => {
+    const newTrend = data.trend.map((row) => {
       const newRow: Record<string, unknown> = { date: row.date, _total: row._total }
       for (const entry of s) {
         let sum = 0
@@ -1923,30 +2052,28 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
       return bv - av || a.name.localeCompare(b.name)
     })
   }, [series, displayTrend])
-  const selectedSeries = sortedSeries.find(s => s.key === selectedSeriesKey)
+  const selectedSeries = sortedSeries.find((s) => s.key === selectedSeriesKey)
   const visibleSeries = selectedSeries ? [selectedSeries] : sortedSeries
   const visibleTrend = useMemo(() => {
     if (!selectedSeries) return displayTrend
 
     const startDates = data.assets
-      .filter(asset => selectedSeries.sourceAssetIds.includes(asset.id))
-      .map(asset => asset.first_date)
+      .filter((asset) => selectedSeries.sourceAssetIds.includes(asset.id))
+      .map((asset) => asset.first_date)
       .filter((date): date is string => date != null)
       .sort()
     const firstDate = startDates[0]
     if (!firstDate) return []
 
     return displayTrend
-      .filter(row => (row.date as string) >= firstDate)
-      .map(row => ({
+      .filter((row) => (row.date as string) >= firstDate)
+      .map((row) => ({
         date: row.date,
         [selectedSeries.key]: row[selectedSeries.key] ?? 0,
         _total: row[selectedSeries.key] ?? 0,
       }))
   }, [data.assets, displayTrend, selectedSeries])
-  const visibleTotal = selectedSeries
-    ? Number(visibleTrend[visibleTrend.length - 1]?._total ?? 0)
-    : data.total
+  const visibleTotal = selectedSeries ? Number(visibleTrend[visibleTrend.length - 1]?._total ?? 0) : data.total
 
   return (
     <div className="border border-border rounded-xl bg-card shadow-sm p-5">
@@ -1954,11 +2081,18 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
         <div className="space-y-2">
           <h3 className="text-sm font-semibold text-foreground">{t('assets.portfolioValue')}</h3>
           <div className="flex flex-wrap items-center gap-2">
-            <div role="group" aria-label={t('assets.chartGroupMode')} className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
+            <div
+              role="group"
+              aria-label={t('assets.chartGroupMode')}
+              className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40"
+            >
               <button
                 type="button"
                 aria-pressed={mode === 'wallet'}
-                onClick={() => { setMode('wallet'); setSelectedSeriesKey(null) }}
+                onClick={() => {
+                  setMode('wallet')
+                  setSelectedSeriesKey(null)
+                }}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${mode === 'wallet' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {t('assets.chartByWallet')}
@@ -1966,13 +2100,20 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
               <button
                 type="button"
                 aria-pressed={mode === 'asset'}
-                onClick={() => { setMode('asset'); setSelectedSeriesKey(null) }}
+                onClick={() => {
+                  setMode('asset')
+                  setSelectedSeriesKey(null)
+                }}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${mode === 'asset' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {t('assets.chartByAsset')}
               </button>
             </div>
-            <div role="group" aria-label={t('assets.chartDrawMode')} className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
+            <div
+              role="group"
+              aria-label={t('assets.chartDrawMode')}
+              className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40"
+            >
               <button
                 type="button"
                 aria-pressed={drawMode === 'stacked'}
@@ -2003,12 +2144,13 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={visibleTrend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
             <defs>
-              {isStacked && visibleSeries.map(s => (
-                <linearGradient key={s.key} id={`portfolio-grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={s.color} stopOpacity={0.5} />
-                  <stop offset="100%" stopColor={s.color} stopOpacity={0.1} />
-                </linearGradient>
-              ))}
+              {isStacked &&
+                visibleSeries.map((s) => (
+                  <linearGradient key={s.key} id={`portfolio-grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={s.color} stopOpacity={0.5} />
+                    <stop offset="100%" stopColor={s.color} stopOpacity={0.1} />
+                  </linearGradient>
+                ))}
             </defs>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" strokeOpacity={0.5} />
             <XAxis
@@ -2016,7 +2158,9 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v: string) => new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })}
+              tickFormatter={(v: string) =>
+                new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })
+              }
             />
             <YAxis
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
@@ -2028,39 +2172,77 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
             <RechartsTooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null
-                const row = visibleTrend.find(r => r.date === label)
+                const row = visibleTrend.find((r) => r.date === label)
                 const dateTotal = row ? ((row._total as number) ?? 0) : 0
                 const items = visibleSeries
-                  .map(s => {
+                  .map((s) => {
                     const val = row ? ((row[s.key] as number) ?? 0) : 0
                     return { key: s.key, name: s.name, value: val, color: s.color }
                   })
-                  .filter(item => item.value !== 0)
+                  .filter((item) => item.value !== 0)
                 if (items.length === 0) return null
                 return (
-                  <div style={{ background: 'var(--card)', color: 'var(--foreground)', border: '1px solid var(--border)', borderRadius: '0.75rem', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '10px 12px' }}>
+                  <div
+                    style={{
+                      background: 'var(--card)',
+                      color: 'var(--foreground)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '0.75rem',
+                      fontSize: '12px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                      padding: '10px 12px',
+                    }}
+                  >
                     <p style={{ fontWeight: 600, marginBottom: 6 }}>
-                      {new Date(label + 'T00:00:00').toLocaleDateString(dateLoc, { day: 'numeric', month: 'long', year: 'numeric' })}
+                      {new Date(label + 'T00:00:00').toLocaleDateString(dateLoc, {
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                      })}
                     </p>
-                    {items.map(item => (
-                      <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 2 }}>
+                    {items.map((item) => (
+                      <div
+                        key={item.key}
+                        style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 2 }}
+                      >
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: item.color, display: 'inline-block' }} />
+                          <span
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: '50%',
+                              backgroundColor: item.color,
+                              display: 'inline-block',
+                            }}
+                          />
                           {item.name}
                         </span>
-                        <span style={{ fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(item.value, currency, loc))}</span>
+                        <span style={{ fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
+                          {mask(formatCurrency(item.value, currency, loc))}
+                        </span>
                       </div>
                     ))}
-                    <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6, display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                    <div
+                      style={{
+                        borderTop: '1px solid var(--border)',
+                        marginTop: 6,
+                        paddingTop: 6,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontWeight: 700,
+                      }}
+                    >
                       <span>{t('assets.total')}</span>
-                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(dateTotal, currency, loc))}</span>
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        {mask(formatCurrency(dateTotal, currency, loc))}
+                      </span>
                     </div>
                   </div>
                 )
               }}
             />
             {/* Stacked mode shows cumulative bands; line mode plots each series' own value. */}
-            {visibleSeries.map(s => (
+            {visibleSeries.map((s) => (
               <Area
                 key={s.key}
                 type="monotone"
@@ -2083,7 +2265,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
       {/* Keep every legend item available so users can switch the isolated series. */}
       <p className="text-[11px] text-muted-foreground mt-3 px-1">{t('assets.chartSelectHint')}</p>
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 px-1">
-        {sortedSeries.map(s => (
+        {sortedSeries.map((s) => (
           <button
             key={s.key}
             type="button"
@@ -2103,24 +2285,39 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
 // Marker drawn on the value chart where a buy (green) or sell (red) happened.
 // Recharts calls this per data point; non-trade points render an empty group.
 function renderAssetTradeDot(props: {
-  cx?: number; cy?: number; index?: number; payload?: { trades?: AssetTransaction[] }
+  cx?: number
+  cy?: number
+  index?: number
+  payload?: { trades?: AssetTransaction[] }
 }) {
   const { cx, cy, index, payload } = props
   const trades = payload?.trades
   if (cx == null || cy == null || !trades || trades.length === 0) {
     return <g key={`td-${index}`} />
   }
-  const hasBuy = trades.some(t => t.kind === 'buy')
-  const hasSell = trades.some(t => t.kind === 'sell')
+  const hasBuy = trades.some((t) => t.kind === 'buy')
+  const hasSell = trades.some((t) => t.kind === 'sell')
   const color = hasSell && !hasBuy ? '#F43F5E' : hasBuy && !hasSell ? '#10B981' : '#6366F1'
-  return (
-    <circle key={`td-${index}`} cx={cx} cy={cy} r={4} fill={color} stroke="var(--card)" strokeWidth={1.5} />
-  )
+  return <circle key={`td-${index}`} cx={cx} cy={cy} r={4} fill={color} stroke="var(--card)" strokeWidth={1.5} />
 }
 
-function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purchasePrice, purchaseDate, valuationMethod, canWrite, chartOnly = false }: {
-  assetId: string; currency: string; locale: string; dateLocale: string
-  purchasePrice: number | null; purchaseDate: string | null
+function AssetDetail({
+  assetId,
+  currency,
+  locale: loc,
+  dateLocale: dateLoc,
+  purchasePrice,
+  purchaseDate,
+  valuationMethod,
+  canWrite,
+  chartOnly = false,
+}: {
+  assetId: string
+  currency: string
+  locale: string
+  dateLocale: string
+  purchasePrice: number | null
+  purchaseDate: string | null
   valuationMethod: string
   canWrite: boolean
   // When true, render only the value-evolution chart (used above the ledger
@@ -2168,7 +2365,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
     enabled: valuationMethod === 'market_price',
   })
   const chartData = useMemo(() => {
-    const pts = trendWithPurchase.map(p => ({ ...p, trades: [] as AssetTransaction[] }))
+    const pts = trendWithPurchase.map((p) => ({ ...p, trades: [] as AssetTransaction[] }))
     if (!assetTrades || pts.length === 0) return pts
     for (const tx of assetTrades) {
       const txTime = new Date(tx.date + 'T00:00:00').getTime()
@@ -2176,7 +2373,10 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       let bestDiff = Infinity
       for (let i = 0; i < pts.length; i++) {
         const diff = Math.abs(new Date(pts[i].date + 'T00:00:00').getTime() - txTime)
-        if (diff < bestDiff) { bestDiff = diff; best = i }
+        if (diff < bestDiff) {
+          bestDiff = diff
+          best = i
+        }
       }
       pts[best].trades.push(tx)
     }
@@ -2187,7 +2387,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
   const valuesWithPurchase = useMemo(() => {
     if (!values) return []
     if (!purchasePrice || !purchaseDate) return values
-    const hasPurchaseValue = values.some(v => v.date === purchaseDate && v.amount === purchasePrice)
+    const hasPurchaseValue = values.some((v) => v.date === purchaseDate && v.amount === purchasePrice)
     if (hasPurchaseValue) return values
     const purchaseEntry: AssetValue = {
       id: 'purchase',
@@ -2228,9 +2428,10 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
   })
 
   // Determine chart color based on trend direction
-  const trendIsPositive = trendWithPurchase.length >= 2
-    ? trendWithPurchase[trendWithPurchase.length - 1].amount >= trendWithPurchase[0].amount
-    : true
+  const trendIsPositive =
+    trendWithPurchase.length >= 2
+      ? trendWithPurchase[trendWithPurchase.length - 1].amount >= trendWithPurchase[0].amount
+      : true
   const chartColor = trendIsPositive ? '#10B981' : '#F43F5E'
 
   const hasChart = trendWithPurchase.length > 1
@@ -2243,7 +2444,9 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       {/* Value Trend Chart */}
       {hasChart && (
         <div>
-          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">{t('assets.valueTrend')}</p>
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+            {t('assets.valueTrend')}
+          </p>
           <div className="h-44 -mx-1">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
@@ -2259,7 +2462,9 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v: string) => new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })}
+                  tickFormatter={(v: string) =>
+                    new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })
+                  }
                 />
                 <YAxis
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
@@ -2281,14 +2486,39 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                     if (!active || !payload?.length) return null
                     const pt = payload[0].payload as { amount?: number; trades?: AssetTransaction[] }
                     return (
-                      <div style={{ background: 'var(--card)', color: 'var(--foreground)', border: '1px solid var(--border)', borderRadius: '0.75rem', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '8px 10px' }}>
+                      <div
+                        style={{
+                          background: 'var(--card)',
+                          color: 'var(--foreground)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '0.75rem',
+                          fontSize: '12px',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                          padding: '8px 10px',
+                        }}
+                      >
                         <p style={{ fontWeight: 600, marginBottom: 4 }}>
-                          {new Date(String(label) + 'T00:00:00').toLocaleDateString(dateLoc, { day: 'numeric', month: 'long', year: 'numeric' })}
+                          {new Date(String(label) + 'T00:00:00').toLocaleDateString(dateLoc, {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                          })}
                         </p>
-                        <div style={{ fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(pt.amount ?? 0, currency, loc))}</div>
+                        <div style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {mask(formatCurrency(pt.amount ?? 0, currency, loc))}
+                        </div>
                         {pt.trades?.map((tx) => (
-                          <div key={tx.id} style={{ marginTop: 3, fontSize: 11, fontWeight: 500, color: tx.kind === 'buy' ? '#10B981' : '#F43F5E' }}>
-                            {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')} {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, currency, loc))}
+                          <div
+                            key={tx.id}
+                            style={{
+                              marginTop: 3,
+                              fontSize: 11,
+                              fontWeight: 500,
+                              color: tx.kind === 'buy' ? '#10B981' : '#F43F5E',
+                            }}
+                          >
+                            {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')} {mask(`${tx.quantity}`)} ×{' '}
+                            {mask(formatCurrency(tx.price, currency, loc))}
                           </div>
                         ))}
                       </div>
@@ -2311,94 +2541,109 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       )}
 
       {/* Add Value Form — only for manual assets */}
-      {!chartOnly && valuationMethod === 'manual' && canWrite && <div className="flex items-end gap-2">
-        <div className="flex-1">
-          <Label className="text-[11px] text-muted-foreground">{t('assets.amount')}</Label>
-          <Input
-            type="number"
-            step="any"
-            value={valueAmount}
-            onChange={e => setValueAmount(e.target.value)}
-            placeholder="0.00"
-            className="h-8 text-sm"
-          />
+      {!chartOnly && valuationMethod === 'manual' && canWrite && (
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <Label className="text-[11px] text-muted-foreground">{t('assets.amount')}</Label>
+            <Input
+              type="number"
+              step="any"
+              value={valueAmount}
+              onChange={(e) => setValueAmount(e.target.value)}
+              placeholder="0.00"
+              className="h-8 text-sm"
+            />
+          </div>
+          <div className="w-36">
+            <Label className="text-[11px] text-muted-foreground">{t('assets.date')}</Label>
+            <DatePickerInput value={valueDate} onChange={setValueDate} />
+          </div>
+          <Button
+            size="sm"
+            className="h-8 px-3 text-xs"
+            disabled={!valueAmount || addValueMutation.isPending}
+            onClick={() => {
+              if (valueAmount) {
+                addValueMutation.mutate({
+                  assetId,
+                  amount: parseFloat(valueAmount),
+                  date: valueDate,
+                })
+              }
+            }}
+          >
+            <Plus size={14} className="mr-1" />
+            {t('assets.addValue')}
+          </Button>
         </div>
-        <div className="w-36">
-          <Label className="text-[11px] text-muted-foreground">{t('assets.date')}</Label>
-          <DatePickerInput value={valueDate} onChange={setValueDate} />
-        </div>
-        <Button
-          size="sm"
-          className="h-8 px-3 text-xs"
-          disabled={!valueAmount || addValueMutation.isPending}
-          onClick={() => {
-            if (valueAmount) {
-              addValueMutation.mutate({
-                assetId,
-                amount: parseFloat(valueAmount),
-                date: valueDate,
-              })
-            }
-          }}
-        >
-          <Plus size={14} className="mr-1" />
-          {t('assets.addValue')}
-        </Button>
-      </div>}
+      )}
 
       {/* Value History */}
-      {!chartOnly && <div>
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('assets.valueHistory')}</p>
-        {valuesLoading ? (
-          <Skeleton className="h-20 w-full rounded-lg" />
-        ) : valuesWithPurchase.length > 0 ? (
-          <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
-            {valuesWithPurchase.map((v: AssetValue, idx: number) => {
-              const isPurchase = v.source === 'purchase'
-              // Calculate change from previous entry (next in array since sorted desc)
-              const prev = valuesWithPurchase[idx + 1]
-              const change = prev ? v.amount - prev.amount : null
-              const changePct = prev && prev.amount !== 0 ? (change! / prev.amount) * 100 : null
+      {!chartOnly && (
+        <div>
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            {t('assets.valueHistory')}
+          </p>
+          {valuesLoading ? (
+            <Skeleton className="h-20 w-full rounded-lg" />
+          ) : valuesWithPurchase.length > 0 ? (
+            <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
+              {valuesWithPurchase.map((v: AssetValue, idx: number) => {
+                const isPurchase = v.source === 'purchase'
+                // Calculate change from previous entry (next in array since sorted desc)
+                const prev = valuesWithPurchase[idx + 1]
+                const change = prev ? v.amount - prev.amount : null
+                const changePct = prev && prev.amount !== 0 ? (change! / prev.amount) * 100 : null
 
-              return (
-                <div key={v.id} className={`flex items-center justify-between py-2 px-3 transition-colors ${isPurchase ? 'bg-primary/5' : 'hover:bg-muted/30'}`}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-sm tabular-nums font-semibold text-foreground">
-                      {mask(formatCurrency(v.amount, currency, loc))}
-                    </span>
-                    {change != null && (
-                      <span className={`text-[11px] tabular-nums font-medium ${change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                        {change >= 0 ? '+' : ''}{mask(formatCurrency(change, currency, loc))}
-                        {changePct != null && ` (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`}
+                return (
+                  <div
+                    key={v.id}
+                    className={`flex items-center justify-between py-2 px-3 transition-colors ${isPurchase ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-sm tabular-nums font-semibold text-foreground">
+                        {mask(formatCurrency(v.amount, currency, loc))}
                       </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge variant={isPurchase ? 'default' : 'outline'} className={`text-[10px] px-1.5 py-0 ${isPurchase ? 'bg-primary/15 text-primary border-primary/30' : ''}`}>
-                      {t(`assets.source${v.source.charAt(0).toUpperCase() + v.source.slice(1)}`)}
-                    </Badge>
-                    <span className="text-[11px] text-muted-foreground tabular-nums">
-                      {new Date(v.date + 'T00:00:00').toLocaleDateString(dateLoc)}
-                    </span>
-                    {valuationMethod === 'manual' && v.source === 'manual' && canWrite && (
-                      <button
-                        onClick={() => deleteValueMutation.mutate(v.id)}
-                        className="p-1 rounded text-muted-foreground/40 hover:text-rose-600 transition-colors"
-                        disabled={deleteValueMutation.isPending}
-                        title={t('common.delete')}
+                      {change != null && (
+                        <span
+                          className={`text-[11px] tabular-nums font-medium ${change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}
+                        >
+                          {change >= 0 ? '+' : ''}
+                          {mask(formatCurrency(change, currency, loc))}
+                          {changePct != null && ` (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge
+                        variant={isPurchase ? 'default' : 'outline'}
+                        className={`text-[10px] px-1.5 py-0 ${isPurchase ? 'bg-primary/15 text-primary border-primary/30' : ''}`}
                       >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
+                        {t(`assets.source${v.source.charAt(0).toUpperCase() + v.source.slice(1)}`)}
+                      </Badge>
+                      <span className="text-[11px] text-muted-foreground tabular-nums">
+                        {new Date(v.date + 'T00:00:00').toLocaleDateString(dateLoc)}
+                      </span>
+                      {valuationMethod === 'manual' && v.source === 'manual' && canWrite && (
+                        <button
+                          onClick={() => deleteValueMutation.mutate(v.id)}
+                          className="p-1 rounded text-muted-foreground/40 hover:text-rose-600 transition-colors"
+                          disabled={deleteValueMutation.isPending}
+                          title={t('common.delete')}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground py-3 text-center">{t('dashboard.noData')}</p>
-        )}
-      </div>}
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground py-3 text-center">{t('dashboard.noData')}</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -2581,12 +2826,8 @@ function AssetTransactionsTab({
             >
               <AlertTriangle size={16} className="text-amber-500 shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-amber-900 dark:text-amber-200 truncate">
-                  {h.ticker || h.name}
-                </p>
-                <p className="text-[11px] text-amber-700 dark:text-amber-300/80">
-                  {t('assets.noPriceWarning')}
-                </p>
+                <p className="text-sm font-medium text-amber-900 dark:text-amber-200 truncate">{h.ticker || h.name}</p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300/80">{t('assets.noPriceWarning')}</p>
               </div>
               {canWrite && (
                 <Button
@@ -2605,7 +2846,9 @@ function AssetTransactionsTab({
 
       {isLoading ? (
         <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 rounded-lg" />
+          ))}
         </div>
       ) : (txs ?? []).length === 0 ? (
         holdingsWithoutCost.length === 0 ? (
@@ -2628,12 +2871,10 @@ function AssetTransactionsTab({
                   {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
                 </Badge>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {tx.ticker || tx.asset_name}
-                  </p>
+                  <p className="text-sm font-medium text-foreground truncate">{tx.ticker || tx.asset_name}</p>
                   <p className="text-[11px] text-muted-foreground tabular-nums">
-                    {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} ·{' '}
-                    {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, cur, locale))}
+                    {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} · {mask(`${tx.quantity}`)} ×{' '}
+                    {mask(formatCurrency(tx.price, cur, locale))}
                   </p>
                 </div>
                 <div className="text-right shrink-0">
@@ -2718,7 +2959,9 @@ function AssetTransactionsTab({
                   >
                     <option value="">{t('assets.noWallet')}</option>
                     {wallets.map((w) => (
-                      <option key={w.id} value={w.id}>{w.name}</option>
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -2747,18 +2990,37 @@ function AssetTransactionsTab({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t('assets.quantity')}</Label>
-                <Input type="number" step="any" min="0" value={formQuantity} onChange={(e) => setFormQuantity(e.target.value)} />
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={formQuantity}
+                  onChange={(e) => setFormQuantity(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label>{t('assets.unitPrice')}</Label>
-                <Input type="number" step="any" min="0" value={formPrice} onChange={(e) => setFormPrice(e.target.value)} />
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={formPrice}
+                  onChange={(e) => setFormPrice(e.target.value)}
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t('assets.fee')}</Label>
-                <Input type="number" step="any" min="0" value={formFee} onChange={(e) => setFormFee(e.target.value)} placeholder="0" />
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={formFee}
+                  onChange={(e) => setFormFee(e.target.value)}
+                  placeholder="0"
+                />
               </div>
               <div className="space-y-2">
                 <Label>{t('assets.date')}</Label>
@@ -2777,7 +3039,8 @@ function AssetTransactionsTab({
                 <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
                 <span className="text-sm font-bold tabular-nums text-foreground">
                   {formatTransactionTotal(
-                    parseFloat(formQuantity) * parseFloat(formPrice) + (formFee ? parseFloat(formFee) : 0) * (formKind === 'buy' ? 1 : -1),
+                    parseFloat(formQuantity) * parseFloat(formPrice) +
+                      (formFee ? parseFloat(formFee) : 0) * (formKind === 'buy' ? 1 : -1),
                     getTransactionTotalCurrency(holdings, formHolding, editingTx),
                     locale,
                   )}
@@ -2786,8 +3049,12 @@ function AssetTransactionsTab({
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={() => saveMutation.mutate()} disabled={!canSave}>{t('common.save')}</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={() => saveMutation.mutate()} disabled={!canSave}>
+              {t('common.save')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2800,8 +3067,14 @@ function AssetTransactionsTab({
           </DialogHeader>
           <p className="text-sm text-muted-foreground">{t('assets.confirmDeleteTx')}</p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletingId(null)}>{t('common.cancel')}</Button>
-            <Button variant="destructive" onClick={() => deletingId && deleteMutation.mutate(deletingId)} disabled={deleteMutation.isPending}>
+            <Button variant="outline" onClick={() => setDeletingId(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deletingId && deleteMutation.mutate(deletingId)}
+              disabled={deleteMutation.isPending}
+            >
               {t('common.delete')}
             </Button>
           </DialogFooter>
@@ -2877,8 +3150,8 @@ function HoldingLedger({
                 {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
               </Badge>
               <span className="text-[11px] text-muted-foreground tabular-nums flex-1">
-                {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} ·{' '}
-                {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, asset.currency, locale))}
+                {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} · {mask(`${tx.quantity}`)} ×{' '}
+                {mask(formatCurrency(tx.price, asset.currency, locale))}
               </span>
               <span className="text-xs font-semibold tabular-nums text-foreground">
                 {mask(formatCurrency(tx.quantity * tx.price, asset.currency, locale))}
@@ -2961,11 +3234,17 @@ function AddHoldingTransactionDialog({
   const canSave = !!quantity && parseFloat(quantity) > 0 && !!price && !oversell && !saveMutation.isPending
 
   return (
-    <Dialog open={!!assetId} onOpenChange={(o) => { if (!o) onClose() }}>
+    <Dialog
+      open={!!assetId}
+      onOpenChange={(o) => {
+        if (!o) onClose()
+      }}
+    >
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {t('assets.addTransaction')}{holding ? ` · ${holding.ticker || holding.name}` : ''}
+            {t('assets.addTransaction')}
+            {holding ? ` · ${holding.ticker || holding.name}` : ''}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
@@ -2997,7 +3276,14 @@ function AddHoldingTransactionDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>{t('assets.fee')}</Label>
-              <Input type="number" step="any" min="0" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0" />
+              <Input
+                type="number"
+                step="any"
+                min="0"
+                value={fee}
+                onChange={(e) => setFee(e.target.value)}
+                placeholder="0"
+              />
             </div>
             <div className="space-y-2">
               <Label>{t('assets.date')}</Label>
@@ -3014,14 +3300,22 @@ function AddHoldingTransactionDialog({
             <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
               <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
               <span className="text-sm font-bold tabular-nums text-foreground">
-                {formatCurrency(parseFloat(quantity) * parseFloat(price) + (fee ? parseFloat(fee) : 0) * (kind === 'buy' ? 1 : -1), cur, locale)}
+                {formatCurrency(
+                  parseFloat(quantity) * parseFloat(price) + (fee ? parseFloat(fee) : 0) * (kind === 'buy' ? 1 : -1),
+                  cur,
+                  locale,
+                )}
               </span>
             </div>
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button onClick={() => saveMutation.mutate()} disabled={!canSave}>{t('common.save')}</Button>
+          <Button variant="outline" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={() => saveMutation.mutate()} disabled={!canSave}>
+            {t('common.save')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

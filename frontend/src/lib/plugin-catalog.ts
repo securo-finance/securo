@@ -43,10 +43,19 @@ export interface PluginFilters {
   workspace: WorkspaceType | null
 }
 
-export const NO_FILTERS: PluginFilters = { query: '', type: null, kind: null, locale: null, status: null, workspace: null }
+export const NO_FILTERS: PluginFilters = {
+  query: '',
+  type: null,
+  kind: null,
+  locale: null,
+  status: null,
+  workspace: null,
+}
 
 export function hasFilters(filters: PluginFilters): boolean {
-  return Boolean(filters.query.trim() || filters.type || filters.kind || filters.locale || filters.status || filters.workspace)
+  return Boolean(
+    filters.query.trim() || filters.type || filters.kind || filters.locale || filters.status || filters.workspace,
+  )
 }
 
 /** The contribution kinds a plugin actually brings. */
@@ -57,7 +66,11 @@ export function contributedKinds(entry: PluginCatalogEntry): string[] {
 }
 
 export function pluginTypes(entry: PluginCatalogEntry): PluginType[] {
-  const types = new Set(contributedKinds(entry).map((kind) => KIND_TYPE[kind]).filter(Boolean))
+  const types = new Set(
+    contributedKinds(entry)
+      .map((kind) => KIND_TYPE[kind])
+      .filter(Boolean),
+  )
   return PLUGIN_TYPES.filter((type) => types.has(type))
 }
 
@@ -79,13 +92,9 @@ function matches(entry: PluginCatalogEntry, query: string): boolean {
   const words = fold(query).split(/\s+/).filter(Boolean)
   if (!words.length) return true
   const haystack = fold(
-    [
-      ...Object.values(entry.name),
-      ...Object.values(entry.description),
-      entry.id,
-      entry.owner,
-      ...entry.topics,
-    ].join(' '),
+    [...Object.values(entry.name), ...Object.values(entry.description), entry.id, entry.owner, ...entry.topics].join(
+      ' ',
+    ),
   )
   return words.every((word) => haystack.includes(word))
 }
@@ -107,7 +116,11 @@ function time(value: string | null): number {
   return value ? Date.parse(value) : 0
 }
 
-export function sortPlugins(entries: PluginCatalogEntry[], sort: PluginSort, nameOf: (e: PluginCatalogEntry) => string) {
+export function sortPlugins(
+  entries: PluginCatalogEntry[],
+  sort: PluginSort,
+  nameOf: (e: PluginCatalogEntry) => string,
+) {
   const byName = (a: PluginCatalogEntry, b: PluginCatalogEntry) => nameOf(a).localeCompare(nameOf(b))
   const compare: Record<PluginSort, (a: PluginCatalogEntry, b: PluginCatalogEntry) => number> = {
     popular: (a, b) => b.stars - a.stars || byName(a, b),
@@ -128,7 +141,12 @@ export function trendingPlugins(entries: PluginCatalogEntry[], limit: number): P
 }
 
 /** Plugins that joined the catalog in the last `days` days, newest first. */
-export function newPlugins(entries: PluginCatalogEntry[], limit: number, days = 30, now = Date.now()): PluginCatalogEntry[] {
+export function newPlugins(
+  entries: PluginCatalogEntry[],
+  limit: number,
+  days = 30,
+  now = Date.now(),
+): PluginCatalogEntry[] {
   const since = now - days * 24 * 60 * 60 * 1000
   return entries
     .filter((entry) => time(entry.added_at) >= since && !entry.revoked)

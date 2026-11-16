@@ -18,7 +18,10 @@ function renderSelect(initial = '', emptyOption?: string) {
       <TimezoneSelect
         id="tz"
         value={value}
-        onChange={(v) => { setValue(v); onChange(v) }}
+        onChange={(v) => {
+          setValue(v)
+          onChange(v)
+        }}
         options={options}
         emptyOption={emptyOption}
       />
@@ -72,7 +75,9 @@ describe('TimezoneSelect', () => {
     expect(within(list).getByText('America')).toBeInTheDocument()
     expect(within(list).getByText('Europe')).toBeInTheDocument()
     // UTC has no region, so it is listed without a heading, after the regions.
-    const texts = within(list).getAllByRole('option').map((o) => o.textContent ?? '')
+    const texts = within(list)
+      .getAllByRole('option')
+      .map((o) => o.textContent ?? '')
     expect(texts[texts.length - 1]).toContain('UTC')
   })
 

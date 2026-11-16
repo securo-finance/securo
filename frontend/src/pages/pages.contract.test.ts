@@ -14,10 +14,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-const modules = import.meta.glob('@/pages/**/*.tsx') as Record<
-  string,
-  () => Promise<Record<string, unknown>>
->
+const modules = import.meta.glob('@/pages/**/*.tsx') as Record<string, () => Promise<Record<string, unknown>>>
 
 const paths = Object.keys(modules)
   .filter((path) => !path.includes('.test.'))
@@ -43,19 +40,21 @@ describe('page modules', () => {
   for (const path of paths) {
     const name = path.replace(/^.*\/pages\//, '').replace(/\.tsx$/, '')
 
-    it(`${name} evaluates and default-exports a component`, async () => {
-      const module = await modules[path]()
+    it(
+      `${name} evaluates and default-exports a component`,
+      async () => {
+        const module = await modules[path]()
 
-      // A plain page is a function; one wrapped in memo or forwardRef is an
-      // object carrying $$typeof. Both are renderable.
-      const component = module.default
-      expect(component).toBeDefined()
-      expect(
-        typeof component === 'function' ||
-          (typeof component === 'object' &&
-            component !== null &&
-            '$$typeof' in component),
-      ).toBe(true)
-    }, EVALUATION_BUDGET_MS)
+        // A plain page is a function; one wrapped in memo or forwardRef is an
+        // object carrying $$typeof. Both are renderable.
+        const component = module.default
+        expect(component).toBeDefined()
+        expect(
+          typeof component === 'function' ||
+            (typeof component === 'object' && component !== null && '$$typeof' in component),
+        ).toBe(true)
+      },
+      EVALUATION_BUDGET_MS,
+    )
   }
 })

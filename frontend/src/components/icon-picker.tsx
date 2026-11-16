@@ -17,9 +17,7 @@ export function IconPicker({ value, color, onChange }: IconPickerProps) {
     if (!search.trim()) return CATEGORY_ICONS
     const q = search.toLowerCase()
     return CATEGORY_ICONS.filter(
-      (entry) =>
-        entry.name.includes(q) ||
-        getCategoryIconLabel(t, entry.name).toLowerCase().includes(q)
+      (entry) => entry.name.includes(q) || getCategoryIconLabel(t, entry.name).toLowerCase().includes(q),
     )
   }, [search, t])
 
@@ -43,25 +41,17 @@ export function IconPicker({ value, color, onChange }: IconPickerProps) {
               title={getCategoryIconLabel(t, entry.name)}
               className={cn(
                 'w-9 h-9 rounded-lg flex items-center justify-center transition-all',
-                isSelected
-                  ? 'ring-2 ring-offset-1 ring-primary'
-                  : 'hover:bg-muted'
+                isSelected ? 'ring-2 ring-offset-1 ring-primary' : 'hover:bg-muted',
               )}
               style={isSelected ? { backgroundColor: color || '#6B7280' } : undefined}
               onClick={() => onChange(entry.name)}
             >
-              <Icon
-                size={18}
-                className={isSelected ? 'text-white' : 'text-muted-foreground'}
-                strokeWidth={2}
-              />
+              <Icon size={18} className={isSelected ? 'text-white' : 'text-muted-foreground'} strokeWidth={2} />
             </button>
           )
         })}
         {filtered.length === 0 && (
-          <p className="col-span-8 text-xs text-muted-foreground text-center py-4">
-            {t('common.noIconsFound')}
-          </p>
+          <p className="col-span-8 text-xs text-muted-foreground text-center py-4">{t('common.noIconsFound')}</p>
         )}
       </div>
     </div>

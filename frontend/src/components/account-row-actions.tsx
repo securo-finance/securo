@@ -2,12 +2,7 @@ import type { MouseEvent } from 'react'
 import type { TFunction } from 'i18next'
 import { Archive, MoreHorizontal, Pencil, Trash2, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 type AccountActionTone = 'default' | 'warning' | 'destructive'
 
@@ -49,10 +44,7 @@ function accountActionClass(tone: AccountActionTone) {
   return 'rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
 }
 
-function DesktopActionButton({ action, deletePending }: {
-  action: AccountAction
-  deletePending: boolean
-}) {
+function DesktopActionButton({ action, deletePending }: { action: AccountAction; deletePending: boolean }) {
   const runAction = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     action.run()
@@ -71,10 +63,7 @@ function DesktopActionButton({ action, deletePending }: {
   )
 }
 
-function DesktopAccountActions({ actions, deletePending }: {
-  actions: AccountAction[]
-  deletePending: boolean
-}) {
+function DesktopAccountActions({ actions, deletePending }: { actions: AccountAction[]; deletePending: boolean }) {
   return (
     // Always visible, like the row actions on payees, categories and rules.
     // Hiding them until hover made them undiscoverable and unreachable by
@@ -87,10 +76,7 @@ function DesktopAccountActions({ actions, deletePending }: {
   )
 }
 
-function MobileActionItem({ action, deletePending }: {
-  action: AccountAction
-  deletePending: boolean
-}) {
+function MobileActionItem({ action, deletePending }: { action: AccountAction; deletePending: boolean }) {
   return (
     <DropdownMenuItem
       variant={action.tone === 'destructive' ? 'destructive' : 'default'}
@@ -103,7 +89,11 @@ function MobileActionItem({ action, deletePending }: {
   )
 }
 
-function MobileAccountActions({ accountName, actions, deletePending }: {
+function MobileAccountActions({
+  accountName,
+  actions,
+  deletePending,
+}: {
   accountName: string
   actions: AccountAction[]
   deletePending: boolean
@@ -112,7 +102,11 @@ function MobileAccountActions({ accountName, actions, deletePending }: {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="ml-1 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground sm:hidden" aria-label={`${t('common.more')}: ${accountName}`}>
+        <button
+          type="button"
+          className="ml-1 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground sm:hidden"
+          aria-label={`${t('common.more')}: ${accountName}`}
+        >
           <MoreHorizontal size={16} />
         </button>
       </DropdownMenuTrigger>

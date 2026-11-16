@@ -2,10 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  isConditionalPasskeySupported,
-  startConditionalPasskeyAuthentication,
-} from './webauthn'
+import { isConditionalPasskeySupported, startConditionalPasskeyAuthentication } from './webauthn'
 
 class FakePublicKeyCredential {
   static isConditionalMediationAvailable = vi.fn<() => Promise<boolean>>()
@@ -61,11 +58,13 @@ describe('conditional passkey authentication', () => {
       abortController.signal,
     )
 
-    expect(get).toHaveBeenCalledWith(expect.objectContaining({
-      mediation: 'conditional',
-      signal: abortController.signal,
-      publicKey: expect.objectContaining({ rpId: 'example.com' }),
-    }))
+    expect(get).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediation: 'conditional',
+        signal: abortController.signal,
+        publicKey: expect.objectContaining({ rpId: 'example.com' }),
+      }),
+    )
     expect(result).toMatchObject({
       id: 'credential-id',
       rawId: 'AQ',

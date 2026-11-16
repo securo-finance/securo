@@ -48,9 +48,7 @@ describe('api data-change signal (issue #763)', () => {
 
   it('does not bump when the mutation fails', async () => {
     api.defaults.adapter = (config: InternalAxiosRequestConfig) =>
-      Promise.reject(
-        Object.assign(new Error('boom'), { config, response: { status: 500 } }),
-      )
+      Promise.reject(Object.assign(new Error('boom'), { config, response: { status: 500 } }))
     await expect(api.post('/transactions', {})).rejects.toThrow()
     expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeNull()
   })

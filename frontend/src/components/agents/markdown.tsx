@@ -110,12 +110,7 @@ function _Markdown({ children, className }: Props) {
             // GFM task lists.
             if (type === 'checkbox') {
               return (
-                <input
-                  type="checkbox"
-                  checked={!!checked}
-                  readOnly
-                  className="mr-1.5 align-middle accent-primary"
-                />
+                <input type="checkbox" checked={!!checked} readOnly className="mr-1.5 align-middle accent-primary" />
               )
             }
             return null
@@ -133,10 +128,10 @@ function _Markdown({ children, className }: Props) {
  *  them entirely when `children`/`className` are referentially the
  *  same. Critical for chats that contain a recharts figure (Recharts
  *  treats new prop refs as new data and re-runs its enter animations). */
-export const Markdown = memo(_Markdown, (prev, next) =>
-  prev.children === next.children && prev.className === next.className,
+export const Markdown = memo(
+  _Markdown,
+  (prev, next) => prev.children === next.children && prev.className === next.className,
 )
-
 
 interface ChartBoundaryProps {
   children: ReactNode

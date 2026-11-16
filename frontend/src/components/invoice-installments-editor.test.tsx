@@ -40,7 +40,9 @@ describe('InvoiceInstallmentsEditor', () => {
     expect(screen.getByTestId('installment-due-0')).toHaveValue('2026-10-01')
     expect(screen.getByTestId('installment-due-1')).toHaveValue('2026-11-01')
     expect(screen.getByTestId('installment-amount-0')).toHaveValue('1500.00')
-    expect(screen.getByTestId('installments-check')).toHaveTextContent(t('invoices.installments.addsUp', { total: '$3,000.00' }))
+    expect(screen.getByTestId('installments-check')).toHaveTextContent(
+      t('invoices.installments.addsUp', { total: '$3,000.00' }),
+    )
   })
 
   it('shows the mismatch, to the cent, as the amounts are edited', async () => {
@@ -65,7 +67,14 @@ describe('InvoiceInstallmentsEditor', () => {
   })
 
   it('switching off clears the schedule', async () => {
-    const { user } = renderWithProviders(<Harness initial={[{ due_date: '2026-10-01', amount: '1500.00' }, { due_date: '2026-11-01', amount: '1500.00' }]} />)
+    const { user } = renderWithProviders(
+      <Harness
+        initial={[
+          { due_date: '2026-10-01', amount: '1500.00' },
+          { due_date: '2026-11-01', amount: '1500.00' },
+        ]}
+      />,
+    )
     expect(screen.getAllByTestId('installment-row')).toHaveLength(2)
     await user.click(screen.getByRole('switch'))
     expect(screen.queryByTestId('installment-row')).not.toBeInTheDocument()

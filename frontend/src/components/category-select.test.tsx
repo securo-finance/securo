@@ -23,9 +23,7 @@ const groceries = {
 function withRole(canWrite: boolean) {
   return function Workspace({ children }: { children: ReactNode }) {
     return (
-      <WorkspaceContext.Provider
-        value={{ canWrite } as unknown as React.ContextType<typeof WorkspaceContext>}
-      >
+      <WorkspaceContext.Provider value={{ canWrite } as unknown as React.ContextType<typeof WorkspaceContext>}>
         {children}
       </WorkspaceContext.Provider>
     )
@@ -42,7 +40,10 @@ function renderSelect({ canWrite = true, creatable = true } = {}) {
     return (
       <CategorySelect
         value={value}
-        onChange={(v) => { setValue(v); onChange(v) }}
+        onChange={(v) => {
+          setValue(v)
+          onChange(v)
+        }}
         categories={[groceries]}
         groups={[]}
         allowNone

@@ -43,14 +43,10 @@ export function PayeeSelect({
   const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
   const canCreate = creatable && canWrite
 
-  const sortedPayees = useMemo(
-    () => [...(payees ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
-    [payees],
-  )
+  const sortedPayees = useMemo(() => [...(payees ?? [])].sort((a, b) => a.name.localeCompare(b.name)), [payees])
 
   const selected = useMemo(
-    () => sortedPayees.find((p) => p.id === value)
-      ?? (created && created.id === value ? created : undefined),
+    () => sortedPayees.find((p) => p.id === value) ?? (created && created.id === value ? created : undefined),
     [sortedPayees, created, value],
   )
 
@@ -72,7 +68,10 @@ export function PayeeSelect({
   })
 
   const createName = canCreate
-    ? inlineCreateName(search, sortedPayees.map((p) => p.name))
+    ? inlineCreateName(
+        search,
+        sortedPayees.map((p) => p.name),
+      )
     : null
 
   return (
@@ -82,16 +81,12 @@ export function PayeeSelect({
           type="button"
           disabled={disabled}
           className={cn(
-            "flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-left shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer",
+            'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-left shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer',
             className,
           )}
         >
           <span className="min-w-0 truncate">
-            {selected ? (
-              selected.name
-            ) : (
-              <span className="text-muted-foreground">{t('payees.noPayee')}</span>
-            )}
+            {selected ? selected.name : <span className="text-muted-foreground">{t('payees.noPayee')}</span>}
           </span>
           <ChevronDownIcon className="size-4 shrink-0 opacity-50" />
         </button>
@@ -105,11 +100,7 @@ export function PayeeSelect({
             return normalizeText(text).includes(normalizeText(query)) ? 1 : 0
           }}
         >
-          <CommandInput
-            placeholder={t('payees.searchPlaceholder')}
-            value={search}
-            onValueChange={setSearch}
-          />
+          <CommandInput placeholder={t('payees.searchPlaceholder')} value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>{t('payees.noPayeeFound')}</CommandEmpty>
             <CommandGroup>

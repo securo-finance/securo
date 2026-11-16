@@ -55,7 +55,7 @@ The same applies to issues. An issue produced by pointing a model at the reposit
 1. Create a branch from `main`: `git checkout -b feature/your-feature`
 2. Make your changes
 3. Run backend tests: `cd backend && uv sync --all-extras && uv run pytest` (Python 3.11+)
-4. Run frontend checks: `cd frontend && npm run lint && npm test`
+4. Run frontend checks: `cd frontend && bun run lint && bun run test`
 5. Commit with a clear message (see below)
 6. Push your branch and open a Pull Request
 
@@ -95,17 +95,16 @@ request.
 
 ### Adding a frontend dependency
 
-`frontend/.npmrc` never runs a package's install scripts, and asks npm to skip
-releases younger than seven days so a compromised publish has time to be caught.
-The cooldown needs npm 11.10 or newer; the npm that ships with Node 22 is older
-and will ignore that line without saying so, so upgrade before you add anything:
+The frontend uses [Bun](https://bun.com) 1.4.4 or newer to install packages.
+`trustedDependencies: []` in `frontend/package.json` keeps Bun from running any
+package's install scripts, and `frontend/bunfig.toml` asks Bun to skip releases
+younger than seven days so a compromised publish has time to be caught:
 
 ```bash
-npm install --global npm@latest
-cd frontend && npm install <package>     # commit package.json and package-lock.json
+cd frontend && bun add <package>     # commit package.json and bun.lock
 ```
 
-If the package you want was published in the last week, npm resolves the release
+If the package you want was published in the last week, Bun resolves the release
 before it. That is the point — wait, or say in the PR why you can't.
 Either works.
 
@@ -146,10 +145,10 @@ ty check .
 python3 scripts/check_migration_chain.py
 
 # Frontend lint
-cd frontend && npm run lint
+cd frontend && bun run lint
 
-# Frontend build check
-cd frontend && npm run build
+# Frontend type check + build
+cd frontend && bun run build
 ```
 
 ### Adding a migration

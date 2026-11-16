@@ -102,18 +102,10 @@ interface SelectionOption {
 }
 
 function toggleSelection(selectedIds: string[], id: string): string[] {
-  return selectedIds.includes(id)
-    ? selectedIds.filter((selectedId) => selectedId !== id)
-    : [...selectedIds, id]
+  return selectedIds.includes(id) ? selectedIds.filter((selectedId) => selectedId !== id) : [...selectedIds, id]
 }
 
-function MobileRootOption({
-  option,
-  onSelect,
-}: {
-  option: RootOption
-  onSelect: (view: RootOption['view']) => void
-}) {
+function MobileRootOption({ option, onSelect }: { option: RootOption; onSelect: (view: RootOption['view']) => void }) {
   const Icon = option.icon
   return (
     <DropdownMenuItem
@@ -125,11 +117,7 @@ function MobileRootOption({
     >
       <Icon size={14} className="text-muted-foreground" />
       <span className="flex-1">{option.label}</span>
-      {option.summary && (
-        <span className="max-w-24 truncate text-[11px] text-muted-foreground">
-          {option.summary}
-        </span>
-      )}
+      {option.summary && <span className="max-w-24 truncate text-[11px] text-muted-foreground">{option.summary}</span>}
       <ChevronRight size={13} className="text-muted-foreground/60" />
     </DropdownMenuItem>
   )
@@ -165,10 +153,7 @@ function MobileClearFilters({ onClear }: { onClear: () => void }) {
   return (
     <>
       <DropdownMenuSeparator />
-      <DropdownMenuItem
-        onSelect={onClear}
-        className="gap-2 text-[12.5px] text-muted-foreground"
-      >
+      <DropdownMenuItem onSelect={onClear} className="gap-2 text-[12.5px] text-muted-foreground">
         <X size={13} />
         {t('transactions.clearFilters')}
       </DropdownMenuItem>
@@ -176,13 +161,7 @@ function MobileClearFilters({ onClear }: { onClear: () => void }) {
   )
 }
 
-function MobileDetailHeader({
-  title,
-  onBack,
-}: {
-  title: string
-  onBack: () => void
-}) {
+function MobileDetailHeader({ title, onBack }: { title: string; onBack: () => void }) {
   const { t } = useTranslation()
   return (
     <>
@@ -219,13 +198,9 @@ function MobileAccountOption({
       }}
       className="gap-2 py-2 text-[13px]"
     >
-      <span className="min-w-0 flex-1 truncate text-left">
-        {getAccountName(account)}
-      </span>
+      <span className="min-w-0 flex-1 truncate text-left">{getAccountName(account)}</span>
       {account.currency && (
-        <span className="text-[10.5px] uppercase tracking-wide text-muted-foreground/70">
-          {account.currency}
-        </span>
+        <span className="text-[10.5px] uppercase tracking-wide text-muted-foreground/70">{account.currency}</span>
       )}
     </DropdownMenuCheckboxItem>
   )
@@ -273,9 +248,7 @@ function MobileAccountView({
 function MobileEmptyOptions() {
   const { t } = useTranslation()
   return (
-    <div className="px-2 py-3 text-center text-xs text-muted-foreground">
-      {t('transactions.filtersBar.noOptions')}
-    </div>
+    <div className="px-2 py-3 text-center text-xs text-muted-foreground">{t('transactions.filtersBar.noOptions')}</div>
   )
 }
 
@@ -295,10 +268,7 @@ function MobileSelectionView({
         event.preventDefault()
         onChange(option.value)
       }}
-      className={cn(
-        'gap-2 py-2 text-[13px]',
-        selectedValue === option.value && 'bg-primary/5',
-      )}
+      className={cn('gap-2 py-2 text-[13px]', selectedValue === option.value && 'bg-primary/5')}
     >
       <span className="min-w-0 flex-1 truncate">{option.label}</span>
       {selectedValue === option.value && <Check size={13} className="text-primary" />}
@@ -335,10 +305,7 @@ function MobileDateView({
         onChange={(value) => onChange(...splitDateRange(value))}
       />
       <DropdownMenuSeparator />
-      <DropdownMenuItem
-        onSelect={onOpenCustomRange}
-        className="justify-between py-2 text-[13px]"
-      >
+      <DropdownMenuItem onSelect={onOpenCustomRange} className="justify-between py-2 text-[13px]">
         {t('transactions.filtersBar.customRange')}
         <ChevronRight size={13} className="text-muted-foreground/60" />
       </DropdownMenuItem>
@@ -418,12 +385,7 @@ function MobileAmountView({
         >
           {t('transactions.filtersBar.reset')}
         </button>
-        <Button
-          type="button"
-          size="sm"
-          disabled={!minAmount && !maxAmount}
-          onClick={onApply}
-        >
+        <Button type="button" size="sm" disabled={!minAmount && !maxAmount} onClick={onApply}>
           {t('transactions.filtersBar.apply')}
         </Button>
       </div>
@@ -448,9 +410,7 @@ function buildRootOptions(
   ]
 }
 
-function buildLabels(
-  t: ReturnType<typeof useTranslation>['t'],
-): Record<Exclude<MobileFilterView, 'root'>, string> {
+function buildLabels(t: ReturnType<typeof useTranslation>['t']): Record<Exclude<MobileFilterView, 'root'>, string> {
   return {
     account: t('transactions.account'),
     category: t('transactions.category'),
@@ -474,23 +434,56 @@ function MobileFilterDetail({
   const { t } = useTranslation()
   const allOption = { value: '', label: t('transactions.all') }
   if (menu.view === 'account') {
-    return <MobileAccountView accounts={menu.accounts} selectedIds={menu.accountIds} onChange={menu.onAccountIdsChange} />
+    return (
+      <MobileAccountView accounts={menu.accounts} selectedIds={menu.accountIds} onChange={menu.onAccountIdsChange} />
+    )
   }
   if (menu.view === 'category') {
-    return <CategoryFilterContent categoryIds={menu.categoryIds} onCategoryIdsChange={menu.onCategoryIdsChange} filterUncategorized={menu.uncategorized} onUncategorizedChange={menu.onUncategorizedChange} categories={menu.categories} groups={menu.categoryGroups} onKeepOpen={() => undefined} />
+    return (
+      <CategoryFilterContent
+        categoryIds={menu.categoryIds}
+        onCategoryIdsChange={menu.onCategoryIdsChange}
+        filterUncategorized={menu.uncategorized}
+        onUncategorizedChange={menu.onUncategorizedChange}
+        categories={menu.categories}
+        groups={menu.categoryGroups}
+        onKeepOpen={() => undefined}
+      />
+    )
   }
   if (menu.view === 'payee') {
-    return <MobileSelectionView options={[allOption, ...menu.payees.map(({ id, name }) => ({ value: id, label: name }))]} selectedValue={menu.payeeId} onChange={menu.onPayeeChange} />
+    return (
+      <MobileSelectionView
+        options={[allOption, ...menu.payees.map(({ id, name }) => ({ value: id, label: name }))]}
+        selectedValue={menu.payeeId}
+        onChange={menu.onPayeeChange}
+      />
+    )
   }
   if (menu.view === 'group') {
-    return <MobileSelectionView options={[allOption, ...menu.groups.map(({ id, name }) => ({ value: id, label: name }))]} selectedValue={menu.groupId} onChange={menu.onGroupIdChange} />
+    return (
+      <MobileSelectionView
+        options={[allOption, ...menu.groups.map(({ id, name }) => ({ value: id, label: name }))]}
+        selectedValue={menu.groupId}
+        onChange={menu.onGroupIdChange}
+      />
+    )
   }
   if (menu.view === 'type') {
-    const options = [allOption, { value: 'credit', label: t('transactions.income') }, { value: 'debit', label: t('transactions.expense') }, { value: 'transfer', label: t('transactions.transfer') }]
+    const options = [
+      allOption,
+      { value: 'credit', label: t('transactions.income') },
+      { value: 'debit', label: t('transactions.expense') },
+      { value: 'transfer', label: t('transactions.transfer') },
+    ]
     return <MobileSelectionView options={options} selectedValue={menu.type} onChange={menu.onTypeChange} />
   }
   if (menu.view === 'status') {
-    const options = [allOption, { value: 'pending', label: t('transactions.statusPending') }, { value: 'posted', label: t('transactions.statusPosted') }]
+    const options = [
+      allOption,
+      { value: 'pending', label: t('transactions.statusPending') },
+      { value: 'posted', label: t('transactions.statusPosted') },
+    ]
     return <MobileSelectionView options={options} selectedValue={menu.status} onChange={menu.onStatusChange} />
   }
   if (menu.view === 'ignored') {
@@ -498,21 +491,48 @@ function MobileFilterDetail({
       { value: 'show', label: t('transactions.ignoredShow') },
       { value: 'hide', label: t('transactions.ignoredHide') },
     ]
-    return <MobileSelectionView options={options} selectedValue={menu.hideIgnored ? 'hide' : 'show'} onChange={(value) => menu.onHideIgnoredChange(value === 'hide')} />
+    return (
+      <MobileSelectionView
+        options={options}
+        selectedValue={menu.hideIgnored ? 'hide' : 'show'}
+        onChange={(value) => menu.onHideIgnoredChange(value === 'hide')}
+      />
+    )
   }
   if (menu.view === 'date') {
-    return <MobileDateView from={menu.from} to={menu.to} presets={menu.datePresets} onChange={menu.onDateRangeChange} onOpenCustomRange={menu.onOpenCustomRange} />
+    return (
+      <MobileDateView
+        from={menu.from}
+        to={menu.to}
+        presets={menu.datePresets}
+        onChange={menu.onDateRangeChange}
+        onOpenCustomRange={menu.onOpenCustomRange}
+      />
+    )
   }
   if (menu.view === 'amount') {
-    return <MobileAmountView minAmount={menu.minAmount} maxAmount={menu.maxAmount} setMinAmount={menu.setMinAmount} setMaxAmount={menu.setMaxAmount} onReset={() => resetAmount(menu)} onApply={menu.onApplyAmountRange} />
+    return (
+      <MobileAmountView
+        minAmount={menu.minAmount}
+        maxAmount={menu.maxAmount}
+        setMinAmount={menu.setMinAmount}
+        setMaxAmount={menu.setMaxAmount}
+        onReset={() => resetAmount(menu)}
+        onApply={menu.onApplyAmountRange}
+      />
+    )
   }
-  return <MobileFilterRoot options={buildRootOptions(labels, menu.summaries)} hasAnyFilter={menu.hasAnyFilter} onSelect={(view) => openDetail(menu, view)} onClear={() => clearAll(menu)} />
+  return (
+    <MobileFilterRoot
+      options={buildRootOptions(labels, menu.summaries)}
+      hasAnyFilter={menu.hasAnyFilter}
+      onSelect={(view) => openDetail(menu, view)}
+      onClear={() => clearAll(menu)}
+    />
+  )
 }
 
-function openDetail(
-  menu: MobileTransactionsFilterMenuProps,
-  view: Exclude<MobileFilterView, 'root'>,
-) {
+function openDetail(menu: MobileTransactionsFilterMenuProps, view: Exclude<MobileFilterView, 'root'>) {
   if (view === 'amount') {
     menu.setMinAmount(menu.appliedMinAmount)
     menu.setMaxAmount(menu.appliedMaxAmount)
@@ -535,19 +555,12 @@ function clearAll(menu: MobileTransactionsFilterMenuProps) {
  * Keeps mobile transaction filters inside one navigable dropdown.
  * @example <MobileTransactionsFilterMenu {...menuProps} />
  */
-export function MobileTransactionsFilterMenu(
-  menu: MobileTransactionsFilterMenuProps,
-) {
+export function MobileTransactionsFilterMenu(menu: MobileTransactionsFilterMenuProps) {
   const { t } = useTranslation()
   const labels = buildLabels(t)
   return (
     <div className="sm:hidden">
-      {menu.view !== 'root' && (
-        <MobileDetailHeader
-          title={labels[menu.view]}
-          onBack={() => menu.setView('root')}
-        />
-      )}
+      {menu.view !== 'root' && <MobileDetailHeader title={labels[menu.view]} onBack={() => menu.setView('root')} />}
       <MobileFilterDetail menu={menu} labels={labels} />
     </div>
   )

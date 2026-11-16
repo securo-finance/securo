@@ -30,19 +30,28 @@ type CounterpartCardProps = {
   dateLocale: string
 }
 
-function CounterpartCard({ label, description, account, date, amount, currency, sign, locale, dateLocale }: CounterpartCardProps) {
+function CounterpartCard({
+  label,
+  description,
+  account,
+  date,
+  amount,
+  currency,
+  sign,
+  locale,
+  dateLocale,
+}: CounterpartCardProps) {
   const colorClass = sign === '+' ? 'text-emerald-600' : 'text-rose-500'
   return (
     <div className="min-w-0 rounded-lg border border-border bg-muted/30 p-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-        {label}
-      </p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">{label}</p>
       <p className="text-sm font-semibold text-foreground truncate" title={description}>
         {description}
       </p>
       <p className="text-xs text-muted-foreground truncate">{account}</p>
       <p className="text-xs text-muted-foreground mt-1">
-        {new Date(date + 'T00:00:00').toLocaleDateString(dateLocale)}{/* date order from setting, words from app language */}
+        {new Date(date + 'T00:00:00').toLocaleDateString(dateLocale)}
+        {/* date order from setting, words from app language */}
       </p>
       <p className={`text-sm font-bold tabular-nums ${colorClass} mt-2`}>
         {sign}
@@ -170,9 +179,7 @@ export function LinkTransferDialog({
           </DialogHeader>
 
           <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto overscroll-contain pr-1">
-            <DialogDescription>
-              {t('transactions.linkTransferPickerDescription')}
-            </DialogDescription>
+            <DialogDescription>{t('transactions.linkTransferPickerDescription')}</DialogDescription>
 
             <CounterpartCard
               label={t('transactions.linkTransferAnchor')}
@@ -239,7 +246,8 @@ export function LinkTransferDialog({
                               )}
                             </div>
                             <p className="text-xs text-muted-foreground truncate">
-                              {account ? getAccountName(account) : '—'} · {new Date(c.date + 'T00:00:00').toLocaleDateString(dateLocale)}
+                              {account ? getAccountName(account) : '—'} ·{' '}
+                              {new Date(c.date + 'T00:00:00').toLocaleDateString(dateLocale)}
                             </p>
                           </div>
                           <p className={`text-sm font-bold tabular-nums ${colorClass} shrink-0`}>
@@ -259,9 +267,7 @@ export function LinkTransferDialog({
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                   {t('transactions.createCounterpartHeader')}
                 </p>
-                <p className="text-xs text-muted-foreground mb-2">
-                  {t('transactions.createCounterpartDescription')}
-                </p>
+                <p className="text-xs text-muted-foreground mb-2">{t('transactions.createCounterpartDescription')}</p>
                 <div className="flex gap-2">
                   <select
                     value={counterpartAccountId}
@@ -317,9 +323,7 @@ export function LinkTransferDialog({
         </DialogHeader>
 
         <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain pr-1">
-          <DialogDescription>
-            {t('transactions.linkTransferDescription')}
-          </DialogDescription>
+          <DialogDescription>{t('transactions.linkTransferDescription')}</DialogDescription>
 
           <div className="grid grid-cols-1 items-stretch gap-2 sm:grid-cols-[1fr_auto_1fr] sm:gap-3">
             <CounterpartCard
@@ -378,11 +382,7 @@ export function LinkTransferDialog({
           <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
             {t('common.cancel')}
           </Button>
-          <Button
-            type="button"
-            onClick={() => onConfirm(effectiveDebit.id, effectiveCredit.id)}
-            disabled={loading}
-          >
+          <Button type="button" onClick={() => onConfirm(effectiveDebit.id, effectiveCredit.id)} disabled={loading}>
             {loading ? t('common.loading') : t('transactions.linkTransferConfirm')}
           </Button>
         </DialogFooter>

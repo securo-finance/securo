@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import i18n from '@/lib/i18n'
-import {
-  WORKSPACE_KINDS,
-  WORKSPACE_KIND_ICON,
-  WORKSPACE_KIND_LABEL_KEY,
-} from '@/lib/workspace-kinds'
+import { WORKSPACE_KINDS, WORKSPACE_KIND_ICON, WORKSPACE_KIND_LABEL_KEY } from '@/lib/workspace-kinds'
 
 describe('WORKSPACE_KINDS', () => {
   it('has no duplicates', () => {
@@ -36,10 +32,7 @@ describe('WORKSPACE_KINDS', () => {
     // a key pt-BR does not have and this test proves nothing.
     for (const kind of WORKSPACE_KINDS) {
       const key = WORKSPACE_KIND_LABEL_KEY[kind]
-      expect(
-        i18n.exists(key, { lng: 'pt-BR', fallbackLng: false }),
-        `${key} missing from pt-BR`,
-      ).toBe(true)
+      expect(i18n.exists(key, { lng: 'pt-BR', fallbackLng: false }), `${key} missing from pt-BR`).toBe(true)
     }
   })
 

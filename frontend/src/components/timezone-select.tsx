@@ -107,18 +107,9 @@ export function TimezoneSelect({
           <ChevronDownIcon className="size-4 shrink-0 opacity-50" />
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-[var(--radix-popover-trigger-width)] min-w-72 p-0 overflow-hidden"
-      >
-        <Command
-          filter={(itemValue, query) => (normalizeText(itemValue).includes(normalizeText(query)) ? 1 : 0)}
-        >
-          <CommandInput
-            placeholder={t('common.searchTimezone')}
-            value={search}
-            onValueChange={setSearch}
-          />
+      <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] min-w-72 p-0 overflow-hidden">
+        <Command filter={(itemValue, query) => (normalizeText(itemValue).includes(normalizeText(query)) ? 1 : 0)}>
+          <CommandInput placeholder={t('common.searchTimezone')} value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>{t('common.noTimezoneFound')}</CommandEmpty>
             {emptyOption && (
@@ -153,9 +144,7 @@ export function TimezoneSelect({
                         <span className="truncate">{timezoneCityLabel(name)}</span>
                         <span className="truncate text-xs text-muted-foreground">{name}</span>
                       </span>
-                      {offset && (
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{offset}</span>
-                      )}
+                      {offset && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{offset}</span>}
                       {value === name && <CheckIcon className="size-4 shrink-0" />}
                     </CommandItem>
                   )

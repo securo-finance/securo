@@ -101,10 +101,7 @@ describe('selection', () => {
 
   it('restores the stored workspace when it is still accessible', async () => {
     localStorage.setItem('workspace_id', 'ws-b')
-    workspacesApi.list.mockResolvedValue([
-      makeWorkspace({ id: 'ws-a' }),
-      makeWorkspace({ id: 'ws-b', name: 'Family' }),
-    ])
+    workspacesApi.list.mockResolvedValue([makeWorkspace({ id: 'ws-a' }), makeWorkspace({ id: 'ws-b', name: 'Family' })])
 
     const { result } = await renderWorkspace()
 
@@ -153,10 +150,7 @@ describe('switchWorkspace', () => {
     // The axios interceptor reads workspace_id from localStorage, so writing
     // it after resetQueries would refetch the new workspace's screens with
     // the old workspace's header.
-    workspacesApi.list.mockResolvedValue([
-      makeWorkspace({ id: 'ws-a' }),
-      makeWorkspace({ id: 'ws-b' }),
-    ])
+    workspacesApi.list.mockResolvedValue([makeWorkspace({ id: 'ws-a' }), makeWorkspace({ id: 'ws-b' })])
 
     const { result } = await renderWorkspace()
 
@@ -171,10 +165,7 @@ describe('switchWorkspace', () => {
   it('drops the previous workspace data from the cache', async () => {
     // Every cached query was scoped to the workspace we just left. Leaving it
     // in place shows one workspace's figures under another's name.
-    workspacesApi.list.mockResolvedValue([
-      makeWorkspace({ id: 'ws-a' }),
-      makeWorkspace({ id: 'ws-b' }),
-    ])
+    workspacesApi.list.mockResolvedValue([makeWorkspace({ id: 'ws-a' }), makeWorkspace({ id: 'ws-b' })])
 
     const { result, queryClient } = await renderWithClient()
     queryClient.setQueryData(['transactions'], [{ id: 't1', amount: 100 }])
@@ -239,9 +230,7 @@ describe('roles', () => {
 
 describe('hasModule', () => {
   it('is true only for modules the server enabled', async () => {
-    workspacesApi.list.mockResolvedValue([
-      makeWorkspace({ enabled_modules: ['transactions', 'budgets'] }),
-    ])
+    workspacesApi.list.mockResolvedValue([makeWorkspace({ enabled_modules: ['transactions', 'budgets'] })])
 
     const { result } = await renderWorkspace()
 
@@ -251,9 +240,7 @@ describe('hasModule', () => {
   })
 
   it('is false for everything when the workspace enables nothing', async () => {
-    workspacesApi.list.mockResolvedValue([
-      makeWorkspace({ enabled_modules: [] }),
-    ])
+    workspacesApi.list.mockResolvedValue([makeWorkspace({ enabled_modules: [] })])
 
     const { result } = await renderWorkspace()
 
@@ -272,8 +259,6 @@ describe('hasModule', () => {
 
 describe('useWorkspace', () => {
   it('refuses to be used outside the provider', () => {
-    expect(() => renderHook(() => useWorkspace())).toThrow(
-      'useWorkspace must be used within a WorkspaceProvider',
-    )
+    expect(() => renderHook(() => useWorkspace())).toThrow('useWorkspace must be used within a WorkspaceProvider')
   })
 })

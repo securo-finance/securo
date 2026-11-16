@@ -48,7 +48,9 @@ export function CollectionSelector({ variant = 'sidebar' }: { variant?: 'sidebar
             {[
               c.account_count > 0 && t('collections.accountCount', { count: c.account_count }),
               c.wallet_count > 0 && t('collections.walletCount', { count: c.wallet_count }),
-            ].filter(Boolean).join(' · ')}
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </span>
           {activeCollection?.id === c.id && <Check size={14} className="shrink-0 text-primary" />}
         </DropdownMenuItem>
@@ -71,7 +73,10 @@ export function CollectionSelector({ variant = 'sidebar' }: { variant?: 'sidebar
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 w-full rounded-lg border border-sidebar-border/60 bg-sidebar-accent/30 px-2.5 py-1.5 text-left hover:bg-sidebar-accent/50 transition-colors">
               {activeCollection ? (
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: activeCollection.color }} />
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: activeCollection.color }}
+                />
               ) : (
                 <Layers size={13} className="shrink-0 text-sidebar-muted" />
               )}
@@ -110,15 +115,16 @@ export function CollectionSelector({ variant = 'sidebar' }: { variant?: 'sidebar
               }
             >
               {activeCollection ? (
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: activeCollection.color }} />
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: activeCollection.color }}
+                />
               ) : (
                 <Layers size={14} className="shrink-0 text-muted-foreground" />
               )}
               <span
                 className={
-                  activeCollection
-                    ? 'font-medium text-foreground'
-                    : 'text-muted-foreground group-hover:text-foreground'
+                  activeCollection ? 'font-medium text-foreground' : 'text-muted-foreground group-hover:text-foreground'
                 }
               >
                 {activeCollection?.name ?? t('collections.allAccounts')}

@@ -23,13 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, History, Loader2, Plus, Settings, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { agents } from '@/lib/api'
 import type { Agent, AgentConversation } from '@/lib/api'
 import { ChatPanel } from '@/components/agents/chat-panel'
@@ -118,7 +112,7 @@ export function GlobalChatPanel({ open, onOpenChange, initialMessage, onInitialM
     return agentsList[0]
   }, [agentsList, persisted.agentId, defaultAgent])
 
-  const conversationId = activeAgent ? persisted.conversationByAgent?.[activeAgent.id] ?? null : null
+  const conversationId = activeAgent ? (persisted.conversationByAgent?.[activeAgent.id] ?? null) : null
 
   function setConversationForActive(cid: string | null) {
     if (!activeAgent) return
@@ -182,9 +176,7 @@ export function GlobalChatPanel({ open, onOpenChange, initialMessage, onInitialM
             'duration-200',
           )}
         >
-          <DialogPrimitive.Title className="sr-only">
-            {t('agents.globalChat.title', 'Chat')}
-          </DialogPrimitive.Title>
+          <DialogPrimitive.Title className="sr-only">{t('agents.globalChat.title', 'Chat')}</DialogPrimitive.Title>
 
           <header className="flex items-center justify-between gap-2 px-3 py-2 border-b shrink-0">
             <div className="flex items-center gap-1 min-w-0 flex-1">
@@ -400,12 +392,7 @@ function ConversationsList({ agentId, activeConversationId, onPick }: ConvListPr
   return (
     <div className="flex-1 overflow-y-auto divide-y">
       {data.map((c) => (
-        <ConversationRow
-          key={c.id}
-          conv={c}
-          isActive={c.id === activeConversationId}
-          onClick={() => onPick(c.id)}
-        />
+        <ConversationRow key={c.id} conv={c} isActive={c.id === activeConversationId} onClick={() => onPick(c.id)} />
       ))}
     </div>
   )
@@ -430,9 +417,7 @@ function ConversationRow({
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium truncate">
-          {conv.title || 'Untitled'}
-        </span>
+        <span className="text-sm font-medium truncate">{conv.title || 'Untitled'}</span>
         <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
           {formatRelative(conv.updated_at)}
         </span>

@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  formatNetWorthAxisTick,
-  getNetWorthDomain,
-  shouldFillNetWorthArea,
-} from './net-worth-chart-utils'
+import { formatNetWorthAxisTick, getNetWorthDomain, shouldFillNetWorthArea } from './net-worth-chart-utils'
 
 describe('getNetWorthDomain', () => {
   it('rounds bounds to readable values for ordinary net worth ranges', () => {

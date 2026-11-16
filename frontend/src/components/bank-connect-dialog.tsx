@@ -5,13 +5,7 @@ import { PluggyConnect } from 'react-pluggy-connect'
 import { connections } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 
@@ -70,7 +64,9 @@ export function BankConnectDialog({
     }
     fetchToken()
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [open, reconnectConnectionId, provider, needsInitialOptions, optionsConfirmed])
 
   const handleSuccess = async (data: { item: { id: string } }) => {
@@ -122,7 +118,9 @@ export function BankConnectDialog({
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={handleClose}>{t('common.cancel')}</Button>
+            <Button variant="outline" onClick={handleClose}>
+              {t('common.cancel')}
+            </Button>
             <Button onClick={() => setOptionsConfirmed(true)}>{t('connections.continueToConnector')}</Button>
           </DialogFooter>
         </DialogContent>

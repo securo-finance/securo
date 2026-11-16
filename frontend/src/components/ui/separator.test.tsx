@@ -17,18 +17,12 @@ describe('Separator', () => {
   it('supports a vertical orientation', () => {
     const { container } = renderWithProviders(<Separator orientation="vertical" />)
 
-    expect(container.querySelector('[data-slot="separator"]')).toHaveAttribute(
-      'data-orientation',
-      'vertical',
-    )
+    expect(container.querySelector('[data-slot="separator"]')).toHaveAttribute('data-orientation', 'vertical')
   })
 
   it('becomes a real separator for assistive tech when not decorative', () => {
     const { container } = renderWithProviders(<Separator decorative={false} />)
 
-    expect(container.querySelector('[data-slot="separator"]')).toHaveAttribute(
-      'role',
-      'separator',
-    )
+    expect(container.querySelector('[data-slot="separator"]')).toHaveAttribute('role', 'separator')
   })
 })

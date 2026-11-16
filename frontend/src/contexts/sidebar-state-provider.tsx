@@ -5,9 +5,7 @@ import { SidebarStateContext, type SidebarStateValue } from '@/contexts/sidebar-
 export const SIDEBAR_COLLAPSED_STORAGE_KEY = 'securo.sidebar.collapsed'
 
 export function SidebarStateProvider({ children }: { children: ReactNode }) {
-  const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true',
-  )
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true')
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((current) => {
@@ -22,7 +20,5 @@ export function SidebarStateProvider({ children }: { children: ReactNode }) {
     [collapsed, toggleCollapsed],
   )
 
-  return (
-    <SidebarStateContext.Provider value={value}>{children}</SidebarStateContext.Provider>
-  )
+  return <SidebarStateContext.Provider value={value}>{children}</SidebarStateContext.Provider>
 }

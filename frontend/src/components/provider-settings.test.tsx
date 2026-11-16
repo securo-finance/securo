@@ -31,8 +31,17 @@ describe('provider settings', () => {
     vi.mocked(admin.providerSettings).mockResolvedValue([
       pluggy,
       {
-        name: 'openexchangerates', configured: false, can_store_secrets: true,
-        fields: { openexchangerates_app_id: { configured: false, source: 'none', invalid: false, environment_configured: false } },
+        name: 'openexchangerates',
+        configured: false,
+        can_store_secrets: true,
+        fields: {
+          openexchangerates_app_id: {
+            configured: false,
+            source: 'none',
+            invalid: false,
+            environment_configured: false,
+          },
+        },
       },
       { name: 'future_provider', configured: false, can_store_secrets: true, fields: {} },
     ])
@@ -47,13 +56,15 @@ describe('provider settings', () => {
 
     await user.click(within(connections).getByRole('button', { name: 'Manage Pluggy' }))
     expect(screen.getByRole('link', { name: 'Setup guide' })).toHaveAttribute(
-      'href', 'https://docs.usesecuro.com/docs/getting-started/installation#optional-integrations',
+      'href',
+      'https://docs.usesecuro.com/docs/getting-started/installation#optional-integrations',
     )
     await user.click(screen.getByRole('button', { name: 'Close' }))
 
     await user.click(within(exchangeRates).getByRole('button', { name: 'Set up Open Exchange Rates' }))
     expect(screen.getByRole('link', { name: 'Setup guide' })).toHaveAttribute(
-      'href', 'https://docs.usesecuro.com/docs/getting-started/installation#exchange-rates',
+      'href',
+      'https://docs.usesecuro.com/docs/getting-started/installation#exchange-rates',
     )
     await user.click(screen.getByRole('button', { name: 'Close' }))
 
@@ -79,9 +90,11 @@ describe('provider settings', () => {
     await user.type(clientSecret, 'replacement-secret')
     await user.click(within(form).getByRole('button', { name: 'Save changes' }))
 
-    await waitFor(() => expect(admin.updateProviderSettings).toHaveBeenCalledWith('pluggy', {
-      pluggy_client_secret: 'replacement-secret',
-    }))
+    await waitFor(() =>
+      expect(admin.updateProviderSettings).toHaveBeenCalledWith('pluggy', {
+        pluggy_client_secret: 'replacement-secret',
+      }),
+    )
     await waitFor(() => expect(screen.queryByRole('form', { name: 'Pluggy' })).not.toBeInTheDocument())
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['admin', 'provider-settings'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['connections', 'providers'] })
@@ -101,20 +114,28 @@ describe('provider settings', () => {
     expect(admin.updateProviderSettings).not.toHaveBeenCalled()
 
     await user.click(within(form).getByRole('button', { name: 'Use environment value' }))
-    await user.click(within(screen.getByRole('dialog', { name: 'Remove saved Client secret?' })).getByRole('button', { name: 'Delete' }))
-    await waitFor(() => expect(admin.updateProviderSettings).toHaveBeenCalledWith('pluggy', {
-      pluggy_client_secret: null,
-    }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Remove saved Client secret?' })).getByRole('button', {
+        name: 'Delete',
+      }),
+    )
+    await waitFor(() =>
+      expect(admin.updateProviderSettings).toHaveBeenCalledWith('pluggy', {
+        pluggy_client_secret: null,
+      }),
+    )
   })
 
   it('warns when removing a saved value has no environment fallback', async () => {
-    vi.mocked(admin.providerSettings).mockResolvedValue([{
-      ...pluggy,
-      fields: {
-        ...pluggy.fields,
-        pluggy_client_secret: { ...pluggy.fields.pluggy_client_secret, environment_configured: false },
+    vi.mocked(admin.providerSettings).mockResolvedValue([
+      {
+        ...pluggy,
+        fields: {
+          ...pluggy.fields,
+          pluggy_client_secret: { ...pluggy.fields.pluggy_client_secret, environment_configured: false },
+        },
       },
-    }])
+    ])
     const { user } = renderWithProviders(<ProviderSettings />)
     await user.click(await screen.findByRole('button', { name: 'Manage Pluggy' }))
     const form = screen.getByRole('form', { name: 'Pluggy' })
@@ -133,16 +154,26 @@ describe('provider settings', () => {
     expect(within(form).getByLabelText('Client secret')).toBeDisabled()
     expect(within(form).getByRole('button', { name: 'Save changes' })).toBeDisabled()
     await user.click(within(form).getByRole('button', { name: 'Use environment value' }))
-    await user.click(within(screen.getByRole('dialog', { name: 'Remove saved Client secret?' })).getByRole('button', { name: 'Delete' }))
-    await waitFor(() => expect(admin.updateProviderSettings).toHaveBeenCalledWith('pluggy', {
-      pluggy_client_secret: null,
-    }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Remove saved Client secret?' })).getByRole('button', {
+        name: 'Delete',
+      }),
+    )
+    await waitFor(() =>
+      expect(admin.updateProviderSettings).toHaveBeenCalledWith('pluggy', {
+        pluggy_client_secret: null,
+      }),
+    )
   })
 
   it('sends a boolean when the SimpleFIN switch changes', async () => {
     const simplefin: ProviderSettingStatus = {
-      name: 'simplefin', configured: true, can_store_secrets: false,
-      fields: { simplefin_enabled: { configured: true, source: 'environment', invalid: false, environment_configured: true } },
+      name: 'simplefin',
+      configured: true,
+      can_store_secrets: false,
+      fields: {
+        simplefin_enabled: { configured: true, source: 'environment', invalid: false, environment_configured: true },
+      },
     }
     vi.mocked(admin.providerSettings).mockResolvedValue([simplefin])
     vi.mocked(admin.updateProviderSettings).mockResolvedValue(simplefin)
@@ -155,14 +186,18 @@ describe('provider settings', () => {
     await user.click(toggle)
     expect(toggle).not.toBeChecked()
     await user.click(within(form).getByRole('button', { name: 'Save changes' }))
-    await waitFor(() => expect(admin.updateProviderSettings).toHaveBeenCalledWith('simplefin', {
-      simplefin_enabled: false,
-    }))
+    await waitFor(() =>
+      expect(admin.updateProviderSettings).toHaveBeenCalledWith('simplefin', {
+        simplefin_enabled: false,
+      }),
+    )
   })
 
   it('shows the Enable Banking redirect URL read-only and copies it', async () => {
     const enableBanking: ProviderSettingStatus = {
-      name: 'enable_banking', configured: false, can_store_secrets: true,
+      name: 'enable_banking',
+      configured: false,
+      can_store_secrets: true,
       fields: {
         enable_banking_app_id: { configured: false, source: 'none', invalid: false, environment_configured: false },
       },

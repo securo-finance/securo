@@ -19,11 +19,7 @@ export function getPortfolioTotalPrimary(assets: ValuedAsset[], displayCurrency:
   return assets.reduce((acc, a) => acc + (getAssetValuePrimary(a, displayCurrency) ?? 0), 0)
 }
 
-export function getPortfolioShare(
-  asset: ValuedAsset,
-  totalPrimary: number,
-  displayCurrency: string,
-): number | null {
+export function getPortfolioShare(asset: ValuedAsset, totalPrimary: number, displayCurrency: string): number | null {
   const value = getAssetValuePrimary(asset, displayCurrency)
   if (value == null || !(totalPrimary > 0)) return null
   return (value / totalPrimary) * 100

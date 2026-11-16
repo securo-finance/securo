@@ -17,9 +17,7 @@ describe('PageRefreshButton', () => {
   })
 
   it('spins and disables while a refetch is in flight', () => {
-    renderWithProviders(
-      <PageRefreshButton onRefresh={() => {}} refreshing />,
-    )
+    renderWithProviders(<PageRefreshButton onRefresh={() => {}} refreshing />)
 
     const button = screen.getByRole('button', { name: 'Refresh' })
     expect(button).toBeDisabled()
@@ -28,7 +26,12 @@ describe('PageRefreshButton', () => {
 
   it('stays busy until the refetch it started settles', async () => {
     let settle: () => void = () => {}
-    const onRefresh = vi.fn(() => new Promise<void>((resolve) => { settle = resolve }))
+    const onRefresh = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve
+        }),
+    )
 
     const { user } = renderWithProviders(<PageRefreshButton onRefresh={onRefresh} />)
     const button = screen.getByRole('button', { name: 'Refresh' })

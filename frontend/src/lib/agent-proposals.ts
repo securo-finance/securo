@@ -51,15 +51,30 @@ export interface ProposalData {
 export function isProposalData(data: unknown): data is ProposalData {
   if (!data || typeof data !== 'object') return false
   const k = (data as { kind?: unknown }).kind
-  return typeof k === 'string' && [
-    'categorize', 'create_category', 'create_budget', 'create_payee_rule',
-    'create_rule', 'update_rule', 'delete_rule',
-    'create_transaction', 'create_recurring_transaction',
-    'update_recurring_transaction', 'cancel_recurring_transaction',
-    'create_goal', 'link_transfer', 'unlink_transfer',
-    'update_goal', 'update_budget', 'delete_budget',
-    'update_transaction_notes', 'create_category_group',
-  ].includes(k)
+  return (
+    typeof k === 'string' &&
+    [
+      'categorize',
+      'create_category',
+      'create_budget',
+      'create_payee_rule',
+      'create_rule',
+      'update_rule',
+      'delete_rule',
+      'create_transaction',
+      'create_recurring_transaction',
+      'update_recurring_transaction',
+      'cancel_recurring_transaction',
+      'create_goal',
+      'link_transfer',
+      'unlink_transfer',
+      'update_goal',
+      'update_budget',
+      'delete_budget',
+      'update_transaction_notes',
+      'create_category_group',
+    ].includes(k)
+  )
 }
 
 /** Treat the data as a proposal even when only `error` is present, since

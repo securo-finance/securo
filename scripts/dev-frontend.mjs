@@ -3,7 +3,7 @@
  * Frontend dev watcher — rebuilds on file change and auto-deploys to Docker.
  *
  * Usage:  node scripts/dev-frontend.mjs
- *         npm run dev:frontend   (once the script is added to package.json)
+ *         bun run dev:frontend   (once the script is added to package.json)
  */
 import { spawn, execSync } from 'child_process'
 import { watch } from 'fs'
@@ -38,7 +38,7 @@ console.log(`  Container: ${CONTAINER}`)
 console.log(`  Watching:  ${FRONTEND_DIR}/src\n`)
 
 // Start vite build --watch
-const vite = spawn('npm', ['run', 'build', '--', '--watch'], {
+const vite = spawn('bun', ['run', 'build', '--watch'], {
   cwd: FRONTEND_DIR,
   stdio: ['inherit', 'pipe', 'inherit'],
   shell: true,

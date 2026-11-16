@@ -29,10 +29,7 @@ export function AgentTemplatesSection({ onCreate, busyId, disabled = false }: Pr
           const Icon = tpl.icon
           const busy = busyId === tpl.id
           return (
-            <div
-              key={tpl.id}
-              className="bg-card rounded-xl border border-border shadow-sm p-4 flex flex-col gap-3"
-            >
+            <div key={tpl.id} className="bg-card rounded-xl border border-border shadow-sm p-4 flex flex-col gap-3">
               <div className="flex items-start gap-3">
                 <div className="h-9 w-9 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
                   <Icon className="h-4 w-4" />

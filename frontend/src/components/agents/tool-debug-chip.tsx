@@ -18,17 +18,21 @@ interface Props {
 export function ToolDebugChip({ name, args, result, pending, defaultOpen = false }: Props) {
   const [open, setOpen] = useState(defaultOpen)
   const status = pending ? 'pending' : result?.ok === false ? 'error' : result ? 'ok' : 'pending'
-  const summary = result?.text || (result?.data && typeof result.data === 'object'
-    ? summarizeData(result.data as Record<string, unknown>)
-    : null)
+  const summary =
+    result?.text ||
+    (result?.data && typeof result.data === 'object' ? summarizeData(result.data as Record<string, unknown>) : null)
 
   return (
-    <div className={cn(
-      'rounded-md border text-xs',
-      status === 'error' ? 'border-rose-300/50 bg-rose-50/40 dark:bg-rose-950/20'
-        : status === 'pending' ? 'border-border bg-muted/40'
-        : 'border-emerald-300/40 bg-emerald-50/30 dark:bg-emerald-950/15'
-    )}>
+    <div
+      className={cn(
+        'rounded-md border text-xs',
+        status === 'error'
+          ? 'border-rose-300/50 bg-rose-50/40 dark:bg-rose-950/20'
+          : status === 'pending'
+            ? 'border-border bg-muted/40'
+            : 'border-emerald-300/40 bg-emerald-50/30 dark:bg-emerald-950/15',
+      )}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -43,9 +47,7 @@ export function ToolDebugChip({ name, args, result, pending, defaultOpen = false
         )}
         <Wrench className="h-3 w-3 text-muted-foreground shrink-0" />
         <span className="font-mono truncate">{name}</span>
-        {summary && (
-          <span className="text-muted-foreground truncate flex-1 min-w-0">— {summary}</span>
-        )}
+        {summary && <span className="text-muted-foreground truncate flex-1 min-w-0">— {summary}</span>}
         {open ? (
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
         ) : (
@@ -85,7 +87,7 @@ function Block({ label, payload, fallback }: { label: string; payload: unknown; 
 
 function summarizeData(data: Record<string, unknown>): string | null {
   if (Array.isArray((data as { items?: unknown[] }).items)) {
-    const n = ((data as { items: unknown[] }).items).length
+    const n = (data as { items: unknown[] }).items.length
     const total = (data as { total?: number }).total
     return `${total ?? n} item${(total ?? n) === 1 ? '' : 's'}`
   }

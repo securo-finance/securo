@@ -117,7 +117,12 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="truncate text-sm font-medium">{connection.name}</p>
-                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', STATUS_STYLE[connection.status])}>
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                        STATUS_STYLE[connection.status],
+                      )}
+                    >
                       {t(`plugins.connections.status.${statusKey}`)}
                     </span>
                   </div>
@@ -135,12 +140,22 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
                 {canWrite && (
                   <div className="flex items-center gap-1">
                     {signIn ? (
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => authorizeMutation.mutate(connection.id)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => authorizeMutation.mutate(connection.id)}
+                      >
                         <LogIn size={14} className="mr-1" />
                         {t('plugins.connections.signIn')}
                       </Button>
                     ) : (
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => syncMutation.mutate(connection.id)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => syncMutation.mutate(connection.id)}
+                      >
                         <RefreshCw size={14} className={cn('mr-1', busy && 'animate-spin')} />
                         {t('plugins.connections.syncNow')}
                       </Button>
@@ -163,9 +178,7 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
         </ul>
       )}
 
-      {adding && (
-        <AddConnectionDialog plugin={plugin} onClose={() => setAdding(false)} onDone={() => void refresh()} />
-      )}
+      {adding && <AddConnectionDialog plugin={plugin} onClose={() => setAdding(false)} onDone={() => void refresh()} />}
       {removing && (
         <RemoveConnectionDialog connection={removing} onClose={() => setRemoving(null)} onDone={() => void refresh()} />
       )}
@@ -207,7 +220,12 @@ function AddConnectionDialog({
   const missing = integration?.fields.some((f) => f.required && !values[f.key]?.trim()) ?? true
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !mutation.isPending) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !mutation.isPending) onClose()
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t('plugins.connections.addTitle', { name: localized(plugin.name, lang) })}</DialogTitle>
@@ -230,7 +248,10 @@ function AddConnectionDialog({
                   <button
                     key={option.key}
                     type="button"
-                    onClick={() => { setKey(option.key); setValues({}) }}
+                    onClick={() => {
+                      setKey(option.key)
+                      setValues({})
+                    }}
                     className={cn(
                       'rounded-lg border px-3 py-2 text-left text-sm transition-colors',
                       option.key === key ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
@@ -261,7 +282,9 @@ function AddConnectionDialog({
             <div key={field.key} className="space-y-2">
               <Label htmlFor={`plugin-field-${field.key}`}>
                 {localized(field.label, lang)}
-                {!field.required && <span className="ml-1 font-normal text-muted-foreground">({t('plugins.connections.optional')})</span>}
+                {!field.required && (
+                  <span className="ml-1 font-normal text-muted-foreground">({t('plugins.connections.optional')})</span>
+                )}
               </Label>
               <Input
                 id={`plugin-field-${field.key}`}
@@ -339,7 +362,12 @@ function RemoveConnectionDialog({
     onError: (err) => toast.error(errorMessage(err, t('common.error'))),
   })
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !mutation.isPending) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !mutation.isPending) onClose()
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t('plugins.connections.removeTitle', { name: connection.name })}</DialogTitle>

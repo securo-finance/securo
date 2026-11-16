@@ -21,7 +21,7 @@ export function getPropertyEquity(
   const value = getAssetValuePrimary(property, displayCurrency)
   if (value == null) return null
   const debt = accounts
-    .filter(account => account.type === 'loan' && account.secured_asset_id === property.id)
+    .filter((account) => account.type === 'loan' && account.secured_asset_id === property.id)
     .reduce((total, loan) => total + getLoanDebtPrimary(loan), 0)
   return { value, debt, equity: value - debt }
 }

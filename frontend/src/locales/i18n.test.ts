@@ -28,14 +28,13 @@ function flattenValues(obj: Record<string, unknown>, prefix = ''): Map<string, s
     const full = prefix ? `${prefix}.${k}` : k
     if (typeof v === 'string') result.set(full, v)
     else if (v !== null && typeof v === 'object' && !Array.isArray(v))
-      for (const entry of flattenValues(v as Record<string, unknown>, full))
-        result.set(entry[0], entry[1])
+      for (const entry of flattenValues(v as Record<string, unknown>, full)) result.set(entry[0], entry[1])
   }
   return result
 }
 
 function extractPlaceholders(value: string): Set<string> {
-  return new Set((value.match(/\{\{(\w+)\}\}/g) ?? []))
+  return new Set(value.match(/\{\{(\w+)\}\}/g) ?? [])
 }
 
 // i18next plural suffixes — some languages (e.g. Polish) expand a single base
@@ -67,14 +66,18 @@ function findDuplicateKeys(source: string): string[] {
   const duplicates: string[] = []
   let i = 0
 
-  const ws = () => { while (i < source.length && ' \t\r\n'.includes(source[i])) i++ }
+  const ws = () => {
+    while (i < source.length && ' \t\r\n'.includes(source[i])) i++
+  }
 
   const str = (): string => {
     i++ // skip "
     let s = ''
     while (i < source.length && source[i] !== '"') {
-      if (source[i] === '\\') { i++; s += source[i++] }
-      else s += source[i++]
+      if (source[i] === '\\') {
+        i++
+        s += source[i++]
+      } else s += source[i++]
     }
     i++ // skip "
     return s
@@ -99,7 +102,8 @@ function findDuplicateKeys(source: string): string[] {
       const full = keyPath ? `${keyPath}.${key}` : key
       if (seen.has(key)) duplicates.push(full)
       seen.add(key)
-      ws(); i++ // skip :
+      ws()
+      i++ // skip :
       val(full)
       ws()
       if (source[i] === ',') i++
@@ -121,7 +125,8 @@ function findDuplicateKeys(source: string): string[] {
     i++ // skip ]
   }
 
-  ws(); val('')
+  ws()
+  val('')
   return duplicates
 }
 
@@ -189,9 +194,7 @@ describe('i18n locale files', () => {
             : PLURAL_SUFFIXES.map((s) => `${key}${s}`).filter((k) => localeValues.has(k))
 
           for (const localeKey of keysToCheck) {
-            const missing = [...enPlaceholders].filter(
-              (p) => !extractPlaceholders(localeValues.get(localeKey)!).has(p),
-            )
+            const missing = [...enPlaceholders].filter((p) => !extractPlaceholders(localeValues.get(localeKey)!).has(p))
             if (missing.length > 0)
               mismatches.push(`${localeKey}: missing ${missing.map((p) => `{{${p}}}`).join(', ')}`)
           }

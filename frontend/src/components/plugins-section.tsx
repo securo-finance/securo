@@ -20,7 +20,13 @@ export function PluginsSection() {
   const [target, setTarget] = useState<PluginTarget | null>(null)
 
   // The database only: opening settings never reaches the catalog.
-  const { data: installed, isLoading, isError, isFetching, refetch } = useQuery({
+  const {
+    data: installed,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['plugins', 'installed'],
     queryFn: pluginsApi.installed,
   })
@@ -66,7 +72,11 @@ export function PluginsSection() {
                   </p>
                 </div>
                 {plugin.integrations?.length > 0 && (
-                  <Button size="sm" variant="outline" onClick={() => navigate(`${pluginPath(plugin.plugin_id)}?tab=connections`)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate(`${pluginPath(plugin.plugin_id)}?tab=connections`)}
+                  >
                     <Plug size={14} className="mr-1" />
                     {t('plugins.detail.connections')}
                   </Button>

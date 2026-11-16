@@ -83,10 +83,14 @@ it.each(['America/Los_Angeles', 'Pacific/Kiritimati'])(
         />,
       )
 
-      expect(await screen.findByText(t('transactions.recurringInfo', {
-        frequency: t('recurring.monthly'),
-        next: '3/8/2026',
-      }))).toBeInTheDocument()
+      expect(
+        await screen.findByText(
+          t('transactions.recurringInfo', {
+            frequency: t('recurring.monthly'),
+            next: '3/8/2026',
+          }),
+        ),
+      ).toBeInTheDocument()
     } finally {
       if (originalTimezone === undefined) delete process.env.TZ
       else process.env.TZ = originalTimezone
@@ -430,8 +434,26 @@ function splitFixture(): Transaction {
     transfer_pair_id: null,
     has_category_lines: true,
     category_lines: [
-      { id: 'l1', category_id: food.id, amount: 40, share_type: 'exact', share_pct: null, position: 0, notes: null, category: food as never },
-      { id: 'l2', category_id: home.id, amount: 110, share_type: 'exact', share_pct: null, position: 1, notes: null, category: home as never },
+      {
+        id: 'l1',
+        category_id: food.id,
+        amount: 40,
+        share_type: 'exact',
+        share_pct: null,
+        position: 0,
+        notes: null,
+        category: food as never,
+      },
+      {
+        id: 'l2',
+        category_id: home.id,
+        amount: 110,
+        share_type: 'exact',
+        share_pct: null,
+        position: 1,
+        notes: null,
+        category: home as never,
+      },
     ],
   })
 }
@@ -540,8 +562,14 @@ it('switching a fully allocated split to percentages keeps it allocated', async 
         ...tx,
         amount: 0.03,
         category_lines: ['a', 'b', 'c'].map((id, position) => ({
-          id, category_id: id, amount: 0.01, share_type: 'exact' as const, share_pct: null,
-          position, notes: null, category: cat(id) as never,
+          id,
+          category_id: id,
+          amount: 0.01,
+          share_type: 'exact' as const,
+          share_pct: null,
+          position,
+          notes: null,
+          category: cat(id) as never,
         })),
       }}
       categories={[]}
@@ -557,8 +585,9 @@ it('switching a fully allocated split to percentages keeps it allocated', async 
   // 33.33 + 33.33 + 33.34: the hundredth left over goes to the last part.
   expect(screen.getByText(t('categoryLines.allAllocated'))).toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: t('common.save') }))
-  expect(onSave.mock.calls[0][0].category_lines.lines.map((l: { share_pct: number }) => l.share_pct))
-    .toEqual([33.33, 33.33, 33.34])
+  expect(onSave.mock.calls[0][0].category_lines.lines.map((l: { share_pct: number }) => l.share_pct)).toEqual([
+    33.33, 33.33, 33.34,
+  ])
 })
 
 it('Enter in a field does not save parts that do not add up', async () => {
@@ -585,11 +614,7 @@ function syncedTransaction(overrides: Partial<Transaction> = {}): Transaction {
   }
 }
 
-function renderSyncedDialog(
-  transaction: Transaction,
-  accounts: Account[] = accountFixtures,
-  onSave = vi.fn(),
-) {
+function renderSyncedDialog(transaction: Transaction, accounts: Account[] = accountFixtures, onSave = vi.fn()) {
   vi.spyOn(currencies, 'list').mockResolvedValue([])
   vi.spyOn(payees, 'list').mockResolvedValue([])
   vi.spyOn(groups, 'list').mockResolvedValue([])
@@ -619,10 +644,9 @@ describe('TransactionDialog reporting date override', () => {
     expect(screen.getByDisplayValue('2026-10-01')).toBeDisabled()
     expect(screen.getByRole('combobox', { name: t('transactions.colStatus') })).toBeDisabled()
     expect(screen.getByRole('combobox', { name: t('transactions.colStatus') })).toHaveValue('posted')
-    fireEvent.change(
-      screen.getByLabelText(t('transactions.reportingDatePlaceholder')),
-      { target: { value: '2026-09-30' } },
-    )
+    fireEvent.change(screen.getByLabelText(t('transactions.reportingDatePlaceholder')), {
+      target: { value: '2026-09-30' },
+    })
     await user.click(screen.getByRole('button', { name: t('common.save') }))
 
     expect(onSave).toHaveBeenCalledOnce()
@@ -632,13 +656,9 @@ describe('TransactionDialog reporting date override', () => {
   })
 
   it('resets reporting attribution to automatic without changing the bank date', async () => {
-    const { onSave, user } = renderSyncedDialog(
-      syncedTransaction({ reporting_date_override: '2026-09-30' }),
-    )
+    const { onSave, user } = renderSyncedDialog(syncedTransaction({ reporting_date_override: '2026-09-30' }))
 
-    await user.click(
-      screen.getByRole('button', { name: t('transactions.clearReportingDate') }),
-    )
+    await user.click(screen.getByRole('button', { name: t('transactions.clearReportingDate') }))
     await user.click(screen.getByRole('button', { name: t('common.save') }))
 
     expect(onSave.mock.calls[0][0]).toMatchObject({ reporting_date_override: null })
@@ -648,8 +668,6 @@ describe('TransactionDialog reporting date override', () => {
   it('hides reporting attribution until the synced account is resolved', () => {
     renderSyncedDialog(syncedTransaction(), [])
 
-    expect(
-      screen.queryByLabelText(t('transactions.reportingDatePlaceholder')),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(t('transactions.reportingDatePlaceholder'))).not.toBeInTheDocument()
   })
 })

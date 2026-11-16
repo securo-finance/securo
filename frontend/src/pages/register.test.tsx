@@ -23,9 +23,9 @@ vi.mock('@/lib/api', () => ({ admin: api.admin, auth: api.auth }))
 vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }))
 
 function httpError(status?: number): AxiosError {
-  return (status === undefined
-    ? { isAxiosError: true, response: undefined }
-    : { isAxiosError: true, response: { status } }) as AxiosError
+  return (
+    status === undefined ? { isAxiosError: true, response: undefined } : { isAxiosError: true, response: { status } }
+  ) as AxiosError
 }
 
 beforeEach(() => {
@@ -90,9 +90,7 @@ describe('RegisterPage', () => {
     await fill(user, { password: 'first-password', confirm: 'second-password' })
     await user.click(screen.getByRole('button', { name: t('auth.register') }))
 
-    expect(
-      await screen.findByText(t('auth.passwordMismatch')),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(t('auth.passwordMismatch'))).toBeInTheDocument()
     // Catching it client-side keeps a guaranteed-doomed request off the wire.
     expect(authContext.register).not.toHaveBeenCalled()
   })
@@ -103,9 +101,7 @@ describe('RegisterPage', () => {
     await fill(user, { password: 'short', confirm: 'short' })
     await user.click(screen.getByRole('button', { name: t('auth.register') }))
 
-    expect(
-      await screen.findByText(t('auth.passwordTooShort')),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(t('auth.passwordTooShort'))).toBeInTheDocument()
     expect(authContext.register).not.toHaveBeenCalled()
   })
 
@@ -136,9 +132,7 @@ describe('RegisterPage', () => {
     await fill(user)
     await user.click(screen.getByRole('button', { name: t('auth.register') }))
 
-    expect(
-      await screen.findByText(t('auth.registrationError')),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(t('auth.registrationError'))).toBeInTheDocument()
   })
 
   it('turns visitors away when registration is closed', async () => {
@@ -148,9 +142,7 @@ describe('RegisterPage', () => {
 
     renderWithProviders(<RegisterPage />, { route: '/register' })
 
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith('/login', { replace: true }),
-    )
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login', { replace: true }))
   })
 
   it('turns visitors away in an OIDC-only deployment', async () => {
@@ -162,9 +154,7 @@ describe('RegisterPage', () => {
 
     renderWithProviders(<RegisterPage />, { route: '/register' })
 
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith('/login', { replace: true }),
-    )
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login', { replace: true }))
   })
 
   it('still renders the form when the oidc config call fails', async () => {
@@ -172,9 +162,7 @@ describe('RegisterPage', () => {
 
     await renderRegister()
 
-    expect(
-      screen.getByRole('button', { name: t('auth.register') }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('auth.register') })).toBeInTheDocument()
     expect(navigate).not.toHaveBeenCalledWith('/login', { replace: true })
   })
 

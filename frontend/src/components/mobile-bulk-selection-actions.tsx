@@ -3,12 +3,7 @@ import { ArrowLeftRight, Check, MoreHorizontal, SlidersHorizontal, Trash2, Users
 import { useTranslation } from 'react-i18next'
 import { CategorySelect } from '@/components/category-select'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 export type MobileBulkSelectionActionsProps = {
   selectedCount: number
@@ -34,7 +29,10 @@ export type MobileBulkSelectionActionsProps = {
 }
 
 function parseBulkTags(value: string) {
-  return value.trim().split(/[\s,]+/).filter(Boolean)
+  return value
+    .trim()
+    .split(/[\s,]+/)
+    .filter(Boolean)
 }
 
 function BulkCategoryPicker(props: MobileBulkSelectionActionsProps) {
@@ -61,11 +59,23 @@ function BulkTagButtons(props: MobileBulkSelectionActionsProps) {
   const tags = parseBulkTags(props.tagInput)
   return (
     <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-      <Button size="sm" variant="ghost" disabled={!tags.length || props.addTagsPending} onClick={() => props.onAddTags(tags)}>
-        <Check size={15} />{t('transactions.bulkAddTags', 'Add tags')}
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={!tags.length || props.addTagsPending}
+        onClick={() => props.onAddTags(tags)}
+      >
+        <Check size={15} />
+        {t('transactions.bulkAddTags', 'Add tags')}
       </Button>
-      <Button size="sm" variant="ghost" disabled={!tags.length || props.removeTagsPending} onClick={() => props.onRemoveTags(tags)}>
-        <X size={15} />{t('transactions.bulkRemoveTags', 'Remove tags')}
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={!tags.length || props.removeTagsPending}
+        onClick={() => props.onRemoveTags(tags)}
+      >
+        <X size={15} />
+        {t('transactions.bulkRemoveTags', 'Remove tags')}
       </Button>
     </div>
   )
@@ -85,7 +95,13 @@ function BulkTagEditor(props: MobileBulkSelectionActionsProps) {
         onChange={(event) => props.onTagInputChange(event.target.value)}
         placeholder={t('transactions.addTagsPlaceholder', '#tag…')}
         className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
-        onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Enter') { event.preventDefault(); submitTags() } }}
+        onKeyDown={(event) => {
+          event.stopPropagation()
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            submitTags()
+          }
+        }}
       />
       <BulkTagButtons {...props} />
     </div>
@@ -97,14 +113,22 @@ function BulkActionItems(props: MobileBulkSelectionActionsProps) {
   return (
     <>
       <DropdownMenuItem disabled={props.groupPending} onSelect={props.onOpenGroup}>
-        <Users size={15} />{t('transactions.addToGroup')}
+        <Users size={15} />
+        {t('transactions.addToGroup')}
       </DropdownMenuItem>
       <DropdownMenuItem disabled={props.transferDisabled} title={props.transferTitle} onSelect={props.onOpenTransfer}>
-        <ArrowLeftRight size={15} />{t('transactions.linkAsTransfer')}
+        <ArrowLeftRight size={15} />
+        {t('transactions.linkAsTransfer')}
       </DropdownMenuItem>
-      {props.onCreateRule && <DropdownMenuItem onSelect={props.onCreateRule}><SlidersHorizontal size={15} />{t('transactions.createRule')}</DropdownMenuItem>}
+      {props.onCreateRule && (
+        <DropdownMenuItem onSelect={props.onCreateRule}>
+          <SlidersHorizontal size={15} />
+          {t('transactions.createRule')}
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem onSelect={props.onBulkDelete} className="text-destructive">
-        <Trash2 size={15} />{t('transactions.bulkDelete')}
+        <Trash2 size={15} />
+        {t('transactions.bulkDelete')}
       </DropdownMenuItem>
       <BulkTagEditor {...props} />
     </>
@@ -117,7 +141,8 @@ function BulkActionsMenu(props: MobileBulkSelectionActionsProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="h-9 shrink-0 px-2.5">
-          <MoreHorizontal size={16} />{t('rules.actions')}
+          <MoreHorizontal size={16} />
+          {t('rules.actions')}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" sideOffset={8} className="w-64">
@@ -135,10 +160,17 @@ export function MobileBulkSelectionActions(props: MobileBulkSelectionActionsProp
   const { t } = useTranslation()
   return (
     <div className="flex w-full items-center gap-1.5 sm:hidden">
-      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{props.selectedCount}</span>
+      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+        {props.selectedCount}
+      </span>
       <BulkCategoryPicker {...props} />
       <BulkActionsMenu {...props} />
-      <button type="button" onClick={props.onClear} className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground" aria-label={t('common.close', 'Close')}>
+      <button
+        type="button"
+        onClick={props.onClear}
+        className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+        aria-label={t('common.close', 'Close')}
+      >
         <X size={16} />
       </button>
     </div>

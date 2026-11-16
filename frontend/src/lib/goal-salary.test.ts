@@ -5,8 +5,13 @@ import { defaultSalary, salaryCandidates, salaryTarget } from './goal-salary'
 
 function recurring(overrides: Partial<RecurringTransaction>): RecurringTransaction {
   return {
-    id: 'r', description: 'Income', amount: 1000, currency: 'BRL', type: 'credit',
-    frequency: 'monthly', is_active: true,
+    id: 'r',
+    description: 'Income',
+    amount: 1000,
+    currency: 'BRL',
+    type: 'credit',
+    frequency: 'monthly',
+    is_active: true,
     ...overrides,
   } as RecurringTransaction
 }

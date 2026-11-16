@@ -12,8 +12,7 @@ export function AuthBrandPanel() {
     <div
       className="relative hidden overflow-hidden p-12 text-white lg:flex lg:flex-col lg:justify-between"
       style={{
-        background:
-          'linear-gradient(150deg, #3F37C9 0%, #5B30C9 48%, #6D28D9 100%)',
+        background: 'linear-gradient(150deg, #3F37C9 0%, #5B30C9 48%, #6D28D9 100%)',
       }}
     >
       {/* Soft animated aurora */}
@@ -37,8 +36,7 @@ export function AuthBrandPanel() {
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{
-          background:
-            'radial-gradient(115% 90% at 78% 8%, transparent 42%, rgba(20, 12, 60, 0.38) 100%)',
+          background: 'radial-gradient(115% 90% at 78% 8%, transparent 42%, rgba(20, 12, 60, 0.38) 100%)',
         }}
       />
 
@@ -52,12 +50,8 @@ export function AuthBrandPanel() {
 
       {/* Tagline */}
       <div className="relative max-w-md space-y-5">
-        <h2 className="text-[2.6rem] font-semibold leading-[1.08] tracking-tight">
-          {t('setup.brandTagline')}
-        </h2>
-        <p className="max-w-sm text-base leading-relaxed text-white/70">
-          {t('setup.brandSubtitle')}
-        </p>
+        <h2 className="text-[2.6rem] font-semibold leading-[1.08] tracking-tight">{t('setup.brandTagline')}</h2>
+        <p className="max-w-sm text-base leading-relaxed text-white/70">{t('setup.brandSubtitle')}</p>
         <div className="flex items-center gap-2.5 pt-1 text-xs font-medium text-white/55">
           <span>{t('setup.brandOpen')}</span>
           <span className="h-1 w-1 rounded-full bg-white/35" />

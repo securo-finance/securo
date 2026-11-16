@@ -64,12 +64,7 @@ it('refreshes date-sensitive data without invalidating unrelated settings', asyn
     ['timezones'],
     ['drill-down'],
   ]
-  const unrelated = [
-    ['admin', 'users'],
-    ['admin', 'number-format'],
-    ['categories'],
-    ['connections', 'providers'],
-  ]
+  const unrelated = [['admin', 'users'], ['admin', 'number-format'], ['categories'], ['connections', 'providers']]
   for (const key of [...affected, ...unrelated]) queryClient.setQueryData(key, [])
 
   const { user } = renderWithProviders(<TimezoneSettings />, { queryClient })

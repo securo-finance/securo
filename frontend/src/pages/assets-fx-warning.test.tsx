@@ -36,14 +36,41 @@ vi.mock('@/lib/page-chat-context', () => ({
 
 function asset(currency: string): Asset {
   return {
-    id: 'asset-1', user_id: 'user-1', name: 'Holding', type: 'other', currency,
-    units: null, valuation_method: 'manual', purchase_date: null, purchase_price: null,
-    sell_date: null, sell_price: null, growth_type: null, growth_rate: null,
-    growth_frequency: null, growth_start_date: null, is_archived: false, position: 0,
-    current_value: 100, current_value_primary: null, gain_loss: null, gain_loss_primary: null,
-    value_count: 0, source: 'manual', connection_id: null, isin: null, maturity_date: null,
-    group_id: null, ticker: null, ticker_exchange: null, last_price: null, last_price_at: null,
-    logo_url: null, average_price: null, total_invested: null, realized_gain: null,
+    id: 'asset-1',
+    user_id: 'user-1',
+    name: 'Holding',
+    type: 'other',
+    currency,
+    units: null,
+    valuation_method: 'manual',
+    purchase_date: null,
+    purchase_price: null,
+    sell_date: null,
+    sell_price: null,
+    growth_type: null,
+    growth_rate: null,
+    growth_frequency: null,
+    growth_start_date: null,
+    is_archived: false,
+    position: 0,
+    current_value: 100,
+    current_value_primary: null,
+    gain_loss: null,
+    gain_loss_primary: null,
+    value_count: 0,
+    source: 'manual',
+    connection_id: null,
+    isin: null,
+    maturity_date: null,
+    group_id: null,
+    ticker: null,
+    ticker_exchange: null,
+    last_price: null,
+    last_price_at: null,
+    logo_url: null,
+    average_price: null,
+    total_invested: null,
+    realized_gain: null,
     transaction_count: 0,
   }
 }
@@ -62,11 +89,15 @@ describe('Assets exchange rate setup warning', () => {
   it('links an admin to exchange rate settings when a valued asset needs conversion', async () => {
     renderWithProviders(<AssetsPage />)
 
-    const warning = (await screen.findByText(t('assets.fxRateMissing', { currencies: 'EUR' }))).closest('[role="status"]')!
-    expect(await within(warning as HTMLElement).findByRole('link', { name: t('assets.exchangeRateSetupLink') }))
-      .toHaveAttribute('href', '/admin#provider-exchangeRates')
-    expect(screen.getByRole('button', { name: t('assets.exchangeRateSetupAction', { from: 'EUR', to: 'USD' }) }))
-      .toBeVisible()
+    const warning = (await screen.findByText(t('assets.fxRateMissing', { currencies: 'EUR' }))).closest(
+      '[role="status"]',
+    )!
+    expect(
+      await within(warning as HTMLElement).findByRole('link', { name: t('assets.exchangeRateSetupLink') }),
+    ).toHaveAttribute('href', '/admin#provider-exchangeRates')
+    expect(
+      screen.getByRole('button', { name: t('assets.exchangeRateSetupAction', { from: 'EUR', to: 'USD' }) }),
+    ).toBeVisible()
     expect(api.fxRates.status).toHaveBeenCalledTimes(1)
   })
 
@@ -85,7 +116,9 @@ describe('Assets exchange rate setup warning', () => {
 
     await screen.findByText('Holding')
     expect(screen.queryByText(t('assets.exchangeRateSetupWarning'))).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: t('assets.exchangeRateSetupAction', { from: 'EUR', to: 'USD' }) })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: t('assets.exchangeRateSetupAction', { from: 'EUR', to: 'USD' }) }),
+    ).not.toBeInTheDocument()
     expect(api.fxRates.status).not.toHaveBeenCalled()
   })
 
@@ -93,7 +126,9 @@ describe('Assets exchange rate setup warning', () => {
     auth.isSuperuser = false
     renderWithProviders(<AssetsPage />)
 
-    const warning = (await screen.findByText(t('assets.fxRateMissing', { currencies: 'EUR' }))).closest('[role="status"]')!
+    const warning = (await screen.findByText(t('assets.fxRateMissing', { currencies: 'EUR' }))).closest(
+      '[role="status"]',
+    )!
     expect(await within(warning as HTMLElement).findByText(t('assets.exchangeRateSetupContactAdmin'))).toBeVisible()
     expect(within(warning as HTMLElement).queryByRole('link')).not.toBeInTheDocument()
     await waitFor(() => expect(api.fxRates.status).toHaveBeenCalledTimes(1))
@@ -113,8 +148,9 @@ describe('Assets exchange rate setup warning', () => {
     renderWithProviders(<AssetsPage />)
 
     const warning = (await screen.findByText(t('assets.exchangeRateSetupWarning'))).closest('[role="status"]')!
-    expect(within(warning as HTMLElement).getByRole('link', { name: t('assets.exchangeRateSetupLink') }))
-      .toHaveAttribute('href', '/admin#provider-exchangeRates')
+    expect(
+      within(warning as HTMLElement).getByRole('link', { name: t('assets.exchangeRateSetupLink') }),
+    ).toHaveAttribute('href', '/admin#provider-exchangeRates')
     expect(screen.queryByText(t('assets.fxRateMissing', { currencies: 'EUR' }))).not.toBeInTheDocument()
   })
 })

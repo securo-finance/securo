@@ -47,9 +47,9 @@ vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }))
 
 /** Build the axios-shaped rejection the page branches on. */
 function httpError(status?: number): AxiosError {
-  return (status === undefined
-    ? { isAxiosError: true, response: undefined }
-    : { isAxiosError: true, response: { status } }) as AxiosError
+  return (
+    status === undefined ? { isAxiosError: true, response: undefined } : { isAxiosError: true, response: { status } }
+  ) as AxiosError
 }
 
 beforeEach(() => {
@@ -80,9 +80,7 @@ describe('LoginPage', () => {
 
     expect(screen.getByLabelText(t('auth.email'))).toBeInTheDocument()
     expect(screen.getByLabelText(t('auth.password'))).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: t('auth.login') }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('auth.login') })).toBeInTheDocument()
   })
 
   it('signs in and lands on the dashboard', async () => {
@@ -93,12 +91,7 @@ describe('LoginPage', () => {
     await user.type(screen.getByLabelText(t('auth.password')), 'secret')
     await user.click(screen.getByRole('button', { name: t('auth.login') }))
 
-    await waitFor(() =>
-      expect(authContext.login).toHaveBeenCalledWith(
-        'tassio@example.com',
-        'secret',
-      ),
-    )
+    await waitFor(() => expect(authContext.login).toHaveBeenCalledWith('tassio@example.com', 'secret'))
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/'))
   })
 
@@ -126,9 +119,7 @@ describe('LoginPage', () => {
     await user.type(screen.getByLabelText(t('auth.password')), 'wrong')
     await user.click(screen.getByRole('button', { name: t('auth.login') }))
 
-    expect(
-      await screen.findByText(t('auth.invalidCredentials')),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(t('auth.invalidCredentials'))).toBeInTheDocument()
   })
 
   it('distinguishes an outage from a wrong password', async () => {
@@ -142,9 +133,7 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: t('auth.login') }))
 
     expect(await screen.findByText(t('auth.serverError'))).toBeInTheDocument()
-    expect(
-      screen.queryByText(t('auth.invalidCredentials')),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText(t('auth.invalidCredentials'))).not.toBeInTheDocument()
   })
 
   it('reports a 5xx as an outage too', async () => {
@@ -174,9 +163,7 @@ describe('LoginPage', () => {
 
     renderWithProviders(<LoginPage />, { route: '/login' })
 
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith('/', { replace: true }),
-    )
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', { replace: true }))
   })
 
   it('redirects a fresh install to the setup wizard', async () => {
@@ -186,17 +173,13 @@ describe('LoginPage', () => {
 
     renderWithProviders(<LoginPage />, { route: '/login' })
 
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith('/setup', { replace: true }),
-    )
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/setup', { replace: true }))
   })
 
   it('offers registration when the server allows it', async () => {
     await renderLogin()
 
-    expect(
-      await screen.findByRole('link', { name: t('auth.register') }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: t('auth.register') })).toBeInTheDocument()
   })
 
   it('does not spend the challenge when the conditional ceremony is aborted', async () => {
@@ -216,9 +199,7 @@ describe('LoginPage', () => {
     )
 
     const { unmount } = renderWithProviders(<LoginPage />, { route: '/login' })
-    await waitFor(() =>
-      expect(webauthn.startConditionalPasskeyAuthentication).toHaveBeenCalled(),
-    )
+    await waitFor(() => expect(webauthn.startConditionalPasskeyAuthentication).toHaveBeenCalled())
 
     // Leaving the page aborts the ceremony, but the pending browser promise
     // can still settle afterwards.
@@ -238,8 +219,6 @@ describe('LoginPage', () => {
     await renderLogin()
 
     expect(screen.getByLabelText(t('auth.email'))).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: t('auth.login') }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('auth.login') })).toBeInTheDocument()
   })
 })

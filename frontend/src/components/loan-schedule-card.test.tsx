@@ -166,4 +166,3 @@ describe('LoanScheduleCard', () => {
     expect(await screen.findByRole('button', { name: t('loans.adjustAction') })).toBeInTheDocument()
   })
 })
-

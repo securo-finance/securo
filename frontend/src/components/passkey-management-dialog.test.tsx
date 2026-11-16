@@ -36,37 +36,35 @@ const currentPasskey: Passkey = {
 
 afterEach(() => vi.restoreAllMocks())
 
-it.each(['success', 'failure'])(
-  'ignores a previous dialog session list %s after reopening',
-  async (outcome) => {
-    let resolvePrevious!: (passkeys: Passkey[]) => void
-    let rejectPrevious!: (error: Error) => void
-    const previousRequest = new Promise<Passkey[]>((resolve, reject) => {
-      resolvePrevious = resolve
-      rejectPrevious = reject
-    })
-    const listPasskeys = vi.spyOn(auth, 'listPasskeys')
-      .mockReturnValueOnce(previousRequest)
-      .mockResolvedValueOnce([currentPasskey])
-    const { user } = renderWithProviders(<DialogHarness />)
+it.each(['success', 'failure'])('ignores a previous dialog session list %s after reopening', async (outcome) => {
+  let resolvePrevious!: (passkeys: Passkey[]) => void
+  let rejectPrevious!: (error: Error) => void
+  const previousRequest = new Promise<Passkey[]>((resolve, reject) => {
+    resolvePrevious = resolve
+    rejectPrevious = reject
+  })
+  const listPasskeys = vi
+    .spyOn(auth, 'listPasskeys')
+    .mockReturnValueOnce(previousRequest)
+    .mockResolvedValueOnce([currentPasskey])
+  const { user } = renderWithProviders(<DialogHarness />)
 
-    await user.click(screen.getByRole('button', { name: 'Manage passkeys' }))
-    expect(screen.getByText(t('common.loading'))).toBeInTheDocument()
-    await user.click(screen.getAllByRole('button', { name: t('common.close') })[0])
-    await user.click(screen.getByRole('button', { name: 'Manage passkeys' }))
-    expect(await screen.findByText(currentPasskey.name)).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Manage passkeys' }))
+  expect(screen.getByText(t('common.loading'))).toBeInTheDocument()
+  await user.click(screen.getAllByRole('button', { name: t('common.close') })[0])
+  await user.click(screen.getByRole('button', { name: 'Manage passkeys' }))
+  expect(await screen.findByText(currentPasskey.name)).toBeInTheDocument()
 
-    await act(async () => {
-      if (outcome === 'success') resolvePrevious([])
-      else rejectPrevious(new Error('Previous request failed'))
-    })
+  await act(async () => {
+    if (outcome === 'success') resolvePrevious([])
+    else rejectPrevious(new Error('Previous request failed'))
+  })
 
-    expect(screen.getByText(currentPasskey.name)).toBeInTheDocument()
-    expect(screen.queryByText(t('auth.passkeyLoadError'))).not.toBeInTheDocument()
-    expect(screen.queryByText(t('auth.noPasskeys'))).not.toBeInTheDocument()
-    expect(listPasskeys).toHaveBeenCalledTimes(2)
-  },
-)
+  expect(screen.getByText(currentPasskey.name)).toBeInTheDocument()
+  expect(screen.queryByText(t('auth.passkeyLoadError'))).not.toBeInTheDocument()
+  expect(screen.queryByText(t('auth.noPasskeys'))).not.toBeInTheDocument()
+  expect(listPasskeys).toHaveBeenCalledTimes(2)
+})
 
 it('retries a failed list request in the current dialog session', async () => {
   vi.spyOn(auth, 'listPasskeys')

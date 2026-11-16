@@ -2,14 +2,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { countryFlag } from '@/lib/country-flag'
 import { countryName } from '@/lib/country-name'
@@ -67,10 +60,7 @@ export function TaxIdKindPicker({
   const [open, setOpen] = useState(false)
   const locale = i18n.language
 
-  const byKind = useMemo(
-    () => new Map(kinds.map((k) => [k.kind, k])),
-    [kinds],
-  )
+  const byKind = useMemo(() => new Map(kinds.map((k) => [k.kind, k])), [kinds])
   const label = (kind: string) => {
     const option = byKind.get(kind)
     return option ? t(option.label_key, kind.toUpperCase()) : kind.toUpperCase()
@@ -181,9 +171,7 @@ export function TaxIdKindPicker({
                     }}
                   >
                     <span className="flex-1">{label(kind)}</span>
-                    {isSelected(kind, jurisdiction.code) && (
-                      <Check size={13} className="text-primary" />
-                    )}
+                    {isSelected(kind, jurisdiction.code) && <Check size={13} className="text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -192,10 +180,7 @@ export function TaxIdKindPicker({
                 describes, rather than repeated under every country. */}
             {/* Same left padding as the country groups, so the headings line up
                 whether or not they carry a flag. */}
-            <CommandGroup
-              className={groupClass}
-              heading={groupHeading(t('fiscal.anyCountry', 'Anywhere else'))}
-            >
+            <CommandGroup className={groupClass} heading={groupHeading(t('fiscal.anyCountry', 'Anywhere else'))}>
               <CommandItem
                 value="other"
                 keywords={[label('other')]}

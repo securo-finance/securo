@@ -136,10 +136,7 @@ function AgentChartImpl({ spec }: Props) {
     )
   }
 
-  const series: SeriesSpec[] =
-    spec.series && spec.series.length > 0
-      ? spec.series
-      : [{ key: 'y' }]
+  const series: SeriesSpec[] = spec.series && spec.series.length > 0 ? spec.series : [{ key: 'y' }]
 
   const seriesWithColor = series.map((s, i) => ({ ...s, color: s.color || PALETTE[i % PALETTE.length] }))
 
@@ -162,12 +159,7 @@ function AgentChartImpl({ spec }: Props) {
 
 type ResolvedSeries = { key: string; name?: string; color: string }
 
-function renderChart(
-  type: ChartType,
-  data: Record<string, unknown>[],
-  series: ResolvedSeries[],
-  currency?: string,
-) {
+function renderChart(type: ChartType, data: Record<string, unknown>[], series: ResolvedSeries[], currency?: string) {
   if (type === 'pie') {
     // Pie expects { name, value } shape. Map a friendly fallback.
     const items = data.map((d, i) => ({
@@ -190,10 +182,7 @@ function renderChart(
             <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
           ))}
         </Pie>
-        <Tooltip
-          contentStyle={tooltipStyle}
-          formatter={(v) => formatY(v as number | string | undefined, currency)}
-        />
+        <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatY(v as number | string | undefined, currency)} />
         <Legend wrapperStyle={{ fontSize: 11 }} />
       </PieChart>
     )
@@ -248,15 +237,7 @@ function renderChart(
           )
         }
         // line
-        return (
-          <Line
-            {...common}
-            type="monotone"
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 3 }}
-          />
-        )
+        return <Line {...common} type="monotone" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
       })}
     </ChartCmp>
   )
@@ -268,7 +249,4 @@ function renderChart(
  *  We compare specs by serialized string (cheap; specs are tiny JSON
  *  blobs the LLM emitted once) so a re-render with the same spec is a
  *  no-op. */
-export const AgentChart = memo(
-  AgentChartImpl,
-  (prev, next) => JSON.stringify(prev.spec) === JSON.stringify(next.spec),
-)
+export const AgentChart = memo(AgentChartImpl, (prev, next) => JSON.stringify(prev.spec) === JSON.stringify(next.spec))

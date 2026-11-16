@@ -5,8 +5,7 @@ export type ParsedSemver = {
   prerelease: string[]
 }
 
-const SEMVER_RE =
-  /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/
+const SEMVER_RE = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/
 
 export function parseSemver(value: string | null | undefined): ParsedSemver | null {
   if (!value) return null
@@ -54,10 +53,7 @@ export function compareSemver(a: ParsedSemver, b: ParsedSemver): number {
   return 0
 }
 
-export function isUpdateAvailable(
-  current: string | null | undefined,
-  latest: string | null | undefined,
-): boolean {
+export function isUpdateAvailable(current: string | null | undefined, latest: string | null | undefined): boolean {
   const c = parseSemver(current)
   const l = parseSemver(latest)
   if (!c || !l) return false

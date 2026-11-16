@@ -1,12 +1,13 @@
 [tools]
 node = "22"
+bun = "1.4.4"
 
 [tasks.install]
 alias = "i"
-run = "npm install"
+run = "bun install"
 
 [tasks.lint]
-run = "npm run lint"
+run = "bun run lint"
 
 [tasks.build]
-run = "npm run build"
+run = "bun run build"

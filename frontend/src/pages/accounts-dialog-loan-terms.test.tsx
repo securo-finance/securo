@@ -55,7 +55,14 @@ it('keeps the contract terms open while the amount is cleared', () => {
 })
 
 it('starts with the contract terms closed for a loan without them', () => {
-  const plain = { ...loan, loan_kind: null, loan_original_amount: null, loan_interest_rate: null, loan_term_months: null, loan_first_payment_date: null } as Account
+  const plain = {
+    ...loan,
+    loan_kind: null,
+    loan_original_amount: null,
+    loan_interest_rate: null,
+    loan_term_months: null,
+    loan_first_payment_date: null,
+  } as Account
   renderWithProviders(<AccountDialog open onClose={vi.fn()} account={plain} onSave={vi.fn()} loading={false} />)
 
   expect(termsSection().open).toBe(false)

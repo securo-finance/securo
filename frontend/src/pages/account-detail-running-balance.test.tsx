@@ -53,30 +53,65 @@ vi.mock('@/contexts/workspace-context', () => ({
 }))
 
 const checking = {
-  id: 'acc-1', name: 'Checking', type: 'checking', currency: 'BRL',
-  balance: 9000, current_balance: 9000, is_active: true,
+  id: 'acc-1',
+  name: 'Checking',
+  type: 'checking',
+  currency: 'BRL',
+  balance: 9000,
+  current_balance: 9000,
+  is_active: true,
 }
 
 const card = {
-  id: 'acc-1', name: 'Card', type: 'credit_card', currency: 'BRL',
-  balance: -501, is_active: true, credit_limit: 5000,
-  statement_close_day: 30, payment_due_day: 10,
+  id: 'acc-1',
+  name: 'Card',
+  type: 'credit_card',
+  currency: 'BRL',
+  balance: -501,
+  is_active: true,
+  credit_limit: 5000,
+  statement_close_day: 30,
+  payment_due_day: 10,
 }
 
 /** A R$1 debit. Its amount alone can never add up to the balances below,
  *  so any balance on screen that matches them came from the server. */
 function tx(index: number, date: string, runningBalance: number | null): Transaction {
   return {
-    id: `tx-${index}`, user_id: 'user-1', account_id: 'acc-1', category_id: null,
-    category: null, external_id: null, description: `Payment ${index}`,
-    original_description: null, amount: 1, currency: 'BRL', date, type: 'debit',
-    source: 'manual', status: 'posted', payee: null, payee_id: null,
-    payee_name: null, notes: null, transfer_pair_id: null, amount_primary: null,
-    fx_rate_used: null, fx_fallback: false, installment_number: null,
-    total_installments: null, installment_total_amount: null,
-    installment_purchase_date: null, installment_series_id: null, bill_id: null,
-    effective_bill_date: null, reporting_date_override: null, splits: [], is_ignored: false,
-    running_balance: runningBalance, running_balance_primary: null,
+    id: `tx-${index}`,
+    user_id: 'user-1',
+    account_id: 'acc-1',
+    category_id: null,
+    category: null,
+    external_id: null,
+    description: `Payment ${index}`,
+    original_description: null,
+    amount: 1,
+    currency: 'BRL',
+    date,
+    type: 'debit',
+    source: 'manual',
+    status: 'posted',
+    payee: null,
+    payee_id: null,
+    payee_name: null,
+    notes: null,
+    transfer_pair_id: null,
+    amount_primary: null,
+    fx_rate_used: null,
+    fx_fallback: false,
+    installment_number: null,
+    total_installments: null,
+    installment_total_amount: null,
+    installment_purchase_date: null,
+    installment_series_id: null,
+    bill_id: null,
+    effective_bill_date: null,
+    reporting_date_override: null,
+    splits: [],
+    is_ignored: false,
+    running_balance: runningBalance,
+    running_balance_primary: null,
   }
 }
 
@@ -110,8 +145,12 @@ beforeEach(() => {
   api.accounts.list.mockResolvedValue([])
   api.accounts.bills.mockResolvedValue([])
   api.accounts.summary.mockResolvedValue({
-    opening_balance: 0, current_balance: 9000, monthly_income: 0, monthly_expenses: 0,
-    projected_income: 0, projected_expenses: 0,
+    opening_balance: 0,
+    current_balance: 9000,
+    monthly_income: 0,
+    monthly_expenses: 0,
+    projected_income: 0,
+    projected_expenses: 0,
   })
   api.categories.list.mockResolvedValue([])
   api.categoryGroups.list.mockResolvedValue([])
@@ -130,12 +169,23 @@ describe('a non-credit-card account with more rows than one page', () => {
         balance_primary: null,
       })),
     )
-    api.dashboard.projectedTransactions.mockResolvedValue([{
-      recurring_id: 'rec-1', account_id: 'acc-1', description: 'Rent', amount: 500,
-      amount_primary: null, currency: 'BRL', type: 'debit', date: '2026-09-28',
-      category_id: null, category_name: null, category_icon: null, category_color: null,
-      category_treat_as_transfer: false,
-    }])
+    api.dashboard.projectedTransactions.mockResolvedValue([
+      {
+        recurring_id: 'rec-1',
+        account_id: 'acc-1',
+        description: 'Rent',
+        amount: 500,
+        amount_primary: null,
+        currency: 'BRL',
+        type: 'debit',
+        date: '2026-09-28',
+        category_id: null,
+        category_name: null,
+        category_icon: null,
+        category_color: null,
+        category_treat_as_transfer: false,
+      },
+    ])
   })
 
   it('shows the balance the server computed over the whole period', async () => {
@@ -147,9 +197,14 @@ describe('a non-credit-card account with more rows than one page', () => {
     // The projection sits on top of the newest row it follows.
     expect(balanceCell('Rent')).toHaveTextContent('R$8,500.00')
     expect(screen.queryByText('Payment 100')).not.toBeInTheDocument()
-    expect(api.transactions.list).toHaveBeenCalledWith(expect.objectContaining({
-      page: 1, limit: 100, include_running_balance: true, include_opening_balance: true,
-    }))
+    expect(api.transactions.list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: 1,
+        limit: 100,
+        include_running_balance: true,
+        include_opening_balance: true,
+      }),
+    )
   })
 
   it('includes recurring commitments in the period-end Projected Balance card', async () => {
@@ -162,20 +217,22 @@ describe('a non-credit-card account with more rows than one page', () => {
 
   it.each([
     ['outside the reporting range', []],
-    ['ordered by reporting date', [
-      { ...tx(0, '2026-08-31', 9100), reporting_date_override: '2026-09-30' },
-      tx(1, '2026-09-15', 8900),
-    ]],
+    [
+      'ordered by reporting date',
+      [{ ...tx(0, '2026-08-31', 9100), reporting_date_override: '2026-09-30' }, tx(1, '2026-09-15', 8900)],
+    ],
   ])('keeps the projected balance on the bank ledger when rows are %s', async (_name, rows) => {
     api.accounts.summary.mockResolvedValue({
-      opening_balance: 9000, current_balance: 8900, monthly_income: 0, monthly_expenses: 0,
-      projected_income: 0, projected_expenses: 0,
+      opening_balance: 9000,
+      current_balance: 8900,
+      monthly_income: 0,
+      monthly_expenses: 0,
+      projected_income: 0,
+      projected_expenses: 0,
     })
     api.transactions.list.mockImplementation(async (args) => listPage(rows, args))
     api.dashboard.projectedTransactions.mockResolvedValue([])
-    api.accounts.runningBalance.mockResolvedValue([
-      { date: '2026-09-30', balance: 8900, balance_primary: null },
-    ])
+    api.accounts.runningBalance.mockResolvedValue([{ date: '2026-09-30', balance: 8900, balance_primary: null }])
 
     await renderPage()
 

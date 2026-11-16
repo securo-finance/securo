@@ -35,12 +35,21 @@ vi.mock('@/contexts/workspace-context', () => ({
 }))
 
 const account = {
-  id: 'acc-eur', name: 'EUR Wallet', type: 'checking', currency: 'EUR',
-  balance: 100, current_balance: 100, is_active: true,
+  id: 'acc-eur',
+  name: 'EUR Wallet',
+  type: 'checking',
+  currency: 'EUR',
+  balance: 100,
+  current_balance: 100,
+  is_active: true,
 }
 const nativeSummary = {
-  opening_balance: 100, current_balance: 100, monthly_income: 0, monthly_expenses: 0,
-  projected_income: 0, projected_expenses: 0,
+  opening_balance: 100,
+  current_balance: 100,
+  monthly_income: 0,
+  monthly_expenses: 0,
+  projected_income: 0,
+  projected_expenses: 0,
 }
 
 beforeEach(async () => {
@@ -56,7 +65,8 @@ beforeEach(async () => {
 
 function renderPage() {
   renderWithProviders(<AccountDetailPage />, {
-    route: `/accounts/${account.id}`, path: '/accounts/:id',
+    route: `/accounts/${account.id}`,
+    path: '/accounts/:id',
   })
 }
 
@@ -73,8 +83,12 @@ describe('account-detail FX fallback (#1165)', () => {
 
   it('allows the primary-currency toggle when the summary is converted', async () => {
     api.accounts.summary.mockResolvedValue({
-      ...nativeSummary, current_balance_primary: 600, opening_balance_primary: 600,
-      monthly_income_primary: 0, monthly_expenses_primary: 0, fx_fallback: false,
+      ...nativeSummary,
+      current_balance_primary: 600,
+      opening_balance_primary: 600,
+      monthly_income_primary: 0,
+      monthly_expenses_primary: 0,
+      fx_fallback: false,
     })
     renderPage()
 

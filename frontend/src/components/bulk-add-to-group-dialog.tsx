@@ -6,13 +6,7 @@ import { toast } from 'sonner'
 import { groups as groupsApi, type GroupCreatePayload } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { GroupKind } from '@/types'
@@ -46,7 +40,12 @@ export function BulkAddToGroupDialog({
   isPending: boolean
 }) {
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose()
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         {/* DialogContent only renders while open, so the form below
             mounts fresh on every open and unmounts on close — no
@@ -106,10 +105,7 @@ function BulkAddToGroupForm({
     queryFn: () => groupsApi.list(false),
   })
 
-  const ownedGroups = useMemo(
-    () => (groups ?? []).filter((g) => g.is_owner && !g.is_archived),
-    [groups],
-  )
+  const ownedGroups = useMemo(() => (groups ?? []).filter((g) => g.is_owner && !g.is_archived), [groups])
 
   const createGroupMutation = useMutation({
     mutationFn: (payload: GroupCreatePayload) => groupsApi.create(payload),
@@ -257,9 +253,7 @@ function BulkAddToGroupForm({
         </div>
       ) : ownedGroups.length === 0 ? (
         <div className="space-y-2 py-4">
-          <p className="text-sm text-muted-foreground font-semibold">
-            {t('splitGroups.splitNoGroups')}
-          </p>
+          <p className="text-sm text-muted-foreground font-semibold">{t('splitGroups.splitNoGroups')}</p>
           <p className="text-sm text-muted-foreground">
             {t('splitGroups.splitNoGroupsLinkPrefix')}
             <button
@@ -302,7 +296,9 @@ function BulkAddToGroupForm({
                 onChange={(e) => setExplicitGroupId(e.target.value)}
               >
                 {ownedGroups.map((g) => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -319,9 +315,7 @@ function BulkAddToGroupForm({
             </div>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            {t('transactions.bulkAddToGroupExactHint')}
-          </p>
+          <p className="text-xs text-muted-foreground">{t('transactions.bulkAddToGroupExactHint')}</p>
 
           <div className="flex items-center justify-between border-t border-border pt-3">
             <Label className="text-xs">{t('splitGroups.members')}</Label>
@@ -343,9 +337,7 @@ function BulkAddToGroupForm({
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
               {group.members.length === 0 ? (
                 <div className="py-4 text-center">
-                  <p className="text-sm text-muted-foreground mb-3">
-                    {t('splitGroups.splitNoMembers')}
-                  </p>
+                  <p className="text-sm text-muted-foreground mb-3">{t('splitGroups.splitNoMembers')}</p>
                   <Button
                     type="button"
                     variant="outline"
@@ -369,18 +361,12 @@ function BulkAddToGroupForm({
                       <input
                         type="checkbox"
                         checked={row.selected}
-                        onChange={(e) =>
-                          updateRow(m.id, { selected: e.target.checked })
-                        }
+                        onChange={(e) => updateRow(m.id, { selected: e.target.checked })}
                         className="h-4 w-4 rounded border-border accent-primary"
                       />
                       <span className="text-sm flex-1 min-w-0 truncate">
                         {m.name}
-                        {m.is_self && (
-                          <span className="ml-1.5 text-xs text-primary">
-                            ({t('splitGroups.you')})
-                          </span>
-                        )}
+                        {m.is_self && <span className="ml-1.5 text-xs text-primary">({t('splitGroups.you')})</span>}
                       </span>
                       {shareType === 'percent' && row.selected && (
                         <div className="flex items-center gap-1">
@@ -403,22 +389,14 @@ function BulkAddToGroupForm({
 
           {shareType === 'percent' && percentSum !== null && selectedRows.length > 0 && (
             <div className="text-xs">
-              <span
-                className={
-                  Math.abs(percentSum - 100) < 0.005
-                    ? 'text-emerald-600'
-                    : 'text-amber-600'
-                }
-              >
+              <span className={Math.abs(percentSum - 100) < 0.005 ? 'text-emerald-600' : 'text-amber-600'}>
                 {t('splitGroups.percentSum', { total: percentSum.toFixed(2) })}
               </span>
             </div>
           )}
 
           {shareType === 'equal' && selectedRows.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {t('splitGroups.equalHint')}
-            </p>
+            <p className="text-xs text-muted-foreground">{t('splitGroups.equalHint')}</p>
           )}
         </div>
       )}
@@ -429,10 +407,7 @@ function BulkAddToGroupForm({
             <Button variant="ghost" onClick={() => setIsCreatingGroup(false)} disabled={createGroupMutation.isPending}>
               {t('common.cancel', 'Cancel')}
             </Button>
-            <Button
-              onClick={handleCreateGroup}
-              disabled={!newGroupName.trim() || createGroupMutation.isPending}
-            >
+            <Button onClick={handleCreateGroup} disabled={!newGroupName.trim() || createGroupMutation.isPending}>
               {createGroupMutation.isPending ? t('common.saving') : t('splitGroups.add')}
             </Button>
           </>
@@ -441,10 +416,7 @@ function BulkAddToGroupForm({
             <Button variant="ghost" onClick={() => setIsAddingMember(false)} disabled={createMemberMutation.isPending}>
               {t('common.cancel', 'Cancel')}
             </Button>
-            <Button
-              onClick={handleCreateMember}
-              disabled={!newMemberName.trim() || createMemberMutation.isPending}
-            >
+            <Button onClick={handleCreateMember} disabled={!newMemberName.trim() || createMemberMutation.isPending}>
               {createMemberMutation.isPending ? t('common.saving') : t('common.save')}
             </Button>
           </>
@@ -453,10 +425,7 @@ function BulkAddToGroupForm({
             <Button variant="ghost" onClick={onCancel} disabled={isPending}>
               {t('common.cancel', 'Cancel')}
             </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={!isValid || isPending || ownedGroups.length === 0}
-            >
+            <Button onClick={handleSubmit} disabled={!isValid || isPending || ownedGroups.length === 0}>
               {t('transactions.bulkAddToGroupSubmit')}
             </Button>
           </>

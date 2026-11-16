@@ -17,13 +17,7 @@ import {
   UserPlus,
   Wallet,
 } from 'lucide-react'
-import {
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-} from 'recharts'
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
 
 import {
   groups as groupsApi,
@@ -40,13 +34,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { CategoryIcon } from '@/components/category-icon'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { PageHeader } from '@/components/page-header'
@@ -54,11 +42,7 @@ import type { GroupMember, GroupSettlement, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      {children}
-    </div>
-  )
+  return <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">{children}</div>
 }
 
 function SectionHeader({
@@ -74,9 +58,7 @@ function SectionHeader({
     <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
       <div className="min-w-0">
         <p className="text-sm font-semibold text-foreground">{title}</p>
-        {description && (
-          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-        )}
+        {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
       </div>
       {action}
     </div>
@@ -102,12 +84,7 @@ function KpiCard({
   breakdown?: KpiBreakdownItem[]
 }) {
   const [open, setOpen] = useState(false)
-  const toneClass =
-    tone === 'positive'
-      ? 'text-emerald-600'
-      : tone === 'negative'
-        ? 'text-rose-500'
-        : 'text-foreground'
+  const toneClass = tone === 'positive' ? 'text-emerald-600' : tone === 'negative' ? 'text-rose-500' : 'text-foreground'
   const hasBreakdown = !!breakdown && breakdown.length > 0
   return (
     <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
@@ -119,31 +96,20 @@ function KpiCard({
         aria-expanded={open}
       >
         <div className="flex items-center justify-between">
-          <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            {label}
-          </p>
+          <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
           <div className="flex items-center gap-1 text-muted-foreground">
-            {hasBreakdown && (
-              <ChevronDown
-                size={14}
-                className={`transition-transform ${open ? 'rotate-180' : ''}`}
-              />
-            )}
+            {hasBreakdown && <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />}
             <Icon size={14} />
           </div>
         </div>
-        <p className={`text-base sm:text-2xl font-bold tabular-nums mt-1 ${toneClass}`}>
-          {value}
-        </p>
+        <p className={`text-base sm:text-2xl font-bold tabular-nums mt-1 ${toneClass}`}>{value}</p>
       </button>
       {open && hasBreakdown && (
         <ul className="mt-2 pt-2 border-t border-border space-y-1 text-xs text-muted-foreground">
           {breakdown!.map((b, i) => (
             <li key={i} className="flex justify-between gap-2">
               <span className="truncate">{b.name}</span>
-              <span className="tabular-nums whitespace-nowrap text-foreground">
-                {b.amountText}
-              </span>
+              <span className="tabular-nums whitespace-nowrap text-foreground">{b.amountText}</span>
             </li>
           ))}
         </ul>
@@ -174,10 +140,7 @@ export default function GroupDetailPage() {
   // The member that represents the current viewer. The server sets
   // is_self per request: the member linked to the viewer, or the owner's
   // own unlinked member when the viewer is the owner.
-  const viewerMember = useMemo(
-    () => group?.members.find((m) => m.is_self),
-    [group?.members],
-  )
+  const viewerMember = useMemo(() => group?.members.find((m) => m.is_self), [group?.members])
   // The owner's member, when the owner is in the group under their account.
   const ownerUserId = group?.user_id
   const ownerMember = useMemo(
@@ -283,8 +246,7 @@ export default function GroupDetailPage() {
     // Unlinked members can still represent the viewer if explicitly the
     // first member of their own group (legacy data) — we preserve that
     // flag during edits via the existing record.
-    const linkedToViewer =
-      memberLinkedUserId !== null && memberLinkedUserId === user?.id
+    const linkedToViewer = memberLinkedUserId !== null && memberLinkedUserId === user?.id
     const is_self = linkedToViewer || (!memberLinkedUserId && (editingMember?.is_self ?? false))
     memberMutation.mutate({
       name: memberName.trim(),
@@ -292,7 +254,6 @@ export default function GroupDetailPage() {
       is_self,
     })
   }
-
 
   // ── Settle-up ────────────────────────────────────────────────
   const [settleOpen, setSettleOpen] = useState(false)
@@ -345,8 +306,7 @@ export default function GroupDetailPage() {
   })
 
   const settlementMutation = useMutation({
-    mutationFn: (payload: GroupSettlementPayload) =>
-      groupsApi.settlements.create(groupId, payload),
+    mutationFn: (payload: GroupSettlementPayload) => groupsApi.settlements.create(groupId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groups', groupId, 'settlements'] })
       queryClient.invalidateQueries({ queryKey: ['groups', groupId, 'balances'] })
@@ -363,20 +323,14 @@ export default function GroupDetailPage() {
   })
 
   const deleteSettlementMutation = useMutation({
-    mutationFn: (settlementId: string) =>
-      groupsApi.settlements.delete(groupId, settlementId),
+    mutationFn: (settlementId: string) => groupsApi.settlements.delete(groupId, settlementId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groups', groupId, 'settlements'] })
       queryClient.invalidateQueries({ queryKey: ['groups', groupId, 'balances'] })
     },
   })
 
-  const openSettleUp = (
-    from?: string,
-    to?: string,
-    amount?: number,
-    currency?: string,
-  ) => {
+  const openSettleUp = (from?: string, to?: string, amount?: number, currency?: string) => {
     setSettleFrom(from ?? '')
     setSettleTo(to ?? '')
     setSettleAmount(amount != null ? amount.toFixed(2) : '')
@@ -444,26 +398,16 @@ export default function GroupDetailPage() {
   // owner's debts, so they are shown in the third person and kept out of
   // the viewer's KPIs.
   const ownerSideLines = !isOwner && !!balances && !balances.self_member_id
-  const viewerLines = useMemo(
-    () => (balances && !ownerSideLines ? balances.lines : []),
-    [balances, ownerSideLines],
-  )
+  const viewerLines = useMemo(() => (balances && !ownerSideLines ? balances.lines : []), [balances, ownerSideLines])
 
   const owedToViewer = useMemo(
-    () =>
-      viewerLines
-        .filter((l) => l.amount > 0)
-        .reduce((s, l) => s + Number(l.amount_in_default_currency), 0),
+    () => viewerLines.filter((l) => l.amount > 0).reduce((s, l) => s + Number(l.amount_in_default_currency), 0),
     [viewerLines],
   )
 
   const viewerOwes = useMemo(
     () =>
-      Math.abs(
-        viewerLines
-          .filter((l) => l.amount < 0)
-          .reduce((s, l) => s + Number(l.amount_in_default_currency), 0),
-      ),
+      Math.abs(viewerLines.filter((l) => l.amount < 0).reduce((s, l) => s + Number(l.amount_in_default_currency), 0)),
     [viewerLines],
   )
 
@@ -499,8 +443,9 @@ export default function GroupDetailPage() {
     return summary.months.map(({ month, total }) => ({
       // Local date from the parts: new Date('2026-03-01') is UTC midnight,
       // which lands in February for anyone west of Greenwich.
-      month: new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1)
-        .toLocaleString(dateLocale, { month: 'short' }),
+      month: new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1).toLocaleString(dateLocale, {
+        month: 'short',
+      }),
       total: Number(Number(total).toFixed(2)),
     }))
   }, [summary, dateLocale])
@@ -516,10 +461,7 @@ export default function GroupDetailPage() {
     }))
   }, [summary, t])
 
-  const categoryBreakdownTotal = useMemo(
-    () => categoryBreakdown.reduce((s, c) => s + c.total, 0),
-    [categoryBreakdown],
-  )
+  const categoryBreakdownTotal = useMemo(() => categoryBreakdown.reduce((s, c) => s + c.total, 0), [categoryBreakdown])
 
   if (loadingGroup) {
     return (
@@ -580,19 +522,11 @@ export default function GroupDetailPage() {
       {/* Spending trend (compact) */}
       {summaryReady && monthlyData.length > 1 && (
         <SectionCard>
-          <SectionHeader
-            title={t('splitGroups.spendingTrend')}
-            description={t('splitGroups.spendingTrendHint')}
-          />
+          <SectionHeader title={t('splitGroups.spendingTrend')} description={t('splitGroups.spendingTrendHint')} />
           <div className="px-2 py-3">
             <ResponsiveContainer width="100%" height={120}>
               <BarChart data={monthlyData}>
-                <XAxis
-                  dataKey="month"
-                  tick={{ fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip
                   cursor={{ fill: 'var(--muted)' }}
                   contentStyle={{
@@ -614,10 +548,7 @@ export default function GroupDetailPage() {
           by category, with a legend showing absolute and % per slice. */}
       {summaryReady && categoryBreakdownTotal > 0 && (
         <SectionCard>
-          <SectionHeader
-            title={t('splitGroups.byCategory')}
-            description={t('splitGroups.byCategoryHint')}
-          />
+          <SectionHeader title={t('splitGroups.byCategory')} description={t('splitGroups.byCategoryHint')} />
           <div className="px-4 py-3 space-y-3">
             <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
               {categoryBreakdown.map((c) => {
@@ -637,10 +568,7 @@ export default function GroupDetailPage() {
                 return (
                   <li key={c.id} className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: c.color }}
-                      />
+                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
                       <span className="truncate">{c.name}</span>
                     </span>
                     <span className="tabular-nums whitespace-nowrap text-muted-foreground">
@@ -656,267 +584,255 @@ export default function GroupDetailPage() {
 
       {/* 2×2 grid: members + balances on top, transactions + settlements below */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-      {/* Members */}
-      <SectionCard>
-        <SectionHeader
-          title={t('splitGroups.members')}
-          action={
-            isOwner && canWrite ? (
-              <Button size="sm" className="gap-1.5 h-8" onClick={openCreateMember}>
-                <UserPlus size={13} />
-                {t('splitGroups.addMember')}
-              </Button>
-            ) : undefined
-          }
-        />
-        {group.members.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground text-sm">
-            {t('splitGroups.noMembers')}
-          </div>
-        ) : (
-          <ul className="divide-y divide-border">
-            {group.members.map((member) => (
-              <li key={member.id} className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{member.name}</span>
-                    {/* "(you)" marks the viewer; a linked viewer sees
+        {/* Members */}
+        <SectionCard>
+          <SectionHeader
+            title={t('splitGroups.members')}
+            action={
+              isOwner && canWrite ? (
+                <Button size="sm" className="gap-1.5 h-8" onClick={openCreateMember}>
+                  <UserPlus size={13} />
+                  {t('splitGroups.addMember')}
+                </Button>
+              ) : undefined
+            }
+          />
+          {group.members.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">{t('splitGroups.noMembers')}</div>
+          ) : (
+            <ul className="divide-y divide-border">
+              {group.members.map((member) => (
+                <li key={member.id} className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{member.name}</span>
+                      {/* "(you)" marks the viewer; a linked viewer sees
                         the owner's member as "(owner)". */}
-                    {viewerMember?.id === member.id ? (
-                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                        {t('splitGroups.you')}
-                      </span>
-                    ) : ownerMember?.id === member.id ? (
-                      <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-                        {t('splitGroups.ownerBadge')}
-                      </span>
-                    ) : null}
+                      {viewerMember?.id === member.id ? (
+                        <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                          {t('splitGroups.you')}
+                        </span>
+                      ) : ownerMember?.id === member.id ? (
+                        <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                          {t('splitGroups.ownerBadge')}
+                        </span>
+                      ) : null}
+                    </div>
+                    {member.email && (
+                      <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                        {member.linked_user_id && <Link2 size={10} />}
+                        {member.email}
+                      </p>
+                    )}
                   </div>
-                  {member.email && (
-                    <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                      {member.linked_user_id && <Link2 size={10} />}
-                      {member.email}
-                    </p>
-                  )}
-                </div>
-                {isOwner && canWrite && (
-                  <Button variant="ghost" size="sm" onClick={() => openEditMember(member)}>
-                    {t('common.edit')}
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </SectionCard>
-
-      {/* Balances */}
-      <SectionCard>
-        <SectionHeader
-          title={t('splitGroups.balances')}
-          description={t('splitGroups.balancesHint')}
-        />
-        {balances && balances.lines.length > 0 ? (
-          <ul className="divide-y divide-border">
-            {balances.lines.map((line, idx) => {
-              // Each line is the viewer's balance with one other member:
-              // positive = they owe the viewer, negative = the viewer owes them.
-              // Owner-side lines (see ownerSideLines) are the owner's instead.
-              const positive = line.amount > 0
-              const otherName = memberName_(line.member_id)
-              const label = ownerSideLines
-                ? positive
-                  ? t('splitGroups.owesGroupOwner', { name: otherName })
-                  : t('splitGroups.groupOwnerOwes', { name: otherName })
-                : positive
-                  ? t('splitGroups.owesYou', { name: otherName })
-                  : t('splitGroups.youOwe', { name: otherName })
-              return (
-                <li
-                  key={`${line.member_id}-${line.currency}-${idx}`}
-                  className="flex items-center justify-between px-4 py-3"
-                >
-                  <div className="text-sm">{label}</div>
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`text-sm font-semibold tabular-nums ${
-                        positive ? 'text-emerald-600' : 'text-rose-500'
-                      }`}
-                    >
-                      {formatCurrency(Math.abs(line.amount), line.currency, locale)}
-                    </span>
-                    {(() => {
-                      // Show "Acertar" if the viewer can act on this line:
-                      // - Owner can act on any line
-                      // - Linked member can only pay what they owe
-                      //   (negative amount = they owe that member)
-                      const canActLinked = !isOwner && !ownerSideLines && !positive
-                      if (!isOwner && !canActLinked) return null
-                      if (!canWrite) return null
-                      return (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (!balances.self_member_id) return
-                            if (positive) {
-                              // Member owes the viewer → from = member, to = viewer
-                              openSettleUp(line.member_id, balances.self_member_id, Math.abs(line.amount), line.currency)
-                            } else {
-                              // Viewer owes the member → from = viewer, to = member
-                              openSettleUp(balances.self_member_id, line.member_id, Math.abs(line.amount), line.currency)
-                            }
-                          }}
-                        >
-                          {canActLinked ? t('splitGroups.payNow') : t('splitGroups.settleUp')}
-                        </Button>
-                      )
-                    })()}
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <div className="text-center py-6 text-muted-foreground text-sm">
-            {t('splitGroups.allSettled')}
-          </div>
-        )}
-      </SectionCard>
-
-      {/* Recent transactions */}
-      <SectionCard>
-        <SectionHeader
-          title={t('splitGroups.recentTransactions')}
-          description={t('splitGroups.recentTransactionsHint')}
-          action={
-            groupTxs && groupTxs.length > 0 ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1 h-8 text-xs"
-                onClick={() => navigate(`/transactions?group_id=${groupId}`)}
-              >
-                {t('splitGroups.viewAllTransactions')}
-                <ArrowRight size={12} />
-              </Button>
-            ) : undefined
-          }
-        />
-        {!groupTxs ? (
-          <div className="p-4 space-y-2">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : groupTxs.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground text-sm flex flex-col items-center gap-2">
-            <Receipt size={20} className="opacity-50" />
-            {t('splitGroups.noTransactions')}
-          </div>
-        ) : (
-          <ul className="divide-y divide-border">
-            {groupTxs.slice(0, 8).map((tx) => (
-              <li
-                key={tx.id}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-muted cursor-pointer transition-colors"
-                onClick={() => navigate(`/transactions?group_id=${groupId}&highlight=${tx.id}`)}
-              >
-                <CategoryIcon
-                  icon={tx.category?.icon}
-                  color={tx.category?.color}
-                  size="md"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {tx.description}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)}
-                    {tx.category?.name ? ` · ${tx.category.name}` : ''}
-                    {tx.splits && tx.splits.length > 0
-                      ? ` · ${t('splitGroups.splitWays', { count: tx.splits.length })}`
-                      : ''}
-                  </p>
-                </div>
-                <span
-                  className={`text-sm font-semibold tabular-nums ml-3 ${
-                    tx.type === 'debit' ? 'text-rose-500' : 'text-emerald-600'
-                  }`}
-                >
-                  {formatCurrency(Number(tx.amount), tx.currency, locale)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </SectionCard>
-
-      {/* Settlements */}
-      <SectionCard>
-        <SectionHeader
-          title={t('splitGroups.settlements')}
-          action={
-            isOwner && canWrite ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 h-8"
-                onClick={() => openSettleUp()}
-              >
-                {t('splitGroups.recordSettlement')}
-              </Button>
-            ) : undefined
-          }
-        />
-        {settlements && settlements.length > 0 ? (
-          <ul className="divide-y divide-border">
-            {settlements.map((s: GroupSettlement) => (
-              <li key={s.id} className="flex items-center justify-between px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm flex items-center gap-1.5">
-                    <span className="font-medium">{memberName_(s.from_member_id)}</span>
-                    <ArrowRight size={12} className="text-muted-foreground" />
-                    <span className="font-medium">{memberName_(s.to_member_id)}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {new Date(s.date + 'T00:00:00').toLocaleDateString(dateLocale)}
-                    {s.notes ? ` · ${s.notes}` : ''}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold tabular-nums">
-                    {formatCurrency(s.amount, s.currency, locale)}
-                  </span>
                   {isOwner && canWrite && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteSettlementMutation.mutate(s.id)}
-                      title={t('common.delete')}
-                      aria-label={t('common.delete')}
-                    >
-                      <Trash2 size={14} />
+                    <Button variant="ghost" size="sm" onClick={() => openEditMember(member)}>
+                      {t('common.edit')}
                     </Button>
                   )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="text-center py-6 text-muted-foreground text-sm">
-            {t('splitGroups.noSettlements')}
-          </div>
-        )}
-      </SectionCard>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+
+        {/* Balances */}
+        <SectionCard>
+          <SectionHeader title={t('splitGroups.balances')} description={t('splitGroups.balancesHint')} />
+          {balances && balances.lines.length > 0 ? (
+            <ul className="divide-y divide-border">
+              {balances.lines.map((line, idx) => {
+                // Each line is the viewer's balance with one other member:
+                // positive = they owe the viewer, negative = the viewer owes them.
+                // Owner-side lines (see ownerSideLines) are the owner's instead.
+                const positive = line.amount > 0
+                const otherName = memberName_(line.member_id)
+                const label = ownerSideLines
+                  ? positive
+                    ? t('splitGroups.owesGroupOwner', { name: otherName })
+                    : t('splitGroups.groupOwnerOwes', { name: otherName })
+                  : positive
+                    ? t('splitGroups.owesYou', { name: otherName })
+                    : t('splitGroups.youOwe', { name: otherName })
+                return (
+                  <li
+                    key={`${line.member_id}-${line.currency}-${idx}`}
+                    className="flex items-center justify-between px-4 py-3"
+                  >
+                    <div className="text-sm">{label}</div>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`text-sm font-semibold tabular-nums ${
+                          positive ? 'text-emerald-600' : 'text-rose-500'
+                        }`}
+                      >
+                        {formatCurrency(Math.abs(line.amount), line.currency, locale)}
+                      </span>
+                      {(() => {
+                        // Show "Acertar" if the viewer can act on this line:
+                        // - Owner can act on any line
+                        // - Linked member can only pay what they owe
+                        //   (negative amount = they owe that member)
+                        const canActLinked = !isOwner && !ownerSideLines && !positive
+                        if (!isOwner && !canActLinked) return null
+                        if (!canWrite) return null
+                        return (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (!balances.self_member_id) return
+                              if (positive) {
+                                // Member owes the viewer → from = member, to = viewer
+                                openSettleUp(
+                                  line.member_id,
+                                  balances.self_member_id,
+                                  Math.abs(line.amount),
+                                  line.currency,
+                                )
+                              } else {
+                                // Viewer owes the member → from = viewer, to = member
+                                openSettleUp(
+                                  balances.self_member_id,
+                                  line.member_id,
+                                  Math.abs(line.amount),
+                                  line.currency,
+                                )
+                              }
+                            }}
+                          >
+                            {canActLinked ? t('splitGroups.payNow') : t('splitGroups.settleUp')}
+                          </Button>
+                        )
+                      })()}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <div className="text-center py-6 text-muted-foreground text-sm">{t('splitGroups.allSettled')}</div>
+          )}
+        </SectionCard>
+
+        {/* Recent transactions */}
+        <SectionCard>
+          <SectionHeader
+            title={t('splitGroups.recentTransactions')}
+            description={t('splitGroups.recentTransactionsHint')}
+            action={
+              groupTxs && groupTxs.length > 0 ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 h-8 text-xs"
+                  onClick={() => navigate(`/transactions?group_id=${groupId}`)}
+                >
+                  {t('splitGroups.viewAllTransactions')}
+                  <ArrowRight size={12} />
+                </Button>
+              ) : undefined
+            }
+          />
+          {!groupTxs ? (
+            <div className="p-4 space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : groupTxs.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm flex flex-col items-center gap-2">
+              <Receipt size={20} className="opacity-50" />
+              {t('splitGroups.noTransactions')}
+            </div>
+          ) : (
+            <ul className="divide-y divide-border">
+              {groupTxs.slice(0, 8).map((tx) => (
+                <li
+                  key={tx.id}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-muted cursor-pointer transition-colors"
+                  onClick={() => navigate(`/transactions?group_id=${groupId}&highlight=${tx.id}`)}
+                >
+                  <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size="md" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{tx.description}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)}
+                      {tx.category?.name ? ` · ${tx.category.name}` : ''}
+                      {tx.splits && tx.splits.length > 0
+                        ? ` · ${t('splitGroups.splitWays', { count: tx.splits.length })}`
+                        : ''}
+                    </p>
+                  </div>
+                  <span
+                    className={`text-sm font-semibold tabular-nums ml-3 ${
+                      tx.type === 'debit' ? 'text-rose-500' : 'text-emerald-600'
+                    }`}
+                  >
+                    {formatCurrency(Number(tx.amount), tx.currency, locale)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+
+        {/* Settlements */}
+        <SectionCard>
+          <SectionHeader
+            title={t('splitGroups.settlements')}
+            action={
+              isOwner && canWrite ? (
+                <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => openSettleUp()}>
+                  {t('splitGroups.recordSettlement')}
+                </Button>
+              ) : undefined
+            }
+          />
+          {settlements && settlements.length > 0 ? (
+            <ul className="divide-y divide-border">
+              {settlements.map((s: GroupSettlement) => (
+                <li key={s.id} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm flex items-center gap-1.5">
+                      <span className="font-medium">{memberName_(s.from_member_id)}</span>
+                      <ArrowRight size={12} className="text-muted-foreground" />
+                      <span className="font-medium">{memberName_(s.to_member_id)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {new Date(s.date + 'T00:00:00').toLocaleDateString(dateLocale)}
+                      {s.notes ? ` · ${s.notes}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatCurrency(s.amount, s.currency, locale)}
+                    </span>
+                    {isOwner && canWrite && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => deleteSettlementMutation.mutate(s.id)}
+                        title={t('common.delete')}
+                        aria-label={t('common.delete')}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="text-center py-6 text-muted-foreground text-sm">{t('splitGroups.noSettlements')}</div>
+          )}
+        </SectionCard>
       </div>
 
       {/* Member dialog */}
       <Dialog open={memberDialogOpen} onOpenChange={setMemberDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {editingMember ? t('splitGroups.editMember') : t('splitGroups.addMember')}
-            </DialogTitle>
+            <DialogTitle>{editingMember ? t('splitGroups.editMember') : t('splitGroups.addMember')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <MemberForm
@@ -943,10 +859,7 @@ export default function GroupDetailPage() {
               <Button variant="outline" onClick={() => setMemberDialogOpen(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button
-                onClick={saveMember}
-                disabled={!memberName.trim() || memberMutation.isPending}
-              >
+              <Button onClick={saveMember} disabled={!memberName.trim() || memberMutation.isPending}>
                 {t('common.save')}
               </Button>
             </div>
@@ -964,181 +877,177 @@ export default function GroupDetailPage() {
             const myMemberId = viewerMember?.id ?? null
             const viewerIsPayer = !!myMemberId && settleFrom === myMemberId
             return (
-          <div className="space-y-4 min-w-0">
-            <div className="space-y-2">
-              <Label>{t('splitGroups.from')}</Label>
-              <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
-                value={settleFrom}
-                onChange={(e) => {
-                  setSettleFrom(e.target.value)
-                  // Reset the ledger-side options: only meaningful
-                  // when the viewer is the payer.
-                  setSettleTxMode('none')
-                  setSettleAccountId('')
-                  setSettlePickedTx(null)
-                  setSettleTxSearch('')
-                }}
-              >
-                <option value="">{t('splitGroups.selectMember')}</option>
-                {group.members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.to')}</Label>
-              <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
-                value={settleTo}
-                onChange={(e) => setSettleTo(e.target.value)}
-              >
-                <option value="">{t('splitGroups.selectMember')}</option>
-                {group.members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {/* Transaction action — placed right after the members so
-                the payer can decide upfront whether a real transaction
-                will back this settlement. When linking an existing
-                transaction, the amount/currency/date below mirror that
-                transaction and lock so the two records can't disagree. */}
-            {viewerIsPayer && (
+              <div className="space-y-4 min-w-0">
                 <div className="space-y-2">
-                  <Label>{t('splitGroups.txAction')}</Label>
+                  <Label>{t('splitGroups.from')}</Label>
                   <select
                     className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
-                    value={settleTxMode}
+                    value={settleFrom}
                     onChange={(e) => {
-                      setSettleTxMode(e.target.value as 'none' | 'create' | 'existing')
+                      setSettleFrom(e.target.value)
+                      // Reset the ledger-side options: only meaningful
+                      // when the viewer is the payer.
+                      setSettleTxMode('none')
                       setSettleAccountId('')
                       setSettlePickedTx(null)
                       setSettleTxSearch('')
                     }}
                   >
-                    <option value="none">{t('splitGroups.txActionNone')}</option>
-                    <option value="create">{t('splitGroups.txActionCreate')}</option>
-                    <option value="existing">{t('splitGroups.txActionExisting')}</option>
+                    <option value="">{t('splitGroups.selectMember')}</option>
+                    {group.members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
                   </select>
-                  {settleTxMode === 'create' && (
-                    <div className="space-y-1">
-                      <select
-                        className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
-                        value={settleAccountId}
-                        onChange={(e) => setSettleAccountId(e.target.value)}
-                      >
-                        <option value="">{t('splitGroups.selectAccount')}</option>
-                        {sortAccountsByDisplayName(accountsList ?? []).map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {getAccountName(a)}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-muted-foreground">
-                        {t('splitGroups.affectAccountHint')}
-                      </p>
-                    </div>
-                  )}
-                  {settleTxMode === 'existing' && (
-                    <div className="space-y-1.5">
-                      <Input
-                        type="text"
-                        value={settleTxSearch}
-                        onChange={(e) => setSettleTxSearch(e.target.value)}
-                        placeholder={t('splitGroups.searchTransaction')}
-                      />
-                      <div className="max-h-44 overflow-y-auto rounded-md border border-border divide-y divide-border">
-                        {(settleTxOptions?.items ?? []).length === 0 ? (
-                          <p className="text-xs text-muted-foreground px-3 py-4 text-center">
-                            {t('splitGroups.noTransactions')}
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('splitGroups.to')}</Label>
+                  <select
+                    className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
+                    value={settleTo}
+                    onChange={(e) => setSettleTo(e.target.value)}
+                  >
+                    <option value="">{t('splitGroups.selectMember')}</option>
+                    {group.members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {/* Transaction action — placed right after the members so
+                the payer can decide upfront whether a real transaction
+                will back this settlement. When linking an existing
+                transaction, the amount/currency/date below mirror that
+                transaction and lock so the two records can't disagree. */}
+                {viewerIsPayer && (
+                  <div className="space-y-2">
+                    <Label>{t('splitGroups.txAction')}</Label>
+                    <select
+                      className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
+                      value={settleTxMode}
+                      onChange={(e) => {
+                        setSettleTxMode(e.target.value as 'none' | 'create' | 'existing')
+                        setSettleAccountId('')
+                        setSettlePickedTx(null)
+                        setSettleTxSearch('')
+                      }}
+                    >
+                      <option value="none">{t('splitGroups.txActionNone')}</option>
+                      <option value="create">{t('splitGroups.txActionCreate')}</option>
+                      <option value="existing">{t('splitGroups.txActionExisting')}</option>
+                    </select>
+                    {settleTxMode === 'create' && (
+                      <div className="space-y-1">
+                        <select
+                          className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
+                          value={settleAccountId}
+                          onChange={(e) => setSettleAccountId(e.target.value)}
+                        >
+                          <option value="">{t('splitGroups.selectAccount')}</option>
+                          {sortAccountsByDisplayName(accountsList ?? []).map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {getAccountName(a)}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-muted-foreground">{t('splitGroups.affectAccountHint')}</p>
+                      </div>
+                    )}
+                    {settleTxMode === 'existing' && (
+                      <div className="space-y-1.5">
+                        <Input
+                          type="text"
+                          value={settleTxSearch}
+                          onChange={(e) => setSettleTxSearch(e.target.value)}
+                          placeholder={t('splitGroups.searchTransaction')}
+                        />
+                        <div className="max-h-44 overflow-y-auto rounded-md border border-border divide-y divide-border">
+                          {(settleTxOptions?.items ?? []).length === 0 ? (
+                            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+                              {t('splitGroups.noTransactions')}
+                            </p>
+                          ) : (
+                            (settleTxOptions?.items ?? []).map((tx) => {
+                              const picked = settlePickedTx?.id === tx.id
+                              return (
+                                <button
+                                  key={tx.id}
+                                  type="button"
+                                  onClick={() => {
+                                    // Picking an existing transaction *as* the
+                                    // settlement: align amount, currency and
+                                    // date so the two records can't disagree.
+                                    setSettlePickedTx(tx)
+                                    setSettleAmount(Number(tx.amount).toFixed(2))
+                                    setSettleCurrency(tx.currency)
+                                    setSettleDate(tx.date)
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-3 ${
+                                    picked ? 'bg-primary/10' : 'hover:bg-muted/50'
+                                  }`}
+                                >
+                                  <span className="min-w-0 truncate">
+                                    <span className="text-muted-foreground">{tx.date}</span> · {tx.description}
+                                  </span>
+                                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                                    {tx.amount} {tx.currency}
+                                  </span>
+                                </button>
+                              )
+                            })
+                          )}
+                        </div>
+                        {settlePickedTx && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            {t('splitGroups.selectedTransaction')}: {settlePickedTx.date} · {settlePickedTx.description}
                           </p>
-                        ) : (
-                          (settleTxOptions?.items ?? []).map((tx) => {
-                            const picked = settlePickedTx?.id === tx.id
-                            return (
-                              <button
-                                key={tx.id}
-                                type="button"
-                                onClick={() => {
-                                  // Picking an existing transaction *as* the
-                                  // settlement: align amount, currency and
-                                  // date so the two records can't disagree.
-                                  setSettlePickedTx(tx)
-                                  setSettleAmount(Number(tx.amount).toFixed(2))
-                                  setSettleCurrency(tx.currency)
-                                  setSettleDate(tx.date)
-                                }}
-                                className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-3 ${
-                                  picked ? 'bg-primary/10' : 'hover:bg-muted/50'
-                                }`}
-                              >
-                                <span className="min-w-0 truncate">
-                                  <span className="text-muted-foreground">{tx.date}</span> ·{' '}
-                                  {tx.description}
-                                </span>
-                                <span className="shrink-0 tabular-nums text-muted-foreground">
-                                  {tx.amount} {tx.currency}
-                                </span>
-                              </button>
-                            )
-                          })
                         )}
                       </div>
-                      {settlePickedTx && (
-                        <p className="text-xs text-muted-foreground truncate">
-                          {t('splitGroups.selectedTransaction')}: {settlePickedTx.date} ·{' '}
-                          {settlePickedTx.description}
-                        </p>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
+                )}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-2 col-span-2">
+                    <Label>{t('splitGroups.amount')}</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={settleAmount}
+                      onChange={(e) => setSettleAmount(e.target.value)}
+                      disabled={settleTxMode === 'existing'}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('splitGroups.currency')}</Label>
+                    <Input
+                      value={settleCurrency}
+                      maxLength={3}
+                      onChange={(e) => setSettleCurrency(e.target.value.toUpperCase())}
+                      disabled={settleTxMode === 'existing'}
+                    />
+                  </div>
                 </div>
-            )}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-2 col-span-2">
-                <Label>{t('splitGroups.amount')}</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={settleAmount}
-                  onChange={(e) => setSettleAmount(e.target.value)}
-                  disabled={settleTxMode === 'existing'}
-                />
+                <div className="space-y-2">
+                  <Label>{t('splitGroups.date')}</Label>
+                  <DatePickerInput
+                    value={settleDate}
+                    onChange={setSettleDate}
+                    className="w-full justify-start"
+                    disabled={settleTxMode === 'existing'}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('splitGroups.notes')}</Label>
+                  <textarea
+                    className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none"
+                    rows={2}
+                    value={settleNotes}
+                    onChange={(e) => setSettleNotes(e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>{t('splitGroups.currency')}</Label>
-                <Input
-                  value={settleCurrency}
-                  maxLength={3}
-                  onChange={(e) => setSettleCurrency(e.target.value.toUpperCase())}
-                  disabled={settleTxMode === 'existing'}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.date')}</Label>
-              <DatePickerInput
-                value={settleDate}
-                onChange={setSettleDate}
-                className="w-full justify-start"
-                disabled={settleTxMode === 'existing'}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.notes')}</Label>
-              <textarea
-                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none"
-                rows={2}
-                value={settleNotes}
-                onChange={(e) => setSettleNotes(e.target.value)}
-              />
-            </div>
-          </div>
             )
           })()}
           <DialogFooter>

@@ -19,11 +19,7 @@ export function getTransactionTotalCurrency(
 
 // Renders the total in its currency, or as a bare amount while the currency
 // is still unknown.
-export function formatTransactionTotal(
-  total: number,
-  currency: string | null,
-  locale: string,
-): string {
+export function formatTransactionTotal(total: number, currency: string | null, locale: string): string {
   if (currency) return formatCurrency(total, currency, locale)
   return new Intl.NumberFormat(locale, {
     minimumFractionDigits: 2,

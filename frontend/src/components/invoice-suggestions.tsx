@@ -26,13 +26,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { suggestionsFor } from '@/lib/invoice-suggestions'
 import type { ReconciliationSuggestion } from '@/types'
 
-export function InvoiceSuggestions({
-  invoiceId,
-  canWrite,
-}: {
-  invoiceId: string
-  canWrite: boolean
-}) {
+export function InvoiceSuggestions({ invoiceId, canWrite }: { invoiceId: string; canWrite: boolean }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const locale = useDisplayLocale()
@@ -58,9 +52,7 @@ export function InvoiceSuggestions({
       if (accept) invalidateFinancialQueries(queryClient)
       // The same words the queue says for the same act. Two vocabularies
       // for one decision would read as two features.
-      toast.success(
-        t(accept ? 'reconciliation.queue.linked' : 'reconciliation.queue.declined'),
-      )
+      toast.success(t(accept ? 'reconciliation.queue.linked' : 'reconciliation.queue.declined'))
     },
     onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
@@ -102,9 +94,13 @@ export function InvoiceSuggestions({
                     not at all, so saying so before the buttons is the
                     difference between a decision and a surprise. */}
                 {(suggestion.covers?.length ?? 0) > 1 && (
-                  <> · {t('invoices.suggestions.alsoCovers', {
-                    count: (suggestion.covers?.length ?? 1) - 1,
-                  })}</>
+                  <>
+                    {' '}
+                    ·{' '}
+                    {t('invoices.suggestions.alsoCovers', {
+                      count: (suggestion.covers?.length ?? 1) - 1,
+                    })}
+                  </>
                 )}
               </p>
             </div>

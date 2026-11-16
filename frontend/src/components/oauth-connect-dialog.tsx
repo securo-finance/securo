@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { connections } from '@/lib/api'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Building2, ChevronLeft, Globe } from 'lucide-react'
 import { toast } from 'sonner'
@@ -72,9 +67,15 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
           setStep('bank')
         }
       })
-      .catch(() => { if (!cancelled) setError(true) })
-      .finally(() => { if (!cancelled) setLoadingCountries(false) })
-    return () => { cancelled = true }
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCountries(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [provider])
 
   useEffect(() => {
@@ -82,17 +83,22 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
     let cancelled = false
     connections
       .listInstitutions(provider, country)
-      .then((data) => { if (!cancelled) setInstitutions(data.institutions) })
-      .catch(() => { if (!cancelled) setError(true) })
-      .finally(() => { if (!cancelled) setLoadingBanks(false) })
-    return () => { cancelled = true }
+      .then((data) => {
+        if (!cancelled) setInstitutions(data.institutions)
+      })
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingBanks(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [provider, country, step])
 
   const sortedCountries = useMemo(
-    () =>
-      [...countries].sort((a, b) =>
-        countryLabel(a).localeCompare(countryLabel(b)),
-      ),
+    () => [...countries].sort((a, b) => countryLabel(a).localeCompare(countryLabel(b))),
     [countries],
   )
 
@@ -145,9 +151,7 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
             {step === 'country' ? t('accounts.selectCountry') : t('accounts.selectBank')}
           </DialogTitle>
           <p className="text-sm text-muted-foreground">
-            {step === 'country'
-              ? t('accounts.selectCountryDesc')
-              : t('accounts.selectBankDesc')}
+            {step === 'country' ? t('accounts.selectCountryDesc') : t('accounts.selectBankDesc')}
           </p>
         </DialogHeader>
 
@@ -183,9 +187,7 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
         ) : step === 'country' ? (
           <div className="space-y-1 pt-2 max-h-[60vh] overflow-y-auto">
             {sortedCountries.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                {t('accounts.noInstitutionsFound')}
-              </p>
+              <p className="text-sm text-muted-foreground text-center py-8">{t('accounts.noInstitutionsFound')}</p>
             ) : (
               sortedCountries.map((code) => (
                 <button
@@ -207,9 +209,7 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
         ) : (
           <div className="space-y-1 pt-2 max-h-[60vh] overflow-y-auto">
             {institutions.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                {t('accounts.noInstitutionsFound')}
-              </p>
+              <p className="text-sm text-muted-foreground text-center py-8">{t('accounts.noInstitutionsFound')}</p>
             ) : (
               institutions.map((inst) => (
                 <button
@@ -224,7 +224,7 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
                         alt=""
                         className="w-full h-full object-contain"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none'
+                          ;(e.target as HTMLImageElement).style.display = 'none'
                         }}
                       />
                     ) : (
@@ -232,9 +232,7 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {inst.display_name}
-                    </p>
+                    <p className="text-sm font-medium text-foreground truncate">{inst.display_name}</p>
                   </div>
                 </button>
               ))

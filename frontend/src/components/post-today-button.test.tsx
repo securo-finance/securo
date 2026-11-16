@@ -24,25 +24,19 @@ describe('PostTodayButton', () => {
   it('is hidden once the transaction is posted', () => {
     renderWithProviders(<PostTodayButton {...posted} canWrite onPostToday={vi.fn()} />)
 
-    expect(
-      screen.queryByRole('button', { name: t('transactions.postToday') }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('transactions.postToday') })).not.toBeInTheDocument()
   })
 
   it('is hidden for a pending row that came from a bank sync', () => {
     renderWithProviders(<PostTodayButton {...syncPending} canWrite onPostToday={vi.fn()} />)
 
-    expect(
-      screen.queryByRole('button', { name: t('transactions.postToday') }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('transactions.postToday') })).not.toBeInTheDocument()
   })
 
   it('is hidden for a read-only user', () => {
     renderWithProviders(<PostTodayButton {...pending} canWrite={false} onPostToday={vi.fn()} />)
 
-    expect(
-      screen.queryByRole('button', { name: t('transactions.postToday') }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('transactions.postToday') })).not.toBeInTheDocument()
   })
 
   it('renders translated copy, not the raw key', () => {

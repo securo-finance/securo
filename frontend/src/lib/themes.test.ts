@@ -28,7 +28,9 @@ describe('built-in themes', () => {
         for (const [text, background] of READABLE_PAIRS) {
           expect(colors[text], `${text}`).toMatch(HEX)
           expect(colors[background], `${background}`).toMatch(HEX)
-          expect(contrastRatio(colors[text]!, colors[background]!), `${text} on ${background}`).toBeGreaterThanOrEqual(4.5)
+          expect(contrastRatio(colors[text]!, colors[background]!), `${text} on ${background}`).toBeGreaterThanOrEqual(
+            4.5,
+          )
         }
       })
 

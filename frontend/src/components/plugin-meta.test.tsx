@@ -7,12 +7,31 @@ import type { PluginCatalogEntry } from '@/types'
 
 function entry(overrides: Partial<PluginCatalogEntry>): PluginCatalogEntry {
   return {
-    id: 'maria/mei', owner: 'maria', repository: 'https://github.com/maria/mei', release: 'v1.0.0',
-    commit: 'a'.repeat(40), name: { en: 'MEI' }, description: { en: 'Taxes for a small business.' },
-    version: '1.0.0', license: 'MIT', min_securo_version: '0.19.0', contributes: { categories: 2 },
-    locales: [], topics: [], stars: 0, stars_7d: 0, added_at: null, updated_at: null,
-    revoked: false, revoked_reason: null, compatible: true, supported: true,
-    workspaces: ['business'], fits_workspace: false, installed_version: null, update_available: false,
+    id: 'maria/mei',
+    owner: 'maria',
+    repository: 'https://github.com/maria/mei',
+    release: 'v1.0.0',
+    commit: 'a'.repeat(40),
+    name: { en: 'MEI' },
+    description: { en: 'Taxes for a small business.' },
+    version: '1.0.0',
+    license: 'MIT',
+    min_securo_version: '0.19.0',
+    contributes: { categories: 2 },
+    locales: [],
+    topics: [],
+    stars: 0,
+    stars_7d: 0,
+    added_at: null,
+    updated_at: null,
+    revoked: false,
+    revoked_reason: null,
+    compatible: true,
+    supported: true,
+    workspaces: ['business'],
+    fits_workspace: false,
+    installed_version: null,
+    update_available: false,
     ...overrides,
   }
 }
@@ -29,9 +48,7 @@ describe('PluginStatus', () => {
   })
 
   it('says why when an update is only for the other workspace type', () => {
-    renderWithProviders(
-      <PluginStatus entry={entry({ installed_version: '1.0.0', update_available: true })} />,
-    )
+    renderWithProviders(<PluginStatus entry={entry({ installed_version: '1.0.0', update_available: true })} />)
     expect(screen.getByText(t('plugins.onlyForBusiness'))).toBeInTheDocument()
     expect(screen.queryByText(t('plugins.updateAvailable'))).not.toBeInTheDocument()
   })

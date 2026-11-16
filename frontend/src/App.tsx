@@ -86,73 +86,262 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <CrossTabRefresh />
         <TooltipProvider>
-        <BrowserRouter>
-          <AuthProvider>
-            <WorkspaceProvider>
-            <Suspense fallback={<LoadingFallback />}>
-              <Routes>
-                <Route path="/setup" element={<SetupPage />} />
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/auth/oidc/callback" element={<OIDCCallbackPage />} />
-                <Route path="/register" element={<RegisterPage />} />
-                {/* A client opening a link the sender shared. Deliberately
+          <BrowserRouter>
+            <AuthProvider>
+              <WorkspaceProvider>
+                <Suspense fallback={<LoadingFallback />}>
+                  <Routes>
+                    <Route path="/setup" element={<SetupPage />} />
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/auth/oidc/callback" element={<OIDCCallbackPage />} />
+                    <Route path="/register" element={<RegisterPage />} />
+                    {/* A client opening a link the sender shared. Deliberately
                     outside ProtectedRoute and outside AppLayout: the
                     recipient has no account, and the token is the whole
                     credential. */}
-                <Route path="/i/:token" element={<SharedInvoicePage />} />
-                <Route
-                  element={
-                    <ProtectedRoute>
-                      <CollectionFilterProvider>
-                        <SidebarStateProvider>
-                          <AppLayout />
-                        </SidebarStateProvider>
-                      </CollectionFilterProvider>
-                    </ProtectedRoute>
-                  }
-                >
-                  <Route path="/" element={<DashboardPage />} />
-                  <Route path="/transactions" element={<ModuleRoute module="transactions"><TransactionsPage /></ModuleRoute>} />
-                  <Route path="/accounts" element={<ModuleRoute module="accounts"><AccountsPage /></ModuleRoute>} />
-                  <Route path="/accounts/:id" element={<ModuleRoute module="accounts"><AccountDetailPage /></ModuleRoute>} />
-                  <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
-                  <Route path="/enable-banking" element={<OAuthCallbackPage />} />
-                  <Route path="/import" element={<ModuleRoute module="import"><ImportPage /></ModuleRoute>} />
-                  <Route path="/rules" element={<ModuleRoute module="rules"><RulesPage /></ModuleRoute>} />
-                  <Route path="/categories" element={<ModuleRoute module="categories"><CategoriesPage /></ModuleRoute>} />
-                  <Route path="/collections" element={<CollectionsPage />} />
-                  <Route path="/budgets" element={<ModuleRoute module="budgets"><BudgetsPage /></ModuleRoute>} />
-                  <Route path="/plan" element={<ModuleRoute module="spending_plan"><SpendingPlanPage /></ModuleRoute>} />
-                  <Route path="/goals" element={<ModuleRoute module="goals"><GoalsPage /></ModuleRoute>} />
-                  <Route path="/recurring" element={<ModuleRoute module="recurring"><RecurringPage /></ModuleRoute>} />
-                  <Route path="/assets" element={<ModuleRoute module="assets"><AssetsPage /></ModuleRoute>} />
-                  {/* Kept so links minted before the importers were merged keep working. */}
-                  <Route path="/assets/import" element={<Navigate to="/import?tab=investments" replace />} />
-                  <Route path="/reports" element={<ModuleRoute module="reports"><ReportsPage /></ModuleRoute>} />
-                  <Route path="/payees" element={<ModuleRoute module="payees"><PayeesPage /></ModuleRoute>} />
-                  <Route path="/groups" element={<ModuleRoute module="split_groups"><GroupsPage /></ModuleRoute>} />
-                  <Route path="/groups/:id" element={<ModuleRoute module="split_groups"><GroupDetailPage /></ModuleRoute>} />
-                  <Route path="/invoices" element={<ModuleRoute module="invoices"><InvoicesPage /></ModuleRoute>} />
-                  {/* Declared before `/invoices/:id`, which would otherwise take "schedules" for an id. */}
-                  <Route path="/invoices/schedules" element={<ModuleRoute module="invoices"><InvoiceSchedulesPage /></ModuleRoute>} />
-                  <Route path="/invoices/schedules/:id" element={<ModuleRoute module="invoices"><InvoiceScheduleDetailPage /></ModuleRoute>} />
-                  <Route path="/invoices/products" element={<ModuleRoute module="invoices"><ProductsPage /></ModuleRoute>} />
-                  <Route path="/invoices/:id" element={<ModuleRoute module="invoices"><InvoiceDetailPage /></ModuleRoute>} />
-                  <Route path="/workspace/settings" element={<WorkspaceSettingsPage />} />
-                  <Route path="/plugins" element={<PluginsRoute><PluginsPage /></PluginsRoute>} />
-                  <Route path="/plugins/oauth/callback" element={<PluginsRoute><PluginOAuthCallbackPage /></PluginsRoute>} />
-                  <Route path="/plugins/:owner/:name" element={<PluginsRoute><PluginDetailPage /></PluginsRoute>} />
-                  <Route path="/admin" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
-                  <Route path="/agents" element={<AgentsRoute><AgentsListPage /></AgentsRoute>} />
-                  <Route path="/agents/connections" element={<AgentsRoute><AgentConnectionsPage /></AgentsRoute>} />
-                  <Route path="/agents/:id" element={<AgentsRoute><AgentDetailPage /></AgentsRoute>} />
-                </Route>
-              </Routes>
-            </Suspense>
-            <Toaster />
-            </WorkspaceProvider>
-          </AuthProvider>
-        </BrowserRouter>
+                    <Route path="/i/:token" element={<SharedInvoicePage />} />
+                    <Route
+                      element={
+                        <ProtectedRoute>
+                          <CollectionFilterProvider>
+                            <SidebarStateProvider>
+                              <AppLayout />
+                            </SidebarStateProvider>
+                          </CollectionFilterProvider>
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route path="/" element={<DashboardPage />} />
+                      <Route
+                        path="/transactions"
+                        element={
+                          <ModuleRoute module="transactions">
+                            <TransactionsPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/accounts"
+                        element={
+                          <ModuleRoute module="accounts">
+                            <AccountsPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/accounts/:id"
+                        element={
+                          <ModuleRoute module="accounts">
+                            <AccountDetailPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+                      <Route path="/enable-banking" element={<OAuthCallbackPage />} />
+                      <Route
+                        path="/import"
+                        element={
+                          <ModuleRoute module="import">
+                            <ImportPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/rules"
+                        element={
+                          <ModuleRoute module="rules">
+                            <RulesPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/categories"
+                        element={
+                          <ModuleRoute module="categories">
+                            <CategoriesPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route path="/collections" element={<CollectionsPage />} />
+                      <Route
+                        path="/budgets"
+                        element={
+                          <ModuleRoute module="budgets">
+                            <BudgetsPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/plan"
+                        element={
+                          <ModuleRoute module="spending_plan">
+                            <SpendingPlanPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/goals"
+                        element={
+                          <ModuleRoute module="goals">
+                            <GoalsPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/recurring"
+                        element={
+                          <ModuleRoute module="recurring">
+                            <RecurringPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/assets"
+                        element={
+                          <ModuleRoute module="assets">
+                            <AssetsPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      {/* Kept so links minted before the importers were merged keep working. */}
+                      <Route path="/assets/import" element={<Navigate to="/import?tab=investments" replace />} />
+                      <Route
+                        path="/reports"
+                        element={
+                          <ModuleRoute module="reports">
+                            <ReportsPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/payees"
+                        element={
+                          <ModuleRoute module="payees">
+                            <PayeesPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/groups"
+                        element={
+                          <ModuleRoute module="split_groups">
+                            <GroupsPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/groups/:id"
+                        element={
+                          <ModuleRoute module="split_groups">
+                            <GroupDetailPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/invoices"
+                        element={
+                          <ModuleRoute module="invoices">
+                            <InvoicesPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      {/* Declared before `/invoices/:id`, which would otherwise take "schedules" for an id. */}
+                      <Route
+                        path="/invoices/schedules"
+                        element={
+                          <ModuleRoute module="invoices">
+                            <InvoiceSchedulesPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/invoices/schedules/:id"
+                        element={
+                          <ModuleRoute module="invoices">
+                            <InvoiceScheduleDetailPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/invoices/products"
+                        element={
+                          <ModuleRoute module="invoices">
+                            <ProductsPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route
+                        path="/invoices/:id"
+                        element={
+                          <ModuleRoute module="invoices">
+                            <InvoiceDetailPage />
+                          </ModuleRoute>
+                        }
+                      />
+                      <Route path="/workspace/settings" element={<WorkspaceSettingsPage />} />
+                      <Route
+                        path="/plugins"
+                        element={
+                          <PluginsRoute>
+                            <PluginsPage />
+                          </PluginsRoute>
+                        }
+                      />
+                      <Route
+                        path="/plugins/oauth/callback"
+                        element={
+                          <PluginsRoute>
+                            <PluginOAuthCallbackPage />
+                          </PluginsRoute>
+                        }
+                      />
+                      <Route
+                        path="/plugins/:owner/:name"
+                        element={
+                          <PluginsRoute>
+                            <PluginDetailPage />
+                          </PluginsRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin"
+                        element={
+                          <AdminRoute>
+                            <AdminSettingsPage />
+                          </AdminRoute>
+                        }
+                      />
+                      <Route
+                        path="/agents"
+                        element={
+                          <AgentsRoute>
+                            <AgentsListPage />
+                          </AgentsRoute>
+                        }
+                      />
+                      <Route
+                        path="/agents/connections"
+                        element={
+                          <AgentsRoute>
+                            <AgentConnectionsPage />
+                          </AgentsRoute>
+                        }
+                      />
+                      <Route
+                        path="/agents/:id"
+                        element={
+                          <AgentsRoute>
+                            <AgentDetailPage />
+                          </AgentsRoute>
+                        }
+                      />
+                    </Route>
+                  </Routes>
+                </Suspense>
+                <Toaster />
+              </WorkspaceProvider>
+            </AuthProvider>
+          </BrowserRouter>
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>

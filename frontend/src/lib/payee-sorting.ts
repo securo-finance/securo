@@ -23,8 +23,8 @@ export function loadPayeeSort(): PayeeSort {
 
     const parsed = JSON.parse(raw)
     if (
-      (parsed?.by === 'name' || parsed?.by === 'type' || parsed?.by === 'transaction_count')
-      && (parsed?.direction === 'asc' || parsed?.direction === 'desc')
+      (parsed?.by === 'name' || parsed?.by === 'type' || parsed?.by === 'transaction_count') &&
+      (parsed?.direction === 'asc' || parsed?.direction === 'desc')
     ) {
       return { by: parsed.by, direction: parsed.direction }
     }

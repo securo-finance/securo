@@ -86,7 +86,7 @@ describe('agents page templates', () => {
     const payload = api.create.mock.calls[0][0] as Record<string, unknown>
     expect(payload.name).toBe('Savings advisor')
     expect(payload.connection_id).toBe('conn-2')
-    expect(payload.system_prompt).toContain("savings advisor")
+    expect(payload.system_prompt).toContain('savings advisor')
     expect(payload.auto_context).toBe(true)
     // The tool scope is part of the create call, never a second request
     // that could fail and leave the agent with every tool allowed.

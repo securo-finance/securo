@@ -50,33 +50,71 @@ vi.mock('@/contexts/workspace-context', () => ({
 }))
 
 const checking = {
-  id: 'acc-1', name: 'Checking', type: 'checking', currency: 'BRL',
-  balance: 9000, current_balance: 9000, is_active: true,
+  id: 'acc-1',
+  name: 'Checking',
+  type: 'checking',
+  currency: 'BRL',
+  balance: 9000,
+  current_balance: 9000,
+  is_active: true,
 }
 
 /** A R$1 debit. Its amount alone can never add up to the balances below,
  *  so any balance on screen that matches them came from the server. */
 function tx(index: number, date: string, runningBalance: number | null): Transaction {
   return {
-    id: `tx-${index}`, user_id: 'user-1', account_id: 'acc-1', category_id: null,
-    category: null, external_id: null, description: `Payment ${index}`,
-    original_description: null, amount: 1, currency: 'BRL', date, type: 'debit',
-    source: 'manual', status: 'posted', payee: null, payee_id: null,
-    payee_name: null, notes: null, transfer_pair_id: null, amount_primary: null,
-    fx_rate_used: null, fx_fallback: false, installment_number: null,
-    total_installments: null, installment_total_amount: null,
-    installment_purchase_date: null, installment_series_id: null, bill_id: null,
-    effective_bill_date: null, reporting_date_override: null, splits: [], is_ignored: false,
-    running_balance: runningBalance, running_balance_primary: null,
+    id: `tx-${index}`,
+    user_id: 'user-1',
+    account_id: 'acc-1',
+    category_id: null,
+    category: null,
+    external_id: null,
+    description: `Payment ${index}`,
+    original_description: null,
+    amount: 1,
+    currency: 'BRL',
+    date,
+    type: 'debit',
+    source: 'manual',
+    status: 'posted',
+    payee: null,
+    payee_id: null,
+    payee_name: null,
+    notes: null,
+    transfer_pair_id: null,
+    amount_primary: null,
+    fx_rate_used: null,
+    fx_fallback: false,
+    installment_number: null,
+    total_installments: null,
+    installment_total_amount: null,
+    installment_purchase_date: null,
+    installment_series_id: null,
+    bill_id: null,
+    effective_bill_date: null,
+    reporting_date_override: null,
+    splits: [],
+    is_ignored: false,
+    running_balance: runningBalance,
+    running_balance_primary: null,
   }
 }
 
 function projection(description: string, treatAsTransfer: boolean) {
   return {
-    recurring_id: `rec-${description}`, account_id: 'acc-1', description, amount: 500,
-    amount_primary: null, currency: 'BRL', type: 'debit', date: '2026-09-28',
-    category_id: 'cat-1', category_name: 'Savings', category_icon: 'piggy-bank',
-    category_color: '#000000', category_treat_as_transfer: treatAsTransfer,
+    recurring_id: `rec-${description}`,
+    account_id: 'acc-1',
+    description,
+    amount: 500,
+    amount_primary: null,
+    currency: 'BRL',
+    type: 'debit',
+    date: '2026-09-28',
+    category_id: 'cat-1',
+    category_name: 'Savings',
+    category_icon: 'piggy-bank',
+    category_color: '#000000',
+    category_treat_as_transfer: treatAsTransfer,
   }
 }
 
@@ -91,8 +129,12 @@ beforeEach(() => {
   api.accounts.list.mockResolvedValue([])
   api.accounts.bills.mockResolvedValue([])
   api.accounts.summary.mockResolvedValue({
-    opening_balance: 0, current_balance: 9000, monthly_income: 0, monthly_expenses: 0,
-    projected_income: 0, projected_expenses: 0,
+    opening_balance: 0,
+    current_balance: 9000,
+    monthly_income: 0,
+    monthly_expenses: 0,
+    projected_income: 0,
+    projected_expenses: 0,
   })
   api.accounts.runningBalance.mockResolvedValue([])
   api.categories.list.mockResolvedValue([])

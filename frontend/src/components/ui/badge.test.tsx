@@ -20,10 +20,7 @@ describe('Badge', () => {
   it('records the requested variant', () => {
     renderWithProviders(<Badge variant="destructive">Overdue</Badge>)
 
-    expect(screen.getByText('Overdue')).toHaveAttribute(
-      'data-variant',
-      'destructive',
-    )
+    expect(screen.getByText('Overdue')).toHaveAttribute('data-variant', 'destructive')
   })
 
   it('renders as a link when asChild is set', () => {
@@ -33,10 +30,7 @@ describe('Badge', () => {
       </Badge>,
     )
 
-    expect(screen.getByRole('link', { name: '3 rules' })).toHaveAttribute(
-      'href',
-      '/rules',
-    )
+    expect(screen.getByRole('link', { name: '3 rules' })).toHaveAttribute('href', '/rules')
   })
 
   it('keeps whitespace-nowrap so a long label cannot wrap mid-badge', () => {

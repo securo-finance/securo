@@ -15,14 +15,11 @@ export function statementChange(
 ): { percent: number; good: boolean } | null {
   if (previous === undefined || previous === 0) return null
   const sign = section === 'expenses' ? -1 : 1
-  const percent = ((current - previous) * sign) / Math.abs(previous) * 100
+  const percent = (((current - previous) * sign) / Math.abs(previous)) * 100
   return { percent, good: section === 'expenses' ? percent < 0 : percent > 0 }
 }
 
-export function sortStatementRows(
-  rows: CategoryStatementRow[],
-  sort: StatementSort,
-): CategoryStatementRow[] {
+export function sortStatementRows(rows: CategoryStatementRow[], sort: StatementSort): CategoryStatementRow[] {
   if (sort === 'default') return rows
   const direction = sort === 'asc' ? 1 : -1
   return [...rows]

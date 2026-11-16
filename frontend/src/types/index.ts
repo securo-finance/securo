@@ -1538,14 +1538,7 @@ export type InvoiceDirection = 'receivable' | 'payable'
 /** What the UI renders. The three terminal decisions above, plus the four
  *  facts the server computes from allocations and the due date. Nothing
  *  here is stored in a column. */
-export type InvoiceState =
-  | 'draft'
-  | 'open'
-  | 'partial'
-  | 'paid'
-  | 'overdue'
-  | 'void'
-  | 'uncollectible'
+export type InvoiceState = 'draft' | 'open' | 'partial' | 'paid' | 'overdue' | 'void' | 'uncollectible'
 
 export interface InvoiceLine {
   id: string
@@ -1777,20 +1770,9 @@ export interface Invoice {
 /** Decisions a person took about an agreement. `past_due` is not one of
  *  them: it is derived from the agreement's invoices. */
 export type InvoiceScheduleStatus = 'active' | 'paused' | 'ended'
-export type InvoiceScheduleFrequency =
-  | 'weekly'
-  | 'biweekly'
-  | 'monthly'
-  | 'quarterly'
-  | 'semiannual'
-  | 'yearly'
+export type InvoiceScheduleFrequency = 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'semiannual' | 'yearly'
 export type InvoiceScheduleEndType = 'never' | 'on_date' | 'after_count'
-export type InvoiceScheduleEndReason =
-  | 'canceled_by_client'
-  | 'canceled_by_us'
-  | 'completed'
-  | 'unpaid'
-  | 'other'
+export type InvoiceScheduleEndReason = 'canceled_by_client' | 'canceled_by_us' | 'completed' | 'unpaid' | 'other'
 
 /** What the agreement says from a date on. One row per price change. */
 export interface InvoiceScheduleTerm {

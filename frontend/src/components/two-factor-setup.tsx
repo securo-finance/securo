@@ -6,13 +6,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { useAuth } from '@/contexts/auth-context'
 import { auth } from '@/lib/api'
 import { isServerUnreachable } from '@/lib/auth-errors'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'

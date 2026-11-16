@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  buildLinesPayload,
-  checkLines,
-  largestLineCategoryId,
-  type CategoryLineRow,
-} from '@/lib/category-lines'
+import { buildLinesPayload, checkLines, largestLineCategoryId, type CategoryLineRow } from '@/lib/category-lines'
 import type { TransactionCategoryLine } from '@/types'
 
 const row = (categoryId: string, amount = '', percent = ''): CategoryLineRow => ({
@@ -18,12 +13,15 @@ const row = (categoryId: string, amount = '', percent = ''): CategoryLineRow => 
 describe('checkLines', () => {
   it('refuses the same category twice', () => {
     expect(checkLines([row('a', '100'), row('a', '50')], 'exact', 150, 'en-US')).toMatchObject({
-      valid: false, reason: 'duplicateCategory',
+      valid: false,
+      reason: 'duplicateCategory',
     })
   })
   it('accepts exact parts that add up to the amount to the cent', () => {
     expect(checkLines([row('a', '0.1'), row('b', '0.2')], 'exact', 0.3, 'en-US')).toEqual({
-      valid: true, remaining: 0, reason: null,
+      valid: true,
+      remaining: 0,
+      reason: null,
     })
   })
 
@@ -53,18 +51,30 @@ describe('buildLinesPayload', () => {
   it('sends exact amounts in currency units and percentages as numbers', () => {
     expect(buildLinesPayload([row('a', '40,5'), row('b', '109,5')], 'exact', 'pt-BR')).toEqual({
       share_type: 'exact',
-      lines: [{ category_id: 'a', amount: 40.5 }, { category_id: 'b', amount: 109.5 }],
+      lines: [
+        { category_id: 'a', amount: 40.5 },
+        { category_id: 'b', amount: 109.5 },
+      ],
     })
     expect(buildLinesPayload([row('a', '', '30'), row('b', '', '70')], 'percent', 'en-US')).toEqual({
       share_type: 'percent',
-      lines: [{ category_id: 'a', share_pct: 30 }, { category_id: 'b', share_pct: 70 }],
+      lines: [
+        { category_id: 'a', share_pct: 30 },
+        { category_id: 'b', share_pct: 70 },
+      ],
     })
   })
 })
 
 describe('largestLineCategoryId', () => {
   const line = (category_id: string, amount: number, position: number): TransactionCategoryLine => ({
-    id: category_id, category_id, amount, share_type: 'exact', share_pct: null, position, notes: null,
+    id: category_id,
+    category_id,
+    amount,
+    share_type: 'exact',
+    share_pct: null,
+    position,
+    notes: null,
   })
 
   it('picks the largest part, the first one on a tie (the backend rule)', () => {

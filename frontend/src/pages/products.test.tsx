@@ -60,14 +60,34 @@ function product(overrides: Partial<Product> = {}): Product {
     fiscal_refs: null,
     prices: [
       {
-        id: 'usd', product_id: 'hour', currency: 'USD', unit_price: '200.00', tax_rate: null,
-        billing: 'one_time', interval: null, nickname: null, lookup_key: null, active: true,
-        external_source: null, external_id: null, created_at: '2026-01-01T00:00:00Z',
+        id: 'usd',
+        product_id: 'hour',
+        currency: 'USD',
+        unit_price: '200.00',
+        tax_rate: null,
+        billing: 'one_time',
+        interval: null,
+        nickname: null,
+        lookup_key: null,
+        active: true,
+        external_source: null,
+        external_id: null,
+        created_at: '2026-01-01T00:00:00Z',
       },
       {
-        id: 'eur', product_id: 'hour', currency: 'EUR', unit_price: '900.00', tax_rate: null,
-        billing: 'recurring', interval: 'monthly', nickname: 'Monthly', lookup_key: null, active: true,
-        external_source: null, external_id: null, created_at: '2026-01-02T00:00:00Z',
+        id: 'eur',
+        product_id: 'hour',
+        currency: 'EUR',
+        unit_price: '900.00',
+        tax_rate: null,
+        billing: 'recurring',
+        interval: 'monthly',
+        nickname: 'Monthly',
+        lookup_key: null,
+        active: true,
+        external_source: null,
+        external_id: null,
+        created_at: '2026-01-02T00:00:00Z',
       },
     ],
     created_at: '2026-01-01T00:00:00Z',
@@ -82,7 +102,15 @@ describe('ProductsPage', () => {
     canWrite = true
     api.products.list.mockResolvedValue([
       product(),
-      product({ id: 'logo', name: 'Logo design', kind: 'product', description: null, unit: null, prices: [], invoice_count: 0 }),
+      product({
+        id: 'logo',
+        name: 'Logo design',
+        kind: 'product',
+        description: null,
+        unit: null,
+        prices: [],
+        invoice_count: 0,
+      }),
     ])
     api.invoices.settings.mockResolvedValue({ tax_fields: 'hidden' })
     api.fiscal.productFields.mockResolvedValue({ jurisdiction: null, fields: [] })
@@ -140,7 +168,9 @@ describe('ProductsPage', () => {
       unit: 'month',
       description: null,
       fiscal_refs: null,
-      prices: [{ currency: 'USD', unit_price: '3000', tax_rate: null, billing: 'one_time', interval: null, nickname: null }],
+      prices: [
+        { currency: 'USD', unit_price: '3000', tax_rate: null, billing: 'one_time', interval: null, nickname: null },
+      ],
     })
   })
 })
@@ -256,7 +286,9 @@ describe('InvoiceLineEditor with the catalog', () => {
   }
 
   it('fills the line from the product at the price in the invoice currency, and marks it', async () => {
-    const { user } = renderWithProviders(<Harness currency="USD" initial={[{ description: '', quantity: '2', unit_price: '0' }]} />)
+    const { user } = renderWithProviders(
+      <Harness currency="USD" initial={[{ description: '', quantity: '2', unit_price: '0' }]} />,
+    )
     await user.click(screen.getByTestId('invoice-line-pick-product'))
     await user.click(await screen.findByTestId('product-option-hour'))
     expect(screen.getByTestId('invoice-line-description-0')).toHaveValue('Consulting hour')
@@ -268,7 +300,9 @@ describe('InvoiceLineEditor with the catalog', () => {
   })
 
   it('fills only the name when the product has no price in the currency', async () => {
-    const { user } = renderWithProviders(<Harness currency="BRL" initial={[{ description: '', quantity: '1', unit_price: '50' }]} />)
+    const { user } = renderWithProviders(
+      <Harness currency="BRL" initial={[{ description: '', quantity: '1', unit_price: '50' }]} />,
+    )
     await user.click(screen.getByTestId('invoice-line-pick-product'))
     const option = await screen.findByTestId('product-option-hour')
     expect(option).toHaveTextContent(t('invoices.products.noPriceIn', { currency: 'BRL' }))

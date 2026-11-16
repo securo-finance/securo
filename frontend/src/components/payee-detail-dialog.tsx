@@ -7,13 +7,7 @@ import { ArrowRight, Pencil, Trash2 } from 'lucide-react'
 import { payees as payeesApi, transactions as transactionsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
@@ -35,13 +29,7 @@ type PayeeDetailDialogProps = {
  *  frame: the row the user just clicked already carries the name, and a
  *  spinner where the name goes is a spinner over the one thing they came for.
  */
-export function PayeeDetailDialog({
-  payee,
-  canWrite,
-  onOpenChange,
-  onEdit,
-  onDelete,
-}: PayeeDetailDialogProps) {
+export function PayeeDetailDialog({ payee, canWrite, onOpenChange, onEdit, onDelete }: PayeeDetailDialogProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const locale = useDisplayLocale()
@@ -78,10 +66,7 @@ export function PayeeDetailDialog({
       {/* The figures below are the description; Radix warns when neither a
           DialogDescription nor this opt-out is present. Same call as
           global-chat-panel and rule-dialog. */}
-      <DialogContent
-        className="sm:max-w-lg flex flex-col max-h-[calc(100dvh-2rem)]"
-        aria-describedby={undefined}
-      >
+      <DialogContent className="sm:max-w-lg flex flex-col max-h-[calc(100dvh-2rem)]" aria-describedby={undefined}>
         <DialogHeader>
           {/* pr-8 clears the close button. Wrapping rather than truncating:
               the list ellipsizes long names, so this is the one place the
@@ -123,7 +108,8 @@ export function PayeeDetailDialog({
 
               {summaryData.most_common_category && (
                 <p className="text-xs text-muted-foreground">
-                  {t('payees.topCategory')}: <span className="font-medium text-foreground">{summaryData.most_common_category.name}</span>
+                  {t('payees.topCategory')}:{' '}
+                  <span className="font-medium text-foreground">{summaryData.most_common_category.name}</span>
                 </p>
               )}
 
@@ -141,7 +127,9 @@ export function PayeeDetailDialog({
                             {tx.category?.name && <> · {tx.category.name}</>}
                           </p>
                         </div>
-                        <span className={`text-sm font-semibold tabular-nums ml-3 ${tx.type === 'debit' ? 'text-rose-500' : 'text-emerald-600'}`}>
+                        <span
+                          className={`text-sm font-semibold tabular-nums ml-3 ${tx.type === 'debit' ? 'text-rose-500' : 'text-emerald-600'}`}
+                        >
                           {mask(formatCurrency(tx.amount, tx.currency, locale))}
                         </span>
                       </div>

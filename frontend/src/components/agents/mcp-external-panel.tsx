@@ -98,9 +98,7 @@ export function McpExternalPanel() {
   // behind an ingress/reverse proxy can point at a custom host/subpath/port.
   // Fall back to the direct :8765 endpoint derived from the browser location,
   // which matches the default Docker Compose setup.
-  const url =
-    info.external_mcp_url ||
-    `${window.location.protocol}//${window.location.hostname}:8765/mcp`
+  const url = info.external_mcp_url || `${window.location.protocol}//${window.location.hostname}:8765/mcp`
 
   // The first three snippets are universal regardless of client choice.
   const universalSnippets: Snippet[] = result
@@ -126,9 +124,7 @@ export function McpExternalPanel() {
           <Plug className="h-5 w-5 text-muted-foreground" />
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-base font-semibold">
-            {t('agents.mcpExternal.title', 'External MCP access')}
-          </h2>
+          <h2 className="text-base font-semibold">{t('agents.mcpExternal.title', 'External MCP access')}</h2>
           <p className="text-sm text-muted-foreground mt-1">
             {t(
               'agents.mcpExternal.subtitle',
@@ -141,12 +137,7 @@ export function McpExternalPanel() {
 
       <div className="px-4 sm:px-5 py-4 space-y-4">
         {!result ? (
-          <Button
-            size="sm"
-            className="gap-1.5 h-8"
-            onClick={() => mintMut.mutate()}
-            disabled={mintMut.isPending}
-          >
+          <Button size="sm" className="gap-1.5 h-8" onClick={() => mintMut.mutate()} disabled={mintMut.isPending}>
             <KeyRound size={13} />
             {mintMut.isPending
               ? t('agents.mcpExternal.minting', 'Generating…')

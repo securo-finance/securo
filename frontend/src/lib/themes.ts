@@ -354,7 +354,14 @@ export function themeVars(theme: Theme, mode: ThemeMode, accent?: AccentColors):
     if (value) for (const name of names) vars[name] = value
   }
   set('background', '--background')
-  set('foreground', '--foreground', '--card-foreground', '--popover-foreground', '--secondary-foreground', '--sidebar-foreground')
+  set(
+    'foreground',
+    '--foreground',
+    '--card-foreground',
+    '--popover-foreground',
+    '--secondary-foreground',
+    '--sidebar-foreground',
+  )
   set('card', '--card', '--popover', '--sidebar')
   set('primary-foreground', '--primary-foreground', '--sidebar-primary-foreground')
   set('muted', '--muted', '--secondary')
@@ -427,7 +434,14 @@ export function pluginThemeId(pluginId: string, key: string): string {
 /** A theme an installed plugin brings, in the shape the library uses. */
 export function pluginTheme(
   plugin: { plugin_id: string; name: Record<string, string> },
-  theme: { key: string; name: Record<string, string>; light?: Record<string, string>; dark?: Record<string, string>; radius?: number | null; font?: ThemeFont | null },
+  theme: {
+    key: string
+    name: Record<string, string>
+    light?: Record<string, string>
+    dark?: Record<string, string>
+    radius?: number | null
+    font?: ThemeFont | null
+  },
 ): Theme {
   return {
     id: pluginThemeId(plugin.plugin_id, theme.key),

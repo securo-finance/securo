@@ -6,12 +6,24 @@ import { formatCurrency } from '@/lib/format'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, Asset } from '@/types'
 
-const home = { id: 'home', type: 'real_estate', currency: 'EUR', current_value: 500000, current_value_primary: null } as Asset
+const home = {
+  id: 'home',
+  type: 'real_estate',
+  currency: 'EUR',
+  current_value: 500000,
+  current_value_primary: null,
+} as Asset
 
 function loan(id: string, name: string, balance: number, securedTo: string | null = 'home') {
   return {
-    id, name, display_name: null, type: 'loan', secured_asset_id: securedTo,
-    current_balance: balance, balance_primary: null, currency: 'EUR',
+    id,
+    name,
+    display_name: null,
+    type: 'loan',
+    secured_asset_id: securedTo,
+    current_balance: balance,
+    balance_primary: null,
+    currency: 'EUR',
   } as unknown as Account
 }
 
@@ -30,11 +42,15 @@ describe('PropertyEquitySummary', () => {
     expect(screen.getByText('Part A')).toBeInTheDocument()
     expect(screen.getByText('Part B')).toBeInTheDocument()
     expect(screen.queryByText('Elsewhere')).not.toBeInTheDocument()
-    expect(screen.getByText(t('assets.propertyEquity', {
-      value: formatCurrency(500000, 'EUR', 'en-US'),
-      debt: formatCurrency(250000, 'EUR', 'en-US'),
-      equity: formatCurrency(250000, 'EUR', 'en-US'),
-    }))).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        t('assets.propertyEquity', {
+          value: formatCurrency(500000, 'EUR', 'en-US'),
+          debt: formatCurrency(250000, 'EUR', 'en-US'),
+          equity: formatCurrency(250000, 'EUR', 'en-US'),
+        }),
+      ),
+    ).toBeInTheDocument()
   })
 
   it('shows nothing for a property without a linked loan', () => {
@@ -47,9 +63,7 @@ describe('PropertyEquitySummary', () => {
 
   it('still lists the linked loans when the property has no FX rate', () => {
     const abroad = { ...home, currency: 'GBP' } as Asset
-    renderWithProviders(
-      <PropertyEquitySummary asset={abroad} loans={[loan('a', 'Part A', -200000)]} {...props} />,
-    )
+    renderWithProviders(<PropertyEquitySummary asset={abroad} loans={[loan('a', 'Part A', -200000)]} {...props} />)
 
     expect(screen.getByText('Part A')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Part A' })).toHaveAttribute('href', '/accounts/a')

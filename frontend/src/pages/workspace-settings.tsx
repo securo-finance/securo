@@ -4,7 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { auth as authApi, currencies as currenciesApi, fiscal as fiscalApi, workspaces as workspacesApi } from '@/lib/api'
+import {
+  auth as authApi,
+  currencies as currenciesApi,
+  fiscal as fiscalApi,
+  workspaces as workspacesApi,
+} from '@/lib/api'
 import { useTimezones } from '@/hooks/use-timezone'
 import { TimezoneSelect } from '@/components/timezone-select'
 import { useAuth } from '@/contexts/auth-context'
@@ -20,18 +25,8 @@ import { IconPicker } from '@/components/icon-picker'
 import { PluginsSection } from '@/components/plugins-section'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { CategoryIcon } from '@/components/category-icon'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -103,7 +98,16 @@ export default function WorkspaceSettingsPage() {
   const [removeTarget, setRemoveTarget] = useState<WorkspaceMember | null>(null)
   const [archiveOpen, setArchiveOpen] = useState(false)
 
-  const formKey = JSON.stringify([current?.id, current?.name, current?.default_currency, current?.locale, current?.tax_jurisdiction, current?.timezone, current?.icon, current?.color])
+  const formKey = JSON.stringify([
+    current?.id,
+    current?.name,
+    current?.default_currency,
+    current?.locale,
+    current?.tax_jurisdiction,
+    current?.timezone,
+    current?.icon,
+    current?.color,
+  ])
   const [previousFormKey, setPreviousFormKey] = useState<string | null>(null)
   if (formKey !== previousFormKey) {
     setPreviousFormKey(formKey)
@@ -156,7 +160,8 @@ export default function WorkspaceSettingsPage() {
 
   const statsQuery = useQuery({
     queryKey: ['workspace-stats', current?.id],
-    queryFn: () => (current ? workspacesApi.stats(current.id) : Promise.resolve({ members: 0, accounts: 0, transactions: 0 })),
+    queryFn: () =>
+      current ? workspacesApi.stats(current.id) : Promise.resolve({ members: 0, accounts: 0, transactions: 0 }),
     enabled: !!current,
   })
 
@@ -180,7 +185,10 @@ export default function WorkspaceSettingsPage() {
       // display currency server-side; refresh the cached user so the
       // whole app re-renders in the new currency, then drop currency-
       // dependent queries.
-      void authApi.me().then(updateUser).catch(() => {})
+      void authApi
+        .me()
+        .then(updateUser)
+        .catch(() => {})
       void queryClient.invalidateQueries()
     },
     onError: (e: unknown) => {
@@ -221,7 +229,7 @@ export default function WorkspaceSettingsPage() {
       return workspacesApi.invite(current.id, {
         email: inviteEmail.trim(),
         role: inviteRole,
-        password: localAuthEnabled ? (invitePassword || undefined) : undefined,
+        password: localAuthEnabled ? invitePassword || undefined : undefined,
       })
     },
     onSuccess: () => {
@@ -319,22 +327,21 @@ export default function WorkspaceSettingsPage() {
               )}
               {isManaged && (
                 <Badge variant="outline" className="text-[11px]">
-                  {isManagerSelf
-                    ? t('workspace.youManageThis')
-                    : t('workspace.externallyManaged')}
+                  {isManagerSelf ? t('workspace.youManageThis') : t('workspace.externallyManaged')}
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              {t('workspace.settingsDescription')}
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">{t('workspace.settingsDescription')}</p>
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-border">
           <StatTile label={t('workspace.members')} value={String(stats.members)} />
           <StatTile label={t('workspace.statAccounts', 'Contas')} value={String(stats.accounts)} />
           <StatTile label={t('workspace.statTransactions', 'Transações')} value={String(stats.transactions)} />
-          <StatTile label={t('workspace.statCreatedAt', 'Criado em')} value={formatDate(current.created_at, localeForFormat)} />
+          <StatTile
+            label={t('workspace.statCreatedAt', 'Criado em')}
+            value={formatDate(current.created_at, localeForFormat)}
+          />
         </div>
       </section>
 
@@ -362,9 +369,7 @@ export default function WorkspaceSettingsPage() {
             {canManage ? (
               <>
                 <div className="space-y-1.5">
-                  <Label className="text-[13px]">
-                    {t('workspace.icon', 'Icon')}
-                  </Label>
+                  <Label className="text-[13px]">{t('workspace.icon', 'Icon')}</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <button
@@ -420,16 +425,14 @@ export default function WorkspaceSettingsPage() {
               <Label htmlFor="ws-currency" className="text-[13px]">
                 {t('workspace.defaultCurrency')}
               </Label>
-              <Select
-                value={editCurrency}
-                onValueChange={setEditCurrency}
-                disabled={!canManage}
-              >
+              <Select value={editCurrency} onValueChange={setEditCurrency} disabled={!canManage}>
                 <SelectTrigger id="ws-currency" className="h-10 rounded-lg w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(supportedCurrencies ?? [{ code: editCurrency, symbol: editCurrency, name: editCurrency, flag: '' }]).map((c) => (
+                  {(
+                    supportedCurrencies ?? [{ code: editCurrency, symbol: editCurrency, name: editCurrency, flag: '' }]
+                  ).map((c) => (
                     <SelectItem key={c.code} value={c.code}>
                       <span className="mr-2">{c.flag}</span>
                       {c.name}
@@ -453,7 +456,9 @@ export default function WorkspaceSettingsPage() {
                 <SelectContent>
                   <SelectItem value="__none__">—</SelectItem>
                   {SUPPORTED_LANGS.map(({ code, label }) => (
-                    <SelectItem key={code} value={code}>{label}</SelectItem>
+                    <SelectItem key={code} value={code}>
+                      {label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -500,9 +505,7 @@ export default function WorkspaceSettingsPage() {
                 emptyOption={t('workspace.timezoneDefault', { zone: timezoneOptions?.default ?? 'UTC' })}
                 disabled={!canManage}
               />
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                {t('workspace.timezoneHint')}
-              </p>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">{t('workspace.timezoneHint')}</p>
             </div>
           </div>
         </div>
@@ -537,10 +540,7 @@ export default function WorkspaceSettingsPage() {
             {members.map((m) => {
               const isMe = m.user_id === currentUser?.id
               return (
-                <li
-                  key={m.id}
-                  className="py-3 px-4 flex items-center gap-3 hover:bg-muted/30 transition-colors"
-                >
+                <li key={m.id} className="py-3 px-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
                   <Avatar className="h-9 w-9">
                     <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">
                       {(m.display_name || m.email).slice(0, 2).toUpperCase()}
@@ -549,15 +549,9 @@ export default function WorkspaceSettingsPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">
                       {m.display_name || m.email}
-                      {isMe && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          ({t('workspace.you')})
-                        </span>
-                      )}
+                      {isMe && <span className="ml-2 text-xs text-muted-foreground">({t('workspace.you')})</span>}
                     </p>
-                    {m.display_name && (
-                      <p className="text-xs text-muted-foreground truncate">{m.email}</p>
-                    )}
+                    {m.display_name && <p className="text-xs text-muted-foreground truncate">{m.email}</p>}
                   </div>
                   {canManage && !isMe ? (
                     <select
@@ -607,16 +601,12 @@ export default function WorkspaceSettingsPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-base font-semibold">
-                {t('workspace.dangerZone', 'Zona de perigo')}
-              </h2>
+              <h2 className="text-base font-semibold">{t('workspace.dangerZone', 'Zona de perigo')}</h2>
             </div>
           </div>
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium">
-                {t('workspace.archiveAction', 'Arquivar workspace')}
-              </p>
+              <p className="text-sm font-medium">{t('workspace.archiveAction', 'Arquivar workspace')}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {t(
                   'workspace.archiveHint',
@@ -643,11 +633,7 @@ export default function WorkspaceSettingsPage() {
           <DialogHeader>
             <DialogTitle>{t('workspace.addMemberTitle')}</DialogTitle>
             <DialogDescription>
-              {t(
-                localAuthEnabled
-                  ? 'workspace.addMemberDescription'
-                  : 'workspace.addMemberDescriptionExistingOnly',
-              )}
+              {t(localAuthEnabled ? 'workspace.addMemberDescription' : 'workspace.addMemberDescriptionExistingOnly')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-1">
@@ -695,18 +681,12 @@ export default function WorkspaceSettingsPage() {
                   className="h-10 rounded-lg"
                   placeholder=""
                 />
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  {t('workspace.passwordHint')}
-                </p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">{t('workspace.passwordHint')}</p>
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setInviteOpen(false)}
-              className="rounded-lg"
-            >
+            <Button variant="outline" onClick={() => setInviteOpen(false)} className="rounded-lg">
               {t('common.cancel')}
             </Button>
             <Button
@@ -721,10 +701,7 @@ export default function WorkspaceSettingsPage() {
       </Dialog>
 
       {/* Remove member dialog */}
-      <Dialog
-        open={!!removeTarget}
-        onOpenChange={(open) => !open && setRemoveTarget(null)}
-      >
+      <Dialog open={!!removeTarget} onOpenChange={(open) => !open && setRemoveTarget(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('workspace.removeConfirmTitle')}</DialogTitle>
@@ -733,11 +710,7 @@ export default function WorkspaceSettingsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setRemoveTarget(null)}
-              className="rounded-lg"
-            >
+            <Button variant="outline" onClick={() => setRemoveTarget(null)} className="rounded-lg">
               {t('common.cancel')}
             </Button>
             <Button
@@ -756,9 +729,7 @@ export default function WorkspaceSettingsPage() {
       <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {t('workspace.archiveConfirmTitle', 'Arquivar workspace?')}
-            </DialogTitle>
+            <DialogTitle>{t('workspace.archiveConfirmTitle', 'Arquivar workspace?')}</DialogTitle>
             <DialogDescription>
               {t(
                 'workspace.archiveConfirmDescription',
@@ -768,11 +739,7 @@ export default function WorkspaceSettingsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setArchiveOpen(false)}
-              className="rounded-lg"
-            >
+            <Button variant="outline" onClick={() => setArchiveOpen(false)} className="rounded-lg">
               {t('common.cancel')}
             </Button>
             <Button

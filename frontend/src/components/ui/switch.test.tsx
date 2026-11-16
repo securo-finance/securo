@@ -6,18 +6,14 @@ import { renderWithProviders } from '@/test/utils'
 
 describe('Switch', () => {
   it('exposes its state to assistive tech', () => {
-    renderWithProviders(
-      <Switch checked onCheckedChange={vi.fn()} aria-labelledby="lbl" />,
-    )
+    renderWithProviders(<Switch checked onCheckedChange={vi.fn()} aria-labelledby="lbl" />)
 
     expect(screen.getByRole('switch')).toBeChecked()
   })
 
   it('reports the flipped value, not the current one', async () => {
     const onCheckedChange = vi.fn()
-    const { user } = renderWithProviders(
-      <Switch checked={false} onCheckedChange={onCheckedChange} />,
-    )
+    const { user } = renderWithProviders(<Switch checked={false} onCheckedChange={onCheckedChange} />)
 
     await user.click(screen.getByRole('switch'))
 
@@ -26,9 +22,7 @@ describe('Switch', () => {
 
   it('flips back off from on', async () => {
     const onCheckedChange = vi.fn()
-    const { user } = renderWithProviders(
-      <Switch checked onCheckedChange={onCheckedChange} />,
-    )
+    const { user } = renderWithProviders(<Switch checked onCheckedChange={onCheckedChange} />)
 
     await user.click(screen.getByRole('switch'))
 
@@ -37,9 +31,7 @@ describe('Switch', () => {
 
   it('stays silent while disabled', async () => {
     const onCheckedChange = vi.fn()
-    const { user } = renderWithProviders(
-      <Switch checked={false} onCheckedChange={onCheckedChange} disabled />,
-    )
+    const { user } = renderWithProviders(<Switch checked={false} onCheckedChange={onCheckedChange} disabled />)
 
     const toggle = screen.getByRole('switch')
     expect(toggle).toBeDisabled()

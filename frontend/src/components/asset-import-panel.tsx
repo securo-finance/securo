@@ -3,7 +3,18 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, Download, FileText, Info, Settings2, Upload, X } from 'lucide-react'
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  Download,
+  FileText,
+  Info,
+  Settings2,
+  Upload,
+  X,
+} from 'lucide-react'
 
 import { assets as assetsApi, assetGroups as assetGroupsApi } from '@/lib/api'
 import type { AssetImportPreview, AssetOrderImport } from '@/types'
@@ -123,11 +134,7 @@ export function AssetImportPanel() {
     if (!preview || preview.orders.length === 0) return
     setImporting(true)
     try {
-      const result = await assetsApi.importOrders(
-        preview.orders as AssetOrderImport[],
-        groupId || null,
-        file?.name,
-      )
+      const result = await assetsApi.importOrders(preview.orders as AssetOrderImport[], groupId || null, file?.name)
       queryClient.invalidateQueries({ queryKey: ['assets'] })
       queryClient.invalidateQueries({ queryKey: ['asset-groups'] })
       queryClient.invalidateQueries({ queryKey: ['import-logs'] })
@@ -159,7 +166,10 @@ export function AssetImportPanel() {
           className={`cursor-pointer rounded-xl border-2 border-dashed bg-card transition-all ${
             dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-border'
           }`}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setDragOver(true)
+          }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
           onClick={() => !loading && fileInputRef.current?.click()}
@@ -192,7 +202,10 @@ export function AssetImportPanel() {
                 </p>
                 <button
                   className="mt-3 flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-rose-500"
-                  onClick={(e) => { e.stopPropagation(); handleReset() }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleReset()
+                  }}
                 >
                   <X size={12} /> {t('import.removeFile')}
                 </button>
@@ -206,7 +219,10 @@ export function AssetImportPanel() {
                 <p className="text-xs text-muted-foreground">{t('assetImport.chooseHint')}</p>
                 <button
                   className="mt-2 flex items-center gap-1 text-xs text-primary transition-colors hover:text-primary/80"
-                  onClick={(e) => { e.stopPropagation(); assetsApi.importTemplate() }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    assetsApi.importTemplate()
+                  }}
                 >
                   <Download size={12} />
                   {t('assetImport.downloadTemplate')}
@@ -230,9 +246,7 @@ export function AssetImportPanel() {
               {needsMapping ? t('assetImport.mapPrompt') : t('assetImport.columnMapping')}
             </span>
             {!needsMapping && mappingSummary && (
-              <span className="min-w-0 truncate text-xs text-muted-foreground/70">
-                {mappingSummary}
-              </span>
+              <span className="min-w-0 truncate text-xs text-muted-foreground/70">{mappingSummary}</span>
             )}
             <ChevronDown
               size={16}
@@ -246,7 +260,8 @@ export function AssetImportPanel() {
               {MAPPABLE_FIELDS.map(({ key, required }) => (
                 <div key={key} className="grid gap-1">
                   <Label htmlFor={`map-${key}`} className="text-xs">
-                    {t(`assetImport.field.${key}`)}{required ? ' *' : ''}
+                    {t(`assetImport.field.${key}`)}
+                    {required ? ' *' : ''}
                   </Label>
                   <select
                     id={`map-${key}`}
@@ -256,7 +271,9 @@ export function AssetImportPanel() {
                   >
                     <option value="">{t('assetImport.ignoreColumn')}</option>
                     {(preview?.csv_columns ?? []).map((col) => (
-                      <option key={col} value={col}>{col}</option>
+                      <option key={col} value={col}>
+                        {col}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -302,7 +319,9 @@ export function AssetImportPanel() {
               >
                 <option value="">{t('assetImport.noWallet')}</option>
                 {(wallets ?? []).map((w) => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -354,9 +373,7 @@ export function AssetImportPanel() {
                     {err.detail ? ` (${err.detail})` : ''}
                   </li>
                 ))}
-                {rowErrors.length > 8 && (
-                  <li>{t('assetImport.moreErrors', { count: rowErrors.length - 8 })}</li>
-                )}
+                {rowErrors.length > 8 && <li>{t('assetImport.moreErrors', { count: rowErrors.length - 8 })}</li>}
               </ul>
             </div>
           )}

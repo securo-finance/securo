@@ -38,14 +38,7 @@ interface MonthPickerProps {
   maxDate?: Date
 }
 
-function MonthPicker({
-  selectedMonth,
-  onMonthSelect,
-  locale,
-  className,
-  minDate,
-  maxDate,
-}: MonthPickerProps) {
+function MonthPicker({ selectedMonth, onMonthSelect, locale, className, minDate, maxDate }: MonthPickerProps) {
   const initialYear = selectedMonth?.getFullYear() ?? new Date().getFullYear()
   const [menuYear, setMenuYear] = React.useState<number>(initialYear)
 
@@ -72,9 +65,7 @@ function MonthPicker({
         >
           <ChevronLeft className="size-4" />
         </button>
-        <span className="text-sm font-medium text-foreground capitalize px-2 py-1">
-          {menuYear}
-        </span>
+        <span className="text-sm font-medium text-foreground capitalize px-2 py-1">{menuYear}</span>
         <button
           type="button"
           onClick={handleNextYear}
@@ -110,9 +101,7 @@ function MonthPicker({
                   }
                 }
 
-                const displayMonthName = locale
-                  ? format(monthDate, 'MMM', { locale })
-                  : m.name
+                const displayMonthName = locale ? format(monthDate, 'MMM', { locale }) : m.name
 
                 return (
                   <td key={m.number} className="h-10 w-1/4 text-center text-sm p-0 relative">
@@ -124,7 +113,7 @@ function MonthPicker({
                         'h-full w-full rounded-lg text-sm capitalize transition-colors flex items-center justify-center cursor-pointer',
                         isSelected
                           ? 'bg-primary text-primary-foreground font-semibold'
-                          : 'text-foreground hover:bg-muted/60 disabled:opacity-30 disabled:pointer-events-none'
+                          : 'text-foreground hover:bg-muted/60 disabled:opacity-30 disabled:pointer-events-none',
                       )}
                     >
                       {displayMonthName}

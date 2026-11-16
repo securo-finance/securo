@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  formatTransactionTotal,
-  getTransactionTotalCurrency,
-} from '@/lib/asset-transaction-total'
+import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 
 describe('asset transaction total', () => {
   const holdings = [

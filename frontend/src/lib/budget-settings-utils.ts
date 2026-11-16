@@ -3,7 +3,15 @@ import type { BudgetVsActual } from '@/types'
 import { parseAmountInput } from '@/lib/format'
 
 type DecimalAmount = number | string
-type BudgetVsActualApiRow = Omit<BudgetVsActual, 'budget_amount' | 'actual_amount' | 'projected_amount' | 'prev_month_amount' | 'projected_prev_month_amount' | 'percentage_used'> & {
+type BudgetVsActualApiRow = Omit<
+  BudgetVsActual,
+  | 'budget_amount'
+  | 'actual_amount'
+  | 'projected_amount'
+  | 'prev_month_amount'
+  | 'projected_prev_month_amount'
+  | 'percentage_used'
+> & {
   budget_amount: DecimalAmount | null
   actual_amount: DecimalAmount
   projected_amount: DecimalAmount
@@ -91,7 +99,11 @@ export function planBudgetChange({
       if (priorRecurring) {
         // Stop the underlying series after this month as well; otherwise it
         // would reappear once the month-only zero override ends.
-        operations.push({ type: 'update', id: priorRecurring.id, data: { amount: 0, effective_month: nextMonth(month) } })
+        operations.push({
+          type: 'update',
+          id: priorRecurring.id,
+          data: { amount: 0, effective_month: nextMonth(month) },
+        })
       }
     }
     return operations

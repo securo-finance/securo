@@ -10,7 +10,10 @@ function hue(seed: string): number {
 }
 
 function initials(label: string): string {
-  const words = label.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean)
+  const words = label
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
   const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? '?').slice(0, 2)
   return letters.toUpperCase()
 }

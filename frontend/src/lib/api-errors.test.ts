@@ -14,19 +14,12 @@ function apiError(detail: unknown): unknown {
 
 describe('extractApiError', () => {
   it('returns a string detail verbatim', () => {
-    expect(extractApiError(apiError('Category is still in use'))).toBe(
-      'Category is still in use',
-    )
+    expect(extractApiError(apiError('Category is still in use'))).toBe('Category is still in use')
   })
 
   it('formats FastAPI validation details using the legacy format', () => {
     expect(
-      extractApiError(
-        apiError([
-          { loc: ['body', 'name'], msg: 'Field required' },
-          { loc: ['body', 'amount'] },
-        ]),
-      ),
+      extractApiError(apiError([{ loc: ['body', 'name'], msg: 'Field required' }, { loc: ['body', 'amount'] }])),
     ).toBe('name: Field required, amount: invalid')
   })
 
@@ -48,9 +41,7 @@ describe('extractApiError', () => {
   })
 
   it('uses an explicit fallback when no detail is available', () => {
-    expect(extractApiError(new Error('network failure'), 'Localized fallback')).toBe(
-      'Localized fallback',
-    )
+    expect(extractApiError(new Error('network failure'), 'Localized fallback')).toBe('Localized fallback')
   })
 })
 

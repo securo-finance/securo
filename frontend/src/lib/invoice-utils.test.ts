@@ -71,9 +71,7 @@ describe('STATE_TONE', () => {
   it('styles every state the server can send', () => {
     // A state without a tone renders unstyled in production. Keeping the
     // list here means adding one is a failing test, not a silent gap.
-    const states: InvoiceState[] = [
-      'draft', 'open', 'partial', 'paid', 'overdue', 'void', 'uncollectible',
-    ]
+    const states: InvoiceState[] = ['draft', 'open', 'partial', 'paid', 'overdue', 'void', 'uncollectible']
     for (const state of states) expect(STATE_TONE[state]).toBeTruthy()
   })
 
@@ -105,8 +103,13 @@ describe('availableActions', () => {
   it('lets a draft be edited, deleted and issued — and nothing else', () => {
     const actions = availableActions(makeInvoice({ status: 'draft', state: 'draft', number: null }))
     expect(actions).toEqual({
-      canEdit: true, canDelete: true, canIssue: true,
-      canVoid: false, canWriteOff: false, canReopen: false, canAllocate: false,
+      canEdit: true,
+      canDelete: true,
+      canIssue: true,
+      canVoid: false,
+      canWriteOff: false,
+      canReopen: false,
+      canAllocate: false,
     })
   })
 
@@ -126,8 +129,15 @@ describe('availableActions', () => {
       makeInvoice({
         balance: '500.00',
         allocations: [
-          { id: 'a1', transaction_id: 't1', credit_note_id: null, amount: '500.00',
-            method: 'manual', allocated_at: '2026-08-10T00:00:00Z', transaction: null },
+          {
+            id: 'a1',
+            transaction_id: 't1',
+            credit_note_id: null,
+            amount: '500.00',
+            method: 'manual',
+            allocated_at: '2026-08-10T00:00:00Z',
+            transaction: null,
+          },
         ],
       }),
     )
@@ -245,16 +255,23 @@ describe('customFieldDefs', () => {
 
 describe('linesTotal', () => {
   it('multiplies quantity by price across lines', () => {
-    expect(linesTotal([
-      { quantity: '10', unit_price: '150.00' },
-      { quantity: '2', unit_price: '25.50' },
-    ])).toBe(1551)
+    expect(
+      linesTotal([
+        { quantity: '10', unit_price: '150.00' },
+        { quantity: '2', unit_price: '25.50' },
+      ]),
+    ).toBe(1551)
   })
 
   it('ignores lines that are still half-typed', () => {
     // The form calls this on every keystroke; "1." and "" are normal
     // intermediate states, not errors to surface.
-    expect(linesTotal([{ quantity: '', unit_price: 'abc' }, { quantity: '2', unit_price: '10' }])).toBe(20)
+    expect(
+      linesTotal([
+        { quantity: '', unit_price: 'abc' },
+        { quantity: '2', unit_price: '10' },
+      ]),
+    ).toBe(20)
   })
 
   it('is zero for no lines', () => {
@@ -293,7 +310,6 @@ describe('invoiceErrorKey', () => {
     expect(invoiceErrorKey(undefined)).toBeNull()
   })
 })
-
 
 describe('formatFileSize', () => {
   it('counts bytes below a kilobyte', () => {
@@ -344,7 +360,6 @@ describe('documentSource', () => {
     expect(documentSource('imported', undefined)).toBe('missing')
   })
 })
-
 
 describe('documentProvenance', () => {
   it('names the system that delivered the file, as that system names itself', () => {

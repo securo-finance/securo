@@ -89,9 +89,7 @@ export function checkLines(
   locale: string,
 ): CategoryLinesCheck {
   const target = shareType === 'exact' ? Math.round(Math.abs(totalAmount) * 100) : 10000
-  const values = rows.map((row) =>
-    shareType === 'exact' ? rowCents(row.amount, locale) : rowBasisPoints(row.percent),
-  )
+  const values = rows.map((row) => (shareType === 'exact' ? rowCents(row.amount, locale) : rowBasisPoints(row.percent)))
   const sum = values.reduce<number>((acc, v) => acc + (v ?? 0), 0)
   const remaining = target - sum
   const fail = (reason: CategoryLinesCheck['reason']): CategoryLinesCheck => ({

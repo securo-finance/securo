@@ -16,11 +16,9 @@ export function normalizeRuleMatchValue(value: string | number): string {
  * case- and accent-insensitively. */
 export function ruleSearchText(rule: Rule, categories: Category[]): string {
   const categoryNames = rule.actions
-    .filter(a => a.op === 'set_category')
-    .map(a => categories.find(c => c.id === a.value)?.name ?? '')
-  return [
-    rule.name,
-    ...flattenConditions(rule.conditions).map(c => String(c.value ?? '')),
-    ...categoryNames,
-  ].map(normalizeRuleMatchValue).join(' ')
+    .filter((a) => a.op === 'set_category')
+    .map((a) => categories.find((c) => c.id === a.value)?.name ?? '')
+  return [rule.name, ...flattenConditions(rule.conditions).map((c) => String(c.value ?? '')), ...categoryNames]
+    .map(normalizeRuleMatchValue)
+    .join(' ')
 }
