@@ -2033,12 +2033,14 @@ async def propose_update_payee(
     description=_PROPOSAL_PREFACE
     + (
         "Build a preview for merging one or more payees into another. The "
-        "target keeps the history: transactions and invoices move to it. "
-        "The sources are deleted along with their fiscal documents, which "
-        "are not copied to the target. A source that still has a recurring "
-        "invoice schedule is refused, because the agreement is not moved. "
-        "Use this for a duplicate counterparty, never for a rename: a "
-        "rename is propose_update_payee."
+        "target keeps the history: transactions, invoices and fiscal "
+        "documents move to it. A document whose kind the target already "
+        "holds is dropped, because one payee carries one document per "
+        "kind; the target's value stays and the first source in source_ids "
+        "wins a shared kind. A source that still has a recurring invoice "
+        "schedule is refused, because the agreement is not moved. Use this "
+        "for a duplicate counterparty, never for a rename: a rename is "
+        "propose_update_payee."
     ),
     parameters={
         "type": "object",
@@ -2081,6 +2083,11 @@ async def propose_merge_payees(
     transactions_to_reassign = 0
     schedules_found = 0
     documents_deleted: list[dict[str, str]] = []
+    # merge_payees moves a source's documents onto the target unless the
+    # target already holds that kind, so the preview has to walk the sources
+    # in the same order to know which rows are actually lost: the target's
+    # kinds are claimed first, then each source's in turn.
+    held_kinds = {row.kind for row in target.tax_ids}
     for source_id in parsed_sources:
         source = await payee_service.get_payee(session, source_id, ws_id)
         if source is None:
@@ -2106,10 +2113,15 @@ async def propose_merge_payees(
         source_tax_ids = [
             {"kind": row.kind, "value": row.value} for row in source.tax_ids
         ]
-        # Nothing copies these onto the target: the rows are deleted with
-        # the source. Listing them here is the only place the caller sees
-        # that a document is about to disappear.
-        documents_deleted.extend(source_tax_ids)
+        # Only a document whose kind is already taken is lost: the row goes
+        # down with the source instead of moving to the target. Listing
+        # those rows is the only place the caller sees that a value is
+        # about to disappear; the rest survive on the target.
+        for document in source_tax_ids:
+            if document["kind"] in held_kinds:
+                documents_deleted.append(document)
+            else:
+                held_kinds.add(document["kind"])
         sources.append(
             {
                 "id": str(source.id),

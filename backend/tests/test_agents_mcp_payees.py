@@ -495,7 +495,7 @@ async def test_merge_refuses_target_as_source(
     assert result["error"] == "target payee cannot also be a source"
 
 
-async def test_preview_merge_payees_discloses_deleted_documents(
+async def test_preview_merge_payees_keeps_a_document_the_target_lacks(
     session: AsyncSession,
     external_ctx: CallContext,
     cpf_payee: dict,
@@ -524,13 +524,106 @@ async def test_preview_merge_payees_discloses_deleted_documents(
     assert result["sources"][0]["tax_ids"] == [
         {"kind": "cpf", "value": "11144477735"}
     ]
-    # The source row is deleted, so its document goes with it. The preview
-    # has to say that instead of implying the target inherits it.
-    assert result["documents_deleted"] == [
-        {"kind": "cpf", "value": "11144477735"}
-    ]
+    # The target holds no CPF, so the merge carries this one over and
+    # nothing is lost.
+    assert result["documents_deleted"] == []
     assert result["sources"][0]["schedule_count"] == 0
     assert "applied" not in result
+
+
+async def test_preview_merge_payees_lists_the_document_the_target_already_holds(
+    session: AsyncSession,
+    external_ctx: CallContext,
+    cpf_payee: dict,
+    target_payee: dict,
+):
+    """One document per kind: the target's stays and the source's is lost."""
+    session.add_all(
+        [
+            PayeeTaxId(
+                id=uuid.uuid4(),
+                payee_id=cpf_payee["id"],
+                workspace_id=cpf_payee["workspace_id"],
+                kind="cpf",
+                value="52998224725",
+            ),
+            PayeeTaxId(
+                id=uuid.uuid4(),
+                payee_id=target_payee["id"],
+                workspace_id=target_payee["workspace_id"],
+                kind="cpf",
+                value="11144477735",
+            ),
+        ]
+    )
+    await session.commit()
+
+    handler = REGISTRY["propose_merge_payees"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        source_ids=[str(cpf_payee["id"])],
+        target_id=str(target_payee["id"]),
+    )
+
+    assert result["documents_deleted"] == [
+        {"kind": "cpf", "value": "52998224725"}
+    ]
+
+
+async def test_preview_merge_payees_lists_only_the_losing_source_document(
+    session: AsyncSession,
+    external_ctx: CallContext,
+    cpf_payee: dict,
+    target_payee: dict,
+    test_user,
+    test_workspace,
+):
+    """The first source in source_ids wins a kind, matching merge_payees."""
+    second = Payee(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Alex Example Duplicate",
+        source="sync",
+    )
+    session.add(second)
+    await session.flush()
+    session.add_all(
+        [
+            PayeeTaxId(
+                id=uuid.uuid4(),
+                payee_id=cpf_payee["id"],
+                workspace_id=cpf_payee["workspace_id"],
+                kind="cpf",
+                value="11144477735",
+            ),
+            PayeeTaxId(
+                id=uuid.uuid4(),
+                payee_id=second.id,
+                workspace_id=second.workspace_id,
+                kind="cpf",
+                value="52998224725",
+            ),
+        ]
+    )
+    await session.commit()
+
+    handler = REGISTRY["propose_merge_payees"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        source_ids=[str(cpf_payee["id"]), str(second.id)],
+        target_id=str(target_payee["id"]),
+    )
+
+    assert [source["tax_ids"] for source in result["sources"]] == [
+        [{"kind": "cpf", "value": "11144477735"}],
+        [{"kind": "cpf", "value": "52998224725"}],
+    ]
+    assert result["documents_deleted"] == [
+        {"kind": "cpf", "value": "52998224725"}
+    ]
 
 
 async def test_merge_refuses_source_with_schedule(
