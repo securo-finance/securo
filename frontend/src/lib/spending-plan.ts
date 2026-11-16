@@ -89,6 +89,14 @@ export function monthGrid(month: string): (string | null)[] {
   ]
 }
 
+/** ``monthGrid`` without the weeks that ended before ``today``. */
+export function gridFrom(month: string, today: string): (string | null)[] {
+  const grid = monthGrid(month)
+  let start = 0
+  while (start + 7 <= grid.length && grid.slice(start, start + 7).every((day) => day === null || day < today)) start += 7
+  return grid.slice(start)
+}
+
 // ---- Money in cents, so sums of many events never drift ----
 
 const cents = (value: number) => Math.round(value * 100)

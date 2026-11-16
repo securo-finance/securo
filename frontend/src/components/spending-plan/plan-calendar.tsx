@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { balanceTone, dayEntries, monthGrid } from '@/lib/spending-plan'
+import { balanceTone, dayEntries, gridFrom } from '@/lib/spending-plan'
 import { cn } from '@/lib/utils'
 import type { SpendingPlanEvent } from '@/types'
 import { entryLabel, entryTone, TONE_BAND, TONE_TEXT, type PlanFormat } from './plan-format'
@@ -25,7 +25,7 @@ export function PlanCalendar({ today, floor, month, selected, balances, eventsOn
           {format.weekdayShort(weekday)}
         </div>
       ))}
-      {monthGrid(month).map((day, index) => {
+      {gridFrom(month, today).map((day, index) => {
         if (day === null) return <div key={`pad-${index}`} />
         const dayNumber = Number(day.slice(8))
         const balance = balances.get(day)

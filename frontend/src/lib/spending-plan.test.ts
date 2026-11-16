@@ -7,6 +7,7 @@ import {
   dayEntries,
   firstDayBelowFloor,
   lookupShortcuts,
+  gridFrom,
   monthGrid,
   monthsBetween,
   planReceipt,
@@ -191,6 +192,12 @@ describe('calendar dates', () => {
     expect(monthGrid('2026-11').slice(0, 2)).toEqual(['2026-11-01', '2026-11-02'])
     expect(monthGrid('2026-11')).toHaveLength(30)
     expect(monthGrid('2026-12').slice(0, 3)).toEqual([null, null, '2026-12-01'])
+  })
+
+  it('starts the grid at the week holding today', () => {
+    expect(gridFrom('2026-11', '2026-11-16').slice(0, 2)).toEqual(['2026-11-15', '2026-11-16'])
+    expect(gridFrom('2026-11', '2026-11-15')[0]).toBe('2026-11-15')
+    expect(gridFrom('2026-12', '2026-11-16').slice(0, 3)).toEqual([null, null, '2026-12-01'])
   })
 
   it('lists the months of the plan', () => {
