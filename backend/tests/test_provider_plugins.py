@@ -555,3 +555,15 @@ async def test_new_values_keep_blank_secrets_and_sync_afresh(
         f"/api/plugins/connections/{connection['id']}/values", json={"values": {"nope": "x"}}, headers=auth_headers
     )
     assert bad.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_the_connection_shows_the_institution_logo_its_accounts_name(
+    session: AsyncSession, bank_connection, test_user
+):
+    data = payload_data()
+    data["accounts"][0]["institution_logo_url"] = "https://www.google.com/s2/favicons?domain=example.com&sz=128"
+    await _pipeline(session, bank_connection, data, test_user)
+    await session.refresh(bank_connection)
+    assert bank_connection.logo_url == "https://www.google.com/s2/favicons?domain=example.com&sz=128"
+

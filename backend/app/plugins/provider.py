@@ -62,6 +62,10 @@ class PluginPayloadProvider(BankProvider):
     async def refresh_credentials(self, credentials: dict) -> dict:
         return credentials
 
+    async def get_institution_logo(self, credentials: dict) -> Optional[str]:
+        # The connection shows the institution its accounts name, as native ones do.
+        return next((a.institution_logo_url for a in self._accounts if a.institution_logo_url), None)
+
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         return [account.to_data() for account in self._accounts]
 
