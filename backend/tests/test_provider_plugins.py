@@ -14,15 +14,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.plugins import service
 from app.plugins.manifest import parse_manifest
-from tests.test_code_plugins import (  # noqa: F401 - fixtures
-    MANIFEST,
-    PLUGIN,
-    catalog,
-    ids,
-    plugin_runner,
-    states,
-    sync_locks,
-)
+from tests import test_code_plugins as code_plugins
+from tests.test_code_plugins import MANIFEST, PLUGIN
+
+# The same fake catalog, in-process runner and in-memory sync locks.
+catalog = code_plugins.catalog
+plugin_runner = code_plugins.plugin_runner
+states = code_plugins.states
+sync_locks = code_plugins.sync_locks
+ids = code_plugins.ids
 
 
 def _provider_manifest(**integration: Any) -> dict[str, Any]:

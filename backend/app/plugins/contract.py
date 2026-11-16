@@ -1,0 +1,245 @@
+"""What a provider plugin's `sync` returns: records for the bank sync pipeline.
+
+An integration that declares `provides` returns `data` next to `state`:
+
+    {"state": {...}, "data": {"contract": 1, "accounts": [...], "holdings": [...]}}
+
+The models below mirror the provider dataclasses in `app.providers.base`
+field for field, so a payload becomes exactly what a native provider would
+hand `connection_service.sync_connection`. Everything is checked before
+anything is written: an invalid payload is a failed sync, and nothing of it
+is kept.
+
+`null` and `[]` differ. A list that is `null` wasn't fetched this run, and
+what Securo already has is left alone; `[]` was fetched and is empty, which
+lets the pipeline archive holdings that are gone. `data: null` means nothing
+was fetched at all (a report still being generated): the plugin's `state` is
+kept and the pipeline doesn't run.
+"""
+from __future__ import annotations
+
+from datetime import date as _date
+from decimal import Decimal
+from typing import Annotated, Any, Literal
+
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
+
+from app.providers.base import AccountData, BillData, HoldingData, TransactionData
+
+CONTRACT_VERSION = 1
+MAX_ACCOUNTS = 500
+MAX_TRANSACTIONS = 20_000
+MAX_BILLS = 2_000
+MAX_HOLDINGS = 5_000
+MAX_TRADES = 20_000
+
+AccountType = Literal["checking", "savings", "credit_card", "loan", "investment", "wallet"]
+Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
+ExternalId = Annotated[str, Field(min_length=1, max_length=255)]
+
+
+def _no_float(value: Any) -> Any:
+    # Floats lose cents on the way; amounts travel as strings (or integers).
+    if isinstance(value, float):
+        raise ValueError("send amounts as strings, not floats")
+    return value
+
+
+Amount = Annotated[Decimal, BeforeValidator(_no_float), Field(allow_inf_nan=False, max_digits=24, decimal_places=8)]
+Positive = Annotated[Decimal, BeforeValidator(_no_float), Field(ge=0, allow_inf_nan=False, max_digits=24, decimal_places=8)]
+
+
+class PayloadError(ValueError):
+    """The plugin returned data Securo can't take. The message names the problem, never the values."""
+
+
+class _Model(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class Transaction(_Model):
+    external_id: ExternalId
+    description: str = Field(min_length=1, max_length=500)
+    amount: Positive
+    """Always positive: `type` says which way the money went."""
+    date: _date
+    type: Literal["debit", "credit"]
+    currency: Currency | None = None
+    amount_in_account_currency: Positive | None = None
+    provider_category: str | None = Field(default=None, max_length=100)
+    status: Literal["posted", "pending"] = "posted"
+    payee: str | None = Field(default=None, max_length=200)
+    raw_data: dict[str, Any] | None = None
+    installment_number: int | None = Field(default=None, ge=1)
+    total_installments: int | None = Field(default=None, ge=1)
+    installment_total_amount: Positive | None = None
+    installment_purchase_date: _date | None = None
+    bill_external_id: ExternalId | None = None
+
+    def to_data(self) -> TransactionData:
+        fields = self.model_dump(exclude={"provider_category"})
+        return TransactionData(**fields, pluggy_category=self.provider_category)
+
+
+class Bill(_Model):
+    external_id: ExternalId
+    due_date: _date
+    total_amount: Amount
+    currency: Currency
+    minimum_payment: Positive | None = None
+    raw_data: dict[str, Any] | None = None
+
+    def to_data(self) -> BillData:
+        return BillData(**self.model_dump())
+
+
+class Account(_Model):
+    external_id: ExternalId
+    name: str = Field(min_length=1, max_length=255)
+    type: AccountType
+    balance: Amount
+    currency: Currency
+    credit_limit: Positive | None = None
+    statement_close_day: int | None = Field(default=None, ge=1, le=31)
+    payment_due_day: int | None = Field(default=None, ge=1, le=31)
+    minimum_payment: Positive | None = None
+    card_brand: str | None = Field(default=None, max_length=50)
+    card_level: str | None = Field(default=None, max_length=50)
+    masked_number: str | None = Field(default=None, max_length=4)
+    """The last four characters only, never the full number."""
+    shared_balance_group: str | None = Field(default=None, max_length=100)
+    stable_external_id: ExternalId | None = None
+    institution_external_id: ExternalId | None = None
+    institution_name: str | None = Field(default=None, max_length=255)
+    institution_logo_url: str | None = Field(default=None, max_length=1000, pattern=r"^https://")
+    auto_invested_balance: Positive = Decimal(0)
+    transactions: list[Transaction] | None = None
+    bills: list[Bill] | None = None
+
+    @model_validator(mode="after")
+    def _unique(self) -> Account:
+        _check_unique("transactions", self.transactions)
+        _check_unique("bills", self.bills)
+        return self
+
+    def to_data(self) -> AccountData:
+        return AccountData(**self.model_dump(exclude={"transactions", "bills"}))
+
+
+class Trade(_Model):
+    """One buy or sell of a holding. `quantity` is positive; `kind` gives the direction."""
+
+    external_id: ExternalId
+    kind: Literal["buy", "sell"]
+    date: _date
+    quantity: Annotated[Decimal, BeforeValidator(_no_float), Field(gt=0, allow_inf_nan=False)]
+    price: Positive
+    """Per unit, in the asset's currency."""
+    fee: Positive = Decimal(0)
+
+
+class Holding(_Model):
+    external_id: ExternalId
+    name: str = Field(min_length=1, max_length=255)
+    currency: Currency
+    current_value: Amount
+    quantity: Amount | None = None
+    unit_price: Positive | None = None
+    purchase_price: Positive | None = None
+    purchase_date: _date | None = None
+    isin: str | None = Field(default=None, pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
+    ticker: str | None = Field(default=None, max_length=50)
+    maturity_date: _date | None = None
+    is_withdrawn: bool = False
+    metadata: dict[str, Any] | None = None
+    account_external_id: ExternalId | None = None
+    account_name: str | None = Field(default=None, max_length=255)
+    trades: list[Trade] | None = None
+
+    @model_validator(mode="after")
+    def _unique(self) -> Holding:
+        _check_unique("trades", self.trades)
+        return self
+
+    def to_data(self) -> HoldingData:
+        return HoldingData(**self.model_dump(exclude={"trades"}))
+
+
+class Payload(_Model):
+    contract: int
+    accounts: list[Account] | None = None
+    holdings: list[Holding] | None = None
+
+    @model_validator(mode="after")
+    def _checked(self) -> Payload:
+        if self.contract != CONTRACT_VERSION:
+            raise ValueError(f"contract {self.contract} isn't supported; this Securo takes contract {CONTRACT_VERSION}")
+        accounts = self.accounts or []
+        holdings = self.holdings or []
+        _check_unique("accounts", accounts)
+        _check_unique("holdings", holdings)
+        counts = {
+            "accounts": (len(accounts), MAX_ACCOUNTS),
+            "transactions": (sum(len(a.transactions or []) for a in accounts), MAX_TRANSACTIONS),
+            "bills": (sum(len(a.bills or []) for a in accounts), MAX_BILLS),
+            "holdings": (len(holdings), MAX_HOLDINGS),
+            "trades": (sum(len(h.trades or []) for h in holdings), MAX_TRADES),
+        }
+        for kind, (count, cap) in counts.items():
+            if count > cap:
+                raise ValueError(f"{count} {kind} in one reply; the most is {cap}, send the rest on the next sync")
+        return self
+
+    def kinds(self) -> set[str]:
+        """The kinds of record this payload carries (fetched, even if empty)."""
+        found: set[str] = set()
+        if self.accounts is not None:
+            found.add("accounts")
+            for account in self.accounts:
+                if account.transactions is not None:
+                    found.add("transactions")
+                if account.bills is not None:
+                    found.add("bills")
+        if self.holdings is not None:
+            found.add("holdings")
+            if any(h.trades is not None for h in self.holdings):
+                found.add("trades")
+        return found
+
+
+def _check_unique(kind: str, records: list | None) -> None:
+    ids = [r.external_id for r in records or []]
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"{kind}: external_id must be unique")
+
+
+def parse_payload(data: Any, provides: list[str]) -> Payload | None:
+    """The validated payload, or None when the plugin fetched nothing this run.
+
+    Raises `PayloadError` when the data is malformed, too large, or carries a
+    kind of record the integration doesn't declare in `provides`.
+    """
+    if data is None:
+        return None
+    if not isinstance(data, dict):
+        raise PayloadError("data must be an object")
+    try:
+        payload = Payload.model_validate(data)
+    except ValidationError as exc:
+        raise PayloadError(_describe(exc)) from None
+    undeclared = payload.kinds() - set(provides)
+    if undeclared:
+        raise PayloadError(f"data has {', '.join(sorted(undeclared))}, which the integration doesn't provide")
+    return payload
+
+
+def _describe(exc: ValidationError) -> str:
+    """Where each problem is and what it is, without the values the plugin sent."""
+    problems = []
+    for error in exc.errors(include_input=False, include_url=False)[:5]:
+        where = ".".join(str(part) for part in error["loc"]) or "data"
+        problems.append(f"{where}: {error['msg']}")
+    more = exc.error_count() - len(problems)
+    if more > 0:
+        problems.append(f"and {more} more")
+    return "invalid data from the plugin: " + "; ".join(problems)
