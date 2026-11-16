@@ -18,7 +18,9 @@ from app.services.admin_service import set_app_setting
 from app.services.credit_card_service import compute_effective_date
 from app.services.balance_projection import (
     ProjectionBase,
+    binding_day,
     covered_until,
+    load_projection_base,
     safe_daily_allowance,
     walk,
 )
@@ -36,6 +38,7 @@ def _base(seed: float, deltas: dict[int, float], start: date = TODAY, days: int 
         seed=seed,
         deltas={TODAY + timedelta(days=offset): delta for offset, delta in deltas.items()},
         recurring_items=[],
+        events=[],
     )
 
 
@@ -90,6 +93,32 @@ def test_safe_daily_allowance_is_limited_by_the_tightest_day():
 
 def test_safe_daily_allowance_is_zero_when_bills_alone_break_the_floor():
     assert safe_daily_allowance(_base(100, {1: -200}), TODAY, floor=0) == 0.0
+
+
+def test_binding_day_is_the_day_that_sets_the_safe_allowance():
+    # Per day through each day: 900, 450, 100, 75, 60. The last day is tightest.
+    base = _base(1000, {2: -600})
+
+    assert binding_day(base, TODAY, floor=100) == TODAY + timedelta(days=4)
+    assert safe_daily_allowance(base, TODAY, floor=100) == 60.0
+
+
+def test_binding_day_before_a_salary_and_the_safe_allowance_floored_to_cents():
+    # Per day through each day: 1000, 100, 66.666..., 550, 440.
+    base = _base(1000, {1: -800, 3: 2000})
+
+    assert binding_day(base, TODAY, floor=0) == TODAY + timedelta(days=2)
+    assert safe_daily_allowance(base, TODAY, floor=0) == 66.66
+
+
+def test_binding_day_gives_back_what_was_already_spent_today():
+    # Today's 30 is variable spending already in the balance, and today's
+    # allowance only covers what is left of it. Per day: 1000, 500, 166.67,
+    # 125, 300.
+    base = _base(1000, {0: -30, 2: -500, 4: 1000})
+
+    assert binding_day(base, TODAY, floor=0, spent_today=30) == TODAY + timedelta(days=3)
+    assert safe_daily_allowance(base, TODAY, floor=0, spent_today=30) == 125.0
 
 
 def test_covered_until_is_the_last_day_before_the_dip():
@@ -337,20 +366,37 @@ async def test_spending_plan_api_round_trip(client: AsyncClient, auth_headers: d
 def test_purchase_installments_split_monthly_with_leftover_cents_first():
     purchase = SimulatedPurchase(amount=Decimal("100.00"), installments=3, first_date=date(2027, 1, 31))
 
-    assert purchase_installments([purchase], today=date(2027, 1, 10)) == [
-        (date(2027, 1, 31), 33.34),
-        (date(2027, 2, 28), 33.33),
-        (date(2027, 3, 31), 33.33),
+    assert [
+        (charge.date, charge.amount, charge.description, charge.source)
+        for charge in purchase_installments([purchase], today=date(2027, 1, 10))
+    ] == [
+        (date(2027, 1, 31), -33.34, "1/3", "scenario"),
+        (date(2027, 2, 28), -33.33, "2/3", "scenario"),
+        (date(2027, 3, 31), -33.33, "3/3", "scenario"),
     ]
 
 
 def test_purchase_installments_dated_in_the_past_land_today():
-    purchase = SimulatedPurchase(amount=Decimal("50"), installments=2, first_date=date(2027, 1, 1))
+    purchase = SimulatedPurchase(
+        description="Bike", amount=Decimal("50"), installments=2, first_date=date(2027, 1, 1)
+    )
 
-    assert purchase_installments([purchase], today=date(2027, 1, 20)) == [
-        (date(2027, 1, 20), 25.0),
-        (date(2027, 2, 1), 25.0),
+    assert [
+        (charge.date, charge.amount, charge.description)
+        for charge in purchase_installments([purchase], today=date(2027, 1, 20))
+    ] == [
+        (date(2027, 1, 20), -25.0, "Bike 1/2"),
+        (date(2027, 2, 1), -25.0, "Bike 2/2"),
     ]
+
+
+def test_a_single_payment_purchase_keeps_its_description():
+    purchase = SimulatedPurchase(description="IPVA", amount=Decimal("3000"), first_date=date(2027, 1, 20))
+
+    assert [
+        (charge.date, charge.amount, charge.description)
+        for charge in purchase_installments([purchase], today=date(2027, 1, 10))
+    ] == [(date(2027, 1, 20), -3000.0, "IPVA")]
 
 
 @pytest.mark.asyncio
@@ -381,18 +427,21 @@ async def test_simulation_moves_the_balance_without_saving_anything(
 
 
 @pytest.mark.asyncio
-async def test_simulate_api_rejects_an_empty_purchase_list(client: AsyncClient, auth_headers: dict):
-    rejected = await client.post(
-        "/api/spending-plan/simulate", headers=auth_headers, json={"purchases": []}
-    )
-    accepted = await client.post(
+async def test_simulate_api_accepts_an_empty_purchase_list(client: AsyncClient, auth_headers: dict):
+    plain = await client.post(
         "/api/spending-plan/simulate",
         headers=auth_headers,
-        json={"purchases": [{"amount": "600", "installments": 6, "first_date": "2030-01-15"}]},
+        json={"daily_allowance": "12", "purchases": []},
+    )
+    too_many = await client.post(
+        "/api/spending-plan/simulate",
+        headers=auth_headers,
+        json={"purchases": [{"amount": "1", "first_date": "2030-01-15"}] * 21},
     )
 
-    assert rejected.status_code == 422
-    assert accepted.status_code == 200
+    assert plain.status_code == 200
+    assert plain.json()["daily_allowance"] == 12.0
+    assert too_many.status_code == 422
 
 
 async def _card_world(session: AsyncSession, user_id, workspace_id):
@@ -608,3 +657,121 @@ async def test_preview_api_saves_nothing(client: AsyncClient, auth_headers: dict
     assert response.json()["daily_allowance"] == 15.0
     assert response.json()["balance_floor"] == 100.0
     assert saved.json() is None
+
+
+@pytest.mark.asyncio
+async def test_projection_events_sum_to_each_days_delta(
+    session: AsyncSession, test_user, test_workspace
+):
+    await set_app_setting(session, "credit_card_accounting_mode", "accrual")
+    today = app_today()
+    user_id, workspace_id = test_user.id, test_workspace.id
+    checking = await _checking(session, user_id, workspace_id)
+    card = await _checking(session, user_id, workspace_id, "Card", "credit_card")
+    card.statement_close_day = 30
+    card.payment_due_day = 7
+    ignored = Category(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id, name="Ignored", is_ignored=True,
+    )
+    session.add(ignored)
+    await session.flush()
+
+    def recurring(account, description, amount, type_, offset, **extra):
+        return RecurringTransaction(
+            id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id, account_id=account.id,
+            description=description, amount=Decimal(amount), currency="BRL", type=type_,
+            frequency="monthly", start_date=today + timedelta(days=offset),
+            next_occurrence=today + timedelta(days=offset), **extra,
+        )
+
+    old_purchase = _tx(user_id, workspace_id, card.id, 400, "debit", today - timedelta(days=5),
+                       description="Market")
+    old_purchase.effective_date = compute_effective_date(old_purchase.date, 30, 7)
+    new_purchase = _tx(user_id, workspace_id, card.id, 500, "debit", today, description="Shoes")
+    new_purchase.effective_date = compute_effective_date(today, 30, 7)
+    session.add_all([
+        _tx(user_id, workspace_id, checking.id, 5000, "credit", today - timedelta(days=40),
+            source="opening_balance"),
+        recurring(checking, "Salary", "8000", "credit", 3),
+        recurring(checking, "Rent", "2000", "debit", 5),
+        recurring(checking, "Ignored bill", "999", "debit", 4, category_id=ignored.id),
+        recurring(card, "Streaming", "50", "debit", 2),
+        _tx(user_id, workspace_id, checking.id, 300, "debit", today + timedelta(days=10),
+            description="Dentist"),
+        old_purchase,
+        new_purchase,
+        _tx(user_id, workspace_id, checking.id, 30, "debit", today, description="Bakery"),
+    ])
+    await session.commit()
+
+    end = today + timedelta(days=70)
+    base = await load_projection_base(session, workspace_id, "BRL", today, end, None)
+
+    by_day: dict[date, float] = {}
+    for event in base.events:
+        assert today <= event.date < end
+        by_day[event.date] = by_day.get(event.date, 0.0) + event.amount
+    assert set(by_day) == {day for day, delta in base.deltas.items() if abs(delta) >= 0.005}
+    for day, delta in base.deltas.items():
+        assert by_day.get(day, 0.0) == pytest.approx(delta, abs=0.005)
+
+    named = {(e.description, e.source) for e in base.events}
+    assert ("Salary", "recurring") in named
+    assert ("Rent", "recurring") in named
+    assert ("Dentist", "planned") in named
+    assert ("Streaming", "card") in named
+    assert not any(e.description == "Ignored bill" for e in base.events)
+    market = [e for e in base.events if e.description == "Market"]
+    shoes = [e for e in base.events if e.description == "Shoes"]
+    assert [(e.date, e.amount, e.source, e.account_name) for e in market] == [
+        (old_purchase.effective_date, -400.0, "card", "Card"),
+    ]
+    assert [(e.date, e.amount, e.source) for e in shoes] == [(new_purchase.effective_date, -500.0, "card")]
+    # The shoes leave on the due date, so today's only unnamed move is the bakery.
+    assert [(e.date, e.amount) for e in base.events if e.source == "other"] == [(today, -30.0)]
+    streaming_days = sorted(e.date for e in base.events if e.description == "Streaming")
+    assert streaming_days[0] == compute_effective_date(today + timedelta(days=2), 30, 7)
+
+
+@pytest.mark.asyncio
+async def test_timeline_events_explain_every_point(
+    session: AsyncSession, test_user, test_workspace
+):
+    today = app_today()
+    account = await _checking(session, test_user.id, test_workspace.id)
+    rent = RecurringTransaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+        description="Rent", amount=Decimal("700"), currency="BRL", type="debit", frequency="monthly",
+        start_date=today + timedelta(days=5), next_occurrence=today + timedelta(days=5),
+    )
+    session.add_all([
+        rent,
+        _tx(test_user.id, test_workspace.id, account.id, 4000, "credit", today - timedelta(days=1),
+            source="opening_balance"),
+        _tx(test_user.id, test_workspace.id, account.id, 5, "debit", today, description="Coffee"),
+    ])
+    await session.commit()
+    await save_plan(session, test_workspace.id, SpendingPlanWrite(
+        daily_allowance=Decimal("50"), balance_floor=Decimal("100"), horizon_months=3,
+    ))
+    tv = SimulatedPurchase(
+        description="TV", amount=Decimal("300"), installments=3, first_date=today + timedelta(days=1),
+    )
+
+    timeline = await get_timeline(session, test_workspace.id, test_user.id, Decimal("50"), [tv])
+
+    assert timeline.opening_balance == 4000.0
+    assert [(e.description, e.amount) for e in timeline.events if e.source == "scenario"] == [
+        ("TV 1/3", -100.0), ("TV 2/3", -100.0), ("TV 3/3", -100.0),
+    ]
+    assert [(e.date, e.amount) for e in timeline.events if e.source == "other"] == [(today, -5.0)]
+    running = timeline.opening_balance
+    for index, point in enumerate(timeline.points):
+        running += sum(e.amount for e in timeline.events if e.date == point.date)
+        spent_by_allowance = 50 * (index + 1) - min(50, timeline.today.spent)
+        assert point.balance == round(running - spent_by_allowance, 2)
+    # Nothing ever comes in, so the money per day only shrinks to the end.
+    assert timeline.binding_date == timeline.horizon_end
+    days = len(timeline.points)
+    through = 4000 + sum(e.amount for e in timeline.events) - 100 + 5
+    assert timeline.safe_daily_allowance == int(through / days * 100) / 100

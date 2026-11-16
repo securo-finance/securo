@@ -26,12 +26,15 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.spending_plan import (
     SimulatedPurchase,
+    SpendingPlanEvent,
     SpendingPlanPoint,
     SpendingPlanTimeline,
     SpendingPlanToday,
     SpendingPlanWrite,
 )
 from app.services.balance_projection import (
+    ProjectionEvent,
+    binding_day,
     covered_until,
     load_projection_base,
     positive_primary_amount,
@@ -192,21 +195,29 @@ async def calendar_allowance(
 
 def purchase_installments(
     purchases: Sequence[SimulatedPurchase], today: date
-) -> list[tuple[date, float]]:
+) -> list[ProjectionEvent]:
     """Split each simulated purchase into monthly installments.
 
     The cents that do not divide evenly go to the first installment, the way
     card issuers usually charge them. An installment dated before today lands
     today: the simulation asks about the money ahead, not the past.
     """
-    charges: list[tuple[date, float]] = []
+    charges: list[ProjectionEvent] = []
     for purchase in purchases:
         total_cents = int((purchase.amount * 100).to_integral_value())
         share, leftover = divmod(total_cents, purchase.installments)
         for number in range(purchase.installments):
             cents = share + (leftover if number == 0 else 0)
-            day = max(add_months(purchase.first_date, number), today)
-            charges.append((day, cents / 100))
+            label = purchase.description or ""
+            if purchase.installments > 1:
+                label = f"{label} {number + 1}/{purchase.installments}".strip()
+            charges.append(ProjectionEvent(
+                date=max(add_months(purchase.first_date, number), today),
+                description=label or None,
+                amount=-cents / 100,
+                source="scenario",
+                account_name=None,
+            ))
     return charges
 
 
@@ -256,9 +267,14 @@ async def get_timeline(
     )
     if purchases:
         deltas = dict(base.deltas)
-        for day, amount in purchase_installments(purchases, today):
-            deltas[day] = deltas.get(day, 0.0) - amount
-        base = replace(base, deltas=deltas)
+        charges = purchase_installments(purchases, today)
+        for charge in charges:
+            deltas[charge.date] = deltas.get(charge.date, 0.0) + charge.amount
+        base = replace(
+            base,
+            deltas=deltas,
+            events=sorted([*base.events, *charges], key=lambda event: event.date),
+        )
     spent = await variable_spent_on(session, workspace_id, primary_currency, today, scope)
     points = walk(base, today, allowance, spent)
     last_covered = covered_until(points, today, floor)
@@ -272,6 +288,8 @@ async def get_timeline(
         balance_floor=floor,
         horizon_end=horizon_end,
         safe_daily_allowance=safe_daily_allowance(base, today, floor, spent),
+        binding_date=binding_day(base, today, floor, spent),
+        opening_balance=round(base.seed, 2),
         average_daily_surplus=round(average_surplus, 2),
         covered_until=last_covered,
         covered_through_horizon=last_covered == horizon_end,
@@ -281,4 +299,15 @@ async def get_timeline(
             remaining=round(allowance - spent, 2),
         ),
         points=[SpendingPlanPoint(date=p.date, balance=p.balance) for p in points],
+        events=[
+            SpendingPlanEvent(
+                date=event.date,
+                description=event.description,
+                amount=round(event.amount, 2),
+                source=event.source,
+                account_name=event.account_name,
+            )
+            for event in base.events
+            if event.date <= horizon_end
+        ],
     )
