@@ -28,6 +28,8 @@ export const CURRENCIES = [
   { code: 'CRC', flag: '\u{1F1E8}\u{1F1F7}', symbol: '₡' },
   { code: 'IDR', flag: '\u{1F1EE}\u{1F1E9}', symbol: 'Rp' },
   { code: 'COP', flag: '\u{1F1E8}\u{1F1F4}', symbol: '$' },
+  { code: 'PEN', flag: '\u{1F1F5}\u{1F1EA}', symbol: 'S/' },
+  { code: 'UYU', flag: '\u{1F1FA}\u{1F1FE}', symbol: '$U' },
   { code: 'CLP', flag: '\u{1F1E8}\u{1F1F1}', symbol: '$' },
   { code: 'DOP', flag: '\u{1F1E9}\u{1F1F4}', symbol: 'RD$' },
   { code: 'KZT', flag: '\u{1F1F0}\u{1F1FF}', symbol: '₸' },
@@ -50,4 +52,9 @@ export const CURRENCIES = [
   { code: 'QAR', flag: '\u{1F1F6}\u{1F1E6}', symbol: 'ر.ق' },
   { code: 'JMD', flag: '\u{1F1EF}\u{1F1F2}', symbol: 'J$' },
   { code: 'RSD', flag: '\u{1F1F7}\u{1F1F8}', symbol: 'RSD' },
+  { code: 'MKD', flag: '\u{1F1F2}\u{1F1F0}', symbol: 'ден' },
+  { code: 'HKD', flag: '\u{1F1ED}\u{1F1F0}', symbol: 'HK$' },
+  { code: 'TWD', flag: '\u{1F1F9}\u{1F1FC}', symbol: 'NT$' },
+  { code: 'ZAR', flag: '\u{1F1FF}\u{1F1E6}', symbol: 'R' },
+  { code: 'GEL', flag: '\u{1F1EC}\u{1F1EA}', symbol: '₾' },
 ] as const

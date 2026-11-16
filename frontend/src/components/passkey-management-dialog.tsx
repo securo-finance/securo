@@ -35,26 +35,18 @@ const FAILURE_KEYS: Record<PasskeyFailure, string> = {
   unknown: 'auth.passkeyRegisterError',
 }
 
-<<<<<<< HEAD
+const NO_PASSKEYS: Passkey[] = []
+
+const PASSKEYS_QUERY_KEY = ['passkeys'] as const
+
 export function PasskeyManagementDialog(props: PasskeyManagementDialogProps) {
   return props.open ? <PasskeyManagementSession {...props} /> : null
 }
 
 function PasskeyManagementSession({ open, onClose, localAuthEnabled = true }: PasskeyManagementDialogProps) {
-=======
-const NO_PASSKEYS: Passkey[] = []
-
-const PASSKEYS_QUERY_KEY = ['passkeys'] as const
-
-export function PasskeyManagementDialog({ open, onClose, localAuthEnabled = true }: PasskeyManagementDialogProps) {
->>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
-<<<<<<< HEAD
-  const [loading, setLoading] = useState(true)
-=======
->>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)

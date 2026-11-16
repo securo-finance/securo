@@ -3,12 +3,8 @@ import { getAccountName } from '@/lib/account-utils'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
-<<<<<<< HEAD
-import { useQuery, useQueries, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-=======
 import { useToday } from '@/hooks/use-today'
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
->>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
+import { useQuery, useQueries, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, addDays, addMonths, parseISO } from 'date-fns'
 import { accounts, dashboard, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'

@@ -11,6 +11,7 @@ import { sumAccountBalances, getAccountLabel } from '@/lib/account-utils'
 import { formatCurrency } from '@/lib/format'
 import { monthLastDay, shiftMonth } from '@/lib/month-utils'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { useToday } from '@/hooks/use-today'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAssistant } from '@/contexts/assistant-context'
 import { AccountIcon } from '@/components/account-icon'
@@ -86,8 +87,7 @@ function useSummary(scope: DashboardScope, month = scope.month) {
 const expensesOf = (summary?: DashboardSummary) => Number(summary?.monthly_expenses_primary ?? summary?.monthly_expenses ?? 0)
 const incomeOf = (summary?: DashboardSummary) => Number(summary?.monthly_income_primary ?? summary?.monthly_income ?? 0)
 
-function todayMonth() {
-  const today = new Date()
+function todayMonth(today: Date) {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
 }
 
@@ -95,6 +95,7 @@ function todayMonth() {
 export function SpendingPaceWidget({ scope }: { scope: DashboardScope }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
+  const todayDate = useToday()
   const { mask } = usePrivacyMode()
   const { data: summary, isLoading, isError, refetch } = useSummary(scope)
   const { data: comparison, isLoading: budgetsLoading, isError: budgetsError, refetch: refetchBudgets } = useQuery({
@@ -106,8 +107,9 @@ export function SpendingPaceWidget({ scope }: { scope: DashboardScope }) {
   const budget = (comparison ?? []).reduce((sum, row) => sum + Number(row.budget_amount ?? 0), 0)
 
   const lastDay = monthLastDay(scope.month)
-  const isCurrent = scope.month === todayMonth()
-  const today = isCurrent ? new Date().getDate() : scope.month < todayMonth() ? lastDay : 0
+  const currentMonth = todayMonth(todayDate)
+  const isCurrent = scope.month === currentMonth
+  const today = isCurrent ? todayDate.getDate() : scope.month < currentMonth ? lastDay : 0
   const used = budget > 0 ? (spent / budget) * 100 : 0
   // Where spending would be today if it went evenly through the month.
   const pace = (today / lastDay) * 100
@@ -286,7 +288,7 @@ export function UpcomingWidget({ scope }: { scope: DashboardScope }) {
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
-  const today = new Date()
+  const today = useToday()
   const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   const from = iso(today)
   const to = iso(new Date(today.getFullYear(), today.getMonth(), today.getDate() + UPCOMING_DAYS))

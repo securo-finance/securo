@@ -822,16 +822,12 @@ export default function TransactionsPage() {
 
   // Group transactions by date for the mobile card view
   const groupedByDate = useMemo(() => {
+    const items = data?.items ?? EMPTY_ROWS
     const groups: { date: string; label: string; items: Transaction[] }[] = []
     let current: { date: string; label: string; items: Transaction[] } | null = null
-<<<<<<< HEAD
-    for (const tx of filteredItems) {
+    for (const tx of items) {
       const reportingDate = tx.reporting_date_override ?? tx.date
       if (!current || current.date !== reportingDate) {
-=======
-    for (const tx of data?.items ?? []) {
-      if (!current || current.date !== tx.date) {
->>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
         current = {
           date: reportingDate,
           label: new Date(reportingDate + 'T00:00:00').toLocaleDateString(dateLocale, {

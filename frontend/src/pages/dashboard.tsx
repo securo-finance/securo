@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
-=======
-import { useState, useEffect, useMemo } from 'react'
->>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
@@ -146,7 +142,6 @@ export default function DashboardPage() {
   const displayName = user?.preferences?.display_name || ''
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
-<<<<<<< HEAD
   const dashboardLayout = useLayout('dashboard')
   const { openLibrary } = useLibrary()
   const [editing, setEditing] = useState(false)
@@ -159,9 +154,7 @@ export default function DashboardPage() {
   const keptItems = dashboardLayout.items.filter((item) => !availableIds.has(item.id))
   // A widget that isn't on the dashboard doesn't load its data.
   const shows = (id: string) => dashboardLayout.ready && dashboardLayout.ids.includes(id)
-=======
   const today = useToday()
->>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
 
   const greeting = (() => {
     const hour = today.getHours()
@@ -182,18 +175,6 @@ export default function DashboardPage() {
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
   const [calendarDateBasis, setCalendarDateBasis] = useState(readCalendarDateBasis)
 
-<<<<<<< HEAD
-  const prevSearchRef = useRef<string | null>(null)
-  const searchParamsRef = useRef(searchParams)
-  searchParamsRef.current = searchParams
-
-  // Sync state from URL when navigating (e.g. back/forward button)
-  useEffect(() => {
-    const search = searchParams.toString()
-    if (prevSearchRef.current === search) return
-    const isInitial = prevSearchRef.current === null
-    prevSearchRef.current = search
-=======
   // Sync state from URL when navigating (e.g. back/forward button). Adjusting
   // state during render rather than from an effect means the params are applied
   // before the stale ones are ever painted.
@@ -202,7 +183,6 @@ export default function DashboardPage() {
   if (syncedSearch !== search) {
     const isInitial = syncedSearch === null
     setSyncedSearch(search)
->>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
 
     const parsedMonth = parseMonthFromParams(searchParams)
     if (parsedMonth) {
@@ -216,7 +196,7 @@ export default function DashboardPage() {
 
   // Sync selectedMonth and the transactions view back to URL
   useEffect(() => {
-    const params = new URLSearchParams(searchParamsRef.current.toString())
+    const params = new URLSearchParams(searchParams.toString())
     if (selectedMonth) {
       params.set('month', selectedMonth)
       params.delete('from')
@@ -235,7 +215,7 @@ export default function DashboardPage() {
     }
 
     setSearchParams(params, { replace: true })
-  }, [selectedMonth, txViewMode, calendarSelectedDate, setSearchParams])
+  }, [selectedMonth, txViewMode, calendarSelectedDate, searchParams, setSearchParams])
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
@@ -511,7 +491,7 @@ export default function DashboardPage() {
   }
 
 
-  const cumulativeData = useMemo(() => {
+  const cumulativeData = (() => {
     if (!balanceHistory) return []
     const daysInMonth = monthLastDay(selectedMonth)
     const opening = balanceHistory.opening_balance
@@ -543,7 +523,7 @@ export default function DashboardPage() {
       })
     }
     return result
-  }, [balanceHistory, selectedMonth])
+  })()
 
   const lastCurrentPoint = [...cumulativeData].reverse().find(d => d.current !== null)
   const lastDay = lastCurrentPoint?.day ?? 0

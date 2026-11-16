@@ -52,9 +52,9 @@ export function AgentFormDialog({ open, onOpenChange, agent, preset }: Props) {
     enabled: open,
   })
 
-  const [syncedForm, setSyncedForm] = useState<{ agent: Agent | null | undefined; open: boolean } | null>(null)
-  if (!syncedForm || syncedForm.agent !== agent || syncedForm.open !== open) {
-    setSyncedForm({ agent, open })
+  const [syncedForm, setSyncedForm] = useState<{ agent: Props['agent']; open: Props['open']; preset: Props['preset'] } | null>(null)
+  if (!syncedForm || syncedForm.agent !== agent || syncedForm.open !== open || syncedForm.preset !== preset) {
+    setSyncedForm({ agent, open, preset })
     if (agent) {
       setName(agent.name)
       setDescription(agent.description ?? '')
@@ -65,7 +65,6 @@ export function AgentFormDialog({ open, onOpenChange, agent, preset }: Props) {
       setAutoContext(agent.auto_context ?? true)
       setIsDefault(agent.is_default ?? false)
     } else {
-<<<<<<< HEAD
       // A template preset (if any) fills the form as a starting point;
       // everything stays editable before the agent is created.
       setName(preset ? t(preset.nameKey) : '')
@@ -73,22 +72,13 @@ export function AgentFormDialog({ open, onOpenChange, agent, preset }: Props) {
       setSystemPrompt(preset?.systemPrompt ?? '')
       // Pre-select the user's default connection (or the only one,
       // if there's just one) so the form is one click closer to done.
-=======
-      setName('')
-      setDescription('')
-      setSystemPrompt('')
->>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
       setConnectionId('')
       setModel('')
       setTemperature('0.4')
       setAutoContext(true)
       setIsDefault(false)
     }
-<<<<<<< HEAD
-  }, [agent, open, preset, t])
-=======
   }
->>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
 
   // When creating, fall back to the most sensible connection as soon as the
   // list loads: the user-flagged default, or the only one if there's a single
