@@ -527,7 +527,7 @@ async def test_preview_merge_payees_keeps_a_document_the_target_lacks(
     # The target holds no CPF, so the merge carries this one over and
     # nothing is lost.
     assert result["documents_deleted"] == []
-    assert result["sources"][0]["schedule_count"] == 0
+    assert result["sources"][0]["live_schedule_count"] == 0
     assert "applied" not in result
 
 
@@ -659,7 +659,7 @@ async def test_merge_refuses_source_with_schedule(
         apply=True,
     )
 
-    assert result["sources"][0]["schedule_count"] == 1
+    assert result["sources"][0]["live_schedule_count"] == 1
     assert result["applied"] is False
     assert result["error"] == "payee_has_schedules:1"
 
@@ -668,6 +668,92 @@ async def test_merge_refuses_source_with_schedule(
         await session.execute(select(Payee).where(Payee.id == source_id))
     ).scalar_one_or_none()
     assert source is not None
+
+
+async def test_merge_moves_an_ended_schedule(
+    session: AsyncSession,
+    external_ctx: CallContext,
+    cpf_payee: dict,
+    target_payee: dict,
+):
+    """An ended agreement is history, so it follows the invoices."""
+    source_id = cpf_payee["id"]
+    schedule = InvoiceSchedule(
+        id=uuid.uuid4(),
+        workspace_id=cpf_payee["workspace_id"],
+        user_id=cpf_payee["user_id"],
+        payee_id=source_id,
+        name="Retainer",
+        status="ended",
+        ended_at=date(2026, 3, 1),
+        end_reason="completed",
+        origin="local",
+        frequency="monthly",
+        start_date=date(2026, 1, 5),
+        end_type="never",
+        currency="BRL",
+    )
+    session.add(schedule)
+    schedule_id = schedule.id
+    await session.commit()
+
+    handler = REGISTRY["propose_merge_payees"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        source_ids=[str(source_id)],
+        target_id=str(target_payee["id"]),
+        apply=True,
+    )
+
+    # Nothing live blocks it, and the preview does not count the ended one.
+    assert result["sources"][0]["live_schedule_count"] == 0
+    assert result["applied"] is True
+
+    session.expire_all()
+    moved = (
+        await session.execute(
+            select(InvoiceSchedule).where(InvoiceSchedule.id == schedule_id)
+        )
+    ).scalar_one()
+    assert moved.payee_id == target_payee["id"]
+
+
+async def test_preview_update_payee_reads_is_favorite_as_sent(
+    session: AsyncSession, external_ctx: CallContext, cpf_payee: dict
+):
+    """A raw string from an external client must not arrive as True."""
+    handler = REGISTRY["propose_update_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        payee_id=str(cpf_payee["id"]),
+        is_favorite="false",
+    )
+
+    assert result["changes"]["is_favorite"] is False
+
+
+async def test_apply_update_payee_reads_is_favorite_as_sent(
+    session: AsyncSession, external_ctx: CallContext, cpf_payee: dict
+):
+    payee = (
+        await session.execute(select(Payee).where(Payee.id == cpf_payee["id"]))
+    ).scalar_one()
+    payee.is_favorite = True
+    await session.commit()
+
+    handler = REGISTRY["propose_update_payee"].handler
+    result = await handler(
+        session=session,
+        ctx=external_ctx,
+        payee_id=str(cpf_payee["id"]),
+        is_favorite="false",
+        apply=True,
+    )
+
+    assert result["applied"] is True
+    assert result["payee"]["is_favorite"] is False
 
 
 async def test_preview_create_payee_does_not_write(

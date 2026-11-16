@@ -1978,7 +1978,9 @@ async def propose_update_payee(
     if website is not None:
         changes["website"] = website
     if is_favorite is not None:
-        changes["is_favorite"] = bool(is_favorite)
+        # Left as sent: PayeeUpdate turns "true"/"false" into a bool and
+        # rejects anything else, so bool("false") cannot come out true.
+        changes["is_favorite"] = is_favorite
 
     normalised_tax_ids: list[dict[str, str]] | None = None
     if tax_ids is not None:
@@ -2001,6 +2003,11 @@ async def propose_update_payee(
         validated_update = PayeeUpdate(**update_data)
     except ValueError as exc:
         return {"error": str(exc)}
+
+    # The preview shows the value the apply path will write, not the one
+    # the client sent.
+    if validated_update.is_favorite is not None:
+        changes["is_favorite"] = validated_update.is_favorite
 
     preview = {
         "kind": "update_payee",
@@ -2037,10 +2044,10 @@ async def propose_update_payee(
         "documents move to it. A document whose kind the target already "
         "holds is dropped, because one payee carries one document per "
         "kind; the target's value stays and the first source in source_ids "
-        "wins a shared kind. A source that still has a recurring invoice "
-        "schedule is refused, because the agreement is not moved. Use this "
-        "for a duplicate counterparty, never for a rename: a rename is "
-        "propose_update_payee."
+        "wins a shared kind. A source with a live recurring invoice "
+        "schedule is refused, because the agreement is about the future; "
+        "an ended one moves with its invoices. Use this for a duplicate "
+        "counterparty, never for a rename: a rename is propose_update_payee."
     ),
     parameters={
         "type": "object",
@@ -2081,7 +2088,7 @@ async def propose_merge_payees(
 
     sources: list[dict[str, Any]] = []
     transactions_to_reassign = 0
-    schedules_found = 0
+    live_schedules = 0
     documents_deleted: list[dict[str, str]] = []
     # merge_payees moves a source's documents onto the target unless the
     # target already holds that kind, so the preview has to walk the sources
@@ -2100,16 +2107,19 @@ async def propose_merge_payees(
             )
             or 0
         )
-        schedule_count = int(
+        # Only a live agreement blocks the merge. An ended one is history
+        # and moves to the target with the invoices it issued.
+        live_schedule_count = int(
             await session.scalar(
                 select(func.count())
                 .select_from(InvoiceSchedule)
                 .where(InvoiceSchedule.payee_id == source_id)
+                .where(InvoiceSchedule.status != "ended")
             )
             or 0
         )
         transactions_to_reassign += count
-        schedules_found += schedule_count
+        live_schedules += live_schedule_count
         source_tax_ids = [
             {"kind": row.kind, "value": row.value} for row in source.tax_ids
         ]
@@ -2127,7 +2137,7 @@ async def propose_merge_payees(
                 "id": str(source.id),
                 "name": source.name,
                 "transaction_count": count,
-                "schedule_count": schedule_count,
+                "live_schedule_count": live_schedule_count,
                 "tax_ids": source_tax_ids,
             }
         )
@@ -2155,13 +2165,13 @@ async def propose_merge_payees(
         "apply_endpoint": "POST /api/payees/merge",
     }
 
-    if schedules_found:
+    if live_schedules:
         # The service refuses this on apply; the preview says so first so
         # the caller does not present a merge that cannot land.
         return {
             **preview,
             "applied": False,
-            "error": f"payee_has_schedules:{schedules_found}",
+            "error": f"payee_has_schedules:{live_schedules}",
         }
 
     if _can_apply(ctx, apply):

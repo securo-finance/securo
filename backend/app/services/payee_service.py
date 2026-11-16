@@ -312,13 +312,14 @@ async def _invoice_count(session: AsyncSession, payee_ids: list[uuid.UUID]) -> i
     return int(result.scalar_one())
 
 
-async def _schedule_count(session: AsyncSession, payee_ids: list[uuid.UUID]) -> int:
-    """How many recurring invoice agreements name any of these counterparties.
+async def _live_schedule_count(session: AsyncSession, payee_ids: list[uuid.UUID]) -> int:
+    """How many live recurring invoice agreements name these counterparties.
 
     Same reasoning as `_invoice_count`: read the model here instead of
-    depending on the invoicing service. Unlike an invoice, a schedule is
-    an agreement about the future, so a merge must not silently rewrite
-    who the client is billed by.
+    depending on the invoicing service. A live agreement is about the
+    future, so a merge must not silently rewrite who the client is billed
+    by. An ended one is history, like the invoices it issued, and moves
+    with them.
     """
     from app.models.invoice_schedule import InvoiceSchedule
 
@@ -326,6 +327,7 @@ async def _schedule_count(session: AsyncSession, payee_ids: list[uuid.UUID]) -> 
         select(func.count())
         .select_from(InvoiceSchedule)
         .where(InvoiceSchedule.payee_id.in_(payee_ids))
+        .where(InvoiceSchedule.status != "ended")
     )
     return int(result.scalar_one())
 
@@ -418,12 +420,13 @@ async def merge_payees(
         if not source:
             raise ValueError(f"Source payee {source_id} not found")
 
-    # A schedule is the agreement to bill this client every period, not a
-    # record of what was already billed. Moving it would silently change
-    # who the client signed with, and leaving it behind trips the RESTRICT
-    # foreign key on the delete below as a 500. Refuse, and say why.
+    # A live schedule is the agreement to bill this client every period,
+    # not a record of what was already billed. Moving it would silently
+    # change who the client signed with, so refuse, and say why. An ended
+    # agreement is history: the invoices it issued already move, so the row
+    # follows them below.
     merging_ids = [source_id for source_id in source_ids if source_id != target_id]
-    scheduled = await _schedule_count(session, merging_ids) if merging_ids else 0
+    scheduled = await _live_schedule_count(session, merging_ids) if merging_ids else 0
     if scheduled:
         raise ValueError(f"payee_has_schedules:{scheduled}")
 
@@ -448,6 +451,18 @@ async def merge_payees(
     await session.execute(
         update(Invoice)
         .where(Invoice.payee_id.in_(source_ids))
+        .values(payee_id=target_id)
+    )
+
+    # Ended schedules are the agreements those invoices were issued under,
+    # so they follow the same route. Nothing live is left here: it was
+    # refused above. Without the move the RESTRICT foreign key would fail
+    # the delete below with a 500.
+    from app.models.invoice_schedule import InvoiceSchedule
+
+    await session.execute(
+        update(InvoiceSchedule)
+        .where(InvoiceSchedule.payee_id.in_(source_ids))
         .values(payee_id=target_id)
     )
 

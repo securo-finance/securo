@@ -4,6 +4,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -556,6 +557,47 @@ async def test_merge_payees_refuses_source_with_schedule(
 
     # Nothing was moved and the source is still there.
     assert await get_payee(session, source.id, test_workspace.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_merge_payees_moves_an_ended_schedule(
+    session: AsyncSession, test_user, test_workspace
+):
+    """An ended agreement is the record of what was billed, not a live one."""
+    workspace_id = test_workspace.id
+    target = await create_payee(session, workspace_id, test_user.id, PayeeCreate(name="Target"))
+    source = await create_payee(session, workspace_id, test_user.id, PayeeCreate(name="Source"))
+    schedule = InvoiceSchedule(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        user_id=test_user.id,
+        payee_id=source.id,
+        name="Retainer",
+        status="ended",
+        ended_at=date(2026, 3, 1),
+        end_reason="completed",
+        origin="local",
+        frequency="monthly",
+        start_date=date(2026, 1, 5),
+        end_type="never",
+        currency="BRL",
+    )
+    session.add(schedule)
+    schedule_id = schedule.id
+    target_id = target.id
+    source_id = source.id
+    await session.commit()
+
+    await merge_payees(session, workspace_id, target_id, [source_id])
+
+    session.expire_all()
+    moved = (
+        await session.execute(
+            select(InvoiceSchedule).where(InvoiceSchedule.id == schedule_id)
+        )
+    ).scalar_one()
+    assert moved.payee_id == target_id
+    assert await get_payee(session, source_id, workspace_id) is None
 
 
 # ---------------------------------------------------------------------------

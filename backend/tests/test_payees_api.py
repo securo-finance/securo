@@ -393,6 +393,51 @@ async def test_merge_payees_refuses_source_with_schedule(
     assert resp.status_code == 200
 
 
+@pytest.mark.asyncio
+async def test_merge_payees_moves_an_ended_schedule(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+):
+    """The 409 tells the user to end the agreement; ending it must work."""
+    target = await _create_payee(client, auth_headers, "MergeTarget")
+    source = await _create_payee(client, auth_headers, "MergeEndedSource")
+
+    payee = (
+        await session.execute(select(Payee).where(Payee.id == uuid.UUID(source["id"])))
+    ).scalar_one()
+    schedule = InvoiceSchedule(
+        id=uuid.uuid4(),
+        workspace_id=payee.workspace_id,
+        user_id=payee.user_id,
+        payee_id=payee.id,
+        name="Retainer",
+        status="ended",
+        ended_at=date.today(),
+        end_reason="completed",
+        origin="local",
+        frequency="monthly",
+        start_date=date.today(),
+        end_type="never",
+        currency="BRL",
+    )
+    session.add(schedule)
+    schedule_id = schedule.id
+    await session.commit()
+
+    resp = await client.post(
+        "/api/payees/merge", headers=auth_headers,
+        json={"target_id": target["id"], "source_ids": [source["id"]]},
+    )
+    assert resp.status_code == 200, resp.text
+
+    session.expire_all()
+    moved = (
+        await session.execute(
+            select(InvoiceSchedule).where(InvoiceSchedule.id == schedule_id)
+        )
+    ).scalar_one()
+    assert str(moved.payee_id) == target["id"]
+
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
