@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck && vite build",
-    "typecheck": "node ./node_modules/@typescript/native/bin/tsc -b",
+    "build": "bun run typecheck && vite build",
+    "typecheck": "bun check -b",
     "lint": "oxlint --report-unused-disable-directives .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
@@ -57,7 +57,6 @@
     "@types/node": "^24.10.13",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
-    "@typescript/native": "npm:typescript@7.0.2",
     "@vitejs/plugin-react": "6.1.1",
     "jsdom": "30.0.1",
     "oxfmt": "0.78.0",
@@ -68,5 +67,6 @@
     "typescript": "~5.9.3",
     "vite": "8.2.2",
     "vitest": "^4.1.8"
-  }
+  },
+  "trustedDependencies": []
 }

@@ -57,7 +57,7 @@ jobs:
             // thousand lines of lockfile and nothing to read. Counting raw
             // would mark the most trivial PR in the repo as the largest.
             const GENERATED = [
-              /(^|\/)package-lock\.json$/, /(^|\/)pnpm-lock\.yaml$/,
+              /(^|\/)package-lock\.json$/, /(^|\/)pnpm-lock\.yaml$/, /(^|\/)bun\.lock$/,
               /(^|\/)yarn\.lock$/, /(^|\/)poetry\.lock$/, /(^|\/)uv\.lock$/,
               /(^|\/)Cargo\.lock$/, /(^|\/)composer\.lock$/, /\.lock$/,
               /(^|\/)go\.sum$/, /\.min\.(js|css)$/, /(^|\/)node_modules\//,

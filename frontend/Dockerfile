@@ -5,11 +5,12 @@ WORKDIR /app
 ARG VITE_APP_VERSION
 ENV VITE_APP_VERSION=$VITE_APP_VERSION
 
-COPY package.json package-lock.json .npmrc ./
-RUN npm ci
+COPY --from=docker.io/oven/bun:1.4.4-slim /usr/local/bin/bun /usr/local/bin/bun
+COPY package.json bun.lock bunfig.toml ./
+RUN bun install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN bun run build
 
 # Serve with nginx
 FROM nginxinc/nginx-unprivileged:alpine

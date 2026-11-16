@@ -5,9 +5,10 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends git \
 	&& rm -rf /var/lib/apt/lists/*
 
-COPY package.json package-lock.json .npmrc ./
+COPY --from=docker.io/oven/bun:1.4.4-slim /usr/local/bin/bun /usr/local/bin/bun
+COPY package.json bun.lock bunfig.toml ./
 # The stamp lets scripts/dev-start.sh tell when node_modules is out of date.
-RUN npm ci && sha256sum package-lock.json | cut -d ' ' -f 1 > node_modules/.package-lock.sha256
+RUN bun install --frozen-lockfile && sha256sum bun.lock | cut -d ' ' -f 1 > node_modules/.bun-lock.sha256
 
 COPY . .
 

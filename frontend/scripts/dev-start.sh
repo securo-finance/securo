@@ -6,13 +6,13 @@
 # update that adds a dependency would run against the old node_modules.
 set -e
 
-stamp=node_modules/.package-lock.sha256
-current=$(sha256sum package-lock.json | cut -d ' ' -f 1)
+stamp=node_modules/.bun-lock.sha256
+current=$(sha256sum bun.lock | cut -d ' ' -f 1)
 
 if [ "$(cat "$stamp" 2>/dev/null)" != "$current" ]; then
-	echo "package-lock.json changed, reinstalling dependencies (npm ci)"
-	npm ci
+	echo "bun.lock changed, reinstalling dependencies (bun install --frozen-lockfile)"
+	bun install --frozen-lockfile
 	echo "$current" > "$stamp"
 fi
 
-exec npm run dev
+exec bun run dev

@@ -72,9 +72,10 @@ jobs:
           # so this is the version the running backend actually reports.
           sed -i -E "0,/^version = /s|^version = .*|version = \"$VERSION\"|" backend/pyproject.toml
 
-          # frontend/package.json (+ its lockfile). The UI reads VITE_APP_VERSION,
-          # injected from the tag at build time, but the manifest should still match.
-          npm --prefix frontend version "$VERSION" --no-git-tag-version --allow-same-version
+          # frontend/package.json. The UI reads VITE_APP_VERSION, injected from the
+          # tag at build time, but the manifest should still match. bun.lock does
+          # not record the project's own version.
+          sed -i -E "0,/\"version\": /s|\"version\": \"[^\"]*\"|\"version\": \"$VERSION\"|" frontend/package.json
 
           # charts/securo/Chart.yaml: release.yml repackages the chart with
           # --version/--app-version, this keeps the checked-in chart honest.
