@@ -185,8 +185,11 @@ async def test_list_transactions_currency_filter_is_case_insensitive(
     session: AsyncSession, ctx: CallContext, test_transactions
 ):
     handler = REGISTRY["list_transactions"].handler
-    a = await handler(session=session, ctx=ctx, currency="usd")
-    b = await handler(session=session, ctx=ctx, currency="USD")
+    a = await handler(session=session, ctx=ctx, currency="brl")
+    b = await handler(session=session, ctx=ctx, currency="BRL")
+    # Against the BRL fixture rows a nonempty result is what proves the
+    # match stayed case-insensitive; two empty results would prove nothing.
+    assert a["total"] >= 1
     assert a["total"] == b["total"]
 
 
