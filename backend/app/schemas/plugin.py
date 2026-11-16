@@ -19,6 +19,9 @@ class PluginIntegrationRead(BaseModel):
     auth: Literal["credentials", "oauth", "none"]
     fields: list[PluginFieldRead] = []
     sync_minutes: int | None = None
+    provides: list[str] | None = Field(
+        default=None, description="Records it syncs as a connected bank: accounts, transactions, bills, holdings, trades."
+    )
 
 
 class PluginHostRead(BaseModel):
@@ -188,6 +191,7 @@ class PluginCodeIntegrationRead(BaseModel):
     key: str
     name: dict[str, str]
     auth: Literal["credentials", "oauth", "none"]
+    provides: list[str] | None = None
 
 
 class PluginCodeConsentRead(BaseModel):

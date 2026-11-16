@@ -3479,6 +3479,15 @@
         "install": "Ez a bővítmény nem hoz adatot. Nézd át, mit tehet a kódja:",
         "update": "Nézd át, mit tehet az új verzió:",
         "remove": "A kódja ebben a munkaterületben többé nem fut."
+      },
+      "provides": "Összekapcsolt bankként szinkronizál",
+      "providesHint": "A Securo hozzáadja ezeket az adatokat ehhez a munkaterülethez, és naprakészen tartja őket, mint egy összekapcsolt banknál. Minden kapcsolat a Bankkapcsolatok között jelenik meg.",
+      "kinds": {
+        "accounts": "Számlák",
+        "transactions": "tranzakciók",
+        "bills": "kártyaszámlák",
+        "holdings": "befektetések",
+        "trades": "vételek és eladások"
       }
     },
     "connections": {

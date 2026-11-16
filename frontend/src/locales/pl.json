@@ -3615,6 +3615,15 @@
         "install": "Ta wtyczka nie dodaje danych. Sprawdź, co może robić jej kod:",
         "update": "Sprawdź, co może robić nowa wersja:",
         "remove": "Jej kod przestaje działać w tym obszarze roboczym."
+      },
+      "provides": "Synchronizuje jak połączony bank",
+      "providesHint": "Securo dodaje te dane do tego obszaru roboczego i aktualizuje je, jak w przypadku połączonego banku. Każde połączenie pojawia się w sekcji „Połączenia bankowe”.",
+      "kinds": {
+        "accounts": "Konta",
+        "transactions": "transakcje",
+        "bills": "rachunki kart",
+        "holdings": "inwestycje",
+        "trades": "kupno i sprzedaż"
       }
     },
     "connections": {

@@ -3480,6 +3480,15 @@
         "install": "Dieses Plugin bringt keine Daten. Prüfe, was sein Code tun darf:",
         "update": "Prüfe, was die neue Version tun darf:",
         "remove": "Sein Code läuft in diesem Arbeitsbereich nicht mehr."
+      },
+      "provides": "Synchronisiert wie eine verbundene Bank",
+      "providesHint": "Securo fügt diese Daten diesem Workspace hinzu und hält sie aktuell, wie bei einer verbundenen Bank. Jede Verbindung erscheint unter Bankverbindungen.",
+      "kinds": {
+        "accounts": "Konten",
+        "transactions": "Transaktionen",
+        "bills": "Kartenabrechnungen",
+        "holdings": "Anlagen",
+        "trades": "Käufe und Verkäufe"
       }
     },
     "connections": {

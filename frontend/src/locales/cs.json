@@ -3665,6 +3665,15 @@
         "install": "Tento plugin nepřináší data. Zkontrolujte, co smí dělat jeho kód:",
         "update": "Zkontrolujte, co smí dělat nová verze:",
         "remove": "Jeho kód v tomto pracovním prostoru přestane běžet."
+      },
+      "provides": "Synchronizuje se jako připojená banka",
+      "providesHint": "Securo přidá tyto záznamy do tohoto pracovního prostoru a udržuje je aktuální, jako u připojené banky. Každé připojení se zobrazí v sekci „Propojení bank“.",
+      "kinds": {
+        "accounts": "Účty",
+        "transactions": "transakce",
+        "bills": "vyúčtování karet",
+        "holdings": "investice",
+        "trades": "nákupy a prodeje"
       }
     },
     "connections": {

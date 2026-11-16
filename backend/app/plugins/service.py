@@ -292,7 +292,10 @@ async def _consent(
     return CodeConsent(
         network=[h.model_dump() for h in shown.network],
         api_scopes=[a.model_dump() for a in shown.api_scopes],
-        integrations=[{"key": i.key, "name": i.name, "auth": i.auth} for i in shown.contributes.integrations],
+        integrations=[
+            {"key": i.key, "name": i.name, "auth": i.auth, "provides": i.provides}
+            for i in shown.contributes.integrations
+        ],
         new_hosts=sorted({h.host for h in shown.network} - old_hosts) if current and manifest else [],
         new_scopes=sorted({a.scope for a in shown.api_scopes} - old_scopes) if current and manifest else [],
         connections=int(count or 0),

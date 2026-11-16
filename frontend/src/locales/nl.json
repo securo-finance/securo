@@ -3481,6 +3481,15 @@
         "install": "Deze plugin brengt geen gegevens mee. Bekijk wat de code mag doen:",
         "update": "Bekijk wat de nieuwe versie mag doen:",
         "remove": "De code draait niet meer in deze werkruimte."
+      },
+      "provides": "Synchroniseert als een gekoppelde bank",
+      "providesHint": "Securo voegt deze gegevens aan deze werkruimte toe en houdt ze bij, zoals bij een gekoppelde bank. Elke koppeling staat onder Bankverbindingen.",
+      "kinds": {
+        "accounts": "Rekeningen",
+        "transactions": "transacties",
+        "bills": "kaartafrekeningen",
+        "holdings": "beleggingen",
+        "trades": "aan- en verkopen"
       }
     },
     "connections": {

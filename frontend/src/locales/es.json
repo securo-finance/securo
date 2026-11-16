@@ -3483,6 +3483,15 @@
         "install": "Este plugin no trae datos. Revisa lo que puede hacer su código:",
         "update": "Revisa lo que puede hacer la nueva versión:",
         "remove": "Su código deja de ejecutarse en este espacio de trabajo."
+      },
+      "provides": "Se sincroniza como un banco conectado",
+      "providesHint": "Securo añade estos registros a este espacio de trabajo y los mantiene al día, como con un banco conectado. Cada conexión aparece en Conexiones bancarias.",
+      "kinds": {
+        "accounts": "Cuentas",
+        "transactions": "transacciones",
+        "bills": "facturas de tarjeta",
+        "holdings": "inversiones",
+        "trades": "compras y ventas"
       }
     },
     "connections": {

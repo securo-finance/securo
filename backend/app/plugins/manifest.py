@@ -67,6 +67,12 @@ HOST_PATTERN = r"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(:[0-9]{1,5}
 ENTRYPOINT_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$"
 PATH_PATTERN = r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,199}$"
 
+#: Records an integration can return from `sync` for the core to write
+#: through the bank sync pipeline, under a bank connection of its own.
+ProvidedKind = Literal["accounts", "transactions", "bills", "holdings", "trades"]
+#: What each kind needs alongside it.
+PROVIDES_NEEDS: dict[str, str] = {"transactions": "accounts", "bills": "accounts", "trades": "holdings"}
+
 #: Condition fields a plugin rule may use. Account and payee ids are a
 #: workspace's own data, so a plugin can't know them.
 ConditionField = Literal["description", "payee", "notes", "amount", "type", "date", "status"]
@@ -222,6 +228,8 @@ class Integration(_Model):
     `oauth`: the person signs in at the service; the plugin builds the sign-in
     link and trades the code for a token. `none`: nothing to fill in.
     With `sync_minutes`, Securo calls the plugin's `sync` on that schedule.
+    With `provides`, `sync` returns those records as data and Securo writes
+    them as it does for a connected bank (see `app.plugins.contract`).
     """
 
     key: str = Field(pattern=KEY_PATTERN)
@@ -230,6 +238,7 @@ class Integration(_Model):
     auth: Literal["credentials", "oauth", "none"] = "credentials"
     fields: list[FormField] = Field(default=[], max_length=20)
     sync_minutes: int | None = Field(default=None, ge=15, le=7 * 24 * 60)
+    provides: list[ProvidedKind] | None = None
 
     @model_validator(mode="after")
     def _unique_fields(self) -> Integration:
@@ -237,6 +246,25 @@ class Integration(_Model):
         if len(keys) != len(set(keys)):
             raise ValueError(f"integration {self.key}: field keys must be unique")
         return self
+
+    @model_validator(mode="after")
+    def _provides_what_it_needs(self) -> Integration:
+        if self.provides is None:
+            return self
+        if not self.provides:
+            raise ValueError(f"integration {self.key}: provides can't be empty")
+        if len(self.provides) != len(set(self.provides)):
+            raise ValueError(f"integration {self.key}: provides must be unique")
+        for kind in self.provides:
+            needed = PROVIDES_NEEDS.get(kind)
+            if needed and needed not in self.provides:
+                raise ValueError(f"integration {self.key}: {kind} needs {needed}")
+        return self
+
+    @property
+    def is_provider(self) -> bool:
+        """Its records go through the bank sync pipeline."""
+        return bool(self.provides)
 
 
 class Runtime(_Model):

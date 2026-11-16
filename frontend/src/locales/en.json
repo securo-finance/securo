@@ -3479,6 +3479,15 @@
         "install": "This plugin brings no data. Review what its code may do:",
         "update": "Review what the new version may do:",
         "remove": "Its code stops running in this workspace."
+      },
+      "provides": "Syncs as a connected bank",
+      "providesHint": "Securo adds these records to this workspace and keeps them up to date, as for a connected bank. Each connection appears under Bank Connections.",
+      "kinds": {
+        "accounts": "Accounts",
+        "transactions": "transactions",
+        "bills": "card bills",
+        "holdings": "investments",
+        "trades": "buys and sells"
       }
     },
     "connections": {

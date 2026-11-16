@@ -132,6 +132,23 @@ describe('PluginPlanDialog with code', () => {
       </WorkspaceContext.Provider>,
     )
     expect(await screen.findByText(t('plugins.code.noNetwork'))).toBeInTheDocument()
+    expect(screen.queryByText(t('plugins.code.provides'))).not.toBeInTheDocument()
+  })
+
+  it('lists the records an integration syncs as a connected bank', async () => {
+    const integrations = [
+      { key: 'keys', name: { en: 'Ledger' }, auth: 'credentials' as const, provides: ['accounts', 'holdings'] as const },
+      { key: 'hooks', name: { en: 'Ledger hooks' }, auth: 'none' as const, provides: null },
+    ].map((i) => ({ ...i, provides: i.provides ? [...i.provides] : null }))
+    api.plugins.plan.mockResolvedValue({ ...PLAN, code: { ...PLAN.code!, integrations } })
+    renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginPlanDialog target={{ id: 'acme/ledger', name: 'Ledger', action: 'install' }} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+    )
+    expect(await screen.findByText(t('plugins.code.provides'))).toBeInTheDocument()
+    expect(screen.getByText(`${t('plugins.code.kinds.accounts')}, ${t('plugins.code.kinds.holdings')}`)).toBeInTheDocument()
+    expect(screen.queryByText('Ledger hooks')).not.toBeInTheDocument()
   })
 })
 

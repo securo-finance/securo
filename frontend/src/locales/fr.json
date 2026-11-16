@@ -3483,6 +3483,15 @@
         "install": "Ce plugin n'apporte pas de données. Vérifiez ce que son code peut faire :",
         "update": "Vérifiez ce que la nouvelle version peut faire :",
         "remove": "Son code cesse de s'exécuter dans cet espace de travail."
+      },
+      "provides": "Se synchronise comme une banque connectée",
+      "providesHint": "Securo ajoute ces données à cet espace de travail et les tient à jour, comme pour une banque connectée. Chaque connexion apparaît dans Connexions bancaires.",
+      "kinds": {
+        "accounts": "Comptes",
+        "transactions": "transactions",
+        "bills": "relevés de carte",
+        "holdings": "placements",
+        "trades": "achats et ventes"
       }
     },
     "connections": {

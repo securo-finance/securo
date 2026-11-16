@@ -670,7 +670,11 @@ export interface PluginIntegration {
   fields: PluginField[]
   /** How often Securo asks the plugin to sync; null for never. */
   sync_minutes: number | null
+  /** Records it syncs as a connected bank; null for an integration that writes through the API. */
+  provides?: PluginProvidedKind[] | null
 }
+
+export type PluginProvidedKind = 'accounts' | 'transactions' | 'bills' | 'holdings' | 'trades'
 
 /** A host a plugin with code may reach, and why. */
 export interface PluginHost {
@@ -732,7 +736,12 @@ export interface PluginConnection {
 export interface PluginCodeConsent {
   network: PluginHost[]
   api_scopes: PluginScope[]
-  integrations: { key: string; name: LocalizedText; auth: PluginIntegration['auth'] }[]
+  integrations: {
+    key: string
+    name: LocalizedText
+    auth: PluginIntegration['auth']
+    provides?: PluginProvidedKind[] | null
+  }[]
   /** On an update: hosts and scopes the installed version didn't have. */
   new_hosts: string[]
   new_scopes: string[]

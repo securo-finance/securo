@@ -3483,6 +3483,15 @@
         "install": "Questo plugin non porta dati. Controlla cosa può fare il suo codice:",
         "update": "Controlla cosa può fare la nuova versione:",
         "remove": "Il suo codice smette di essere eseguito in questo spazio di lavoro."
+      },
+      "provides": "Si sincronizza come una banca collegata",
+      "providesHint": "Securo aggiunge questi dati a questo spazio di lavoro e li tiene aggiornati, come per una banca collegata. Ogni connessione compare in Connessioni bancarie.",
+      "kinds": {
+        "accounts": "Conti",
+        "transactions": "transazioni",
+        "bills": "estratti conto della carta",
+        "holdings": "investimenti",
+        "trades": "acquisti e vendite"
       }
     },
     "connections": {

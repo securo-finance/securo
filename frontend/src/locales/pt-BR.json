@@ -3483,6 +3483,15 @@
         "install": "Este plugin não traz dados. Veja o que o código dele pode fazer:",
         "update": "Veja o que a nova versão pode fazer:",
         "remove": "O código dele deixa de rodar neste workspace."
+      },
+      "provides": "Sincroniza como um banco conectado",
+      "providesHint": "O Securo adiciona esses registros a este workspace e os mantém atualizados, como em um banco conectado. Cada conexão aparece em Conexões Bancárias.",
+      "kinds": {
+        "accounts": "Contas",
+        "transactions": "transações",
+        "bills": "faturas de cartão",
+        "holdings": "investimentos",
+        "trades": "compras e vendas"
       }
     },
     "connections": {
