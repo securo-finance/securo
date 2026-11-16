@@ -229,6 +229,11 @@ class PluginConnectionCreate(BaseModel):
     values: dict[str, Any] = {}
 
 
+class PluginConnectionUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    values: dict[str, Any] = Field(default={}, description="Fields left out or blank keep their value.")
+
+
 class PluginConnectionCreated(BaseModel):
     connection: PluginConnectionRead
     authorize_url: str | None = Field(description="For sign-in integrations: send the browser here.")

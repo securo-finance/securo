@@ -74,7 +74,21 @@ async def list_connections(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await connection_service.get_connections(session, ctx.workspace.id)
+    rows = await connection_service.get_connections(session, ctx.workspace.id)
+    plugins = {
+        c.bank_connection_id: c for c in await plugin_connections.list_connections(session, ctx.workspace.id)
+        if c.bank_connection_id is not None
+    }
+    reads = []
+    for row in rows:
+        read = BankConnectionRead.model_validate(row)
+        plugin = plugins.get(row.id)
+        if plugin is not None:
+            read = read.model_copy(
+                update={"plugin_connection_id": plugin.id, "plugin_id": plugin.plugin_id, "integration": plugin.integration}
+            )
+        reads.append(read)
+    return reads
 
 
 @router.post("/oauth/url", response_model=OAuthUrlResponse)

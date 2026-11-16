@@ -24,6 +24,7 @@ from app.schemas.plugin import (
     PluginAuthorizeRead,
     PluginConnectionCreate,
     PluginConnectionCreated,
+    PluginConnectionUpdate,
     PluginConnectionRead,
     PluginOAuthCallback,
     PluginCatalogRead,
@@ -180,6 +181,23 @@ async def create_connection(
     if link is None:
         _queue_sync(connection.id)
     return PluginConnectionCreated(connection=_connection_read(connection), authorize_url=link)
+
+
+@router.put("/connections/{connection_id}/values", response_model=PluginConnectionRead)
+async def update_connection_values(
+    connection_id: uuid.UUID,
+    body: PluginConnectionUpdate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """New form values (to reconnect after changing a password, say); then it syncs afresh."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    connection = await _connection_guarded(
+        connections.update_values(session, connection, name=body.name, values=body.values)
+    )
+    if connection.status == "pending":
+        _queue_sync(connection.id)
+    return _connection_read(connection)
 
 
 @router.post("/connections/{connection_id}/authorize", response_model=PluginAuthorizeRead)

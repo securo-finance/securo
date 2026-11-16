@@ -500,3 +500,58 @@ async def test_bank_connections_api_reports_a_plugin_that_needs_sign_in(
     monkeypatch.setenv("PLUGINS_ENABLED", "false")
     off = await client.post(f"/api/connections/{bank['id']}/sync", headers=auth_headers)
     assert off.status_code == 503 and "turned off" in off.json()["detail"]
+
+
+# --- Managing a plugin's connection from Bank Connections ---------------------------------
+
+
+async def _api_connected(client: AsyncClient, auth_headers: dict, values: dict) -> dict:
+    plan = (await client.get(f"/api/plugins/{PLUGIN}/plan", params={"action": "install"}, headers=auth_headers)).json()
+    body = {"action": "install", "commit": plan["commit"], "token": plan["token"]}
+    assert (await client.post(f"/api/plugins/{PLUGIN}/apply", json=body, headers=auth_headers)).status_code == 200
+    created = await client.post(
+        "/api/plugins/connections",
+        json={"plugin_id": PLUGIN, "integration": "keys", "name": "Main", "values": values},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201, created.text
+    return created.json()["connection"]
+
+
+@pytest.mark.asyncio
+async def test_bank_connections_say_which_plugin_syncs_them(
+    client: AsyncClient, auth_headers: dict, provider_catalog, plugin_runner, monkeypatch
+):
+    monkeypatch.setattr("app.api.plugins._queue_sync", lambda connection_id: None)
+    connection = await _api_connected(client, auth_headers, {"api_key": "sk_live_1"})
+    (bank,) = (await client.get("/api/connections", headers=auth_headers)).json()
+    assert (bank["plugin_connection_id"], bank["plugin_id"], bank["integration"]) == (connection["id"], PLUGIN, "keys")
+
+
+@pytest.mark.asyncio
+async def test_new_values_keep_blank_secrets_and_sync_afresh(
+    client: AsyncClient, auth_headers: dict, provider_catalog, plugin_runner, monkeypatch, session: AsyncSession
+):
+    queued: list = []
+    monkeypatch.setattr("app.api.plugins._queue_sync", queued.append)
+    connection = await _api_connected(client, auth_headers, {"api_key": "sk_live_1", "account": "expired"})
+    (bank,) = (await client.get("/api/connections", headers=auth_headers)).json()
+    assert (await client.post(f"/api/connections/{bank['id']}/sync", headers=auth_headers)).status_code == 410
+
+    updated = await client.put(
+        f"/api/plugins/connections/{connection['id']}/values",
+        json={"name": "Renamed", "values": {"api_key": "", "account": "ok"}},
+        headers=auth_headers,
+    )
+    assert updated.status_code == 200, updated.text
+    assert (updated.json()["status"], updated.json()["config"], updated.json()["name"]) == ("pending", {"account": "ok"}, "Renamed")
+    stored = await session.get(PluginConnection, uuid.UUID(connection["id"]))
+    assert stored is not None and vault.unseal(stored.secrets)["api_key"] == "sk_live_1"
+    (bank,) = (await client.get("/api/connections", headers=auth_headers)).json()
+    assert (bank["status"], bank["display_name"]) == ("active", "Renamed")
+    assert len(queued) == 2  # the first sync, and the one after the new values
+
+    bad = await client.put(
+        f"/api/plugins/connections/{connection['id']}/values", json={"values": {"nope": "x"}}, headers=auth_headers
+    )
+    assert bad.status_code == 422

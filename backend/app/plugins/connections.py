@@ -220,6 +220,45 @@ async def for_bank_connection(
     )
 
 
+async def update_values(
+    session: AsyncSession, connection: PluginConnection, *, name: str | None, values: dict[str, Any]
+) -> PluginConnection:
+    """New form values for a connection (reconnecting after a password change, say).
+
+    A field left blank keeps what it had, so a secret never has to be typed
+    again to change something else. The connection then syncs afresh.
+    """
+    _, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
+    integration = _integration(manifest, connection.integration)
+    try:
+        secrets = vault.unseal(connection.secrets)
+    except vault.SealBroken:
+        secrets = {}
+    config = dict(connection.config or {})
+    given = {k: v for k, v in values.items() if not (v is None or (isinstance(v, str) and not v.strip()))}
+    fields = {f.key: f for f in integration.fields}
+    unknown = set(values) - set(fields)
+    if unknown:
+        raise PluginConnectionError(f"unknown fields: {', '.join(sorted(unknown))}")
+    kept = {**{k: v for k, v in config.items() if k in fields}, **{k: v for k, v in secrets.items() if k in fields}}
+    new_config, new_secrets = _split(integration, {**kept, **given})
+    connection.config = new_config
+    connection.secrets = vault.seal({**{k: v for k, v in secrets.items() if k.startswith("__securo_")}, **new_secrets})
+    if name is not None and name.strip():
+        connection.name = name.strip()[:100]
+    if integration.auth != "oauth":
+        connection.status = "pending"
+    connection.failures = 0
+    connection.last_error = None
+    if connection.bank_connection_id is not None:
+        bank = await session.get(BankConnection, connection.bank_connection_id)
+        if bank is not None:
+            bank.display_name = connection.name
+    await _mirror_status(session, connection)
+    await session.commit()
+    return connection
+
+
 def _split(integration: Integration, values: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """The form's values as settings and secrets; refuses unknown or missing fields."""
     fields = {f.key: f for f in integration.fields}
