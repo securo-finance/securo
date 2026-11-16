@@ -3,7 +3,7 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.category import CategoryRead
 from app.schemas.transaction_category_line import (
@@ -17,6 +17,16 @@ from app.schemas.transaction_split import (
 )
 
 
+def _normalize_currency_code(value: Optional[str]) -> Optional[str]:
+    """Upper-case a currency code so ``brl`` reads as ``BRL``.
+
+    Aggregations compare the row's currency to the account's, and that
+    comparison is case-sensitive, so a lower-case row in its own account's
+    currency lands in the unconverted-foreign branch and counts zero (#1263).
+    """
+    return value.upper() if isinstance(value, str) else value
+
+
 class TransactionBase(BaseModel):
     description: str
     amount: Decimal
@@ -26,6 +36,11 @@ class TransactionBase(BaseModel):
     currency: Optional[str] = None
     fx_rate: Optional[Decimal] = None
     payee_raw: Optional[str] = None  # raw payee string from import (OFX/QIF)
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_currency_code(value)
 
 
 class TransactionCreate(TransactionBase):
@@ -130,6 +145,11 @@ class TransactionUpdate(BaseModel):
     # same series; "all" touches every row in the series. Ignored when the
     # transaction has no installment fingerprint.
     apply_to: Literal["this", "future", "all"] = "this"
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_currency_code(value)
 
 
 class InstallmentSeriesCreate(BaseModel):
