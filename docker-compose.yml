@@ -271,6 +271,8 @@ services:
     restart: unless-stopped
 
 networks:
+  # Declared so podman-compose accepts services that name it alongside `plugins`.
+  default: {}
   plugins:
     internal: true
 
