@@ -11,6 +11,7 @@ from app.models.transaction import Transaction
 from app.models.rule import Rule
 from app.models.workspace_plugin import WorkspacePlugin
 from app.models.plugin_connection import PluginConnection
+from app.models.plugin_logo import PluginLogo
 from app.models.ui_layout import UiLayout
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.budget import Budget
@@ -70,6 +71,7 @@ __all__ = [
     "Rule",
     "WorkspacePlugin",
     "PluginConnection",
+    "PluginLogo",
     "UiLayout",
     "RecurringTransaction",
     "Budget",

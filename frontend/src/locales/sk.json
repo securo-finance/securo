@@ -1436,7 +1436,9 @@
       "active": "Aktívne",
       "error": "Chyba",
       "expired": "Vypršané"
-    }
+    },
+    "pluginConnectors": "Z vašich pluginov",
+    "pluginUnavailable": "Plugin tohto pripojenia už nie je nainštalovaný ani dostupný."
   },
   "loans": {
     "title": "Úverová zmluva",
@@ -3630,6 +3632,7 @@
       "write": "Čítanie a zmeny: {{what}}",
       "ownerOnly": "Plugin, ktorý spúšťa kód, môže pridať, aktualizovať alebo odstrániť len vlastník pracovného priestoru.",
       "removeConnections": "Jeho pripojenia v tomto pracovnom priestore ({{count}}) sa odstránia aj s uloženými kľúčmi a prístupmi.",
+      "unlinks": "Jeho bankové pripojenia ({{count}}) sa prestanú synchronizovať. Účty a transakcie zostanú ako manuálne účty.",
       "removeNothing": "Kód pluginu sa z vášho servera odstráni, keď ho žiadny pracovný priestor nepoužíva.",
       "auth": {
         "credentials": "Kľúč alebo heslo",
@@ -3654,6 +3657,15 @@
         "install": "Tento plugin neprináša údaje. Skontrolujte, čo smie robiť jeho kód:",
         "update": "Skontrolujte, čo smie robiť nová verzia:",
         "remove": "Jeho kód v tomto pracovnom priestore prestane bežať."
+      },
+      "provides": "Synchronizuje sa ako pripojená banka",
+      "providesHint": "Securo pridá tieto záznamy do tohto pracovného priestoru a udržiava ich aktuálne, ako pri pripojenej banke. Každé pripojenie sa zobrazí v sekcii „Prepojenia bánk“.",
+      "kinds": {
+        "accounts": "Účty",
+        "transactions": "transakcie",
+        "bills": "vyúčtovania kariet",
+        "holdings": "investície",
+        "trades": "nákupy a predaje"
       }
     },
     "connections": {
@@ -3691,8 +3703,13 @@
       "added": "{{name}}: pripojené",
       "removeTitle": "Odstrániť {{name}}?",
       "removeHint": "Uložené kľúče a prístup k tomuto pracovnému priestoru sa vymažú. Čo už bolo načítané, zostane.",
+      "removeBankHint": "Synchronizuje sa ako pripojená banka: odstránením sa táto banka odpojí a odstránia sa synchronizované účty aj s transakciami.",
       "removed": "{{name}}: odstránené",
-      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne."
+      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne.",
+      "editTitle": "Znovu pripojiť {{name}}",
+      "editHint": "Aktualizujte, čo sa zmenilo, napríklad nové heslo alebo token. Potom sa pripojenie znova synchronizuje.",
+      "keepBlank": "Nechajte pole prázdne, aby sa zachovala jeho súčasná hodnota.",
+      "updated": "{{name}} aktualizované"
     },
     "oauth": {
       "title": "Dokončuje sa prihlásenie",

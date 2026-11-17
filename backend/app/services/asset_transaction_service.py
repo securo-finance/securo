@@ -54,14 +54,16 @@ def _d(value) -> Decimal:
     return Decimal(str(value or 0))
 
 
+def _created(tx: AssetTransaction) -> datetime:
+    """When the row was entered, comparable whether or not the driver kept the time zone."""
+    created = tx.created_at or datetime.min
+    return created if created.tzinfo else created.replace(tzinfo=timezone.utc)
+
+
 def _replay_order(tx: AssetTransaction) -> tuple[date, int, datetime]:
     """Ledger replay order: by date, a split before that day's trades, then
     in the order the entries were made."""
-    return (
-        tx.date,
-        0 if tx.kind == "split" else 1,
-        tx.created_at or datetime.min.replace(tzinfo=timezone.utc),
-    )
+    return (tx.date, 0 if tx.kind == "split" else 1, _created(tx))
 
 
 def _units_after_split(qty: Decimal, tx: AssetTransaction) -> Decimal:

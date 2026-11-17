@@ -12,6 +12,12 @@ Sign-in (`oauth`): the plugin builds the link to the service; the service
 sends the browser back to Securo's `/plugins/oauth/callback` page, and the
 plugin trades the code for a token. The state is single use and bound to the
 person and workspace that started it.
+
+Provider integrations (`provides`): the connection comes with a bank
+connection of its own, and `sync` returns records that Securo writes through
+the bank sync pipeline (`app.plugins.contract`, `app.plugins.provider`). The
+plugin's cursor is kept only once its records are written, so a sync that
+fails is fetched again.
 """
 from __future__ import annotations
 
@@ -28,10 +34,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core import redis as redis_store
 from app.models.access_token import AccessToken
+from app.models.bank_connection import BankConnection
 from app.models.plugin_connection import PluginConnection
 from app.models.workspace_plugin import WorkspacePlugin
-from app.plugins import runner, vault
+from app.plugins import logos, runner, vault
+from app.plugins.contract import PayloadError, parse_payload
 from app.plugins.manifest import Integration, Manifest, localized, parse_manifest
+from app.plugins.provider import PluginPayloadProvider, provider_name
 from app.services import access_token_service, oauth_state
 
 logger = logging.getLogger(__name__)
@@ -41,6 +50,11 @@ _API_TOKEN = "__securo_api_token"
 #: Longest wait after repeated failures before the next scheduled sync.
 _MAX_BACKOFF = timedelta(hours=24)
 STATUSES = ("pending", "active", "error", "needs_auth")
+#: A plugin connection's status, as its bank connection shows it.
+BANK_STATUS = {"pending": "active", "active": "active", "error": "error", "needs_auth": "expired"}
+#: How far back the plugin is asked to re-read, as the bank sync does.
+_SINCE_OVERLAP = timedelta(days=14)
+_BANK_GONE = "its bank connection is gone; remove it and connect again"
 
 
 class PluginConnectionError(Exception):
@@ -134,6 +148,7 @@ async def create(
         token_id = None
 
     connection = PluginConnection(
+        id=uuid.uuid4(),
         workspace_id=workspace_id,
         plugin_id=plugin_id,
         integration=integration.key,
@@ -147,6 +162,8 @@ async def create(
         failures=0,
         created_by=user_id,
     )
+    if integration.is_provider:
+        await _add_bank(session, connection, localized(manifest.name, lang), user_id)
     session.add(connection)
     await session.commit()
     await session.refresh(connection)
@@ -159,6 +176,117 @@ async def create(
             await delete(session, connection)
             raise
     return connection, link
+
+
+async def _add_bank(session: AsyncSession, connection: PluginConnection, institution: str, user_id: uuid.UUID) -> None:
+    """The bank connection a provider integration syncs into, listed under Bank Connections from the start.
+
+    The institution is named after the plugin (an "Interactive Brokers"
+    plugin), as a native connection is named after its bank.
+    """
+    bank = BankConnection(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=connection.workspace_id,
+        provider=provider_name(connection.plugin_id),
+        external_id=str(connection.id),
+        institution_name=institution[:255],
+        display_name=connection.name,
+        credentials={},
+        settings={},
+        status=BANK_STATUS.get(connection.status, "error"),
+    )
+    session.add(bank)
+    await session.flush()
+    connection.bank_connection_id = bank.id
+
+
+async def _drop_bank(session: AsyncSession, connection: PluginConnection, *, keep_records: bool) -> None:
+    """Take the connection's bank connection away (not committed).
+
+    Someone removing the connection disconnects it exactly as a native one is,
+    accounts and their transactions included. When the plugin goes instead
+    (removed, or an update that stops providing), the records stay: the
+    accounts carry on as manual ones, so no release of a plugin can take
+    anyone's history with it.
+    """
+    if connection.bank_connection_id is None:
+        return
+    from app.services import connection_service
+
+    bank_id, connection.bank_connection_id = connection.bank_connection_id, None
+    if keep_records:
+        await connection_service.unlink_connection(session, bank_id, connection.workspace_id)
+    else:
+        await connection_service.delete_connection(session, bank_id, connection.workspace_id, commit=False)
+
+
+async def for_bank_connection(
+    session: AsyncSession, workspace_id: uuid.UUID, bank_connection_id: uuid.UUID
+) -> PluginConnection | None:
+    """The plugin connection that syncs a bank connection, if a plugin does."""
+    return await session.scalar(
+        select(PluginConnection).where(
+            PluginConnection.workspace_id == workspace_id,
+            PluginConnection.bank_connection_id == bank_connection_id,
+        )
+    )
+
+
+async def update_values(
+    session: AsyncSession, connection: PluginConnection, *, name: str | None, values: dict[str, Any]
+) -> PluginConnection:
+    """New form values for a connection (reconnecting after a password change, say).
+
+    A field left blank keeps what it had, so a secret never has to be typed
+    again to change something else. What the plugin stored itself (a refresh
+    token, say) is kept too. The connection then syncs afresh.
+
+    Not while it syncs: the sync would save back the secrets it started with.
+    """
+    lock = f"plugin-sync:{connection.id}"
+    if not await _acquire(lock):
+        raise PluginConnectionError("this connection is syncing right now; try again in a moment")
+    try:
+        await session.refresh(connection)
+        return await _update_values(session, connection, name=name, values=values)
+    finally:
+        await _release(lock)
+
+
+async def _update_values(
+    session: AsyncSession, connection: PluginConnection, *, name: str | None, values: dict[str, Any]
+) -> PluginConnection:
+    _, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
+    integration = _integration(manifest, connection.integration)
+    try:
+        secrets = vault.unseal(connection.secrets)
+    except vault.SealBroken:
+        secrets = {}
+    config = dict(connection.config or {})
+    given = {k: v for k, v in values.items() if not (v is None or (isinstance(v, str) and not v.strip()))}
+    fields = {f.key: f for f in integration.fields}
+    unknown = set(values) - set(fields)
+    if unknown:
+        raise PluginConnectionError(f"unknown fields: {', '.join(sorted(unknown))}")
+    kept = {**{k: v for k, v in config.items() if k in fields}, **{k: v for k, v in secrets.items() if k in fields}}
+    new_config, new_secrets = _split(integration, {**kept, **given})
+    connection.config = new_config
+    # The form's secrets replace theirs; everything else the plugin or Securo stored stays.
+    connection.secrets = vault.seal({**{k: v for k, v in secrets.items() if k not in fields}, **new_secrets})
+    if name is not None and name.strip():
+        connection.name = name.strip()[:100]
+    if integration.auth != "oauth":
+        connection.status = "pending"
+    connection.failures = 0
+    connection.last_error = None
+    if connection.bank_connection_id is not None:
+        bank = await session.get(BankConnection, connection.bank_connection_id)
+        if bank is not None:
+            bank.display_name = connection.name
+    await _mirror_status(session, connection)
+    await session.commit()
+    return connection
 
 
 def _split(integration: Integration, values: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -311,6 +439,7 @@ async def finish_oauth(
     _keep(connection, result, secrets)
     connection.status = "pending"
     connection.last_error = None
+    await _mirror_status(session, connection)
     await session.commit()
     return connection
 
@@ -340,26 +469,128 @@ async def sync(session: AsyncSession, connection: PluginConnection) -> PluginCon
     try:
         # Read again under the lock: another sync may have moved the cursor or the secrets.
         await session.refresh(connection)
-        params = {
+        params: dict[str, Any] = {
             "state": dict(connection.state or {}),
             "last_sync_at": connection.last_sync_at.isoformat() if connection.last_sync_at else None,
         }
+        provides: list[str] | None = None
         try:
+            provides = await _provides(session, connection)
+            if provides is not None:
+                params["since"] = await _since(session, connection)
             result, secrets = await _call(session, connection, "sync", params)
         except runner.PluginCallFailed as exc:
-            _failed(connection, f"{exc.kind}: {exc.message}", needs_auth=exc.kind in ("NeedsAuth", "AuthError"))
+            if provides is not None and exc.kind == "RateLimited":
+                _rate_limited(connection, f"{exc.kind}: {exc.message}")
+            else:
+                _failed(connection, f"{exc.kind}: {exc.message}", needs_auth=exc.kind in ("NeedsAuth", "AuthError"))
         except (runner.RunnerUnavailable, runner.RunnerRefused, PluginConnectionError) as exc:
             _failed(connection, str(exc), needs_auth=False)
         else:
-            _keep(connection, result, secrets)
-            connection.status = "active"
-            connection.last_error = None
-            connection.failures = 0
-            connection.last_sync_at = _now()
+            if provides is None:
+                _keep(connection, result, secrets)
+                _succeeded(connection)
+            else:
+                await _write_payload(session, connection, provides, result, secrets)
+        await _mirror_status(session, connection)
         await session.commit()
         return connection
     finally:
         await _release(lock)
+
+
+async def _provides(session: AsyncSession, connection: PluginConnection) -> list[str] | None:
+    """What the connection's integration provides, or None when it writes through the API."""
+    _, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
+    integration = _integration(manifest, connection.integration)
+    if not integration.provides:
+        return None
+    if connection.bank_connection_id is None:
+        # Nowhere to write its records: failing says so, where syncing on
+        # would drop them and move the cursor past them.
+        raise PluginConnectionError(_BANK_GONE)
+    return list(integration.provides)
+
+
+async def _since(session: AsyncSession, connection: PluginConnection) -> str | None:
+    """The first day to re-read: the bank connection's last full sync, minus the usual overlap."""
+    bank = await session.get(BankConnection, connection.bank_connection_id)
+    last = _aware(bank.last_sync_at) if bank is not None else None
+    return (last - _SINCE_OVERLAP).date().isoformat() if last is not None else None
+
+
+async def _write_payload(
+    session: AsyncSession, connection: PluginConnection, provides: list[str], result: Any, secrets: dict[str, Any]
+) -> None:
+    """Write what `sync` returned through the bank sync pipeline, then keep the plugin's cursor.
+
+    New secrets are kept whatever happens next, so a rotated token is never
+    lost. The cursor is kept only once the records are written: a payload that
+    is invalid, or fails to write, is fetched again on the next sync.
+    """
+    from app.services import connection_service
+
+    reply = result if isinstance(result, dict) else {}
+    _keep(connection, {"secrets": reply.get("secrets")}, secrets)
+    await session.commit()
+    record, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
+    logo_urls = await logos.urls(session, connection.plugin_id, record.commit)
+    try:
+        payload = parse_payload(reply.get("data"), provides, logo_urls, {h.host for h in manifest.network})
+    except PayloadError as exc:
+        _failed(connection, str(exc), needs_auth=False)
+        return
+    if payload is not None:
+        bank = await session.get(BankConnection, connection.bank_connection_id)
+        if bank is None:
+            _failed(connection, _BANK_GONE, needs_auth=False)
+            return
+        connection_id, workspace_id, bank_id, user_id = connection.id, connection.workspace_id, bank.id, bank.user_id
+        try:
+            await connection_service.sync_connection(
+                session, bank_id, workspace_id, user_id,
+                provider=PluginPayloadProvider(bank.provider, payload, logo_urls, scope=bank.external_id),
+            )
+        except Exception as exc:  # noqa: BLE001 - recorded on the connection, retried on the next sync
+            logger.exception("Writing the records of plugin connection %s failed", connection_id)
+            refreshed = await session.get(PluginConnection, connection_id)
+            if refreshed is None:
+                return
+            await session.refresh(refreshed)
+            _failed(refreshed, f"Securo couldn't save what the plugin returned ({type(exc).__name__})", needs_auth=False)
+            return
+        await session.refresh(connection)
+    _keep(connection, {"state": reply.get("state")}, secrets)
+    _succeeded(connection)
+
+
+def _succeeded(connection: PluginConnection) -> None:
+    connection.status = "active"
+    connection.last_error = None
+    connection.failures = 0
+    connection.last_sync_at = _now()
+
+
+def _rate_limited(connection: PluginConnection, message: str) -> None:
+    """The service is throttling: healthy, so no failure, and the next try waits the usual interval."""
+    connection.status = "active"
+    connection.last_error = message.replace("\x00", "")[:500]
+    connection.last_sync_at = _now()
+
+
+def rate_limited(connection: PluginConnection) -> bool:
+    """Whether its last sync was throttled by the service: healthy, but nothing was pulled."""
+    # A sync that succeeds clears the error, so only a throttled one is active with one.
+    return connection.status == "active" and bool(connection.last_error)
+
+
+async def _mirror_status(session: AsyncSession, connection: PluginConnection) -> None:
+    """The bank connection shows the plugin connection's health (its last sync is the pipeline's)."""
+    if connection.bank_connection_id is None:
+        return
+    bank = await session.get(BankConnection, connection.bank_connection_id)
+    if bank is not None:
+        bank.status = BANK_STATUS.get(connection.status, "error")
 
 
 #: Longest a sync can hold its lock, should the process die mid-sync.
@@ -398,6 +629,7 @@ def due(connection: PluginConnection, now: datetime | None = None) -> bool:
 
 
 async def delete(session: AsyncSession, connection: PluginConnection) -> None:
+    await _drop_bank(session, connection, keep_records=False)
     await _revoke_token(session, connection)
     await session.delete(connection)
     await session.commit()
@@ -412,6 +644,7 @@ async def delete_all(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: 
     )
     count = 0
     for connection in rows.all():
+        await _drop_bank(session, connection, keep_records=True)
         await _revoke_token(session, connection)
         await session.delete(connection)
         count += 1
@@ -423,7 +656,9 @@ async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manife
 
     Each connection's token gets exactly the manifest's scopes. A plugin that
     starts declaring scopes gets a token per connection; one that stops has
-    its tokens revoked.
+    its tokens revoked. A connection whose integration starts providing
+    records gets its bank connection; one whose integration stops is removed,
+    as is one whose integration is gone.
     """
     scopes = [s.scope for s in manifest.api_scopes]
     rows = await session.scalars(
@@ -434,11 +669,15 @@ async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manife
     integrations = {i.key: i for i in manifest.contributes.integrations}
     for connection in rows.all():
         integration = integrations.get(connection.integration)
-        if integration is None:
-            # The new version dropped this integration: nothing can run it anymore.
+        if integration is None or (connection.bank_connection_id is not None and not integration.is_provider):
+            # The new version dropped this integration, or no longer syncs it
+            # as a bank: nothing can run it as it was set up anymore.
+            await _drop_bank(session, connection, keep_records=True)
             await _revoke_token(session, connection)
             await session.delete(connection)
             continue
+        if integration.is_provider and connection.bank_connection_id is None and connection.created_by is not None:
+            await _add_bank(session, connection, localized(manifest.name, lang), connection.created_by)
         connection.sync_minutes = integration.sync_minutes
         token = await session.get(AccessToken, connection.access_token_id) if connection.access_token_id else None
         if token is not None and token.revoked_at is None and scopes:
