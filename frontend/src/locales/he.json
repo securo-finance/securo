@@ -1379,8 +1379,16 @@
     "connectionStatus": {
       "active": "פעיל",
       "error": "שגיאה",
-      "expired": "פג תוקף"
-    }
+      "expired": "פג תוקף",
+      "disconnected": "מנותק"
+    },
+    "pluginConnectors": "מהתוספים שלך",
+    "pluginUnavailable": "התוסף שמאחורי החיבור הזה אינו מותקן או אינו זמין יותר.",
+    "confirmDisconnectKeepDesc": "{{institution}} יפסיק להסתנכרן. החשבונות והיסטוריית התנועות שלו יישארו ביישום, וניתן לחבר אותו מחדש בהמשך.",
+    "disconnectAlsoDelete": "מחיקת החשבונות והתנועות גם כן",
+    "disconnectedKept": "הבנק נותק. החשבונות וההיסטוריה נשמרו.",
+    "removeConnection": "הסרת החיבור",
+    "connectionDisconnected": "מנותק. חברו מחדש כדי לסנכרן שוב"
   },
   "loans": {
     "title": "חוזה ההלוואה",
@@ -1594,7 +1602,18 @@
     "autoGenerate": "יצירת תנועות אוטומטית",
     "autoGenerateHelp": "יצירת תנועה בכל פעם שהחיוב מגיע. כבו כדי להמתין לחיוב האמיתי (למשל מסנכרון הבנק) ולהציג אותו רק כצפוי עד אז.",
     "fxEstimate": "הערכה לפי שער החליפין האחרון ({{rate}}). הסכום הסופי עשוי להשתנות.",
-    "confirmDeleteDescription": "ההגדרה החוזרת \"{{description}}\" תימחק לצמיתות. תנועות קיימות יישארו אך יאבדו את הקישור לחוזרת. לא ניתן לבטל פעולה זו."
+    "confirmDeleteDescription": "ההגדרה החוזרת \"{{description}}\" תימחק לצמיתות. תנועות קיימות יישארו אך יאבדו את הקישור לחוזרת. לא ניתן לבטל פעולה זו.",
+    "priceHistory": "היסטוריית מחירים",
+    "viewPriceHistory": "הצגת היסטוריית המחירים",
+    "priceChangesTitle": "שינויי מחיר אחרונים (30 הימים האחרונים)",
+    "priceChangesEmpty": "לא זוהו שינויי מחיר יציבים",
+    "priceChangeBadge": "המחיר השתנה",
+    "priceChangeIncrease": "המחיר עלה",
+    "priceChangeDecrease": "המחיר ירד",
+    "priceChangeAmount": "{{old}} ← {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "אחרי הפסקה של {{days}} ימים",
+    "priceChangeInsufficient": "נדרשים לפחות 3 חיובים תואמים שנרשמו לפני ש-Securo מדווח על שינוי מחיר יציב."
   },
   "rules": {
     "searchPlaceholder": "חיפוש כללים...",
@@ -2063,6 +2082,7 @@
     "noTransactions": "אין עדיין תנועות",
     "txBuy": "קנייה",
     "txSell": "מכירה",
+    "txSplit": "פיצול",
     "txFee": "עמלה",
     "txSaved": "התנועה נשמרה",
     "txDeleted": "התנועה נמחקה",
@@ -2073,6 +2093,10 @@
     "unitPrice": "מחיר ליחידה",
     "fee": "עמלה",
     "txTotal": "סה\"כ",
+    "splitOldUnits": "יחידות לפני",
+    "splitNewUnits": "יחידות אחרי",
+    "splitHint": "הזינו את היחידות שהחזקתם לפני הפיצול ואת מה שהן הפכו להיות: פיצול של 100 ל-1 הוא 1 ← 100, פיצול הפוך של 1 ל-10 הוא 10 ← 1. תארכו אותו ליום הראשון שבו האחזקה נסחרת במחיר החדש.",
+    "splitInvalid": "הזינו שני מספרים שלמים שונים בין 1 ל-1,000,000.",
     "confirmDeleteTxTitle": "למחוק את התנועה?",
     "confirmDeleteTx": "פעולה זו מסירה את הרשומה ומחשבת מחדש את המחיר הממוצע של האחזקה.",
     "editAsset": "עריכת נכס",
@@ -2429,7 +2453,8 @@
     "preview": "תצוגה מקדימה",
     "download": "הורדה",
     "closePreview": "סגירת התצוגה המקדימה",
-    "remove": "הסרה"
+    "remove": "הסרה",
+    "invalidAmount": "הזינו סכום תקין, למשל {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "חיפוש קבוצות...",
@@ -2833,6 +2858,8 @@
       "saveFailed": "שמירת בחירת הכלים נכשלה",
       "empty": "לא התגלו כלים. האם שרת ה-MCP פועל? עם Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "הצעה",
+      "enabledCount": "{{enabled}} מתוך {{total}} מופעלים",
+      "enableAll": "הפעלת הכול",
       "loading": "טוען כלים…"
     },
     "chat": {
@@ -2884,7 +2911,13 @@
         "deleteBudget": "{{category}}: {{amount}} ל{{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} בכל חודש החל מ{{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} ← {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} ← {{after}}",
+        "manualAccountNoChanges": "אין שינויים"
       }
     },
     "conversation": {
@@ -2932,6 +2965,7 @@
       "baseUrl": "כתובת נקודת הקצה",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "כתובת נקודת הקצה נדרשת עבור ספק זה",
+      "baseUrlInvalid": "הזינו כתובת נקודת קצה תקינה מסוג http או https",
       "ollamaHint": "אם Ollama רץ על המחשב המארח, השתמשו ב-http://host.docker.internal:11434 (Mac/Windows) או בכתובת ה-IP של המארח (Linux).",
       "openaiCompatHint": "פשוט הדביקו host:port (לדוגמה http://192.168.1.142:1234). הנתיב /v1 מתווסף אוטומטית. מתוך Docker ב-Mac/Windows, החליפו את localhost ב-host.docker.internal.",
       "apiKey": "מפתח API / טוקן",
@@ -3411,7 +3445,8 @@
         "type": "סוג",
         "content": "תוכן",
         "language": "שפה",
-        "status": "סטטוס"
+        "status": "סטטוס",
+        "workspace": "סביבת עבודה"
       },
       "view": {
         "all": "הכול",
@@ -3458,7 +3493,9 @@
       "type": "סוג",
       "added": "נוסף",
       "connections": "חיבורים",
-      "codeNote": "ההתקנה מציגה למה הוא עשוי לגשת ומה לשנות לפני שמשהו רץ."
+      "codeNote": "ההתקנה מציגה למה הוא עשוי לגשת ומה לשנות לפני שמשהו רץ.",
+      "workspaces": "סביבות עבודה",
+      "anyWorkspace": "אישי ועסקי"
     },
     "installedFailed": "לא ניתן לטעון את התוספים המותקנים.",
     "planRecordOnly": {
@@ -3477,6 +3514,7 @@
       "write": "קריאה ושינוי של {{what}}",
       "ownerOnly": "רק בעלי סביבת העבודה יכולים להוסיף, לעדכן או להסיר תוסף שמריץ קוד.",
       "removeConnections": "החיבורים שלו בסביבת עבודה זו ({{count}}) יוסרו, יחד עם המפתחות והגישה השמורים.",
+      "unlinks": "חיבורי הבנק שלו ({{count}}) יפסיקו להסתנכרן. החשבונות והתנועות שלהם יישארו, כחשבונות ידניים.",
       "removeNothing": "קוד התוסף יוסר מהשרת שלך כשאף סביבת עבודה לא תשתמש בו.",
       "auth": {
         "credentials": "מפתח או סיסמה",
@@ -3501,6 +3539,15 @@
         "install": "תוסף זה לא מביא נתונים. בדקו מה הקוד שלו עשוי לעשות:",
         "update": "בדקו מה הגרסה החדשה עשויה לעשות:",
         "remove": "הקוד שלו מפסיק לרוץ בסביבת עבודה זו."
+      },
+      "provides": "מסתנכרן כבנק מחובר",
+      "providesHint": "Securo מוסיף רשומות אלה לסביבת עבודה זו ומעדכן אותן באופן שוטף, כמו עבור בנק מחובר. כל חיבור מופיע תחת חיבורי בנק.",
+      "kinds": {
+        "accounts": "חשבונות",
+        "transactions": "תנועות",
+        "bills": "חיובי כרטיס",
+        "holdings": "השקעות",
+        "trades": "קניות ומכירות"
       }
     },
     "connections": {
@@ -3538,8 +3585,13 @@
       "added": "{{name}} חובר",
       "removeTitle": "להסיר את {{name}}?",
       "removeHint": "המפתחות השמורים שלו והגישה שלו לסביבת העבודה יימחקו. מה שהוא כבר הביא נשאר.",
+      "removeBankHint": "הוא מסתנכרן כבנק מחובר: הסרתו תנתק את אותו בנק ותסיר את החשבונות שסונכרנו, יחד עם התנועות שלהם.",
       "removed": "{{name}} הוסר",
-      "copyFailed": "לא ניתן להעתיק. סמנו את הכתובת והעתיקו ידנית."
+      "copyFailed": "לא ניתן להעתיק. סמנו את הכתובת והעתיקו ידנית.",
+      "editTitle": "חיבור מחדש של {{name}}",
+      "editHint": "עדכנו את מה שהשתנה, למשל סיסמה או טוקן חדשים. לאחר מכן החיבור יסתנכרן שוב.",
+      "keepBlank": "השאירו שדה ריק כדי לשמור על הערך הנוכחי שלו.",
+      "updated": "{{name}} עודכן"
     },
     "oauth": {
       "title": "משלים את ההתחברות",
@@ -3548,7 +3600,9 @@
       "failed": "לא ניתן היה להשלים את ההתחברות. נסו שוב.",
       "missing": "השירות לא החזיר את ההתחברות. נסו שוב.",
       "serviceError": "השירות דיווח על שגיאה: {{message}}"
-    }
+    },
+    "onlyForBusiness": "סביבות עבודה עסקיות בלבד",
+    "onlyForPersonal": "סביבות עבודה אישיות בלבד"
   },
   "library": {
     "title": "ספרייה",

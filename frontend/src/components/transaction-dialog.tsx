@@ -1668,7 +1668,7 @@ function TransactionForm({
                     type="button"
                     disabled={loading || !splitsValid || !linesValid}
                     aria-label={t('transactions.moreSaveOptions')}
-                    className="rounded-s-none border-s border-l-primary-foreground/20 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
+                    className="rounded-s-none border-s border-s-primary-foreground/20 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
                   >
                     <ChevronDown size={14} />
                   </Button>
