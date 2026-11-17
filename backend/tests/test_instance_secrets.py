@@ -568,3 +568,46 @@ def test_startup_loader_reports_when_done(db_url, monkeypatch):
 
     assert core_config.load_stored_secret_key() is True
     assert settings.secret_key_fallbacks[0] == stored(db_url)[0]
+
+
+@needs_pg
+def test_the_move_locks_the_rows_it_rewrites(pg_url, monkeypatch):
+    """A reconnect committing new credentials while the move runs must not be
+    overwritten by the re-encrypted older value: the move holds the rows."""
+    old = OLD_COMPOSE_DEFAULT
+    enc = crypto.fernet_for(old).encrypt(b"old-url").decode()
+    run(execute(
+        pg_url,
+        ("CREATE TABLE bank_connections (id INTEGER PRIMARY KEY, credentials JSON)", {}),
+        ("INSERT INTO bank_connections VALUES (1, CAST(:c AS JSON)), (2, CAST(:d AS JSON))",
+         {"c": json.dumps({"access_url_enc": enc}), "d": json.dumps({"item_id": "item-2"})}),
+    ))
+    real_move = instance.reencrypt_with
+    blocked = {}
+
+    def move_then_probe(old_keys):
+        hook = real_move(old_keys)
+
+        async def wrapped(conn, new_key):
+            await hook(conn, new_key)
+            # While the move's transaction is open, another connection can't
+            # take a row it read, even one it had nothing to rewrite in (a
+            # reconnect could be about to give it encrypted credentials).
+            engine = create_async_engine(pg_url, poolclass=NullPool)
+            try:
+                async with engine.connect() as other:
+                    await other.execute(text("SET lock_timeout = '200ms'"))
+                    try:
+                        await other.execute(text("SELECT id FROM bank_connections WHERE id = 2 FOR UPDATE"))
+                        blocked["row"] = False
+                    except Exception:
+                        blocked["row"] = True
+            finally:
+                await engine.dispose()
+
+        return wrapped
+
+    monkeypatch.setattr(instance, "reencrypt_with", move_then_probe)
+    settings_for(pg_url, old, monkeypatch)
+
+    assert blocked == {"row": True}

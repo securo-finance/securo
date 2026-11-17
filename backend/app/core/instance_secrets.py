@@ -107,6 +107,13 @@ async def _ensure_table(conn: AsyncConnection) -> None:
     ))
 
 
+def _locking(conn: AsyncConnection) -> str:
+    """Row locks for the rows the move reads and rewrites, so a reconnect or
+    a saved setting committing meanwhile is neither lost nor overwritten with
+    the older value. SQLite has no FOR UPDATE (and one writer at a time)."""
+    return " FOR UPDATE" if conn.dialect.name == "postgresql" else ""
+
+
 async def _table_exists(conn: AsyncConnection, table: str) -> bool:
     if conn.dialect.name == "postgresql":
         found = await conn.scalar(text("SELECT to_regclass(:t)"), {"t": table})
@@ -211,7 +218,7 @@ async def _rewrite_column(
     if not await _table_exists(conn, table):
         return 0
     rows = (await conn.execute(
-        text(f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL")
+        text(f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL{_locking(conn)}")
     )).all()
     changed = 0
     for row_id, value in rows:
@@ -290,7 +297,7 @@ async def _rewrite_bank_credentials(
     if not await _table_exists(conn, "bank_connections"):
         return 0
     rows = (await conn.execute(
-        text("SELECT id, credentials FROM bank_connections WHERE credentials IS NOT NULL")
+        text(f"SELECT id, credentials FROM bank_connections WHERE credentials IS NOT NULL{_locking(conn)}")
     )).all()
     cast = "CAST(:v AS JSON)" if conn.dialect.name == "postgresql" else ":v"
     changed = 0
@@ -308,7 +315,9 @@ async def _rewrite_bank_credentials(
 async def _rewrite_settings(conn: AsyncConnection, rewrite: Callable[[str], str | None]) -> int:
     if not await _table_exists(conn, "app_settings"):
         return 0
-    rows = (await conn.execute(text("SELECT key, value FROM app_settings WHERE value IS NOT NULL"))).all()
+    rows = (await conn.execute(
+        text(f"SELECT key, value FROM app_settings WHERE value IS NOT NULL{_locking(conn)}")
+    )).all()
     changed = 0
     for key, value in rows:
         # Fernet tokens start with "gAAAAA"; skip the rest without trying keys.
