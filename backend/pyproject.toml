@@ -51,6 +51,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Only needed when STORAGE_PROVIDER=s3.
+s3 = [
+    "aiobotocore>=2.21.0",
+]
 dev = [
     "pytest>=9.0.0",
     "pytest-asyncio>=1.0",
