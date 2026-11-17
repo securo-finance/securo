@@ -60,6 +60,12 @@ def _route(name: str) -> str:
     return f"/api/plugins/icons/{name}"
 
 
+def _long_icon() -> str:
+    """An icon the index names one character past the length it takes (513)."""
+    icon = "icons/" + _name(PNG)
+    return icon + "x" * (513 - len(icon))
+
+
 # --- The catalog -------------------------------------------------------------------
 
 
@@ -82,6 +88,8 @@ async def test_catalog_rows_say_where_the_icon_is_served(client: AsyncClient, au
         {"icon": "icons/maria--casa--aaaa.png"},  # not named by its checksum: nothing to check it against
         {"icon": f"https://evil.example.com/icons/{_name(PNG)}"},
         {"icon": f"icons/{_name(PNG, 'svg')}"},
+        {"icon": _long_icon()},  # too long for the entry: the icon goes, the plugin stays listed
+        {"icon": 42},  # not a path at all
     ],
 )
 async def test_a_plugin_without_a_checksum_named_icon_has_no_icon_url(client: AsyncClient, auth_headers, catalog, extra):
