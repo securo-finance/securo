@@ -2,6 +2,7 @@ import hashlib
 import logging
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -50,7 +51,7 @@ from app.services.provider_settings import resolve_settings
 from app.services import oauth_state
 from app.services import admin_service
 from app.services import category_line_service, reconciliation_service, recurring_match_service
-from app.services.text_similarity import token_overlap
+from app.services.text_similarity import normalize_words, token_overlap
 from app.services.account_service import (
     LIABILITY_ACCOUNT_TYPES,
     _provider_to_internal_balance,
@@ -2101,6 +2102,69 @@ def _eb_same_merchant(held: dict, booked: dict) -> bool:
     return shared
 
 
+#: Payload fields a bank may rewrite when it fills in a late entry_reference.
+_EB_LATE_REF_REWRITTEN = frozenset({"entry_reference", "remittance_information"})
+
+
+def _eb_reworded_entry(held: dict, booked: dict) -> bool:
+    """Whether `booked` is `held` with a reference filled in and its
+    remittance text reworded.
+
+    A Spanish bank returned a transfer as "TRANSFERENCIA A FAVOR DE ...
+    CONCEPTO <concept>" with no reference, then as "TRASPASO: <concept>" with
+    one. The two texts share too few words for the description match, but
+    every other field of the payload is the same. So the payloads have to
+    agree on everything but the reference and the remittance text, and the
+    two texts have to end in the same words, covering at least 80% of the
+    shorter one: a bank that rewords an entry swaps the label in front and
+    keeps the concept the payer typed at the end. Shared words elsewhere are
+    not enough, since "CARD PAYMENT AT SHOP ALPHA" and "CARD PAYMENT AT SHOP
+    BETA" are two purchases when no creditor field tells them apart.
+    """
+    def rest(raw: dict) -> dict:
+        return {
+            key: value for key, value in raw.items()
+            if key not in _EB_LATE_REF_REWRITTEN and value is not None
+        }
+
+    if rest(held) != rest(booked):
+        return False
+    held_words = normalize_words(_eb_remittance(held))
+    booked_words = normalize_words(_eb_remittance(booked))
+    if not held_words or not booked_words:
+        return False
+    shared_tail = 0
+    for held_word, booked_word in zip(reversed(held_words), reversed(booked_words)):
+        if held_word != booked_word:
+            break
+        shared_tail += 1
+    return shared_tail / min(len(held_words), len(booked_words)) >= 0.8
+
+
+def _eb_exact_twin_in_batch(
+    held: Transaction, txn_data, incoming_batch: Sequence[TransactionData],
+) -> bool:
+    """Whether another entry of this fetch matches `held` by description.
+
+    A reworded match (`_eb_reworded_entry`) is weaker than a description
+    match, and the entries of a fetch are matched one at a time. Without this
+    check, "BETA COFFEE SHOP NEW YORK" processed first would take the held
+    "ALPHA COFFEE SHOP NEW YORK" row, its category and its notes, while the
+    referenced copy of ALPHA in the same fetch landed as a new row.
+    """
+    held_text = held.original_description or held.description
+    return any(
+        other.external_id != txn_data.external_id
+        and other.amount == held.amount
+        and other.type == held.type
+        and other.currency == held.currency
+        and other.date == held.date
+        and other.status == held.status
+        and token_overlap(held_text, other.description) >= 0.9
+        for other in incoming_batch
+    )
+
+
 def _eb_entry_date(raw: dict) -> Optional[date]:
     """The date an Enable Banking payload gives its entry, read the way the
     provider reads it: the booking date, else the value date, else the
@@ -2175,6 +2239,7 @@ async def _find_synced_duplicate(
     txn_data,
     incoming_external_ids: set[str],
     live_external_ids: Optional[set[str]] = None,
+    incoming_batch: Sequence[TransactionData] = (),
 ) -> Optional[Transaction]:
     """Find an existing row that the incoming `txn_data` is a twin of.
 
@@ -2202,7 +2267,8 @@ async def _find_synced_duplicate(
     settles, since that needs to know the hold has left the feed. Pass it
     only for an Enable Banking connection, and leave it out when the fetch
     was cut short, as a partial set would make a hold the provider still
-    lists look gone.
+    lists look gone. ``incoming_batch`` is the fetch `txn_data` came from;
+    it and ``live_external_ids`` let Path 4 match a reworded remittance text.
     """
     # Path 1: installment fingerprint. Highly specific, so we don't require a
     # description match on top.
@@ -2322,7 +2388,12 @@ async def _find_synced_duplicate(
     # the currency, date, status and description, no row holding the reference
     # itself competes, and it is the single candidate: two identical purchases
     # on one day are ambiguous, and picking one would hang its category and
-    # notes on the other.
+    # notes on the other. Some banks also reword the remittance text when they
+    # fill in the reference; such a row matches when the rest of its payload is
+    # unchanged (`_eb_reworded_entry`), the fetch was complete, and no other
+    # entry of the fetch matches it by description (`_eb_exact_twin_in_batch`).
+    # Known gap: a held row the bank deleted, next to a new entry that agrees
+    # on every field and on the ending of its text, is still taken for it.
     #
     # A row that took over the pending hold it settled (Path 6) keeps the
     # hold's date, up to `_EB_HOLD_SETTLE_DAYS` before the booking. It is
@@ -2371,10 +2442,19 @@ async def _find_synced_duplicate(
                 and candidate.currency == txn_data.currency
                 and candidate.date == txn_data.date
                 and candidate.status == txn_data.status
-                and token_overlap(
-                    candidate.original_description or candidate.description,
-                    txn_data.description,
-                ) >= 0.9
+                and (
+                    token_overlap(
+                        candidate.original_description or candidate.description,
+                        txn_data.description,
+                    ) >= 0.9
+                    or (
+                        live_external_ids is not None
+                        and _eb_reworded_entry(candidate.raw_data, raw)
+                        and not _eb_exact_twin_in_batch(
+                            candidate, txn_data, incoming_batch,
+                        )
+                    )
+                )
             ):
                 late_ref_matches.append(candidate)
         if len(rekey_matches) == 1:
@@ -3258,6 +3338,7 @@ async def sync_connection(
                     txn_data,
                     incoming_txn_external_ids,
                     live_external_ids=hold_live_ids,
+                    incoming_batch=transactions_data,
                 )
                 if synced_dup:
                     if synced_dup.original_description is None:
