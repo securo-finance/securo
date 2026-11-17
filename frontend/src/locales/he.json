@@ -1386,9 +1386,9 @@
     "pluginConnectors": "מהתוספים שלך",
     "pluginUnavailable": "התוסף שמאחורי החיבור הזה אינו מותקן או אינו זמין יותר.",
     "confirmDisconnectKeepDesc": "{{institution}} יפסיק להסתנכרן. החשבונות והיסטוריית התנועות שלו יישארו ביישום, וניתן לחבר אותו מחדש בהמשך.",
-    "disconnectAlsoDelete": "מחיקת החשבונות והתנועות גם כן",
+    "disconnectAlsoDelete": "מחיקה גם של החשבונות והתנועות",
     "disconnectedKept": "הבנק נותק. החשבונות וההיסטוריה נשמרו.",
-    "removeConnection": "הסרת החיבור",
+    "removeConnection": "הסרת חיבור",
     "connectionDisconnected": "מנותק. חברו מחדש כדי לסנכרן שוב"
   },
   "loans": {
