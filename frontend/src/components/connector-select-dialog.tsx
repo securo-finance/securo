@@ -134,7 +134,7 @@ function ConnectorSelectSession({ open, onClose, onSelect, plugins = [], onSelec
                     key={`${connector.plugin.plugin_id}:${connector.integration.key}`}
                     type="button"
                     onClick={() => { onSelectPlugin?.(connector); onClose() }}
-                    className="w-full flex items-start gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:border-primary hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="w-full flex items-start gap-3 rounded-lg border border-border p-4 text-start transition-colors hover:border-primary hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <PluginAvatar
                       seed={connector.plugin.plugin_id}

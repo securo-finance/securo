@@ -83,7 +83,7 @@ export function PayeeDetailDialog({
         aria-describedby={undefined}
       >
         <DialogHeader>
-          {/* pr-8 clears the close button. Wrapping rather than truncating:
+          {/* pe-8 clears the close button. Wrapping rather than truncating:
               the list ellipsizes long names, so this is the one place the
               whole thing is meant to be readable. */}
           <DialogTitle className="pe-8 break-words">{shown?.name}</DialogTitle>

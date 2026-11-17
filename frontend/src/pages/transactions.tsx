@@ -1046,7 +1046,7 @@ export default function TransactionsPage() {
     const alignClass = col.align === 'right' ? 'text-end' : 'text-start'
     const justify = col.align === 'right' ? 'justify-end' : 'justify-start'
     const cursorClass = col.sortable ? 'cursor-pointer select-none hover:text-foreground' : ''
-    // Match the amount/attachments body cells' pr-5 so right-aligned
+    // Match the amount/attachments body cells' pe-5 so right-aligned
     // headers line up with their values (issue #161 polish).
     const padX = col.align === 'right' ? 'pe-5' : ''
     return (
