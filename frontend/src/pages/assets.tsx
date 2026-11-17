@@ -838,11 +838,11 @@ export default function AssetsPage() {
             </div>
           </div>
           {/* Quant. */}
-          <div className="text-right tabular-nums text-muted-foreground">
+          <div className="text-end tabular-nums text-muted-foreground">
             {asset.units != null ? mask(`${asset.units}`) : '—'}
           </div>
           {/* Preço Médio */}
-          <div className="text-right tabular-nums">
+          <div className="text-end tabular-nums">
             {asset.average_price != null ? mask(formatCurrency(asset.average_price, asset.currency, locale)) : (
               needsBuys && canWrite ? (
                 <button
@@ -855,15 +855,15 @@ export default function AssetsPage() {
             )}
           </div>
           {/* Preço Atual */}
-          <div className="text-right tabular-nums text-muted-foreground">
+          <div className="text-end tabular-nums text-muted-foreground">
             {asset.last_price != null ? mask(formatCurrency(asset.last_price, asset.currency, locale)) : '—'}
           </div>
           {/* Rentabilidade */}
-          <div className="text-right tabular-nums">
+          <div className="text-end tabular-nums">
             {profit ? (
               <span className={profit.amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
                 <span className="block">
-                  {profit.amount >= 0 ? '+' : ''}{mask(formatCurrency(profit.amount, asset.currency, locale))}
+                  <span dir="ltr">{profit.amount >= 0 ? '+' : ''}{mask(formatCurrency(profit.amount, asset.currency, locale))}</span>
                 </span>
                 {profit.percentage != null && (
                   <span className="block text-[10px]">
@@ -874,7 +874,7 @@ export default function AssetsPage() {
             ) : <span className="text-muted-foreground">—</span>}
           </div>
           {/* Saldo */}
-          <div className="text-right tabular-nums">
+          <div className="text-end tabular-nums">
             {asset.current_value != null ? (
               <>
                 <span className="inline-flex items-center justify-end gap-1">
@@ -891,7 +891,7 @@ export default function AssetsPage() {
             ) : <span className="text-muted-foreground">—</span>}
           </div>
           {/* % carteira */}
-          <div className="text-right tabular-nums text-muted-foreground">
+          <div className="text-end tabular-nums text-muted-foreground">
             {pctOfPortfolio != null ? `${pctOfPortfolio.toFixed(1)}%` : '—'}
           </div>
           {/* actions */}
@@ -955,12 +955,12 @@ export default function AssetsPage() {
         style={{ gridTemplateColumns: HOLDINGS_GRID }}
       >
         <div>{t('assets.colAsset')}</div>
-        <div className="text-right">{t('assets.colQuantity')}</div>
-        <div className="text-right">{t('assets.colAvgPrice')}</div>
-        <div className="text-right">{t('assets.colCurrentPrice')}</div>
-        <div className="text-right">{t('assets.colReturn')}</div>
-        <div className="text-right">{t('assets.colBalance')}</div>
-        <div className="text-right">{t('assets.colPortfolioPct')}</div>
+        <div className="text-end">{t('assets.colQuantity')}</div>
+        <div className="text-end">{t('assets.colAvgPrice')}</div>
+        <div className="text-end">{t('assets.colCurrentPrice')}</div>
+        <div className="text-end">{t('assets.colReturn')}</div>
+        <div className="text-end">{t('assets.colBalance')}</div>
+        <div className="text-end">{t('assets.colPortfolioPct')}</div>
         <div />
       </div>
     )
@@ -1124,12 +1124,12 @@ export default function AssetsPage() {
           )}
         </div>
         {!isCollapsed && walletAssets.length > 0 && (
-          <div className="pl-4">
+          <div className="ps-4">
             {renderHoldingsTable(walletAssets)}
           </div>
         )}
         {!isCollapsed && walletAssets.length === 0 && (
-          <div className="pl-4 py-3 text-xs text-muted-foreground italic">
+          <div className="ps-4 py-3 text-xs text-muted-foreground italic">
             {t('assets.emptyWallet')}
           </div>
         )}
@@ -1394,7 +1394,7 @@ export default function AssetsPage() {
                             key={`${match.symbol}-${match.exchange ?? ''}`}
                             type="button"
                             onClick={() => pickTickerMatch(match)}
-                            className="flex flex-col w-full text-left px-3 py-2 hover:bg-muted transition-colors"
+                            className="flex flex-col w-full text-start px-3 py-2 hover:bg-muted transition-colors"
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-semibold text-sm truncate">{isBond ? (match.name ?? match.symbol) : match.symbol}</span>
@@ -1411,7 +1411,7 @@ export default function AssetsPage() {
                       </div>
                     )}
                     {tickerSearchLoading && (
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                      <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
                         {t('common.loading')}
                       </span>
                     )}
@@ -1436,7 +1436,7 @@ export default function AssetsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <div className="text-right">
+                        <div className="text-end">
                           <div className="text-base font-bold tabular-nums">
                             {formatCurrency(selectedQuote.price, selectedQuote.currency, locale)}
                           </div>
@@ -1543,9 +1543,9 @@ export default function AssetsPage() {
                   <div className="space-y-2">
                     <Label>{t('assets.growthRate')}</Label>
                     <div className="relative">
-                      <Input type="number" step="any" value={formGrowthRate} onChange={e => setFormGrowthRate(e.target.value)} className={formGrowthType === 'percentage' ? 'pr-8' : ''} />
+                      <Input type="number" step="any" value={formGrowthRate} onChange={e => setFormGrowthRate(e.target.value)} className={formGrowthType === 'percentage' ? 'pe-8' : ''} />
                       {formGrowthType === 'percentage' && (
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
+                        <span className="absolute end-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
                       )}
                     </div>
                   </div>
@@ -1626,7 +1626,7 @@ export default function AssetsPage() {
                     <span className="text-xs font-medium text-muted-foreground">{t('assets.currentValue')}</span>
                     {base > 0 && (
                       <p className={`text-[11px] tabular-nums font-medium mt-0.5 ${isLoss ? 'text-rose-500' : 'text-emerald-600'}`}>
-                        {diff >= 0 ? '+' : ''}{formatCurrency(diff, formCurrency, locale)}
+                        <span dir="ltr">{diff >= 0 ? '+' : ''}{formatCurrency(diff, formCurrency, locale)}</span>
                       </p>
                     )}
                   </div>
@@ -1782,7 +1782,7 @@ export default function AssetsPage() {
             <button
               onClick={() => movingAsset && moveAssetMutation.mutate({ id: movingAsset.id, groupId: null })}
               disabled={!movingAsset?.group_id || moveAssetMutation.isPending}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-left"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-start"
             >
               <div className="w-6 h-6 rounded-md flex items-center justify-center bg-muted">
                 <Package size={13} className="text-muted-foreground" />
@@ -1794,7 +1794,7 @@ export default function AssetsPage() {
                 key={w.id}
                 onClick={() => movingAsset && moveAssetMutation.mutate({ id: movingAsset.id, groupId: w.id })}
                 disabled={movingAsset?.group_id === w.id || moveAssetMutation.isPending}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-left"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-start"
               >
                 <div
                   className="w-6 h-6 rounded-md flex items-center justify-center"
@@ -1984,7 +1984,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
             </div>
           </div>
         </div>
-        <div className="text-left sm:text-right">
+        <div className="text-start sm:text-end">
           <span className="text-xs text-muted-foreground">{t('assets.total')}</span>
           <p className="text-lg font-bold tabular-nums text-foreground">
             {mask(formatCurrency(data.total, currency, loc))}
@@ -2331,7 +2331,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
             }
           }}
         >
-          <Plus size={14} className="mr-1" />
+          <Plus size={14} className="me-1" />
           {t('assets.addValue')}
         </Button>
       </div>}
@@ -2358,7 +2358,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                     </span>
                     {change != null && (
                       <span className={`text-[11px] tabular-nums font-medium ${change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                        {change >= 0 ? '+' : ''}{mask(formatCurrency(change, currency, loc))}
+                        <span dir="ltr">{change >= 0 ? '+' : ''}{mask(formatCurrency(change, currency, loc))}</span>
                         {changePct != null && ` (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`}
                       </span>
                     )}
@@ -2651,7 +2651,7 @@ function AssetTransactionsTab({
                   </p>
                 </div>
                 {tx.kind !== 'split' && (
-                  <div className="text-right shrink-0">
+                  <div className="text-end shrink-0">
                     <p className="text-sm font-semibold tabular-nums text-foreground">
                       {mask(formatCurrency(total, cur, locale))}
                     </p>

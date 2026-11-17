@@ -340,7 +340,7 @@ function BulkAddToGroupForm({
           </div>
 
           {group && (
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-64 overflow-y-auto pe-1">
               {group.members.length === 0 ? (
                 <div className="py-4 text-center">
                   <p className="text-sm text-muted-foreground mb-3">
@@ -377,7 +377,7 @@ function BulkAddToGroupForm({
                       <span className="text-sm flex-1 min-w-0 truncate">
                         {m.name}
                         {m.is_self && (
-                          <span className="ml-1.5 text-xs text-primary">
+                          <span className="ms-1.5 text-xs text-primary">
                             ({t('splitGroups.you')})
                           </span>
                         )}

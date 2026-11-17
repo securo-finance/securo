@@ -382,7 +382,7 @@ export default function AccountsPage() {
                           </p>
                         </div>
                       </Link>
-                      <div className="shrink-0 text-right">
+                      <div className="shrink-0 text-end">
                         <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                           {mask(formatCurrency(bal, acc.currency, locale))}
                         </p>
@@ -513,7 +513,7 @@ export default function AccountsPage() {
                             {needsReconnect && (
                               <TriangleAlert
                                 size={10}
-                                className="absolute -right-0.5 -top-0.5 rounded-full bg-card text-amber-500"
+                                className="absolute -end-0.5 -top-0.5 rounded-full bg-card text-amber-500"
                               />
                             )}
                           </Button>
@@ -559,7 +559,7 @@ export default function AccountsPage() {
                                   </p>
                                 </div>
                               </Link>
-                              <div className="shrink-0 text-right">
+                              <div className="shrink-0 text-end">
                                 <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                                   {mask(formatCurrency(bal, acc.currency, locale))}
                                 </p>
@@ -620,14 +620,14 @@ export default function AccountsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-xs text-muted-foreground hover:text-foreground h-7 px-2 mr-3"
+                          className="text-xs text-muted-foreground hover:text-foreground h-7 px-2 me-3"
                           onClick={() => reopenMutation.mutate(acc.id)}
                           disabled={reopenMutation.isPending}
                         >
                           {t('accounts.reopen')}
                         </Button>
                       )}
-                      <p className="text-sm font-semibold tabular-nums text-muted-foreground w-32 text-right">
+                      <p className="text-sm font-semibold tabular-nums text-muted-foreground w-32 text-end">
                         {mask(formatCurrency(Number(acc.current_balance), acc.currency, locale))}
                       </p>
                     </div>

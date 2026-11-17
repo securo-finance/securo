@@ -183,7 +183,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
           </Button>
           {failed ? (
             <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
-              <RefreshCw size={14} className="mr-1" />
+              <RefreshCw size={14} className="me-1" />
               {t('common.retry')}
             </Button>
           ) : (
@@ -192,7 +192,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
               onClick={() => shown && applyMutation.mutate(shown)}
               disabled={pending || !confirmable}
             >
-              {target.action === 'remove' && <Trash2 size={14} className="mr-1" />}
+              {target.action === 'remove' && <Trash2 size={14} className="me-1" />}
               {t(`plugins.confirm.${target.action}`)}
             </Button>
           )}
@@ -225,7 +225,7 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
   const providers = code.integrations.filter((integration) => integration.provides?.length)
   const isNew = (value: string, list: string[]) =>
     list.includes(value) && (
-      <span className="ml-1.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+      <span className="ms-1.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
         {t('plugins.code.new')}
       </span>
     )

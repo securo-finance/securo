@@ -33,7 +33,7 @@ import {
   rowsFromLines,
   type CategoryLineRow,
 } from '@/lib/category-lines'
-import { formatAmountInput, parseAmountInput } from '@/lib/format'
+import { formatAmountInput, ltrAmount, parseAmountInput } from '@/lib/format'
 import { Pencil, Trash2, Plus, RefreshCw, Info, History, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
@@ -285,28 +285,28 @@ function RecurringTab() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('recurring.description')}</th>
-                <th className={`${TH} text-left w-36`}>{t('recurring.amount')}</th>
-                <th className={`${TH} text-left w-28 hidden md:table-cell`}>{t('recurring.frequency')}</th>
-                <th className={`${TH} text-left w-32 hidden md:table-cell`}>{t('recurring.nextOccurrence')}</th>
-                <th className={`${TH} text-left w-24 hidden sm:table-cell`}>{t('recurring.status')}</th>
-                <th className={`${TH} text-right w-12`}>
+                <th className={`${TH} ps-4 sm:ps-5 text-start`}>{t('recurring.description')}</th>
+                <th className={`${TH} text-start w-36`}>{t('recurring.amount')}</th>
+                <th className={`${TH} text-start w-28 hidden md:table-cell`}>{t('recurring.frequency')}</th>
+                <th className={`${TH} text-start w-32 hidden md:table-cell`}>{t('recurring.nextOccurrence')}</th>
+                <th className={`${TH} text-start w-24 hidden sm:table-cell`}>{t('recurring.status')}</th>
+                <th className={`${TH} text-end w-12`}>
                   <span className="sr-only">{t('recurring.viewPriceHistory')}</span>
                 </th>
-                {canWrite && <th className={`${TH} pr-4 sm:pr-5 text-right w-24`}>{t('recurring.actions')}</th>}
+                {canWrite && <th className={`${TH} pe-4 sm:pe-5 text-end w-24`}>{t('recurring.actions')}</th>}
               </tr>
             </thead>
             <tbody>
               {recurringList.map((rt) => (
                 <tr key={rt.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors">
-                  <td className="py-3 pl-4 sm:pl-5 text-sm font-medium text-foreground">
+                  <td className="py-3 ps-4 sm:ps-5 text-sm font-medium text-foreground">
                     <span className="inline-flex flex-wrap items-center gap-2">
                       {rt.description}
                       {isSplitByCategory(rt) && <CategorySplitBadge tx={rt} />}
                     </span>
                   </td>
                   <td className={`py-3 text-xs sm:text-sm font-bold tabular-nums ${rt.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {mask(`${rt.type === 'credit' ? '+' : '−'}${formatCurrency(rt.amount, rt.currency, locale)}`)}
+                    {mask(ltrAmount(`${rt.type === 'credit' ? '+' : '−'}${formatCurrency(rt.amount, rt.currency, locale)}`))}
                     {rt.currency !== userCurrency && rt.amount_primary != null && (
                       <div className="flex items-center gap-1 text-[11px] font-normal text-muted-foreground">
                         <span>{mask(formatCurrency(rt.amount_primary, userCurrency, locale))}</span>
@@ -336,7 +336,7 @@ function RecurringTab() {
                   </td>
                   {/* Price history is reachable for every row, including
                       read-only workspaces. */}
-                  <td className="py-3 pr-2 text-right">
+                  <td className="py-3 pe-2 text-end">
                     <button
                       type="button"
                       className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
@@ -348,7 +348,7 @@ function RecurringTab() {
                     </button>
                   </td>
                   {canWrite && (
-                    <td className="py-3 pr-4 sm:pr-5">
+                    <td className="py-3 pe-4 sm:pe-5">
                       <div className="flex items-center justify-end gap-1">
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"

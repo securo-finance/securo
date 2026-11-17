@@ -133,9 +133,9 @@ export function ProposalCard({ toolCallId, data }: Props) {
           ) : (
             <Button size="sm" onClick={() => apply.mutate()} disabled={apply.isPending}>
               {apply.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin me-1.5" />
               ) : (
-                <Check className="h-3.5 w-3.5 mr-1.5" />
+                <Check className="h-3.5 w-3.5 me-1.5" />
               )}
               {t('agents.proposal.apply')}
             </Button>

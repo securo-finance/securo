@@ -78,7 +78,7 @@ import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
-import { formatCurrency } from '@/lib/format'
+import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { readCalendarDateBasis } from '@/lib/transaction-calendar'
@@ -1024,10 +1024,12 @@ export default function TransactionsPage() {
     e.preventDefault()
     e.stopPropagation()
     resizingRef.current = { id: col.id, startX: e.clientX, startWidth: grid.widthOf(col.id) }
+    // The handle is on the column's end edge: the left one in right-to-left layouts.
+    const towardEnd = getComputedStyle(e.currentTarget).direction === 'rtl' ? -1 : 1
     const onMove = (ev: PointerEvent) => {
       const r = resizingRef.current
       if (!r) return
-      grid.setWidth(r.id, r.startWidth + (ev.clientX - r.startX))
+      grid.setWidth(r.id, r.startWidth + towardEnd * (ev.clientX - r.startX))
     }
     const onUp = () => {
       resizingRef.current = null
@@ -1041,12 +1043,12 @@ export default function TransactionsPage() {
   const renderHeaderCell = (col: ColumnDef) => {
     const isSorted = grid.sortBy === col.id
     const sortIndicator = isSorted ? (grid.sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : null
-    const alignClass = col.align === 'right' ? 'text-right' : 'text-left'
+    const alignClass = col.align === 'right' ? 'text-end' : 'text-start'
     const justify = col.align === 'right' ? 'justify-end' : 'justify-start'
     const cursorClass = col.sortable ? 'cursor-pointer select-none hover:text-foreground' : ''
-    // Match the amount/attachments body cells' pr-5 so right-aligned
+    // Match the amount/attachments body cells' pe-5 so right-aligned
     // headers line up with their values (issue #161 polish).
-    const padX = col.align === 'right' ? 'pr-5' : ''
+    const padX = col.align === 'right' ? 'pe-5' : ''
     return (
       <TableHead
         key={col.id}
@@ -1062,7 +1064,7 @@ export default function TransactionsPage() {
           onPointerDown={(e) => startResize(e, col)}
           onClick={(e) => e.stopPropagation()}
           aria-hidden="true"
-          className="absolute right-0 top-0 h-full w-2 -mr-1 cursor-col-resize select-none hover:bg-primary/40 active:bg-primary/60"
+          className="absolute end-0 top-0 h-full w-2 -me-1 cursor-col-resize select-none hover:bg-primary/40 active:bg-primary/60"
         />
       </TableHead>
     )
@@ -1082,11 +1084,11 @@ export default function TransactionsPage() {
           }`}
         >
           {mask(
-            `${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '−'}${formatCurrency(
+            ltrAmount(`${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '−'}${formatCurrency(
               Math.abs(displayAmount),
               tx.currency,
               locale,
-            )}`,
+            )}`),
           )}
         </span>
         {tx.is_shared && (
@@ -1309,7 +1311,7 @@ export default function TransactionsPage() {
 
   const renderBodyCell = (col: ColumnDef, tx: Transaction) => {
     const widthStyle = { width: grid.widthOf(col.id), minWidth: grid.widthOf(col.id) }
-    const alignClass = col.align === 'right' ? 'text-right' : ''
+    const alignClass = col.align === 'right' ? 'text-end' : ''
     const baseClass = `py-2.5 ${alignClass}`
     switch (col.id) {
       case 'date':
@@ -1320,7 +1322,7 @@ export default function TransactionsPage() {
         )
       case 'description':
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pl-2 max-w-0`}>
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} ps-2 max-w-0`}>
             {renderDescriptionCell(tx)}
           </TableCell>
         )
@@ -1347,7 +1349,7 @@ export default function TransactionsPage() {
       }
       case 'amount':
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pr-5`}>
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pe-5`}>
             {renderAmountCell(tx)}
           </TableCell>
         )
@@ -1389,7 +1391,7 @@ export default function TransactionsPage() {
       }
       case 'attachments':
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pr-5 text-sm text-muted-foreground tabular-nums`}>
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pe-5 text-sm text-muted-foreground tabular-nums`}>
             {(tx.attachment_count ?? 0) > 0 ? (
               <span className="inline-flex items-center gap-1 justify-end w-full">
                 <Paperclip size={12} />{tx.attachment_count}
@@ -1546,7 +1548,7 @@ export default function TransactionsPage() {
             {t('splitGroups.title')}: {filterGroup?.name ?? '…'}
             <button
               onClick={() => { setFilterGroupId(''); setPage(1) }}
-              className="ml-0.5 text-primary/60 hover:text-primary"
+              className="ms-0.5 text-primary/60 hover:text-primary"
               aria-label={t('transactions.clearGroupFilter')}
             >
               ×
@@ -1564,7 +1566,7 @@ export default function TransactionsPage() {
               <span>{tag}</span>
               <button
                 onClick={() => removeTagFilter(tag)}
-                className="ml-0.5 text-primary/60 hover:text-primary"
+                className="ms-0.5 text-primary/60 hover:text-primary"
                 aria-label={`Remove ${tag} filter`}
               >
                 <X size={12} />
@@ -1655,7 +1657,7 @@ export default function TransactionsPage() {
           <Table style={{ tableLayout: 'fixed' }}>
             <TableHeader>
               <TableRow className="border-b border-border hover:bg-transparent">
-                <TableHead style={{ width: 40, minWidth: 40 }} className="py-3 pl-4 pr-0">
+                <TableHead style={{ width: 40, minWidth: 40 }} className="py-3 ps-4 pe-0">
                   {canWrite && (
                     <input
                       type="checkbox"
@@ -1695,7 +1697,7 @@ export default function TransactionsPage() {
                         setDialogOpen(true)
                       }}
                     >
-                      <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0">
+                      <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 ps-4 pe-0">
                         {/* Bulk operations are scoped to user.id so they
                             silently skip shared rows — hide the checkbox
                             on those to avoid the dead-end UX. */}
@@ -1721,13 +1723,13 @@ export default function TransactionsPage() {
                         disabled={!canOpenLinkDialog}
                         onSelect={() => setLinkTransferDialogOpen(true)}
                       >
-                        <ArrowLeftRight className="mr-2 h-4 w-4" />
+                        <ArrowLeftRight className="me-2 h-4 w-4" />
                         {t('transactions.linkAsTransfer')}
                       </ContextMenuItem>
 
                       <ContextMenuSub>
                         <ContextMenuSubTrigger>
-                          <TagIcon className="mr-2 h-4 w-4" />
+                          <TagIcon className="me-2 h-4 w-4" />
                           {t('transactions.selectCategory')}
                         </ContextMenuSubTrigger>
                         <ContextMenuPortal>
@@ -1756,18 +1758,18 @@ export default function TransactionsPage() {
                       </ContextMenuSub>
 
                       <ContextMenuItem onSelect={() => setBulkAddToGroupOpen(true)}>
-                        <Users className="mr-2 h-4 w-4" />
+                        <Users className="me-2 h-4 w-4" />
                         {t('transactions.addToGroup')}
                       </ContextMenuItem>
 
                       <ContextMenuItem onSelect={handleFocusTagInput}>
-                        <TagIcon className="mr-2 h-4 w-4" />
+                        <TagIcon className="me-2 h-4 w-4" />
                         {t('transactions.bulkAddTags')}
                       </ContextMenuItem>
 
                       {selectedSingleTx && (
                         <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
-                          <SlidersHorizontal className="mr-2 h-4 w-4" />
+                          <SlidersHorizontal className="me-2 h-4 w-4" />
                           {t('transactions.createRule')}
                         </ContextMenuItem>
                       )}
@@ -1778,7 +1780,7 @@ export default function TransactionsPage() {
                         disabled={bulkDeleteMutation.isPending}
                         onSelect={() => setBulkDeleteConfirmOpen(true)}
                       >
-                        <Trash2 className="mr-2 h-4 w-4" />
+                        <Trash2 className="me-2 h-4 w-4" />
                         {t('common.delete')}
                       </ContextMenuItem>
                     </ContextMenuContent>
@@ -1841,7 +1843,7 @@ export default function TransactionsPage() {
               </span>
             )}
             {/* Desktop: original horizontal layout */}
-            <span className="mr-auto text-xs text-muted-foreground hidden sm:inline">
+            <span className="me-auto text-xs text-muted-foreground hidden sm:inline">
               {t('transactions.summaryCount', { count: data.total })}
             </span>
             {data.summary.excluded > 0 && (
@@ -1945,9 +1947,9 @@ export default function TransactionsPage() {
           centered when the nav is collapsed (issue #1027). */}
       {viewMode === 'list' && selectedIds.size > 0 && (
         <div className={cn(
-          "fixed bottom-0 left-0 right-0 z-50",
+          "fixed bottom-0 start-0 end-0 z-50",
           "transition-[left] duration-300 ease-in-out motion-reduce:transition-none",
-          sidebarCollapsed ? 'lg:left-16' : 'lg:left-60',
+          sidebarCollapsed ? 'lg:start-16' : 'lg:start-60',
         )}>
         <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
           <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2 transition-all duration-500">
@@ -1984,7 +1986,7 @@ export default function TransactionsPage() {
                 sum (issue #185) adds no horizontal width to an already
                 crowded bar. The sum is hidden below sm where only the
                 count pill shows. */}
-            <div className="flex items-center gap-2.5 pl-3 pr-4 whitespace-nowrap">
+            <div className="flex items-center gap-2.5 ps-3 pe-4 whitespace-nowrap">
               <span className="inline-flex items-center justify-center size-6 rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">
                 {selectedIds.size}
               </span>
@@ -1998,11 +2000,11 @@ export default function TransactionsPage() {
                   }`}
                 >
                   {mask(
-                    `${selectedNet >= 0 ? '+' : '−'}${formatCurrency(
+                    ltrAmount(`${selectedNet >= 0 ? '+' : '−'}${formatCurrency(
                       Math.abs(selectedNet),
                       userCurrency,
                       locale,
-                    )}`,
+                    )}`),
                   )}
                 </span>
               </div>
@@ -2040,7 +2042,7 @@ export default function TransactionsPage() {
               title={t('transactions.addToGroup')}
               className="h-8 px-3 shrink-0 text-sm"
             >
-              <Users size={15} className="lg:mr-1.5" />
+              <Users size={15} className="lg:me-1.5" />
               <span className="hidden lg:inline">{t('transactions.addToGroup')}</span>
             </Button>
 
@@ -2107,7 +2109,7 @@ export default function TransactionsPage() {
               onClick={() => setLinkTransferDialogOpen(true)}
               className="h-8 px-3 shrink-0 text-sm"
             >
-              <ArrowLeftRight size={15} className="mr-1.5" />
+              <ArrowLeftRight size={15} className="me-1.5" />
               <span className="hidden lg:inline">{t('transactions.linkAsTransfer')}</span>
             </Button>
 
@@ -2125,7 +2127,7 @@ export default function TransactionsPage() {
                   className="h-8 px-3 shrink-0 text-sm"
                   title={t('transactions.createRule')}
                 >
-                  <SlidersHorizontal size={15} className="lg:mr-1.5" />
+                  <SlidersHorizontal size={15} className="lg:me-1.5" />
                   <span className="hidden lg:inline">{t('transactions.createRule')}</span>
                 </Button>
               )
@@ -2139,11 +2141,11 @@ export default function TransactionsPage() {
               disabled={bulkDeleteMutation.isPending}
               className="h-8 px-3 shrink-0 text-sm"
             >
-              <Trash2 size={15} className="lg:mr-1.5" />
+              <Trash2 size={15} className="lg:me-1.5" />
               <span className="hidden lg:inline">{t('common.delete')}</span>
             </Button>
 
-            <div className="ml-auto" />
+            <div className="ms-auto" />
 
             {/* Close */}
             <button

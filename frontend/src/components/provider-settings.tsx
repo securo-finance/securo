@@ -58,7 +58,7 @@ function ProviderRow({ provider }: { provider: ProviderSettingStatus }) {
       <ProviderSettingsDialog provider={provider} name={name} description={description} icon={<Icon className="size-5" aria-hidden="true" />} guideUrl={presentation && setupGuides[presentation.category]}>
         <Button
           variant="outline"
-          className="ml-14 h-10 gap-2 shadow-none sm:ml-0"
+          className="ms-14 h-10 gap-2 shadow-none sm:ms-0"
           aria-label={t(`providerSettings.catalog.${hasSettings ? 'manageProvider' : 'configureProvider'}`, { provider: name })}
         >
           {t(`providerSettings.catalog.${hasSettings ? 'manage' : 'configure'}`)}
