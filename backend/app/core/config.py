@@ -1,10 +1,11 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from math import isfinite
 from os import getenv
 from pathlib import Path
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import PrivateAttr, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -12,23 +13,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 CREDENTIALS_DIRECTORY: list[Path] = [
     Path(p) for p in getenv("CREDENTIALS_DIRECTORY", "/run/secrets").split(":") if p
 ]
-
-# Every default that shipped in the code, Compose files, Helm chart and example
-# env files carries one of these markers (as the plugin runner's placeholders
-# do). Those values are public, so anything signed or encrypted with one of
-# them can be forged or read by anyone (#1173).
-PLACEHOLDER_SECRET_MARKERS = ("change-me-in-production", "change-in-production")
-
-
-def require_private_secret(name: str, value: str) -> None:
-    """Refuse to start with a missing or publicly known signing secret."""
-    hint = f"Generate one with `openssl rand -hex 32` and set {name} in your .env."
-    value = value.strip()
-    if not value:
-        raise ValueError(f"{name} is not set. {hint}")
-    if any(marker in value for marker in PLACEHOLDER_SECRET_MARKERS):
-        raise ValueError(f"{name} is set to a public default value. {hint}")
-
 
 class Settings(BaseSettings):
     # App
@@ -39,8 +23,13 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
 
     # Auth. Signs session and password-reset tokens and derives the key that
-    # encrypts saved credentials, so it has no default: see validate_secret_key.
+    # encrypts saved credentials. Left unset (or on a public default), the
+    # instance generates its own and keeps it in the database: see
+    # app.core.instance_secrets and get_settings().
     secret_key: SecretStr = SecretStr("")
+    # Keys this instance encrypted with before, tried when opening a saved
+    # credential. Never used to sign or check a token.
+    _secret_key_fallbacks: tuple[str, ...] = PrivateAttr(default=())
     local_auth_enabled: bool = True
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
@@ -213,10 +202,9 @@ class Settings(BaseSettings):
             self.frontend_url = f"http://localhost:{self.frontend_port}"
         return self
 
-    @model_validator(mode="after")
-    def validate_secret_key(self) -> "Settings":
-        require_private_secret("SECRET_KEY", self.secret_key.get_secret_value())
-        return self
+    @property
+    def secret_key_fallbacks(self) -> tuple[str, ...]:
+        return self._secret_key_fallbacks
 
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":
@@ -255,4 +243,40 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return resolve_secret_key(Settings())
+
+
+def resolve_secret_key(settings: Settings) -> Settings:
+    """Use the instance key when the environment has none of its own (#1173).
+
+    A SECRET_KEY set in the environment always wins. Missing, or set to one of
+    the public defaults that shipped with every install path, the instance
+    uses a key generated once and stored in the database, and the credentials
+    encrypted with the public default move to it (app.core.instance_secrets).
+    """
+    from app.core import instance_secrets as instance
+
+    configured = settings.secret_key.get_secret_value().strip()
+    if not instance.is_public_or_missing(configured):
+        # Keep reading anything encrypted while the instance key was in use,
+        # in case SECRET_KEY was set after it existed.
+        stored = instance.read_existing(settings.database_url, instance.SECRET_KEY_NAME)
+        settings._secret_key_fallbacks = tuple(
+            k for k in dict.fromkeys((stored, *instance.PUBLIC_SECRET_KEYS)) if k and k != configured
+        )
+        return settings
+
+    if configured:
+        logging.getLogger(__name__).warning(
+            "SECRET_KEY is set to a public default, which anyone can use to sign in as any "
+            "user. Using this instance's own key instead."
+        )
+    old_keys = tuple(dict.fromkeys((configured, *instance.PUBLIC_SECRET_KEYS)))
+    key = instance.fetch_or_create(
+        settings.database_url,
+        instance.SECRET_KEY_NAME,
+        on_created=instance.reencrypt_with(old_keys),
+    )
+    settings.secret_key = SecretStr(key)
+    settings._secret_key_fallbacks = tuple(k for k in old_keys if k)
+    return settings

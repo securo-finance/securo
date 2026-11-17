@@ -13,8 +13,8 @@ global:
 
 # If existingSecret is NOT set, this secret will be created with the values below
 secret:
-  # Required: the backend refuses to start without a unique value.
-  # Generate one with `openssl rand -hex 32` (or set it in existingSecret).
+  # Optional. Left empty, Securo generates a unique key on first start and keeps
+  # it in the database. Set one (openssl rand -hex 32) to manage it yourself.
   secretKey: ""
   # If postgresql.enabled is true, the internal database will be deployed.
   # If postgresql.enabled is false, you must provide your external database URL here or in existingSecret.
@@ -36,7 +36,7 @@ secret:
   openexchangeratesAppId: ""
 
   # Agents (LLM)
-  # Required when agents are enabled (openssl rand -hex 32).
+  # Optional, like secretKey: left empty, the instance generates its own.
   agentsMcpJwtSecret: ""
   agentsOpenaiApiKey: ""
   agentsAnthropicApiKey: ""

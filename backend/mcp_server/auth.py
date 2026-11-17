@@ -118,7 +118,7 @@ def verify_request(request: Request) -> CallContext:
     try:
         payload = jwt.decode(
             token,
-            _settings().mcp_jwt_secret,
+            _settings().signing_secret(),
             algorithms=[JWT_ALGO],
             audience=JWT_AUDIENCE,
             issuer=JWT_ISSUER,

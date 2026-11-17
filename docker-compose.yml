@@ -9,9 +9,9 @@ x-podman:
 
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
-  # No default: a shared value would let anyone sign a session token for any
-  # install. Generate one with `openssl rand -hex 32` and put it in .env.
-  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is not set. Generate one with openssl rand -hex 32 and put it in .env}
+  # Optional. Left empty, Securo generates a unique key on first start and
+  # keeps it in the database. Set one (openssl rand -hex 32) to manage it yourself.
+  SECRET_KEY: ${SECRET_KEY:-}
   DEBUG: ${DEBUG:-true}
   # Not nested (${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}):
   # podman-compose before 1.6.0 leaves a stray "}" on such values (#1162).
@@ -71,7 +71,7 @@ x-backend-env: &backend-env
   # (host:8765). Set when the MCP server sits behind an ingress/reverse proxy.
   AGENTS_EXTERNAL_MCP_URL: ${AGENTS_EXTERNAL_MCP_URL:-}
   AGENTS_EXTRA_MCP_SERVERS: ${AGENTS_EXTRA_MCP_SERVERS:-}
-  # Required once agents are on; the backend and mcp-server refuse to start without it.
+  # Optional: left empty, the instance generates its own, like SECRET_KEY.
   AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-}
   # TTL for tokens minted from /agents/connections → "External MCP access".
   # Used by Claude Desktop, n8n, custom clients plugging into Securo.

@@ -30,9 +30,9 @@ from mcp_server.registry import REGISTRY, call_tool, list_tools
 
 logger = logging.getLogger(__name__)
 
-# This server verifies every call's token, so it refuses to start with a
-# missing or public secret even when AGENTS_ENABLED is off (#1173).
-get_agent_settings().require_mcp_jwt_secret()
+# Load the signing secret before serving, so a database that can't be reached
+# shows up at startup rather than on the first call (#1173).
+get_agent_settings().signing_secret()
 
 app = FastAPI(title="Securo MCP Server", openapi_url=None, docs_url=None)
 

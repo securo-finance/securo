@@ -1,10 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.core.config import require_private_secret
 
 
 class AgentSettings(BaseSettings):
@@ -33,8 +31,8 @@ class AgentSettings(BaseSettings):
     extra_mcp_servers: str = ""
 
     # Shared secret used to mint short-lived JWTs for MCP calls. Distinct
-    # from the main app secret so revocation is independent. No default:
-    # required while agents are on, and always by the MCP server.
+    # from the main app secret so revocation is independent. Read it through
+    # signing_secret(): left unset, the instance generates its own.
     mcp_jwt_secret: str = ""
     mcp_jwt_ttl_seconds: int = 600
 
@@ -89,14 +87,25 @@ class AgentSettings(BaseSettings):
         extra="ignore",
     )
 
-    def require_mcp_jwt_secret(self) -> None:
-        require_private_secret("AGENTS_MCP_JWT_SECRET", self.mcp_jwt_secret)
+    def signing_secret(self) -> str:
+        """The secret MCP tokens are signed and checked with.
 
-    @model_validator(mode="after")
-    def validate_mcp_jwt_secret(self) -> "AgentSettings":
-        if self.enabled:
-            self.require_mcp_jwt_secret()
-        return self
+        Left unset (or on a public default), the instance generates one and
+        keeps it in the database, so the API that signs and the MCP server
+        that checks always agree (see app.core.instance_secrets). Tokens
+        signed with a public default are never accepted.
+        """
+        return _instance_mcp_jwt_secret(self.mcp_jwt_secret)
+
+
+@lru_cache(maxsize=4)
+def _instance_mcp_jwt_secret(configured: str) -> str:
+    from app.core import instance_secrets as instance
+    from app.core.config import get_settings
+
+    if not instance.is_public_or_missing(configured):
+        return configured
+    return instance.fetch_or_create(get_settings().database_url, instance.MCP_JWT_SECRET_NAME)
 
 
 @lru_cache

@@ -1,29 +1,32 @@
-"""Symmetric encryption for stored secrets (LLM API keys, etc.).
+"""Symmetric encryption for stored secrets (LLM API keys, bank credentials,
+provider settings).
 
-Key derivation: PBKDF2(SHA256, app SECRET_KEY) so we don't need a
-separate key file. If the operator rotates SECRET_KEY, existing
-ciphertexts become unreadable — that's by design (rotation = re-enter
-your provider keys).
+Key derivation: PBKDF2(SHA256, app SECRET_KEY) so we don't need a separate
+key file. Values are encrypted with the current key and opened with it or
+with a key the instance used before (see `Settings.secret_key_fallbacks`).
+Changing SECRET_KEY by hand to an unrelated value still makes existing
+ciphertexts unreadable: that means re-entering those secrets.
 """
 from __future__ import annotations
 
-import base64
 import functools
-import hashlib
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 from app.core.config import get_settings
+from app.core.fernet_keys import credentials_fernet
 
 
-_SALT = b"securo-agents-llm-keys-v1"
+def fernet_for(secret_key: str) -> Fernet:
+    return credentials_fernet(secret_key)
 
 
 @functools.lru_cache(maxsize=1)
-def _fernet() -> Fernet:
-    secret = get_settings().secret_key.get_secret_value().encode("utf-8")
-    raw = hashlib.pbkdf2_hmac("sha256", secret, _SALT, iterations=100_000, dklen=32)
-    return Fernet(base64.urlsafe_b64encode(raw))
+def _fernet() -> MultiFernet:
+    settings = get_settings()
+    keys = [settings.secret_key.get_secret_value(), *settings.secret_key_fallbacks]
+    # Encrypts with the first key; opens with any of them.
+    return MultiFernet([fernet_for(k) for k in dict.fromkeys(keys) if k])
 
 
 def encrypt(plaintext: str | None) -> str | None:

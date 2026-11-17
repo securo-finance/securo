@@ -61,4 +61,4 @@ def mint_token(
         payload["agent_id"] = str(agent_id)
     if external:
         payload["ext"] = True
-    return jwt.encode(payload, s.mcp_jwt_secret, algorithm=JWT_ALGO)
+    return jwt.encode(payload, s.signing_secret(), algorithm=JWT_ALGO)

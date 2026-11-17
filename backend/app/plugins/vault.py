@@ -9,39 +9,41 @@ up again, as bank connections do.
 """
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
-from functools import lru_cache
 from typing import Any
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 from app.core.config import get_settings
-
-_SALT = b"securo-plugin-secrets-v1"
+from app.core.fernet_keys import plugin_secrets_fernet
 
 
 class SealBroken(Exception):
     """The secrets can't be opened (SECRET_KEY changed, or the data is damaged)."""
 
 
-@lru_cache(maxsize=4)
-def _fernet(secret_key: str) -> Fernet:
-    key = hashlib.pbkdf2_hmac("sha256", secret_key.encode(), _SALT, 100_000, dklen=32)
-    return Fernet(base64.urlsafe_b64encode(key))
+def fernet_for(secret_key: str) -> Fernet:
+    return plugin_secrets_fernet(secret_key)
+
+
+def _fernet() -> MultiFernet:
+    # Seals with the current key; opens with it or a key the instance used
+    # before (see Settings.secret_key_fallbacks).
+    settings = get_settings()
+    keys = [settings.secret_key.get_secret_value(), *settings.secret_key_fallbacks]
+    return MultiFernet([fernet_for(k) for k in dict.fromkeys(keys) if k])
 
 
 def seal(secrets: dict[str, Any]) -> str | None:
     if not secrets:
         return None
-    return _fernet(get_settings().secret_key.get_secret_value()).encrypt(json.dumps(secrets).encode()).decode()
+    return _fernet().encrypt(json.dumps(secrets).encode()).decode()
 
 
 def unseal(sealed: str | None) -> dict[str, Any]:
     if not sealed:
         return {}
     try:
-        return json.loads(_fernet(get_settings().secret_key.get_secret_value()).decrypt(sealed.encode()))
+        return json.loads(_fernet().decrypt(sealed.encode()))
     except (InvalidToken, ValueError) as exc:
         raise SealBroken from exc
