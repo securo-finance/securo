@@ -106,6 +106,21 @@ async def authorize_call(session, ctx: CallContext) -> uuid.UUID:
     return workspace_id
 
 
+def _signed_with_a_retired_key(token: str) -> bool:
+    from app.agents.mcp.keys import retired_public_keys
+
+    for key in retired_public_keys():
+        try:
+            jwt.decode(
+                token, key, algorithms=[JWT_ALGO],
+                options={"verify_aud": False, "verify_iss": False, "verify_exp": False},
+            )
+        except JWTError:
+            continue
+        return True
+    return False
+
+
 def verify_request(request: Request) -> CallContext:
     auth = request.headers.get("authorization") or ""
     if not auth.lower().startswith("bearer "):
@@ -124,6 +139,17 @@ def verify_request(request: Request) -> CallContext:
             issuer=JWT_ISSUER,
         )
     except JWTError as exc:
+        if _signed_with_a_retired_key(token):
+            # Still refused: anyone can sign with that key. The message tells
+            # the person whose client stopped working what to do (#1173).
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=(
+                    "This token was signed with a public default key that Securo no longer "
+                    "accepts. Create a new one in Securo under Agents > Connections > "
+                    "External MCP access."
+                ),
+            ) from exc
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"invalid token: {exc}") from exc
 
     sub = payload.get("sub")

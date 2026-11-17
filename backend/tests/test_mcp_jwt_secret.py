@@ -149,3 +149,31 @@ async def test_server_refuses_to_start_with_a_short_secret_key(env):
     with pytest.raises(UnsafeMCPSecret):
         async with lifespan(app):
             pass
+
+
+def test_an_unrelated_bad_token_keeps_the_generic_message(env):
+    env(mcp_secret=None, app_secret=STRONG_SECRET)
+    forged = jose_jwt.encode({"sub": str(uuid.uuid4())}, "some-other-key", algorithm=JWT_ALGO)
+
+    with pytest.raises(HTTPException) as refused:
+        verify_request(_req_with(forged))
+
+    assert refused.value.status_code == 401
+    assert "no longer accepts" not in refused.value.detail
+
+
+def test_a_token_from_the_public_derived_key_is_explained(env):
+    """Installs with no MCP secret and a public SECRET_KEY signed with the key
+    derived from it; that token is refused with the same explanation."""
+    import hashlib
+    import hmac
+
+    env(mcp_secret=None, app_secret=STRONG_SECRET)
+    public_derived = hmac.new(PUBLIC_APP_DEFAULT.encode(), b"securo:mcp-jwt:v1", hashlib.sha256).hexdigest()
+    old = jose_jwt.encode({"sub": str(uuid.uuid4())}, public_derived, algorithm=JWT_ALGO)
+
+    with pytest.raises(HTTPException) as refused:
+        verify_request(_req_with(old))
+
+    assert refused.value.status_code == 401
+    assert "no longer accepts" in refused.value.detail

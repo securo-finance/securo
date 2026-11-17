@@ -74,6 +74,8 @@ async def test_tools_list_rejects_token_signed_with_public_default(mcp_secret, p
 
     assert response.status_code == 401
     assert "tools" not in response.text
+    # Refused, with a message that tells the token's holder what to do.
+    assert "no longer accepts" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

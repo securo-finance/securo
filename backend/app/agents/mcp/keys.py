@@ -91,3 +91,17 @@ def resolve_mcp_jwt_secret() -> str:
             f"{_SETUP_HINT}"
         )
     return hmac.new(app_secret.encode("utf-8"), _DERIVATION_LABEL, hashlib.sha256).hexdigest()
+
+
+def retired_public_keys() -> list[str]:
+    """Keys that signed MCP tokens on installs still on a public default.
+
+    Never used to accept a token: only to tell its holder why it stopped
+    working (see mcp_server.auth.verify_request).
+    """
+    keys = list(PUBLIC_DEFAULT_MCP_SECRETS)
+    keys += [
+        hmac.new(secret.encode("utf-8"), _DERIVATION_LABEL, hashlib.sha256).hexdigest()
+        for secret in PUBLIC_DEFAULT_APP_SECRETS
+    ]
+    return keys
