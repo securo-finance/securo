@@ -248,6 +248,15 @@ def test_surrounding_whitespace_is_stripped_from_bucket_and_endpoint(s3_settings
     assert settings.storage_s3_endpoint_url == "https://s3.example.com"
 
 
+def test_blank_endpoint_is_rejected_instead_of_falling_back_to_aws(s3_settings):
+    with pytest.raises(ValidationError, match="STORAGE_S3_ENDPOINT_URL"):
+        Settings(
+            _env_file=None,
+            _secrets_dir=None,
+            **(s3_settings.model_dump() | {"storage_s3_endpoint_url": "   "}),
+        )
+
+
 def test_local_default_does_not_require_s3_configuration(s3_settings):
     settings = Settings(_env_file=None, _secrets_dir=None)
     assert settings.storage_provider == "local"

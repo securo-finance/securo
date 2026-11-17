@@ -206,7 +206,11 @@ class Settings(BaseSettings):
             return self
         # Normalize, not just check: the provider sends these values as they are.
         self.storage_s3_bucket = self.storage_s3_bucket.strip()
-        self.storage_s3_endpoint_url = self.storage_s3_endpoint_url.strip()
+        raw_endpoint_url = self.storage_s3_endpoint_url
+        self.storage_s3_endpoint_url = raw_endpoint_url.strip()
+        if raw_endpoint_url and not self.storage_s3_endpoint_url:
+            # A blank value would otherwise mean "no endpoint" and silently reach AWS.
+            raise ValueError("STORAGE_S3_ENDPOINT_URL must not be blank when set")
         if not self.storage_s3_bucket:
             raise ValueError("STORAGE_S3_BUCKET is required when STORAGE_PROVIDER=s3")
         if self.storage_s3_addressing_style not in {"auto", "path", "virtual"}:
