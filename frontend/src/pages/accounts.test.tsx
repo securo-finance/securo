@@ -41,7 +41,7 @@ vi.mock('@/contexts/collection-filter-context', () => ({
 }))
 
 vi.mock('@/hooks/use-privacy-mode', () => ({
-  usePrivacyMode: () => ({ mask: false }),
+  usePrivacyMode: () => ({ privacyMode: false, mask: (value: string) => value, MASK: '••••' }),
 }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
@@ -49,9 +49,6 @@ vi.mock('@/hooks/use-display-locale', () => ({
   useDateLocale: () => 'en-US',
 }))
 
-vi.mock('@/lib/invalidate-queries', () => ({
-  invalidateFinancialQueries: vi.fn(),
-}))
 
 vi.mock('@/components/bank-connect-dialog', () => ({ BankConnectDialog: () => null }))
 vi.mock('@/components/connector-select-dialog', () => ({ ConnectorSelectDialog: () => null }))
@@ -233,11 +230,19 @@ describe('AccountsPage connections a plugin syncs', () => {
       makeConnection({ id: 'bank-1', provider: 'plugin:acme/ledger', plugin_connection_id: 'pc-1', plugin_id: 'acme/ledger' }),
       makeConnection({ id: 'bank-2', provider: 'plugin:acme/ledger', plugin_connection_id: 'pc-2', plugin_id: 'acme/ledger' }),
     ])
+    // What the first connection brought in only exists once it finished.
+    let synced = false
+    api.accountsList.mockImplementation(async () =>
+      synced ? [{ ...makeAccount('bank-1'), connection_id: null, name: 'Brokerage Cash', institution_name: null }] : [],
+    )
+    api.pluginConnections.mockReset()
     api.pluginConnections
       .mockResolvedValueOnce([pending('pc-1'), pending('pc-2')])
-      .mockResolvedValue([{ ...pluginConnection, id: 'pc-1', status: 'active' as const }, pending('pc-2')])
+      .mockImplementation(async () => {
+        synced = true
+        return [{ ...pluginConnection, id: 'pc-1', status: 'active' as const }, pending('pc-2')]
+      })
     renderWithProviders(<AccountsPage />, { route: '/accounts' })
-    await vi.waitFor(() => expect(api.pluginConnections).toHaveBeenCalledTimes(2), { timeout: 5000 })
-    await vi.waitFor(() => expect(api.connectionsList.mock.calls.length).toBeGreaterThan(1))
+    expect(await screen.findByText('Brokerage Cash', {}, { timeout: 6000 })).toBeInTheDocument()
   }, 10000)
 })

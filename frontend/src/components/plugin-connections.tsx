@@ -6,6 +6,7 @@ import axios from 'axios'
 import { Copy, LogIn, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import {
   Dialog,
   DialogContent,
@@ -60,6 +61,8 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
     mutationFn: pluginsApi.sync,
     onSuccess: (connection) => {
       void refresh()
+      // Sync now answers once the sync settled: what it brought in shows right away.
+      if (integrations.get(connection.integration)?.provides?.length) invalidateSyncedRecords(queryClient)
       if (connection.status === 'active') toast.success(t('plugins.connections.synced', { name: connection.name }))
       else toast.error(connection.last_error || t('plugins.connections.syncFailed'))
     },

@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { accounts, assets, connections, currencies, plugins as pluginsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
-import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { invalidateFinancialQueries, invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -145,11 +145,7 @@ export default function AccountsPage() {
   const wasSyncing = useRef<Set<string>>(new Set())
   useEffect(() => {
     const syncing = new Set(syncingKey ? syncingKey.split(',') : [])
-    if ([...wasSyncing.current].some((id) => !syncing.has(id))) {
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      invalidateFinancialQueries(queryClient)
-    }
+    if ([...wasSyncing.current].some((id) => !syncing.has(id))) invalidateSyncedRecords(queryClient)
     wasSyncing.current = syncing
   }, [syncingKey, queryClient])
 
@@ -719,7 +715,8 @@ export default function AccountsPage() {
           connection={pluginForm.connection}
           onClose={() => setPluginForm(null)}
           onDone={() => {
-            queryClient.invalidateQueries({ queryKey: ['connections'] })
+            // The sync may already have settled before the page polls it as pending.
+            invalidateSyncedRecords(queryClient)
             queryClient.invalidateQueries({ queryKey: ['plugin-connections'] })
           }}
         />

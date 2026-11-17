@@ -1077,7 +1077,10 @@ async def _sync_holding_trades(
         for tx in rows:
             if tx.external_id not in wanted:
                 await session.delete(tx)
-        for trade in reconciled:
+        # The ledger replays same-day trades in creation order: stamp them in
+        # the order they reconciled in, so both replays agree.
+        stamp = datetime.now(timezone.utc)
+        for position, trade in enumerate(reconciled):
             tx = stored.get(trade.external_id)
             if tx is None:
                 tx = AssetTransaction(
@@ -1092,6 +1095,7 @@ async def _sync_holding_trades(
             tx.price = trade.price
             tx.fee = trade.fee
             tx.date = trade.date
+            tx.created_at = stamp + timedelta(microseconds=position)
         await session.flush()
         # Average price, realized gain and cost basis come from the ledger;
         # the position stays what the provider reports.

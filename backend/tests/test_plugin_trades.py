@@ -215,3 +215,34 @@ async def test_a_position_closed_before_the_first_sync_comes_in_sold(
 async def test_a_closed_position_without_trades_is_still_skipped(session: AsyncSession, bank_connection, test_user):
     await _pipeline(session, bank_connection, holding("0", None, is_withdrawn=True, current_value="0"), test_user)
     assert await _rows(session, Asset, connection_id=bank_connection.id) == []
+
+
+@pytest.mark.asyncio
+async def test_a_buy_corrected_onto_the_day_of_its_sale_replays_before_it(
+    session: AsyncSession, bank_connection, test_user
+):
+    closed = {"is_withdrawn": True, "current_value": "0"}
+    first = [_trade("b1", "buy", 2, "10", "100"), _trade("s1", "sell", 9, "10", "120")]
+    await _pipeline(session, bank_connection, holding("0", first, **closed), test_user)
+    # The provider corrects the buy: another id, the same day as the sale.
+    corrected = [_trade("b2", "buy", 9, "10", "100"), _trade("s1", "sell", 9, "10", "120")]
+    await _pipeline(session, bank_connection, holding("0", corrected, **closed), test_user)
+    asset = await _asset(session, bank_connection)
+    assert set(await _ledger(session, asset)) == {"b2", "s1"}
+    assert asset.sell_date == date(2026, 11, 9)
+    assert Decimal(str(asset.realized_gain)) == Decimal("200.00")
+    assert asset.purchase_price is None and Decimal(str(asset.units)) == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_a_position_bought_again_after_a_sale_is_open(session: AsyncSession, bank_connection, test_user):
+    bought = [_trade("b1", "buy", 2, "10", "100")]
+    await _pipeline(session, bank_connection, holding("10", bought), test_user)
+    sold = bought + [_trade("s1", "sell", 9, "10", "120")]
+    await _pipeline(session, bank_connection, holding("0", sold, is_withdrawn=True, current_value="0"), test_user)
+    asset = await _asset(session, bank_connection)
+    assert asset.sell_date == date(2026, 11, 9)
+    again = sold + [_trade("b2", "buy", 12, "5", "110")]
+    await _pipeline(session, bank_connection, holding("5", again), test_user)
+    asset = await _asset(session, bank_connection)
+    assert asset.sell_date is None and Decimal(str(asset.units)) == Decimal("5")

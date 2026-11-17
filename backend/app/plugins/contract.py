@@ -19,12 +19,12 @@ kept and the pipeline doesn't run.
 from __future__ import annotations
 
 from datetime import date as _date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from collections.abc import Collection
 from urllib.parse import urlsplit
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
 
 from app.plugins.manifest import KEY_PATTERN
 from app.providers.base import AccountData, BillData, HoldingData, HoldingTradeData, TransactionData
@@ -55,18 +55,39 @@ def _no_float(value: Any) -> Any:
 # and prices) and round the rest; a number too large for its column is
 # refused here, before anything is written, instead of failing the write.
 
+def _fits(whole: int, places: int):
+    """Refuse a number that, rounded to the column's decimals as the database does, no longer fits."""
+
+    def check(value: Decimal) -> Decimal:
+        rounded = value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
+        if abs(rounded) >= Decimal(10) ** whole:
+            raise ValueError(f"too large: at most {whole} digits before the decimal point")
+        return value
+
+    return AfterValidator(check)
+
+
 #: Money: Numeric(15, 2) columns (balances, transactions, bills, cost basis, fees).
 Money = Annotated[
-    Decimal, BeforeValidator(_no_float), Field(allow_inf_nan=False, max_digits=13 + 8, decimal_places=8)
+    Decimal,
+    BeforeValidator(_no_float),
+    Field(allow_inf_nan=False, max_digits=13 + 8, decimal_places=8),
+    _fits(13, 2),
 ]
 PositiveMoney = Annotated[Money, Field(ge=0)]
 #: Units and holding values: Numeric(15, 6) columns (`assets.units`, `asset_values.amount`).
 Units = Annotated[
-    Decimal, BeforeValidator(_no_float), Field(allow_inf_nan=False, max_digits=9 + 8, decimal_places=8)
+    Decimal,
+    BeforeValidator(_no_float),
+    Field(allow_inf_nan=False, max_digits=9 + 8, decimal_places=8),
+    _fits(9, 6),
 ]
 #: Trade quantities and prices: Numeric(18, 6) columns.
 TradeNumber = Annotated[
-    Decimal, BeforeValidator(_no_float), Field(allow_inf_nan=False, max_digits=12 + 8, decimal_places=8, ge=0)
+    Decimal,
+    BeforeValidator(_no_float),
+    Field(allow_inf_nan=False, max_digits=12 + 8, decimal_places=8, ge=0),
+    _fits(12, 6),
 ]
 
 
