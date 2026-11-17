@@ -9,7 +9,9 @@ x-podman:
 
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
-  SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+  # Optional. Left empty, Securo generates a unique key on first start and
+  # keeps it in the database. Set one (openssl rand -hex 32) to manage it yourself.
+  SECRET_KEY: ${SECRET_KEY:-}
   DEBUG: ${DEBUG:-false}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
   PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}

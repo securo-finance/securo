@@ -6,7 +6,8 @@ a known string was accepted and could act as any user whose UUID was known
 (the user directory hands those out to every registered user).
 
 These tests pin two things:
-  - a known public default is refused, from the environment or from SECRET_KEY
+  - a known public default in the environment is ignored, and a public
+    SECRET_KEY is replaced by the instance key, so neither ever signs
   - with no explicit secret, the key is derived from SECRET_KEY, and the
     backend that mints and the server that verifies agree on it
 
@@ -18,8 +19,10 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from fastapi import HTTPException
+from jose import jwt as jose_jwt
 
-from app.agents.mcp.auth import mint_token
+from app.agents.mcp.auth import JWT_ALGO, mint_token
 from app.agents.mcp.keys import UnsafeMCPSecret, resolve_mcp_jwt_secret
 from mcp_server.auth import verify_request
 from starlette.requests import Request
@@ -58,22 +61,45 @@ def _req_with(token: str) -> Request:
 
 
 @pytest.mark.parametrize("public_default", [PUBLIC_MCP_DEFAULT, PUBLIC_COMPOSE_DEFAULT])
-def test_public_default_mcp_secret_is_refused(env, public_default):
+def test_public_default_mcp_secret_is_ignored(env, public_default):
+    """Old Compose files and Helm values still pass a public default. It is
+    never used to sign: the key is derived from SECRET_KEY instead, so those
+    installs keep starting (#1173)."""
+    env(mcp_secret=None, app_secret=STRONG_SECRET)
+    derived = resolve_mcp_jwt_secret()
     env(mcp_secret=public_default, app_secret=STRONG_SECRET)
-    with pytest.raises(UnsafeMCPSecret):
-        resolve_mcp_jwt_secret()
+
+    assert resolve_mcp_jwt_secret() == derived
+    assert resolve_mcp_jwt_secret() != public_default
 
 
-def test_public_default_secret_key_is_refused_when_deriving(env):
+def test_public_default_secret_key_derives_from_the_instance_key(env, monkeypatch, tmp_path):
+    """SECRET_KEY on a public default is replaced by the instance's own key
+    (app.core.instance_secrets), so the derived MCP key isn't public either."""
+    import hashlib
+    import hmac
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'i.sqlite'}")
     env(mcp_secret=None, app_secret=PUBLIC_APP_DEFAULT)
-    with pytest.raises(UnsafeMCPSecret):
-        resolve_mcp_jwt_secret()
+
+    key = resolve_mcp_jwt_secret()
+
+    public = hmac.new(PUBLIC_APP_DEFAULT.encode(), b"securo:mcp-jwt:v1", hashlib.sha256).hexdigest()
+    assert key != public
+    assert len(key) == 64
 
 
-def test_mint_refuses_a_public_default(env):
+def test_mint_with_a_public_default_signs_with_the_derived_key(env):
     env(mcp_secret=PUBLIC_MCP_DEFAULT, app_secret=STRONG_SECRET)
-    with pytest.raises(UnsafeMCPSecret):
-        mint_token(user_id=uuid.uuid4())
+    token = mint_token(user_id=uuid.uuid4())
+
+    assert verify_request(_req_with(token)).user_id is not None
+    forged = jose_jwt.encode(
+        jose_jwt.get_unverified_claims(token), PUBLIC_MCP_DEFAULT, algorithm=JWT_ALGO
+    )
+    with pytest.raises(HTTPException) as refused:
+        verify_request(_req_with(forged))
+    assert refused.value.status_code == 401
 
 
 def test_derives_a_stable_key_from_secret_key(env):
@@ -104,11 +130,50 @@ def test_derived_key_mints_and_verifies(env):
 
 
 @pytest.mark.asyncio
-async def test_server_refuses_to_start_with_a_public_default(env):
-    """The container must fail to start rather than serve with a forgeable key."""
+async def test_server_starts_with_a_public_default_in_the_environment(env):
+    """The value is ignored, not fatal: an install updated without touching
+    its Compose file keeps its MCP server."""
     from mcp_server.main import lifespan, app
 
     env(mcp_secret=PUBLIC_MCP_DEFAULT, app_secret=STRONG_SECRET)
+    async with lifespan(app):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_server_refuses_to_start_with_a_short_secret_key(env):
+    """Deriving from a SECRET_KEY under 32 characters is still refused."""
+    from mcp_server.main import lifespan, app
+
+    env(mcp_secret=None, app_secret="short-but-private")
     with pytest.raises(UnsafeMCPSecret):
         async with lifespan(app):
             pass
+
+
+def test_an_unrelated_bad_token_keeps_the_generic_message(env):
+    env(mcp_secret=None, app_secret=STRONG_SECRET)
+    forged = jose_jwt.encode({"sub": str(uuid.uuid4())}, "some-other-key", algorithm=JWT_ALGO)
+
+    with pytest.raises(HTTPException) as refused:
+        verify_request(_req_with(forged))
+
+    assert refused.value.status_code == 401
+    assert "no longer accepts" not in refused.value.detail
+
+
+def test_a_token_from_the_public_derived_key_is_explained(env):
+    """Installs with no MCP secret and a public SECRET_KEY signed with the key
+    derived from it; that token is refused with the same explanation."""
+    import hashlib
+    import hmac
+
+    env(mcp_secret=None, app_secret=STRONG_SECRET)
+    public_derived = hmac.new(PUBLIC_APP_DEFAULT.encode(), b"securo:mcp-jwt:v1", hashlib.sha256).hexdigest()
+    old = jose_jwt.encode({"sub": str(uuid.uuid4())}, public_derived, algorithm=JWT_ALGO)
+
+    with pytest.raises(HTTPException) as refused:
+        verify_request(_req_with(old))
+
+    assert refused.value.status_code == 401
+    assert "no longer accepts" in refused.value.detail

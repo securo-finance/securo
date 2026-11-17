@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 
 from app.agents.config import get_agent_settings
 from app.core.config import get_settings
@@ -65,12 +66,16 @@ def resolve_mcp_jwt_secret() -> str:
     token anyone could forge.
     """
     configured = (get_agent_settings().mcp_jwt_secret or "").strip()
+    if configured in PUBLIC_DEFAULT_MCP_SECRETS:
+        # Old Compose files and Helm values still pass this. Refusing to start
+        # would stop those installs on update, so the value is ignored and the
+        # key is derived from SECRET_KEY, which is never public (#1173).
+        logging.getLogger(__name__).warning(
+            "AGENTS_MCP_JWT_SECRET is set to a public default; ignoring it and deriving "
+            "the MCP signing key from SECRET_KEY. Remove it, or %s", _SETUP_HINT[0].lower() + _SETUP_HINT[1:],
+        )
+        configured = ""
     if configured:
-        if configured in PUBLIC_DEFAULT_MCP_SECRETS:
-            raise UnsafeMCPSecret(
-                "AGENTS_MCP_JWT_SECRET is still a public default, so any token "
-                f"signed with it would be accepted. {_SETUP_HINT}"
-            )
         return configured
 
     app_secret = get_settings().secret_key.get_secret_value().strip()
@@ -86,3 +91,17 @@ def resolve_mcp_jwt_secret() -> str:
             f"{_SETUP_HINT}"
         )
     return hmac.new(app_secret.encode("utf-8"), _DERIVATION_LABEL, hashlib.sha256).hexdigest()
+
+
+def retired_public_keys() -> list[str]:
+    """Keys that signed MCP tokens on installs still on a public default.
+
+    Never used to accept a token: only to tell its holder why it stopped
+    working (see mcp_server.auth.verify_request).
+    """
+    keys = list(PUBLIC_DEFAULT_MCP_SECRETS)
+    keys += [
+        hmac.new(secret.encode("utf-8"), _DERIVATION_LABEL, hashlib.sha256).hexdigest()
+        for secret in PUBLIC_DEFAULT_APP_SECRETS
+    ]
+    return keys

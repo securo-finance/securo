@@ -97,6 +97,15 @@ async def _warm_tesouro_cache() -> None:
         logger.exception("Startup: Tesouro Direto cache warm failed")
 
 
+async def _load_stored_secret_key() -> None:
+    from app.core.config import load_stored_secret_key
+
+    for _ in range(60):
+        if await asyncio.to_thread(load_stored_secret_key):
+            return
+        await asyncio.sleep(5)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Agents on means the API mints MCP tokens and the MCP server accepts
@@ -107,6 +116,10 @@ async def lifespan(app: FastAPI):
         from app.agents.mcp.keys import resolve_mcp_jwt_secret
 
         resolve_mcp_jwt_secret()
+
+    # Old credentials may need the instance key as a fallback; read it off
+    # the event loop, and keep trying while the database comes up.
+    app.state.stored_key_task = asyncio.create_task(_load_stored_secret_key())
 
     # Startup: dispatch sync for all stale bank connections
     try:

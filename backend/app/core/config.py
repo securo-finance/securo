@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from math import isfinite
@@ -6,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import PrivateAttr, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -14,7 +16,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 CREDENTIALS_DIRECTORY: list[Path] = [
     Path(p) for p in getenv("CREDENTIALS_DIRECTORY", "/run/secrets").split(":") if p
 ]
-
 
 class Settings(BaseSettings):
     # App
@@ -24,8 +25,16 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
 
-    # Auth
-    secret_key: SecretStr = SecretStr("change-me-in-production")
+    # Auth. Signs session and password-reset tokens and derives the key that
+    # encrypts saved credentials. Left unset (or on a public default), the
+    # instance generates its own and keeps it in the database: see
+    # app.core.instance_secrets and get_settings().
+    secret_key: SecretStr = SecretStr("")
+    # Keys this instance encrypted with before, tried when opening a saved
+    # credential. Never used to sign or check a token.
+    _secret_key_fallbacks: tuple[str, ...] = PrivateAttr(default=())
+    # Set when the instance key may hold old ciphertexts but wasn't read yet.
+    _stored_key_url: str | None = PrivateAttr(default=None)
     local_auth_enabled: bool = True
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
@@ -237,6 +246,29 @@ class Settings(BaseSettings):
             self.frontend_url = f"http://localhost:{self.frontend_port}"
         return self
 
+    @property
+    def secret_key_fallbacks(self) -> tuple[str, ...]:
+        if self._stored_key_url is not None and not _in_event_loop():
+            # Read on first use rather than at import: the database may still
+            # be starting then, and a key missed once would stay missed for
+            # the life of the process. Kept only once the read succeeds.
+            # Never from the event loop: the API loads it at startup in a
+            # thread (load_stored_secret_key), so a request doesn't wait.
+            from app.core import instance_secrets as instance
+
+            try:
+                stored = instance.read_existing(self._stored_key_url, instance.SECRET_KEY_NAME)
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "Could not read the stored instance key yet: %s", exc
+                )
+                return self._secret_key_fallbacks
+            current = self.secret_key.get_secret_value()
+            if stored and stored != current:
+                self._secret_key_fallbacks = (stored, *self._secret_key_fallbacks)
+            self._stored_key_url = None
+        return self._secret_key_fallbacks
+
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":
         if not self.local_auth_enabled and not self.oidc_login_available:
@@ -272,6 +304,62 @@ class Settings(BaseSettings):
     )
 
 
+def _in_event_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def load_stored_secret_key() -> bool:
+    """Read the instance key kept as a fallback, from a thread. True once
+    there is nothing left to read."""
+    settings = get_settings()
+    settings.secret_key_fallbacks  # noqa: B018 (reads and caches)
+    return settings._stored_key_url is None
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return resolve_secret_key(Settings())
+
+
+def resolve_secret_key(settings: Settings) -> Settings:
+    """Use the instance key when the environment has none of its own (#1173).
+
+    A SECRET_KEY set in the environment always wins. Missing, or set to one of
+    the public defaults that shipped with every install path, the instance
+    uses a key generated once and stored in the database, and the credentials
+    encrypted with the public default move to it (app.core.instance_secrets).
+    """
+    from app.core import instance_secrets as instance
+
+    raw = settings.secret_key.get_secret_value()
+    configured = raw.strip()
+    if not instance.is_public_or_missing(configured):
+        # The key stays exactly as given. Anything encrypted while the
+        # instance key was in use (SECRET_KEY set after it existed) still
+        # opens: that key is read on first use (secret_key_fallbacks).
+        settings._stored_key_url = settings.database_url
+        settings._secret_key_fallbacks = tuple(
+            k for k in instance.PUBLIC_SECRET_KEYS if k != raw
+        )
+        return settings
+
+    if configured:
+        logging.getLogger(__name__).warning(
+            "SECRET_KEY is set to a public default, which anyone can use to sign in as any "
+            "user. Using this instance's own key instead."
+        )
+    # Values were encrypted with the key exactly as configured, padding and
+    # all, or with an empty one; try those as well as the public defaults.
+    old_keys = tuple(dict.fromkeys((raw, configured, *instance.PUBLIC_SECRET_KEYS)))
+    key = instance.fetch_or_create(
+        settings.database_url,
+        instance.SECRET_KEY_NAME,
+        on_created=instance.reencrypt_with(old_keys),
+    )
+    settings.secret_key = SecretStr(key)
+    settings._secret_key_fallbacks = old_keys
+    return settings

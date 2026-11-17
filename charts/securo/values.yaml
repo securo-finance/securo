@@ -17,8 +17,9 @@ secret:
   storageS3AccessKey: ""
   storageS3SecretKey: ""
   storageS3SessionToken: ""
-  # MUST change in production
-  secretKey: "dev-secret-change-in-production"
+  # Optional. Left empty, Securo generates a unique key on first start and keeps
+  # it in the database. Set one (openssl rand -hex 32) to manage it yourself.
+  secretKey: ""
   # If postgresql.enabled is true, the internal database will be deployed.
   # If postgresql.enabled is false, you must provide your external database URL here or in existingSecret.
   databaseUrl: 'postgresql+asyncpg://postgres:postgres@{{ include "securo.fullname" . }}-postgresql:5432/securo'
@@ -41,7 +42,7 @@ secret:
   # Agents (LLM). Signs the MCP server's JWTs. Empty derives it from secretKey,
   # so the install needs no extra value. There is no default on purpose: a
   # public one would let anyone mint a token for any user (#1174). A known
-  # public value is refused at startup.
+  # public value is ignored and the derived key used instead.
   agentsMcpJwtSecret: ""
   agentsOpenaiApiKey: ""
   agentsAnthropicApiKey: ""

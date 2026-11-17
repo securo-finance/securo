@@ -6,7 +6,9 @@ token anyone can sign with a string published in this repository.
 
 The suite runs with `AGENTS_MCP_JWT_SECRET` set to a test value (conftest);
 these tests force the two public defaults a real deployment used to fall
-back to, and check that a forged token gets 401 instead of data.
+back to, and check that a forged token is refused instead of reaching data.
+A public default in the environment is ignored and the key is derived from
+SECRET_KEY (#1173), so the forged signature simply doesn't verify.
 """
 from __future__ import annotations
 
@@ -70,8 +72,10 @@ async def test_tools_list_rejects_token_signed_with_public_default(mcp_secret, p
             headers={"Authorization": f"Bearer {forged}"},
         )
 
-    assert response.status_code == 500
+    assert response.status_code == 401
     assert "tools" not in response.text
+    # Refused, with a message that tells the token's holder what to do.
+    assert "no longer accepts" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -99,6 +103,5 @@ async def test_forged_token_with_public_default_cannot_read_transactions(
             headers={"Authorization": f"Bearer {forged}"},
         )
 
-    assert response.status_code == 500
-    assert response.json()["error"]["code"] == -32603
+    assert response.status_code == 401
     assert "SALARIO" not in response.text
