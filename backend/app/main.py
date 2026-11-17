@@ -99,6 +99,15 @@ async def _warm_tesouro_cache() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Agents on means the API mints MCP tokens and the MCP server accepts
+    # them. Refuse to start when the signing key is a public default: every
+    # token would be forgeable, and the failure is otherwise silent until
+    # someone uses it (issue #1174).
+    if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on"):
+        from app.agents.mcp.keys import resolve_mcp_jwt_secret
+
+        resolve_mcp_jwt_secret()
+
     # Startup: dispatch sync for all stale bank connections
     try:
         from app.worker import celery_app  # noqa: F811

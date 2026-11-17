@@ -7,6 +7,7 @@ from typing import Optional
 from jose import jwt
 
 from app.agents.config import get_agent_settings
+from app.agents.mcp.keys import resolve_mcp_jwt_secret
 
 
 JWT_ISSUER = "securo-backend"
@@ -61,4 +62,4 @@ def mint_token(
         payload["agent_id"] = str(agent_id)
     if external:
         payload["ext"] = True
-    return jwt.encode(payload, s.mcp_jwt_secret, algorithm=JWT_ALGO)
+    return jwt.encode(payload, resolve_mcp_jwt_secret(), algorithm=JWT_ALGO)
