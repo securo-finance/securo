@@ -913,7 +913,7 @@ async def test_reconnect_after_disconnect_resyncs_without_duplicates(
     mock_provider.get_accounts = AsyncMock(return_value=[
         AccountData(
             external_id="keep-acc-1", name="Connected Account",
-            type="checking", balance=Decimal("0"), currency="BRL",
+            type="checking", balance=Decimal("123.45"), currency="BRL",
         ),
     ])
     mock_provider.get_transactions = AsyncMock(return_value=[
@@ -938,6 +938,10 @@ async def test_reconnect_after_disconnect_resyncs_without_duplicates(
         await session.execute(select(Account).where(Account.user_id == test_user.id))
     ).scalars().all()
     assert [a.id for a in accounts] == [account.id]
+    # The resumed sync really ran against the kept account: it took the
+    # balance the provider reports now.
+    await session.refresh(accounts[0])
+    assert accounts[0].balance == Decimal("123.45")
     synced = (
         await session.execute(
             select(Transaction).where(

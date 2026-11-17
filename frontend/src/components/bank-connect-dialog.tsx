@@ -89,11 +89,13 @@ export function BankConnectDialog({
         )
       }
       invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
       toast.success(t('accounts.connected'))
     } catch {
       toast.error(t('accounts.connectError'))
     } finally {
+      // Also after a failure: the callback may have reactivated the
+      // connection before the sync failed, and the list must show that.
+      queryClient.invalidateQueries({ queryKey: ['connections'] })
       handleClose()
     }
   }
