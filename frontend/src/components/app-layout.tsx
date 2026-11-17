@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react'
 import {
   getAccountName,
+  includedInRollups,
   sidebarAccountBalance,
   sidebarAccounts,
   sortAccountsByAbsoluteBalance,
@@ -217,7 +218,8 @@ export function AppLayout() {
   const visibleAccounts = activeAccountIds
     ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
     : allAccounts
-  const totalBalance = sumAccountsTotal(visibleAccounts)
+  const totalBalance = sumAccountsTotal(activeAccountIds === null
+    ? includedInRollups(visibleAccounts) : visibleAccounts)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
@@ -509,6 +511,7 @@ export function AppLayout() {
             <div className={cn('px-3 pb-2 mt-2', desktopSidebarCollapsed && 'lg:hidden')}>
               <button
                 onClick={() => setAccountsExpanded(!accountsExpanded)}
+                aria-expanded={accountsExpanded}
                 className="flex items-center justify-between w-full px-3 py-2 hover:text-sidebar-foreground transition-colors"
               >
                 <span className="text-[11px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted">

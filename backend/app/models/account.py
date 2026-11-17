@@ -74,6 +74,12 @@ class Account(Base):
         nullable=True, index=True,
     )
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Keep the account visible everywhere (lists, ledger, own pages, export)
+    # but out of rollup totals (net worth, reports, budgets). Reports-level
+    # mirror of `transactions.exclude_from_pnl`, one layer up.
+    exclude_from_reports: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     connection: Mapped[Optional["BankConnection"]] = relationship(back_populates="accounts")

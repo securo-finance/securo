@@ -46,8 +46,9 @@ vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
 }))
 
+const collection = vi.hoisted(() => ({ ids: null as string[] | null, wallets: null as string[] | null }))
 vi.mock('@/contexts/collection-filter-context', () => ({
-  useCollectionFilter: () => ({ activeAccountIds: null, activeWalletIds: null }),
+  useCollectionFilter: () => ({ activeAccountIds: collection.ids, activeWalletIds: collection.wallets }),
 }))
 
 const privacy = vi.hoisted(() => ({ on: false }))
@@ -70,6 +71,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 8, 12, 12))
   vi.clearAllMocks()
+  collection.ids = null
+  collection.wallets = null
   layouts.saved = {}
   layouts.saves = []
   privacy.on = false
@@ -83,6 +86,25 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('Reports page — Custom range segment', () => {
+  it('does not fetch unfiltered money for a fully empty collection', async () => {
+    collection.ids = []
+    collection.wallets = []
+    renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.dataRange).toHaveBeenCalled())
+    expect(api.reports.netWorth).not.toHaveBeenCalled()
+    expect(screen.queryByText('$1,000.00')).not.toBeInTheDocument()
+  })
+
+  it('retains wallet-only net worth without fetching account-only reports', async () => {
+    collection.ids = []
+    collection.wallets = ['wallet']
+    const { user } = renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalled())
+    expect(api.reports.netWorth.mock.calls[0].slice(2, 4)).toEqual([[], ['wallet']])
+    await user.click(screen.getByRole('button', { name: t('reports.incomeExpenses') }))
+    expect(api.reports.incomeExpenses).not.toHaveBeenCalled()
+  })
+
   it('loads the Net Worth tab with the 1Y preset by default', async () => {
     renderWithProviders(<ReportsPage />)
 
