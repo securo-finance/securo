@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pyotp
@@ -132,17 +132,13 @@ async def test_enable_2fa_invalid_code(client: AsyncClient, auth_headers: dict, 
 
 def test_verify_totp_allows_adjacent_time_windows():
     secret = pyotp.random_base32()
-    fixed_time = datetime(2026, 7, 19, 12, 0)
+    fixed_time = datetime(2026, 7, 19, 12, 0, tzinfo=timezone.utc)
     totp = pyotp.TOTP(secret)
     previous_code = totp.at(fixed_time, counter_offset=-1)
     next_code = totp.at(fixed_time, counter_offset=1)
 
-    class FrozenDateTime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return cls(2026, 7, 19, 12, 0, tzinfo=tz)
-
-    with patch("pyotp.totp.datetime.datetime", FrozenDateTime):
+    # pyotp 2.12 reads the clock with time.time(), not datetime.datetime.now().
+    with patch("pyotp.totp.time.time", return_value=fixed_time.timestamp()):
         assert _verify_totp(secret, previous_code)
         assert _verify_totp(secret, next_code)
 
