@@ -21,24 +21,29 @@ def fernet_for(secret_key: str) -> Fernet:
     return credentials_fernet(secret_key)
 
 
-@functools.lru_cache(maxsize=1)
-def _fernet() -> MultiFernet:
+def _keys() -> tuple[str, ...]:
     settings = get_settings()
-    keys = [settings.secret_key.get_secret_value(), *settings.secret_key_fallbacks]
-    # Encrypts with the first key; opens with any of them.
-    return MultiFernet([fernet_for(k) for k in dict.fromkeys(keys) if k])
+    return (settings.secret_key.get_secret_value(), *settings.secret_key_fallbacks)
+
+
+@functools.lru_cache(maxsize=4)
+def _fernet(keys: tuple[str, ...] = ()) -> MultiFernet:
+    keys = keys or _keys()
+    # Encrypts with the first key; opens with any of them, an empty legacy
+    # key included.
+    return MultiFernet([fernet_for(k) for k in dict.fromkeys(keys)])
 
 
 def encrypt(plaintext: str | None) -> str | None:
     if not plaintext:
         return None
-    return _fernet().encrypt(plaintext.encode("utf-8")).decode("ascii")
+    return _fernet(_keys()).encrypt(plaintext.encode("utf-8")).decode("ascii")
 
 
 def decrypt(ciphertext: str | None) -> str | None:
     if not ciphertext:
         return None
     try:
-        return _fernet().decrypt(ciphertext.encode("ascii")).decode("utf-8")
+        return _fernet(_keys()).decrypt(ciphertext.encode("ascii")).decode("utf-8")
     except (InvalidToken, ValueError):
         return None  # silently treat corrupt/rotated entries as missing

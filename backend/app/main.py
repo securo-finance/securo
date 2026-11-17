@@ -110,6 +110,15 @@ async def lifespan(app: FastAPI):
     # Background pre-warm of the Tesouro cache (non-blocking; gated to BRL
     # instances inside the helper). Kept on app.state so it isn't GC'd.
     app.state.tesouro_warm_task = asyncio.create_task(_warm_tesouro_cache())
+    # Load the MCP signing secret off the event loop, so the first token a
+    # request mints doesn't wait for the database on the loop thread.
+    if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on"):
+        try:
+            from app.agents.config import get_agent_settings
+
+            await asyncio.to_thread(get_agent_settings().signing_secret)
+        except Exception:
+            logger.exception("Startup: could not load the MCP signing secret")
     yield
     # Shutdown
     await close_redis()

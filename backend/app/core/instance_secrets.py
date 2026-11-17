@@ -194,13 +194,10 @@ def fetch_or_create(database_url: str, name: str, on_created: OnCreated | None =
 
 
 def read_existing(database_url: str, name: str) -> str | None:
-    """The stored instance value, or None when there is none or the database
-    can't be read right now. Never creates anything."""
-    try:
-        return _run(lambda: _read_only(database_url, name))
-    except Exception as exc:  # the caller has a usable key of its own
-        logger.debug("Could not read the stored instance %s: %s", name, exc)
-        return None
+    """The stored instance value, or None when there is none. Never creates
+    anything. Raises when the database can't be read, so the caller can tell
+    "nothing stored" from "couldn't look"."""
+    return _run(lambda: _read_only(database_url, name))
 
 
 # --- Re-encrypting what a public default protected ---------------------------
@@ -232,7 +229,9 @@ def reencrypt_with(old_keys: Iterable[str]) -> OnCreated:
     the new instance key, inside the transaction that stores that key."""
     from app.core.fernet_keys import credentials_fernet, plugin_secrets_fernet
 
-    old = [k for k in dict.fromkeys(old_keys) if k]
+    # An empty key is a real one here: installs that ran with SECRET_KEY=""
+    # encrypted with it.
+    old = [k for k in dict.fromkeys(old_keys) if k is not None]
 
     async def hook(conn: AsyncConnection, new_key: str) -> None:
         def move(fernet_for: Callable[[str], Fernet], token: str) -> str | None:

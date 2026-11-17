@@ -14,6 +14,7 @@ import json
 import os
 import re
 import threading
+import uuid
 from pathlib import Path
 
 import pytest
@@ -526,3 +527,75 @@ def test_entry_points_start_without_a_secret_key(tmp_path, module):
 
     assert done.returncode == 0, done.stderr[-2000:]
     assert len(stored(url)) == 1
+
+
+# --- Review follow-ups ------------------------------------------------------------
+
+def test_stored_key_missed_at_startup_is_read_once_the_database_answers(db_url, monkeypatch):
+    """An install that set its own key after running on the instance key:
+    if the database is still starting when settings load, the instance key
+    must not be dropped from the fallbacks for the life of the process."""
+    generated = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+    real_read = instance.read_existing
+    calls = {"n": 0}
+
+    def flaky(url, name):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ConnectionRefusedError("database starting")
+        return real_read(url, name)
+
+    monkeypatch.setattr(instance, "read_existing", flaky)
+
+    assert generated not in settings.secret_key_fallbacks  # first look fails
+    assert settings.secret_key_fallbacks[0] == generated  # next one reads it
+    assert settings.secret_key_fallbacks[0] == generated
+    assert calls["n"] == 2  # kept once read
+
+
+@pytest.mark.parametrize("raw", [f" {OLD_COMPOSE_DEFAULT}\n", "", "   "])
+def test_credentials_under_the_exact_old_value_move(db_url, monkeypatch, raw):
+    """Values were encrypted with SECRET_KEY exactly as set: padded, or an
+    explicitly empty value."""
+    seed_credentials(db_url, raw)
+
+    settings = settings_for(db_url, raw, monkeypatch)
+    new_key = settings.secret_key.get_secret_value()
+
+    after = read_credentials(db_url)
+    assert crypto.fernet_for(new_key).decrypt(after["llm"][1].encode()) == b"sk-llm-key"
+    assert json.loads(vault.fernet_for(new_key).decrypt(after["plugin"].encode())) == {"token": "plugin-token"}
+    assert raw in settings.secret_key_fallbacks
+
+
+def test_value_under_an_empty_legacy_key_still_opens(app_settings):
+    app_settings("")
+    legacy = crypto.fernet_for("").encrypt(b"legacy").decode()
+    sealed = vault.fernet_for("").encrypt(b'{"k": 1}').decode()
+
+    assert crypto.decrypt(legacy) == "legacy"
+    assert vault.unseal(sealed) == {"k": 1}
+
+
+def test_mcp_token_lifetime_starts_after_the_secret_loads(monkeypatch):
+    """On first use the secret can wait for the database; that wait must not
+    come out of the token's lifetime."""
+    from jose import jwt as jose_jwt
+
+    from app.agents.config import AgentSettings
+    from app.agents.mcp import auth
+
+    clock = {"t": 1_000_000.0}
+
+    def slow_secret(self):
+        clock["t"] += 20  # waited for the database
+        return "my-own-mcp-signing-secret"
+
+    monkeypatch.setattr(AgentSettings, "signing_secret", slow_secret)
+    monkeypatch.setattr(auth.time, "time", lambda: clock["t"])
+
+    token = auth.mint_token(user_id=uuid.uuid4(), ttl_seconds=10)
+
+    claims = jose_jwt.get_unverified_claims(token)
+    assert claims["exp"] - clock["t"] == 10

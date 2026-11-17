@@ -31,7 +31,8 @@ def _fernet() -> MultiFernet:
     # before (see Settings.secret_key_fallbacks).
     settings = get_settings()
     keys = [settings.secret_key.get_secret_value(), *settings.secret_key_fallbacks]
-    return MultiFernet([fernet_for(k) for k in dict.fromkeys(keys) if k])
+    # An empty legacy key is kept: installs that ran with SECRET_KEY="" sealed with it.
+    return MultiFernet([fernet_for(k) for k in dict.fromkeys(keys)])
 
 
 def seal(secrets: dict[str, Any]) -> str | None:

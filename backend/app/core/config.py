@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     # Keys this instance encrypted with before, tried when opening a saved
     # credential. Never used to sign or check a token.
     _secret_key_fallbacks: tuple[str, ...] = PrivateAttr(default=())
+    # Set when the instance key may hold old ciphertexts but wasn't read yet.
+    _stored_key_url: str | None = PrivateAttr(default=None)
     local_auth_enabled: bool = True
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
@@ -204,6 +206,23 @@ class Settings(BaseSettings):
 
     @property
     def secret_key_fallbacks(self) -> tuple[str, ...]:
+        if self._stored_key_url is not None:
+            # Read on first use rather than at import: the database may still
+            # be starting then, and a key missed once would stay missed for
+            # the life of the process. Kept only once the read succeeds.
+            from app.core import instance_secrets as instance
+
+            try:
+                stored = instance.read_existing(self._stored_key_url, instance.SECRET_KEY_NAME)
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "Could not read the stored instance key yet: %s", exc
+                )
+                return self._secret_key_fallbacks
+            current = self.secret_key.get_secret_value()
+            if stored and stored != current:
+                self._secret_key_fallbacks = (stored, *self._secret_key_fallbacks)
+            self._stored_key_url = None
         return self._secret_key_fallbacks
 
     @model_validator(mode="after")
@@ -256,13 +275,15 @@ def resolve_secret_key(settings: Settings) -> Settings:
     """
     from app.core import instance_secrets as instance
 
-    configured = settings.secret_key.get_secret_value().strip()
+    raw = settings.secret_key.get_secret_value()
+    configured = raw.strip()
     if not instance.is_public_or_missing(configured):
-        # Keep reading anything encrypted while the instance key was in use,
-        # in case SECRET_KEY was set after it existed.
-        stored = instance.read_existing(settings.database_url, instance.SECRET_KEY_NAME)
+        # The key stays exactly as given. Anything encrypted while the
+        # instance key was in use (SECRET_KEY set after it existed) still
+        # opens: that key is read on first use (secret_key_fallbacks).
+        settings._stored_key_url = settings.database_url
         settings._secret_key_fallbacks = tuple(
-            k for k in dict.fromkeys((stored, *instance.PUBLIC_SECRET_KEYS)) if k and k != configured
+            k for k in instance.PUBLIC_SECRET_KEYS if k != raw
         )
         return settings
 
@@ -271,12 +292,14 @@ def resolve_secret_key(settings: Settings) -> Settings:
             "SECRET_KEY is set to a public default, which anyone can use to sign in as any "
             "user. Using this instance's own key instead."
         )
-    old_keys = tuple(dict.fromkeys((configured, *instance.PUBLIC_SECRET_KEYS)))
+    # Values were encrypted with the key exactly as configured, padding and
+    # all, or with an empty one; try those as well as the public defaults.
+    old_keys = tuple(dict.fromkeys((raw, configured, *instance.PUBLIC_SECRET_KEYS)))
     key = instance.fetch_or_create(
         settings.database_url,
         instance.SECRET_KEY_NAME,
         on_created=instance.reencrypt_with(old_keys),
     )
     settings.secret_key = SecretStr(key)
-    settings._secret_key_fallbacks = tuple(k for k in old_keys if k)
+    settings._secret_key_fallbacks = old_keys
     return settings
