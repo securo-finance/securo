@@ -3867,11 +3867,20 @@ async def sync_connection(
                 }
         else:
             # Throttled: the backoff stays (the scheduler counts this run as a
-            # rate-limited failure) and the provider's Retry-After, if any,
-            # becomes its floor. The pending catch-up stays due as well, since
-            # the throttled accounts were not re-read.
+            # rate-limited failure) and each 429 sets its floor: its own
+            # Retry-After, or 6 hours without one, the longest winning. The
+            # pending catch-up stays due as well, since the throttled accounts
+            # were not re-read.
             sync_outcome = "partial" if transactions_fetched else "rate_limited"
-            connection.settings = _with_retry_after(connection.settings, retry_after)
+            connection.settings = _with_retry_after(
+                connection.settings,
+                _throttle_retry_after(
+                    provider,
+                    rate_limited_accounts,
+                    retry_after,
+                    throttled_without_retry_after,
+                ),
+            )
         action_required_warnings = getattr(provider, "action_required_warnings", None)
         if isinstance(action_required_warnings, list) and action_required_warnings:
             logger.warning(

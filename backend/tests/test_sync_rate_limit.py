@@ -245,11 +245,13 @@ async def test_transactions_429_keeps_other_accounts_and_backs_off(
         )
     ).scalar_one()
     assert ledger == throttled.balance
-    # Checkpoint kept for the skipped account. Without a Retry-After nothing
-    # is written: a manual sync does not hold back the scheduler, which
-    # counts its own throttled runs (see the scheduled task tests below).
+    # Checkpoint kept for the skipped account. Without a Retry-After the
+    # usual 6 hours become the floor, but no failure is counted: a manual
+    # sync does not hold back the scheduler by itself, which counts its own
+    # throttled runs (see the scheduled task tests below).
     assert result_conn.last_sync_at == before
-    assert SYNC_BACKOFF_KEY not in (result_conn.settings or {})
+    assert "failures" not in _backoff(result_conn)
+    assert 6 * 3600 - 100 < _retry_floor_seconds(result_conn) <= 6 * 3600
 
 
 @pytest.mark.asyncio
@@ -308,7 +310,11 @@ async def test_partial_sync_keeps_existing_backoff(
         )
 
     assert outcome == "partial"
-    assert _backoff(result_conn) == backoff
+    state = dict(_backoff(result_conn))
+    # The throttle had no Retry-After: the usual 6 hours become the floor.
+    assert 6 * 3600 - 100 < _retry_floor_seconds(result_conn) <= 6 * 3600
+    state.pop(RETRY_NOT_BEFORE_KEY)
+    assert state == backoff
 
 
 @pytest.mark.asyncio
@@ -862,6 +868,60 @@ async def test_manual_429_with_retry_after_does_not_hold_back_scheduler(
 
     assert (result["backing_off"], result["rate_limited"]) == (0, 1)
     assert provider.get_accounts.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_partial_manual_sync_after_scheduled_failure_keeps_six_hour_floor(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A scheduled sync fails and leaves a backoff. A manual sync then ends
+    partial: account A's 429 has no Retry-After (6 hours by default), account
+    B's has one hour. B's shorter header must not undercut A's default, or
+    the scheduler could come back before the 6 hours."""
+    stale = datetime.now(timezone.utc) - timedelta(hours=5)
+    user_id, workspace_id = test_user.id, test_workspace.id
+    conn = await _make_connection(session, user_id, workspace_id, last_sync_at=stale)
+    conn_id = conn.id
+    failing = _mock_provider_two_accounts()
+    failing.get_accounts = AsyncMock(side_effect=httpx.ConnectError("boom"))
+    await _run_sync_all(session, failing)
+    await session.refresh(conn)
+    assert (_backoff(conn)["failures"], _backoff(conn)["rate_limited"]) == (1, False)
+
+    provider = _mock_provider_two_accounts()
+    provider.rate_limited_account_ids = set()
+    provider.rate_limit_retry_after = None
+    provider.get_accounts = AsyncMock(
+        return_value=[
+            AccountData(
+                external_id=ext_id,
+                name=f"Account {ext_id[-1].upper()}",
+                type="checking",
+                balance=Decimal("100"),
+                currency="BRL",
+            )
+            for ext_id in ("rl-acc-a", "rl-acc-b", "rl-acc-c")
+        ]
+    )
+    original = provider.get_transactions.side_effect
+
+    def _transactions(creds, account_external_id, since=None, payee_source="auto"):
+        if account_external_id == "rl-acc-a":
+            raise ProviderRateLimited("429", retry_after=None)
+        if account_external_id == "rl-acc-b":
+            raise ProviderRateLimited("429", retry_after=3600.0)
+        return original(creds, account_external_id, since, payee_source)
+
+    provider.get_transactions = AsyncMock(side_effect=_transactions)
+
+    with _sync_patches(provider):
+        result_conn, _, outcome = await sync_connection(
+            session, conn_id, workspace_id, user_id
+        )
+
+    assert outcome == "partial"
+    assert _backoff(result_conn)["failures"] == 1
+    assert 6 * 3600 - 100 < _retry_floor_seconds(result_conn) <= 6 * 3600
 
 
 class _SessionMakerProxy:
