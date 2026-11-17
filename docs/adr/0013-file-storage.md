@@ -1,6 +1,6 @@
 # 0013. Files go through a storage provider
 
-- Status: Superseded by 0019
+- Status: Superseded by [0019](0019-s3-storage.md)
 - Date: 2026-03-27
 - Origin: #37 (transaction attachments), #718 (invoice attachments)
 
