@@ -62,7 +62,7 @@ describe('lineFromProduct', () => {
 
   it('copies the product in and remembers where it came from', () => {
     const p = product([price({ id: 'usd', unit_price: '200.00', tax_rate: '10' })])
-    expect(lineFromProduct(current, p, p.prices[0])).toEqual({
+    expect(lineFromProduct(current, p, p.prices[0])).toStrictEqual({
       description: 'Consulting hour',
       quantity: '3',
       unit: 'h',
@@ -75,13 +75,30 @@ describe('lineFromProduct', () => {
 
   it('leaves the amount for the person when there is no price in the currency', () => {
     const p = product([], { unit: null })
-    expect(lineFromProduct(current, p, null)).toEqual({
+    expect(lineFromProduct(current, p, null)).toStrictEqual({
       ...current,
       description: 'Consulting hour',
       product_id: 'prod',
       price_id: null,
     })
   })
+
+  // An omitted key is what lets the server fill the product's refs, and
+  // lets an agreement term keep inheriting refs the product gains later.
+  it.each([{ service_code: 'new-code' }, null])(
+    'drops the previous product fiscal references for a product with %j',
+    (fiscal_refs) => {
+      const previous = {
+        ...current,
+        product_id: 'old-product',
+        fiscal_refs: { service_code: 'old-code' },
+      }
+      const line = lineFromProduct(previous, product([], { fiscal_refs }), null)
+
+      expect(line.product_id).toBe('prod')
+      expect('fiscal_refs' in line).toBe(false)
+    },
+  )
 })
 
 describe('productActions', () => {

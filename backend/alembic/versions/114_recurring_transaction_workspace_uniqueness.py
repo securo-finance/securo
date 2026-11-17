@@ -1,14 +1,14 @@
 """scope user-owned records to workspaces
 
-Revision ID: 099
-Revises: 098
+Revision ID: 114
+Revises: 113
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "099"
-down_revision = "098"
+revision = "114"
+down_revision = "113"
 branch_labels = None
 depends_on = None
 

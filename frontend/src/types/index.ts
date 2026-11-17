@@ -6,6 +6,8 @@ export interface User {
   is_verified: boolean
   is_2fa_enabled: boolean
   preferences: UserPreferences
+  /** The theme picked from the library; null is Securo's own look. */
+  theme?: string | null
 }
 
 export interface AdminUser {
@@ -163,6 +165,8 @@ export interface SyncResult extends BankConnection {
   sync_outcome: 'refreshed' | 'rate_limited'
 }
 
+export type AccountType = 'checking' | 'savings' | 'credit_card' | 'loan' | 'investment' | 'wallet'
+
 export interface Account {
   id: string
   user_id: string
@@ -179,6 +183,14 @@ export interface Account {
   institution_logo_url: string | null
   type: string
   secured_asset_id?: string | null
+  // Loan accounts only: contract terms the payment schedule is computed from.
+  loan_kind?: LoanKind | null
+  loan_original_amount?: number | null
+  loan_interest_rate?: number | null
+  loan_rate_period?: LoanRatePeriod | null
+  loan_term_months?: number | null
+  loan_first_payment_date?: string | null
+  loan_amortization?: LoanAmortization | null
   balance: number
   current_balance: number
   previous_balance: number | null
@@ -311,9 +323,20 @@ export interface Transaction {
   // available, cycle math otherwise). Setting it forces the tx into the
   // bill whose due_date matches.
   effective_bill_date: string | null
+  // Optional period-attribution override. The bank-provided `date` remains
+  // unchanged; null restores automatic cash/accrual bucketing.
+  reporting_date_override: string | null
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
+  // Split across several categories (#425): `category_id` is then null and
+  // each part lives in `category_lines`, adding up to `amount`.
+  has_category_lines?: boolean
+  category_lines?: TransactionCategoryLine[]
+  // Set by a list filtered by category: the part of a split row that falls
+  // in the filter, so totals built from rows match the report they came from.
+  matched_amount?: number | null
+  matched_amount_primary?: number | null
   // Shared-transaction view fields. Set per-request when the viewer
   // is a linked split member but not the owner. Render `viewer_share`
   // as the amount and treat the row as read-only — editing belongs
@@ -362,6 +385,7 @@ export interface InstallmentSeriesInput {
     fx_rate_used?: number | null
     effective_bill_date?: string | null
     splits?: TransactionSplitsInput | null
+    category_lines?: TransactionCategoryLinesInput | null
   }
   installments: number
   first_installment_status?: 'posted' | 'pending'
@@ -369,6 +393,33 @@ export interface InstallmentSeriesInput {
 }
 
 export type ShareType = 'equal' | 'exact' | 'percent'
+
+export type CategoryLineShareType = 'exact' | 'percent'
+
+export interface TransactionCategoryLine {
+  id: string
+  category_id: string
+  amount: number
+  share_type: CategoryLineShareType
+  share_pct: number | null
+  position: number
+  notes: string | null
+  category?: Category | null
+}
+
+export interface TransactionCategoryLineInput {
+  category_id: string
+  amount?: number | null
+  share_pct?: number | null
+  notes?: string | null
+}
+
+// Same semantics as `splits`: leave it out to keep the current parts, send
+// two or more lines to split, send an empty list to undo the split.
+export interface TransactionCategoryLinesInput {
+  share_type: CategoryLineShareType
+  lines: TransactionCategoryLineInput[]
+}
 
 export interface TransactionSplit {
   id: string
@@ -397,8 +448,9 @@ export interface TransactionSplitsInput {
 // TransactionSplitsInput the split section produces, not the
 // TransactionSplit[] rows the API returns, so the edit payload type reflects
 // the form's actual shape.
-export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits'> & {
+export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits' | 'category_lines'> & {
   splits?: TransactionSplitsInput | null
+  category_lines?: TransactionCategoryLinesInput
 }
 
 export type GroupKind = 'social' | 'cost_center' | 'project' | 'client' | 'other'
@@ -446,7 +498,8 @@ export interface GroupSettlement {
 export interface GroupBalanceLine {
   member_id: string
   currency: string
-  // Positive = member owes the owner. Negative = owner owes member.
+  // Relative to the viewer: positive = member owes the viewer,
+  // negative = the viewer owes the member.
   amount: number
   // FX-converted to the group's default currency for cross-currency rollups.
   amount_in_default_currency: number
@@ -459,6 +512,28 @@ export interface GroupBalances {
   lines: GroupBalanceLine[]
 }
 
+export interface GroupSummaryMonth {
+  /** "YYYY-MM" — the client formats it for display. */
+  month: string
+  total: number
+}
+
+export interface GroupSummaryCategory {
+  /** Null for transactions with no category. */
+  category_id: string | null
+  name: string | null
+  color: string | null
+  total: number
+}
+
+export interface GroupSummary {
+  group_id: string
+  default_currency: string
+  total_moved: number
+  months: GroupSummaryMonth[]
+  categories: GroupSummaryCategory[]
+}
+
 /** A fiscal document belonging to a payee. `kind` mirrors the backend's
  *  closed TaxIdKind; the value arrives normalised. */
 export interface PayeeTaxId {
@@ -468,7 +543,7 @@ export interface PayeeTaxId {
 
 export interface Payee {
   id: string
-  user_id: string
+  user_id: string | null
   name: string
   /** Legal nature, or null when unknown — the normal state for a row sync created. */
   type: 'person' | 'company' | null
@@ -551,6 +626,227 @@ export interface RuleExportItem {
   is_active: boolean
 }
 
+export interface RulePack {
+  code: string
+  /** English name; `names` has it per locale. */
+  name: string
+  names: Record<string, string>
+  flag: string
+  rule_count: number
+  installed: boolean
+  /** Rules in this workspace that still come from the pack. */
+  rules_from_pack: number
+}
+
+/** Removing a pack deletes `remove` and keeps `keep`, the rules the user edited. */
+export interface RulePackRemoval {
+  remove: { id: string; name: string }[]
+  keep: { id: string; name: string }[]
+  /** Identifies this plan; removal is refused if the plan changed since. */
+  token: string
+}
+
+/** Text per locale; always has `en`. */
+export type LocalizedText = Record<string, string>
+
+export type PluginAction = 'install' | 'update' | 'remove'
+export type PluginItemKind = 'category_groups' | 'categories' | 'rules'
+
+/** One field of an integration's connection form. */
+export interface PluginField {
+  key: string
+  label: LocalizedText
+  /** Kept encrypted and never shown again. */
+  secret: boolean
+  required: boolean
+}
+
+/** A connection to an outside service that a plugin with code offers. */
+export interface PluginIntegration {
+  key: string
+  name: LocalizedText
+  description?: LocalizedText | null
+  auth: 'credentials' | 'oauth' | 'none'
+  fields: PluginField[]
+  /** How often Securo asks the plugin to sync; null for never. */
+  sync_minutes: number | null
+}
+
+/** A host a plugin with code may reach, and why. */
+export interface PluginHost {
+  host: string
+  purpose: LocalizedText
+}
+
+/** What a plugin with code may read or change in the workspace, and why. */
+export interface PluginScope {
+  scope: string
+  purpose: LocalizedText
+}
+
+/** A theme a plugin adds to the library: colors for Securo's tokens, nothing else. */
+export interface PluginTheme {
+  key: string
+  name: LocalizedText
+  light: Record<string, string>
+  dark: Record<string, string>
+  radius?: number | null
+  font?: 'sans' | 'mono' | 'serif' | null
+}
+
+export interface InstalledPlugin {
+  plugin_id: string
+  name: LocalizedText
+  version: string
+  commit: string
+  installed_at: string
+  /** For plugins with code. */
+  integrations: PluginIntegration[]
+  network: PluginHost[]
+  api_scopes: PluginScope[]
+  /** For sign-in integrations: the address to register with the service. */
+  redirect_uri: string | null
+  /** Themes it adds to the library. */
+  themes?: PluginTheme[]
+}
+
+export type PluginConnectionStatus = 'pending' | 'active' | 'error' | 'needs_auth'
+
+/** A connection made through a plugin. Its secrets never come back. */
+export interface PluginConnection {
+  id: string
+  plugin_id: string
+  integration: string
+  name: string
+  status: PluginConnectionStatus
+  config: Record<string, string>
+  /** Secret fields that are set, by key. */
+  secret_fields: string[]
+  sync_minutes: number | null
+  last_sync_at: string | null
+  last_error: string | null
+  created_at: string
+}
+
+/** What the owner agrees to when adding, updating or removing a plugin with code. */
+export interface PluginCodeConsent {
+  network: PluginHost[]
+  api_scopes: PluginScope[]
+  integrations: { key: string; name: LocalizedText; auth: PluginIntegration['auth'] }[]
+  /** On an update: hosts and scopes the installed version didn't have. */
+  new_hosts: string[]
+  new_scopes: string[]
+  /** Connections in this workspace, removed along with the plugin. */
+  connections: number
+  /** An update to a version without code: its connections go, as on removal. */
+  drops_code?: boolean
+}
+
+export interface PluginCatalogEntry {
+  id: string
+  owner: string
+  repository: string
+  release: string
+  commit: string
+  name: LocalizedText
+  description: LocalizedText
+  version: string
+  license: string
+  min_securo_version: string
+  /** How many items of each kind the plugin brings, by contribution kind. */
+  contributes: Record<string, number>
+  locales: string[]
+  /** The repository's GitHub topics. */
+  topics: string[]
+  stars: number
+  /** Stars gained in the last 7 days. */
+  stars_7d: number
+  added_at: string | null
+  updated_at: string | null
+  revoked: boolean
+  revoked_reason: string | null
+  /** This Securo is at least min_securo_version. */
+  compatible: boolean
+  /** This Securo can apply everything the plugin contributes. */
+  supported: boolean
+  /** The workspace types it's meant for. */
+  workspaces: string[]
+  /** It's meant for this workspace's type. */
+  fits_workspace: boolean
+  installed_version: string | null
+  update_available: boolean
+}
+
+/** An item a plugin points at: one of its own, or a built-in default. */
+export interface PluginRef {
+  key: string
+  name: LocalizedText
+  default: boolean
+}
+
+export interface PluginContents {
+  category_groups: { key: string; name: LocalizedText; icon: string; color: string }[]
+  categories: {
+    key: string
+    name: LocalizedText
+    icon: string
+    color: string
+    group: PluginRef | null
+    treat_as_transfer: boolean
+  }[]
+  rules: {
+    key: string
+    name: string
+    priority: number
+    conditions_op: 'and' | 'or'
+    conditions: RuleConditionNode[]
+    actions: { op: string; value?: string | boolean | null; category: PluginRef | null }[]
+  }[]
+  integrations?: PluginIntegration[]
+  network?: PluginHost[]
+  api_scopes?: PluginScope[]
+  themes?: PluginTheme[]
+}
+
+/** One plugin opened from the catalog. */
+export interface PluginDetail {
+  plugin: PluginCatalogEntry
+  /** Markdown, from the catalog's verified copy. */
+  readme: string | null
+  /** Null when this Securo can't read what the plugin contains. */
+  contents: PluginContents | null
+}
+
+export interface PluginItem {
+  kind: PluginItemKind
+  key: string
+  name: string
+}
+
+/** What installing, updating or removing a plugin does, item by item. */
+export interface PluginPlan {
+  action: PluginAction
+  plugin_id: string
+  version: string | null
+  commit: string | null
+  token: string
+  create: PluginItem[]
+  update: PluginItem[]
+  delete: PluginItem[]
+  /** Edited by the user: left as they are. */
+  keep: PluginItem[]
+  /** No longer the plugin's (edited, or still in use): handed over to the user. */
+  release: PluginItem[]
+  /** Already in the workspace by name: left alone. */
+  existing: PluginItem[]
+  unresolved: PluginItem[]
+  default_categories: string[]
+  /** For plugins with code: what the owner agrees to. */
+  code?: PluginCodeConsent | null
+  /** Themes it adds to the library and takes out of it (members using one go back to Securo's own). */
+  themes?: { added: { key: string; name: LocalizedText }[]; removed: { key: string; name: LocalizedText }[] } | null
+}
+
 export interface RuleExportPayload {
   format: 'securo-categorization-rules'
   version: number
@@ -575,6 +871,7 @@ export interface RulePreviewItem {
   type: 'debit' | 'credit'
   current_category_id: string | null
   current_category_name: string | null
+  current_has_category_lines?: boolean
   new_category_id: string | null
   new_category_name: string | null
   will_change: boolean
@@ -625,6 +922,8 @@ export interface ImportPreviewTransaction {
   category_id?: string | null
   force_uncategorized?: boolean
   notes?: string | null
+  /** A split across categories read back from a CSV export. */
+  category_lines?: { category_name: string; amount: number }[] | null
 }
 
 export interface ImportReviewTransaction extends ImportPreviewTransaction {
@@ -659,6 +958,9 @@ export interface RecurringTransaction {
   next_occurrence: string
   amount_primary: number | null
   fx_rate_used: number | null
+  /** Split across categories: every occurrence starts with these parts. */
+  has_category_lines?: boolean
+  category_lines?: TransactionCategoryLine[]
 }
 
 export interface ProjectedTransaction {
@@ -675,6 +977,16 @@ export interface ProjectedTransaction {
   category_icon: string | null
   category_color: string | null
   category_treat_as_transfer: boolean
+  /** Split recurring template: the parts, in the occurrence's currency. */
+  has_category_lines?: boolean
+  category_lines?: {
+    category_id: string
+    category_name: string | null
+    category_icon: string | null
+    category_color: string | null
+    amount: number
+    treat_as_transfer: boolean
+  }[]
 }
 
 export interface TransactionCalendarItem {
@@ -699,6 +1011,7 @@ export interface TransactionCalendarItem {
   is_transfer: boolean
   is_ignored: boolean
   exclude_from_pnl: boolean
+  has_category_lines?: boolean
 }
 
 export interface TransactionCalendarDay {
@@ -780,6 +1093,13 @@ export interface DailyBalance {
   balance: number | null
 }
 
+export interface DailyBaseline {
+  day: number
+  median: number | null
+  lower_quartile: number | null
+  upper_quartile: number | null
+}
+
 /** End-of-day balance of one account, one point per day (#1202). */
 export interface AccountRunningBalancePoint {
   date: string
@@ -789,7 +1109,11 @@ export interface AccountRunningBalancePoint {
 
 export interface BalanceHistory {
   current: DailyBalance[]
-  previous: DailyBalance[]
+  opening_balance: number
+  baseline: DailyBaseline[]
+  comparison: DailyBalance[] | null
+  comparison_month: string | null
+  comparison_opening_balance: number | null
 }
 
 export interface Budget {
@@ -815,6 +1139,26 @@ export interface BudgetVsActual {
   projected_prev_month_amount: number
   percentage_used: number | null
   is_recurring: boolean
+}
+
+export interface BudgetSuggestion {
+  category_id: string
+  category_name: string
+  category_icon: string
+  category_color: string
+  group_id: string | null
+  group_name: string | null
+  suggested_amount: string
+  total_spent: string
+  months_with_data: number
+  existing_budget: boolean
+}
+
+export interface BudgetSuggestionResponse {
+  month: string
+  months_requested: number
+  months_analyzed: number
+  suggestions: BudgetSuggestion[]
 }
 
 export interface Asset {
@@ -1097,6 +1441,33 @@ export interface ReportResponse {
   meta: ReportMeta
   composition: ReportCompositionItem[]
   category_trend: CategoryTrendItem[]
+}
+
+// Income & expense statement: signed net amounts (credits positive, debits
+// negative) per category group, aligned with `CategoryStatementResponse.months`.
+export interface CategoryStatementRow {
+  key: string
+  kind: 'group' | 'category' | 'uncategorized'
+  label: string | null
+  icon: string | null
+  color: string | null
+  category_ids: string[]
+  txn_type: 'credit' | 'debit' | null
+  values: number[]
+  children: CategoryStatementRow[]
+}
+
+export interface CategoryStatementSection {
+  totals: number[]
+  rows: CategoryStatementRow[]
+}
+
+export interface CategoryStatementResponse {
+  currency: string
+  /** "YYYY-MM", newest first. */
+  months: string[]
+  income: CategoryStatementSection
+  expenses: CategoryStatementSection
 }
 
 // --- Invoices -------------------------------------------------------------
@@ -1667,7 +2038,7 @@ export interface ReconciliationConditions {
   /** Only pairs where one of the two legs sits on an account of this
    *  kind. Either leg is enough: a rule that exists to be careful about
    *  credit cards has to fire whichever end the card is on. */
-  account_types?: ('checking' | 'savings' | 'credit_card' | 'investment' | 'wallet')[]
+  account_types?: AccountType[]
   /** One side's statement text has to name the other side's account. The
    *  signal that tells two same-day transfers of the same amount apart,
    *  when one line reads "To FORTUNEO ACCOUNT" and the other does not. */
@@ -1820,4 +2191,53 @@ export interface ReconciliationHistoryEvent {
   user_id?: string | null
   transaction_id?: string | null
   transaction_description?: string | null
+}
+
+export type LoanKind = 'mortgage' | 'auto' | 'personal' | 'student' | 'other'
+export type LoanRatePeriod = 'monthly' | 'yearly_effective' | 'yearly_nominal'
+export type LoanAmortization = 'price' | 'sac'
+
+export interface LoanInstallment {
+  number: number
+  due_date: string
+  payment: number
+  interest: number
+  principal: number
+  balance: number
+}
+
+/** The lender's balance on a date, sent to bring a loan's ledger in line. */
+export interface LoanBalanceUpdate {
+  balance: number
+  date: string
+  description: string
+  category_id?: string | null
+}
+
+/** What the backend recorded: positive when the debt grew, 0 when it already matched. */
+export interface LoanBalanceAdjustment {
+  adjustment: number
+  current_debt: number
+  transaction_id: string | null
+}
+
+/** A loan's payment schedule, computed by the backend from its contract terms. */
+export interface LoanSchedule {
+  account_id: string
+  currency: string
+  current_debt: number
+  configured: boolean
+  missing: string[]
+  monthly_payment: number | null
+  payments_due: number | null
+  remaining_payments: number | null
+  next_payment: LoanInstallment | null
+  scheduled_balance: number | null
+  ahead_by: number | null
+  total_interest: number | null
+  total_paid: number | null
+  payoff_date: string | null
+  projected_payoff_date: string | null
+  paid_off: boolean
+  installments: LoanInstallment[]
 }

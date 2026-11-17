@@ -156,7 +156,7 @@ async def test_backup_post_without_password_is_a_plain_zip(client: AsyncClient, 
 
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
         assert "metadata.json" in zf.namelist()
-        assert json.loads(zf.read("metadata.json"))["format_version"] == "1.0"
+        assert json.loads(zf.read("metadata.json"))["format_version"] == "1.1"
 
 
 @pytest.mark.asyncio

@@ -65,17 +65,17 @@ def test_sanitize_collapses_underscores():
 
 def test_validate_file_too_large():
     with pytest.raises(ValueError, match="too large"):
-        _validate_file("big.pdf", "application/pdf", 200 * 1024 * 1024)
+        _validate_file("big.pdf", 200 * 1024 * 1024)
 
 
 def test_validate_file_bad_extension():
     with pytest.raises(ValueError, match="not allowed"):
-        _validate_file("hack.exe", "application/octet-stream", 100)
+        _validate_file("hack.exe", 100)
 
 
 def test_validate_file_ok():
     # Should not raise for allowed extensions
-    _validate_file("receipt.pdf", "application/pdf", 1024)
+    _validate_file("receipt.pdf", 1024)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ async def test_upload_attachment(session: AsyncSession, test_user, test_workspac
     with patch("app.services.attachment_service.get_storage_provider", return_value=mock_storage):
         att = await upload_attachment(
             session, test_workspace.id, test_user.id, txn_for_attach.id,
-            "receipt.pdf", "application/pdf", b"fake-data",
+            "receipt.pdf", b"fake-data",
         )
     assert att.filename == "receipt.pdf"
     assert att.transaction_id == txn_for_attach.id
@@ -149,7 +149,7 @@ async def test_upload_attachment_max_limit(session: AsyncSession, test_user, tes
         with pytest.raises(ValueError, match="Maximum"):
             await upload_attachment(
                 session, test_workspace.id, test_user.id, txn_for_attach.id,
-                "extra.pdf", "application/pdf", b"data",
+                "extra.pdf", b"data",
             )
 
 
@@ -160,7 +160,7 @@ async def test_upload_wrong_transaction(session: AsyncSession, test_user, test_w
         with pytest.raises(LookupError, match="not found"):
             await upload_attachment(
                 session, test_workspace.id, test_user.id, uuid.uuid4(),
-                "file.pdf", "application/pdf", b"data",
+                "file.pdf", b"data",
             )
 
 

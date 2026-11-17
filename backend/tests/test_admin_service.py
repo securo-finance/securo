@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
@@ -424,11 +425,19 @@ async def test_is_registration_enabled_from_setting(session: AsyncSession, clean
     assert await is_registration_enabled(session) is False
 
 
-async def test_is_registration_enabled_fallback_to_env(session: AsyncSession, clean_db):
-    """When no DB setting exists, falls back to env config."""
-    result = await is_registration_enabled(session)
-    # Should not raise; returns the env default
-    assert isinstance(result, bool)
+@pytest.mark.parametrize("env_value", [True, False])
+async def test_is_registration_enabled_fallback_to_env(
+    session: AsyncSession, clean_db, monkeypatch, env_value
+):
+    """When no DB setting exists, REGISTRATION_ENABLED decides."""
+    monkeypatch.setattr(get_settings(), "registration_enabled", env_value)
+    assert await is_registration_enabled(session) is env_value
+
+
+async def test_saved_setting_wins_over_env(session: AsyncSession, clean_db, monkeypatch):
+    monkeypatch.setattr(get_settings(), "registration_enabled", False)
+    await set_app_setting(session, "registration_enabled", "true")
+    assert await is_registration_enabled(session) is True
 
 
 # ---------------------------------------------------------------------------

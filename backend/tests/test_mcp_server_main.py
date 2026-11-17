@@ -125,6 +125,9 @@ async def test_mcp_rejects_non_string_method(test_user):
 
 @pytest.mark.asyncio
 async def test_mcp_initialize_returns_protocol_handshake(test_user):
+    """Legacy lifecycle. With no requested version the server offers its
+    newest legacy one. It used to hardcode 2024-11-05, a version whose
+    transport was the deprecated HTTP+SSE pair this server never served."""
     async with _client() as cli:
         r = await cli.post(
             "/mcp",
@@ -133,9 +136,10 @@ async def test_mcp_initialize_returns_protocol_handshake(test_user):
         )
     assert r.status_code == 200
     result = r.json()["result"]
-    assert result["protocolVersion"] == "2024-11-05"
+    assert result["protocolVersion"] == "2025-11-25"
     assert result["serverInfo"]["name"] == "securo-builtin"
     assert "tools" in result["capabilities"]
+    assert "mcp-session-id" not in r.headers
 
 
 @pytest.mark.asyncio
@@ -199,7 +203,9 @@ async def test_mcp_tools_call_unknown_tool(test_user):
             headers=_auth_headers(test_user.id),
         )
     assert r.status_code == 200
-    assert r.json()["error"]["code"] == -32601
+    # An unknown tool is Invalid params, not Method not found: the method
+    # (tools/call) exists, its argument does not.
+    assert r.json()["error"]["code"] == -32602
 
 
 @pytest.mark.asyncio

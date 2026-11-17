@@ -48,6 +48,7 @@ from app.services import (
     reconciliation_service,
     reconciliation_suggestion_service,
 )
+from app.services.attachment_service import served_content_type
 from app.services.invoice_service import InvoiceError
 from app.services.module_service import ModuleId
 
@@ -143,8 +144,11 @@ async def read_summary(
     ctx: WorkspaceContext = Depends(read_ctx),
     session: AsyncSession = Depends(get_async_session),
 ):
+    # The page shows these figures in the reader's currency, so they are
+    # added up in it.
     data = await invoice_service.aging_summary(
-        session, ctx.workspace.id, direction=direction
+        session, ctx.workspace.id, direction=direction,
+        currency=ctx.user.primary_currency,
     )
     data["upcoming"] = [_serialize(inv) for inv in data["upcoming"]]
     return data
@@ -668,7 +672,7 @@ async def download_pdf(
         data = await invoice_attachment_service.read_bytes(session, primary)
         return Response(
             content=data,
-            media_type=primary.content_type,
+            media_type=served_content_type(primary.filename),
             headers={
                 "Content-Disposition": f'attachment; filename="{primary.filename}"'
             },

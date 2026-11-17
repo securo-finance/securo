@@ -1,3 +1,5 @@
+import { translateApiMessage } from '@/lib/api-error-translations'
+
 const DEFAULT_ERROR = 'An unexpected error occurred'
 
 export function extractApiError(
@@ -15,14 +17,14 @@ export function extractApiError(
     const data = (error.response as { data: unknown }).data
     if (data && typeof data === 'object' && 'detail' in data) {
       const detail = (data as { detail: unknown }).detail
-      if (typeof detail === 'string') return detail
+      if (typeof detail === 'string') return translateApiMessage(detail)
       // `{ code, message }`, the shape every hand-raised error in the API
       // uses. Without this branch a precise message ("Similarity runs from
       // 0 to 1") was thrown away and the caller showed its generic
       // fallback instead.
       if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
         const message = (detail as { message?: unknown }).message
-        if (typeof message === 'string' && message.trim()) return message
+        if (typeof message === 'string' && message.trim()) return translateApiMessage(message)
       }
       if (Array.isArray(detail)) {
         const message = detail.map((d: { msg?: string; loc?: string[] }) => {

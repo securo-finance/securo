@@ -1,4 +1,6 @@
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from math import isfinite
 from os import getenv
 from pathlib import Path
 
@@ -72,7 +74,7 @@ class Settings(BaseSettings):
 
     # FX Rates
     openexchangerates_app_id: str = ""
-    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR,GEL"  # comma-separated list
+    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,PEN,UYU,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR,GEL"  # comma-separated list
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage
@@ -132,6 +134,19 @@ class Settings(BaseSettings):
 
     # Celery
     redis_url: str = "redis://localhost:6379/0"
+    # Minimum age of a successful sync before automatic polling retries it.
+    # Set to 6 for banks limiting unattended account access to four times/day.
+    bank_sync_min_interval_hours: float = 4
+
+    @model_validator(mode="after")
+    def validate_bank_sync_interval(self):
+        if not isfinite(self.bank_sync_min_interval_hours) or self.bank_sync_min_interval_hours <= 0:
+            raise ValueError("BANK_SYNC_MIN_INTERVAL_HOURS must be finite and positive")
+        try:
+            datetime.now(timezone.utc) - timedelta(hours=self.bank_sync_min_interval_hours)
+        except OverflowError as exc:
+            raise ValueError("BANK_SYNC_MIN_INTERVAL_HOURS exceeds the supported date range") from exc
+        return self
 
     # Reverse-proxy trust for client-IP-based rate limiting. 0 (default) means
     # request.client.host is used as-is, which is only correct when nothing
@@ -141,6 +156,8 @@ class Settings(BaseSettings):
     # number of trusted reverse proxies in front of the backend (usually 1) to
     # derive the client IP from X-Forwarded-For instead, trusting only that
     # many hops from the right; a chain shorter than expected is not trusted.
+    # The same IP is the Psu-Ip-Address of user-triggered Enable Banking syncs
+    # (app.providers.psu), which only sends it when it is a public address.
     trusted_proxy_hops: int = 0
 
     # Logo size for market-priced asset icons. The logo URL is built from
@@ -156,6 +173,22 @@ class Settings(BaseSettings):
     # Set TESOURO_DIRETO_ENABLED=false to fully disable (e.g. to avoid the
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
+
+    # Data plugins (categories and rules) from the plugin catalog. Gated by
+    # PLUGINS_ENABLED, off by default: while off nothing is fetched and no
+    # plugin can be installed. The built-in rule packs don't depend on it.
+    # The catalog is a static index, fetched only when someone opens it,
+    # never in the background; manifests come from the same host, checked
+    # against the index's sha256. Point it at a mirror to host your own.
+    plugins_index_url: str = "https://plugins.usesecuro.com/v1/index.json"
+    # Plugins with code run in the `securo-plugins` runner (Compose profile
+    # `plugins`), never in this process. Blank URL: no runner, so no plugin
+    # with code can be installed. The token is shared with the runner only.
+    plugins_runner_url: str = ""
+    plugins_runner_token: str = ""
+    # How a plugin's code reaches this API, over the internal network. Only
+    # plugins that declared `api_scopes` get a token to use it.
+    plugins_api_url: str = "http://backend:8000/api"
 
     @property
     def oidc_login_available(self) -> bool:

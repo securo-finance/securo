@@ -1,5 +1,5 @@
 import calendar
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -143,3 +143,71 @@ def compute_effective_date(
     if cycle_end.month == 12:
         return _clamp_day(cycle_end.year + 1, 1, payment_due_day)
     return _clamp_day(cycle_end.year, cycle_end.month + 1, payment_due_day)
+
+
+def cc_cycle_bill_due_dates(
+    window_start: Optional[date],
+    window_end: Optional[date],
+    statement_close_day: Optional[int],
+    payment_due_day: Optional[int],
+) -> Optional[dict]:
+    """Due dates of a single bill cycle, when a window is exactly one.
+
+    Returns None unless ``[window_start, window_end]`` is exactly one
+    billing cycle of a credit card account with both cycle days set: the
+    start is a clamped close day and the day after the end is the next
+    clamped close day. Callers should keep their plain date-window
+    behavior for any other window shape.
+
+    When the window is a cycle, returns a dict with the due dates of the
+    neighboring bills and a ``degenerate`` flag:
+
+    - ``this``: the bill this cycle closes to.
+    - ``prev``: the bill that closed right before the window.
+    - ``next``: the bill the following cycle closes to.
+    - ``degenerate``: True when this bill shares a due date with the
+      previous or the next one (month-length clamping, e.g. close 29 /
+      due 30 around February). A manual ``effective_bill_date`` then
+      cannot name exactly one bill, so callers keep the historical window
+      behavior.
+
+    A manual ``effective_bill_date`` belongs to this bill when it falls in
+    ``(prev, this]``: after the previous bill's due date, up to and
+    including this bill's due date. Every date then maps to exactly one
+    bill, so an override that is not an exact due date still shows up in
+    one bill view and only one.
+
+    Why this exists: a manual ``effective_bill_date`` names a bill by that
+    bill's DUE date, but bucketing a transaction by the purchase window
+    containing that date lands it on the wrong bill whenever the due date
+    falls inside the NEXT cycle's window. With close 24 / due 18, the Aug
+    bill is due 08-18, which sits inside the Sep cycle's 07-24 to 08-23
+    purchase window, so the Aug bill shows empty and the Sep bill picks up
+    its charges (issue #563).
+    """
+    if window_start is None or window_end is None:
+        return None
+    if not statement_close_day or not payment_due_day:
+        return None
+    if (window_end - window_start).days > 31:
+        return None
+    next_day = window_end + timedelta(days=1)
+    days_next = calendar.monthrange(next_day.year, next_day.month)[1]
+    if next_day.day != min(statement_close_day, days_next):
+        return None
+    days_start = calendar.monthrange(window_start.year, window_start.month)[1]
+    if window_start.day != min(statement_close_day, days_start):
+        return None
+    d_this = compute_effective_date(window_start, statement_close_day, payment_due_day)
+    d_prev = compute_effective_date(
+        window_start - timedelta(days=1), statement_close_day, payment_due_day
+    )
+    d_next = compute_effective_date(
+        window_end + timedelta(days=1), statement_close_day, payment_due_day
+    )
+    return {
+        "this": d_this,
+        "prev": d_prev,
+        "next": d_next,
+        "degenerate": d_this == d_prev or d_this == d_next,
+    }

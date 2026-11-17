@@ -23,6 +23,16 @@ export const STATE_TONE: Record<InvoiceState, string> = {
   uncollectible: 'bg-muted text-muted-foreground border-border',
 }
 
+/** Aging buckets, oldest last. The tone runs from quiet to loud with the
+ *  age, so the bar reads as a temperature without needing its legend. */
+export const AGING_BUCKETS = [
+  { key: 'current', tone: 'bg-emerald-500/70' },
+  { key: 'd1_30', tone: 'bg-amber-400/80' },
+  { key: 'd31_60', tone: 'bg-orange-500/80' },
+  { key: 'd61_90', tone: 'bg-rose-500/80' },
+  { key: 'd90_plus', tone: 'bg-rose-700/80' },
+] as const
+
 /** The states that represent money still expected. Used for the "open"
  *  filter and for anything that counts receivables. `uncollectible` is
  *  deliberately absent — it is a decision to stop expecting. */

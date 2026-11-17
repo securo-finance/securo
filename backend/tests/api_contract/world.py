@@ -111,6 +111,11 @@ STEPS: list[Step] = [
          files=lambda w: {"file": ("receipt.png", PNG_BYTES, "image/png")}),
     Step("agents_connection_id", "POST", "/api/agents/connections",
          lambda w: {"name": "Local LLM", "kind": "ollama", "base_url": "http://ollama:11434"}),
+    # A loan with contract terms, so the loan schedule route has a happy path.
+    Step("loan_account_id", "POST", "/api/accounts",
+         lambda w: {"name": "Car loan", "type": "loan", "balance": 1200, "currency": "USD",
+                    "loan_original_amount": 1200, "loan_interest_rate": 1, "loan_rate_period": "monthly",
+                    "loan_term_months": 12, "loan_first_payment_date": MONTH, "loan_amortization": "price"}),
 ]
 
 

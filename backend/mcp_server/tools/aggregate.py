@@ -7,6 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.transaction import Transaction
 from app.models.category import Category
+from app.services._query_filters import (
+    is_not_transfer,
+    line_category_id,
+    line_primary_or_amount,
+    with_category_lines,
+)
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_workspace_id
@@ -36,7 +42,7 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_
             "tx_type": {"type": "string", "enum": ["expense", "income"], "description": "Filter to expenses or income only"},
             "description_contains": {"type": "string", "description": "Case-insensitive substring match against the transaction description — use this to scope to a merchant/keyword like 'uber', 'spotify', 'amigos do bem'."},
             "status": {"type": "string", "enum": ["posted", "pending", "all"], "default": "posted", "description": "Default 'posted' = only money that already moved. Use 'pending' for scheduled/recurring not yet settled, or 'all' to include both."},
-            "exclude_transfers": {"type": "boolean", "default": True},
+            "exclude_transfers": {"type": "boolean", "default": True, "description": "Leave out transfers: paired transfer legs and rows in a category flagged treat_as_transfer."},
             "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 25, "description": "Max bucket rows in the result. Capped at 50."},
         },
         "additionalProperties": False,
@@ -65,11 +71,16 @@ async def aggregate(
     # token-tight providers.
     limit = max(1, min(int(limit), 50))
     ws_id = await resolve_workspace_id(session, ctx)
-    amount_col = func.coalesce(Transaction.amount_primary, Transaction.amount)
+    # Read category parts: a transaction split across categories becomes one
+    # row per part, so every sum below takes the part's share and every
+    # count is distinct per transaction.
+    amount_col = line_primary_or_amount()
+    category_col = line_category_id()
+    tx_count = func.count(func.distinct(Transaction.id))
 
     # Group expression + label expression.
     if group_by == "category":
-        bucket_id = Transaction.category_id
+        bucket_id = category_col
         label_q = select(Category.id, Category.name).where(Category.workspace_id == ws_id)
     elif group_by == "account":
         bucket_id = Transaction.account_id
@@ -89,14 +100,15 @@ async def aggregate(
     if metric == "sum":
         value_expr = func.sum(amount_col)
     elif metric == "avg":
-        value_expr = func.avg(amount_col)
+        # Per transaction, not per part.
+        value_expr = func.sum(amount_col) / func.nullif(tx_count, 0)
     else:  # count
-        value_expr = func.count(Transaction.id)
+        value_expr = tx_count
 
-    q = (
-        select(bucket_id.label("bucket"), value_expr.label("value"), func.count(Transaction.id).label("count"))
-        .where(Transaction.workspace_id == ws_id)
-    )
+    q = with_category_lines(
+        select(bucket_id.label("bucket"), value_expr.label("value"), tx_count.label("count"))
+        .select_from(Transaction)
+    ).where(Transaction.workspace_id == ws_id)
 
     fd = parse_date(from_date)
     td = parse_date(to_date)
@@ -110,7 +122,7 @@ async def aggregate(
         q = q.where(Transaction.account_id.in_(accs))
     cats = parse_uuid_list(category_ids)
     if cats:
-        q = q.where(Transaction.category_id.in_(cats))
+        q = q.where(category_col.in_(cats))
     if payee_id:
         # parse_uuid_list returns a list — single payee_id wrapped works too.
         pids = parse_uuid_list([payee_id])
@@ -137,7 +149,9 @@ async def aggregate(
         q = q.where(Transaction.type == "credit")
 
     if exclude_transfers:
-        q = q.where(Transaction.transfer_pair_id.is_(None))
+        # Paired transfers and rows in a `treat_as_transfer` category, the
+        # same transfers the reports leave out of income and expenses.
+        q = q.where(is_not_transfer(category_col))
 
     q = q.group_by(bucket_id).order_by(value_expr.desc().nulls_last()).limit(int(limit))
 

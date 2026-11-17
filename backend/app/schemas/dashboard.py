@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 class DashboardSummary(BaseModel):
     total_balance: dict[str, float]  # currency -> amount
     total_balance_primary: float = 0.0  # consolidated in primary currency
-    projected_balance: dict[str, float] = Field(default_factory=dict)  # current balance plus forecast rows
+    projected_balance: dict[str, float] = Field(
+        default_factory=dict
+    )  # current balance plus forecast rows
     projected_balance_primary: float = 0.0  # consolidated projected balance
     balance_date: str  # ISO date string, e.g. "2026-03-02"
     monthly_income: float
@@ -58,9 +60,31 @@ class DailyBalance(BaseModel):
     balance: Optional[float]  # None for future days beyond cutoff
 
 
+class DailyBaseline(BaseModel):
+    day: int
+    median: Optional[float] = None  # None when fewer than 2 months contribute
+    lower_quartile: Optional[float] = None  # None when fewer than 3 contribute
+    upper_quartile: Optional[float] = None  # None when fewer than 3 contribute
+
+
 class BalanceHistory(BaseModel):
     current: list[DailyBalance]
-    previous: list[DailyBalance]
+    opening_balance: float
+    baseline: list[DailyBaseline]  # cumulative change since month opening
+    comparison: Optional[list[DailyBalance]] = None
+    comparison_month: Optional[str] = None
+    comparison_opening_balance: Optional[float] = None
+
+
+class ProjectedCategoryLine(BaseModel):
+    """One part of a projected occurrence of a split recurring template."""
+
+    category_id: str
+    category_name: Optional[str] = None
+    category_icon: Optional[str] = None
+    category_color: Optional[str] = None
+    amount: float
+    treat_as_transfer: bool = False
 
 
 class ProjectedTransaction(BaseModel):
@@ -77,3 +101,6 @@ class ProjectedTransaction(BaseModel):
     category_icon: Optional[str]
     category_color: Optional[str] = None
     category_treat_as_transfer: bool = False
+    # Split template: `category_*` are empty and the parts are listed here.
+    has_category_lines: bool = False
+    category_lines: list[ProjectedCategoryLine] = []

@@ -414,7 +414,7 @@ async def test_balance_history_with_future_projections(
 
     history = await get_balance_history(session, test_workspace.id, test_user.id, month=month_start)
     assert len(history.current) > 0
-    assert len(history.previous) > 0
+    assert len(history.baseline) == len(history.current)
 
 
 def test_signed_expr_helpers_smoke():

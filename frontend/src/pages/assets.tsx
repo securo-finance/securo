@@ -53,6 +53,8 @@ import {
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
+import { ExchangeRateSetupAction, ExchangeRateSetupIcon } from '@/components/exchange-rate-setup-notice'
+import { needsConversion, useExchangeRatesNeedSetup } from '@/hooks/use-exchange-rates-need-setup'
 import { PropertyEquitySummary } from '@/components/property-equity-summary'
 import { LOAN_COLLATERAL_TYPES } from '@/lib/property-equity'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -273,6 +275,8 @@ export default function AssetsPage() {
     return (rawAssetsList ?? []).filter((a) => a.group_id && allowed.has(a.group_id))
   }, [rawAssetsList, activeWalletIds])
 
+  const exchangeRatesNeedSetup = useExchangeRatesNeedSetup(assetsList, userCurrency)
+
   const { data: rawPortfolioData } = useQuery({
     queryKey: ['portfolio-trend'],
     queryFn: () => assets.portfolioTrend(),
@@ -480,11 +484,14 @@ export default function AssetsPage() {
 
     let iterations = 0
     while (iterations < 10000) {
-      const next = new Date(d)
-      if (formGrowthFrequency === 'daily') next.setDate(next.getDate() + 1)
-      else if (formGrowthFrequency === 'weekly') next.setDate(next.getDate() + 7)
-      else if (formGrowthFrequency === 'monthly') next.setMonth(next.getMonth() + 1)
-      else if (formGrowthFrequency === 'yearly') next.setFullYear(next.getFullYear() + 1)
+      // Same steps as the backend's _next_due_date: monthly clamps the day to
+      // 28 and yearly clamps Feb 29 to Feb 28, so the preview matches what
+      // gets saved.
+      let next: Date
+      if (formGrowthFrequency === 'daily') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+      else if (formGrowthFrequency === 'weekly') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)
+      else if (formGrowthFrequency === 'monthly') next = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), 28))
+      else if (formGrowthFrequency === 'yearly') next = new Date(d.getFullYear() + 1, d.getMonth(), d.getMonth() === 1 ? Math.min(d.getDate(), 28) : d.getDate())
       else break
       if (next > today) break
       if (formGrowthType === 'percentage') {
@@ -768,6 +775,7 @@ export default function AssetsPage() {
       asset.current_value_primary == null
     const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
+    const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
 
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
@@ -852,7 +860,10 @@ export default function AssetsPage() {
           <div className="text-right tabular-nums">
             {asset.current_value != null ? (
               <>
-                <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
+                <span className="inline-flex items-center justify-end gap-1">
+                  <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
+                  {needsExchangeRate && <ExchangeRateSetupIcon from={asset.currency} to={userCurrency} isAdmin={Boolean(user?.is_superuser)} />}
+                </span>
                 {asset.current_value_primary != null && asset.currency !== userCurrency && (
                   <span className="block text-[10px] text-muted-foreground">{mask(formatCurrency(asset.current_value_primary, userCurrency, locale))}</span>
                 )}
@@ -1163,11 +1174,20 @@ export default function AssetsPage() {
       ) : (
       <>
       {/* Assets that have no resolvable FX rate are left out of the totals
-          below; explain that so the numbers do not look wrong (issue #574). */}
-      {unconvertedCurrencies.length > 0 && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-          <span>{t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })}</span>
+          below; explain that so the numbers do not look wrong (issue #574).
+          One warning only: when no rate provider is configured, the same
+          box says so and offers the way to set it up. */}
+      {(unconvertedCurrencies.length > 0 || exchangeRatesNeedSetup) && (
+        <div role="status" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+            <span>
+              {unconvertedCurrencies.length > 0
+                ? t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })
+                : t('assets.exchangeRateSetupWarning')}
+            </span>
+            {exchangeRatesNeedSetup && <ExchangeRateSetupAction isAdmin={Boolean(user?.is_superuser)} />}
+          </div>
         </div>
       )}
 
@@ -1792,7 +1812,8 @@ export default function AssetsPage() {
   )
 }
 
-const PORTFOLIO_COLORS = ['#6366F1', '#F43F5E', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16']
+// The theme's series colors, as every chart uses them.
+const PORTFOLIO_COLORS = Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`)
 
 function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: dateLoc, mask }: {
   data: { assets: { id: string; name: string; type: string; group_id: string | null }[]; trend: Record<string, unknown>[]; total: number }

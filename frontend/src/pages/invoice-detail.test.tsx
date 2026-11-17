@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 
-import { LinkPaymentDialog } from '@/pages/invoice-detail'
+import { EditDraftDialog, LinkPaymentDialog } from '@/pages/invoice-detail'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Transaction } from '@/types'
+import type { Invoice, Transaction } from '@/types'
 
 const api = vi.hoisted(() => ({
-  invoices: { allocate: vi.fn(), deduct: vi.fn() },
+  invoices: { allocate: vi.fn(), deduct: vi.fn(), update: vi.fn() },
+  payees: { list: vi.fn() },
   transactions: { list: vi.fn() },
 }))
 
 vi.mock('@/lib/api', () => ({
   invoices: api.invoices,
+  payees: api.payees,
   transactions: api.transactions,
 }))
 
@@ -31,6 +33,90 @@ const payment = {
   date: '2026-10-12',
   type: 'credit',
 } as Transaction
+
+describe('EditDraftDialog', () => {
+  it('preserves the full catalog line when only the notes change', async () => {
+    const line = {
+      description: 'Design work',
+      quantity: '2',
+      unit: 'h',
+      unit_price: '125.00',
+      tax_rate: '10',
+      product_id: 'product-1',
+      price_id: 'price-1',
+      fiscal_refs: { service_code: 'design' },
+    }
+    const invoice: Invoice = {
+      id: 'draft-1',
+      payee_id: null,
+      payee: null,
+      document_type: 'invoice',
+      direction: 'receivable',
+      origin: 'local',
+      external_source: null,
+      external_id: null,
+      number: null,
+      series: null,
+      external_number: null,
+      status: 'draft',
+      state: 'draft',
+      total: '275.00',
+      subtotal: '250.00',
+      discount: '0.00',
+      tax_total: '25.00',
+      amount_paid: '0.00',
+      amount_deducted: '0.00',
+      balance: '275.00',
+      days_overdue: 0,
+      next_due_date: null,
+      currency: 'USD',
+      issue_date: '2026-10-01',
+      due_date: '2026-10-31',
+      competence_date: null,
+      sent_at: null,
+      notes: null,
+      internal_notes: null,
+      custom_fields: null,
+      snapshot: null,
+      share_token: null,
+      schedule_id: null,
+      schedule: null,
+      sequence: null,
+      period_start: null,
+      period_end: null,
+      installments: [],
+      deductions: [],
+      allocations: [],
+      lines: [{ ...line, id: 'line-1', total: '275.00', position: 0 }],
+      created_at: '2026-10-01T00:00:00Z',
+    }
+    api.payees.list.mockResolvedValue([])
+    api.invoices.update.mockResolvedValue(invoice)
+    const onSaved = vi.fn()
+    const { user } = renderWithProviders(
+      <EditDraftDialog
+        open
+        onOpenChange={vi.fn()}
+        invoice={invoice}
+        showTax
+        currency="USD"
+        onSaved={onSaved}
+      />,
+    )
+
+    await user.type(screen.getByTestId('edit-notes-input'), 'Thanks for your business')
+    await user.click(screen.getByTestId('edit-submit'))
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(api.invoices.update).toHaveBeenCalledWith('draft-1', {
+      payee_id: null,
+      due_date: '2026-10-31',
+      notes: 'Thanks for your business',
+      installments: [],
+      lines: [line],
+    })
+  })
+})
 
 function apiError(code: string) {
   return { response: { data: { detail: { code } } } }
@@ -140,5 +226,22 @@ describe('LinkPaymentDialog candidates', () => {
     expect(screen.getByText('Half used elsewhere')).toBeInTheDocument()
     expect(screen.queryByText('Already on this invoice')).not.toBeInTheDocument()
     expect(screen.queryByText('Spent on another')).not.toBeInTheDocument()
+  })
+
+  it('measures the difference against what is left of a payment used elsewhere', async () => {
+    api.transactions.list.mockResolvedValue({
+      items: [
+        {
+          ...payment,
+          invoice_links: [{ invoice_id: 'inv-9', amount: '400.00', number: 1, series: null, external_number: null }],
+        },
+      ],
+      total: 1,
+    })
+    const { user } = renderDialog()
+    await user.click(await screen.findByTestId('invoice-candidate'))
+    // 1500 expected; 1000 arrived, but 400 of it already settled another
+    // invoice, so linking it here covers 600 and leaves 900.
+    expect(screen.getByTestId('invoice-difference')).toHaveTextContent('$900.00')
   })
 })

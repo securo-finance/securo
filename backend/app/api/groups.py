@@ -17,6 +17,7 @@ from app.schemas.group import (
     GroupMemberRead,
     GroupMemberUpdate,
     GroupRead,
+    GroupSummary,
     GroupUpdate,
 )
 from app.schemas.group_settlement import (
@@ -25,7 +26,12 @@ from app.schemas.group_settlement import (
     GroupSettlementUpdate,
 )
 from app.schemas.transaction import TransactionRead
-from app.services import balance_service, group_service, settlement_service
+from app.services import (
+    balance_service,
+    group_service,
+    group_summary_service,
+    settlement_service,
+)
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -190,6 +196,25 @@ async def list_group_transactions(
     if txs is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return txs
+
+
+@router.get("/{group_id}/summary", response_model=GroupSummary)
+async def get_summary(
+    group_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Spending aggregates for the whole group.
+
+    Separate from /transactions, which is a capped recent-activity list:
+    totals have to see every split, not the last page of them.
+    """
+    summary = await group_summary_service.compute_summary(
+        session, group_id, ctx.workspace.id, ctx.user_id
+    )
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    return summary
 
 
 @router.get("/{group_id}/balances", response_model=GroupBalances)

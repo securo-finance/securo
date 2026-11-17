@@ -19,6 +19,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.import_logs import router as import_logs_router
 from app.api.oidc_auth import router as oidc_auth_router
 from app.api.passkeys import router as passkeys_router
+from app.api.forecast import router as forecast_router
 from app.api.import_transactions import router as import_router
 from app.api.info import router as info_router
 from app.api.recurring_transactions import router as recurring_router
@@ -38,6 +39,7 @@ from app.api.fiscal import router as fiscal_router
 from app.api.invoice_attachments import router as invoice_attachments_router
 from app.api.invoice_schedules import router as invoice_schedules_router
 from app.api.invoices import router as invoices_router
+from app.api.mortgage_payments import router as mortgage_payments_router
 from app.api.products import router as products_router
 from app.api.public_invoices import router as public_invoices_router
 from app.api.payees import router as payees_router
@@ -47,6 +49,9 @@ from app.api.transactions import router as transactions_router
 from app.api.two_factor import router as two_factor_router
 from app.api.user_lookup import router as user_lookup_router
 from app.api.workspaces import router as workspaces_router
+from app.api.access_tokens import router as access_tokens_router
+from app.api.plugins import router as plugins_router
+from app.api.ui_layouts import router as ui_layouts_router
 from app.api.admin import router as admin_router, check_registration_enabled
 from app.core.auth import fastapi_users
 from app.core.auth_policy import require_local_auth_enabled
@@ -176,12 +181,15 @@ app.include_router(category_groups_router)
 app.include_router(rules_router)
 app.include_router(reconciliation_router)
 app.include_router(transactions_router)
+app.include_router(mortgage_payments_router)
 app.include_router(import_router)
 app.include_router(import_logs_router)
 app.include_router(accounts_router)
 app.include_router(connections_router)
 app.include_router(recurring_router)
+app.include_router(forecast_router)
 app.include_router(budgets_router)
+
 app.include_router(goals_router)
 app.include_router(groups_router)
 app.include_router(assets_router)
@@ -206,6 +214,9 @@ app.include_router(public_invoices_router)
 app.include_router(products_router)
 app.include_router(settings_router)
 app.include_router(workspaces_router)
+app.include_router(access_tokens_router)
+app.include_router(plugins_router)
+app.include_router(ui_layouts_router)
 app.include_router(admin_router)
 app.include_router(info_router)
 

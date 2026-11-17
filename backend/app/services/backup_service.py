@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.database import Base
 from app.models.account import Account
 from app.models.app_settings import AppSetting
 from app.models.asset import Asset
@@ -46,6 +47,7 @@ from app.models.invoice import (
 )
 from app.models.invoice_attachment import InvoiceAttachment
 from app.models.invoice_schedule import InvoiceSchedule, InvoiceScheduleTerm
+from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.product import Product, ProductPrice
 from app.models.reconciliation import (
@@ -54,9 +56,11 @@ from app.models.reconciliation import (
     ReconciliationSuggestion,
 )
 from app.models.recurring_transaction import RecurringTransaction
+from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
+from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.transaction_split import TransactionSplit
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceTaxId
 from app.providers import get_storage_provider
@@ -139,6 +143,7 @@ RESTORE_ORDER: list[str] = [
     "reconciliation_rules",
     "budgets",
     "recurring_transactions",
+    "recurring_transaction_category_lines",
     "import_logs",
     "credit_card_bills",
     "groups",
@@ -151,6 +156,8 @@ RESTORE_ORDER: list[str] = [
     "asset_values",
     "asset_transactions",
     "transactions",
+    "transaction_category_lines",
+    "mortgage_payment_allocations",
     "transaction_splits",
     "group_settlements",
     "transaction_attachments",
@@ -179,6 +186,9 @@ MODEL_SPECS: dict[str, EntitySpec] = {
     "reconciliation_rules": EntitySpec("reconciliation_rules", ReconciliationRule),
     "budgets": EntitySpec("budgets", Budget),
     "recurring_transactions": EntitySpec("recurring_transactions", RecurringTransaction),
+    "recurring_transaction_category_lines": EntitySpec(
+        "recurring_transaction_category_lines", RecurringTransactionCategoryLine
+    ),
     "import_logs": EntitySpec("import_logs", ImportLog),
     "credit_card_bills": EntitySpec("credit_card_bills", CreditCardBill),
     "groups": EntitySpec("groups", Group),
@@ -192,6 +202,12 @@ MODEL_SPECS: dict[str, EntitySpec] = {
     "asset_values": EntitySpec("asset_values", AssetValue),
     "asset_transactions": EntitySpec("asset_transactions", AssetTransaction),
     "transactions": EntitySpec("transactions", Transaction),
+    "transaction_category_lines": EntitySpec(
+        "transaction_category_lines", TransactionCategoryLine
+    ),
+    "mortgage_payment_allocations": EntitySpec(
+        "mortgage_payment_allocations", MortgagePaymentAllocation
+    ),
     "transaction_splits": EntitySpec("transaction_splits", TransactionSplit),
     "group_settlements": EntitySpec("group_settlements", GroupSettlement),
     "transaction_attachments": EntitySpec("transaction_attachments", TransactionAttachment),
@@ -249,6 +265,7 @@ CONFIG_NAMES = [
     "reconciliation_rules",
     "budgets",
     "recurring_transactions",
+    "recurring_transaction_category_lines",
     "products",
     "product_prices",
     "invoice_settings",
@@ -270,6 +287,7 @@ DATA_NAMES = [
     "collection_asset_groups",
     "budgets",
     "recurring_transactions",
+    "recurring_transaction_category_lines",
     "import_logs",
     "credit_card_bills",
     "groups",
@@ -283,6 +301,8 @@ DATA_NAMES = [
     "asset_values",
     "asset_transactions",
     "transactions",
+    "transaction_category_lines",
+    "mortgage_payment_allocations",
     "transaction_splits",
     "group_settlements",
     "transaction_attachments",
@@ -297,6 +317,43 @@ DATA_NAMES = [
     "goals",
 ]
 BOTH_NAMES = list(dict.fromkeys([*DATA_NAMES, *CONFIG_NAMES]))
+
+# Workspace tables deliberately left out of backups, each with its reason. Every
+# other table with a workspace_id must be covered by MODEL_SPECS: an export
+# refuses to run otherwise, so a new table holding money can never be skipped
+# silently and leave a partial archive behind.
+EXCLUDED_WORKSPACE_TABLES: dict[str, str] = {
+    "access_tokens": "API access secrets",
+    "agents": "AI agent setup of the optional agents module, tied to its provider",
+    "agent_conversations": "chat history with AI agents",
+    "bank_connections": "provider secrets and bank sessions",
+    "plugin_connections": "plugin secrets",
+    "workspace_members": "membership is managed per instance",
+    "workspace_plugins": "install state tied to the plugin runtime",
+    "ui_layouts": "per-user screen layout",
+}
+
+
+def uncovered_workspace_tables() -> set[str]:
+    """Workspace tables that are neither backed up nor explicitly excluded."""
+    models: list[Any] = [spec.model for spec in MODEL_SPECS.values() if spec.model is not None]
+    covered = {model.__table__.name for model in models}
+    workspace_tables = {
+        table.name for table in Base.metadata.tables.values() if "workspace_id" in table.columns
+    }
+    return workspace_tables - covered - set(EXCLUDED_WORKSPACE_TABLES)
+
+
+def _ensure_backup_coverage() -> None:
+    uncovered = uncovered_workspace_tables()
+    if uncovered:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Backup is unavailable because these workspace tables are not covered yet: "
+                + ", ".join(sorted(uncovered))
+            ),
+        )
 
 NULL_WHEN_UNMAPPED = {
     "connection_id",
@@ -566,7 +623,9 @@ async def build_backup_zip(
     workspace: Workspace,
     *,
     content: BackupContent = BackupContent.both,
+    password: str | None = None,
 ) -> bytes:
+    _ensure_backup_coverage()
     names = entity_names_for_content(content)
     buf = io.BytesIO()
     entity_counts: dict[str, int] = {}
@@ -575,7 +634,16 @@ async def build_backup_zip(
     archived_logo_ids: set[str] = set()
     omitted_attachment_ids: dict[str, list[str]] = {}
 
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    archive: Any
+    if password:
+        archive = pyzipper.AESZipFile(
+            buf, "w", compression=_COMPRESSION, encryption=pyzipper.WZ_AES
+        )
+        archive.setpassword(password.encode("utf-8"))
+    else:
+        archive = zipfile.ZipFile(buf, "w", _COMPRESSION)
+
+    with archive as zf:
         for name in names:
             rows = await _fetch_entity_rows(session, name, workspace.id)
             if name in ATTACHMENT_ENTITY_NAMES:
@@ -1143,7 +1211,12 @@ async def _clear_workspace_entities(
     names: list[str],
     id_maps: RestoreIdMaps,
     attachment_ids_without_files: dict[str, set[str]],
-) -> tuple[list[str], list[PreservedReference], dict[tuple[str, str], str]]:
+) -> tuple[
+    list[str],
+    list[PreservedReference],
+    dict[tuple[str, str], str],
+    list[tuple[Any, list[dict[str, Any]]]],
+]:
     name_set = set(names)
     archived_ids = set(id_maps.flat_entities)
     stale_storage_keys: list[str] = []
@@ -1292,6 +1365,39 @@ async def _clear_workspace_entities(
             update(Transaction).where(Transaction.workspace_id == workspace_id).values(bill_id=None)
         )
 
+    # Category lines must point at a category, so a configuration-only restore
+    # that replaces categories but keeps the split transactions (or recurring
+    # bills) lifts their lines out first and puts them back afterwards. A line
+    # whose category is not in the archive would be left dangling: refuse the
+    # restore instead, which rolls everything back.
+    preserved_rows: list[tuple[Any, list[dict[str, Any]]]] = []
+    if "categories" in name_set:
+        line_owners = (
+            (TransactionCategoryLine, "transactions"),
+            (RecurringTransactionCategoryLine, "recurring_transactions"),
+        )
+        for line_model, owner_name in line_owners:
+            if owner_name in name_set:
+                continue
+            result = await session.execute(
+                select(line_model).where(line_model.workspace_id == workspace_id)
+            )
+            rows = []
+            for line in result.scalars():
+                if str(line.category_id) not in archived_ids:
+                    raise ValueError(
+                        "A split uses a category that is not in this backup; "
+                        "restore data and configuration together instead"
+                    )
+                rows.append(
+                    {column.key: getattr(line, column.key) for column in line_model.__table__.columns}
+                )
+            if rows:
+                preserved_rows.append((line_model, rows))
+                await session.execute(
+                    delete(line_model).where(line_model.workspace_id == workspace_id)
+                )
+
     collection_ids = select(Collection.id).where(Collection.workspace_id == workspace_id)
     if "collection_accounts" in name_set or "collections" in name_set:
         await session.execute(
@@ -1317,6 +1423,8 @@ async def _clear_workspace_entities(
         "transaction_attachments",
         "group_settlements",
         "transaction_splits",
+        "mortgage_payment_allocations",
+        "transaction_category_lines",
         "transactions",
         "invoices",
         "invoice_schedule_terms",
@@ -1331,6 +1439,7 @@ async def _clear_workspace_entities(
         "assets",
         "collections",
         "budgets",
+        "recurring_transaction_category_lines",
         "recurring_transactions",
         "reconciliation_rules",
         "rules",
@@ -1363,7 +1472,17 @@ async def _clear_workspace_entities(
         list(dict.fromkeys(stale_storage_keys)),
         preserved_references,
         preserved_attachment_keys,
+        preserved_rows,
     )
+
+
+async def _restore_preserved_rows(
+    session: AsyncSession,
+    preserved_rows: list[tuple[Any, list[dict[str, Any]]]],
+) -> None:
+    await session.flush()
+    for model, rows in preserved_rows:
+        await session.execute(insert(model), rows)
 
 
 async def _restore_preserved_references(
@@ -1517,6 +1636,7 @@ async def restore_backup_bytes(
             stale_storage_keys: list[str] = []
             preserved_references: list[PreservedReference] = []
             preserved_attachment_keys: dict[tuple[str, str], str] = {}
+            preserved_rows: list[tuple[Any, list[dict[str, Any]]]] = []
             if mode == BackupRestoreMode.new_workspace:
                 user = await session.get(User, target_user_id)
                 if user is None:
@@ -1547,6 +1667,7 @@ async def restore_backup_bytes(
                     stale_storage_keys,
                     preserved_references,
                     preserved_attachment_keys,
+                    preserved_rows,
                 ) = await _clear_workspace_entities(
                     session,
                     target_workspace.id,
@@ -1742,6 +1863,7 @@ async def restore_backup_bytes(
                 restored_counts[name] = count
 
             await _restore_preserved_references(session, preserved_references)
+            await _restore_preserved_rows(session, preserved_rows)
             await session.refresh(target_workspace)
             response = BackupRestoreResult(
                 workspace_id=target_workspace.id,

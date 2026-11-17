@@ -3,6 +3,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -144,6 +145,18 @@ async def merge_payees(
         return {"merged": len(data.source_ids), "transactions_reassigned": reassigned}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except IntegrityError as exc:
+        # Two merges into one target can each move a document of the same
+        # kind; the second commit then trips uq_payee_tax_id_kind. Only that
+        # one is worth a retry: any other violation (a source still linked
+        # to an invoice schedule, say) fails the same way again.
+        await session.rollback()
+        if "uq_payee_tax_id_kind" not in str(exc.orig):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payee merge conflicted with a concurrent change. Retry the merge.",
+        ) from exc
 
 
 @router.post("/bulk-delete", status_code=status.HTTP_200_OK)

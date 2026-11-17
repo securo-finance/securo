@@ -4,7 +4,7 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { isInvalidDescriptionAction, parseRulePriority, previewableActions } from '@/lib/rule-form-utils'
 import { rules as rulesApi } from '@/lib/api'
-import { formatCurrency } from '@/lib/format'
+import { formatSignedAmount } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { Input } from '@/components/ui/input'
@@ -363,12 +363,16 @@ function RulePreviewPanel({
                         </td>
                         <td className={cn(
                           'whitespace-nowrap py-1.5 pr-2 text-right tabular-nums',
-                          item.will_change && item.type === 'credit' && 'text-emerald-600',
+                          item.will_change && (item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'),
                         )}>
-                          {mask(formatCurrency(Math.abs(item.amount), item.currency, locale))}
+                          {mask(formatSignedAmount(item.amount, item.type, item.currency, locale))}
                         </td>
                         <td className="py-1.5">
-                          {item.will_change ? (
+                          {item.will_change && item.current_has_category_lines ? (
+                            // A rule never recategorizes a split row; it can
+                            // still change its payee or notes.
+                            <span className="truncate">{t('categoryLines.badgeShort')}</span>
+                          ) : item.will_change ? (
                             <span className="flex items-center gap-1">
                               <span className="truncate">
                                 {item.current_category_name ?? t('transactions.uncategorized')}
@@ -381,7 +385,9 @@ function RulePreviewPanel({
                           ) : (
                             <span className="flex items-center gap-1">
                               <span className="truncate">
-                                {item.current_category_name ?? t('transactions.uncategorized')}
+                                {item.current_has_category_lines
+                                  ? t('categoryLines.badgeShort')
+                                  : item.current_category_name ?? t('transactions.uncategorized')}
                               </span>
                               <span className="shrink-0 rounded-full bg-muted px-1.5 text-[10px] font-semibold">
                                 {t('rules.previewNoChange')}
@@ -463,6 +469,13 @@ export function RuleDialog({
     initialData?.overwriteExistingCategories ?? false
   )
   const [previewOpen, setPreviewOpen] = useState(false)
+
+  // Signed amounts are not obvious from a bare number box, so say it once,
+  // right where the threshold is typed: income positive, expenses negative.
+  const hasAmountCondition = useMemo(
+    () => flattenConditions(conditions).some(c => c.field === 'amount'),
+    [conditions],
+  )
 
   function updateCondition(i: number, field: keyof RuleCondition, val: string | number) {
     setConditions(prev => prev.map((node, idx) => (
@@ -669,6 +682,9 @@ export function RuleDialog({
                   <Plus size={12} /> {t('rules.addGroup')}
                 </button>
               </div>
+              {hasAmountCondition && (
+                <p className="text-xs text-muted-foreground">{t('rules.amountSignHint')}</p>
+              )}
             </div>
           </div>
 

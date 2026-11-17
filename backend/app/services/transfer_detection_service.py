@@ -51,10 +51,15 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
+from sqlalchemy.orm import noload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.mortgage_payment_allocation import (
+    MORTGAGE_PRINCIPAL_SOURCE,
+    MortgagePaymentAllocation,
+)
 from app.models.transaction import Transaction
 from app.services import reconciliation_policy
 from app.services import reconciliation_rule_service as rule_service
@@ -192,7 +197,19 @@ async def _pool(
     query = select(Transaction).where(
         Transaction.workspace_id == workspace_id,
         Transaction.transfer_pair_id.is_(None),
+        # A mortgage payment with a saved breakdown already moves its
+        # principal to the loan, and the principal entry is that movement.
+        # Pairing either as a transfer would move the money a second time.
+        # Not a policy knob: workspace rule overrides must not re-enable it.
+        Transaction.source != MORTGAGE_PRINCIPAL_SOURCE,
+        ~exists().where(MortgagePaymentAllocation.payment_transaction_id == Transaction.id),
+        # A row split across categories is not one movement: a transfer
+        # leaves income and expenses as a whole row.
+        Transaction.has_category_lines.is_(False),
     )
+    # The pool never holds a split row, so skip the per-batch line query
+    # the relationship would otherwise issue for thousands of rows.
+    query = query.options(noload(Transaction.category_lines))
     if ignored_sources:
         query = query.where(Transaction.source.not_in(ignored_sources))
     result = await session.execute(query)
