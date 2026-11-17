@@ -117,7 +117,11 @@ jobs:
               if (lastOurs.state === 'APPROVED') continue;
 
               const authorAt = newest([
-                ...commits.filter((c) => c.author && c.author.login === author)
+                // A merge from main is not an answer. A commit GitHub could not
+                // link to an account (unknown email) counts as the author's:
+                // reading it as silence could close a pull request they pushed to.
+                ...commits.filter((c) => (c.parents || []).length < 2)
+                  .filter((c) => !c.author || c.author.login === author)
                   .map((c) => c.commit.committer.date),
                 ...words.filter((w) => w.user.login === author).map((w) => w.at),
               ]);
