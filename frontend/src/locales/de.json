@@ -1368,10 +1368,16 @@
     "connectionStatus": {
       "active": "Aktiv",
       "error": "Fehler",
-      "expired": "Abgelaufen"
+      "expired": "Abgelaufen",
+      "disconnected": "Getrennt"
     },
     "pluginConnectors": "Aus deinen Plugins",
-    "pluginUnavailable": "Das Plugin dieser Verbindung ist nicht mehr installiert oder verfügbar."
+    "pluginUnavailable": "Das Plugin dieser Verbindung ist nicht mehr installiert oder verfügbar.",
+    "confirmDisconnectKeepDesc": "{{institution}} wird nicht mehr synchronisiert. Die Konten und der Transaktionsverlauf bleiben in der App, und du kannst die Bank später wieder verbinden.",
+    "disconnectAlsoDelete": "Auch Konten und Transaktionen löschen",
+    "disconnectedKept": "Bank getrennt. Konten und Verlauf wurden behalten.",
+    "removeConnection": "Verbindung entfernen",
+    "connectionDisconnected": "Getrennt. Erneut verbinden, um wieder zu synchronisieren"
   },
   "loans": {
     "title": "Kreditvertrag",
@@ -2050,6 +2056,7 @@
     "noTransactions": "Noch keine Transaktionen",
     "txBuy": "Kauf",
     "txSell": "Verkauf",
+    "txSplit": "Split",
     "txFee": "Gebühr",
     "txSaved": "Transaktion gespeichert",
     "txDeleted": "Transaktion gelöscht",
@@ -2060,6 +2067,10 @@
     "unitPrice": "Preis pro Einheit",
     "fee": "Gebühr",
     "txTotal": "Gesamt",
+    "splitOldUnits": "Einheiten vorher",
+    "splitNewUnits": "Einheiten nachher",
+    "splitHint": "Gib ein, wie viele Einheiten du vor dem Split hattest und wie viele daraus geworden sind: Ein Split 100:1 ist 1 → 100, ein Reverse Split 1:10 ist 10 → 1. Trage als Datum den ersten Tag ein, an dem das Wertpapier zum neuen Kurs gehandelt wird.",
+    "splitInvalid": "Gib zwei verschiedene ganze Zahlen von 1 bis 1.000.000 ein.",
     "confirmDeleteTxTitle": "Transaktion löschen?",
     "confirmDeleteTx": "Dies entfernt den Eintrag und berechnet den durchschnittlichen Einstandspreis neu.",
     "editAsset": "Vermögenswert bearbeiten",
@@ -2820,6 +2831,8 @@
       "saveFailed": "Fehler beim Speichern der Werkzeugauswahl",
       "empty": "Keine Werkzeuge gefunden. Läuft der MCP-Server? Mit Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "vorschlagen",
+      "enabledCount": "{{enabled}} von {{total}} aktiviert",
+      "enableAll": "Alle aktivieren",
       "loading": "Werkzeuge werden geladen…"
     },
     "chat": {
@@ -2919,6 +2932,7 @@
       "baseUrl": "Endpunkt-URL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Endpunkt-URL ist für diesen Anbieter erforderlich",
+      "baseUrlInvalid": "Gib eine gültige http- oder https-Endpunkt-URL ein",
       "ollamaHint": "Wenn Ollama auf deinem Host-Rechner läuft, verwende http://host.docker.internal:11434 (Mac/Windows) oder deine Host-IP (Linux).",
       "openaiCompatHint": "Füge einfach Host:Port ein (z.B. http://192.168.1.142:1234). Der Pfad /v1 wird automatisch hinzugefügt. Ersetze unter Mac/Windows innerhalb von Docker 'localhost' durch 'host.docker.internal'.",
       "apiKey": "API-Schlüssel / Token",

@@ -1367,10 +1367,16 @@
     "connectionStatus": {
       "active": "Aktív",
       "error": "Hiba",
-      "expired": "Lejárt"
+      "expired": "Lejárt",
+      "disconnected": "Leválasztva"
     },
     "pluginConnectors": "A bővítményeidből",
-    "pluginUnavailable": "A kapcsolat bővítménye már nincs telepítve vagy nem érhető el."
+    "pluginUnavailable": "A kapcsolat bővítménye már nincs telepítve vagy nem érhető el.",
+    "confirmDisconnectKeepDesc": "A(z) {{institution}} szinkronizálása leáll. A számlák és a tranzakciós előzmények az alkalmazásban maradnak, és később újra csatlakoztathatod.",
+    "disconnectAlsoDelete": "A számlák és tranzakciók törlése is",
+    "disconnectedKept": "Bank leválasztva. A számlák és az előzmények megmaradtak.",
+    "removeConnection": "Kapcsolat eltávolítása",
+    "connectionDisconnected": "Leválasztva. Csatlakoztasd újra a szinkronizáláshoz"
   },
   "loans": {
     "title": "Hitelszerződés",
@@ -2051,6 +2057,7 @@
     "noTransactions": "Még nincs tranzakció",
     "txBuy": "Vétel",
     "txSell": "Eladás",
+    "txSplit": "Split",
     "txFee": "Díj",
     "txSaved": "Tranzakció mentve",
     "txDeleted": "Tranzakció törölve",
@@ -2061,6 +2068,10 @@
     "unitPrice": "Egységár",
     "fee": "Díj",
     "txTotal": "Összesen",
+    "splitOldUnits": "Egységek a split előtt",
+    "splitNewUnits": "Egységek a split után",
+    "splitHint": "Add meg, hány egységed volt a split előtt, és mennyi lett belőlük utána: a 100:1 arányú split 1 → 100, az 1:10 arányú fordított split pedig 10 → 1. Dátumnak azt az első napot add meg, amikor az eszközzel már az új áron kereskednek.",
+    "splitInvalid": "Adj meg két különböző egész számot 1 és 1 000 000 között.",
     "confirmDeleteTxTitle": "Törlöd a tranzakciót?",
     "confirmDeleteTx": "Ez eltávolítja a tételt, és újraszámolja a pozíció átlagárát.",
     "editAsset": "Eszköz szerkesztése",
@@ -2819,6 +2830,8 @@
       "saveFailed": "Nem sikerült menteni az eszközválasztást",
       "empty": "Nem található eszköz. Fut az MCP-szerver? Dockerrel: `docker compose --profile agents up -d`.",
       "proposeBadge": "javaslat",
+      "enabledCount": "{{enabled}} / {{total}} bekapcsolva",
+      "enableAll": "Összes bekapcsolása",
       "loading": "Eszközök betöltése…"
     },
     "chat": {
@@ -2918,6 +2931,7 @@
       "baseUrl": "Végpont URL-je",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Ennél a szolgáltatónál kötelező megadni a végpont URL-jét",
+      "baseUrlInvalid": "Adjon meg érvényes http vagy https végpont URL-t",
       "ollamaHint": "Ha az Ollama a gazdagépeden fut, használd a http://host.docker.internal:11434 címet (Mac/Windows) vagy a gazdagéped IP-címét (Linux).",
       "openaiCompatHint": "Csak illeszd be a host:port párost (pl. http://192.168.1.142:1234). A /v1 útvonal automatikusan hozzáadódik. Mac/Windows alatt Dockerből a localhost helyett a host.docker.internal címet használd.",
       "apiKey": "API-kulcs / token",

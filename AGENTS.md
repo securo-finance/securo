@@ -17,7 +17,7 @@ FastAPI, SQLAlchemy (async), Alembic and Celery on Redis in `backend/`; React 19
 - **"Today" comes from `app_today()`** (ADR 0009), never `date.today()`. Stored timestamps are UTC.
 - **Migrations are one numbered line** (ADR 0010): next number after the head, `down_revision` the previous one; a merged migration is never edited. `tests/test_schema_matches_migrations_postgres.py` fails when the migrations and the models disagree; fix it with a migration, never by adding to `tests/schema_drift_baseline.txt`.
 - **Every outbound call is gated, and there is no telemetry** (ADR 0016). A new external call needs a switch and a superseding ADR for the list.
-- **Files go through `get_storage_provider()`** with keys that start with the workspace id (ADR 0013).
+- **Files go through `get_storage_provider()`** with keys that start with the workspace id (ADR 0019).
 - **New routes are closed to access tokens** until mapped in `backend/app/core/access_token_scopes.py` (ADR 0012).
 - **Every user-facing string is translated.** Add each key to `frontend/src/locales/en.json` and every other locale file; `src/locales/i18n.test.ts` fails on a missing or extra key or a placeholder mismatch.
 - **A new architecture decision, or a change to one, comes with an ADR** (`docs/adr/README.md`).
@@ -45,6 +45,7 @@ Run lint, type check and the tests you touched before calling work done; CI runs
 ## Tests
 
 - **Backend** (`backend/tests/conftest.py`): in-memory SQLite by default, schema from `Base.metadata.create_all` (not from migrations), pgvector shimmed to JSON, Redis and external FX sync mocked, `AGENTS_ENABLED` forced on. Fixtures: `session`, `client`, `test_user`, `test_workspace`, `auth_headers`, `viewer_auth_headers`, `admin_auth_headers`, `test_account`, `test_transactions`, `test_categories`, `test_rules`. Files matching `tests/*_postgres.py` use `postgres_sessions` and need `POSTGRES_TEST_URL` (skipped locally without it, required in CI).
+- **CI shards** (`.github/workflows/ci.yml`): the backend suite runs in four parallel jobs split by `pytest-split`, balanced by `backend/.test_durations`. New tests are given the average duration, so the balance drifts slowly; when one shard runs well past the others, refresh it from a CI run's own timings with `.github/ci/merge_test_durations.py` (usage in its docstring). The Backend Tests check combines the shards' coverage and enforces the 60% floor.
 - **Contract sweep** (`backend/tests/api_contract/`): every OpenAPI route and method against the expected status in `baseline.json`, as owner and as viewer.
 - **Frontend** (`frontend/vitest.config.ts`): a `node` project for `src/lib/*.test.ts` and a jsdom `dom` project for the rest, setup in `src/test/setup.ts`. Render with `renderWithProviders` from `src/test/utils.tsx` (real English strings). The API is stubbed with `vi.mock('@/lib/api', ...)`; there is no MSW. `src/pages/pages.contract.test.ts` and `src/components/components.contract.test.ts` import every page and component to catch modules that break on import.
 
@@ -81,7 +82,7 @@ Paths are under `backend/`.
 - **Invoices**: routers `app/api/invoices.py`, `invoice_attachments.py`, `invoice_schedules.py`, `products.py`, `public_invoices.py` (shared link, no auth); `app/services/invoice_service.py` (`issue_invoice`, `allocate`, `derive_state`), `invoice_schedule_service.py` (`generate_due`), `product_service.py`, `invoice_document.py`, `invoice_pdf.py`; task `app/tasks/invoice_schedule_tasks.py`. Tax ids by country: `app/fiscal/` (packs in `app/fiscal/jurisdictions/*.toml`). Tests `tests/test_invoice*.py`, `tests/test_fiscal_*.py`.
 - **Admin and settings**: router `app/api/admin.py` (users, instance settings, provider settings, timezone); `app/services/admin_service.py`; widget layouts `app/api/ui_layouts.py`. Tests `tests/test_admin_*.py`.
 - **Export and backup**: router `app/api/export.py`, `app/services/backup_service.py`. Test `tests/test_export_api.py`.
-- **Storage** (ADR 0013): `app/providers/storage.py`, `local_storage.py`, `get_storage_provider` in `app/providers/__init__.py`.
+- **Storage** (ADR 0019): `app/providers/storage.py`, `local_storage.py`, `s3_storage.py`, `get_storage_provider` in `app/providers/__init__.py`.
 - **Plugins** (ADR 0015): router `app/api/plugins.py`; `app/plugins/` (`service.py`, `manifest.py`, `index.py`, `sync.py`, `runner.py`, `vault.py`, `provenance.py`); sandbox `plugin_runner/`; task `app/tasks/plugin_tasks.py`. Tests `tests/test_*_plugins.py`, `tests/test_plugin_runner.py`.
 - **AI agents** (ADR 0014): `app/agents/` (`app/agents/api/`, `app/agents/services/`, `app/agents/runtime/executor.py`, `app/agents/providers/`, `app/agents/mcp/client.py`, `app/agents/tasks/ingest.py`); MCP server `mcp_server/` (`mcp_server/registry.py`, `mcp_server/auth.py`, `mcp_server/tools/`). Tests `tests/test_agents_*.py`, `tests/test_mcp_*.py`.
 - **Migrations**: `alembic/versions/NNN_name.py`; chain check `scripts/check_migration_chain.py`.

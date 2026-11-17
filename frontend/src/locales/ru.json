@@ -1384,10 +1384,16 @@
     "connectionStatus": {
       "active": "Активно",
       "error": "Ошибка",
-      "expired": "Истекло"
+      "expired": "Истекло",
+      "disconnected": "Отключено"
     },
     "pluginConnectors": "Из ваших плагинов",
-    "pluginUnavailable": "Плагин этого подключения больше не установлен или недоступен."
+    "pluginUnavailable": "Плагин этого подключения больше не установлен или недоступен.",
+    "confirmDisconnectKeepDesc": "{{institution}} перестанет синхронизироваться. Счета и история транзакций останутся в приложении, а подключение можно будет восстановить позже.",
+    "disconnectAlsoDelete": "Также удалить счета и транзакции",
+    "disconnectedKept": "Банк отключён. Счета и история сохранены.",
+    "removeConnection": "Удалить подключение",
+    "connectionDisconnected": "Отключено. Подключите снова, чтобы синхронизировать"
   },
   "loans": {
     "title": "Кредитный договор",
@@ -2074,6 +2080,7 @@
     "noTransactions": "Пока нет транзакций",
     "txBuy": "Покупка",
     "txSell": "Продажа",
+    "txSplit": "Сплит",
     "txFee": "Комиссия",
     "txSaved": "Транзакция сохранена",
     "txDeleted": "Транзакция удалена",
@@ -2084,6 +2091,10 @@
     "unitPrice": "Цена за единицу",
     "fee": "Комиссия",
     "txTotal": "Итого",
+    "splitOldUnits": "Единиц до сплита",
+    "splitNewUnits": "Единиц после сплита",
+    "splitHint": "Укажите, сколько единиц у вас было до сплита и сколько стало после: сплит 100 к 1 — это 1 → 100, обратный сплит 1 к 10 — это 10 → 1. Датой считайте первый день торгов по новой цене.",
+    "splitInvalid": "Введите два разных целых числа от 1 до 1 000 000.",
     "confirmDeleteTxTitle": "Удалить транзакцию?",
     "confirmDeleteTx": "Это удалит запись и пересчитает среднюю цену позиции.",
     "editAsset": "Редактировать актив",
@@ -2844,6 +2855,8 @@
       "saveFailed": "Не удалось сохранить выбор инструментов",
       "empty": "Инструменты не найдены. MCP-сервер запущен? В Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "предложить",
+      "enabledCount": "Включено {{enabled}} из {{total}}",
+      "enableAll": "Включить все",
       "loading": "Загрузка инструментов…"
     },
     "chat": {
@@ -2943,6 +2956,7 @@
       "baseUrl": "URL эндпоинта",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "URL эндпоинта обязателен для этого провайдера",
+      "baseUrlInvalid": "Введите корректный URL эндпоинта http или https",
       "ollamaHint": "Если Ollama работает на вашем хост-компьютере, используйте http://host.docker.internal:11434 (Mac/Windows) или IP вашего хоста (Linux).",
       "openaiCompatHint": "Просто вставьте host:port (например, http://192.168.1.142:1234). Путь /v1 добавляется автоматически. Из Docker на Mac/Windows замените localhost на host.docker.internal.",
       "apiKey": "API-ключ / токен",

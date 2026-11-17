@@ -1367,10 +1367,16 @@
     "connectionStatus": {
       "active": "有効",
       "error": "エラー",
-      "expired": "期限切れ"
+      "expired": "期限切れ",
+      "disconnected": "接続解除済み"
     },
     "pluginConnectors": "インストール済みのプラグイン",
-    "pluginUnavailable": "この接続のプラグインはインストールされていないか、利用できなくなりました。"
+    "pluginUnavailable": "この接続のプラグインはインストールされていないか、利用できなくなりました。",
+    "confirmDisconnectKeepDesc": "{{institution}} の同期を停止します。口座と取引履歴はアプリに残り、あとで再接続できます。",
+    "disconnectAlsoDelete": "口座と取引も削除する",
+    "disconnectedKept": "銀行の接続を解除しました。口座と履歴は残っています。",
+    "removeConnection": "接続を削除",
+    "connectionDisconnected": "接続解除済み。再接続すると同期を再開します"
   },
   "loans": {
     "title": "ローン契約",
@@ -2049,6 +2055,7 @@
     "noTransactions": "取引はまだありません",
     "txBuy": "買付",
     "txSell": "売却",
+    "txSplit": "株式分割",
     "txFee": "手数料",
     "txSaved": "取引を保存しました",
     "txDeleted": "取引を削除しました",
@@ -2059,6 +2066,10 @@
     "unitPrice": "単価",
     "fee": "手数料",
     "txTotal": "合計",
+    "splitOldUnits": "分割前の数量",
+    "splitNewUnits": "分割後の数量",
+    "splitHint": "分割前に保有していた数量と、分割後の数量を入力してください。1株を100株にする分割は 1 → 100、10株を1株にする株式併合は 10 → 1 です。日付には、新しい価格で取引される最初の日を指定してください。",
+    "splitInvalid": "1から1,000,000までの異なる整数を2つ入力してください。",
     "confirmDeleteTxTitle": "取引を削除しますか?",
     "confirmDeleteTx": "この項目を削除し、保有の平均単価を再計算します。",
     "editAsset": "資産を編集",
@@ -2819,6 +2830,8 @@
       "saveFailed": "ツール選択の保存に失敗しました",
       "empty": "検出されたツールはありません。MCPサーバーは起動していますか?Dockerの場合: `docker compose --profile agents up -d`",
       "proposeBadge": "提案",
+      "enabledCount": "{{total}} 件中 {{enabled}} 件が有効",
+      "enableAll": "すべて有効にする",
       "loading": "ツールを読み込み中…"
     },
     "chat": {
@@ -2918,6 +2931,7 @@
       "baseUrl": "エンドポイントURL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "このプロバイダーにはエンドポイントURLが必要です",
+      "baseUrlInvalid": "有効な http または https のエンドポイントURLを入力してください",
       "ollamaHint": "Ollamaがホストマシンで動いている場合、http://host.docker.internal:11434(Mac/Windows)またはホストのIP(Linux)を使ってください。",
       "openaiCompatHint": "host:portだけ貼り付けてください(例: http://192.168.1.142:1234)。/v1パスは自動で追加されます。Mac/WindowsのDocker内からはlocalhostをhost.docker.internalに置き換えてください。",
       "apiKey": "APIキー / トークン",

@@ -419,21 +419,23 @@ async def test_balance_history_with_future_projections(
 
 def test_signed_expr_helpers_smoke():
     """The signed-amount SQL expression helpers compile without a bound query.
-    Covers the empty-currency branch of _signed_balance_expr and
-    _signed_primary_expr (used elsewhere / kept for reuse)."""
+    Covers the shared account-currency expressions and _signed_primary_expr
+    (used elsewhere / kept for reuse)."""
+    from app.services._query_filters import (
+        amount_in_account_currency,
+        signed_amount_expr,
+    )
     from app.services.dashboard_service import (
-        _signed_balance_expr,
         _signed_primary_expr,
         _primary_amount_expr,
     )
 
-    # Empty currency arg -> simple effective=amount branch
-    expr_empty = _signed_balance_expr("")
-    expr_cur = _signed_balance_expr("BRL")
+    expr_amount = amount_in_account_currency("BRL")
+    expr_signed = signed_amount_expr("BRL")
     expr_primary = _signed_primary_expr()
     expr_amt = _primary_amount_expr()
     # They should be SQLAlchemy ColumnElements that render to SQL strings
-    assert all(str(e) for e in (expr_empty, expr_cur, expr_primary, expr_amt))
+    assert all(str(e) for e in (expr_amount, expr_signed, expr_primary, expr_amt))
 
 
 async def _register_sqlite_to_char(session):

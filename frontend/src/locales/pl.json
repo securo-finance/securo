@@ -1420,10 +1420,16 @@
     "connectionStatus": {
       "active": "Aktywne",
       "error": "Błąd",
-      "expired": "Wygasłe"
+      "expired": "Wygasłe",
+      "disconnected": "Odłączone"
     },
     "pluginConnectors": "Z twoich wtyczek",
-    "pluginUnavailable": "Wtyczka tego połączenia nie jest już zainstalowana ani dostępna."
+    "pluginUnavailable": "Wtyczka tego połączenia nie jest już zainstalowana ani dostępna.",
+    "confirmDisconnectKeepDesc": "{{institution}} przestanie się synchronizować. Konta i historia transakcji zostaną w aplikacji, a połączenie można później przywrócić.",
+    "disconnectAlsoDelete": "Usuń też konta i transakcje",
+    "disconnectedKept": "Bank odłączony. Konta i historia zostały zachowane.",
+    "removeConnection": "Usuń połączenie",
+    "connectionDisconnected": "Odłączone. Połącz ponownie, aby znów synchronizować"
   },
   "loans": {
     "title": "Umowa kredytu",
@@ -2146,6 +2152,7 @@
     "noTransactions": "Brak transakcji",
     "txBuy": "Kupno",
     "txSell": "Sprzedaż",
+    "txSplit": "Split",
     "txFee": "Opłata",
     "txSaved": "Transakcja zapisana",
     "txDeleted": "Transakcja usunięta",
@@ -2156,6 +2163,10 @@
     "unitPrice": "Cena jednostkowa",
     "fee": "Opłata",
     "txTotal": "Razem",
+    "splitOldUnits": "Jednostki przed splitem",
+    "splitNewUnits": "Jednostki po splicie",
+    "splitHint": "Wpisz liczbę jednostek przed splitem i po nim: split 100:1 to 1 → 100, a reverse split (scalenie) 1:10 to 10 → 1. Jako datę podaj pierwszy dzień notowania po nowej cenie.",
+    "splitInvalid": "Wpisz dwie różne liczby całkowite od 1 do 1 000 000.",
     "confirmDeleteTxTitle": "Usunąć transakcję?",
     "confirmDeleteTx": "Usuwa wpis i przelicza średnią cenę pozycji.",
     "editAsset": "Edytuj aktywo",
@@ -2918,6 +2929,8 @@
       "saveFailed": "Nie udało się zapisać wyboru narzędzi",
       "empty": "Nie wykryto narzędzi. Czy serwer MCP działa? W Dockerze: `docker compose --profile agents up -d`.",
       "proposeBadge": "propozycja",
+      "enabledCount": "Włączone: {{enabled}} z {{total}}",
+      "enableAll": "Włącz wszystkie",
       "loading": "Wczytywanie narzędzi…"
     },
     "chat": {
@@ -2998,6 +3011,7 @@
       "baseUrl": "Adres URL endpointu",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Adres URL endpointu jest wymagany dla tego dostawcy",
+      "baseUrlInvalid": "Podaj prawidłowy adres URL endpointu http lub https",
       "ollamaHint": "Jeśli Ollama działa na Twoim hoście, użyj http://host.docker.internal:11434 (Mac/Windows) lub adresu IP hosta (Linux).",
       "openaiCompatHint": "Wklej po prostu host:port (np. http://192.168.1.142:1234). Ścieżka /v1 jest dodawana automatycznie. Z wnętrza Dockera na Macu/Windowsie zamień localhost na host.docker.internal.",
       "apiKey": "Klucz API / token",

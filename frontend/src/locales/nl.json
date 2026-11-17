@@ -1369,10 +1369,16 @@
     "connectionStatus": {
       "active": "Actief",
       "error": "Fout",
-      "expired": "Verlopen"
+      "expired": "Verlopen",
+      "disconnected": "Losgekoppeld"
     },
     "pluginConnectors": "Uit je plugins",
-    "pluginUnavailable": "De plugin van deze koppeling is niet meer geïnstalleerd of beschikbaar."
+    "pluginUnavailable": "De plugin van deze koppeling is niet meer geïnstalleerd of beschikbaar.",
+    "confirmDisconnectKeepDesc": "{{institution}} wordt niet meer gesynchroniseerd. De rekeningen en transactiegeschiedenis blijven in de app, en je kunt later opnieuw verbinden.",
+    "disconnectAlsoDelete": "Ook rekeningen en transacties verwijderen",
+    "disconnectedKept": "Bank losgekoppeld. Rekeningen en geschiedenis zijn bewaard.",
+    "removeConnection": "Verbinding verwijderen",
+    "connectionDisconnected": "Losgekoppeld. Verbind opnieuw om weer te synchroniseren"
   },
   "loans": {
     "title": "Leningcontract",
@@ -2051,6 +2057,7 @@
     "noTransactions": "Nog geen transacties",
     "txBuy": "Koop",
     "txSell": "Verkopen",
+    "txSplit": "Splitsing",
     "txFee": "Vergoeding",
     "txSaved": "Transactie opgeslagen",
     "txDeleted": "Transactie verwijderd",
@@ -2061,6 +2068,10 @@
     "unitPrice": "Eenheidsprijs",
     "fee": "Vergoeding",
     "txTotal": "Totaal",
+    "splitOldUnits": "Eenheden vóór splitsing",
+    "splitNewUnits": "Eenheden na splitsing",
+    "splitHint": "Voer in hoeveel eenheden u vóór de splitsing had en hoeveel het er daarna zijn: een splitsing van 100 voor 1 is 1 → 100, een omgekeerde splitsing van 1 voor 10 is 10 → 1. Gebruik als datum de eerste dag waarop de belegging tegen de nieuwe koers wordt verhandeld.",
+    "splitInvalid": "Voer twee verschillende gehele getallen van 1 tot 1.000.000 in.",
     "confirmDeleteTxTitle": "Transactie verwijderen?",
     "confirmDeleteTx": "Hierdoor wordt de vermelding verwijderd en wordt de gemiddelde prijs van het bedrijf opnieuw berekend.",
     "editAsset": "Activa bewerken",
@@ -2821,6 +2832,8 @@
       "saveFailed": "Kan de gereedschapsselectie niet opslaan",
       "empty": "Geen gereedschap gevonden. Is de MCP-server actief? Met Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "voorstellen",
+      "enabledCount": "{{enabled}} van {{total}} ingeschakeld",
+      "enableAll": "Alles inschakelen",
       "loading": "Gereedschappen laden…"
     },
     "chat": {
@@ -2920,6 +2933,7 @@
       "baseUrl": "Endpoint-URL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Endpoint-URL is vereist voor deze provider",
+      "baseUrlInvalid": "Voer een geldige http- of https-endpoint-URL in",
       "ollamaHint": "Als Ollama op uw hostcomputer draait, gebruik dan http://host.docker.internal:11434 (Mac/Windows) of uw host-IP (Linux).",
       "openaiCompatHint": "Plak gewoon de host:port (bijvoorbeeld http://192.168.1.142:1234).). Het /v1 pad wordt automatisch toegevoegd. Vanuit Docker op Mac/Windows vervangt u localhost door host.docker.internal.",
       "apiKey": "API-sleutel/token",

@@ -1,5 +1,6 @@
 import json
 import uuid
+from datetime import datetime
 
 import pyotp
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,8 +24,16 @@ router = APIRouter()
 TOTP_VALID_WINDOW = 1
 
 
-def _verify_totp(secret: str, code: str) -> bool:
-    return pyotp.TOTP(secret).verify(code, valid_window=TOTP_VALID_WINDOW)
+def _verify_totp(secret: str, code: str, for_time: datetime | None = None) -> bool:
+    """Check a code against now, accepting the tick before and after it.
+
+    `for_time` only exists so a test can pin the clock through pyotp's own
+    API: patching the clock it reads internally does not survive a release
+    that changes how pyotp gets the current time.
+    """
+    return pyotp.TOTP(secret).verify(
+        code, for_time=for_time, valid_window=TOTP_VALID_WINDOW
+    )
 
 
 def _parse_temp_token_payload(raw: str | bytes) -> dict[str, object] | None:

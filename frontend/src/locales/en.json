@@ -1367,10 +1367,16 @@
     "connectionStatus": {
       "active": "Active",
       "error": "Error",
-      "expired": "Expired"
+      "expired": "Expired",
+      "disconnected": "Disconnected"
     },
     "pluginConnectors": "From your plugins",
-    "pluginUnavailable": "The plugin behind this connection isn't installed or available anymore."
+    "pluginUnavailable": "The plugin behind this connection isn't installed or available anymore.",
+    "confirmDisconnectKeepDesc": "{{institution}} will stop syncing. Its accounts and transaction history stay in the app, and you can reconnect it later.",
+    "disconnectAlsoDelete": "Also delete accounts and transactions",
+    "disconnectedKept": "Bank disconnected. Accounts and history were kept.",
+    "removeConnection": "Remove connection",
+    "connectionDisconnected": "Disconnected. Reconnect to sync again"
   },
   "loans": {
     "title": "Loan contract",
@@ -2049,6 +2055,7 @@
     "noTransactions": "No transactions yet",
     "txBuy": "Buy",
     "txSell": "Sell",
+    "txSplit": "Split",
     "txFee": "Fee",
     "txSaved": "Transaction saved",
     "txDeleted": "Transaction deleted",
@@ -2059,6 +2066,10 @@
     "unitPrice": "Unit price",
     "fee": "Fee",
     "txTotal": "Total",
+    "splitOldUnits": "Units before",
+    "splitNewUnits": "Units after",
+    "splitHint": "Enter the units you held before the split and what they became: a 100-for-1 split is 1 → 100, a 1-for-10 reverse split is 10 → 1. Date it on the first day the holding trades at the new price.",
+    "splitInvalid": "Enter two different whole numbers from 1 to 1,000,000.",
     "confirmDeleteTxTitle": "Delete transaction?",
     "confirmDeleteTx": "This removes the entry and recalculates the holding's average price.",
     "editAsset": "Edit Asset",
@@ -2819,6 +2830,8 @@
       "saveFailed": "Failed to save tool selection",
       "empty": "No tools discovered. Is the MCP server running? With Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "propose",
+      "enabledCount": "{{enabled}} of {{total}} enabled",
+      "enableAll": "Enable all",
       "loading": "Loading tools…"
     },
     "chat": {
@@ -2918,6 +2931,7 @@
       "baseUrl": "Endpoint URL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Endpoint URL is required for this provider",
+      "baseUrlInvalid": "Enter a valid http or https endpoint URL",
       "ollamaHint": "If Ollama runs on your host machine, use http://host.docker.internal:11434 (Mac/Windows) or your host IP (Linux).",
       "openaiCompatHint": "Just paste the host:port (e.g. http://192.168.1.142:1234). The /v1 path is added automatically. From inside Docker on Mac/Windows, replace localhost with host.docker.internal.",
       "apiKey": "API key / token",

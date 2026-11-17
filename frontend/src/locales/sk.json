@@ -1435,10 +1435,16 @@
     "connectionStatus": {
       "active": "Aktívne",
       "error": "Chyba",
-      "expired": "Vypršané"
+      "expired": "Vypršané",
+      "disconnected": "Odpojené"
     },
     "pluginConnectors": "Z vašich pluginov",
-    "pluginUnavailable": "Plugin tohto pripojenia už nie je nainštalovaný ani dostupný."
+    "pluginUnavailable": "Plugin tohto pripojenia už nie je nainštalovaný ani dostupný.",
+    "confirmDisconnectKeepDesc": "{{institution}} sa prestane synchronizovať. Účty a história transakcií zostanú v aplikácii a banku môžete neskôr znova pripojiť.",
+    "disconnectAlsoDelete": "Zmazať aj účty a transakcie",
+    "disconnectedKept": "Banka odpojená. Účty a história zostali zachované.",
+    "removeConnection": "Odstrániť pripojenie",
+    "connectionDisconnected": "Odpojené. Pripojte znova pre synchronizáciu"
   },
   "loans": {
     "title": "Úverová zmluva",
@@ -2173,6 +2179,7 @@
     "noTransactions": "Zatiaľ žiadne transakcie",
     "txBuy": "Nákup",
     "txSell": "Predaj",
+    "txSplit": "Split",
     "txFee": "Poplatok",
     "txSaved": "Transakcia uložená",
     "txDeleted": "Transakcia vymazaná",
@@ -2183,6 +2190,10 @@
     "unitPrice": "Jednotková cena",
     "fee": "Poplatok",
     "txTotal": "Spolu",
+    "splitOldUnits": "Kusov pred splitom",
+    "splitNewUnits": "Kusov po splite",
+    "splitHint": "Zadaj počet kusov pred splitom a po ňom: split 100:1 je 1 → 100, reverzný split 1:10 je 10 → 1. Ako dátum uveď prvý deň, keď sa už obchoduje za novú cenu.",
+    "splitInvalid": "Zadaj dve rôzne celé čísla od 1 do 1 000 000.",
     "confirmDeleteTxTitle": "Vymazať transakciu?",
     "confirmDeleteTx": "Záznam sa odstráni a priemerná cena pozície sa prepočíta.",
     "editAsset": "Upraviť aktívum",
@@ -2967,6 +2978,8 @@
       "saveFailed": "Výber nástrojov sa nepodarilo uložiť",
       "empty": "Nenašli sa žiadne nástroje. Beží MCP server? S Dockerom: `docker compose --profile agents up -d`.",
       "proposeBadge": "navrhuje",
+      "enabledCount": "Zapnuté {{enabled}} z {{total}}",
+      "enableAll": "Zapnúť všetko",
       "loading": "Načítavajú sa nástroje…"
     },
     "chat": {
@@ -3070,6 +3083,7 @@
       "baseUrl": "URL endpointu",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Pre tohto poskytovateľa je URL endpointu povinná",
+      "baseUrlInvalid": "Zadajte platnú URL endpointu http alebo https",
       "ollamaHint": "Ak Ollama beží na tvojom hostiteľskom počítači, použi http://host.docker.internal:11434 (Mac/Windows) alebo IP adresu hostiteľa (Linux).",
       "openaiCompatHint": "Stačí vložiť host:port (napr. http://192.168.1.142:1234). Cesta /v1 sa pridá automaticky. Z Dockeru na Mac/Windows nahraď localhost za host.docker.internal.",
       "apiKey": "API kľúč / token",

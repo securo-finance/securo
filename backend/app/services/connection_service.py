@@ -2,6 +2,7 @@ import hashlib
 import logging
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -50,7 +51,7 @@ from app.services.provider_settings import resolve_settings
 from app.services import oauth_state
 from app.services import admin_service
 from app.services import category_line_service, reconciliation_service, recurring_match_service
-from app.services.text_similarity import token_overlap
+from app.services.text_similarity import normalize_words, token_overlap
 from app.services.account_service import (
     LIABILITY_ACCOUNT_TYPES,
     _provider_to_internal_balance,
@@ -2037,8 +2038,23 @@ def _merge_sync_metadata(
             merged = {**transaction.raw_data, **txn_data.raw_data}
             if merged != transaction.raw_data:
                 transaction.raw_data = merged
-    if transaction.original_description is None:
-        transaction.original_description = txn_data.description
+    provider_description = (txn_data.description or "").strip()
+    if provider_description and transaction.source == "sync":
+        previous_original = transaction.original_description
+        if previous_original is None:
+            # Migration 071 left provenance NULL for older rows. Without knowing
+            # whether the visible text was user-edited, preserve it and store
+            # the provider text only as provenance.
+            transaction.original_description = provider_description
+        elif provider_description != previous_original:
+            if (
+                not transaction.description_is_rule_managed
+                and transaction.description == previous_original
+            ):
+                transaction.description = provider_description
+            transaction.original_description = provider_description
+    elif provider_description and transaction.original_description is None:
+        transaction.original_description = provider_description
     if txn_data.payee and not transaction.payee:
         transaction.payee = txn_data.payee
 
@@ -2099,6 +2115,69 @@ def _eb_same_merchant(held: dict, booked: dict) -> bool:
             return False
         shared = True
     return shared
+
+
+#: Payload fields a bank may rewrite when it fills in a late entry_reference.
+_EB_LATE_REF_REWRITTEN = frozenset({"entry_reference", "remittance_information"})
+
+
+def _eb_reworded_entry(held: dict, booked: dict) -> bool:
+    """Whether `booked` is `held` with a reference filled in and its
+    remittance text reworded.
+
+    A Spanish bank returned a transfer as "TRANSFERENCIA A FAVOR DE ...
+    CONCEPTO <concept>" with no reference, then as "TRASPASO: <concept>" with
+    one. The two texts share too few words for the description match, but
+    every other field of the payload is the same. So the payloads have to
+    agree on everything but the reference and the remittance text, and the
+    two texts have to end in the same words, covering at least 80% of the
+    shorter one: a bank that rewords an entry swaps the label in front and
+    keeps the concept the payer typed at the end. Shared words elsewhere are
+    not enough, since "CARD PAYMENT AT SHOP ALPHA" and "CARD PAYMENT AT SHOP
+    BETA" are two purchases when no creditor field tells them apart.
+    """
+    def rest(raw: dict) -> dict:
+        return {
+            key: value for key, value in raw.items()
+            if key not in _EB_LATE_REF_REWRITTEN and value is not None
+        }
+
+    if rest(held) != rest(booked):
+        return False
+    held_words = normalize_words(_eb_remittance(held))
+    booked_words = normalize_words(_eb_remittance(booked))
+    if not held_words or not booked_words:
+        return False
+    shared_tail = 0
+    for held_word, booked_word in zip(reversed(held_words), reversed(booked_words)):
+        if held_word != booked_word:
+            break
+        shared_tail += 1
+    return shared_tail / min(len(held_words), len(booked_words)) >= 0.8
+
+
+def _eb_exact_twin_in_batch(
+    held: Transaction, txn_data, incoming_batch: Sequence[TransactionData],
+) -> bool:
+    """Whether another entry of this fetch matches `held` by description.
+
+    A reworded match (`_eb_reworded_entry`) is weaker than a description
+    match, and the entries of a fetch are matched one at a time. Without this
+    check, "BETA COFFEE SHOP NEW YORK" processed first would take the held
+    "ALPHA COFFEE SHOP NEW YORK" row, its category and its notes, while the
+    referenced copy of ALPHA in the same fetch landed as a new row.
+    """
+    held_text = held.original_description or held.description
+    return any(
+        other.external_id != txn_data.external_id
+        and other.amount == held.amount
+        and other.type == held.type
+        and other.currency == held.currency
+        and other.date == held.date
+        and other.status == held.status
+        and token_overlap(held_text, other.description) >= 0.9
+        for other in incoming_batch
+    )
 
 
 def _eb_entry_date(raw: dict) -> Optional[date]:
@@ -2175,6 +2254,7 @@ async def _find_synced_duplicate(
     txn_data,
     incoming_external_ids: set[str],
     live_external_ids: Optional[set[str]] = None,
+    incoming_batch: Sequence[TransactionData] = (),
 ) -> Optional[Transaction]:
     """Find an existing row that the incoming `txn_data` is a twin of.
 
@@ -2202,7 +2282,8 @@ async def _find_synced_duplicate(
     settles, since that needs to know the hold has left the feed. Pass it
     only for an Enable Banking connection, and leave it out when the fetch
     was cut short, as a partial set would make a hold the provider still
-    lists look gone.
+    lists look gone. ``incoming_batch`` is the fetch `txn_data` came from;
+    it and ``live_external_ids`` let Path 4 match a reworded remittance text.
     """
     # Path 1: installment fingerprint. Highly specific, so we don't require a
     # description match on top.
@@ -2322,7 +2403,12 @@ async def _find_synced_duplicate(
     # the currency, date, status and description, no row holding the reference
     # itself competes, and it is the single candidate: two identical purchases
     # on one day are ambiguous, and picking one would hang its category and
-    # notes on the other.
+    # notes on the other. Some banks also reword the remittance text when they
+    # fill in the reference; such a row matches when the rest of its payload is
+    # unchanged (`_eb_reworded_entry`), the fetch was complete, and no other
+    # entry of the fetch matches it by description (`_eb_exact_twin_in_batch`).
+    # Known gap: a held row the bank deleted, next to a new entry that agrees
+    # on every field and on the ending of its text, is still taken for it.
     #
     # A row that took over the pending hold it settled (Path 6) keeps the
     # hold's date, up to `_EB_HOLD_SETTLE_DAYS` before the booking. It is
@@ -2371,10 +2457,19 @@ async def _find_synced_duplicate(
                 and candidate.currency == txn_data.currency
                 and candidate.date == txn_data.date
                 and candidate.status == txn_data.status
-                and token_overlap(
-                    candidate.original_description or candidate.description,
-                    txn_data.description,
-                ) >= 0.9
+                and (
+                    token_overlap(
+                        candidate.original_description or candidate.description,
+                        txn_data.description,
+                    ) >= 0.9
+                    or (
+                        live_external_ids is not None
+                        and _eb_reworded_entry(candidate.raw_data, raw)
+                        and not _eb_exact_twin_in_batch(
+                            candidate, txn_data, incoming_batch,
+                        )
+                    )
+                )
             ):
                 late_ref_matches.append(candidate)
         if len(rekey_matches) == 1:
@@ -2898,6 +2993,10 @@ async def sync_connection(
     )
     if not connection:
         raise ValueError("Connection not found")
+    if connection.status == DISCONNECTED_STATUS:
+        raise ConnectionDisconnectedError(
+            "This connection was disconnected. Reconnect it to sync again."
+        )
     if provider is None and is_plugin_provider(connection.provider):
         raise ProviderNotConfiguredError("This connection is synced by its plugin.")
     if provider is None and not connection.credentials:
@@ -3258,6 +3357,7 @@ async def sync_connection(
                     txn_data,
                     incoming_txn_external_ids,
                     live_external_ids=hold_live_ids,
+                    incoming_batch=transactions_data,
                 )
                 if synced_dup:
                     if synced_dup.original_description is None:
@@ -3631,10 +3731,7 @@ async def sync_connection(
         # Provider consent expired — distinct from a generic error so the UI
         # can show a clearer "reauthorize" prompt.
         await session.rollback()
-        async with session.begin():
-            conn = await session.get(BankConnection, connection_id)
-            if conn:
-                conn.status = "expired"
+        await _mark_failed_sync(session, connection_id, "expired")
         raise
     except ProviderUserActionRequired:
         # Stale/revoked provider credentials require a non-destructive
@@ -3642,10 +3739,7 @@ async def sync_connection(
         # shows the reconnect banner, then let the API return a typed 409
         # instead of a generic 500.
         await session.rollback()
-        async with session.begin():
-            conn = await session.get(BankConnection, connection_id)
-            if conn:
-                conn.status = "error"
+        await _mark_failed_sync(session, connection_id, "error")
         raise
     except ProviderRateLimited:
         # The bank/aggregator is throttling data requests (PSD2 caps unattended
@@ -3653,10 +3747,7 @@ async def sync_connection(
         # it or 500 the request — skip this run, keep it active, and leave
         # last_sync_at untouched so the next sync retries the same window.
         await session.rollback()
-        async with session.begin():
-            conn = await session.get(BankConnection, connection_id)
-            if conn and conn.status != "expired":
-                conn.status = "active"
+        await _mark_failed_sync(session, connection_id, "active", keep=("expired",))
         # The row can vanish if the connection was deleted mid-sync. Fall back
         # to the one we already hold rather than raising: re-raising here would
         # escape as a 500, which is exactly what this handler exists to avoid.
@@ -3667,11 +3758,32 @@ async def sync_connection(
     except Exception:
         # Mark connection as errored so UI shows reconnect banner
         await session.rollback()
-        async with session.begin():
-            conn = await session.get(BankConnection, connection_id)
-            if conn:
-                conn.status = "error"
+        await _mark_failed_sync(session, connection_id, "error")
         raise
+
+
+DISCONNECTED_STATUS = "disconnected"
+
+
+async def _mark_failed_sync(
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    status: str,
+    *,
+    keep: tuple[str, ...] = (),
+) -> None:
+    """Set the status a sync that ended early leaves. A disconnect can commit
+    between the sync's rollback and this write; overwriting it would bring
+    back a connection the user archived and break its reconnect. The row is
+    read under lock, so the check and the write see the same status."""
+    async with session.begin():
+        conn = await session.get(BankConnection, connection_id, with_for_update=True)
+        if conn and conn.status not in (DISCONNECTED_STATUS, *keep):
+            conn.status = status
+
+
+class ConnectionDisconnectedError(Exception):
+    """A sync was asked of a connection the user disconnected."""
 
 
 async def unlink_connection(
@@ -3719,16 +3831,40 @@ async def unlink_connection(
 
 
 async def delete_connection(
-    session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID, *, commit: bool = True
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    keep_accounts: bool = False,
+    commit: bool = True,
 ) -> bool:
-    """Disconnect: archive the connection's assets and delete it, with its accounts.
+    """Disconnect a connection.
 
-    `commit=False` leaves the commit to the caller (a plugin being removed
-    disconnects its connections inside the removal's transaction).
+    `keep_accounts=True` archives it and keeps its accounts and history (see
+    below); otherwise its assets are archived and it is deleted with its
+    accounts. `commit=False` leaves the commit to the caller (a plugin being
+    removed disconnects its connections inside the removal's transaction).
     """
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         return False
+
+    if keep_accounts:
+        # Disconnecting keeps the accounts, their history, payees and
+        # recurrings. The connection is archived rather than deleted so its
+        # accounts stay linked to it: a later reconnect goes through the
+        # reconnect flow, which matches each account by the same
+        # (connection_id, external_id) a normal sync uses, so the re-sync
+        # updates the existing rows instead of importing them again.
+        # Dropping the credentials ends the access, and the status keeps the
+        # scheduler and manual sync away from it.
+        connection.status = DISCONNECTED_STATUS
+        connection.credentials = None
+        if commit:
+            await session.commit()
+        else:
+            await session.flush()
+        return True
 
     # Archive synced investment assets rather than deleting them: the user
     # may still want to see their historical AssetValue trend, and if they

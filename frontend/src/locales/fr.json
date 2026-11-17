@@ -1371,10 +1371,16 @@
     "connectionStatus": {
       "active": "Active",
       "error": "Erreur",
-      "expired": "Expirée"
+      "expired": "Expirée",
+      "disconnected": "Déconnectée"
     },
     "pluginConnectors": "De vos plugins",
-    "pluginUnavailable": "Le plugin de cette connexion n'est plus installé ou disponible."
+    "pluginUnavailable": "Le plugin de cette connexion n'est plus installé ou disponible.",
+    "confirmDisconnectKeepDesc": "{{institution}} ne sera plus synchronisé. Ses comptes et l'historique des transactions restent dans l'app, et vous pourrez le reconnecter plus tard.",
+    "disconnectAlsoDelete": "Supprimer aussi les comptes et les transactions",
+    "disconnectedKept": "Banque déconnectée. Les comptes et l'historique ont été conservés.",
+    "removeConnection": "Supprimer la connexion",
+    "connectionDisconnected": "Déconnectée. Reconnectez pour synchroniser à nouveau"
   },
   "loans": {
     "title": "Contrat de prêt",
@@ -2053,6 +2059,7 @@
     "noTransactions": "Aucune transaction pour l'instant",
     "txBuy": "Achat",
     "txSell": "Vente",
+    "txSplit": "Split",
     "txFee": "Frais",
     "txSaved": "Transaction enregistrée",
     "txDeleted": "Transaction supprimée",
@@ -2063,6 +2070,10 @@
     "unitPrice": "Prix unitaire",
     "fee": "Frais",
     "txTotal": "Total",
+    "splitOldUnits": "Unités avant",
+    "splitNewUnits": "Unités après",
+    "splitHint": "Saisissez les unités que vous déteniez avant le split et ce qu'elles sont devenues : un split 100 pour 1 s'écrit 1 → 100, un regroupement 1 pour 10 s'écrit 10 → 1. Datez l'opération du premier jour où le titre est coté au nouveau cours.",
+    "splitInvalid": "Saisissez deux nombres entiers différents compris entre 1 et 1 000 000.",
     "confirmDeleteTxTitle": "Supprimer la transaction ?",
     "confirmDeleteTx": "Cela supprime l'écriture et recalcule le prix moyen de la position.",
     "editAsset": "Modifier l'actif",
@@ -2823,6 +2834,8 @@
       "saveFailed": "Échec de l'enregistrement de la sélection d'outils",
       "empty": "Aucun outil découvert. Le serveur MCP est-il en cours d'exécution ? Avec Docker : `docker compose --profile agents up -d`.",
       "proposeBadge": "proposer",
+      "enabledCount": "{{enabled}} sur {{total}} activés",
+      "enableAll": "Tout activer",
       "loading": "Chargement des outils…"
     },
     "chat": {
@@ -2922,6 +2935,7 @@
       "baseUrl": "URL du point de terminaison",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "L'URL du point de terminaison est requise pour ce fournisseur",
+      "baseUrlInvalid": "Saisissez une URL de point de terminaison http ou https valide",
       "ollamaHint": "Si Ollama tourne sur votre machine hôte, utilisez http://host.docker.internal:11434 (Mac/Windows) ou l'IP de votre hôte (Linux).",
       "openaiCompatHint": "Collez simplement l'hôte:port (ex. http://192.168.1.142:1234). Le chemin /v1 est ajouté automatiquement. Depuis Docker sur Mac/Windows, remplacez localhost par host.docker.internal.",
       "apiKey": "Clé API / jeton",

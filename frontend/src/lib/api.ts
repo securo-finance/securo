@@ -492,8 +492,10 @@ export const connections = {
     const { data } = await api.patch(`/connections/${id}/settings`, settings)
     return data
   },
-  delete: async (id: string): Promise<void> => {
-    await api.delete(`/connections/${id}`)
+  // Disconnecting keeps the accounts and their history unless the caller
+  // asks for them to be deleted too.
+  delete: async (id: string, { keepAccounts = true }: { keepAccounts?: boolean } = {}): Promise<void> => {
+    await api.delete(`/connections/${id}`, { params: { keep_accounts: keepAccounts } })
   },
 }
 
@@ -1539,14 +1541,16 @@ export const assets = {
   },
   addTransaction: async (
     id: string,
-    tx: { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string },
+    tx:
+      | { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string }
+      | { kind: 'split'; old_units: number; new_units: number; date: string; notes?: string },
   ): Promise<Asset> => {
     const { data } = await api.post(`/assets/${id}/transactions`, tx)
     return data
   },
   updateTransaction: async (
     txId: string,
-    tx: Partial<{ kind: 'buy' | 'sell'; quantity: number; price: number; fee: number; date: string; notes: string }>,
+    tx: Partial<{ kind: 'buy' | 'sell' | 'split'; quantity: number; price: number; fee: number; old_units: number; new_units: number; date: string; notes: string }>,
   ): Promise<Asset> => {
     const { data } = await api.patch(`/assets/transactions/${txId}`, tx)
     return data

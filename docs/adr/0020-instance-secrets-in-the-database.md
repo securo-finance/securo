@@ -1,4 +1,4 @@
-# 0019. An install with no secret of its own gets one, kept in the database
+# 0020. An install with no secret of its own gets one, kept in the database
 
 - Status: Accepted
 - Date: 2026-11-17
