@@ -362,6 +362,54 @@ async def test_transaction_calendar_ignores_unconverted_foreign_forecast_rows(
 
 
 @pytest.mark.asyncio
+async def test_transaction_calendar_counts_a_forecast_row_stored_with_other_case(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A row imported as ``brl`` belongs to the ``BRL`` account.
+
+    OFX carries its own ``Ccy`` and the importer stores it as sent, so the
+    projected walk has to compare the codes normalized or the row reads as an
+    unconverted foreign one and moves nothing (#1263)."""
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="BRL checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Opening cash", amount=Decimal("100"),
+            currency="BRL", date=date(2026, 7, 1), type="credit", source="manual",
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Padaria", amount=Decimal("40"),
+            currency="brl", date=date(2026, 7, 3), type="debit", source="manual",
+            status="pending",
+        ),
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 7, 1),
+        account_ids=[account.id],
+    )
+
+    july_3 = next(day for day in calendar.days if day.date == date(2026, 7, 3))
+    assert july_3.projected_count == 1
+    assert july_3.ending_balance == 60.0
+
+
+@pytest.mark.asyncio
 async def test_transaction_calendar_skips_closed_account_recurring_projections(
     session: AsyncSession, test_user, test_workspace
 ):

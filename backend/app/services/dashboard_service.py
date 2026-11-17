@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.currency import same_currency
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
@@ -1283,7 +1284,7 @@ def _signed_transaction_amount(tx: Transaction) -> float:
     account_currency = tx.account.currency if tx.account else tx.currency
     amount = (
         tx.amount
-        if tx.currency == account_currency
+        if same_currency(tx.currency, account_currency)
         else (tx.amount_primary or 0)
     )
     signed = amount if tx.type == "credit" else -amount

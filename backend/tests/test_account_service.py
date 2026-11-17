@@ -1336,6 +1336,29 @@ async def test_account_balance_ignores_unconverted_foreign_rows(
 
 
 @pytest.mark.asyncio
+async def test_balance_counts_a_same_currency_row_stored_with_other_case(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A code that differs only by case still names the account's currency.
+
+    The account schema stores the code as sent, while the transaction schema
+    upper-cases it, so a ``brl`` account meets a ``BRL`` row. Comparing the
+    codes literally would drop the row as an unconverted foreign one and
+    report zero instead of the amount (#1263)."""
+    account = await _make_account(
+        session, test_user.id, "Lowercase BRL", currency="brl"
+    )
+    today = date.today()
+    await _add_txn(
+        session, test_user.id, account.id, 100, "credit", today, currency="BRL"
+    )
+
+    accounts = await get_accounts(session, test_workspace.id)
+    listed = next(a for a in accounts if a["id"] == account.id)
+    assert listed["current_balance"] == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
 async def test_manual_account_reports_the_balance_its_history_ends_on(
     session: AsyncSession, test_user, test_workspace
 ):

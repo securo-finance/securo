@@ -5,6 +5,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.currency import normalize_currency_code
 from app.schemas.category import CategoryRead
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
@@ -15,16 +16,6 @@ from app.schemas.transaction_split import (
     TransactionSplitRead,
     TransactionSplitsInput,
 )
-
-
-def _normalize_currency_code(value: Optional[str]) -> Optional[str]:
-    """Upper-case a currency code so ``brl`` reads as ``BRL``.
-
-    Aggregations compare the row's currency to the account's, and that
-    comparison is case-sensitive, so a lower-case row in its own account's
-    currency lands in the unconverted-foreign branch and counts zero (#1263).
-    """
-    return value.upper() if isinstance(value, str) else value
 
 
 class TransactionBase(BaseModel):
@@ -40,7 +31,7 @@ class TransactionBase(BaseModel):
     @field_validator("currency", mode="before")
     @classmethod
     def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_currency_code(value)
+        return normalize_currency_code(value)
 
 
 class TransactionCreate(TransactionBase):
@@ -149,7 +140,7 @@ class TransactionUpdate(BaseModel):
     @field_validator("currency", mode="before")
     @classmethod
     def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_currency_code(value)
+        return normalize_currency_code(value)
 
 
 class InstallmentSeriesCreate(BaseModel):

@@ -82,11 +82,19 @@ def amount_in_account_currency(account_currency):
     instead of being read 1:1 (#353, #1263). Falling back to the native amount
     there is how a 700,000 CLP purchase became 700,000 BRL in the ledger.
 
+    The codes are compared upper-cased on both sides: a row and its account can
+    name the same currency in different cases, because imports store whatever
+    the file or adapter sent (OFX ``Ccy`` included) and the account keeps the
+    code as given, while the transaction schema upper-cases what it accepts.
+
     Pass a currency code, or ``Account.currency`` from a query that joins the
     account, so a correlated aggregate uses each row's own account.
     """
     return case(
-        (Transaction.currency == account_currency, Transaction.amount),
+        (
+            func.upper(Transaction.currency) == func.upper(account_currency),
+            Transaction.amount,
+        ),
         else_=func.coalesce(Transaction.amount_primary, 0),
     )
 
