@@ -40,13 +40,19 @@ def _d(value) -> Decimal:
     return Decimal(str(value or 0))
 
 
+def _created(tx: AssetTransaction) -> datetime:
+    """When the row was entered, comparable whether or not the driver kept the time zone."""
+    created = tx.created_at or datetime.min
+    return created if created.tzinfo else created.replace(tzinfo=timezone.utc)
+
+
 def _recompute(transactions: list[AssetTransaction]) -> dict:
     """Replay a holding's ledger in date order → derived position.
 
     Returns units (current quantity), average_price (per unit, None when flat),
     cost_basis (of held units), realized_gain, first_buy/last_sell dates.
     """
-    txs = sorted(transactions, key=lambda t: (t.date, t.created_at or datetime.min.replace(tzinfo=timezone.utc)))
+    txs = sorted(transactions, key=lambda t: (t.date, _created(t)))
     qty = Decimal("0")
     cost = Decimal("0")
     realized = Decimal("0")

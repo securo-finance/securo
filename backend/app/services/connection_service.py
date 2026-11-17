@@ -17,6 +17,7 @@ from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
+from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.account import Account
@@ -32,11 +33,13 @@ from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
+from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
 from app.providers.base import (
     AccountData,
     BankProvider,
     HoldingData,
+    HoldingTradeData,
     ProviderNotConfiguredError,
     ProviderRateLimited,
     ProviderUserActionRequired,
@@ -49,7 +52,9 @@ from app.services import admin_service
 from app.services import category_line_service, reconciliation_service, recurring_match_service
 from app.services.text_similarity import token_overlap
 from app.services.account_service import (
+    LIABILITY_ACCOUNT_TYPES,
     _provider_to_internal_balance,
+    keep_balance_as_manual,
     sync_opening_balance_for_connected_account,
 )
 from app.services.asset_group_service import (
@@ -293,6 +298,9 @@ async def _fetch_holdings(
         provider = provider or get_provider(
             connection.provider, settings=await resolve_settings(session)
         )
+        # A plugin's payload may leave holdings out of a run: nothing to sync.
+        if getattr(provider, "holdings_fetched", True) is False:
+            return None
         return await provider.get_holdings(credentials)
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -805,6 +813,8 @@ async def _sync_holdings(
         and (asset.connection_id == connection.id or asset.connection_id is None)
     }
     seen: set[str] = set()
+    # Every asset this sync wrote, for the holdings' trades below.
+    synced_assets: dict[str, Asset] = {}
 
     for holding in holdings:
         seen.add(holding.external_id)
@@ -818,7 +828,15 @@ async def _sync_holdings(
         #     the user) so it drops out of current totals but historical
         #     AssetValues remain visible in reports. No new AssetValue —
         #     appending today's zero would bury the real closing value.
-        if holding.is_withdrawn:
+        # A position opened and closed between two syncs still has a history
+        # when its trades come along: it's imported, and its ledger sells it.
+        closed_with_history = (
+            holding.is_withdrawn
+            and existing is None
+            and bool(holding.trades)
+            and _reconciled_trades(holding, list(holding.trades or [])) is not None
+        )
+        if holding.is_withdrawn and not closed_with_history:
             if existing is None:
                 continue
             provider_sell_date: Optional[str] = None
@@ -841,6 +859,7 @@ async def _sync_holdings(
                 withdrawn_metadata[_PROVIDER_SELL_DATE_METADATA_KEY] = provider_sell_date
             existing.external_metadata = withdrawn_metadata or None
             existing.connection_id = connection.id
+            synced_assets[holding.external_id] = existing
             continue
 
         # A provider-reported closure is reversible. The prior raw status is
@@ -855,6 +874,7 @@ async def _sync_holdings(
             session, existing, holding, user_id, connection.id, source,
             workspace_id=connection.workspace_id,
         )
+        synced_assets[holding.external_id] = asset
         if asset.group_id is not None:
             existing_group = await session.get(AssetGroup, asset.group_id)
             if (
@@ -905,6 +925,8 @@ async def _sync_holdings(
         if ext_id not in seen and not asset.is_archived:
             asset.is_archived = True
 
+    await _sync_holding_trades(session, source, holdings, synced_assets)
+
     # Sync owns its wallets: drop any it emptied by re-attribution above
     # (e.g. the single connection-named wallet that predates per-institution
     # ones). Wallets still holding assets — or used this run — are kept, and
@@ -935,6 +957,160 @@ async def _sync_holdings(
                 await session.delete(emptied)
 
 
+def _trade_target(holding: HoldingData) -> Optional[Decimal]:
+    """The quantity a holding's trades must add up to, when known."""
+    return Decimal("0") if holding.is_withdrawn else holding.quantity
+
+
+def _reconciled_trades(
+    holding: HoldingData, trades: list[HoldingTradeData]
+) -> Optional[list[HoldingTradeData]]:
+    """`trades` in ledger order, if they add up to the holding's position.
+
+    Replaying every buy and sell must land on the quantity the provider
+    reports now (zero once withdrawn) without ever going below zero. Each
+    trade's quantity may carry the provider's rounding, so the check allows
+    one millionth of the largest lot (at least 0.0001).
+    """
+    target = _trade_target(holding)
+    if target is None or not trades:
+        return None
+    ordered = sorted(trades, key=lambda t: (t.date, t.kind != "buy", t.external_id))
+    largest = max([abs(target), *(trade.quantity for trade in trades)])
+    tolerance = max(Decimal("0.0001"), largest * Decimal("0.000001"))
+    position = Decimal("0")
+    for trade in ordered:
+        position += trade.quantity if trade.kind == "buy" else -trade.quantity
+        if position < -tolerance:
+            return None
+    return ordered if abs(position - target) <= tolerance else None
+
+
+def _trade_from_row(tx: AssetTransaction) -> HoldingTradeData:
+    return HoldingTradeData(
+        external_id=tx.external_id or "",
+        kind="buy" if tx.kind == "buy" else "sell",
+        date=tx.date,
+        quantity=Decimal(str(tx.quantity)),
+        price=Decimal(str(tx.price)),
+        fee=Decimal(str(tx.fee or 0)),
+    )
+
+
+async def _sale_recorded_by_hand(session: AsyncSession, asset: Asset) -> bool:
+    """Whether the asset's sale date is the user's, not one its ledger set by selling out."""
+    from app.services.asset_transaction_service import _recompute
+
+    if asset.sell_date is None:
+        return False
+    rows = (
+        await session.execute(select(AssetTransaction).where(AssetTransaction.asset_id == asset.id))
+    ).scalars().all()
+    position = _recompute(list(rows))
+    return not (rows and position["units"] <= 0 and position["last_sell"] == asset.sell_date)
+
+
+async def _sync_holding_trades(
+    session: AsyncSession,
+    source: str,
+    holdings: list[HoldingData],
+    synced_assets: dict[str, Asset],
+) -> None:
+    """Mirror the trades a provider reports into each asset's ledger.
+
+    The ledger lets performance count what was bought and sold instead of
+    inferring it from value changes. Stored trades of this connection's
+    source are overlaid with the reported ones by `external_id` (the reported
+    one wins, it may be a correction), so a provider that only reports recent
+    trades keeps the older ones; failing that, the reported trades alone are
+    tried. A set that doesn't add up to the reported position is not used and
+    the stored ledger stays. Trades of any other source (entered by hand,
+    imported) are never touched, and `units` stays the reported quantity.
+    """
+    from app.services.asset_transaction_service import recompute_and_cache
+
+    reported = [
+        holding
+        for holding in holdings
+        if holding.trades is not None
+        and (asset := synced_assets.get(holding.external_id)) is not None
+        # A market-priced asset is valued from its own ledger (units x
+        # quote): the user took over tracking it, so its trades stay theirs.
+        and asset.valuation_method != "market_price"
+        and _trade_target(holding) is not None
+    ]
+    if not reported:
+        return
+    await session.flush()
+    for holding in reported:
+        asset = synced_assets[holding.external_id]
+        rows = (
+            await session.execute(
+                select(AssetTransaction).where(
+                    AssetTransaction.asset_id == asset.id,
+                    AssetTransaction.source == source,
+                )
+            )
+        ).scalars().all()
+        stored = {tx.external_id: tx for tx in rows if tx.external_id}
+        merged = {external_id: _trade_from_row(tx) for external_id, tx in stored.items()}
+        merged.update((trade.external_id, trade) for trade in holding.trades or [])
+        reconciled = _reconciled_trades(holding, list(merged.values())) or _reconciled_trades(
+            holding, list(holding.trades or [])
+        )
+        if reconciled is None:
+            if holding.trades:
+                logger.warning(
+                    "Trades for asset %s don't add up to the reported position; keeping its ledger",
+                    asset.id,
+                )
+            continue
+        # A sale the user recorded on a position the provider still holds
+        # stays recorded. One the ledger itself set (the position was sold
+        # out) follows the ledger, so buying again reopens the position.
+        sold = (
+            (asset.sell_date, asset.sell_price)
+            if not holding.is_withdrawn and await _sale_recorded_by_hand(session, asset)
+            else None
+        )
+        wanted = {trade.external_id for trade in reconciled}
+        for tx in rows:
+            if tx.external_id not in wanted:
+                await session.delete(tx)
+        # The ledger replays same-day trades in creation order: stamp them in
+        # the order they reconciled in, so both replays agree.
+        stamp = datetime.now(timezone.utc)
+        for position, trade in enumerate(reconciled):
+            tx = stored.get(trade.external_id)
+            if tx is None:
+                tx = AssetTransaction(
+                    asset_id=asset.id,
+                    workspace_id=asset.workspace_id,
+                    source=source,
+                    external_id=trade.external_id,
+                )
+                session.add(tx)
+            tx.kind = trade.kind
+            tx.quantity = trade.quantity
+            tx.price = trade.price
+            tx.fee = trade.fee
+            tx.date = trade.date
+            tx.created_at = stamp + timedelta(microseconds=position)
+        await session.flush()
+        was_sold = asset.sell_date is not None
+        # Average price, realized gain and cost basis come from the ledger;
+        # the position stays what the provider reports.
+        await recompute_and_cache(session, asset)
+        if holding.quantity is not None and not holding.is_withdrawn:
+            asset.units = holding.quantity
+        if sold is not None:
+            asset.sell_date, asset.sell_price = sold
+        if was_sold and asset.sell_date is None and not holding.is_withdrawn:
+            # Reopened by this sync: the value step above skipped it while it
+            # still read as sold, so record today's value now.
+            await _upsert_asset_value_for_today(session, asset, holding.current_value, app_today())
+
+
 async def _upsert_asset_from_holding(
     session: AsyncSession,
     asset: Optional[Asset],
@@ -960,7 +1136,7 @@ async def _upsert_asset_from_holding(
             source=source,
             external_id=holding.external_id,
             name=holding.name,
-            type="investment",
+            type=holding.asset_type or "investment",
             currency=holding.currency,
             units=holding.quantity,
             purchase_price=holding.purchase_price,
@@ -977,6 +1153,10 @@ async def _upsert_asset_from_holding(
 
     # Fields Pluggy consistently returns — safe to overwrite each sync.
     asset.name = holding.name
+    # A type the provider names replaces only the generic default: a type
+    # the user picked stays.
+    if holding.asset_type and asset.type == "investment":
+        asset.type = holding.asset_type
     asset.currency = holding.currency
     asset.user_id = user_id
     # external_metadata is a snapshot blob: we want the latest every time.
@@ -2705,13 +2885,22 @@ async def sync_connection(
     workspace_id: uuid.UUID,
     requesting_user_id: uuid.UUID,
     trigger_provider_refresh: bool = False,
+    provider: BankProvider | None = None,
 ) -> tuple[BankConnection, int, SyncOutcome]:
+    """Sync a connection from its provider.
+
+    `provider` is given for a plugin's connection: the plugin already fetched,
+    and the provider serves what it returned (`app.plugins.provider`). Its
+    credentials stay sealed with the plugin connection, so there are none here.
+    """
     connection = await get_connection(
         session, connection_id, workspace_id, for_update=True
     )
     if not connection:
         raise ValueError("Connection not found")
-    if not connection.credentials:
+    if provider is None and is_plugin_provider(connection.provider):
+        raise ProviderNotConfiguredError("This connection is synced by its plugin.")
+    if provider is None and not connection.credentials:
         raise ValueError("Credentials not found")
 
     # Authorization is workspace-scoped and happens before this service is
@@ -2737,7 +2926,7 @@ async def sync_connection(
     # provider is a server misconfiguration, and the catch-all below would
     # wrongly stamp the (healthy) connection with status="error".
     try:
-        provider = get_provider(connection.provider, settings=await resolve_settings(session))
+        provider = provider or get_provider(connection.provider, settings=await resolve_settings(session))
     except ValueError as exc:
         raise ProviderNotConfiguredError(
             f"Provider '{connection.provider}' is not configured. "
@@ -2746,7 +2935,7 @@ async def sync_connection(
 
     try:
         # Refresh credentials if needed
-        credentials = await provider.refresh_credentials(connection.credentials)
+        credentials = await provider.refresh_credentials(connection.credentials or {})
         connection.credentials = credentials
 
         # Backfill the institution logo for connections linked before logo
@@ -3485,9 +3674,58 @@ async def sync_connection(
         raise
 
 
-async def delete_connection(
+async def unlink_connection(
     session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> bool:
+    """End a connection but keep what it synced (not committed).
+
+    Its accounts become manual ones with all their transactions: a synced
+    account keeps an opening-balance transaction that makes its transactions
+    add up to the provider's balance, so the balance carries over. Its assets
+    are archived, as on a disconnect, and the connection and its institutions
+    are deleted.
+    """
+    connection = await get_connection(session, connection_id, workspace_id)
+    if not connection:
+        return False
+    await session.execute(
+        update(Asset).where(Asset.connection_id == connection_id).values(is_archived=True)
+    )
+    accounts = (
+        await session.scalars(select(Account).where(Account.connection_id == connection_id))
+    ).all()
+    for account in accounts:
+        # The sync names an account after its institution; once manual, the
+        # institution is gone and the account's own name tells it apart.
+        if account.institution is not None and account.display_name == account.institution.name:
+            account.display_name = None
+    # What each account shows while synced: liabilities store debt as positive.
+    shown = {
+        account.id: -account.balance if account.type in LIABILITY_ACCOUNT_TYPES else account.balance
+        for account in accounts
+    }
+    await session.execute(
+        update(Account)
+        .where(Account.connection_id == connection_id)
+        .values(connection_id=None, institution_id=None)
+    )
+    for account in accounts:
+        await keep_balance_as_manual(session, account, Decimal(str(shown[account.id])))
+    # Bulk statements, so the relationship's delete-orphan cascade can't
+    # reach the accounts just unlinked.
+    await session.execute(delete(Institution).where(Institution.connection_id == connection_id))
+    await session.execute(delete(BankConnection).where(BankConnection.id == connection_id))
+    return True
+
+
+async def delete_connection(
+    session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID, *, commit: bool = True
+) -> bool:
+    """Disconnect: archive the connection's assets and delete it, with its accounts.
+
+    `commit=False` leaves the commit to the caller (a plugin being removed
+    disconnects its connections inside the removal's transaction).
+    """
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         return False
@@ -3572,5 +3810,8 @@ async def delete_connection(
             )
         )
 
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return True
