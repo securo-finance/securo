@@ -30,6 +30,10 @@ from mcp_server.registry import REGISTRY, call_tool, list_tools
 
 logger = logging.getLogger(__name__)
 
+# This server verifies every call's token, so it refuses to start with a
+# missing or public secret even when AGENTS_ENABLED is off (#1173).
+get_agent_settings().require_mcp_jwt_secret()
+
 app = FastAPI(title="Securo MCP Server", openapi_url=None, docs_url=None)
 
 

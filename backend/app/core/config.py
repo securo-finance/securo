@@ -13,6 +13,22 @@ CREDENTIALS_DIRECTORY: list[Path] = [
     Path(p) for p in getenv("CREDENTIALS_DIRECTORY", "/run/secrets").split(":") if p
 ]
 
+# Every default that shipped in the code, Compose files, Helm chart and example
+# env files carries one of these markers (as the plugin runner's placeholders
+# do). Those values are public, so anything signed or encrypted with one of
+# them can be forged or read by anyone (#1173).
+PLACEHOLDER_SECRET_MARKERS = ("change-me-in-production", "change-in-production")
+
+
+def require_private_secret(name: str, value: str) -> None:
+    """Refuse to start with a missing or publicly known signing secret."""
+    hint = f"Generate one with `openssl rand -hex 32` and set {name} in your .env."
+    value = value.strip()
+    if not value:
+        raise ValueError(f"{name} is not set. {hint}")
+    if any(marker in value for marker in PLACEHOLDER_SECRET_MARKERS):
+        raise ValueError(f"{name} is set to a public default value. {hint}")
+
 
 class Settings(BaseSettings):
     # App
@@ -22,8 +38,9 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
 
-    # Auth
-    secret_key: SecretStr = SecretStr("change-me-in-production")
+    # Auth. Signs session and password-reset tokens and derives the key that
+    # encrypts saved credentials, so it has no default: see validate_secret_key.
+    secret_key: SecretStr = SecretStr("")
     local_auth_enabled: bool = True
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
@@ -194,6 +211,11 @@ class Settings(BaseSettings):
     def default_frontend_url(self) -> "Settings":
         if not self.frontend_url:
             self.frontend_url = f"http://localhost:{self.frontend_port}"
+        return self
+
+    @model_validator(mode="after")
+    def validate_secret_key(self) -> "Settings":
+        require_private_secret("SECRET_KEY", self.secret_key.get_secret_value())
         return self
 
     @model_validator(mode="after")

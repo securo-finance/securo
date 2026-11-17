@@ -9,7 +9,9 @@ x-podman:
 
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
-  SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+  # No default: a shared value would let anyone sign a session token for any
+  # install. Generate one with `openssl rand -hex 32` and put it in .env.
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is not set. Generate one with openssl rand -hex 32 and put it in .env}
   DEBUG: ${DEBUG:-false}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
   PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
@@ -63,7 +65,8 @@ x-backend-env: &backend-env
   AGENTS_ENABLED: ${AGENTS_ENABLED:-false}
   AGENTS_BUILTIN_MCP_URL: ${AGENTS_BUILTIN_MCP_URL:-http://mcp-server:8765/mcp}
   AGENTS_EXTRA_MCP_SERVERS: ${AGENTS_EXTRA_MCP_SERVERS:-}
-  AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-dev-mcp-secret-change-in-production}
+  # Required once agents are on; the backend and mcp-server refuse to start without it.
+  AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-}
   # TTL for tokens minted from /agents/connections → "External MCP access".
   # Used by Claude Desktop, n8n, custom clients plugging into Securo.
   AGENTS_MCP_EXTERNAL_TTL_DAYS: ${AGENTS_MCP_EXTERNAL_TTL_DAYS:-90}

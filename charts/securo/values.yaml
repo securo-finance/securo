@@ -13,8 +13,9 @@ global:
 
 # If existingSecret is NOT set, this secret will be created with the values below
 secret:
-  # MUST change in production
-  secretKey: "dev-secret-change-in-production"
+  # Required: the backend refuses to start without a unique value.
+  # Generate one with `openssl rand -hex 32` (or set it in existingSecret).
+  secretKey: ""
   # If postgresql.enabled is true, the internal database will be deployed.
   # If postgresql.enabled is false, you must provide your external database URL here or in existingSecret.
   databaseUrl: 'postgresql+asyncpg://postgres:postgres@{{ include "securo.fullname" . }}-postgresql:5432/securo'
@@ -35,7 +36,8 @@ secret:
   openexchangeratesAppId: ""
 
   # Agents (LLM)
-  agentsMcpJwtSecret: "dev-mcp-secret-change-in-production"
+  # Required when agents are enabled (openssl rand -hex 32).
+  agentsMcpJwtSecret: ""
   agentsOpenaiApiKey: ""
   agentsAnthropicApiKey: ""
   agentsOpenaiCompatApiKey: ""

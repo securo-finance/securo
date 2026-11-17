@@ -196,3 +196,87 @@ def test_set_frontend_url_is_used_as_is(monkeypatch):
     monkeypatch.setenv("FRONTEND_PORT", "3132")
 
     assert Settings(_env_file=None).frontend_url == "https://securo.example.com"
+
+
+# The values that shipped as defaults in code, Compose, Helm and the example
+# env files are public: a token signed with one of them can be forged by
+# anyone (#1173). Startup must refuse them instead of running with them.
+PUBLIC_SECRETS = [
+    "change-me-in-production",
+    "dev-secret-change-in-production",
+    "dev-mcp-secret-change-in-production",
+]
+
+
+def test_secret_key_unset_refuses_to_start(monkeypatch, secrets: Path):
+    monkeypatch.delenv("SECRET_KEY")
+
+    with pytest.raises(ValidationError, match="SECRET_KEY is not set"):
+        Settings(_env_file=None, _secrets_dir=str(secrets))
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_blank_secret_key_refuses_to_start(monkeypatch, secrets: Path, value: str):
+    monkeypatch.setenv("SECRET_KEY", value)
+
+    with pytest.raises(ValidationError, match="SECRET_KEY is not set"):
+        Settings(_env_file=None, _secrets_dir=str(secrets))
+
+
+@pytest.mark.parametrize("value", PUBLIC_SECRETS)
+def test_public_default_secret_key_refuses_to_start(monkeypatch, secrets: Path, value: str):
+    monkeypatch.setenv("SECRET_KEY", f" {value}\n")
+
+    with pytest.raises(ValidationError, match="SECRET_KEY is set to a public default"):
+        Settings(_env_file=None, _secrets_dir=str(secrets))
+
+
+def test_public_secret_key_is_refused_from_secrets_dir(monkeypatch, secrets: Path):
+    monkeypatch.delenv("SECRET_KEY")
+    write(secrets, "secret_key", "change-me-in-production\n")
+
+    with pytest.raises(ValidationError, match="SECRET_KEY is set to a public default"):
+        Settings(_env_file=None, _secrets_dir=str(secrets))
+
+
+def test_unique_secret_key_starts(monkeypatch, secrets: Path):
+    monkeypatch.setenv("SECRET_KEY", "a-unique-value-only-this-install-knows")
+
+    settings = Settings(_env_file=None, _secrets_dir=str(secrets))
+
+    assert settings.secret_key.get_secret_value() == "a-unique-value-only-this-install-knows"
+
+
+@pytest.mark.parametrize("value", ["", *PUBLIC_SECRETS])
+def test_agents_refuse_public_or_missing_mcp_secret(monkeypatch, value: str):
+    from app.agents.config import AgentSettings
+
+    monkeypatch.setenv("AGENTS_ENABLED", "true")
+    monkeypatch.setenv("AGENTS_MCP_JWT_SECRET", value)
+
+    with pytest.raises(ValidationError, match="AGENTS_MCP_JWT_SECRET"):
+        AgentSettings(_env_file=None)
+
+
+def test_agents_off_do_not_need_an_mcp_secret(monkeypatch):
+    """Nobody pays for a feature they didn't turn on: with agents off, no
+    token is minted or checked, so the secret isn't required."""
+    from app.agents.config import AgentSettings
+
+    monkeypatch.setenv("AGENTS_ENABLED", "false")
+    monkeypatch.delenv("AGENTS_MCP_JWT_SECRET", raising=False)
+
+    assert AgentSettings(_env_file=None).enabled is False
+
+
+def test_mcp_server_refuses_public_secret_even_with_agents_off(monkeypatch):
+    """The MCP server verifies tokens whenever it runs, so it checks the
+    secret on its own, whatever AGENTS_ENABLED says."""
+    from app.agents.config import AgentSettings
+
+    monkeypatch.setenv("AGENTS_ENABLED", "false")
+    monkeypatch.setenv("AGENTS_MCP_JWT_SECRET", "dev-mcp-secret-change-in-production")
+    settings = AgentSettings(_env_file=None)
+
+    with pytest.raises(ValueError, match="AGENTS_MCP_JWT_SECRET is set to a public default"):
+        settings.require_mcp_jwt_secret()

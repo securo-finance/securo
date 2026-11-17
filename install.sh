@@ -261,12 +261,15 @@ generate_env() {
 
   if command -v openssl &> /dev/null; then
     SECRET_KEY=$(openssl rand -hex 32)
+    AGENTS_MCP_JWT_SECRET=$(openssl rand -hex 32)
   else
     SECRET_KEY=$(head -c 32 /dev/urandom | xxd -p | tr -d '\n')
+    AGENTS_MCP_JWT_SECRET=$(head -c 32 /dev/urandom | xxd -p | tr -d '\n')
   fi
 
   cat > .env <<EOF
 SECRET_KEY=$SECRET_KEY
+AGENTS_MCP_JWT_SECRET=$AGENTS_MCP_JWT_SECRET
 PLUGGY_CLIENT_ID=
 PLUGGY_CLIENT_SECRET=
 EOF

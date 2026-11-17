@@ -34,6 +34,12 @@ curl -fsSL https://usesecuro.com/install.sh | bash
 
 ```bash
 git clone https://github.com/securo-finance/securo.git && cd securo
+copy .env.example .env
+```
+
+Open `.env` and set `SECRET_KEY` to a long random value only you know (64 characters from a password generator works). Securo refuses to start without it. Then:
+
+```bash
 docker compose up --build
 ```
 

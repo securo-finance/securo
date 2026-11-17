@@ -27,13 +27,16 @@ If your storage only supports `ReadWriteOnce` (RWO), you must restrict all Secur
 If you want to install the latest official release from the GitHub Container Registry (GHCR):
 
 ```bash
-helm install securo oci://ghcr.io/securo-finance/charts/securo --version <VERSION>
+helm install securo oci://ghcr.io/securo-finance/charts/securo --version <VERSION> \
+  --set secret.secretKey="$(openssl rand -hex 32)"
 ```
+
+`secret.secretKey` has no default and the backend refuses to start without a unique value (or set `secretKey` in your `existingSecret`). Keep it stable across upgrades: it signs sessions and encrypts saved credentials.
 
 If you are developing locally and want to install from the source repository:
 
 ```bash
-helm install securo ./charts/securo
+helm install securo ./charts/securo --set secret.secretKey="$(openssl rand -hex 32)"
 ```
 
 ## Configuration

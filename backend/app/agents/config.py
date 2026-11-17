@@ -1,7 +1,10 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.config import require_private_secret
 
 
 class AgentSettings(BaseSettings):
@@ -30,8 +33,9 @@ class AgentSettings(BaseSettings):
     extra_mcp_servers: str = ""
 
     # Shared secret used to mint short-lived JWTs for MCP calls. Distinct
-    # from the main app secret so revocation is independent.
-    mcp_jwt_secret: str = "change-me-in-production"
+    # from the main app secret so revocation is independent. No default:
+    # required while agents are on, and always by the MCP server.
+    mcp_jwt_secret: str = ""
     mcp_jwt_ttl_seconds: int = 600
 
     # TTL for long-lived tokens minted via the UI for external agents
@@ -84,6 +88,15 @@ class AgentSettings(BaseSettings):
         env_prefix="AGENTS_",
         extra="ignore",
     )
+
+    def require_mcp_jwt_secret(self) -> None:
+        require_private_secret("AGENTS_MCP_JWT_SECRET", self.mcp_jwt_secret)
+
+    @model_validator(mode="after")
+    def validate_mcp_jwt_secret(self) -> "AgentSettings":
+        if self.enabled:
+            self.require_mcp_jwt_secret()
+        return self
 
 
 @lru_cache
