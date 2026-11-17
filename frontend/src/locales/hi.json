@@ -1649,7 +1649,6 @@
     "fieldType": "प्रकार",
     "fieldAccount": "खाता",
     "fieldPayee": "प्राप्तकर्ता",
-    "fieldCardEnding": "कार्ड का अंतिम भाग",
     "fieldDate": "तिथि",
     "fieldStatus": "स्थिति",
     "opContains": "शामिल है",

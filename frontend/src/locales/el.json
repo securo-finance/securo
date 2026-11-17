@@ -1649,7 +1649,6 @@
     "fieldType": "Τύπος",
     "fieldAccount": "Λογαριασμός",
     "fieldPayee": "Δικαιούχος",
-    "fieldCardEnding": "Τέλος κάρτας",
     "fieldDate": "Ημερομηνία",
     "fieldStatus": "Κατάσταση",
     "opContains": "περιέχει",

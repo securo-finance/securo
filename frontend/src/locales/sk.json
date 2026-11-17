@@ -1746,7 +1746,6 @@
     "fieldType": "Typ",
     "fieldAccount": "Účet",
     "fieldPayee": "Príjemca",
-    "fieldCardEnding": "Koniec karty",
     "fieldDate": "Dátum",
     "fieldStatus": "Stav",
     "opContains": "obsahuje",

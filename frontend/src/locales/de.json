@@ -1655,7 +1655,6 @@
     "fieldType": "Typ",
     "fieldAccount": "Konto",
     "fieldPayee": "Zahlungsempfänger",
-    "fieldCardEnding": "Kartenendung",
     "fieldDate": "Datum",
     "fieldStatus": "Status",
     "opContains": "enthält",

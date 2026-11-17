@@ -74,30 +74,6 @@ def test_equals_no_match():
     assert evaluate_conditions("and", conditions, tx) is False
 
 
-def test_card_ending_equals():
-    conditions = [
-        {"field": "card_masked_number", "op": "equals", "value": "5896"}
-    ]
-    tx = make_tx(card_masked_number="5896")
-    assert evaluate_conditions("and", conditions, tx) is True
-
-
-def test_card_ending_not_equals():
-    conditions = [
-        {"field": "card_masked_number", "op": "not_equals", "value": "5896"}
-    ]
-    tx = make_tx(card_masked_number="4305")
-    assert evaluate_conditions("and", conditions, tx) is True
-
-
-def test_card_ending_does_not_match_missing_card():
-    conditions = [
-        {"field": "card_masked_number", "op": "equals", "value": "5896"}
-    ]
-    tx = make_tx(card_masked_number=None)
-    assert evaluate_conditions("and", conditions, tx) is False
-
-
 def test_regex():
     conditions = [{"field": "description", "op": "regex", "value": "PIX.*RECEBIDO"}]
     tx = make_tx(description="PIX RECEBIDO JOAO")

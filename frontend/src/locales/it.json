@@ -1658,7 +1658,6 @@
     "fieldType": "Tipo",
     "fieldAccount": "Conto",
     "fieldPayee": "Beneficiario",
-    "fieldCardEnding": "Finale della carta",
     "fieldDate": "Data",
     "fieldStatus": "Stato",
     "opContains": "contiene",

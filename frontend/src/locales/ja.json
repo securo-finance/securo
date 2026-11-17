@@ -1649,7 +1649,6 @@
     "fieldType": "種類",
     "fieldAccount": "口座",
     "fieldPayee": "取引相手",
-    "fieldCardEnding": "カード末尾",
     "fieldDate": "日付",
     "fieldStatus": "ステータス",
     "opContains": "次を含む",

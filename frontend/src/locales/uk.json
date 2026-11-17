@@ -1671,7 +1671,6 @@
     "fieldType": "Тип",
     "fieldAccount": "Рахунок",
     "fieldPayee": "Отримувач",
-    "fieldCardEnding": "Останні цифри картки",
     "fieldDate": "Дата",
     "fieldStatus": "Статус",
     "opContains": "містить",
