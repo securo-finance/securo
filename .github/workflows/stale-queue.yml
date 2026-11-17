@@ -10,6 +10,10 @@ name: stale queue
 # warning from us is not progress. That also means a rebase or a maintainer
 # push resets the timer, which is what should happen.
 #
+# It only sweeps when the ball is with the author. A draft, one of our own
+# branches, or a pull request with a review still pending is waiting on us;
+# closing those would punish the contributor for our queue.
+#
 # Closing is reversible and the closing comment says how. `stale: keep`
 # exempts a pull request for good.
 
@@ -43,6 +47,10 @@ jobs:
             const WARNED = '<!-- stale: warned -->';
             const CLOSED = '<!-- stale: closed -->';
             const DAY = 24 * 60 * 60 * 1000;
+            // Only the workflow's own comments may move the clock. Without
+            // this, anyone could post the marker on a pull request and turn
+            // its next pass into a close with no warning ever delivered.
+            const OURS = 'github-actions[bot]';
 
             const days = (iso) => Math.floor((Date.now() - Date.parse(iso)) / DAY);
 
@@ -53,6 +61,12 @@ jobs:
 
             for (const pr of pulls) {
               if (pr.labels.some((l) => l.name === KEEP)) continue;
+
+              // The ball is not with the author in these three cases.
+              if (pr.draft) continue;
+              if (['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association)) continue;
+              if ((pr.requested_reviewers || []).length) continue;
+              if ((pr.requested_teams || []).length) continue;
 
               // The newest commit on the branch decides the clock.
               let movedAt = pr.updated_at;
@@ -71,7 +85,8 @@ jobs:
 
               const comments = await github.paginate(github.rest.issues.listComments,
                 { owner: OWNER, repo: REPO, issue_number: pr.number, per_page: 100 });
-              const byBody = (marker) => comments.filter((c) => (c.body || '').includes(marker));
+              const byBody = (marker) => comments.filter((c) =>
+                (c.body || '').includes(marker) && c.user && c.user.login === OURS);
 
               // Only a warning newer than the last commit counts: a pull request
               // that was warned once, moved, and then stalled again gets a fresh
