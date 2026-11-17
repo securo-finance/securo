@@ -7,7 +7,7 @@ sync provider.
 
 import math
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest_asyncio
@@ -197,6 +197,24 @@ async def test_create_preview_normalizes_values_and_does_not_write(
         )
     ).scalars().all()
     assert rows == []
+
+
+async def test_create_preview_with_a_future_opening_balance_starts_at_zero(
+    session: AsyncSession, ctx: CallContext, test_user, test_workspace
+):
+    future = app_today() + timedelta(days=30)
+    result = await _call("propose_create_manual_account")(
+        session=session,
+        ctx=ctx,
+        name="Reserva futura",
+        type="savings",
+        currency="BRL",
+        opening_balance=1000,
+        opening_balance_date=future.isoformat(),
+    )
+
+    assert result["proposed"]["opening_balance"] == 1000.0
+    assert result["proposed"]["current_balance"] == 0.0
 
 
 async def test_create_apply_creates_manual_account_and_opening_balance(
@@ -456,6 +474,30 @@ async def test_list_accounts_names_the_opening_and_current_balances(
     assert item["balance"] == 4393.28
     assert item["current_balance"] == 4393.28
     assert item["opening_balance"] == 4493.28
+
+
+async def test_list_accounts_omits_the_opening_balance_of_a_connected_account(
+    session: AsyncSession, ctx: CallContext, test_user, test_workspace, test_connection
+):
+    connected = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=test_connection.id,
+        name="Conta conectada",
+        type="checking",
+        currency="BRL",
+        balance=Decimal("500.00"),
+        external_id="ext-connected-1",
+    )
+    session.add(connected)
+    await session.commit()
+
+    result = await _call("list_accounts")(session=session, ctx=ctx)
+    item = next(row for row in result["items"] if row["id"] == str(connected.id))
+
+    # The provider's balance is today's snapshot, not the opening balance.
+    assert "opening_balance" not in item
 
 
 async def test_update_preview_warns_about_a_possible_duplicate(

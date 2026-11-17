@@ -48,7 +48,7 @@ async def list_accounts(
     # rows is already a list of dicts (per service contract), but normalize keys.
     items: list[dict[str, Any]] = []
     for r in rows:
-        items.append({
+        item = {
             "id": str(r.get("id")) if r.get("id") else None,
             "name": r.get("name"),
             "type": r.get("type"),
@@ -57,11 +57,15 @@ async def list_accounts(
             # for a manual account is only its opening balance.
             "balance": num(r.get("current_balance")),
             "current_balance": num(r.get("current_balance")),
-            "opening_balance": num(r.get("balance")),
             "balance_primary": num(r.get("balance_primary")),
             "is_closed": bool(r.get("is_closed", False)),
             "institution": r.get("institution_name"),
-        })
+        }
+        # On a connected account the stored balance is the provider's snapshot
+        # of today, not the opening balance, so it has no opening to report.
+        if not r.get("connection_id"):
+            item["opening_balance"] = num(r.get("balance"))
+        items.append(item)
     return {"items": items, "total": len(items)}
 
 
@@ -271,6 +275,13 @@ async def propose_create_manual_account(
         if normalized_balance != 0
         else None
     )
+    # counts_in_current_balance skips future transactions, so a balance dated
+    # ahead leaves the account at 0 until that date arrives.
+    current_balance = (
+        Decimal("0")
+        if effective_date is not None and effective_date > app_today()
+        else normalized_balance
+    )
 
     ws_id = await resolve_workspace_id(session, ctx)
     existing = await _matching_manual_accounts(
@@ -285,7 +296,7 @@ async def propose_create_manual_account(
             "name": normalized_name,
             "type": normalized_type,
             "currency": normalized_currency,
-            "current_balance": num(normalized_balance),
+            "current_balance": num(current_balance),
             "opening_balance": num(normalized_balance),
             "opening_balance_date": (
                 effective_date.isoformat() if effective_date else None
