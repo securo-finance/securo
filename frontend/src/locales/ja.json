@@ -2916,6 +2916,7 @@
       "baseUrl": "エンドポイントURL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "このプロバイダーにはエンドポイントURLが必要です",
+      "baseUrlInvalid": "有効な http または https のエンドポイントURLを入力してください",
       "ollamaHint": "Ollamaがホストマシンで動いている場合、http://host.docker.internal:11434(Mac/Windows)またはホストのIP(Linux)を使ってください。",
       "openaiCompatHint": "host:portだけ貼り付けてください(例: http://192.168.1.142:1234)。/v1パスは自動で追加されます。Mac/WindowsのDocker内からはlocalhostをhost.docker.internalに置き換えてください。",
       "apiKey": "APIキー / トークン",

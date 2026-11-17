@@ -2996,6 +2996,7 @@
       "baseUrl": "Adres URL endpointu",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Adres URL endpointu jest wymagany dla tego dostawcy",
+      "baseUrlInvalid": "Podaj prawidłowy adres URL endpointu http lub https",
       "ollamaHint": "Jeśli Ollama działa na Twoim hoście, użyj http://host.docker.internal:11434 (Mac/Windows) lub adresu IP hosta (Linux).",
       "openaiCompatHint": "Wklej po prostu host:port (np. http://192.168.1.142:1234). Ścieżka /v1 jest dodawana automatycznie. Z wnętrza Dockera na Macu/Windowsie zamień localhost na host.docker.internal.",
       "apiKey": "Klucz API / token",

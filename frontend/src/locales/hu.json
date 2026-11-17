@@ -2916,6 +2916,7 @@
       "baseUrl": "Végpont URL-je",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Ennél a szolgáltatónál kötelező megadni a végpont URL-jét",
+      "baseUrlInvalid": "Adjon meg érvényes http vagy https végpont URL-t",
       "ollamaHint": "Ha az Ollama a gazdagépeden fut, használd a http://host.docker.internal:11434 címet (Mac/Windows) vagy a gazdagéped IP-címét (Linux).",
       "openaiCompatHint": "Csak illeszd be a host:port párost (pl. http://192.168.1.142:1234). A /v1 útvonal automatikusan hozzáadódik. Mac/Windows alatt Dockerből a localhost helyett a host.docker.internal címet használd.",
       "apiKey": "API-kulcs / token",

@@ -5,7 +5,7 @@ import uuid
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,29 @@ from app.agents.services.crypto import decrypt, encrypt
 
 
 VALID_KINDS = set(list_providers())  # ollama, openai, anthropic, openai_compatible
+
+INVALID_BASE_URL = "Enter a valid http or https endpoint URL"
+
+
+def _clean_base_url(base_url: Optional[str]) -> Optional[str]:
+    """Strip a base URL and reject one the providers could never call."""
+    if base_url is None:
+        return None
+    base_url = base_url.strip()
+    if not base_url:
+        return ""  # on update, an empty string clears the field
+    try:
+        parts = urlsplit(base_url)
+        _ = parts.port  # raises ValueError on a port that is not a number in range
+    except ValueError as exc:
+        raise ValueError(INVALID_BASE_URL) from exc
+    if (
+        parts.scheme not in ("http", "https")
+        or not parts.hostname
+        or any(c.isspace() for c in base_url)
+    ):
+        raise ValueError(INVALID_BASE_URL)
+    return base_url
 
 
 async def list_connections(session: AsyncSession, user_id: uuid.UUID) -> list[LlmConnection]:
@@ -52,6 +75,7 @@ async def create_connection(
 ) -> LlmConnection:
     if kind not in VALID_KINDS:
         raise ValueError(f"unknown kind '{kind}', expected one of {sorted(VALID_KINDS)}")
+    base_url = _clean_base_url(base_url)
     if kind == "openai_compatible" and not base_url:
         raise ValueError("openai_compatible requires base_url")
 
@@ -89,6 +113,7 @@ async def update_connection(
     conn = await get_connection(session, conn_id, user_id)
     if conn is None:
         return None
+    base_url = _clean_base_url(base_url)
     if name is not None:
         conn.name = name.strip()
     if base_url is not None:

@@ -2916,6 +2916,7 @@
       "baseUrl": "एंडपॉइंट URL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "इस प्रदाता के लिए एंडपॉइंट URL ज़रूरी है",
+      "baseUrlInvalid": "मान्य http या https एंडपॉइंट URL दर्ज करें",
       "ollamaHint": "अगर Ollama आपकी होस्ट मशीन पर चलता है, तो http://host.docker.internal:11434 (Mac/Windows) या अपना होस्ट IP (Linux) उपयोग करें।",
       "openaiCompatHint": "बस host:port पेस्ट करें (जैसे http://192.168.1.142:1234)। /v1 पथ अपने आप जुड़ जाता है। Mac/Windows पर Docker के अंदर से, localhost को host.docker.internal से बदलें।",
       "apiKey": "API कुंजी / टोकन",

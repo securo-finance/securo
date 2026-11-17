@@ -3084,6 +3084,7 @@
       "baseUrl": "URL endpointu",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Pro tohoto poskytovatele je URL endpointu povinná",
+      "baseUrlInvalid": "Zadejte platnou URL endpointu http nebo https",
       "ollamaHint": "Pokud Ollama běží na vašem hostitelském počítači, použijte http://host.docker.internal:11434 (Mac/Windows) nebo IP adresu hostitele (Linux).",
       "openaiCompatHint": "Stačí vložit host:port (např. http://192.168.1.142:1234). Cesta /v1 se přidá automaticky. Z Dockeru na Mac/Windows nahraďte localhost za host.docker.internal.",
       "apiKey": "API klíč / token",

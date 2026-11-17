@@ -2882,6 +2882,7 @@
       "baseUrl": "URL del endpoint",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "La URL del endpoint es obligatoria para este proveedor",
+      "baseUrlInvalid": "Introduce una URL de endpoint http o https válida",
       "ollamaHint": "Si Ollama se ejecuta en tu máquina anfitriona, usa http://host.docker.internal:11434 (Mac/Windows) o la IP de tu host (Linux).",
       "openaiCompatHint": "Pega solo host:puerto (p. ej. http://192.168.1.142:1234). La ruta /v1 se añade automáticamente. Desde Docker en Mac/Windows, reemplaza localhost por host.docker.internal.",
       "apiKey": "Clave API / token",
