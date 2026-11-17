@@ -65,9 +65,11 @@ jobs:
         run: uv run --no-sync ty check .
 
   # The suite runs in four parallel shards, balanced by the per-test durations
-  # in backend/.test_durations (pytest-split). Each shard keeps whole test files
-  # together (duration_based_chunks) so module setup isn't repeated, and writes
-  # its own coverage data; the Backend Tests job below combines them.
+  # in backend/.test_durations (pytest-split). duration_based_chunks cuts the
+  # suite, in collection order, into four contiguous runs of tests, so only the
+  # files at the three cut points are divided between shards and module setup
+  # is rarely repeated. Each shard writes its own coverage data; the Backend
+  # Tests job below combines them.
   backend-shard:
     name: Backend Tests (shard ${{ matrix.group }}/4)
     needs: backend-changes
