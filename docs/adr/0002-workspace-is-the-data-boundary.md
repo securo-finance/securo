@@ -16,7 +16,10 @@ Every financial row belongs to a workspace, and every read and write is scoped t
 - A request's workspace comes from the `X-Workspace-Id` header, resolved by `current_workspace` in `backend/app/core/workspace_context.py` into a `WorkspaceContext` (workspace, member, user). Without the header the user's default workspace is used (first non-archived one they belong to or manage). A workspace the user can't see answers 404, not 403, so its existence doesn't leak.
 - Services filter by `ctx.id` explicitly.
 - A request made with an access token is pinned to the token's workspace; naming another one answers 403. Rows shared from other workspaces (group expenses) are visible to session users but not to token requests: queries that pull them add `in_bound_workspace(...)` from `backend/app/core/shared_scope.py`.
-- Tables that are global on purpose: `users`, `user_passkeys`, `app_settings` (instance settings), `fx_rates` (rates are facts, not anyone's data), `institutions` (catalog), and the agents' per-user LLM connections and knowledge tables (an agent itself has `workspace_id`).
+- Tables without `workspace_id`, each for a reason:
+  - global: `workspaces` itself, `app_settings` (instance settings), `fx_rates` (rates are facts, not anyone's data);
+  - owned by a user across workspaces: `users`, `user_passkeys`, `agent_llm_connections` (a user's own LLM keys), `agent_llm_usage`;
+  - scoped through a parent that has `workspace_id`, by a non-null foreign key that cascades: `institutions` (its bank connection), `collection_accounts` and `collection_asset_groups` (their collection), `agent_messages` (its conversation), `agent_tools`, `agent_knowledge_docs` and `agent_knowledge_chunks` (their agent).
 
 `backend/app/core/workspace_autostamp.py` fills a missing `workspace_id` on insert from a parent row or the user's first workspace. It exists for backwards compatibility only and new code must not rely on it.
 
@@ -29,4 +32,4 @@ Every financial row belongs to a workspace, and every read and write is scoped t
 
 ## Enforced by
 
-Per-area tests: `tests/test_asset_group_workspace_scope.py`, `tests/test_payee_workspace_scope.py`, `tests/test_access_tokens.py`, `tests/test_mcp_token_scoping.py`, `tests/test_group_visibility.py`, `tests/test_shared_transactions_view.py`. There is no test yet that walks every model and requires `workspace_id` unless the table is on the global list.
+Per-area tests: `tests/test_asset_group_workspace_scope.py`, `tests/test_payee_workspace_scope.py`, `tests/test_access_tokens.py`, `tests/test_mcp_token_scoping.py`, `tests/test_group_visibility.py`, `tests/test_shared_transactions_view.py`. A test that walks every table and requires `workspace_id`, or one of the reasons above, is proposed in #1471.

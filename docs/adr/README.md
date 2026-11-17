@@ -8,6 +8,7 @@ Each file here records one decision about how Securo is built: what we chose, wh
 - **A merged ADR is not rewritten.** When a decision changes, add a new ADR that supersedes the old one and set the old one's status to `Superseded by NNNN`. Fixing a typo or a stale file path is fine.
 - **A new architecture decision, or a change to one, comes with an ADR in the same pull request.** That covers a new table that breaks a pattern below, a new external call, a new background job family, a new optional service, a change to how money, time, access or storage work.
 - **Name the code.** An ADR points at the files and functions that carry it, and at the tests that keep it true. A decision no test enforces says so under "Enforced by".
+- Cited paths are checked in CI (`.github/ci/check_doc_paths.py`): a renamed file fails the build until the ADR names its new place.
 - ADRs 0001 to 0018 were written after the fact, from decisions already in the code. Their date is when the decision landed; the pull request that brought it is listed as its origin.
 
 ## Index

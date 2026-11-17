@@ -26,7 +26,7 @@ Current switches and defaults: `AGENTS_ENABLED` (off), `PLUGINS_ENABLED` (off), 
 ## Consequences
 
 - A new optional capability follows the same shape: one flag, off when it has a cost, documented in `.env.example` and the README, its off path verified to import, schedule and call nothing.
-- Known exception: the database schema is not optional. The agents migrations (046 to 049, 054) create their tables and require the `vector` extension even when agents are off, which is why the Compose database image is `pgvector/pgvector`.
+- Known exception: the database schema is not optional. The agents migrations (046 to 049, 054) create their tables and require the `vector` extension even when agents are off, which is why the Compose database image is `pgvector/pgvector:pg16`.
 
 ## Enforced by
 

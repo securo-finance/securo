@@ -22,4 +22,4 @@ Alembic allows branching histories with hash revision ids. With many pull reques
 
 ## Enforced by
 
-The "Migration Chain" CI job runs `backend/scripts/check_migration_chain.py` on the branch merged with `main`; `tests/test_migration_chain.py` tests the checker. Nothing compares the models with the migrations, and nothing stops an edit to a merged migration.
+The "Migration Chain" CI job runs `backend/scripts/check_migration_chain.py` on the branch merged with `main`; `tests/test_migration_chain.py` tests the checker. Nothing stops an edit to a merged migration. A test that applies every migration to an empty PostgreSQL database and compares it with the models is proposed in #1471.

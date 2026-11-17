@@ -44,7 +44,7 @@ Run lint, type check and the tests you touched before calling work done; CI runs
 
 ## Tests
 
-- **Backend** (`backend/tests/conftest.py`): in-memory SQLite by default, schema from `Base.metadata.create_all` (not from migrations), pgvector shimmed to JSON, Redis and external FX sync mocked, `AGENTS_ENABLED` forced on. Fixtures: `session`, `client`, `test_user`, `test_workspace`, `auth_headers`, `viewer_auth_headers`, `admin_auth_headers`, `test_account`, `test_transactions`, `test_categories`, `test_rules`. Files ending in `_postgres.py` use `postgres_sessions` and need `POSTGRES_TEST_URL` (skipped locally without it, required in CI).
+- **Backend** (`backend/tests/conftest.py`): in-memory SQLite by default, schema from `Base.metadata.create_all` (not from migrations), pgvector shimmed to JSON, Redis and external FX sync mocked, `AGENTS_ENABLED` forced on. Fixtures: `session`, `client`, `test_user`, `test_workspace`, `auth_headers`, `viewer_auth_headers`, `admin_auth_headers`, `test_account`, `test_transactions`, `test_categories`, `test_rules`. Files matching `tests/*_postgres.py` use `postgres_sessions` and need `POSTGRES_TEST_URL` (skipped locally without it, required in CI).
 - **Contract sweep** (`backend/tests/api_contract/`): every OpenAPI route and method against the expected status in `baseline.json`, as owner and as viewer.
 - **Frontend** (`frontend/vitest.config.ts`): a `node` project for `src/lib/*.test.ts` and a jsdom `dom` project for the rest, setup in `src/test/setup.ts`. Render with `renderWithProviders` from `src/test/utils.tsx` (real English strings). The API is stubbed with `vi.mock('@/lib/api', ...)`; there is no MSW. `src/pages/pages.contract.test.ts` and `src/components/components.contract.test.ts` import every page and component to catch modules that break on import.
 
@@ -83,8 +83,10 @@ Paths are under `backend/`.
 - **Export and backup**: router `app/api/export.py`, `app/services/backup_service.py`. Test `tests/test_export_api.py`.
 - **Storage** (ADR 0013): `app/providers/storage.py`, `local_storage.py`, `get_storage_provider` in `app/providers/__init__.py`.
 - **Plugins** (ADR 0015): router `app/api/plugins.py`; `app/plugins/` (`service.py`, `manifest.py`, `index.py`, `sync.py`, `runner.py`, `vault.py`, `provenance.py`); sandbox `plugin_runner/`; task `app/tasks/plugin_tasks.py`. Tests `tests/test_*_plugins.py`, `tests/test_plugin_runner.py`.
-- **AI agents** (ADR 0014): `app/agents/` (`api/`, `services/`, `runtime/executor.py`, `providers/`, `mcp/client.py`, `tasks/ingest.py`); MCP server `mcp_server/` (`registry.py`, `auth.py`, `tools/`). Tests `tests/test_agents_*.py`, `tests/test_mcp_*.py`.
+- **AI agents** (ADR 0014): `app/agents/` (`app/agents/api/`, `app/agents/services/`, `app/agents/runtime/executor.py`, `app/agents/providers/`, `app/agents/mcp/client.py`, `app/agents/tasks/ingest.py`); MCP server `mcp_server/` (`mcp_server/registry.py`, `mcp_server/auth.py`, `mcp_server/tools/`). Tests `tests/test_agents_*.py`, `tests/test_mcp_*.py`.
 - **Migrations**: `alembic/versions/NNN_name.py`; chain check `scripts/check_migration_chain.py`.
+
+Every path cited in this file and in `docs/adr/` is checked by `.github/ci/check_doc_paths.py` in CI: when you rename or move a file, update the map in the same pull request.
 
 ## Map: frontend
 
@@ -104,12 +106,12 @@ Paths are under `frontend/src/`.
   - Transactions `transactions.tsx` (`transaction-dialog.tsx`, `transactions-filter-bar.tsx`, `transfer-dialog.tsx`, `transaction-category-lines-section.tsx`, `transaction-attachments.tsx`).
   - Accounts `accounts.tsx`, `account-detail.tsx` (`bank-connect-dialog.tsx`, `loan-schedule-card.tsx`); bank OAuth return `oauth-callback.tsx`.
   - Import `import.tsx` (`import-review-table.tsx`, `import-history.tsx`, `asset-import-panel.tsx`).
-  - Rules and reconciliation `rules.tsx` (`rule-dialog.tsx`, `reconciliation-*.tsx`).
+  - Rules and reconciliation `rules.tsx` (`rule-dialog.tsx`, `components/reconciliation-*.tsx`).
   - Categories `categories.tsx`; payees `payees.tsx`; collections `collections.tsx`; budgets `budgets.tsx`; goals `goals.tsx`; recurring `recurring.tsx`.
   - Assets `assets.tsx`; reports `reports.tsx` (`components/reports/`).
   - Shared expense groups `groups.tsx`, `group-detail.tsx`.
   - Invoices `invoices.tsx`, `invoice-detail.tsx`, `invoice-schedules.tsx`, `invoice-schedule-detail.tsx`, `products.tsx` (`invoice-ui.tsx`, `invoice-line-editor.tsx`, `invoice-document.tsx`); public shared invoice `shared-invoice.tsx` (`/i/:token`, no auth).
-  - Workspace settings `workspace-settings.tsx`; admin `admin/settings.tsx` (`provider-settings*.tsx`).
-  - Plugins `plugins.tsx`, `plugin-detail.tsx` (`plugin-*.tsx`); agents `agents-list.tsx`, `agent-detail.tsx`, `agent-connections.tsx` (`components/agents/`, streaming `lib/agents-stream.ts`).
+  - Workspace settings `workspace-settings.tsx`; admin `pages/admin/settings.tsx` (`components/provider-settings*.tsx`).
+  - Plugins `plugins.tsx`, `plugin-detail.tsx` (`components/plugin-*.tsx`); agents `agents-list.tsx`, `agent-detail.tsx`, `agent-connections.tsx` (`components/agents/`, streaming `lib/agents-stream.ts`).
   - Auth `login.tsx`, `register.tsx`, `setup.tsx` (first run), `oidc-callback.tsx`.
 - **Onboarding tour**: `components/onboarding-tour.tsx`, targets marked with `data-tour="..."`.
