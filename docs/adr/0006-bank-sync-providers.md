@@ -17,7 +17,7 @@ Bank aggregators differ by country, flow (OAuth redirect, connect widget, token 
 
 ## Consequences
 
-- A new aggregator is a new `BankProvider`, an entry in `KNOWN_PROVIDERS` and `PROVIDER_FIELDS`, and its module and class in `_CREDENTIALED_PROVIDERS` (or a `register_provider` call for one that needs no credentials); sync, scheduling and the UI pick it up. One exception: a provider whose `flow_type` is `widget` opens `BankConnectDialog` (`frontend/src/components/bank-connect-dialog.tsx`), which renders Pluggy's widget; a provider with a different widget needs that dialog taught to render it.
+- A new aggregator is a new `BankProvider`, an entry in `KNOWN_PROVIDERS` and `PROVIDER_FIELDS`, and its module and class in `_CREDENTIALED_PROVIDERS` (or a `register_provider` call for one that needs no credentials); sync, scheduling and the UI pick it up. One exception: a provider whose `flow_type` is `widget` opens `BankConnectDialog` (`frontend/src/components/bank-connect-dialog.tsx`), which renders Pluggy's widget; a provider with a different widget needs that dialog taught to render it. A provider whose `flow_type` is `oauth` must override `list_institutions`: the default returns no countries or banks, so the connect dialog would have nothing to offer.
 - Provider-specific behavior stays inside the provider. Services never branch on a provider's name to reshape its data.
 
 ## Enforced by
