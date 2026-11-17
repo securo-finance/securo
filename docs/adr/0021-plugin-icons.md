@@ -26,6 +26,7 @@ The catalog drew a generated badge for every plugin, so that browsing it never t
 - The browser reaches only Securo, for icons as for everything else in the catalog.
 - A request without sign-in can make Securo ask the catalog's host for one file, by a name that must be a sha256 and an image extension. Refusing that would mean remembering which icons the catalog listed, in Redis or a table, for every backend process; a fixed host, a fixed path shape and a 64 KB cap were judged enough.
 - An icon never needs refreshing: a new release with a new image is a new checksum, so a new address.
+- An icon the catalog names badly, one the entry can't hold or that isn't text at all, costs the icon and never the listing: the plugin still shows, with the generated badge.
 - Icons show in the catalog and on a plugin's page. Installed plugins and connections, which don't read the catalog, still draw the badge.
 - A plugin that uses a company's mark is responsible for the right to use it; the catalog can revoke it.
 

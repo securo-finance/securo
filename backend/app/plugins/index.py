@@ -27,7 +27,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.models.workspace import WORKSPACE_KINDS
 from app.core.config import get_settings
@@ -58,6 +58,8 @@ _MANIFEST_CACHE_SIZE = 256
 _ICON_CACHE_SIZE = 64
 #: An icon's file name in the catalog: its sha256 and what it is.
 ICON_NAME = re.compile(r"[0-9a-f]{64}\.(?:png|webp)")
+#: Longest icon path an index entry takes, as every other copy's path.
+_ICON_PATH_MAX = 512
 
 def supported_contributions() -> frozenset[str]:
     """What this instance can apply. Plugins with anything else are listed but
@@ -85,7 +87,7 @@ class IndexEntry(BaseModel):
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     readme: str | None = Field(default=None, max_length=512, description="The README copy, relative to the index.")
     readme_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    icon: str | None = Field(default=None, max_length=512, description="The icon copy, relative to the index.")
+    icon: str | None = Field(default=None, max_length=_ICON_PATH_MAX, description="The icon copy, relative to the index.")
     archive: str | None = Field(
         default=None, max_length=512, description="The release's source tarball, relative to the index (plugins with code)."
     )
@@ -107,6 +109,20 @@ class IndexEntry(BaseModel):
     workspaces: list[str] = Field(
         default_factory=lambda: list(WORKSPACE_KINDS), description="The workspace types it's meant for."
     )
+
+    @field_validator("icon", mode="before")
+    @classmethod
+    def _an_unusable_icon_costs_the_icon_only(cls, value: object) -> object:
+        """An icon is decoration: one Securo can't serve never takes its plugin down with it.
+
+        The field used to be unknown to the model, so any value in it was ignored. Now that
+        it's read, a value the entry can't hold has to leave the entry valid: otherwise one
+        bad icon in the catalog hides a whole plugin from it.
+        """
+        if value is None or (isinstance(value, str) and len(value) <= _ICON_PATH_MAX):
+            return value
+        logger.warning("Ignoring an unusable icon in a plugin index entry: %s", str(value)[:200])
+        return None
 
     @property
     def owner(self) -> str:
