@@ -40,6 +40,8 @@ async def _asset(session, connection) -> Asset:
 
 async def _ledger(session, asset) -> dict[str, tuple[str, Decimal, Decimal, str]]:
     rows = await _rows(session, AssetTransaction, asset_id=asset.id)
+    ids = [tx.external_id or "" for tx in rows]
+    assert len(ids) == len(set(ids)), f"duplicate trades in the ledger: {sorted(ids)}"
     return {
         tx.external_id or "": (tx.kind, Decimal(str(tx.quantity)).normalize(), Decimal(str(tx.price)).normalize(), tx.source)
         for tx in rows
@@ -144,3 +146,18 @@ async def test_a_holding_without_a_type_is_an_investment_until_one_is_named(
     assert (await _asset(session, bank_connection)).type == "investment"
     await _pipeline(session, bank_connection, holding("10", None, type="etf"), test_user)
     assert (await _asset(session, bank_connection)).type == "etf"
+
+
+@pytest.mark.asyncio
+async def test_a_sale_the_user_recorded_stays_when_trades_are_written(
+    session: AsyncSession, bank_connection, test_user
+):
+    await _pipeline(session, bank_connection, holding("10", None), test_user)
+    asset = await _asset(session, bank_connection)
+    asset.sell_date, asset.sell_price = date(2026, 11, 1), Decimal("1200")  # sold, as the user records it
+    await session.commit()
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10")]), test_user)
+    asset = await _asset(session, bank_connection)
+    assert "b1" in await _ledger(session, asset)
+    assert (asset.sell_date, asset.sell_price) == (date(2026, 11, 1), Decimal("1200"))
+

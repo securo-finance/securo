@@ -47,8 +47,27 @@ def _no_float(value: Any) -> Any:
     return value
 
 
-Amount = Annotated[Decimal, BeforeValidator(_no_float), Field(allow_inf_nan=False, max_digits=24, decimal_places=8)]
-Positive = Annotated[Decimal, BeforeValidator(_no_float), Field(ge=0, allow_inf_nan=False, max_digits=24, decimal_places=8)]
+def _number(whole_digits: int, **bounds: Any) -> Any:
+    """A decimal that fits the column it lands in: `whole_digits` before the point, 8 after at most.
+
+    The columns keep fewer decimals (2 for money, 6 for units and prices) and
+    round the rest; a number too large for its column is refused here, before
+    anything is written, instead of failing the write.
+    """
+    return Annotated[
+        Decimal,
+        BeforeValidator(_no_float),
+        Field(allow_inf_nan=False, max_digits=whole_digits + 8, decimal_places=8, **bounds),
+    ]
+
+
+#: Money: Numeric(15, 2) columns (balances, transactions, bills, cost basis, fees).
+Money = _number(13)
+PositiveMoney = _number(13, ge=0)
+#: Units and holding values: Numeric(15, 6) columns (`assets.units`, `asset_values.amount`).
+Units = _number(9)
+#: Trade quantities and prices: Numeric(18, 6) columns.
+TradeNumber = _number(12, ge=0)
 
 
 class PayloadError(ValueError):
@@ -62,19 +81,19 @@ class _Model(BaseModel):
 class Transaction(_Model):
     external_id: ExternalId
     description: str = Field(min_length=1, max_length=500)
-    amount: Positive
+    amount: PositiveMoney
     """Always positive: `type` says which way the money went."""
     date: _date
     type: Literal["debit", "credit"]
     currency: Currency | None = None
-    amount_in_account_currency: Positive | None = None
+    amount_in_account_currency: PositiveMoney | None = None
     provider_category: str | None = Field(default=None, max_length=100)
     status: Literal["posted", "pending"] = "posted"
     payee: str | None = Field(default=None, max_length=200)
     raw_data: dict[str, Any] | None = None
     installment_number: int | None = Field(default=None, ge=1)
     total_installments: int | None = Field(default=None, ge=1)
-    installment_total_amount: Positive | None = None
+    installment_total_amount: PositiveMoney | None = None
     installment_purchase_date: _date | None = None
     bill_external_id: ExternalId | None = None
 
@@ -86,9 +105,9 @@ class Transaction(_Model):
 class Bill(_Model):
     external_id: ExternalId
     due_date: _date
-    total_amount: Amount
+    total_amount: Money
     currency: Currency
-    minimum_payment: Positive | None = None
+    minimum_payment: PositiveMoney | None = None
     raw_data: dict[str, Any] | None = None
 
     def to_data(self) -> BillData:
@@ -99,12 +118,12 @@ class Account(_Model):
     external_id: ExternalId
     name: str = Field(min_length=1, max_length=255)
     type: AccountType
-    balance: Amount
+    balance: Money
     currency: Currency
-    credit_limit: Positive | None = None
+    credit_limit: PositiveMoney | None = None
     statement_close_day: int | None = Field(default=None, ge=1, le=31)
     payment_due_day: int | None = Field(default=None, ge=1, le=31)
-    minimum_payment: Positive | None = None
+    minimum_payment: PositiveMoney | None = None
     card_brand: str | None = Field(default=None, max_length=50)
     card_level: str | None = Field(default=None, max_length=50)
     masked_number: str | None = Field(default=None, max_length=4)
@@ -114,7 +133,7 @@ class Account(_Model):
     institution_external_id: ExternalId | None = None
     institution_name: str | None = Field(default=None, max_length=255)
     institution_logo_url: str | None = Field(default=None, max_length=1000, pattern=r"^https://")
-    auto_invested_balance: Positive = Decimal(0)
+    auto_invested_balance: PositiveMoney = Decimal(0)
     transactions: list[Transaction] | None = None
     bills: list[Bill] | None = None
 
@@ -134,10 +153,10 @@ class Trade(_Model):
     external_id: ExternalId
     kind: Literal["buy", "sell"]
     date: _date
-    quantity: Annotated[Decimal, BeforeValidator(_no_float), Field(gt=0, allow_inf_nan=False)]
-    price: Positive
+    quantity: Annotated[TradeNumber, Field(gt=0)]
+    price: TradeNumber
     """Per unit, in the asset's currency."""
-    fee: Positive = Decimal(0)
+    fee: PositiveMoney = Decimal(0)
 
     def to_data(self) -> HoldingTradeData:
         return HoldingTradeData(**self.model_dump())
@@ -148,13 +167,13 @@ class Holding(_Model):
     name: str = Field(min_length=1, max_length=255)
     type: HoldingType | None = None
     currency: Currency
-    current_value: Amount
-    quantity: Amount | None = None
-    unit_price: Positive | None = None
-    purchase_price: Positive | None = None
+    current_value: Units
+    quantity: Units | None = None
+    unit_price: TradeNumber | None = None
+    purchase_price: PositiveMoney | None = None
     purchase_date: _date | None = None
     isin: str | None = Field(default=None, pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
-    ticker: str | None = Field(default=None, max_length=50)
+    ticker: str | None = Field(default=None, max_length=32)
     maturity_date: _date | None = None
     is_withdrawn: bool = False
     metadata: dict[str, Any] | None = None

@@ -567,3 +567,22 @@ async def test_the_connection_shows_the_institution_logo_its_accounts_name(
     await session.refresh(bank_connection)
     assert bank_connection.logo_url == "https://www.google.com/s2/favicons?domain=example.com&sz=128"
 
+
+
+@pytest.mark.asyncio
+async def test_new_values_keep_what_the_plugin_stored_and_wait_for_a_sync(
+    session: AsyncSession, ids, provider_catalog, plugin_runner, sync_locks
+):
+    connection = await _provider_connection(session, ids)
+    secrets = vault.unseal(connection.secrets)
+    connection.secrets = vault.seal({**secrets, "refresh_token": "kept-by-the-plugin"})
+    await session.commit()
+
+    sync_locks.add(f"plugin-sync:{connection.id}")  # a sync is running
+    with pytest.raises(connections.PluginConnectionError, match="syncing"):
+        await connections.update_values(session, connection, name=None, values={"account": "ok"})
+    sync_locks.clear()
+
+    await connections.update_values(session, connection, name=None, values={"api_key": "sk_live_2"})
+    stored = vault.unseal(connection.secrets)
+    assert stored["api_key"] == "sk_live_2" and stored["refresh_token"] == "kept-by-the-plugin"

@@ -1061,10 +1061,14 @@ async def _sync_holding_trades(
             tx.date = trade.date
         await session.flush()
         # Average price, realized gain and cost basis come from the ledger;
-        # the position stays what the provider reports.
+        # the position stays what the provider reports, and a sale the user
+        # recorded on a position the provider still holds stays recorded.
+        sold = (asset.sell_date, asset.sell_price) if not holding.is_withdrawn else None
         await recompute_and_cache(session, asset)
         if holding.quantity is not None and not holding.is_withdrawn:
             asset.units = holding.quantity
+        if sold is not None and sold[0] is not None:
+            asset.sell_date, asset.sell_price = sold
 
 
 async def _upsert_asset_from_holding(

@@ -2,7 +2,8 @@
 
 An integration that declares `provides` gets a bank connection of its own,
 with `provider = "plugin:<plugin id>"`. Plugin ids are up to 104
-characters, so the columns that hold a provider name grow to 128.
+characters, so the columns that hold a provider name grow to 128: the
+connection's, and the source of the assets, wallets and trades it syncs.
 
 Revision ID: 114
 Revises: 113
@@ -20,6 +21,7 @@ depends_on = None
 _WIDENED = (
     ("bank_connections", "provider", 50),
     ("assets", "source", 50),
+    ("asset_groups", "source", 50),
     ("asset_transactions", "source", 20),
 )
 

@@ -95,10 +95,14 @@ def test_null_lists_are_not_fetched_and_empty_lists_are():
         (lambda d: d["holdings"][0]["trades"].append(dict(d["holdings"][0]["trades"][0])), "unique"),
         (lambda d: d["accounts"][0].update(institution_logo_url="http://example.com/x.png"), "institution_logo_url"),
         (lambda d: d["holdings"][0].update(type="real_estate"), "type"),
+        (lambda d: d["holdings"][0].update(quantity="1000000000"), "quantity"),
+        (lambda d: d["accounts"][0].update(balance="10000000000000"), "balance"),
+        (lambda d: d["holdings"][0].update(ticker="X" * 33), "ticker"),
     ],
     ids=["contract", "unknown-field", "account-type", "float", "currency", "full-number", "negative-amount",
          "transaction-type", "duplicate-transaction", "duplicate-account", "zero-quantity", "trade-kind",
-         "duplicate-trade", "insecure-logo", "holding-type"],
+         "duplicate-trade", "insecure-logo", "holding-type", "units-too-large", "money-too-large",
+         "ticker-too-long"],
 )
 def test_malformed_data_is_refused(change, message):
     with pytest.raises(PayloadError, match=message):

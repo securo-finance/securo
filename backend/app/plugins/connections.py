@@ -228,8 +228,24 @@ async def update_values(
     """New form values for a connection (reconnecting after a password change, say).
 
     A field left blank keeps what it had, so a secret never has to be typed
-    again to change something else. The connection then syncs afresh.
+    again to change something else. What the plugin stored itself (a refresh
+    token, say) is kept too. The connection then syncs afresh.
+
+    Not while it syncs: the sync would save back the secrets it started with.
     """
+    lock = f"plugin-sync:{connection.id}"
+    if not await _acquire(lock):
+        raise PluginConnectionError("this connection is syncing right now; try again in a moment")
+    try:
+        await session.refresh(connection)
+        return await _update_values(session, connection, name=name, values=values)
+    finally:
+        await _release(lock)
+
+
+async def _update_values(
+    session: AsyncSession, connection: PluginConnection, *, name: str | None, values: dict[str, Any]
+) -> PluginConnection:
     _, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
     integration = _integration(manifest, connection.integration)
     try:
@@ -245,7 +261,8 @@ async def update_values(
     kept = {**{k: v for k, v in config.items() if k in fields}, **{k: v for k, v in secrets.items() if k in fields}}
     new_config, new_secrets = _split(integration, {**kept, **given})
     connection.config = new_config
-    connection.secrets = vault.seal({**{k: v for k, v in secrets.items() if k.startswith("__securo_")}, **new_secrets})
+    # The form's secrets replace theirs; everything else the plugin or Securo stored stays.
+    connection.secrets = vault.seal({**{k: v for k, v in secrets.items() if k not in fields}, **new_secrets})
     if name is not None and name.strip():
         connection.name = name.strip()[:100]
     if integration.auth != "oauth":
