@@ -34,7 +34,7 @@ SYNC_BACKOFF_KEY = connection_service.SYNC_BACKOFF_KEY
 RETRY_NOT_BEFORE_KEY = connection_service.RETRY_NOT_BEFORE_KEY
 SYNC_BACKOFF_MAX = timedelta(hours=24)
 # Enable Banking advises resuming no earlier than 6 hours after a 429.
-SYNC_BACKOFF_RATE_LIMITED_MIN = timedelta(hours=6)
+SYNC_BACKOFF_RATE_LIMITED_MIN = connection_service.RATE_LIMITED_RETRY_DEFAULT
 
 
 def _sync_backoff_delay(failures: int, rate_limited: bool, base: timedelta) -> timedelta:

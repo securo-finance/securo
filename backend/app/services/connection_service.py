@@ -2982,6 +2982,8 @@ SYNC_BACKOFF_KEY = "sync_backoff"
 RETRY_NOT_BEFORE_KEY = "retry_not_before"
 # A bogus Retry-After must not park a connection for days.
 RETRY_AFTER_MAX = timedelta(hours=24)
+# Enable Banking advises resuming no earlier than 6 hours after a 429.
+RATE_LIMITED_RETRY_DEFAULT = timedelta(hours=6)
 
 
 def _with_retry_after(settings: Optional[dict], retry_after: Optional[float]) -> dict:
@@ -2995,9 +2997,38 @@ def _with_retry_after(settings: Optional[dict], retry_after: Optional[float]) ->
     not_before = datetime.now(timezone.utc) + timedelta(seconds=seconds)
     previous = current.get(SYNC_BACKOFF_KEY)
     state = dict(previous) if isinstance(previous, dict) else {}
+    # A shorter Retry-After (say, from a manual sync an hour later) must not
+    # pull an earlier, longer floor forward: the bank's first answer stands.
+    existing = _parse_aware_datetime(state.get(RETRY_NOT_BEFORE_KEY))
+    if existing is not None and existing > not_before:
+        not_before = existing
     state[RETRY_NOT_BEFORE_KEY] = not_before.isoformat()
     current[SYNC_BACKOFF_KEY] = state
     return current
+
+
+def _parse_aware_datetime(value: object) -> Optional[datetime]:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _throttle_retry_after(provider: object) -> Optional[float]:
+    """Retry-After to note when a sync fails for another reason after the
+    provider was throttled on some account. The failure decides the status,
+    but the bank's 429 still sets a floor on the next scheduled try: its own
+    Retry-After, or the usual 6 hours when it gave none."""
+    throttled = getattr(provider, "rate_limited_account_ids", None)
+    if not isinstance(throttled, (set, frozenset, list, tuple)) or not throttled:
+        return None
+    retry_after = getattr(provider, "rate_limit_retry_after", None)
+    if isinstance(retry_after, (int, float)):
+        return float(retry_after)
+    return RATE_LIMITED_RETRY_DEFAULT.total_seconds()
 
 
 async def sync_connection(
@@ -3877,9 +3908,16 @@ async def sync_connection(
         # no fresh data was pulled and can say so instead of a success toast.
         return refreshed or connection, 0, "rate_limited"
     except Exception:
-        # Mark connection as errored so UI shows reconnect banner
+        # Mark connection as errored so UI shows reconnect banner. If the
+        # provider was also throttled on some account, its Retry-After is kept
+        # as the floor on the next scheduled try.
         await session.rollback()
-        await _mark_failed_sync(session, connection_id, "error")
+        await _mark_failed_sync(
+            session,
+            connection_id,
+            "error",
+            retry_after=_throttle_retry_after(provider),
+        )
         raise
 
 

@@ -20,6 +20,7 @@ from decimal import Decimal
 from email.utils import format_datetime
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -329,6 +330,77 @@ async def test_session_429_notes_retry_after_floor(
     assert (outcome, merged, result_conn.status) == ("rate_limited", 0, "active")
     assert result_conn.last_sync_at == before
     assert 500 < _retry_floor_seconds(result_conn) <= 600
+
+
+@pytest.mark.asyncio
+async def test_shorter_retry_after_keeps_longer_floor(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A manual partial sync with a short Retry-After does not pull forward
+    the longer floor an earlier throttled run left."""
+    conn = await _make_connection(session, test_user.id, test_workspace.id)
+    floor = (datetime.now(timezone.utc) + timedelta(hours=11)).isoformat()
+    backoff = {
+        "failures": 1,
+        "last_attempt_at": datetime.now(timezone.utc).isoformat(),
+        "rate_limited": True,
+        RETRY_NOT_BEFORE_KEY: floor,
+    }
+    conn.settings = {SYNC_BACKOFF_KEY: backoff}
+    await session.commit()
+    provider = _mock_provider_two_accounts(rate_limit_account="rl-acc-a")
+    provider.rate_limited_account_ids = {"rl-acc-a"}
+    provider.rate_limit_retry_after = 60.0
+
+    with _sync_patches(provider):
+        result_conn, _, outcome = await sync_connection(
+            session, conn.id, test_workspace.id, test_user.id
+        )
+
+    assert outcome == "partial"
+    assert _backoff(result_conn)[RETRY_NOT_BEFORE_KEY] == floor
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("retry_after", "low", "high"),
+    [(900.0, 800, 900), (None, 6 * 3600 - 100, 6 * 3600)],
+)
+async def test_transient_failure_after_throttle_keeps_retry_floor(
+    session: AsyncSession, test_user, test_workspace, retry_after, low, high
+):
+    """One account 429s, another fails with a network error and none sync:
+    the error still decides the status, but the throttle sets the floor on
+    the next scheduled try (the bank's Retry-After, or 6 hours without one)."""
+    conn = await _make_connection(session, test_user.id, test_workspace.id)
+    provider = _mock_provider_two_accounts()
+    provider.rate_limited_account_ids = {"rl-acc-a"}
+    provider.rate_limit_retry_after = retry_after
+    provider.get_accounts = AsyncMock(side_effect=httpx.ConnectError("boom"))
+
+    with _sync_patches(provider), pytest.raises(httpx.ConnectError):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    stored = await session.get(BankConnection, conn.id, populate_existing=True)
+    assert stored is not None and stored.status == "error"
+    assert low < _retry_floor_seconds(stored) <= high
+
+
+@pytest.mark.asyncio
+async def test_failure_without_throttle_notes_no_floor(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, test_workspace.id)
+    provider = _mock_provider_two_accounts()
+    provider.rate_limited_account_ids = set()
+    provider.get_accounts = AsyncMock(side_effect=httpx.ConnectError("boom"))
+
+    with _sync_patches(provider), pytest.raises(httpx.ConnectError):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    stored = await session.get(BankConnection, conn.id, populate_existing=True)
+    assert stored is not None and stored.status == "error"
+    assert SYNC_BACKOFF_KEY not in (stored.settings or {})
 
 
 @pytest.mark.asyncio
