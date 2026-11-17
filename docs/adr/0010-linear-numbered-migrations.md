@@ -17,9 +17,9 @@ Alembic allows branching histories with hash revision ids. With many pull reques
 
 ## Consequences
 
-- Tests build the schema from the models (`Base.metadata.create_all`), not from migrations, so a model change without its migration passes the unit tests. The migration has to be written and run by hand.
+- Most tests build the schema from the models (`Base.metadata.create_all`), not from migrations. One test applies the migrations and compares the result with the models, so a model change without its migration fails CI.
 - Migrations run on every instance on upgrade, unattended: they must be safe on real data (no destructive change without a backfill, Postgres specifics tested against Postgres).
 
 ## Enforced by
 
-The "Migration Chain" CI job runs `backend/scripts/check_migration_chain.py` on the branch merged with `main`; `tests/test_migration_chain.py` tests the checker. Nothing stops an edit to a merged migration. A test that applies every migration to an empty PostgreSQL database and compares it with the models is proposed in #1471.
+The "Migration Chain" CI job runs `backend/scripts/check_migration_chain.py` on the branch merged with `main`; `tests/test_migration_chain.py` tests the checker. `tests/test_schema_matches_migrations_postgres.py` applies every migration to an empty PostgreSQL database and compares it with the models. Drift that predates it is frozen in `tests/schema_drift_baseline.txt`: new drift fails, and a line that no longer shows up fails too, so the list only shrinks. Nothing stops an edit to a merged migration.
