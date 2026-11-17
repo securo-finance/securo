@@ -14,7 +14,6 @@ import json
 import os
 import re
 import threading
-import uuid
 from pathlib import Path
 
 import pytest
@@ -368,51 +367,6 @@ def test_tokens_signed_with_a_public_default_are_refused(db_url, monkeypatch):
         decode_jwt(forged, settings.secret_key.get_secret_value(), ["fastapi-users:auth"])
 
 
-# --- MCP signing secret ---------------------------------------------------------
-
-@pytest.mark.parametrize("value", ["", "dev-mcp-secret-change-in-production", "change-me-in-production"])
-def test_mcp_secret_is_generated_when_missing_or_public(db_url, monkeypatch, value):
-    from app.agents.config import AgentSettings, _instance_mcp_jwt_secret
-
-    _instance_mcp_jwt_secret.cache_clear()
-    monkeypatch.setattr("app.core.config.get_settings", lambda: Settings(_env_file=None, database_url=db_url))
-    monkeypatch.setenv("AGENTS_MCP_JWT_SECRET", value)
-
-    secret = AgentSettings(_env_file=None).signing_secret()
-    _instance_mcp_jwt_secret.cache_clear()
-    # The MCP server, another process, resolves the same value.
-    again = AgentSettings(_env_file=None).signing_secret()
-    _instance_mcp_jwt_secret.cache_clear()
-
-    assert re.fullmatch(r"[0-9a-f]{64}", secret)
-    assert again == secret
-    assert stored(db_url, instance.MCP_JWT_SECRET_NAME) == [secret]
-
-
-def test_own_mcp_secret_is_used_as_is(db_url, monkeypatch):
-    from app.agents.config import AgentSettings, _instance_mcp_jwt_secret
-
-    _instance_mcp_jwt_secret.cache_clear()
-    monkeypatch.setenv("AGENTS_MCP_JWT_SECRET", "my-own-mcp-signing-secret")
-
-    assert AgentSettings(_env_file=None).signing_secret() == "my-own-mcp-signing-secret"
-    _instance_mcp_jwt_secret.cache_clear()
-
-
-def test_mcp_secret_and_secret_key_are_distinct(db_url, monkeypatch):
-    from app.agents.config import AgentSettings, _instance_mcp_jwt_secret
-
-    _instance_mcp_jwt_secret.cache_clear()
-    monkeypatch.setattr("app.core.config.get_settings", lambda: Settings(_env_file=None, database_url=db_url))
-    monkeypatch.delenv("AGENTS_MCP_JWT_SECRET", raising=False)
-    key = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
-
-    mcp = AgentSettings(_env_file=None).signing_secret()
-    _instance_mcp_jwt_secret.cache_clear()
-
-    assert mcp != key
-
-
 # --- Postgres -------------------------------------------------------------------
 
 PG_URL = os.environ.get("POSTGRES_TEST_URL")
@@ -445,11 +399,11 @@ def test_processes_starting_together_agree_on_one_key(pg_url, monkeypatch):
         ("CREATE TABLE agent_llm_connections (id INTEGER PRIMARY KEY, api_key_encrypted TEXT)", {}),
         ("INSERT INTO agent_llm_connections VALUES (1, :v)",
          {"v": crypto.fernet_for(old).encrypt(b"sk-llm-key").decode()}),
-        # The table can already exist, e.g. when the MCP secret came first, so
+        # The table can already exist (another instance value came first), so
         # creating it does not serialize the processes by itself.
         ("CREATE TABLE instance_secrets (name VARCHAR(64) PRIMARY KEY, value TEXT NOT NULL,"
          " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)", {}),
-        ("INSERT INTO instance_secrets (name, value) VALUES ('mcp_jwt_secret', 'x')", {}),
+        ("INSERT INTO instance_secrets (name, value) VALUES ('another_value', 'x')", {}),
     ))
     monkeypatch.setenv("SECRET_KEY", old)
     keys: list[str] = []
@@ -576,26 +530,3 @@ def test_value_under_an_empty_legacy_key_still_opens(app_settings):
 
     assert crypto.decrypt(legacy) == "legacy"
     assert vault.unseal(sealed) == {"k": 1}
-
-
-def test_mcp_token_lifetime_starts_after_the_secret_loads(monkeypatch):
-    """On first use the secret can wait for the database; that wait must not
-    come out of the token's lifetime."""
-    from jose import jwt as jose_jwt
-
-    from app.agents.config import AgentSettings
-    from app.agents.mcp import auth
-
-    clock = {"t": 1_000_000.0}
-
-    def slow_secret(self):
-        clock["t"] += 20  # waited for the database
-        return "my-own-mcp-signing-secret"
-
-    monkeypatch.setattr(AgentSettings, "signing_secret", slow_secret)
-    monkeypatch.setattr(auth.time, "time", lambda: clock["t"])
-
-    token = auth.mint_token(user_id=uuid.uuid4(), ttl_seconds=10)
-
-    claims = jose_jwt.get_unverified_claims(token)
-    assert claims["exp"] - clock["t"] == 10

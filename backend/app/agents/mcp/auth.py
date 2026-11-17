@@ -7,6 +7,7 @@ from typing import Optional
 from jose import jwt
 
 from app.agents.config import get_agent_settings
+from app.agents.mcp.keys import resolve_mcp_jwt_secret
 
 
 JWT_ISSUER = "securo-backend"
@@ -45,9 +46,6 @@ def mint_token(
     must use `extra_server_audience(name)` so they are useless against it.
     """
     s = get_agent_settings()
-    # Resolved before the clock is read: on first use it can wait for the
-    # database, which must not eat into the token's lifetime.
-    secret = s.signing_secret()
     now = int(time.time())
     payload = {
         "sub": str(user_id),
@@ -64,4 +62,4 @@ def mint_token(
         payload["agent_id"] = str(agent_id)
     if external:
         payload["ext"] = True
-    return jwt.encode(payload, secret, algorithm=JWT_ALGO)
+    return jwt.encode(payload, resolve_mcp_jwt_secret(), algorithm=JWT_ALGO)

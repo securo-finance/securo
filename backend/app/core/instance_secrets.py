@@ -1,9 +1,10 @@
 """Instance secrets for installs that never set their own.
 
-SECRET_KEY signs sessions and encrypts saved credentials, and
-AGENTS_MCP_JWT_SECRET signs the tokens the MCP server accepts. Every install
-path used to ship a public default for both (#1173), so an install that never
-set them signed and encrypted with values anyone can read.
+SECRET_KEY signs sessions and encrypts saved credentials, and the MCP signing
+key is derived from it unless AGENTS_MCP_JWT_SECRET is set
+(app/agents/mcp/keys.py). Every install path used to ship a public default
+(#1173), so an install that never set one signed and encrypted with a value
+anyone can read.
 
 When the environment carries no value, or one of those public defaults, the
 instance uses a random value generated once and kept in the database, the one
@@ -50,7 +51,6 @@ PUBLIC_SECRET_KEYS = (
 )
 
 SECRET_KEY_NAME = "secret_key"
-MCP_JWT_SECRET_NAME = "mcp_jwt_secret"
 
 _TABLE = "instance_secrets"
 # Any constant works: it only has to be the same in every process.

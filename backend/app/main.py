@@ -99,6 +99,15 @@ async def _warm_tesouro_cache() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Agents on means the API mints MCP tokens and the MCP server accepts
+    # them. Refuse to start when the signing key is a public default: every
+    # token would be forgeable, and the failure is otherwise silent until
+    # someone uses it (issue #1174).
+    if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on"):
+        from app.agents.mcp.keys import resolve_mcp_jwt_secret
+
+        resolve_mcp_jwt_secret()
+
     # Startup: dispatch sync for all stale bank connections
     try:
         from app.worker import celery_app  # noqa: F811
@@ -110,15 +119,6 @@ async def lifespan(app: FastAPI):
     # Background pre-warm of the Tesouro cache (non-blocking; gated to BRL
     # instances inside the helper). Kept on app.state so it isn't GC'd.
     app.state.tesouro_warm_task = asyncio.create_task(_warm_tesouro_cache())
-    # Load the MCP signing secret off the event loop, so the first token a
-    # request mints doesn't wait for the database on the loop thread.
-    if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on"):
-        try:
-            from app.agents.config import get_agent_settings
-
-            await asyncio.to_thread(get_agent_settings().signing_secret)
-        except Exception:
-            logger.exception("Startup: could not load the MCP signing secret")
     yield
     # Shutdown
     await close_redis()

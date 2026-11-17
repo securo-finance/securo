@@ -4,7 +4,6 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-
 class AgentSettings(BaseSettings):
     # Master switch. When false, the router is not mounted, MCP servers are
     # not contacted, and no background tasks run.
@@ -31,8 +30,12 @@ class AgentSettings(BaseSettings):
     extra_mcp_servers: str = ""
 
     # Shared secret used to mint short-lived JWTs for MCP calls. Distinct
-    # from the main app secret so revocation is independent. Read it through
-    # signing_secret(): left unset, the instance generates its own.
+    # from the main app secret so revocation is independent.
+    #
+    # Empty means "derive from SECRET_KEY" (see app/agents/mcp/keys.py).
+    # There is deliberately no default value: a public one would let any
+    # caller forge a token for any user. Known public defaults are refused
+    # at startup, and so is deriving from a public or short SECRET_KEY.
     mcp_jwt_secret: str = ""
     mcp_jwt_ttl_seconds: int = 600
 
@@ -86,26 +89,6 @@ class AgentSettings(BaseSettings):
         env_prefix="AGENTS_",
         extra="ignore",
     )
-
-    def signing_secret(self) -> str:
-        """The secret MCP tokens are signed and checked with.
-
-        Left unset (or on a public default), the instance generates one and
-        keeps it in the database, so the API that signs and the MCP server
-        that checks always agree (see app.core.instance_secrets). Tokens
-        signed with a public default are never accepted.
-        """
-        return _instance_mcp_jwt_secret(self.mcp_jwt_secret)
-
-
-@lru_cache(maxsize=4)
-def _instance_mcp_jwt_secret(configured: str) -> str:
-    from app.core import instance_secrets as instance
-    from app.core.config import get_settings
-
-    if not instance.is_public_or_missing(configured):
-        return configured
-    return instance.fetch_or_create(get_settings().database_url, instance.MCP_JWT_SECRET_NAME)
 
 
 @lru_cache

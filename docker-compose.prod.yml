@@ -65,7 +65,10 @@ x-backend-env: &backend-env
   AGENTS_ENABLED: ${AGENTS_ENABLED:-false}
   AGENTS_BUILTIN_MCP_URL: ${AGENTS_BUILTIN_MCP_URL:-http://mcp-server:8765/mcp}
   AGENTS_EXTRA_MCP_SERVERS: ${AGENTS_EXTRA_MCP_SERVERS:-}
-  # Optional: left empty, the instance generates its own, like SECRET_KEY.
+  # Signs the MCP server's JWTs. Empty derives it from SECRET_KEY, so an
+  # install with a random SECRET_KEY needs no extra configuration. There is no
+  # default value on purpose: a public one would let anyone mint a token for
+  # any user (#1174). A known public value is refused at startup.
   AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-}
   # TTL for tokens minted from /agents/connections → "External MCP access".
   # Used by Claude Desktop, n8n, custom clients plugging into Securo.

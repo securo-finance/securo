@@ -54,6 +54,10 @@ global:
 
 The secret must contain the corresponding keys (e.g., `secretKey`, `databaseUrl`, `agentsOpenaiApiKey`).
 
+### AI Agents and the MCP server
+
+`mcpServer.enabled` runs the built-in MCP server inside the cluster. It is not added to the Ingress or the HTTPRoute unless you also set `mcpServer.publicRoute: true`, so publishing it to your public entry point is a deliberate step; when you do, set `config.agentsExternalMcpUrl` to the URL clients should use. Tokens are signed with `secret.agentsMcpJwtSecret` when it is set, or with a key derived from `secretKey` otherwise, so a random `secretKey` is enough. A known public value is ignored and the derived key used instead, since anyone holding the signing key could mint a token for any user.
+
 ## Uninstalling the Chart
 
 To uninstall/delete the `securo` deployment:

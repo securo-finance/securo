@@ -13,7 +13,7 @@ from typing import Optional
 from fastapi import HTTPException, Request, status
 from jose import JWTError, jwt
 
-from app.agents.config import get_agent_settings
+from app.agents.mcp.keys import resolve_mcp_jwt_secret
 
 
 JWT_ISSUER = "securo-backend"
@@ -106,19 +106,19 @@ async def authorize_call(session, ctx: CallContext) -> uuid.UUID:
     return workspace_id
 
 
-def _settings():
-    return get_agent_settings()
-
-
 def verify_request(request: Request) -> CallContext:
     auth = request.headers.get("authorization") or ""
     if not auth.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
     token = auth.split(" ", 1)[1].strip()
+    # An unsafe key (public default, or derived from one) means no token can
+    # be trusted. `UnsafeMCPSecret` propagates: startup already refused, so
+    # reaching here would be a wiring bug, and guessing at a key would be worse.
+    signing_key = resolve_mcp_jwt_secret()
     try:
         payload = jwt.decode(
             token,
-            _settings().signing_secret(),
+            signing_key,
             algorithms=[JWT_ALGO],
             audience=JWT_AUDIENCE,
             issuer=JWT_ISSUER,
