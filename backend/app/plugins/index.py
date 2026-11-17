@@ -7,14 +7,17 @@ plugin, where a copy of its manifest is and that copy's sha256. Listing the
 catalog is that one request; a manifest is fetched only to plan an install
 or update, from the index's own host, and is refused unless its sha256
 matches. A plugin's README is copied there too and fetched, on the same
-terms, only when someone opens that plugin. Requests never follow redirects
-and are capped in size.
+terms, only when someone opens that plugin. Its icon, when it has one, is
+copied there under its sha256 (`icons/<sha256>.png`) and fetched when a
+browser asks Securo for it by that name: the content must hash to the name.
+Requests never follow redirects and are capped in size.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
+import re
 import tomllib
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version as package_version
@@ -26,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.models.workspace import WORKSPACE_KINDS
 from app.core.config import get_settings
+from app.plugins.logos import content_type as image_type
 from app.plugins.manifest import (
     CODE_KINDS,
     DATA_KINDS,
@@ -46,7 +50,11 @@ _MAX_INDEX_BYTES = 4 << 20
 _MAX_MANIFEST_BYTES = 2 << 20
 _MAX_README_BYTES = 256 << 10
 _MAX_ARCHIVE_BYTES = 20 << 20
+MAX_ICON_BYTES = 64 << 10
 _MANIFEST_CACHE_SIZE = 256
+#: An icon's file name in the catalog: its sha256 and what it is.
+_ICON_NAME = r"[0-9a-f]{64}\.(?:png|webp)"
+ICON_URL_PREFIX = "/api/plugins/icons/"
 
 def supported_contributions() -> frozenset[str]:
     """What this instance can apply. Plugins with anything else are listed but
@@ -74,6 +82,7 @@ class IndexEntry(BaseModel):
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     readme: str | None = Field(default=None, max_length=512, description="The README copy, relative to the index.")
     readme_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    icon: str | None = Field(default=None, max_length=512, description="The icon copy, relative to the index.")
     archive: str | None = Field(
         default=None, max_length=512, description="The release's source tarball, relative to the index (plugins with code)."
     )
@@ -99,6 +108,12 @@ class IndexEntry(BaseModel):
     @property
     def owner(self) -> str:
         return self.repository.rstrip("/").split("/")[-2]
+
+    @property
+    def icon_url(self) -> str | None:
+        """Where Securo serves the icon, when the index names its copy by its sha256."""
+        match = re.fullmatch(f"icons/({_ICON_NAME})", self.icon or "")
+        return f"{ICON_URL_PREFIX}{match.group(1)}" if match else None
 
     @property
     def supported(self) -> bool:
@@ -211,6 +226,24 @@ async def fetch_readme(client: httpx.AsyncClient, entry: IndexEntry) -> str | No
         raise PluginIndexError(f"{entry.id}: the README isn't UTF-8") from exc
     _remember(_readmes, entry.readme_sha256, readme)
     return readme
+
+
+async def fetch_icon(client: httpx.AsyncClient, name: str) -> tuple[str, bytes]:
+    """An icon as (content type, bytes), by its file name in the catalog: `<sha256>.png` or `.webp`.
+
+    The name is all it takes to find and check it: it's fetched from
+    `icons/` beside the index, and refused unless it hashes to that name and
+    is a small PNG or WebP.
+    """
+    if not re.fullmatch(_ICON_NAME, name):
+        raise PluginIndexError("not an icon's name")
+    body = await _get(client, urljoin(get_settings().plugins_index_url, f"icons/{name}"), MAX_ICON_BYTES)
+    if hashlib.sha256(body).hexdigest() != name.partition(".")[0]:
+        raise PluginIndexError(f"icon {name} doesn't match its checksum")
+    kind = image_type(body)
+    if kind is None:
+        raise PluginIndexError(f"icon {name} isn't a PNG or WebP image")
+    return kind, body
 
 
 #: The last archive fetched, by checksum: an install reads it for the runner

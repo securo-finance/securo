@@ -86,6 +86,9 @@ class PluginCatalogRead(BaseModel):
     supported: bool = Field(description="This Securo can apply everything the plugin contributes.")
     workspaces: list[str] = Field(description="The workspace types it's meant for.")
     fits_workspace: bool = Field(description="It's meant for this workspace's type.")
+    icon_url: str | None = Field(
+        default=None, description="Where Securo serves the plugin's icon; none draws the generated badge."
+    )
     installed_version: str | None
     update_available: bool
 

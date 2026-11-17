@@ -35,3 +35,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0018](0018-transfers-and-card-accounting.md) | Transfers are matched by a visible policy; card accounting mode moves reports, never balances |
 | [0019](0019-s3-storage.md) | Files can live in an S3-compatible bucket, from the regular image |
 | [0020](0020-instance-secrets-in-the-database.md) | An install with no secret of its own gets one, kept in the database |
+| [0021](0021-plugin-icons.md) | Plugin icons come from the catalog by checksum, served by Securo |

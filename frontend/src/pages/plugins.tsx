@@ -403,7 +403,7 @@ function PluginRow({
           {rank}
         </span>
       )}
-      <PluginAvatar seed={entry.id} label={name} className="size-10 text-sm" />
+      <PluginAvatar seed={entry.id} label={name} src={entry.icon_url} className="size-10 text-sm" />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <h3 className="min-w-0 truncate text-[15px] font-semibold leading-6">
