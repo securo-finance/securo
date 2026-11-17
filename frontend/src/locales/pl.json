@@ -2929,6 +2929,8 @@
       "saveFailed": "Nie udało się zapisać wyboru narzędzi",
       "empty": "Nie wykryto narzędzi. Czy serwer MCP działa? W Dockerze: `docker compose --profile agents up -d`.",
       "proposeBadge": "propozycja",
+      "enabledCount": "Włączone: {{enabled}} z {{total}}",
+      "enableAll": "Włącz wszystkie",
       "loading": "Wczytywanie narzędzi…"
     },
     "chat": {

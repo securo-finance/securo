@@ -2830,6 +2830,8 @@
       "saveFailed": "Failed to save tool selection",
       "empty": "No tools discovered. Is the MCP server running? With Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "propose",
+      "enabledCount": "{{enabled}} of {{total}} enabled",
+      "enableAll": "Enable all",
       "loading": "Loading tools…"
     },
     "chat": {

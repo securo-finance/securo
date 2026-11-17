@@ -2830,6 +2830,8 @@
       "saveFailed": "टूल चयन सहेजने में विफल",
       "empty": "कोई टूल नहीं मिला। क्या MCP सर्वर चल रहा है? Docker के साथ: `docker compose --profile agents up -d`।",
       "proposeBadge": "प्रस्ताव",
+      "enabledCount": "{{total}} में से {{enabled}} चालू",
+      "enableAll": "सभी चालू करें",
       "loading": "टूल लोड हो रहे हैं…"
     },
     "chat": {

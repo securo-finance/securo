@@ -2831,6 +2831,8 @@
       "saveFailed": "Fehler beim Speichern der Werkzeugauswahl",
       "empty": "Keine Werkzeuge gefunden. Läuft der MCP-Server? Mit Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "vorschlagen",
+      "enabledCount": "{{enabled}} von {{total}} aktiviert",
+      "enableAll": "Alle aktivieren",
       "loading": "Werkzeuge werden geladen…"
     },
     "chat": {

@@ -2830,6 +2830,8 @@
       "saveFailed": "Nem sikerült menteni az eszközválasztást",
       "empty": "Nem található eszköz. Fut az MCP-szerver? Dockerrel: `docker compose --profile agents up -d`.",
       "proposeBadge": "javaslat",
+      "enabledCount": "{{enabled}} / {{total}} bekapcsolva",
+      "enableAll": "Összes bekapcsolása",
       "loading": "Eszközök betöltése…"
     },
     "chat": {

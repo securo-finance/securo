@@ -2832,6 +2832,8 @@
       "saveFailed": "Kan de gereedschapsselectie niet opslaan",
       "empty": "Geen gereedschap gevonden. Is de MCP-server actief? Met Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "voorstellen",
+      "enabledCount": "{{enabled}} van {{total}} ingeschakeld",
+      "enableAll": "Alles inschakelen",
       "loading": "Gereedschappen laden…"
     },
     "chat": {

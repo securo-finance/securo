@@ -2834,6 +2834,8 @@
       "saveFailed": "Échec de l'enregistrement de la sélection d'outils",
       "empty": "Aucun outil découvert. Le serveur MCP est-il en cours d'exécution ? Avec Docker : `docker compose --profile agents up -d`.",
       "proposeBadge": "proposer",
+      "enabledCount": "{{enabled}} sur {{total}} activés",
+      "enableAll": "Tout activer",
       "loading": "Chargement des outils…"
     },
     "chat": {
