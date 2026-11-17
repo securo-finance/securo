@@ -161,13 +161,12 @@ async def test_list_transactions_tx_type_filter(
 async def test_list_transactions_currency_filter_matches_native(
     session: AsyncSession, ctx: CallContext, test_transactions
 ):
-    """The Transaction.currency column defaults to USD in the fixture
-    (independent of the account's BRL currency), so 'USD' should return
+    """The fixture rows carry the account's currency, so 'BRL' should return
     everything and any narrower filter returns ≤ that count."""
     handler = REGISTRY["list_transactions"].handler
-    usd = await handler(session=session, ctx=ctx, currency="USD")
-    assert usd["total"] >= 1
-    assert all(x["currency"] == "USD" for x in usd["items"])
+    brl = await handler(session=session, ctx=ctx, currency="BRL")
+    assert brl["total"] >= 1
+    assert all(x["currency"] == "BRL" for x in brl["items"])
 
 
 async def test_list_transactions_currency_filter_returns_zero_for_unused(
@@ -186,8 +185,11 @@ async def test_list_transactions_currency_filter_is_case_insensitive(
     session: AsyncSession, ctx: CallContext, test_transactions
 ):
     handler = REGISTRY["list_transactions"].handler
-    a = await handler(session=session, ctx=ctx, currency="usd")
-    b = await handler(session=session, ctx=ctx, currency="USD")
+    a = await handler(session=session, ctx=ctx, currency="brl")
+    b = await handler(session=session, ctx=ctx, currency="BRL")
+    # Against the BRL fixture rows a nonempty result is what proves the
+    # match stayed case-insensitive; two empty results would prove nothing.
+    assert a["total"] >= 1
     assert a["total"] == b["total"]
 
 

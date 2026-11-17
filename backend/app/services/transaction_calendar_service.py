@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.currency import same_currency
 from app.models.account import Account
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
@@ -414,10 +415,13 @@ async def _signed_balance_delta_primary(
     primary_currency: str,
 ) -> float:
     account_currency = tx.account.currency if tx.account else tx.currency
+    # A cross-currency row counts only once its account-currency amount was
+    # stamped; reading it 1:1 is how 700,000 CLP became 700,000 BRL (#353).
+    # The codes can differ by case, so compare them normalized.
     effective = (
         tx.amount
-        if tx.currency == account_currency
-        else Decimal(str(tx.amount_primary or tx.amount))
+        if same_currency(tx.currency, account_currency)
+        else Decimal(str(tx.amount_primary or 0))
     )
     amount = abs(Decimal(str(effective)))
     if account_currency != primary_currency:
