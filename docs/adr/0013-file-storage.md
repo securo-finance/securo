@@ -1,6 +1,6 @@
 # 0013. Files go through a storage provider
 
-- Status: Accepted
+- Status: Superseded by 0019
 - Date: 2026-03-27
 - Origin: #37 (transaction attachments), #718 (invoice attachments)
 
