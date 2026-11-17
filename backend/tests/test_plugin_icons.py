@@ -90,6 +90,15 @@ async def test_a_plugin_without_a_checksum_named_icon_has_no_icon_url(client: As
     assert row["id"] == PLUGIN and row["icon_url"] is None  # still listed, with the generated badge
 
 
+@pytest.mark.asyncio
+async def test_an_icon_path_past_the_limit_costs_the_icon_and_not_the_plugin(client: AsyncClient, auth_headers, catalog):
+    icon = "icons/" + "a" * 503 + ".png"
+    assert len(icon) == 513  # one character past the entry's limit
+    catalog.extra = {"icon": icon}
+    (row,) = (await client.get("/api/plugins/catalog", headers=auth_headers)).json()
+    assert row["id"] == PLUGIN and row["icon_url"] is None  # still listed, with the generated badge
+
+
 # --- Serving it ------------------------------------------------------------------------
 
 

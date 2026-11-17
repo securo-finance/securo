@@ -58,6 +58,10 @@ _MANIFEST_CACHE_SIZE = 256
 _ICON_CACHE_SIZE = 64
 #: An icon's file name in the catalog: its sha256 and what it is.
 ICON_NAME = re.compile(r"[0-9a-f]{64}\.(?:png|webp)")
+#: The longest path a row may name its icon copy by. A longer one costs the
+#: icon, not the row: see `_without_an_overlong_icon`.
+_ICON_PATH_MAX = 512
+
 
 def supported_contributions() -> frozenset[str]:
     """What this instance can apply. Plugins with anything else are listed but
@@ -85,7 +89,7 @@ class IndexEntry(BaseModel):
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     readme: str | None = Field(default=None, max_length=512, description="The README copy, relative to the index.")
     readme_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    icon: str | None = Field(default=None, max_length=512, description="The icon copy, relative to the index.")
+    icon: str | None = Field(default=None, max_length=_ICON_PATH_MAX, description="The icon copy, relative to the index.")
     archive: str | None = Field(
         default=None, max_length=512, description="The release's source tarball, relative to the index (plugins with code)."
     )
@@ -152,6 +156,20 @@ async def _get(client: httpx.AsyncClient, url: str, limit: int) -> bytes:
     return bytes(body)
 
 
+def _without_an_overlong_icon(raw) -> object:
+    """The row as it will be read: an icon path past the limit becomes no icon.
+
+    Validation refuses the whole row and `fetch_index` then skips the plugin,
+    so a long icon path would hide a plugin that is otherwise fine. The icon
+    is the one field that costs nothing to lose: the catalog draws a badge.
+    """
+    if isinstance(raw, dict):
+        icon = raw.get("icon")
+        if isinstance(icon, str) and len(icon) > _ICON_PATH_MAX:
+            return {**raw, "icon": None}
+    return raw
+
+
 async def fetch_index(client: httpx.AsyncClient) -> list[IndexEntry]:
     """The catalog's plugins. An entry that isn't valid is skipped, not fatal."""
     try:
@@ -163,7 +181,7 @@ async def fetch_index(client: httpx.AsyncClient) -> list[IndexEntry]:
     entries: dict[str, IndexEntry] = {}
     for raw in data["plugins"]:
         try:
-            entry = IndexEntry.model_validate(raw)
+            entry = IndexEntry.model_validate(_without_an_overlong_icon(raw))
         except ValidationError:
             logger.warning("Skipping an invalid plugin index entry: %s", str(raw)[:200])
             continue
