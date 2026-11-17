@@ -31,7 +31,7 @@ on:
     workflows: [CI]
     types: [completed]
   issue_comment:
-    types: [created, edited]
+    types: [created]
   pull_request_review:
     types: [submitted, dismissed]
   # Resolving a review thread is a webhook event, not an Actions event:
@@ -79,6 +79,11 @@ jobs:
             // an agent pushing through this repository commits as its owner.
             const VERDICT_AUTHORS = ['tassionoronha'];
             const VERDICT = '<!-- fast-lane: approve -->';
+            // A pull request opened by this login is never merged by the lane.
+            // Every agent pushes as the owner, so a verdict it could leave on
+            // its own code would let that code approve itself: `pulls.get`
+            // alone cannot tell an agent's comment from the owner's.
+            const SELF_APPROVAL_GUARD = ['tassionoronha'];
 
             const REQUIRED = ['Backend Tests', 'Frontend Checks', 'Helm Checks'];
 
@@ -134,11 +139,11 @@ jobs:
               // ---- 2. files that never take the fast lane -------------------
               const files = await github.paginate(github.rest.pulls.listFiles,
                 { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
-              // GitHub caps this list at 3,000 entries even with pagination. A
-              // gate that reads paths has to refuse a list it knows is short:
-              // the blocked file would be exactly the one it could not see.
+              // GitHub caps this list at 3,000 files even with pagination, so a blocked
+              // file past that cut would be invisible. `changed_files` is the count the
+              // pull request reports: when the two differ, files went unread.
               if (files.length !== pr.changed_files) {
-                return skip(`the file list is incomplete (${files.length} of ${pr.changed_files})`);
+                return skip(`read ${files.length} of ${pr.changed_files} changed files`);
               }
               // A rename reports the new path in `filename` and the old one in
               // `previous_filename`: moving a migration, an auth file or this
@@ -222,11 +227,18 @@ jobs:
 
               // ---- 4. the verdict names the head we are about to merge ------
               const head = pr.head.sha;
+              if (SELF_APPROVAL_GUARD.includes(pr.user.login)) {
+                return skip(`opened by ${pr.user.login}: agent code is not merged by the lane`);
+              }
               const comments = await github.paginate(github.rest.issues.listComments,
                 { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
+              // The marker must open the comment, so quoting a verdict in the
+              // conversation cannot pass as one; an edited comment never counts,
+              // because a verdict is a statement about one head, written once.
               const verdict = comments.filter((c) =>
                 c.user && VERDICT_AUTHORS.includes(c.user.login)
-                && (c.body || '').includes(VERDICT)
+                && (c.body || '').trimStart().startsWith(VERDICT)
+                && (!c.updated_at || c.created_at === c.updated_at)
                 && new RegExp(`sha:\\s*${head}\\b`).test(c.body || '')).pop();
               if (!verdict) return skip(`no verdict for ${head.slice(0, 7)}`);
 
