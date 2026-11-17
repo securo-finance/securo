@@ -33,3 +33,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0016](0016-outbound-calls-and-no-telemetry.md) | Every outbound call is gated, and there is no telemetry |
 | [0017](0017-category-lines.md) | Category lines split a transaction's category, the row stays as the bank reports it |
 | [0018](0018-transfers-and-card-accounting.md) | Transfers are matched by a visible policy; card accounting mode moves reports, never balances |
+| [0019](0019-instance-secrets-in-the-database.md) | An install with no secret of its own gets one, kept in the database |
