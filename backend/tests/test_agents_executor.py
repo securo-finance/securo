@@ -800,3 +800,13 @@ async def test_initialization_runs_once(session, test_user, test_agent):
     )
 
     assert await agent_service.allowed_tool_pairs(session, test_agent.id) == {("securo", "list_accounts")}
+
+
+async def test_tool_list_records_a_server_named_by_a_long_url(session, test_user, test_agent):
+    """An extra server registered without an alias is named by its URL."""
+    from app.agents.services import agent_service
+
+    server = "https://mcp.example.com/" + "a" * 100 + "/mcp"
+    await agent_service.initialize_tools(session, test_agent, [(server, "ping")])
+
+    assert await agent_service.allowed_tool_pairs(session, test_agent.id) == {(server, "ping")}

@@ -1,4 +1,5 @@
-"""Track whether an agent's tool list has been written out.
+"""Track whether an agent's tool list has been written out, and let it hold
+any server name.
 
 An agent with no agent_tools rows used to be allowed every tool. Rows now
 are the only grant, so agents that relied on "no rows" are marked as not
@@ -28,7 +29,21 @@ def upgrade() -> None:
         "UPDATE agents SET tools_initialized = true "
         "WHERE EXISTS (SELECT 1 FROM agent_tools WHERE agent_tools.agent_id = agents.id)"
     )
+    # Rows are now written for every discovered tool, and an extra MCP server
+    # registered without an alias is named by its whole URL, which can pass
+    # 80 characters. SQLite has no ALTER COLUMN TYPE and doesn't enforce a
+    # VARCHAR length anyway.
+    if op.get_bind().dialect.name == "postgresql":
+        op.alter_column(
+            "agent_tools", "server",
+            existing_type=sa.String(80), type_=sa.String(500), existing_nullable=False,
+        )
 
 
 def downgrade() -> None:
+    if op.get_bind().dialect.name == "postgresql":
+        op.alter_column(
+            "agent_tools", "server",
+            existing_type=sa.String(500), type_=sa.String(80), existing_nullable=False,
+        )
     op.drop_column("agents", "tools_initialized")

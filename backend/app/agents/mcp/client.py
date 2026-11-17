@@ -41,6 +41,10 @@ class _ServerSpec:
 BUILTIN_SERVER_NAME = "securo"
 
 
+# agent_tools.server's length.
+_MAX_SERVER_NAME = 500
+
+
 def _parse_servers() -> list[_ServerSpec]:
     s = get_agent_settings()
     out = [_ServerSpec(name=BUILTIN_SERVER_NAME, url=s.builtin_mcp_url)]
@@ -64,6 +68,16 @@ def _parse_servers() -> list[_ServerSpec]:
                     "for the built-in server.",
                     url.strip(),
                     BUILTIN_SERVER_NAME,
+                )
+                continue
+            if len(name) > _MAX_SERVER_NAME:
+                # agent_tools.server holds the name as is; never truncated,
+                # since it routes calls.
+                logger.warning(
+                    "Ignoring extra MCP server %r: its name is longer than %d characters; "
+                    "give it a shorter alias (url|alias).",
+                    url.strip()[:80],
+                    _MAX_SERVER_NAME,
                 )
                 continue
             if not name or "__" in name or name.endswith("_"):

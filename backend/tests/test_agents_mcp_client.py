@@ -121,6 +121,18 @@ def test_parse_servers_skips_names_that_break_the_wire_name(monkeypatch, name):
     assert [sp.name for sp in _parse_servers()] == ["securo", "reports"]
 
 
+def test_parse_servers_keeps_a_long_url_name_and_skips_one_too_long(monkeypatch):
+    """An aliasless server is named by its URL; a long one must still fit
+    agent_tools.server, and one past the column is refused, not truncated."""
+    from app.agents.config import get_agent_settings
+
+    long_url = "https://mcp.example.com/" + "a" * 100 + "/mcp"
+    too_long = "https://mcp.example.com/" + "b" * 600
+    s = get_agent_settings()
+    monkeypatch.setattr(s, "extra_mcp_servers", f"{long_url}, {too_long}")
+    assert [sp.name for sp in _parse_servers()] == ["securo", long_url]
+
+
 # --------------------------------------------------------------------- MCPClient.list_tools
 
 @pytest.mark.asyncio
