@@ -26,6 +26,7 @@ Securo's promise is that a person's financial data stays on their own infrastruc
 | Plugin code egress | `plugin_runner/` | `plugins` profile, declared hosts only |
 
   Paths are under `backend/app/` except `plugin_runner/`, under `backend/`.
+- Extended by [0019](0019-s3-storage.md), which adds S3-compatible object storage for files, called only with `STORAGE_PROVIDER=s3`.
 - The browser makes three requests of its own: the GitHub releases API to show the update banner (every 6 hours, can be turned off per browser), Google Fonts from `frontend/index.html`, and institution favicons from Google (the backend only builds the URL).
 
 ## Consequences

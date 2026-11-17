@@ -29,7 +29,7 @@ ADR 0013 put every file behind `StorageProvider` and left S3 declared but not im
 ## Consequences
 
 - New file features use the provider and a workspace-prefixed key; no service opens paths on disk or calls S3 directly.
-- The image carries the S3 client for everyone. That is a few megabytes on disk, in exchange for one image to build, publish and document, and no special tag to switch to S3.
+- The image carries the S3 client for everyone. That is about 50 MB installed, 31 MB of it `botocore` and 8.4 MB `aiohttp`, in exchange for one image to build, publish and document, and no special tag to switch to S3.
 - Every backend, worker and MCP process must get the same storage settings, or they read and write in different places.
 - AI knowledge documents and embedding caches stay on local storage; this decision covers attachments, invoice attachments and logos.
 
