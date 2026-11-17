@@ -62,6 +62,28 @@ on:
         description: pull request number to evaluate, empty to sweep every open one
         required: false
 
+# Is the sweep alive? A cron that does not fire leaves no failed run, only a run
+# that is not there, so silence is this trigger's failure mode. Ask for it:
+#   gh api "repos/{owner}/{repo}/actions/workflows/fast-lane.yml/runs?event=schedule&per_page=1"
+# No scheduled run after an hour in which '17 * * * *' has passed is a symptom,
+# not a diagnosis: the trigger may not be registered, or the workflow may not be
+# active, or GitHub may be delaying or dropping scheduled runs. Check its state
+# with `gh api repos/{owner}/{repo}/actions/workflows/fast-lane.yml` before
+# concluding anything. A schedule in another workflow of this repository firing
+# in the same window rules out a repository-wide outage, not this file. Until it
+# is settled, the one thing only the sweep covers — a resolved CodeRabbit
+# thread, which starts no event at all — goes on holding a merge with nothing in
+# the log saying so.
+#
+# A manual run proves the other half, that the sweep itself works. Its log
+# carries `sweeping N open pull requests` and then one line per pull request: the
+# gate that refused it (`#N: not merging, ...`) or the merge. A pull request that
+# could not be read logs `#N: <message>` there instead of stopping the sweep, so
+# every number in the list has to be accounted for — that, not the count alone,
+# is what says the sweep evaluated them all.
+#   gh workflow run fast-lane.yml        # no `pr` input: every open pull request
+# Both triggers run the same code, so a run's log names which one started it.
+
 permissions:
   contents: write
   pull-requests: write
@@ -494,6 +516,10 @@ jobs:
               // so a thread resolved with no other event still gets merged.
               const open = await github.paginate(github.rest.pulls.list,
                 { owner: OWNER, repo: REPO, state: 'open', per_page: 100 });
+              // Which trigger this is: a cron that never fires and a hand-run
+              // look the same in a list of runs, and the log is where the
+              // difference is read.
+              core.info(`sweep started by ${ev === 'schedule' ? 'the hourly schedule' : 'a manual run'}`);
               core.info(`sweeping ${open.length} open pull requests`);
               for (const p of open) {
                 try {
