@@ -1368,10 +1368,16 @@
     "connectionStatus": {
       "active": "Aktiv",
       "error": "Fehler",
-      "expired": "Abgelaufen"
+      "expired": "Abgelaufen",
+      "disconnected": "Getrennt"
     },
     "pluginConnectors": "Aus deinen Plugins",
-    "pluginUnavailable": "Das Plugin dieser Verbindung ist nicht mehr installiert oder verfügbar."
+    "pluginUnavailable": "Das Plugin dieser Verbindung ist nicht mehr installiert oder verfügbar.",
+    "confirmDisconnectKeepDesc": "{{institution}} wird nicht mehr synchronisiert. Die Konten und der Transaktionsverlauf bleiben in der App, und du kannst die Bank später wieder verbinden.",
+    "disconnectAlsoDelete": "Auch Konten und Transaktionen löschen",
+    "disconnectedKept": "Bank getrennt. Konten und Verlauf wurden behalten.",
+    "removeConnection": "Verbindung entfernen",
+    "connectionDisconnected": "Getrennt. Erneut verbinden, um wieder zu synchronisieren"
   },
   "loans": {
     "title": "Kreditvertrag",

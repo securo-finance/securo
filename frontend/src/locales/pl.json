@@ -1420,10 +1420,16 @@
     "connectionStatus": {
       "active": "Aktywne",
       "error": "Błąd",
-      "expired": "Wygasłe"
+      "expired": "Wygasłe",
+      "disconnected": "Odłączone"
     },
     "pluginConnectors": "Z twoich wtyczek",
-    "pluginUnavailable": "Wtyczka tego połączenia nie jest już zainstalowana ani dostępna."
+    "pluginUnavailable": "Wtyczka tego połączenia nie jest już zainstalowana ani dostępna.",
+    "confirmDisconnectKeepDesc": "{{institution}} przestanie się synchronizować. Konta i historia transakcji zostaną w aplikacji, a połączenie można później przywrócić.",
+    "disconnectAlsoDelete": "Usuń też konta i transakcje",
+    "disconnectedKept": "Bank odłączony. Konta i historia zostały zachowane.",
+    "removeConnection": "Usuń połączenie",
+    "connectionDisconnected": "Odłączone. Połącz ponownie, aby znów synchronizować"
   },
   "loans": {
     "title": "Umowa kredytu",

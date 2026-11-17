@@ -812,6 +812,192 @@ async def test_delete_connection_unpairs_transfer_partner_on_manual_account(
     }
 
 
+async def _connection_with_history(session: AsyncSession, user_id):
+    """A connection whose account holds one synced transaction with a payee
+    and one recurring, plus a synced asset."""
+    from app.models.recurring_transaction import RecurringTransaction
+
+    conn, account, payee = await _connected_payee(session, user_id, "Kept Payee")
+    account.external_id = "keep-acc-1"
+    tx = (
+        await session.execute(select(Transaction).where(Transaction.account_id == account.id))
+    ).scalar_one()
+    tx.external_id = "keep-tx-1"
+    recurring = RecurringTransaction(
+        id=uuid.uuid4(), user_id=user_id, account_id=account.id,
+        description="Rent", amount=Decimal("100"), currency="BRL", type="debit",
+        frequency="monthly", start_date=date.today(), next_occurrence=date.today(),
+    )
+    asset = Asset(
+        id=uuid.uuid4(), user_id=user_id, name="Synced ETF", type="etf",
+        currency="BRL", source="test", external_id="keep-asset-1",
+        connection_id=conn.id, is_archived=False,
+    )
+    session.add_all([recurring, asset])
+    await session.commit()
+    return conn, account, tx, payee, recurring, asset
+
+
+@pytest.mark.asyncio
+async def test_disconnect_keeping_accounts_preserves_history(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """keep_accounts archives the connection and leaves its accounts,
+    transactions, payees, recurrings and assets in place (#1018)."""
+    from app.models.payee import Payee
+    from app.models.recurring_transaction import RecurringTransaction
+
+    conn, account, tx, payee, recurring, asset = await _connection_with_history(
+        session, test_user.id
+    )
+
+    workspace_id, conn_id, account_id = test_workspace.id, conn.id, account.id
+    tx_id, payee_id, recurring_id, asset_id = tx.id, payee.id, recurring.id, asset.id
+
+    assert await delete_connection(
+        session, conn_id, workspace_id, keep_accounts=True
+    ) is True
+
+    session.expire_all()
+    kept = await get_connection(session, conn_id, workspace_id)
+    assert kept is not None
+    assert kept.status == "disconnected"
+    assert kept.credentials is None
+    kept_account = await session.get(Account, account_id)
+    assert kept_account is not None
+    assert kept_account.connection_id == conn_id
+    assert kept_account.external_id == "keep-acc-1"
+    assert await session.get(Transaction, tx_id) is not None
+    assert await session.get(Payee, payee_id) is not None
+    assert await session.get(RecurringTransaction, recurring_id) is not None
+    kept_asset = await session.get(Asset, asset_id)
+    assert kept_asset is not None and kept_asset.is_archived is False
+
+
+@pytest.mark.asyncio
+async def test_disconnected_connection_does_not_sync(
+    session: AsyncSession, test_user, test_workspace,
+):
+    from app.services.connection_service import ConnectionDisconnectedError
+
+    conn = await _make_connection(session, test_user.id, "Archived Bank")
+    await delete_connection(session, conn.id, test_workspace.id, keep_accounts=True)
+
+    mock_provider = AsyncMock()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         pytest.raises(ConnectionDisconnectedError):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+    mock_provider.get_accounts.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        RuntimeError("provider down"),
+        ProviderUserActionRequired("reconnect", code="credentials_invalid"),
+        ProviderRateLimited("slow down"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_failed_sync_keeps_a_disconnect_made_meanwhile(
+    session: AsyncSession, test_user, test_workspace, failure,
+):
+    """A disconnect that commits while a sync is failing stays disconnected:
+    the failure handler must not stamp the archived row back to error or
+    active, or its reconnect token would have no item to reopen."""
+    from sqlalchemy import update
+
+    conn = await _make_connection(session, test_user.id, "Racing Bank")
+    conn_id = conn.id
+    workspace_id = test_workspace.id
+    user_id = test_user.id
+
+    async def disconnect_then_fail(_credentials):
+        await session.execute(
+            update(BankConnection)
+            .where(BankConnection.id == conn_id)
+            .values(status="disconnected", credentials=None)
+        )
+        await session.commit()
+        raise failure
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(side_effect=disconnect_then_fail)
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        try:
+            await sync_connection(session, conn_id, workspace_id, user_id)
+        except Exception:
+            pass
+
+    session.expire_all()
+    kept = await get_connection(session, conn_id, workspace_id)
+    assert kept is not None
+    assert kept.status == "disconnected"
+
+
+@pytest.mark.asyncio
+async def test_reconnect_after_disconnect_resyncs_without_duplicates(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Reconnecting a connection disconnected with keep_accounts and syncing
+    the same data again updates the kept rows instead of importing them a
+    second time."""
+    conn, account, tx, _payee, _recurring, _asset = await _connection_with_history(
+        session, test_user.id
+    )
+    await delete_connection(session, conn.id, test_workspace.id, keep_accounts=True)
+
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id=conn.external_id,
+        institution_name="Kept Payee Bank",
+        credentials={"token": "fresh"},
+        accounts=[],
+    ))
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "fresh"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="keep-acc-1", name="Connected Account",
+            type="checking", balance=Decimal("123.45"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="keep-tx-1", description="Synced tx",
+            amount=Decimal("10"), date=date.today(), type="debit", currency="BRL",
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        reconnected = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code",
+            reconnect_connection_id=conn.id,
+        )
+        assert reconnected.status == "active"
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    accounts = (
+        await session.execute(select(Account).where(Account.user_id == test_user.id))
+    ).scalars().all()
+    assert [a.id for a in accounts] == [account.id]
+    # The resumed sync really ran against the kept account: it took the
+    # balance the provider reports now.
+    await session.refresh(accounts[0])
+    assert accounts[0].balance == Decimal("123.45")
+    synced = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.account_id == account.id,
+                Transaction.external_id.isnot(None),
+            )
+        )
+    ).scalars().all()
+    assert [t.id for t in synced] == [tx.id]
+
+
 # ---------------------------------------------------------------------------
 # create_connect_token
 # ---------------------------------------------------------------------------

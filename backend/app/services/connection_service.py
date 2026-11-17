@@ -2978,6 +2978,10 @@ async def sync_connection(
     )
     if not connection:
         raise ValueError("Connection not found")
+    if connection.status == DISCONNECTED_STATUS:
+        raise ConnectionDisconnectedError(
+            "This connection was disconnected. Reconnect it to sync again."
+        )
     if provider is None and is_plugin_provider(connection.provider):
         raise ProviderNotConfiguredError("This connection is synced by its plugin.")
     if provider is None and not connection.credentials:
@@ -3712,10 +3716,7 @@ async def sync_connection(
         # Provider consent expired — distinct from a generic error so the UI
         # can show a clearer "reauthorize" prompt.
         await session.rollback()
-        async with session.begin():
-            conn = await session.get(BankConnection, connection_id)
-            if conn:
-                conn.status = "expired"
+        await _mark_failed_sync(session, connection_id, "expired")
         raise
     except ProviderUserActionRequired:
         # Stale/revoked provider credentials require a non-destructive
@@ -3723,10 +3724,7 @@ async def sync_connection(
         # shows the reconnect banner, then let the API return a typed 409
         # instead of a generic 500.
         await session.rollback()
-        async with session.begin():
-            conn = await session.get(BankConnection, connection_id)
-            if conn:
-                conn.status = "error"
+        await _mark_failed_sync(session, connection_id, "error")
         raise
     except ProviderRateLimited:
         # The bank/aggregator is throttling data requests (PSD2 caps unattended
@@ -3734,10 +3732,7 @@ async def sync_connection(
         # it or 500 the request — skip this run, keep it active, and leave
         # last_sync_at untouched so the next sync retries the same window.
         await session.rollback()
-        async with session.begin():
-            conn = await session.get(BankConnection, connection_id)
-            if conn and conn.status != "expired":
-                conn.status = "active"
+        await _mark_failed_sync(session, connection_id, "active", keep=("expired",))
         # The row can vanish if the connection was deleted mid-sync. Fall back
         # to the one we already hold rather than raising: re-raising here would
         # escape as a 500, which is exactly what this handler exists to avoid.
@@ -3748,11 +3743,32 @@ async def sync_connection(
     except Exception:
         # Mark connection as errored so UI shows reconnect banner
         await session.rollback()
-        async with session.begin():
-            conn = await session.get(BankConnection, connection_id)
-            if conn:
-                conn.status = "error"
+        await _mark_failed_sync(session, connection_id, "error")
         raise
+
+
+DISCONNECTED_STATUS = "disconnected"
+
+
+async def _mark_failed_sync(
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    status: str,
+    *,
+    keep: tuple[str, ...] = (),
+) -> None:
+    """Set the status a sync that ended early leaves. A disconnect can commit
+    between the sync's rollback and this write; overwriting it would bring
+    back a connection the user archived and break its reconnect. The row is
+    read under lock, so the check and the write see the same status."""
+    async with session.begin():
+        conn = await session.get(BankConnection, connection_id, with_for_update=True)
+        if conn and conn.status not in (DISCONNECTED_STATUS, *keep):
+            conn.status = status
+
+
+class ConnectionDisconnectedError(Exception):
+    """A sync was asked of a connection the user disconnected."""
 
 
 async def unlink_connection(
@@ -3800,16 +3816,40 @@ async def unlink_connection(
 
 
 async def delete_connection(
-    session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID, *, commit: bool = True
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    keep_accounts: bool = False,
+    commit: bool = True,
 ) -> bool:
-    """Disconnect: archive the connection's assets and delete it, with its accounts.
+    """Disconnect a connection.
 
-    `commit=False` leaves the commit to the caller (a plugin being removed
-    disconnects its connections inside the removal's transaction).
+    `keep_accounts=True` archives it and keeps its accounts and history (see
+    below); otherwise its assets are archived and it is deleted with its
+    accounts. `commit=False` leaves the commit to the caller (a plugin being
+    removed disconnects its connections inside the removal's transaction).
     """
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         return False
+
+    if keep_accounts:
+        # Disconnecting keeps the accounts, their history, payees and
+        # recurrings. The connection is archived rather than deleted so its
+        # accounts stay linked to it: a later reconnect goes through the
+        # reconnect flow, which matches each account by the same
+        # (connection_id, external_id) a normal sync uses, so the re-sync
+        # updates the existing rows instead of importing them again.
+        # Dropping the credentials ends the access, and the status keeps the
+        # scheduler and manual sync away from it.
+        connection.status = DISCONNECTED_STATUS
+        connection.credentials = None
+        if commit:
+            await session.commit()
+        else:
+            await session.flush()
+        return True
 
     # Archive synced investment assets rather than deleting them: the user
     # may still want to see their historical AssetValue trend, and if they

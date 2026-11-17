@@ -492,8 +492,10 @@ export const connections = {
     const { data } = await api.patch(`/connections/${id}/settings`, settings)
     return data
   },
-  delete: async (id: string): Promise<void> => {
-    await api.delete(`/connections/${id}`)
+  // Disconnecting keeps the accounts and their history unless the caller
+  // asks for them to be deleted too.
+  delete: async (id: string, { keepAccounts = true }: { keepAccounts?: boolean } = {}): Promise<void> => {
+    await api.delete(`/connections/${id}`, { params: { keep_accounts: keepAccounts } })
   },
 }
 

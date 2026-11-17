@@ -1367,10 +1367,16 @@
     "connectionStatus": {
       "active": "Aktív",
       "error": "Hiba",
-      "expired": "Lejárt"
+      "expired": "Lejárt",
+      "disconnected": "Leválasztva"
     },
     "pluginConnectors": "A bővítményeidből",
-    "pluginUnavailable": "A kapcsolat bővítménye már nincs telepítve vagy nem érhető el."
+    "pluginUnavailable": "A kapcsolat bővítménye már nincs telepítve vagy nem érhető el.",
+    "confirmDisconnectKeepDesc": "A(z) {{institution}} szinkronizálása leáll. A számlák és a tranzakciós előzmények az alkalmazásban maradnak, és később újra csatlakoztathatod.",
+    "disconnectAlsoDelete": "A számlák és tranzakciók törlése is",
+    "disconnectedKept": "Bank leválasztva. A számlák és az előzmények megmaradtak.",
+    "removeConnection": "Kapcsolat eltávolítása",
+    "connectionDisconnected": "Leválasztva. Csatlakoztasd újra a szinkronizáláshoz"
   },
   "loans": {
     "title": "Hitelszerződés",

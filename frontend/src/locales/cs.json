@@ -1451,10 +1451,16 @@
     "connectionStatus": {
       "active": "Aktivní",
       "error": "Chyba",
-      "expired": "Vypršelo"
+      "expired": "Vypršelo",
+      "disconnected": "Odpojeno"
     },
     "pluginConnectors": "Z vašich pluginů",
-    "pluginUnavailable": "Plugin tohoto připojení už není nainstalován ani dostupný."
+    "pluginUnavailable": "Plugin tohoto připojení už není nainstalován ani dostupný.",
+    "confirmDisconnectKeepDesc": "{{institution}} se přestane synchronizovat. Účty a historie transakcí zůstanou v aplikaci a banku můžete později znovu připojit.",
+    "disconnectAlsoDelete": "Smazat také účty a transakce",
+    "disconnectedKept": "Banka odpojena. Účty a historie zůstaly zachovány.",
+    "removeConnection": "Odebrat připojení",
+    "connectionDisconnected": "Odpojeno. Připojte znovu pro synchronizaci"
   },
   "loans": {
     "title": "Úvěrová smlouva",

@@ -1367,10 +1367,16 @@
     "connectionStatus": {
       "active": "Active",
       "error": "Error",
-      "expired": "Expired"
+      "expired": "Expired",
+      "disconnected": "Disconnected"
     },
     "pluginConnectors": "From your plugins",
-    "pluginUnavailable": "The plugin behind this connection isn't installed or available anymore."
+    "pluginUnavailable": "The plugin behind this connection isn't installed or available anymore.",
+    "confirmDisconnectKeepDesc": "{{institution}} will stop syncing. Its accounts and transaction history stay in the app, and you can reconnect it later.",
+    "disconnectAlsoDelete": "Also delete accounts and transactions",
+    "disconnectedKept": "Bank disconnected. Accounts and history were kept.",
+    "removeConnection": "Remove connection",
+    "connectionDisconnected": "Disconnected. Reconnect to sync again"
   },
   "loans": {
     "title": "Loan contract",

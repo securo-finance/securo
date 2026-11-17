@@ -224,6 +224,8 @@ async def sync_connection(
         }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except connection_service.ConnectionDisconnectedError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ProviderUserActionRequired as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -261,6 +263,10 @@ async def get_reconnect_token(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
 
     item_id = connection.credentials.get("item_id") if connection.credentials else None
+    # A disconnected connection has no credentials left, but the widget item
+    # it was linked to is its external_id, so it can still be reopened.
+    if not item_id and connection.status == connection_service.DISCONNECTED_STATUS:
+        item_id = connection.external_id
     if not item_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -297,15 +303,25 @@ async def update_settings(
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(
     connection_id: uuid.UUID,
+    keep_accounts: bool = True,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    """Disconnect a bank.
+
+    By default the accounts and their history stay and the connection is
+    archived so it can be reconnected later. keep_accounts=false deletes the
+    connection with its accounts and transactions. A connection a plugin
+    syncs goes with the plugin's connection, which keeps the accounts.
+    """
     plugin_connection = await _plugin_connection(session, connection_id, ctx.workspace.id)
     if plugin_connection is not None:
         # The plugin's connection goes with it: nothing would sync into it anymore.
         await plugin_connections.delete(session, plugin_connection)
         return
-    deleted = await connection_service.delete_connection(session, connection_id, ctx.workspace.id)
+    deleted = await connection_service.delete_connection(
+        session, connection_id, ctx.workspace.id, keep_accounts=keep_accounts
+    )
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
 

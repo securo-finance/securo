@@ -1367,10 +1367,16 @@
     "connectionStatus": {
       "active": "有効",
       "error": "エラー",
-      "expired": "期限切れ"
+      "expired": "期限切れ",
+      "disconnected": "接続解除済み"
     },
     "pluginConnectors": "インストール済みのプラグイン",
-    "pluginUnavailable": "この接続のプラグインはインストールされていないか、利用できなくなりました。"
+    "pluginUnavailable": "この接続のプラグインはインストールされていないか、利用できなくなりました。",
+    "confirmDisconnectKeepDesc": "{{institution}} の同期を停止します。口座と取引履歴はアプリに残り、あとで再接続できます。",
+    "disconnectAlsoDelete": "口座と取引も削除する",
+    "disconnectedKept": "銀行の接続を解除しました。口座と履歴は残っています。",
+    "removeConnection": "接続を削除",
+    "connectionDisconnected": "接続解除済み。再接続すると同期を再開します"
   },
   "loans": {
     "title": "ローン契約",

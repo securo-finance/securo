@@ -1371,10 +1371,16 @@
     "connectionStatus": {
       "active": "Activa",
       "error": "Error",
-      "expired": "Caducada"
+      "expired": "Caducada",
+      "disconnected": "Desconectada"
     },
     "pluginConnectors": "De tus plugins",
-    "pluginUnavailable": "El plugin de esta conexión ya no está instalado o disponible."
+    "pluginUnavailable": "El plugin de esta conexión ya no está instalado o disponible.",
+    "confirmDisconnectKeepDesc": "{{institution}} dejará de sincronizarse. Sus cuentas y el historial de transacciones se quedan en la app, y puedes volver a conectarlo más tarde.",
+    "disconnectAlsoDelete": "Eliminar también cuentas y transacciones",
+    "disconnectedKept": "Banco desconectado. Se conservaron las cuentas y el historial.",
+    "removeConnection": "Eliminar conexión",
+    "connectionDisconnected": "Desconectada. Vuelve a conectar para sincronizar"
   },
   "loans": {
     "title": "Contrato del préstamo",
