@@ -116,7 +116,8 @@ It returns:
 ### The payload
 
 `backend/app/plugins/contract.py` is the source of truth: each model there
-(`Account`, `Transaction`, `Bill`, `Holding`, `Trade`, `Payload`) mirrors a
+(`Account`, `Transaction`, `Bill`, `ReservedBalance`, `Holding`, `Trade`,
+`Payload`) mirrors a
 provider dataclass in `backend/app/providers/base.py` field for field, and
 unknown fields are refused. The rules that catch people out:
 
@@ -130,12 +131,48 @@ unknown fields are refused. The rules that catch people out:
 - `null` (or a missing list) means not fetched this run: what Securo has is
   left alone. `[]` means fetched and empty. `"data": null` means nothing was
   fetched yet.
-- At most 500 accounts, 20,000 transactions, 2,000 bills, 5,000 holdings and
-  20,000 trades per reply; send the rest on the next sync.
+- At most 500 accounts, 20,000 transactions, 2,000 bills, 2,000 reserved
+  balances, 5,000 holdings and 20,000 trades per reply; send the rest on the
+  next sync.
 - `masked_number` is the last four characters only.
 - An account's logo is either `institution_logo` (a key of the manifest's
   `logos`) or `institution_logo_url` (https, on a host declared in
   `network`), never both.
+
+### Reserved balances
+
+An account can carry `reserved_balances`: money the institution holds
+reserved inside it, such as cofrinhos, "saldo reservado" or a judicial hold
+([ADR 0022](../adr/0022-provider-reserved-balances.md)). They are for display
+only. Securo shows them beside the account's balance and never adds them to
+anything: not the account's balance, net worth, dashboard totals, goals,
+balance history, holdings or the cashflow forecast. Keep reporting the
+account's `balance` as the institution gives it; it means the same with or
+without reserves.
+
+```json
+"reserved_balances": [
+  {"external_id": "pocket-trip", "name": "Trip", "currency": "BRL", "amount": "1500.00"}
+]
+```
+
+- `external_id`, `currency` and `amount` are required; `name` is optional.
+- `amount` is a string (or integer), zero or positive. A zero reserve is kept
+  and shown.
+- The identity is `(external_id, currency)`, unique within the account. A
+  reserve in two currencies is two records with the same `external_id`. A
+  new `name` for the same identity renames it in place.
+- `null` (or leaving the field out) means not reported this run: the reserves
+  Securo stored are kept. Send it when you couldn't read them completely, too,
+  rather than a partial list.
+- A list is the whole set: reserves Securo has that aren't in it are deleted,
+  and `[]` clears them all.
+- They come with accounts, so `provides` needs only `accounts`; there is no
+  separate kind.
+
+The account page lists each reserve in its own currency. The subtotal it
+shows adds only the reserves in the account's currency; no reserve is
+converted.
 
 ### Errors
 
@@ -171,6 +208,9 @@ shows both named errors: access code `expired` and `busy`.
    - rules run on new transactions, and transfer detection looks for pairs
      among them;
    - bills are written for their account;
+   - reserved balances are upserted by `(external_id, currency)` under their
+     account, and a reported list removes the ones missing from it; the
+     account's balance doesn't change;
    - holdings are matched by `external_id` (scoped to the connection, so two
      connections of the same plugin don't collide); holdings missing from a
      `[]` list are archived; trades that add up to a holding's `quantity`
