@@ -34,6 +34,8 @@ MAX_HOLDINGS = 5_000
 MAX_TRADES = 20_000
 
 AccountType = Literal["checking", "savings", "credit_card", "loan", "investment", "wallet"]
+#: The asset types a holding may name; they pick its icon on the Assets page.
+HoldingType = Literal["stock", "etf", "fund", "crypto", "investment"]
 Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
 ExternalId = Annotated[str, Field(min_length=1, max_length=255)]
 
@@ -144,6 +146,7 @@ class Trade(_Model):
 class Holding(_Model):
     external_id: ExternalId
     name: str = Field(min_length=1, max_length=255)
+    type: HoldingType | None = None
     currency: Currency
     current_value: Amount
     quantity: Amount | None = None
@@ -166,7 +169,7 @@ class Holding(_Model):
 
     def to_data(self) -> HoldingData:
         trades = [trade.to_data() for trade in self.trades] if self.trades is not None else None
-        return HoldingData(**self.model_dump(exclude={"trades"}), trades=trades)
+        return HoldingData(**self.model_dump(exclude={"trades", "type"}), trades=trades, asset_type=self.type)
 
 
 class Payload(_Model):

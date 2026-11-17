@@ -1092,7 +1092,7 @@ async def _upsert_asset_from_holding(
             source=source,
             external_id=holding.external_id,
             name=holding.name,
-            type="investment",
+            type=holding.asset_type or "investment",
             currency=holding.currency,
             units=holding.quantity,
             purchase_price=holding.purchase_price,
@@ -1109,6 +1109,10 @@ async def _upsert_asset_from_holding(
 
     # Fields Pluggy consistently returns — safe to overwrite each sync.
     asset.name = holding.name
+    # A type the provider names replaces only the generic default: a type
+    # the user picked stays.
+    if holding.asset_type and asset.type == "investment":
+        asset.type = holding.asset_type
     asset.currency = holding.currency
     asset.user_id = user_id
     # external_metadata is a snapshot blob: we want the latest every time.

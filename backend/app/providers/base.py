@@ -198,6 +198,9 @@ class HoldingData:
     # Buys and sells of this holding, for providers that report them (plugin
     # contract 1). None: not reported, the stored ledger is left alone.
     trades: Optional[list["HoldingTradeData"]] = None
+    # What kind of investment it is ("stock", "etf", "fund", "crypto"), for
+    # providers that know. None: the generic "investment".
+    asset_type: Optional[str] = None
 
 
 @dataclass

@@ -123,3 +123,24 @@ async def test_a_closed_position_realizes_its_gain(session: AsyncSession, bank_c
     assert set(await _ledger(session, asset)) == {"b1", "s1"}
     assert Decimal(str(asset.realized_gain)) == Decimal("200.00")
     assert asset.sell_date == date(2026, 11, 9)
+
+
+@pytest.mark.asyncio
+async def test_a_holding_names_its_type_and_a_type_set_by_hand_stays(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("10", None, type="etf"), test_user)
+    asset = await _asset(session, bank_connection)
+    assert asset.type == "etf"
+    asset.type = "fund"  # changed by hand
+    await session.commit()
+    await _pipeline(session, bank_connection, holding("10", None, type="stock"), test_user)
+    assert (await _asset(session, bank_connection)).type == "fund"
+
+
+@pytest.mark.asyncio
+async def test_a_holding_without_a_type_is_an_investment_until_one_is_named(
+    session: AsyncSession, bank_connection, test_user
+):
+    await _pipeline(session, bank_connection, holding("10", None), test_user)
+    assert (await _asset(session, bank_connection)).type == "investment"
+    await _pipeline(session, bank_connection, holding("10", None, type="etf"), test_user)
+    assert (await _asset(session, bank_connection)).type == "etf"
