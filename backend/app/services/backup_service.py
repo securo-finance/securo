@@ -1682,6 +1682,10 @@ async def restore_backup_bytes(
             for name in RESTORE_ORDER:
                 if name not in names:
                     continue
+                # Write each entity before the next one. Some foreign keys (an account's
+                # secured asset, for one) have no ORM relationship, so a single flush is
+                # free to insert the referencing rows first and Postgres rejects them.
+                await session.flush()
                 rows = _read_json_file(zf, name)
                 if not rows:
                     restored_counts[name] = 0
