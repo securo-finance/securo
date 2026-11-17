@@ -18,9 +18,13 @@ name: fast lane
 #   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
 #
 # A refusal is also said on the pull request itself, in one comment this
-# workflow rewrites in place and deletes once the pull request merges: a run
-# log expires, and a pull request with no trace of an evaluation reads as if
-# nobody had looked at it. That is visibility only, never a looser gate.
+# workflow rewrites in place and deletes once the pull request merges, but only
+# when the head being evaluated already carries an approval. That is the one
+# case where somebody is waiting on the lane and the log is the only place
+# saying why. An open pull request nobody has approved yet is not commented on
+# at all: a sweep looks at every open pull request, and saying "no approval
+# yet" under each of them, every hour, is noise on other people's work. This is
+# visibility only, never a looser gate.
 #
 # Gate 5 is a comment and not a GitHub review on purpose: posting a review is
 # one of the calls that needs a human approval, posting a comment is not. Both
@@ -124,11 +128,16 @@ jobs:
             ];
 
             // A refusal used to exist only in this run's log, and a log expires:
-            // the pull request looked exactly as if nobody had evaluated it, so
-            // whoever was watching the queue had to guess which gate held. It is
-            // said on the pull request instead, in one comment per pull request
-            // that is rewritten in place, so an hourly sweep never stacks the
-            // same line.
+            // the pull request a person had already approved looked exactly as
+            // if nobody had evaluated it, so whoever was watching the queue had
+            // to guess which gate held. It is said on the pull request instead,
+            // in one comment per pull request, rewritten in place.
+            //
+            // Only an approved head gets it. An open pull request nobody has
+            // approved yet is not a refusal anyone can act on, and describing it
+            // that way under a sweep of every open pull request is noise on
+            // someone else's work. `tryMerge` marks a skip reportable only when
+            // that head carries a valid verdict, and the caller obeys the mark.
             //
             // Creating it only when none exists is not enough to keep it one: a
             // sweep and a hand-run of the same pull request sit in different
@@ -152,13 +161,17 @@ jobs:
                 && (c.body || '').trimStart().startsWith(REFUSAL));
             }
 
-            async function reportRefusal(number, head, why) {
+            // Written for a contributor who has never read this workflow: no
+            // SHA, no gate names, no raw API error. It says what the automatic
+            // merge decided and that nothing is being asked of them.
+            async function reportRefusal(number, why) {
               const body =
                 `${REFUSAL}\n\n` +
-                `The fast lane evaluated this pull request at \`${head.slice(0, 7)}\` ` +
-                `and did not merge it: ${why}.\n\n` +
-                `Visibility only — no gate changed. This comment is rewritten in ` +
-                `place, so it always names the last commit evaluated.`;
+                `This pull request was not merged automatically: ${why}.\n\n` +
+                `That is only a note about the automatic merge. It does not ask ` +
+                `for any change, and it does not stop a maintainer from merging ` +
+                `it by hand. The note is rewritten in place, so it always ` +
+                `describes the most recent check.`;
               try {
                 const mine = await refusalComments(number);
                 if (!mine.length) {
@@ -166,19 +179,16 @@ jobs:
                     { owner: OWNER, repo: REPO, issue_number: number, body });
                   return;
                 }
-                // The list comes in creation order: the newest one stays and the
-                // rest go, so a racing pair ends as one comment.
-                const keep = mine[mine.length - 1];
-                if ((keep.body || '').trim() !== body.trim()) {
-                  await github.rest.issues.updateComment(
-                    { owner: OWNER, repo: REPO, comment_id: keep.id, body });
-                }
-                for (const extra of mine.slice(0, -1)) {
+                // Every copy is updated, not just the newest: two runs can each
+                // have created one before seeing the other, and a pass that
+                // updated only one would leave the other saying something old.
+                for (const c of mine) {
+                  if ((c.body || '').trim() === body.trim()) continue;
                   try {
-                    await github.rest.issues.deleteComment(
-                      { owner: OWNER, repo: REPO, comment_id: extra.id });
+                    await github.rest.issues.updateComment(
+                      { owner: OWNER, repo: REPO, comment_id: c.id, body });
                   } catch (e) {
-                    core.info(`#${number}: could not delete a repeated refusal: ${e.message}`);
+                    core.info(`#${number}: could not update a repeated refusal: ${e.message}`);
                   }
                 }
               } catch (e) {
@@ -208,18 +218,29 @@ jobs:
             }
 
             // Everything below runs for one pull request. It returns the refusal
-            // ({ why, head }) when a gate does not hold, so the caller can say it
-            // on the pull request, and null when it merged or when there was
-            // nothing worth saying there.
+            // ({ why, report }) when a gate does not hold, and the caller says it
+            // on the pull request only when `report` is true: the head carries an
+            // approval, so somebody is waiting on the lane for it. It returns
+            // null when it merged or when there is nothing worth saying there.
             async function tryMerge(number) {
               let head = null;
+              // The verdict for this head, read before the gates only so a skip
+              // can tell whether a person already approved it. Gate 4 below is
+              // where the verdict actually decides the merge.
+              let verdict = null;
               // A closed, draft or wrong-base pull request is refused before the
               // lane would consider it at all, and the pull request itself
               // already shows that: a comment there would be noise, so these
-              // three return null. Every gate below them is reported.
-              const skip = (why) => {
-                core.info(`#${number}: not merging — ${why}`);
-                return head ? { why, head } : null;
+              // three return null. Every gate below them can be reported, but
+              // only when the head is approved.
+              //
+              // `why` reaches contributors as the visible sentence of the
+              // comment, so it is plain text; anything technical goes in
+              // `detail`, which stays in the log.
+              const skip = (why, report = true, detail = '') => {
+                core.info(`#${number}: not merging, ${why}${detail ? `: ${detail}` : ''}`);
+                if (!head) return null;
+                return { why, report: report && Boolean(verdict) };
               };
 
               let pr;
@@ -234,10 +255,31 @@ jobs:
 
               head = pr.head.sha;
 
+              try {
+                const comments = await github.paginate(github.rest.issues.listComments,
+                  { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
+                // The marker must open the comment, so quoting a verdict in the
+                // conversation cannot pass as one; an edited comment never counts,
+                // because a verdict is a statement about one head, written once.
+                verdict = comments.filter((c) =>
+                  c.user && VERDICT_AUTHORS.includes(c.user.login)
+                  && (c.body || '').trimStart().startsWith(VERDICT)
+                  && (!c.updated_at || c.created_at === c.updated_at)
+                  && new RegExp(`sha:\\s*${head}\\b`).test(c.body || '')).pop() || null;
+              } catch (e) {
+                // No readable approval means nothing to report either way; the
+                // gates below still run and gate 4 names the missing verdict.
+                core.info(`#${number}: could not read the comments: ${e.message}`);
+              }
+
               const labels = pr.labels.map((l) => l.name);
               const risk = labels.filter((l) => l.startsWith('risk: ')).map((l) => l.slice(6));
               if (risk.length !== 1 || !['low', 'medium'].includes(risk[0])) {
-                return skip(`risk is ${risk.join('/') || 'unlabelled'}`);
+                const carried = risk.length
+                  ? risk.map((r) => `\`risk: ${r}\``).join(' and ')
+                  : 'no `risk:` label';
+                return skip(`it carries ${carried}, and only \`risk: low\` and ` +
+                  `\`risk: medium\` are merged automatically`);
               }
 
               // ---- 2. files that never take the fast lane -------------------
@@ -247,7 +289,8 @@ jobs:
               // file past that cut would be invisible. `changed_files` is the count the
               // pull request reports: when the two differ, files went unread.
               if (files.length !== pr.changed_files) {
-                return skip(`read ${files.length} of ${pr.changed_files} changed files`);
+                return skip(`only ${files.length} of its ${pr.changed_files} ` +
+                  `changed files could be read`);
               }
               // A rename reports the new path in `filename` and the old one in
               // `previous_filename`: moving a migration, an auth file or this
@@ -255,7 +298,10 @@ jobs:
               for (const f of files) {
                 for (const p of [f.filename, f.previous_filename].filter(Boolean)) {
                   for (const [re, what] of BLOCKED) {
-                    if (re.test(p)) return skip(`${p} is ${what}`);
+                    if (re.test(p)) {
+                      return skip(`\`${p}\` is in a part of the repository that is ` +
+                        `never merged automatically (${what})`);
+                    }
                   }
                 }
               }
@@ -274,7 +320,7 @@ jobs:
               }
               const blocked = [...latest].filter(([, s]) => s === 'CHANGES_REQUESTED');
               if (blocked.length) {
-                return skip(`changes requested by ${blocked.map(([u]) => u).join(', ')}`);
+                return skip(`changes were requested by ${blocked.map(([u]) => u).join(', ')}`);
               }
 
               // ---- 3b. an unresolved CodeRabbit major thread blocks the merge
@@ -305,19 +351,20 @@ jobs:
                     { owner: OWNER, repo: REPO, number });
                   threads = (data.repository.pullRequest || {}).reviewThreads || null;
                 } catch (e) {
-                  return skip(`cannot read the review threads: ${e.message}`);
+                  return skip('its review threads could not be read', true, e.message);
                 }
                 // A gate that needs every thread must fail closed when it can
                 // only read some of them: a blocker past the first 100 threads,
                 // or past the fifth comment of one, would otherwise be invisible.
-                if (!threads) return skip('the review threads came back empty');
+                if (!threads) return skip('its review threads came back empty');
                 if (threads.pageInfo && threads.pageInfo.hasNextPage) {
-                  return skip('more review threads than this gate can read');
+                  return skip('it has more review threads than this check can read');
                 }
                 const truncated = (threads.nodes || []).some((t) =>
                   t.comments && t.comments.pageInfo && t.comments.pageInfo.hasNextPage);
                 if (truncated) {
-                  return skip('more comments on a thread than this gate can read');
+                  return skip('one of its review threads has more comments than ' +
+                    'this check can read');
                 }
                 const open = (threads.nodes || [])
                   .filter((t) => !t.isResolved && !t.isOutdated)
@@ -325,25 +372,18 @@ jobs:
                     c.author && c.author.login === 'coderabbitai'
                     && /\b(major|critical)\b/i.test(c.body || '')));
                 if (open.length) {
-                  return skip(`${open.length} unresolved CodeRabbit major thread(s)`);
+                  return skip(`it has ${open.length} unresolved CodeRabbit major thread(s)`);
                 }
               }
 
               // ---- 4. the verdict names the head we are about to merge ------
               if (SELF_APPROVAL_GUARD.includes(pr.user.login)) {
-                return skip(`opened by ${pr.user.login}: agent code is not merged by the lane`);
+                // Never said on the pull request: a comment under the author's
+                // own pull request explaining the rule only spells out the guard.
+                return skip(`opened by ${pr.user.login}, which is not merged ` +
+                  'automatically', false);
               }
-              const comments = await github.paginate(github.rest.issues.listComments,
-                { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
-              // The marker must open the comment, so quoting a verdict in the
-              // conversation cannot pass as one; an edited comment never counts,
-              // because a verdict is a statement about one head, written once.
-              const verdict = comments.filter((c) =>
-                c.user && VERDICT_AUTHORS.includes(c.user.login)
-                && (c.body || '').trimStart().startsWith(VERDICT)
-                && (!c.updated_at || c.created_at === c.updated_at)
-                && new RegExp(`sha:\\s*${head}\\b`).test(c.body || '')).pop();
-              if (!verdict) return skip(`no verdict for ${head.slice(0, 7)}`);
+              if (!verdict) return skip('it carries no approval for the commit checked');
 
               // ---- 5. green, on that exact head ----------------------------
               const { data: checks } = await github.rest.checks.listForRef(
@@ -358,9 +398,15 @@ jobs:
               }
               for (const name of REQUIRED) {
                 const c = byName.get(name);
-                if (!c)                    return skip(`no ${name} run on ${head.slice(0, 7)}`);
-                if (c.status !== 'completed')  return skip(`${name} is ${c.status}`);
-                if (c.conclusion !== 'success') return skip(`${name} is ${c.conclusion}`);
+                if (!c) {
+                  return skip(`the ${name} check never ran on this commit`);
+                }
+                if (c.status !== 'completed') {
+                  return skip(`the ${name} check is still ${c.status}`);
+                }
+                if (c.conclusion !== 'success') {
+                  return skip(`the ${name} check ended as ${c.conclusion}`);
+                }
               }
 
               // ---- merge, pinned to the head the verdict was given for -----
@@ -372,7 +418,7 @@ jobs:
                   sha: head, merge_method: 'squash',
                 });
               } catch (e) {
-                return skip(`the merge call failed: ${e.message}`);
+                return skip('GitHub refused the merge', true, e.message);
               }
 
               // A push made with GITHUB_TOKEN starts no workflow run, so the
@@ -388,18 +434,22 @@ jobs:
                 core.warning(`could not dispatch CI on main: ${e.message}`);
               }
 
+              // An earlier evaluation may have refused this pull request and be
+              // still on it; that comment is now false. Cleared before the merge
+              // comment so a failure posting the latter cannot leave it behind.
+              await clearRefusal(number);
+
+              // The merged commit stays in a hidden marker rather than in the
+              // sentence: the SHA is internal, and contributors read this.
               await github.rest.issues.createComment({
                 owner: OWNER, repo: REPO, issue_number: number,
                 body: `Merged by the fast lane: \`risk: ${risk[0]}\`, ` +
-                      `verdict at ${head.slice(0, 7)} by ${verdict.user.login} ` +
-                      `(${verdict.html_url}), ${REQUIRED.join(', ')} green. ` +
+                      `approved by ${verdict.user.login} ` +
+                      `(${verdict.html_url}), ${REQUIRED.join(', ')} green.\n\n` +
+                      `<!-- sha: ${head} -->\n` +
                       `Anything touching auth, secrets, migrations, bank sync, ` +
                       `plugins or deployment still waits for a maintainer.`,
               });
-
-              // An earlier evaluation may have refused this pull request and be
-              // still on it; that comment is now false.
-              await clearRefusal(number);
 
               return null;
             }
@@ -438,7 +488,7 @@ jobs:
 
             if (number) {
               const refusal = await tryMerge(number);
-              if (refusal) await reportRefusal(number, refusal.head, refusal.why);
+              if (refusal && refusal.report) await reportRefusal(number, refusal.why);
             } else if (ev === 'schedule' || ev === 'workflow_dispatch') {
               // The sweep: every open pull request goes through the same gates,
               // so a thread resolved with no other event still gets merged.
@@ -448,7 +498,7 @@ jobs:
               for (const p of open) {
                 try {
                   const refusal = await tryMerge(p.number);
-                  if (refusal) await reportRefusal(p.number, refusal.head, refusal.why);
+                  if (refusal && refusal.report) await reportRefusal(p.number, refusal.why);
                 } catch (e) {
                   core.info(`#${p.number}: ${e.message}`);
                 }
