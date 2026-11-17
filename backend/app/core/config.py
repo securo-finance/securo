@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -206,10 +207,12 @@ class Settings(BaseSettings):
 
     @property
     def secret_key_fallbacks(self) -> tuple[str, ...]:
-        if self._stored_key_url is not None:
+        if self._stored_key_url is not None and not _in_event_loop():
             # Read on first use rather than at import: the database may still
             # be starting then, and a key missed once would stay missed for
             # the life of the process. Kept only once the read succeeds.
+            # Never from the event loop: the API loads it at startup in a
+            # thread (load_stored_secret_key), so a request doesn't wait.
             from app.core import instance_secrets as instance
 
             try:
@@ -258,6 +261,22 @@ class Settings(BaseSettings):
         secrets_dir=CREDENTIALS_DIRECTORY,
         extra="ignore",
     )
+
+
+def _in_event_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def load_stored_secret_key() -> bool:
+    """Read the instance key kept as a fallback, from a thread. True once
+    there is nothing left to read."""
+    settings = get_settings()
+    settings.secret_key_fallbacks  # noqa: B018 (reads and caches)
+    return settings._stored_key_url is None
 
 
 @lru_cache

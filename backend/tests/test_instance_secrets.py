@@ -530,3 +530,41 @@ def test_value_under_an_empty_legacy_key_still_opens(app_settings):
 
     assert crypto.decrypt(legacy) == "legacy"
     assert vault.unseal(sealed) == {"k": 1}
+
+
+def test_stored_key_is_never_read_from_the_event_loop(db_url, monkeypatch):
+    """A request must not wait on the database for it: inside the loop the
+    fallbacks come back without it, and a thread (the API's startup task)
+    loads it."""
+    generated = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+    reads = {"n": 0}
+    real_read = instance.read_existing
+
+    def counting(url, name):
+        reads["n"] += 1
+        return real_read(url, name)
+
+    monkeypatch.setattr(instance, "read_existing", counting)
+
+    async def in_loop():
+        before = settings.secret_key_fallbacks
+        after = await asyncio.to_thread(lambda: settings.secret_key_fallbacks)
+        return before, after
+
+    before, after = asyncio.run(in_loop())
+
+    assert generated not in before
+    assert after[0] == generated
+    assert reads["n"] == 1
+
+
+def test_startup_loader_reports_when_done(db_url, monkeypatch):
+    from app.core import config as core_config
+
+    settings_for(db_url, None, monkeypatch)
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+    monkeypatch.setattr(core_config, "get_settings", lambda: settings)
+
+    assert core_config.load_stored_secret_key() is True
+    assert settings.secret_key_fallbacks[0] == stored(db_url)[0]
