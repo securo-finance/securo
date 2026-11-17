@@ -372,3 +372,18 @@ def test_registry_exposes_server_names(monkeypatch):
     monkeypatch.setattr(get_agent_settings(), "extra_mcp_servers", "http://b:9001/mcp|beta")
     reg = MCPRegistry()
     assert set(reg.server_names()) == {"securo", "beta"}
+
+
+@pytest.mark.asyncio
+async def test_list_tools_keeps_a_long_tool_name_and_skips_one_too_long():
+    """MCP allows names up to 128 characters; one past agent_tools.tool_name
+    can't be recorded and is left out rather than truncated."""
+    _FakeAsyncClient.queue.append(_FakeResponse(json_body={
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {"tools": [{"name": "a" * 128}, {"name": "b" * 256}]},
+    }))
+
+    handles = await MCPClient(name="ext", url="http://mcp.test/mcp").list_tools(token="fake")
+
+    assert [h.name for h in handles] == ["a" * 128]

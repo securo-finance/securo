@@ -89,7 +89,8 @@ class AgentTool(Base):
     agent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), primary_key=True)
     # An extra server without an alias is named by its URL (see _parse_servers).
     server: Mapped[str] = mapped_column(String(500), primary_key=True)
-    tool_name: Mapped[str] = mapped_column(String(120), primary_key=True)
+    # MCP allows tool names up to 128 characters; room to spare, never truncated.
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
     agent: Mapped["Agent"] = relationship(back_populates="tools")

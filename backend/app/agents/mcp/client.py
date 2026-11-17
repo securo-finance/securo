@@ -41,8 +41,9 @@ class _ServerSpec:
 BUILTIN_SERVER_NAME = "securo"
 
 
-# agent_tools.server's length.
+# agent_tools.server's and agent_tools.tool_name's lengths.
 _MAX_SERVER_NAME = 500
+_MAX_TOOL_NAME = 255
 
 
 def _parse_servers() -> list[_ServerSpec]:
@@ -264,11 +265,20 @@ class MCPClient:
         result = await self._post("tools/list", {}, token=token)
         out: list[ToolHandle] = []
         for t in (result or {}).get("tools", []):
+            name = t.get("name") or ""
+            if len(name) > _MAX_TOOL_NAME:
+                # agent_tools.tool_name holds the name as is: a longer one
+                # can't be recorded, and truncating would call another tool.
+                logger.warning(
+                    "Ignoring tool %r from MCP server %r: names over %d characters aren't supported.",
+                    name[:60] + "...", self.name, _MAX_TOOL_NAME,
+                )
+                continue
             meta = t.get("_meta") if isinstance(t.get("_meta"), dict) else {}
             extras = meta.get(_SECURO_TOOL_META_KEY) or t.get("_securo") or {}
             out.append(ToolHandle(
                 server=self.name,
-                name=t.get("name") or "",
+                name=name,
                 description=t.get("description") or "",
                 parameters=t.get("inputSchema") or {"type": "object", "properties": {}},
                 is_proposal=bool(extras.get("is_proposal", False)),
