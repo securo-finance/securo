@@ -22,6 +22,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.content_disposition import content_disposition
 from app.core.database import get_async_session
 from app.models.workspace import Workspace
 from app.services import (
@@ -98,11 +99,11 @@ async def download_shared_pdf(
         if document.logo_id
         else None
     )
-    filename = f"{document.number or 'invoice'}.pdf".replace("/", "-")
+    filename = f"{document.number or 'invoice'}.pdf"
     return Response(
         content=invoice_pdf.render_pdf(document, logo_bytes),
         media_type="application/pdf",
         # `inline` rather than `attachment`: someone opening a link
         # expects to see the document, not to receive a download.
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition("inline", filename)},
     )

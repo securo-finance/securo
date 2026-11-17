@@ -1704,3 +1704,34 @@ async def test_an_imported_document_is_never_given_a_page_we_wrote(
         f"/api/invoices/{imported['id']}/pdf", headers=biz_headers
     )
     assert served.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Download filenames come from free text and must survive any script
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["Τιμ-", "№", 'Q"1-'])
+async def test_pdf_downloads_survive_any_number_prefix(
+    client: AsyncClient, biz_headers, client_payee, prefix
+):
+    """The prefix is free text and the UI ships Greek, Cyrillic and CJK.
+    Header values go out as latin-1, so a raw `Τιμ-` used to turn every
+    download of the document into a 500, the client's public link included."""
+    await client.patch(
+        "/api/invoices/settings", headers=biz_headers, json={"number_prefix": prefix}
+    )
+    invoice = await _create(client, biz_headers, payee_id=str(client_payee.id))
+    token = (
+        await client.post(f"/api/invoices/{invoice['id']}/share", headers=biz_headers)
+    ).json()["token"]
+
+    for url, headers in [
+        (f"/api/invoices/{invoice['id']}/statement", biz_headers),
+        (f"/api/public/invoices/{token}/pdf", {}),
+    ]:
+        resp = await client.get(url, headers=headers)
+        assert resp.status_code == 200, f"{url} -> {resp.status_code}"
+        assert resp.content.startswith(b"%PDF")
+        disposition = resp.headers["content-disposition"]
+        assert disposition.count('"') == 2, disposition
+        assert "filename*=UTF-8''" in disposition
