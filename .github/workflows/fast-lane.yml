@@ -18,9 +18,14 @@ name: fast lane
 #   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
 #
 # Gate 5 is a comment and not a GitHub review on purpose: posting a review is
-# one of the calls that needs a human approval, posting a comment is not. The
-# marker is HTML so it does not render, and the SHA is required so a verdict can
-# never carry over to a later push.
+# one of the calls that needs a human approval, posting a comment is not. Both
+# the marker and the SHA line are HTML comments, so neither renders:
+#   <!-- fast-lane: approve -->
+#   <!-- sha: <40-hex head SHA> -->
+# Nothing internal (SHA included) belongs in visible text: contributors read
+# these comments. The SHA is required so a verdict can never carry over to a
+# later push, and an edited comment is not a verdict (created_at must equal
+# updated_at), so an open PR gets a new comment rather than an edit.
 #
 # pull_request_target-style events are avoided for the merge itself; this job
 # never checks out the pull request's code, it only reads its file list and
