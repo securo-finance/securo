@@ -2935,6 +2935,7 @@
       "baseUrl": "URL du point de terminaison",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "L'URL du point de terminaison est requise pour ce fournisseur",
+      "baseUrlInvalid": "Saisissez une URL de point de terminaison http ou https valide",
       "ollamaHint": "Si Ollama tourne sur votre machine hôte, utilisez http://host.docker.internal:11434 (Mac/Windows) ou l'IP de votre hôte (Linux).",
       "openaiCompatHint": "Collez simplement l'hôte:port (ex. http://192.168.1.142:1234). Le chemin /v1 est ajouté automatiquement. Depuis Docker sur Mac/Windows, remplacez localhost par host.docker.internal.",
       "apiKey": "Clé API / jeton",
