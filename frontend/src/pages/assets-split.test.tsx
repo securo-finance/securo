@@ -29,6 +29,7 @@ const api = vi.hoisted(() => ({
   assetGroups: { list: vi.fn() },
   accounts: { list: vi.fn() },
   currencies: { list: vi.fn() },
+  fxRates: { status: vi.fn() },
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -36,6 +37,7 @@ vi.mock('@/lib/api', () => ({
   assetGroups: api.assetGroups,
   accounts: api.accounts,
   currencies: api.currencies,
+  fxRates: api.fxRates,
 }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
@@ -141,6 +143,7 @@ beforeEach(() => {
   // Only Date is faked, so the dialog opens on a known day.
   vi.setSystemTime(new Date('2026-10-27T12:00:00'))
   api.assets.addTransaction.mockResolvedValue(makeHolding())
+  api.fxRates.status.mockResolvedValue({ configured: true })
 })
 
 afterEach(() => vi.useRealTimers())
