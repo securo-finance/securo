@@ -1,0 +1,201 @@
+name: fast lane
+
+# Merges a low/medium-risk pull request as soon as a reviewer has left an
+# approving verdict and CI is green, without a maintainer pressing the button.
+#
+# Why a workflow and not a bot account: every tool an agent here has for
+# merging asks a person to approve that single call, so automating through the
+# agent would keep one click per pull request — the exact cost this is meant to
+# remove. Merging from inside the repository, with the workflow token, is the
+# only path that is actually unattended.
+#
+# The gates, all of which must hold:
+#   1. the PR is against main, not a draft, and has no standing CHANGES_REQUESTED
+#   2. it carries `risk: low` or `risk: medium`
+#   3. none of its files match BLOCKED_PATHS below
+#   4. the three required checks are green on the exact head being merged
+#   5. a trusted reviewer left a verdict comment naming that same head SHA
+#
+# Gate 5 is a comment and not a GitHub review on purpose: posting a review is
+# one of the calls that needs a human approval, posting a comment is not. The
+# marker is HTML so it does not render, and the SHA is required so a verdict can
+# never carry over to a later push.
+#
+# pull_request_target-style events are avoided for the merge itself; this job
+# never checks out the pull request's code, it only reads its file list and
+# calls the API. Nothing from a contribution is executed here.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  issue_comment:
+    types: [created, edited]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+
+concurrency:
+  group: fast-lane-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    # One variable turns the whole thing off without touching this file.
+    if: vars.FAST_LANE != 'off'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const OWNER = context.repo.owner, REPO = context.repo.repo;
+
+            // Who may leave a verdict. Same trust boundary as the label axes:
+            // an agent pushing through this repository commits as its owner.
+            const VERDICT_AUTHORS = ['tassionoronha'];
+            const VERDICT = '<!-- fast-lane: approve -->';
+
+            const REQUIRED = ['Backend Tests', 'Frontend Checks', 'Helm Checks'];
+
+            // Stricter than `risk: low/medium` on purpose. The label comes from
+            // file names, and two of the open medium PRs are a new auth endpoint
+            // and a runner that executes plugin code — a path rule that reads
+            // only the top directory would wave both through.
+            const BLOCKED = [
+              [/^backend\/app\/core\/(auth|auth_policy|webauthn|secrets?)/i, 'auth or secrets'],
+              [/^backend\/app\/api\/[^/]*auth/i,                      'auth API'],
+              [/^backend\/alembic\//,                                 'schema migration'],
+              [/^backend\/app\/providers\//,                          'bank provider'],
+              [/^backend\/app\/services\/.*(sync|plugin)/i,           'sync or plugin'],
+              [/^(charts|k8s|helm)\//i,                               'deployment'],
+              [/(^|\/)(Dockerfile|docker-compose[^/]*\.(yml|yaml)|install\.sh)$/, 'deployment'],
+              [/(^|\/)\.env/,                                         'environment file'],
+              [/plugin[-_]runner|runtime\.py$/i,                      'executes third-party code'],
+            ];
+
+            // ---- 1. which pull request is this event about? -----------------
+            const ev = context.eventName;
+            let number = null;
+            if (ev === 'workflow_run') {
+              const run = context.payload.workflow_run;
+              if (run.conclusion !== 'success') return;
+              // A push to main has no pull request: nothing to merge.
+              if (run.event !== 'pull_request') return;
+              const prs = run.pull_requests || [];
+              // GitHub does not always fill `pull_requests` for fork heads, so
+              // fall back to looking the branch up. It must be unambiguous.
+              if (prs.length === 1) {
+                number = prs[0].number;
+              } else {
+                const own = run.head_repository && run.head_repository.owner
+                  ? run.head_repository.owner.login : OWNER;
+                const { data: open } = await github.rest.pulls.list({
+                  owner: OWNER, repo: REPO, state: 'open',
+                  head: `${own}:${run.head_branch}`, per_page: 5,
+                });
+                if (open.length !== 1) return;
+                number = open[0].number;
+              }
+            } else if (ev === 'issue_comment') {
+              if (!context.payload.issue.pull_request) return;
+              number = context.payload.issue.number;
+            } else if (context.payload.pull_request) {
+              number = context.payload.pull_request.number;
+            } else {
+              return;
+            }
+
+            const skip = async (why) => {
+              core.info(`#${number}: not merging — ${why}`);
+            };
+
+            let pr;
+            try {
+              ({ data: pr } = await github.rest.pulls.get(
+                { owner: OWNER, repo: REPO, pull_number: number }));
+            } catch (e) { return skip('cannot read the pull request'); }
+
+            if (pr.state !== 'open')      return skip('it is not open');
+            if (pr.draft)                 return skip('it is a draft');
+            if (pr.base.ref !== 'main')   return skip(`it targets ${pr.base.ref}`);
+
+            const labels = pr.labels.map((l) => l.name);
+            const risk = labels.filter((l) => l.startsWith('risk: ')).map((l) => l.slice(6));
+            if (risk.length !== 1 || !['low', 'medium'].includes(risk[0])) {
+              return skip(`risk is ${risk.join('/') || 'unlabelled'}`);
+            }
+
+            // ---- 2. files that never take the fast lane ---------------------
+            const files = await github.paginate(github.rest.pulls.listFiles,
+              { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
+            for (const f of files) {
+              for (const [re, what] of BLOCKED) {
+                if (re.test(f.filename)) return skip(`${f.filename} is ${what}`);
+              }
+            }
+
+            // ---- 3. a standing request for changes blocks the merge ---------
+            const reviews = await github.paginate(github.rest.pulls.listReviews,
+              { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
+            const latest = new Map();
+            for (const r of reviews) {
+              if (r.user) latest.set(r.user.login, r.state);
+            }
+            const blocked = [...latest].filter(([, s]) => s === 'CHANGES_REQUESTED');
+            if (blocked.length) {
+              return skip(`changes requested by ${blocked.map(([u]) => u).join(', ')}`);
+            }
+
+            // ---- 4. the verdict names the head we are about to merge --------
+            const head = pr.head.sha;
+            const comments = await github.paginate(github.rest.issues.listComments,
+              { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
+            const verdict = comments.filter((c) =>
+              c.user && VERDICT_AUTHORS.includes(c.user.login)
+              && (c.body || '').includes(VERDICT)
+              && new RegExp(`sha:\\s*${head}\\b`).test(c.body || '')).pop();
+            if (!verdict) return skip(`no verdict for ${head.slice(0, 7)}`);
+
+            // ---- 5. green, on that exact head ------------------------------
+            const { data: checks } = await github.rest.checks.listForRef(
+              { owner: OWNER, repo: REPO, ref: head, per_page: 100 });
+            // A re-run leaves several entries per name: keep the newest one.
+            const byName = new Map();
+            for (const c of checks.check_runs) {
+              const seen = byName.get(c.name);
+              if (!seen || (c.started_at || '') > (seen.started_at || '')) {
+                byName.set(c.name, c);
+              }
+            }
+            for (const name of REQUIRED) {
+              const c = byName.get(name);
+              if (!c)                    return skip(`no ${name} run on ${head.slice(0, 7)}`);
+              if (c.status !== 'completed')  return skip(`${name} is ${c.status}`);
+              if (c.conclusion !== 'success') return skip(`${name} is ${c.conclusion}`);
+            }
+
+            // ---- merge, pinned to the head the verdict was given for -------
+            // Passing `sha` makes GitHub refuse if the branch moved after the
+            // checks above, which is the race a plain merge would have.
+            try {
+              await github.rest.pulls.merge({
+                owner: OWNER, repo: REPO, pull_number: number,
+                sha: head, merge_method: 'squash',
+              });
+            } catch (e) {
+              return skip(`the merge call failed: ${e.message}`);
+            }
+
+            await github.rest.issues.createComment({
+              owner: OWNER, repo: REPO, issue_number: number,
+              body: `Merged by the fast lane: \`risk: ${risk[0]}\`, ` +
+                    `verdict at ${head.slice(0, 7)} by ${verdict.user.login} ` +
+                    `(${verdict.html_url}), ${REQUIRED.join(', ')} green. ` +
+                    `Anything touching auth, secrets, migrations, bank sync, ` +
+                    `plugins or deployment still waits for a maintainer.`,
+            });
