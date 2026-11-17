@@ -14,6 +14,17 @@ name: approve fork runs
 # the pull request says it changes. Everything else runs with the read-only
 # token and no secrets GitHub already gives a fork's pull request.
 #
+# A held run does not always come with a `pull_request_target` event to react
+# to. Reviewing a pull request from a fork starts one: `pull_request_review`
+# runs the pull request's own copy of the workflow, so the run is held as any
+# other fork run is, whoever submitted the review: the fast lane's run 143 of
+# 17 Nov 2026 was held after a maintainer's review. A comment on the pull
+# request and a workflow starting one have the same shape. A held run is
+# recorded as completed with the conclusion `action_required`, so the
+# `workflow_run` event of the workflow that was held is delivered here in this
+# repository's context whatever started it, and that is the trigger used for
+# them below.
+#
 # Setting the APPROVE_FORK_RUNS repository variable to `off` stops it without
 # touching this file.
 
@@ -22,8 +33,17 @@ on:
   # held for approval, and it fires exactly when a fork's run is created.
   pull_request_target:
     types: [opened, synchronize, reopened]
+  # A review, a comment or another workflow starting a run on a fork's head
+  # produces no `pull_request_target` event, and a workflow triggered by those
+  # is held like the run it answers. The fast lane is the workflow here that
+  # those events start.
+  workflow_run:
+    workflows: [fast lane]
+    types: [requested, completed]
   # Covers a run created between events, or one GitHub did not deliver. A run
   # left awaiting approval expires after thirty days and is marked failed.
+  # This is a backstop only: on this repository a scheduled run arrives hours
+  # after its cron, so it cannot be the path that unblocks a waiting run.
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
@@ -46,6 +66,7 @@ jobs:
         with:
           script: |
             const OWNER = context.repo.owner, REPO = context.repo.repo;
+            const DEFAULT_BRANCH = context.payload.repository.default_branch;
 
             // Workflows and the repository configuration a run reads are a
             // maintainer decision, never an automatic approval.
@@ -64,8 +85,11 @@ jobs:
               // The head is read again here, later than the listing that paired
               // it with the run: a push in between would let this approve a run
               // of the old commit on the new commit's file list. Only a fork's
-              // run needs the approval this workflow grants.
-              let ok = pr.head.sha === sha && pr.head.repo !== null &&
+              // run against the default branch needs the approval this
+              // workflow grants.
+              let ok = pr.state === 'open' && pr.head.sha === sha &&
+                       pr.base.ref === DEFAULT_BRANCH &&
+                       pr.head.repo !== null &&
                        pr.head.repo.full_name !== `${OWNER}/${REPO}`;
 
               if (ok) {
@@ -91,19 +115,31 @@ jobs:
             // `run.pull_requests` is empty for a run whose head lives in a fork:
             // the field only lists pull requests whose branch is in this
             // repository, and every run this workflow exists for is the other
-            // kind. The pairing is made from the head instead, and it must be
-            // the exact commit: the files above are read at the head of the
-            // pull request, so a run of an older commit could otherwise be
-            // approved by a later one that reverted a `.github/` change.
-            // A deleted fork leaves both sides without a repository name, and
-            // a key of `undefined@<sha>` would pair two unrelated things.
+            // kind. The pairing is made from the commit, and it must be the
+            // exact head: the files above are read at the head of the pull
+            // request, so a run of an older commit could otherwise be approved
+            // by a later one that reverted a `.github/` change.
+            //
+            // The repository name cannot be part of the pairing. A run started
+            // by a review of a fork's pull request reports this repository as
+            // its head repository, while the pull request reports the fork, so
+            // a key built from both never meets for exactly the runs that have
+            // no `pull_request_target` event behind them. mayApprove() reads
+            // the pull request again and refuses unless it is still open, still
+            // that head, against the default branch and in a fork.
             const open = await github.paginate(github.rest.pulls.list, {
               owner: OWNER, repo: REPO, state: 'open', per_page: 100,
             });
+            // A commit can head more than one open pull request: a branch in a
+            // fork and one in this repository that carries the same commits
+            // share their ids. Keeping only the last would drop the fork's run
+            // whenever one of this repository's pull requests was listed after
+            // it, so every candidate is kept and tried in turn.
             const byHead = new Map();
             for (const pr of open) {
-              const head = pr.head.repo && pr.head.repo.full_name;
-              if (head) byHead.set(`${head}@${pr.head.sha}`, pr.number);
+              const candidates = byHead.get(pr.head.sha) || [];
+              candidates.push(pr.number);
+              byHead.set(pr.head.sha, candidates);
             }
 
             const runs = await github.paginate(
@@ -113,19 +149,29 @@ jobs:
 
             let approved = 0, held = 0;
             for (const run of runs) {
-              const number = run.head_repository
-                ? byHead.get(`${run.head_repository.full_name}@${run.head_sha}`)
-                : undefined;
-              if (number === undefined) {
+              const candidates = byHead.get(run.head_sha) || [];
+              if (candidates.length === 0) {
                 // Closed, force-pushed past, or a run with no pull request at
                 // all: not this workflow's decision to make.
                 held++;
                 continue;
               }
 
-              if (!(await mayApprove(number, run.head_sha))) {
+              // The first candidate that passes the checks above. The others
+              // are pull requests at the same commit that the run is not for,
+              // such as one of this repository's own.
+              let number;
+              for (const candidate of candidates) {
+                if (await mayApprove(candidate, run.head_sha)) {
+                  number = candidate;
+                  break;
+                }
+              }
+
+              if (number === undefined) {
                 held++;
-                core.info(`run ${run.id} (${run.name}) left for a maintainer: #${number}`);
+                const at = candidates.map((n) => `#${n}`).join(', ');
+                core.info(`run ${run.id} (${run.name}) left for a maintainer: ${at}`);
                 continue;
               }
 
