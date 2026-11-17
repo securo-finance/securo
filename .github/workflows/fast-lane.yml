@@ -65,15 +65,22 @@ on:
 # Is the sweep alive? A cron that does not fire leaves no failed run, only a run
 # that is not there, so silence is this trigger's failure mode. Ask for it:
 #   gh api "repos/{owner}/{repo}/actions/workflows/fast-lane.yml/runs?event=schedule&per_page=1"
-# No scheduled run after an hour in which '17 * * * *' has passed means the
-# trigger is not registered, and the one thing only the sweep covers — a
-# resolved CodeRabbit thread, which starts no event at all — goes on holding the
-# merge with nothing in the log saying so. A schedule in another workflow of
-# this repository firing in the same window says the repository is fine and the
-# problem is this file.
+# No scheduled run after an hour in which '17 * * * *' has passed is a symptom,
+# not a diagnosis: the trigger may not be registered, or the workflow may not be
+# active, or GitHub may be delaying or dropping scheduled runs. Check its state
+# with `gh api repos/{owner}/{repo}/actions/workflows/fast-lane.yml` before
+# concluding anything. A schedule in another workflow of this repository firing
+# in the same window rules out a repository-wide outage, not this file. Until it
+# is settled, the one thing only the sweep covers — a resolved CodeRabbit
+# thread, which starts no event at all — goes on holding a merge with nothing in
+# the log saying so.
 #
-# A manual run proves the other half, that the sweep itself works, and its log
-# must carry `sweeping N open pull requests`:
+# A manual run proves the other half, that the sweep itself works. Its log
+# carries `sweeping N open pull requests` and then one line per pull request: the
+# gate that refused it (`#N: not merging, ...`) or the merge. A pull request that
+# could not be read logs `#N: <message>` there instead of stopping the sweep, so
+# every number in the list has to be accounted for — that, not the count alone,
+# is what says the sweep evaluated them all.
 #   gh workflow run fast-lane.yml        # no `pr` input: every open pull request
 # Both triggers run the same code, so a run's log names which one started it.
 
