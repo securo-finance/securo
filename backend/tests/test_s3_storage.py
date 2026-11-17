@@ -235,6 +235,19 @@ def test_http_endpoint_allowed_with_explicit_opt_in(s3_settings):
     assert settings.storage_s3_endpoint_url == "http://localhost:3900"
 
 
+def test_surrounding_whitespace_is_stripped_from_bucket_and_endpoint(s3_settings):
+    settings = Settings(
+        _env_file=None,
+        _secrets_dir=None,
+        **(s3_settings.model_dump() | {
+            "storage_s3_bucket": "  attachments  ",
+            "storage_s3_endpoint_url": " https://s3.example.com\n",
+        }),
+    )
+    assert settings.storage_s3_bucket == "attachments"
+    assert settings.storage_s3_endpoint_url == "https://s3.example.com"
+
+
 def test_local_default_does_not_require_s3_configuration(s3_settings):
     settings = Settings(_env_file=None, _secrets_dir=None)
     assert settings.storage_provider == "local"
