@@ -3,7 +3,7 @@ from datetime import date as _date, datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional, cast
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, JSON, Numeric, SmallInteger, String, event
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, JSON, Numeric, SmallInteger, String, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 
 class Transaction(Base):
     __tablename__ = "transactions"
+    __table_args__ = (
+        # Declared here so autogenerate keeps migration 114's composite index.
+        Index("ix_transactions_account_card_masked_number", "account_id", "card_masked_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))

@@ -164,16 +164,21 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
                     index_elements=["account_id", "masked_number"]
                 )
             )
+        # Chunk the ids: one UPDATE with thousands of bound UUIDs goes past the
+        # driver's parameter limit on a large history.
+        batch_size = 500
         for tail, transaction_ids in candidate_ids_by_tail.items():
-            result = await session.execute(
-                update(Transaction)
-                .where(
-                    Transaction.id.in_(transaction_ids),
-                    Transaction.card_masked_number.is_(None),
+            for start in range(0, len(transaction_ids), batch_size):
+                batch = transaction_ids[start:start + batch_size]
+                result = await session.execute(
+                    update(Transaction)
+                    .where(
+                        Transaction.id.in_(batch),
+                        Transaction.card_masked_number.is_(None),
+                    )
+                    .values(card_masked_number=tail)
                 )
-                .values(card_masked_number=tail)
-            )
-            updated += cast(CursorResult, result).rowcount or 0
+                updated += cast(CursorResult, result).rowcount or 0
         await session.commit()
         print(f"updated: {updated}")
         return 0

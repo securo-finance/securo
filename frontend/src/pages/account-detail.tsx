@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { getAccountName } from '@/lib/account-utils'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -689,6 +689,8 @@ export default function AccountDetailPage() {
       cards: { id: string; label: string }[]
     }) => {
       await accounts.update(id!, settings)
+      // Settings are already saved even if the label call below fails.
+      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
       return accounts.updateLinkedCards(id!, cards)
     },
     onSuccess: () => {
@@ -1923,7 +1925,6 @@ function CreditCardSettingsDialog({
     account.credit_limit,
     account.statement_close_day,
     account.payment_due_day,
-    linkedCards.map((card) => [card.id, card.label]),
   ])
   const [previousFormKey, setPreviousFormKey] = useState<string | null>(null)
   if (formKey !== previousFormKey) {
@@ -1935,6 +1936,20 @@ function CreditCardSettingsDialog({
       setCardLabels(Object.fromEntries(linkedCards.map((card) => [card.id, card.label ?? ''])))
     }
   }
+
+  // Cards can arrive after the dialog opens. Add their labels without
+  // resetting what the user already typed in the settings fields.
+  useEffect(() => {
+    setCardLabels((current) => {
+      let next: Record<string, string> | null = null
+      for (const card of linkedCards) {
+        if (card.id in current) continue
+        next ??= { ...current }
+        next[card.id] = card.label ?? ''
+      }
+      return next ?? current
+    })
+  }, [linkedCards])
 
   const parseDay = (v: string): number | null => {
     const n = parseInt(v, 10)
@@ -2027,7 +2042,7 @@ function CreditCardSettingsDialog({
                     {t('accounts.cardLabel')}
                   </span>
                 </div>
-                <div className="divide-y divide-border">
+                <div className="max-h-72 divide-y divide-border overflow-y-auto">
                   {linkedCards.map((card) => {
                     const inputId = `linked-card-label-${card.id}`
                     return (

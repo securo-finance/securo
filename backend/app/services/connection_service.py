@@ -1545,7 +1545,9 @@ async def handle_oauth_callback(
             if synced_dup:
                 if synced_dup.original_description is None:
                     synced_dup.original_description = txn_data.description
-                if txn_data.card_masked_number is not None:
+                if txn_data.card_masked_number is not None and not (
+                    synced_dup.status == "posted" and txn_data.status == "pending"
+                ):
                     synced_dup.card_masked_number = txn_data.card_masked_number
                 if synced_dup.status == "pending" and txn_data.status == "posted":
                     synced_dup.status = "posted"
@@ -1904,7 +1906,10 @@ def _merge_sync_metadata(
                 transaction.raw_data = merged
     if transaction.original_description is None:
         transaction.original_description = txn_data.description
-    if txn_data.card_masked_number is not None:
+    # A stale pending twin must not replace what the posted row already knows.
+    if txn_data.card_masked_number is not None and not (
+        transaction.status == "posted" and txn_data.status == "pending"
+    ):
         transaction.card_masked_number = txn_data.card_masked_number
     if txn_data.payee and not transaction.payee:
         transaction.payee = txn_data.payee
@@ -2359,6 +2364,7 @@ async def _promote_settled_pending(
     incoming_external_ids: set[str],
     unseen_pending: dict[str, date],
     bills_by_external_id: dict[str, CreditCardBill],
+    known_linked_card_numbers: dict[uuid.UUID, set[str]],
 ) -> Optional[str]:
     """Mark the pending row a posted `txn_data` settles as posted.
 
@@ -2393,6 +2399,9 @@ async def _promote_settled_pending(
     transaction.status = "posted"
     _merge_sync_metadata(transaction, txn_data, replace_external_id=rekeyed)
     _relink_bill(transaction, txn_data, account, bills_by_external_id)
+    await _remember_linked_card(
+        session, account, txn_data.card_masked_number, known_linked_card_numbers
+    )
     return transaction.external_id
 
 
@@ -3131,7 +3140,9 @@ async def sync_connection(
                 if synced_dup:
                     if synced_dup.original_description is None:
                         synced_dup.original_description = txn_data.description
-                    if txn_data.card_masked_number is not None:
+                    if txn_data.card_masked_number is not None and not (
+                        synced_dup.status == "posted" and txn_data.status == "pending"
+                    ):
                         synced_dup.card_masked_number = txn_data.card_masked_number
                     if synced_dup.status == "pending" and txn_data.status == "posted":
                         # Posted truth wins: swap in the new id so subsequent
@@ -3385,6 +3396,7 @@ async def sync_connection(
                             incoming_ids,
                             unseen_pending,
                             bills_by_external_id,
+                            known_linked_card_numbers,
                         )
                         if promoted_id:
                             promoted_ids.add(promoted_id)
