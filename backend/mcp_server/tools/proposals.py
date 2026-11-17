@@ -15,33 +15,46 @@ unchanged for Securo's own UI.
 
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal, cast
 
-from sqlalchemy import select
+from pydantic import ValidationError
+from sqlalchemy import String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.budget import Budget
 from app.models.category import Category
+from app.models.category_group import CategoryGroup
+from app.models.goal import Goal
 from app.models.group import Group, GroupMember
+from app.models.invoice_schedule import InvoiceSchedule
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
-from app.schemas.budget import BudgetCreate
+from app.fiscal.registry import TaxIdKind, normalise_and_validate
+from app.schemas.budget import BudgetCreate, BudgetUpdate
 from app.schemas.category import CategoryCreate
-from app.schemas.goal import GoalCreate
+from app.schemas.category_group import CategoryGroupCreate
+from app.schemas.goal import GoalCreate, GoalUpdate
+from app.schemas.payee import PayeeCreate, PayeeUpdate, TaxIdInput
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
     WeekendAdjustment,
 )
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
-from app.schemas.transaction import TransactionCreate
+from app.schemas.transaction import TransactionCreate, TransactionUpdate
+from app.schemas.transaction_category_line import TransactionCategoryLinesInput
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import (
     budget_service,
+    category_group_service,
+    category_line_service,
     category_service,
     goal_service,
+    payee_service,
     recurring_transaction_service,
     rule_service,
     transaction_service,
@@ -49,12 +62,16 @@ from app.services import (
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
 from mcp_server.tools._helpers import (
+    like_literal,
     num,
     parse_date,
     parse_uuid,
     parse_uuid_list,
     resolve_workspace_id,
 )
+
+# The notes column's own length, so a direct call cannot store more than the schema allows.
+NOTES_MAX_LENGTH: int = cast(int, cast(String, Transaction.__table__.c.notes.type).length)
 
 
 # Repeated in EVERY propose_* tool description. The LLM reads these when
@@ -87,9 +104,92 @@ _APPLY_FIELD = {
 }
 
 
+# A split across categories, as `TransactionCategoryLinesInput` takes it.
+_CATEGORY_LINES_FIELD: dict[str, Any] = {
+    "type": "object",
+    "description": "Optional: divide the amount across categories instead of one `category_id`.",
+    "properties": {
+        "share_type": {"type": "string", "enum": ["exact", "percent"]},
+        "lines": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "category_id": {"type": "string", "format": "uuid"},
+                    "amount": {"type": "number", "description": "Required for share_type='exact'"},
+                    "share_pct": {"type": "number", "description": "Required for share_type='percent'"},
+                },
+                "required": ["category_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["share_type", "lines"],
+    "additionalProperties": False,
+}
+
+
+async def _check_category_lines(
+    session: AsyncSession,
+    ws_id,
+    amount: float,
+    category_lines: dict[str, Any],
+    *,
+    tx_type: str,
+    account: Account,
+) -> dict[str, Any]:
+    """Validate a `category_lines` argument with the same math a save runs,
+    so a preview never promises a split the API would refuse. Returns
+    `{payload, preview}` or `{error}`."""
+    try:
+        # Pydantic parses the ids and amounts; its ValidationError is a
+        # ValueError, reported back like any other bad split.
+        payload = TransactionCategoryLinesInput.model_validate(category_lines)
+        resolved = category_line_service.materialize(Decimal(str(amount)), payload)
+    except (ValueError, TypeError, KeyError) as exc:
+        return {"error": f"invalid category_lines: {exc}"}
+    line_cats = {
+        c.id: c
+        for c in (
+            await session.execute(
+                select(Category).where(
+                    Category.id.in_([cid for cid, _, _, _ in resolved]),
+                    Category.workspace_id == ws_id,
+                )
+            )
+        ).scalars()
+    }
+    if len(line_cats) != len({cid for cid, _, _, _ in resolved}):
+        return {"error": "category not found"}
+    # The same eligibility the save checks, so a preview never offers a
+    # split that Apply would then refuse.
+    if any(c.is_ignored or c.is_hidden for c in line_cats.values()):
+        return {"error": "an ignored or hidden category cannot hold part of a transaction"}
+    if (
+        tx_type == "credit"
+        and account.type == "credit_card"
+        and any(c.treat_as_transfer for c in line_cats.values())
+    ):
+        return {"error": "a credit on a credit card cannot have a part in a transfer category"}
+    return {
+        "payload": payload,
+        "preview": [
+            {
+                "category_id": str(cid),
+                "category_name": line_cats[cid].name,
+                "amount": float(part),
+                "share_pct": float(pct) if pct is not None else None,
+            }
+            for cid, part, pct, _ in resolved
+        ],
+    }
+
+
 def _can_apply(ctx: CallContext, apply: bool) -> bool:
-    """Gate: writes only happen when the caller is external AND set apply."""
-    return bool(apply) and ctx.external
+    """Gate: writes only happen when the caller is external, set apply, and
+    holds a role that can write in the workspace."""
+    return bool(apply) and ctx.external and ctx.can_write
 
 
 @tool(
@@ -97,7 +197,11 @@ def _can_apply(ctx: CallContext, apply: bool) -> bool:
     description=_PROPOSAL_PREFACE
     + (
         "Build a preview for re-categorizing one or more transactions. "
-        "Returns a summary of what would change and the resolved category."
+        "Returns a summary of what would change and the resolved category. "
+        "A transaction split across several categories is never "
+        "re-categorized: it is listed with `is_category_split: true` and "
+        "left as is (`skipped_split_count`). Tell the user, and change its "
+        "parts in the app instead."
     ),
     parameters={
         "type": "object",
@@ -154,6 +258,7 @@ async def propose_categorize(
             "amount": num(t.amount),
             "currency": t.currency,
             "current_category_id": str(t.category_id) if t.category_id else None,
+            "is_category_split": bool(t.has_category_lines),
         }
         for t in txs
     ]
@@ -162,6 +267,7 @@ async def propose_categorize(
         "target_category": {"id": str(cat.id), "name": cat.name},
         "affected_count": len(affected),
         "affected": affected,
+        "skipped_split_count": sum(1 for a in affected if a["is_category_split"]),
         "missing_ids": [str(t) for t in tx_ids if str(t) not in {a["id"] for a in affected}],
         "apply_endpoint": "POST /api/transactions/categorize",
     }
@@ -174,6 +280,109 @@ async def propose_categorize(
             session, ws_id, tx_uuids, cat.id
         )
         return {**preview, "applied": True, "updated_count": updated}
+
+    return preview
+
+
+@tool(
+    name="propose_update_transaction_notes",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing one transaction's notes and tags. Tags "
+        "are hashtags inside the notes (e.g. #trip). `notes` replaces the "
+        "free text; `add_tags` and `remove_tags` are applied after it, and a "
+        "tag already present is not added twice. Only the notes change: "
+        "amount, date, account and category are never touched. Returns the "
+        "current notes alongside the result so the user can compare."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "transaction_id": {"type": "string", "format": "uuid"},
+            "notes": {
+                "type": "string",
+                "maxLength": NOTES_MAX_LENGTH,
+                "description": "Replaces the whole notes text; an empty string clears it",
+            },
+            "add_tags": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "Tags to add, with or without the leading #",
+            },
+            "remove_tags": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "Tags to remove, with or without the leading #",
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["transaction_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "transactions"],
+)
+async def propose_update_transaction_notes(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    transaction_id: str,
+    notes: str | None = None,
+    add_tags: list[str] | None = None,
+    remove_tags: list[str] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    if notes is None and not add_tags and not remove_tags:
+        return {"error": "no changes provided"}
+    ws_id = await resolve_workspace_id(session, ctx)
+    tx = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.id == parse_uuid(transaction_id),
+                Transaction.workspace_id == ws_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if tx is None:
+        return {"error": "transaction not found"}
+
+    new_notes = tx.notes if notes is None else (notes.strip() or None)
+    if remove_tags:
+        new_notes = transaction_service.notes_with_tags_removed(new_notes, remove_tags)
+    if add_tags:
+        new_notes = transaction_service.notes_with_tags_added(new_notes, add_tags)
+    if new_notes is not None and len(new_notes) > NOTES_MAX_LENGTH:
+        return {"error": f"notes must be {NOTES_MAX_LENGTH} characters or fewer"}
+    if new_notes == tx.notes:
+        return {"error": "the notes already read like that; nothing to change"}
+
+    preview = {
+        "kind": "update_transaction_notes",
+        "target": {
+            "id": str(tx.id),
+            "description": tx.description,
+            "date": tx.date.isoformat() if tx.date else None,
+            "amount": num(tx.amount),
+            "currency": tx.currency,
+            "notes": tx.notes,
+        },
+        "changes": {"notes": new_notes},
+        # Notes follow a transfer to its other leg, the same as an edit in
+        # the UI, so the preview says so instead of surprising the user.
+        "transfer_pair_id": str(tx.transfer_pair_id) if tx.transfer_pair_id else None,
+        "apply_endpoint": f"PATCH /api/transactions/{tx.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        try:
+            updated = await transaction_service.update_transaction(
+                session, tx.id, ws_id, ctx.user_id, TransactionUpdate(notes=new_notes)
+            )
+        except ValueError as exc:
+            return {**preview, "error": str(exc)}
+        if updated is None:
+            return {**preview, "error": "transaction not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
 
     return preview
 
@@ -215,7 +424,7 @@ async def propose_create_category(
         await session.execute(
             select(Category.id, Category.name).where(
                 Category.workspace_id == ws_id,
-                Category.name.ilike(name.strip()),
+                Category.name.ilike(like_literal(name.strip()), escape="\\"),
             )
         )
     ).first()
@@ -241,6 +450,76 @@ async def propose_create_category(
             CategoryCreate(
                 name=preview["proposed"]["name"],
                 group_id=parse_uuid(group_id) if group_id else None,
+                icon=preview["proposed"]["icon"],
+                color=preview["proposed"]["color"],
+            ),
+        )
+        return {**preview, "applied": True, "id": str(created.id)}
+
+    return preview
+
+
+@tool(
+    name="propose_create_category_group",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Preview the creation of a new category group (e.g. 'Pets', to hold "
+        "'Food', 'Vet' and 'Insurance'). Returns the proposed shape and any "
+        "name collision detected. Once applied, pass the returned id as "
+        "`group_id` to propose_create_category."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 100},
+            "icon": {"type": "string"},
+            "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "categories"],
+)
+async def propose_create_category_group(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    name: str,
+    icon: str | None = None,
+    color: str | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    existing = (
+        await session.execute(
+            select(CategoryGroup.id, CategoryGroup.name).where(
+                CategoryGroup.workspace_id == ws_id,
+                CategoryGroup.name.ilike(like_literal(name.strip()), escape="\\"),
+            )
+        )
+    ).first()
+    preview = {
+        "kind": "create_category_group",
+        "proposed": {
+            "name": name.strip(),
+            "icon": icon or "folder",
+            "color": color or "#6B7280",
+        },
+        "name_collision": {"id": str(existing.id), "name": existing.name} if existing else None,
+        "apply_endpoint": "POST /api/category-groups",
+    }
+
+    if _can_apply(ctx, apply):
+        if existing:
+            return {**preview, "error": f"category group named {existing.name!r} already exists"}
+        created = await category_group_service.create_group(
+            session,
+            ws_id,
+            ctx.user_id,
+            CategoryGroupCreate(
+                name=preview["proposed"]["name"],
                 icon=preview["proposed"]["icon"],
                 color=preview["proposed"]["color"],
             ),
@@ -332,6 +611,144 @@ async def propose_create_budget(
 
 
 @tool(
+    name="propose_update_budget",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for changing the amount of an existing budget "
+        "(e.g. 'raise my groceries budget to R$1,500'). Call list_budgets "
+        "first to find the budget_id. For a recurring budget the new amount "
+        "covers every month that budget applies to, the same as editing it "
+        "on the budgets page. Returns the current amount alongside the new "
+        "one so the user can compare."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "budget_id": {"type": "string", "format": "uuid"},
+            "amount": {"type": "number", "exclusiveMinimum": 0},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["budget_id", "amount"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "budgets"],
+)
+async def propose_update_budget(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    budget_id: str,
+    amount: float,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    row = await _budget_with_category_name(session, ws_id, budget_id)
+    if row is None:
+        return {"error": "budget not found"}
+    budget, category_name = row
+
+    if amount <= 0:
+        return {"error": "amount must be greater than zero"}
+    new_amount = Decimal(str(amount))
+    if new_amount == budget.amount:
+        return {"error": "the budget already has that amount; nothing to change"}
+
+    preview = {
+        "kind": "update_budget",
+        "target": _budget_target(budget, category_name),
+        "changes": {"amount": float(new_amount)},
+        "apply_endpoint": f"PATCH /api/budgets/{budget.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        updated = await budget_service.update_budget(
+            session, budget.id, ws_id, BudgetUpdate(amount=new_amount)
+        )
+        if updated is None:
+            return {**preview, "error": "budget not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
+
+    return preview
+
+
+@tool(
+    name="propose_delete_budget",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for deleting a budget (e.g. 'drop the budget for "
+        "streaming'). Call list_budgets first to find the budget_id. "
+        "Deleting a recurring budget removes it from every month it covers; "
+        "the category and its transactions are untouched."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "budget_id": {"type": "string", "format": "uuid"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["budget_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "budgets"],
+)
+async def propose_delete_budget(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    budget_id: str,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    row = await _budget_with_category_name(session, ws_id, budget_id)
+    if row is None:
+        return {"error": "budget not found"}
+    budget, category_name = row
+
+    preview = {
+        "kind": "delete_budget",
+        "target": _budget_target(budget, category_name),
+        "apply_endpoint": f"DELETE /api/budgets/{budget.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        ok = await budget_service.delete_budget(session, budget.id, ws_id)
+        if not ok:
+            return {**preview, "error": "budget not found"}
+        return {**preview, "applied": True, "deleted": True}
+
+    return preview
+
+
+async def _budget_with_category_name(
+    session: AsyncSession, ws_id: uuid.UUID, budget_id: str
+) -> tuple[Budget, str | None] | None:
+    row = (
+        await session.execute(
+            select(Budget, Category.name)
+            .outerjoin(Category, Category.id == Budget.category_id)
+            .where(Budget.id == parse_uuid(budget_id), Budget.workspace_id == ws_id)
+        )
+    ).first()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
+def _budget_target(budget: Budget, category_name: str | None) -> dict[str, Any]:
+    return {
+        "id": str(budget.id),
+        "category_id": str(budget.category_id),
+        "category_name": category_name,
+        "month": budget.month.isoformat(),
+        "amount": num(budget.amount),
+        "currency": budget.currency,
+        "is_recurring": bool(budget.is_recurring),
+    }
+
+
+@tool(
     name="propose_create_transaction",
     description=_PROPOSAL_PREFACE
     + (
@@ -344,7 +761,13 @@ async def propose_create_budget(
         "grupo dos Amigos e divida igualmente'. Use `'exact'` with a "
         "`share_amount` per member, or `'percent'` with `share_pct` per "
         "member, for custom shares. All members must belong to the same "
-        "group as `group_id`. Call `list_groups` first to fetch IDs."
+        "group as `group_id`. Call `list_groups` first to fetch IDs.\n\n"
+        "Category split: pass `category_lines` (instead of `category_id`) "
+        "to divide the amount across several categories, e.g. a receipt "
+        "of 200 as 120 groceries + 80 household. Two or more lines; "
+        "`share_type='exact'` with an `amount` per line adding up to "
+        "`amount`, or `'percent'` with `share_pct` adding up to 100. Cannot "
+        "be combined with `group_id`."
     ),
     parameters={
         "type": "object",
@@ -399,6 +822,7 @@ async def propose_create_budget(
                 "required": ["share_type", "members"],
                 "additionalProperties": False,
             },
+            "category_lines": _CATEGORY_LINES_FIELD,
             "apply": _APPLY_FIELD,
         },
         "required": ["description", "amount", "type", "account_id"],
@@ -421,6 +845,7 @@ async def propose_create_transaction(
     notes: str | None = None,
     group_id: str | None = None,
     splits: dict[str, Any] | None = None,
+    category_lines: dict[str, Any] | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
@@ -534,6 +959,22 @@ async def propose_create_transaction(
                     }
                 )
 
+    # Category split: validated with the same math the save runs, so the
+    # preview never promises a split the API would refuse.
+    lines_payload: TransactionCategoryLinesInput | None = None
+    lines_preview: list[dict[str, Any]] | None = None
+    if category_lines:
+        if category_id:
+            return {"error": "pass either category_id or category_lines, not both"}
+        if group_id or splits:
+            return {"error": "a category split cannot be combined with a group split"}
+        checked = await _check_category_lines(
+            session, ws_id, amount, category_lines, tx_type=type, account=acc
+        )
+        if "error" in checked:
+            return checked
+        lines_payload, lines_preview = checked["payload"], checked["preview"]
+
     target_date = parse_date(date) or _today()
     proposed: dict[str, Any] = {
         "description": description.strip(),
@@ -547,6 +988,11 @@ async def propose_create_transaction(
         "category_name": cat.name if cat else None,
         "notes": (notes or None),
     }
+    if lines_preview is not None and lines_payload is not None:
+        proposed["category_lines"] = {
+            "share_type": lines_payload.share_type,
+            "lines": lines_preview,
+        }
     if splits_preview is not None:
         assert splits is not None
         proposed["group_id"] = group_id
@@ -597,6 +1043,7 @@ async def propose_create_transaction(
                     currency=proposed["currency"],
                     notes=notes,
                     splits=splits_payload,
+                    category_lines=lines_payload,
                 ),
             )
         except ValueError as exc:
@@ -613,7 +1060,11 @@ async def propose_create_transaction(
         "Build a preview for adding a recurring transaction / subscription "
         "(e.g. 'Netflix R$55 every month on the 10th'). Frequency is one "
         "of weekly/biweekly/monthly/quarterly/semiannual/yearly. For monthly, "
-        "quarterly, or semiannual use day_of_month (1-31)."
+        "quarterly, or semiannual use day_of_month (1-31). Pass "
+        "`category_lines` instead of `category_id` for a bill split across "
+        "categories (e.g. rent + condo fee + property tax in one payment); "
+        "every occurrence then starts with that split. Same shape as in "
+        "propose_create_transaction."
     ),
     parameters={
         "type": "object",
@@ -633,6 +1084,7 @@ async def propose_create_transaction(
             "account_id": {"type": "string", "format": "uuid"},
             "category_id": {"type": "string", "format": "uuid"},
             "currency": {"type": "string"},
+            "category_lines": _CATEGORY_LINES_FIELD,
             "apply": _APPLY_FIELD,
         },
         "required": ["description", "amount", "type", "frequency", "account_id"],
@@ -656,6 +1108,7 @@ async def propose_create_recurring_transaction(
     end_date: str | None = None,
     category_id: str | None = None,
     currency: str | None = None,
+    category_lines: dict[str, Any] | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
     if frequency in ("monthly", "quarterly", "semiannual") and not day_of_month:
@@ -682,6 +1135,18 @@ async def propose_create_recurring_transaction(
         if cat is None:
             return {"error": "category not found"}
 
+    lines_payload: TransactionCategoryLinesInput | None = None
+    lines_preview: list[dict[str, Any]] | None = None
+    if category_lines:
+        if category_id:
+            return {"error": "pass either category_id or category_lines, not both"}
+        checked = await _check_category_lines(
+            session, ws_id, amount, category_lines, tx_type=type, account=acc
+        )
+        if "error" in checked:
+            return checked
+        lines_payload, lines_preview = checked["payload"], checked["preview"]
+
     target_start = parse_date(start_date) or _today()
     target_end = parse_date(end_date) if end_date else None
     resolved_currency = (currency or acc.currency or "USD").upper()
@@ -701,6 +1166,11 @@ async def propose_create_recurring_transaction(
             "account_name": acc.name,
             "category_id": str(cat.id) if cat else None,
             "category_name": cat.name if cat else None,
+            "category_lines": (
+                {"share_type": lines_payload.share_type, "lines": lines_preview}
+                if lines_payload is not None
+                else None
+            ),
         },
         "apply_endpoint": "POST /api/recurring-transactions",
     }
@@ -722,6 +1192,7 @@ async def propose_create_recurring_transaction(
                 end_date=target_end,
                 account_id=acc.id,
                 category_id=cat.id if cat else None,
+                category_lines=lines_payload,
             ),
         )
         return {**preview, "applied": True, "id": str(created.id)}
@@ -1029,6 +1500,145 @@ async def propose_create_goal(
     return preview
 
 
+_GOAL_STATUSES = ["active", "completed", "paused", "archived"]
+
+
+@tool(
+    name="propose_update_goal",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing an existing goal (e.g. 'I have saved "
+        "R$3,000 for the trip now', 'move the deadline to December', "
+        "'pause my car goal'). Call list_goals first to find the goal_id, "
+        "then pass only the fields that change. `current_amount` is the "
+        "progress of a manual goal; a goal that tracks an account, asset or "
+        "net worth computes its progress itself, so it is refused there. "
+        "`status` pauses, archives, completes or reactivates the goal. "
+        "Returns the current values alongside the changes so the user can "
+        "compare."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "goal_id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "target_amount": {"type": "number", "exclusiveMinimum": 0},
+            "current_amount": {
+                "type": "number",
+                "minimum": 0,
+                "description": "How much is saved so far (manual goals only)",
+            },
+            "target_date": {
+                "type": "string",
+                "format": "date",
+                "description": "New deadline (YYYY-MM-DD); an empty string removes it",
+            },
+            "status": {"type": "string", "enum": _GOAL_STATUSES},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["goal_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "goals"],
+)
+async def propose_update_goal(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    goal_id: str,
+    name: str | None = None,
+    target_amount: float | None = None,
+    current_amount: float | None = None,
+    target_date: str | None = None,
+    status: str | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    goal = (
+        await session.execute(
+            select(Goal).where(Goal.id == parse_uuid(goal_id), Goal.workspace_id == ws_id)
+        )
+    ).scalar_one_or_none()
+    if goal is None:
+        return {"error": "goal not found"}
+
+    requested: dict[str, Any] = {}
+    if name is not None:
+        if not name.strip():
+            return {"error": "name cannot be empty"}
+        requested["name"] = name.strip()
+    if target_amount is not None:
+        if target_amount <= 0:
+            return {"error": "target_amount must be greater than zero"}
+        requested["target_amount"] = Decimal(str(target_amount))
+    if current_amount is not None:
+        if goal.tracking_type != "manual":
+            return {
+                "error": (
+                    f"this goal tracks its {goal.tracking_type.replace('_', ' ')}, "
+                    "so its progress cannot be set by hand"
+                )
+            }
+        if current_amount < 0:
+            return {"error": "current_amount cannot be negative"}
+        requested["current_amount"] = Decimal(str(current_amount))
+    if target_date is not None:
+        try:
+            requested["target_date"] = parse_date(target_date)
+        except ValueError:
+            return {"error": f"invalid target_date {target_date!r}; use YYYY-MM-DD"}
+    if status is not None:
+        requested["status"] = status
+    if not requested:
+        return {"error": "no changes provided"}
+
+    # Only what differs from the goal as stored goes into the proposal.
+    update_data = {k: v for k, v in requested.items() if getattr(goal, k) != v}
+    if not update_data:
+        return {"error": "the goal already reads like that; nothing to change"}
+    try:
+        update = GoalUpdate(**update_data)
+    except ValidationError as exc:
+        return {"error": "; ".join(str(e["msg"]) for e in exc.errors())}
+
+    changes: dict[str, Any] = {}
+    for key, value in update.model_dump(exclude_unset=True).items():
+        if isinstance(value, Decimal):
+            changes[key] = float(value)
+        elif key == "target_date":
+            changes[key] = value.isoformat() if value else None
+        else:
+            changes[key] = value
+
+    preview = {
+        "kind": "update_goal",
+        "target": {
+            "id": str(goal.id),
+            "name": goal.name,
+            "target_amount": num(goal.target_amount),
+            "current_amount": num(goal.current_amount),
+            "currency": goal.currency,
+            "target_date": goal.target_date.isoformat() if goal.target_date else None,
+            "status": goal.status,
+            "tracking_type": goal.tracking_type,
+        },
+        "changes": changes,
+        "apply_endpoint": f"PATCH /api/goals/{goal.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        try:
+            updated = await goal_service.update_goal(session, goal.id, ws_id, ctx.user_id, update)
+        except ValueError as exc:
+            return {**preview, "error": str(exc)}
+        if updated is None:
+            return {**preview, "error": "goal not found"}
+        return {**preview, "applied": True, "id": str(updated.id)}
+
+    return preview
+
+
 def _today():
     from datetime import date as _d
 
@@ -1099,5 +1709,482 @@ async def propose_create_payee_rule(
             ),
         )
         return {**preview, "applied": True, "id": str(created.id)}
+
+    return preview
+
+
+def _payee_snapshot(payee) -> dict[str, Any]:
+    """The fields a payee update can touch, small enough for an LLM."""
+    return {
+        "id": str(payee.id),
+        "name": payee.name,
+        "type": payee.type,
+        "source": payee.source,
+        "is_favorite": bool(payee.is_favorite),
+        "notes": payee.notes,
+        "email": payee.email,
+        "phone": payee.phone,
+        "address": payee.address,
+        "website": payee.website,
+        "tax_ids": [{"kind": row.kind, "value": row.value} for row in payee.tax_ids],
+    }
+
+
+def _normalise_tax_ids(
+    tax_ids: list[dict[str, Any]],
+) -> tuple[list[dict[str, str]] | None, str | None]:
+    """Validate the incoming document set without writing it.
+
+    The service repeats this on apply. Doing it here means a preview shows
+    the reason a document would be refused instead of pretending the whole
+    change is ready and failing halfway through.
+    """
+    normalised: list[dict[str, str]] = []
+    seen: set[TaxIdKind] = set()
+    for item in tax_ids:
+        raw_kind = item.get("kind")
+        try:
+            kind = TaxIdKind(raw_kind)
+        except (TypeError, ValueError):
+            return None, f"unknown_tax_id_kind:{raw_kind}"
+        if kind in seen:
+            return None, f"duplicate_tax_id:{kind.value}"
+        seen.add(kind)
+        value, error = normalise_and_validate(kind, str(item.get("value") or ""))
+        if error == "empty":
+            # An emptied field means "remove this document", not "store
+            # nothing"; mirrors payee_service._apply_tax_ids.
+            continue
+        if error:
+            return None, f"invalid_tax_id:{kind.value}:{error}"
+        normalised.append({"kind": kind.value, "value": value})
+    return normalised, None
+
+
+@tool(
+    name="propose_create_payee",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for adding a payee (counterparty) that does not "
+        "exist yet. Returns any payee that already uses the same name, "
+        "because the workspace refuses duplicates. `tax_ids` are validated "
+        "on preview, so an invalid document is refused before anything is "
+        "written."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "type": {"type": "string", "enum": ["person", "company"]},
+            "notes": {"type": "string", "maxLength": 1000},
+            "email": {"type": "string", "maxLength": 255},
+            "phone": {"type": "string", "maxLength": 50},
+            "address": {"type": "string", "maxLength": 500},
+            "website": {"type": "string", "maxLength": 255},
+            "tax_ids": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": [kind.value for kind in TaxIdKind],
+                        },
+                        "value": {"type": "string", "maxLength": 120},
+                    },
+                    "required": ["kind", "value"],
+                    "additionalProperties": False,
+                },
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "payees"],
+)
+async def propose_create_payee(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    name: str,
+    type: Literal["person", "company"] | None = None,
+    notes: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
+    website: str | None = None,
+    tax_ids: list[dict[str, Any]] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    cleaned = name.strip()
+    if not cleaned:
+        return {"error": "payee name cannot be empty"}
+
+    proposed: dict[str, Any] = {"name": cleaned}
+    for field, value in (
+        ("type", type),
+        ("notes", notes),
+        ("email", email),
+        ("phone", phone),
+        ("address", address),
+        ("website", website),
+    ):
+        if value is not None:
+            proposed[field] = value
+
+    normalised_tax_ids: list[dict[str, str]] = []
+    if tax_ids is not None:
+        normalised, error = _normalise_tax_ids(tax_ids)
+        if error:
+            return {"error": error}
+        if normalised is not None:
+            normalised_tax_ids = normalised
+            proposed["tax_ids"] = normalised
+
+    # Same reason as propose_update_payee: the dispatcher does not enforce
+    # the advertised schema, so validate before showing a preview.
+    try:
+        create_data = PayeeCreate(
+            name=cleaned,
+            type=type,
+            notes=notes,
+            email=email,
+            phone=phone,
+            address=address,
+            website=website,
+            tax_ids=[TaxIdInput(**item) for item in normalised_tax_ids],
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    existing = await payee_service.find_payee_by_name(session, ws_id, cleaned)
+    preview = {
+        "kind": "create_payee",
+        "proposed": proposed,
+        "existing": _payee_snapshot(existing) if existing is not None else None,
+        "apply_endpoint": "POST /api/payees",
+    }
+    if existing is not None:
+        # The service refuses this on apply; surface it in the preview so the
+        # caller learns before anything is written.
+        return {**preview, "applied": False, "error": "duplicate_payee_name"}
+
+    if _can_apply(ctx, apply):
+        try:
+            created = await payee_service.create_payee(
+                session, ws_id, ctx.user_id, create_data
+            )
+        except ValueError as exc:
+            return {**preview, "applied": False, "error": str(exc)}
+        fresh = await payee_service.get_payee(session, created.id, ws_id)
+        return {
+            **preview,
+            "applied": True,
+            "payee": _payee_snapshot(fresh or created),
+        }
+
+    return preview
+
+
+@tool(
+    name="propose_update_payee",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing one payee (counterparty), including "
+        "its fiscal documents. Pass the payee_id and only the fields to "
+        "change. `tax_ids` replaces the whole document set, so send every "
+        "document the payee should keep. Returns the current values next "
+        "to the proposed ones."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "payee_id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "type": {"type": "string", "enum": ["person", "company"]},
+            "notes": {"type": "string", "maxLength": 1000},
+            "email": {"type": "string", "maxLength": 255},
+            "phone": {"type": "string", "maxLength": 50},
+            "address": {"type": "string", "maxLength": 500},
+            "website": {"type": "string", "maxLength": 255},
+            "is_favorite": {"type": "boolean"},
+            "tax_ids": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": [kind.value for kind in TaxIdKind],
+                        },
+                        "value": {"type": "string", "maxLength": 120},
+                    },
+                    "required": ["kind", "value"],
+                    "additionalProperties": False,
+                },
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["payee_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "payees"],
+)
+async def propose_update_payee(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    payee_id: str,
+    name: str | None = None,
+    type: str | None = None,
+    notes: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
+    website: str | None = None,
+    is_favorite: bool | None = None,
+    tax_ids: list[dict[str, Any]] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    pid = parse_uuid(payee_id)
+    payee = await payee_service.get_payee(session, pid, ws_id) if pid else None
+    if payee is None:
+        return {"error": "payee not found"}
+
+    changes: dict[str, Any] = {}
+    if name is not None:
+        cleaned = name.strip()
+        if not cleaned:
+            return {"error": "payee name cannot be empty"}
+        clash = await payee_service.find_payee_by_name(session, ws_id, cleaned)
+        if clash is not None and clash.id != payee.id:
+            return {"error": "duplicate_payee_name", "existing": _payee_snapshot(clash)}
+        changes["name"] = cleaned
+    if type is not None:
+        changes["type"] = type
+    if notes is not None:
+        changes["notes"] = notes
+    if email is not None:
+        changes["email"] = email
+    if phone is not None:
+        changes["phone"] = phone
+    if address is not None:
+        changes["address"] = address
+    if website is not None:
+        changes["website"] = website
+    if is_favorite is not None:
+        # Left as sent: PayeeUpdate turns "true"/"false" into a bool and
+        # rejects anything else, so bool("false") cannot come out true.
+        changes["is_favorite"] = is_favorite
+
+    normalised_tax_ids: list[dict[str, str]] | None = None
+    if tax_ids is not None:
+        normalised_tax_ids, error = _normalise_tax_ids(tax_ids)
+        if error:
+            return {"error": error}
+        changes["tax_ids"] = normalised_tax_ids
+
+    if not changes:
+        return {"error": "no changes provided"}
+
+    # The MCP dispatcher passes arguments straight to the handler, so an
+    # external client can send a value the advertised schema forbids. Build
+    # the update here: a preview must not describe a change the apply path
+    # will refuse.
+    update_data: dict[str, Any] = dict(changes)
+    if normalised_tax_ids is not None:
+        update_data["tax_ids"] = [TaxIdInput(**item) for item in normalised_tax_ids]
+    try:
+        validated_update = PayeeUpdate(**update_data)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    # The preview shows the value the apply path will write, not the one
+    # the client sent.
+    if validated_update.is_favorite is not None:
+        changes["is_favorite"] = validated_update.is_favorite
+
+    preview = {
+        "kind": "update_payee",
+        "target": _payee_snapshot(payee),
+        "changes": changes,
+        "apply_endpoint": f"PATCH /api/payees/{payee.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        try:
+            updated = await payee_service.update_payee(
+                session, payee.id, ws_id, validated_update
+            )
+        except ValueError as exc:
+            return {**preview, "applied": False, "error": str(exc)}
+        if updated is None:
+            return {**preview, "applied": False, "error": "payee not found"}
+        fresh = await payee_service.get_payee(session, updated.id, ws_id)
+        return {
+            **preview,
+            "applied": True,
+            "payee": _payee_snapshot(fresh or updated),
+        }
+
+    return preview
+
+
+@tool(
+    name="propose_merge_payees",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for merging one or more payees into another. The "
+        "target keeps the history: transactions, invoices and fiscal "
+        "documents move to it. A document whose kind the target already "
+        "holds is dropped, because one payee carries one document per "
+        "kind; the target's value stays and the first source in source_ids "
+        "wins a shared kind. A source with a live recurring invoice "
+        "schedule is refused, because the agreement is about the future; "
+        "an ended one moves with its invoices. Use this for a duplicate "
+        "counterparty, never for a rename: a rename is propose_update_payee."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "source_ids": {
+                "type": "array",
+                "items": {"type": "string", "format": "uuid"},
+                "minItems": 1,
+            },
+            "target_id": {"type": "string", "format": "uuid"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["source_ids", "target_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "payees"],
+)
+async def propose_merge_payees(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    source_ids: list[str],
+    target_id: str,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    tid = parse_uuid(target_id)
+    target = await payee_service.get_payee(session, tid, ws_id) if tid else None
+    if target is None:
+        return {"error": "target payee not found"}
+
+    parsed_sources = list(dict.fromkeys(parse_uuid_list(source_ids) or []))
+    if not parsed_sources:
+        return {"error": "source_ids is required"}
+    if tid in parsed_sources:
+        return {"error": "target payee cannot also be a source"}
+
+    sources: list[dict[str, Any]] = []
+    transactions_to_reassign = 0
+    live_schedules = 0
+    documents_deleted: list[dict[str, str]] = []
+    # merge_payees moves a source's documents onto the target unless the
+    # target already holds that kind, so the preview has to walk the sources
+    # in the same order to know which rows are actually lost: the target's
+    # kinds are claimed first, then each source's in turn.
+    held_kinds = {row.kind for row in target.tax_ids}
+    for source_id in parsed_sources:
+        source = await payee_service.get_payee(session, source_id, ws_id)
+        if source is None:
+            return {"error": f"source payee {source_id} not found"}
+        count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(Transaction)
+                .where(Transaction.payee_id == source_id)
+            )
+            or 0
+        )
+        # Only a live agreement blocks the merge. An ended one is history
+        # and moves to the target with the invoices it issued.
+        live_schedule_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(InvoiceSchedule)
+                .where(InvoiceSchedule.payee_id == source_id)
+                .where(InvoiceSchedule.status != "ended")
+            )
+            or 0
+        )
+        transactions_to_reassign += count
+        live_schedules += live_schedule_count
+        source_tax_ids = [
+            {"kind": row.kind, "value": row.value} for row in source.tax_ids
+        ]
+        # Only a document whose kind is already taken is lost: the row goes
+        # down with the source instead of moving to the target. Listing
+        # those rows is the only place the caller sees that a value is
+        # about to disappear; the rest survive on the target.
+        for document in source_tax_ids:
+            if document["kind"] in held_kinds:
+                documents_deleted.append(document)
+            else:
+                held_kinds.add(document["kind"])
+        sources.append(
+            {
+                "id": str(source.id),
+                "name": source.name,
+                "transaction_count": count,
+                "live_schedule_count": live_schedule_count,
+                "tax_ids": source_tax_ids,
+            }
+        )
+
+    preview = {
+        "kind": "merge_payees",
+        "target": {
+            "id": str(target.id),
+            "name": target.name,
+            "transaction_count": int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Transaction)
+                    .where(Transaction.payee_id == target.id)
+                )
+                or 0
+            ),
+            "tax_ids": [
+                {"kind": row.kind, "value": row.value} for row in target.tax_ids
+            ],
+        },
+        "sources": sources,
+        "transactions_to_reassign": transactions_to_reassign,
+        "documents_deleted": documents_deleted,
+        "apply_endpoint": "POST /api/payees/merge",
+    }
+
+    if live_schedules:
+        # The service refuses this on apply; the preview says so first so
+        # the caller does not present a merge that cannot land.
+        return {
+            **preview,
+            "applied": False,
+            "error": f"payee_has_schedules:{live_schedules}",
+        }
+
+    if _can_apply(ctx, apply):
+        try:
+            reassigned = await payee_service.merge_payees(
+                session, ws_id, target.id, parsed_sources
+            )
+        except ValueError as exc:
+            return {**preview, "applied": False, "error": str(exc)}
+        return {
+            **preview,
+            "applied": True,
+            "transactions_reassigned": reassigned,
+        }
 
     return preview

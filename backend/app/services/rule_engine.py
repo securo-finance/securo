@@ -41,6 +41,22 @@ def _to_decimal(val) -> Decimal:
         return Decimal("0")
 
 
+def _signed_amount(tx: "Transaction", raw) -> Decimal:
+    """The amount as a condition compares it: credits positive, debits negative.
+
+    Amounts are stored positive with the direction in `type`, so an unsigned
+    comparison sees every transaction as positive. The sign is what lets
+    `amount > 0` select income and `amount < 0` expenses. The magnitude is
+    taken first because a row saved with a negative amount (the manual API
+    does not reject one) must follow the same contract: the sign comes from
+    `type` alone.
+    """
+    amount = abs(_to_decimal(raw))
+    if getattr(tx, "type", None) == "debit":
+        amount = -amount
+    return amount
+
+
 def _to_date(val) -> date | None:
     if isinstance(val, datetime):
         return val.date()
@@ -87,17 +103,20 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
             # Amounts are stored with a fixed scale (100.00) while the rule
             # form submits the number as typed (100): comparing their string
             # forms would never agree. Compare numerically when both sides
-            # parse, and fall back to text when either does not.
+            # parse, and fall back to text when either does not. The
+            # comparison is signed: a debit of 100.00 is -100.
             if field == "amount":
                 try:
-                    return Decimal(str(tx_val)) == Decimal(str(value))
+                    return _signed_amount(tx, tx_val) == Decimal(str(value))
                 except InvalidOperation:
                     pass
             return tx_str == val_str
         if op == "not_equals":
+            # Signed for the same reason as `equals`: a debit of 100.00 is
+            # -100, so it is not equal to the typed 100.
             if field == "amount":
                 try:
-                    return Decimal(str(tx_val)) != Decimal(str(value))
+                    return _signed_amount(tx, tx_val) != Decimal(str(value))
                 except InvalidOperation:
                     pass
             return tx_str != val_str
@@ -128,7 +147,10 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
             if op == "lte":
                 return tx_date <= val_date
 
-        tx_num = _to_decimal(tx_val)
+        # Amounts are stored positive with the direction in `type`, so the
+        # comparison needs the signed value: `amount > 0` is income and
+        # `amount < 0` expenses.
+        tx_num = _signed_amount(tx, tx_val) if field == "amount" else _to_decimal(tx_val)
         val_num = _to_decimal(value)
         if op == "gt":
             return tx_num > val_num
@@ -206,6 +228,7 @@ def apply_rule_actions(
     *,
     skip_description: bool = False,
     assignable_category_ids: Collection[uuid.UUID] | None = None,
+    existing_payee_ids: Collection[uuid.UUID] | None = None,
 ) -> bool:
     """Apply actions in-place and return the updated category-set flag.
 
@@ -220,6 +243,10 @@ def apply_rule_actions(
     and take the whole import or sync batch with it.
 
     Passing nothing skips the check, for callers with no workspace at hand.
+
+    `set_payee` keeps its payee id the same way and can outlive the payee, so
+    it only writes an id in `existing_payee_ids`. Passing nothing skips that
+    check too.
     """
     for action in actions:
         op = action.get("op")
@@ -248,9 +275,12 @@ def apply_rule_actions(
 
         elif op == "set_payee":
             try:
-                tx.payee_id = uuid.UUID(str(value))
+                payee_id = uuid.UUID(str(value))
             except (ValueError, AttributeError):
-                pass
+                continue
+            if existing_payee_ids is not None and payee_id not in existing_payee_ids:
+                continue
+            tx.payee_id = payee_id
 
         elif op == "append_notes":
             new_tags = str(value or "").strip()

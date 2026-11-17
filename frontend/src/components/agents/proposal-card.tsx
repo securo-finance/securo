@@ -6,10 +6,13 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/date-range-format'
+import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import {
+  accounts,
   budgets,
   categories,
+  categoryGroups,
   goals,
   recurring,
   rules,
@@ -54,11 +57,10 @@ export function ProposalCard({ toolCallId, data }: Props) {
       setAppliedAt(Date.now())
       toast.success(t('agents.proposal.applied'))
       // Invalidate the broad surface that proposals may have changed.
+      invalidateCategoryQueries(qc)
       ;[
         'transactions',
         'accounts',
-        'categories',
-        'category-groups',
         'recurring-transactions',
         'budgets',
         'rules',
@@ -161,7 +163,42 @@ function kindTitle(kind: ProposalKind, t: ReturnType<typeof useTranslation>['t']
   if (kind === 'create_rule') return t('rules.newRule')
   if (kind === 'update_rule') return t('rules.editRule')
   if (kind === 'delete_rule') return t('rules.confirmDeleteTitle')
+  if (kind === 'create_manual_account') return t('accounts.addManual')
+  if (kind === 'update_manual_account') return t('accounts.editAccount')
   return t(`agents.proposal.kind.${kind}`)
+}
+
+function accountTypeLabel(
+  accountType: unknown,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  const type = String(accountType ?? '')
+  return t(`accounts.type${type.charAt(0).toUpperCase()}${type.slice(1)}`)
+}
+
+function manualAccountFieldLabel(
+  field: string,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (field === 'name') return t('accounts.accountName')
+  if (field === 'type') return t('accounts.accountType')
+  if (field === 'opening_balance') return t('accounts.openingBalanceDescription')
+  if (field === 'opening_balance_date') return t('accounts.balanceDate')
+  return field
+}
+
+function manualAccountChangeValue(
+  field: string,
+  value: unknown,
+  currency: unknown,
+  dateLocale: string,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (value == null) return '∅'
+  if (field === 'opening_balance') return fmt(value, currency)
+  if (field === 'opening_balance_date') return formatDate(String(value), dateLocale)
+  if (field === 'type') return accountTypeLabel(value, t)
+  return String(value)
 }
 
 function renderSummary(
@@ -188,6 +225,28 @@ function renderSummary(
         amount: fmt(p.amount, p.currency),
         month: String(p.month ?? '?'),
       })
+    case 'create_manual_account': {
+      const balanceDate = p.opening_balance_date
+        ? ` · ${t('agents.proposal.summary.manualAccountDate', {
+            label: t('accounts.balanceDate'),
+            date: formatDate(String(p.opening_balance_date), dateLocale),
+          })}`
+        : ''
+      return t('agents.proposal.summary.createManualAccount', {
+        name: String(p.name ?? '?'),
+        type: accountTypeLabel(p.type, t),
+        currentBalance: t('agents.proposal.summary.manualAccountMoney', {
+          label: t('accounts.currentBalance'),
+          amount: fmt(p.current_balance ?? p.opening_balance, p.currency),
+        }),
+        openingBalance: t('agents.proposal.summary.manualAccountMoney', {
+          label: t('accounts.openingBalanceDescription'),
+          amount: fmt(p.opening_balance, p.currency),
+        }),
+        balanceDate,
+      })
+        + (d.name_collision ? `. ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+    }
     case 'create_payee_rule':
       return t('agents.proposal.summary.createPayeeRule', {
         pattern: String(p.match_pattern ?? '?'),
@@ -208,7 +267,7 @@ function renderSummary(
         type: String(p.type ?? '?'),
         date: String(p.date ?? ''),
         account: String((p.account_name as string) ?? '?'),
-      })
+      }) + splitSummary(p as Record<string, unknown>, fmt)
     case 'create_recurring_transaction':
       return t('agents.proposal.summary.createRecurring', {
         description: String(p.description ?? '?'),
@@ -216,7 +275,7 @@ function renderSummary(
         frequency: String(p.frequency ?? '?'),
         day: p.day_of_month ? `${p.day_of_month}` : '?',
         account: String((p.account_name as string) ?? '?'),
-      })
+      }) + splitSummary(p as Record<string, unknown>, fmt)
     case 'update_recurring_transaction': {
       const changes = (d.changes || {}) as Record<string, unknown>
       const lines = Object.entries(changes).map(([k, v]) => {
@@ -249,6 +308,63 @@ function renderSummary(
         { from: legLabel(from, dateLocale), to: legLabel(to, dateLocale) },
       )
     }
+    case 'update_goal': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      const lines = Object.entries(changes).map(([k, v]) => {
+        const before = tgt[k]
+        return `${k}: ${String(before ?? '∅')} → ${String(v ?? '∅')}`
+      })
+      return t('agents.proposal.summary.updateGoal', {
+        name: String(tgt.name ?? '?'),
+        changes: lines.join(', ') || '—',
+      })
+    }
+    case 'update_budget': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      return t('agents.proposal.summary.updateBudget', {
+        category: String((tgt.category_name as string) ?? tgt.category_id ?? '?'),
+        month: String(tgt.month ?? '?'),
+        before: fmt(tgt.amount, tgt.currency),
+        after: fmt(changes.amount, tgt.currency),
+      })
+    }
+    case 'update_manual_account': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      const changedFields = Object.entries(changes).map(([field, value]) => (
+        t('agents.proposal.summary.manualAccountChange', {
+          field: manualAccountFieldLabel(field, t),
+          before: manualAccountChangeValue(field, tgt[field], tgt.currency, dateLocale, t),
+          after: manualAccountChangeValue(field, value, tgt.currency, dateLocale, t),
+        })
+      ))
+      return t('agents.proposal.summary.updateManualAccount', {
+        name: String(tgt.name ?? '?'),
+        currentBalance: t('agents.proposal.summary.manualAccountMoney', {
+          label: t('accounts.currentBalance'),
+          amount: fmt(tgt.current_balance, tgt.currency),
+        }),
+        changes: changedFields.join('. ') || t('agents.proposal.summary.manualAccountNoChanges'),
+      })
+        + (d.name_collision ? `. ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+    }
+    case 'delete_budget':
+      return t(tgt.is_recurring ? 'agents.proposal.summary.deleteRecurringBudget' : 'agents.proposal.summary.deleteBudget', {
+        category: String((tgt.category_name as string) ?? tgt.category_id ?? '?'),
+        amount: fmt(tgt.amount, tgt.currency),
+        month: String(tgt.month ?? '?'),
+      })
+    case 'update_transaction_notes': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      return t('agents.proposal.summary.updateTransactionNotes', {
+        description: String(tgt.description ?? '?'),
+        before: String(tgt.notes || '∅'),
+        after: String(changes.notes || '∅'),
+      })
+    }
+    case 'create_category_group':
+      return t('agents.proposal.summary.createCategoryGroup', {
+        name: String(p.name ?? '?'),
+      }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
     default:
       return ''
   }
@@ -269,6 +385,31 @@ function fmt(amount: unknown, currency: unknown): string {
     return new Intl.NumberFormat(undefined, { style: 'currency', currency: c }).format(n)
   } catch {
     return `${c} ${n.toFixed(2)}`
+  }
+}
+
+/** " · Food 120.00, Home 80.00" for a proposal split across categories,
+ * so the user sees where the money goes before Apply. */
+function splitSummary(p: Record<string, unknown>, format: typeof fmt): string {
+  const block = p.category_lines as { lines?: Array<Record<string, unknown>> } | undefined
+  if (!block?.lines?.length) return ''
+  return ' · ' + block.lines
+    .map((line) => `${String(line.category_name ?? '?')} ${format(line.amount, p.currency)}`)
+    .join(', ')
+}
+
+/** The parts a proposal validated, in the shape the API takes, or undefined. */
+function categoryLinesPayload(p: Record<string, unknown>) {
+  const block = p.category_lines as { share_type?: string; lines?: Array<Record<string, unknown>> } | undefined
+  if (!block || !Array.isArray(block.lines) || block.lines.length < 2) return undefined
+  const percent = block.share_type === 'percent'
+  return {
+    share_type: percent ? 'percent' : 'exact',
+    lines: block.lines.map((line) => (
+      percent
+        ? { category_id: String(line.category_id), share_pct: Number(line.share_pct) }
+        : { category_id: String(line.category_id), amount: Number(line.amount) }
+    )),
   }
 }
 
@@ -307,6 +448,11 @@ function SplitPreview({ proposed }: { proposed?: Record<string, unknown> }) {
   )
 }
 
+// The preview found the name taken; creating it anyway would make a duplicate.
+function rejectNameCollision(data: ProposalData): void {
+  if (data.name_collision) throw new Error(`The name is already used by ${data.name_collision.name}`)
+}
+
 // Each kind maps to one Securo endpoint already exposed via lib/api.ts.
 // Returns a string ref (id of the new entity) when available — used as a
 // breadcrumb in the localStorage record so a future "view created entity"
@@ -320,6 +466,7 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       return `${res.updated} updated`
     }
     case 'create_category': {
+      rejectNameCollision(data)
       const c = await categories.create({
         name: String(p.name),
         group_id: (p.group_id as string) || undefined,
@@ -335,6 +482,16 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         month: String(p.month),
       })
       return b.id
+    }
+    case 'create_manual_account': {
+      const account = await accounts.create({
+        name: String(p.name),
+        type: String(p.type),
+        currency: String(p.currency),
+        balance: Number(p.opening_balance),
+        balance_date: (p.opening_balance_date as string) || undefined,
+      })
+      return account.id
     }
     case 'create_payee_rule': {
       const r = await rules.create({
@@ -381,6 +538,7 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
             })),
           }
         : undefined
+      const linesPayload = categoryLinesPayload(p)
       const t = await transactions.create({
         description: String(p.description),
         amount: Number(p.amount),
@@ -391,6 +549,7 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         category_id: (p.category_id as string) || undefined,
         notes: (p.notes as string) || undefined,
         ...(splitsPayload ? { splits: splitsPayload } : {}),
+        ...(linesPayload ? { category_lines: linesPayload, category_id: undefined } : {}),
       } as Parameters<typeof transactions.create>[0])
       return t.id
     }
@@ -406,6 +565,8 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         end_date: (p.end_date as string) || undefined,
         account_id: (p.account_id as string) || undefined,
         category_id: (p.category_id as string) || undefined,
+        // Every occurrence of the bill starts with these parts.
+        ...(categoryLinesPayload(p) ? { category_lines: categoryLinesPayload(p), category_id: undefined } : {}),
       } as Parameters<typeof recurring.create>[0])
       return rt.id
     }
@@ -443,6 +604,52 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       const pairId = String(data.transfer_pair_id)
       await transactions.unlinkTransfer(pairId)
       return pairId
+    }
+    case 'update_goal': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await goals.update(id, (data.changes || {}) as Parameters<typeof goals.update>[1])
+      return id
+    }
+    case 'update_budget': {
+      // Only the amount goes out, the same edit the budgets page makes.
+      const id = String((data.target as Record<string, unknown>).id)
+      await budgets.update(id, { amount: Number((data.changes as Record<string, unknown>).amount) })
+      return id
+    }
+    case 'update_manual_account': {
+      const id = String((data.target as Record<string, unknown>).id)
+      const c = (data.changes || {}) as Record<string, unknown>
+      const payload: Record<string, unknown> = {}
+      if (c.opening_balance !== undefined) payload.balance = Number(c.opening_balance)
+      if (c.opening_balance_date !== undefined) payload.balance_date = c.opening_balance_date as string
+      if (typeof c.name === 'string') payload.name = c.name
+      if (typeof c.type === 'string') payload.type = c.type
+      await accounts.update(
+        id,
+        payload as Parameters<typeof accounts.update>[1],
+      )
+      return id
+    }
+    case 'delete_budget': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await budgets.delete(id)
+      return id
+    }
+    case 'update_transaction_notes': {
+      // Only `notes` goes out, so the edit cannot reach amount, date or account.
+      const id = String((data.target as Record<string, unknown>).id)
+      const notes = (data.changes as Record<string, unknown> | undefined)?.notes
+      await transactions.update(id, { notes: typeof notes === 'string' ? notes : null })
+      return id
+    }
+    case 'create_category_group': {
+      rejectNameCollision(data)
+      const g = await categoryGroups.create({
+        name: String(p.name),
+        icon: (p.icon as string) || undefined,
+        color: (p.color as string) || undefined,
+      })
+      return g.id
     }
   }
 }

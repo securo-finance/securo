@@ -6,9 +6,9 @@ fine. The sync must:
 - skip only the throttled account and keep what it imported for the others
   (no rollback of the whole run), reporting the run as "partial";
 - not advance last_sync_at while an account was skipped;
-- back off: the connection gets a cooldown (Retry-After when the provider
-  sends one, otherwise a default) and the scheduled sync leaves it alone
-  until the cooldown ends, instead of retrying every hour;
+- back off through the scheduler's one backoff (sync_backoff): a throttled
+  scheduled run, full or partial, counts as a rate-limited failure, and the
+  provider's Retry-After, when it sends one, is a floor on that wait;
 - count throttled runs apart from synced ones in the scheduled task.
 """
 
@@ -33,7 +33,11 @@ from app.providers.base import (
     TransactionData,
 )
 from app.providers.enable_banking import EnableBankingProvider, _parse_retry_after
-from app.services.connection_service import rate_limited_until, sync_connection
+from app.services.connection_service import (
+    RETRY_NOT_BEFORE_KEY,
+    SYNC_BACKOFF_KEY,
+    sync_connection,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -148,18 +152,33 @@ def _sync_patches(provider: AsyncMock):
 # ---------------------------------------------------------------------------
 
 
-def _cooldown_seconds(conn: BankConnection) -> float:
-    until = rate_limited_until(conn.settings)
-    assert until is not None, conn.settings
+def _backoff(conn: BankConnection) -> dict:
+    """The scheduler backoff state stored on the connection."""
+    state = (conn.settings or {}).get(SYNC_BACKOFF_KEY)
+    assert isinstance(state, dict), conn.settings
+    return state
+
+
+def _retry_floor_seconds(conn: BankConnection) -> float:
+    """Seconds until the Retry-After floor noted in the backoff state."""
+    until = datetime.fromisoformat(_backoff(conn)[RETRY_NOT_BEFORE_KEY])
     return (until - datetime.now(timezone.utc)).total_seconds()
 
 
 @pytest.mark.asyncio
-async def test_full_sync_advances_checkpoint_and_clears_cooldown(
+async def test_full_sync_advances_checkpoint_and_clears_backoff(
     session: AsyncSession, test_user, test_workspace
 ):
     conn = await _make_connection(session, test_user.id, test_workspace.id)
-    conn.settings = {"rate_limited_until": "2026-01-01T00:00:00+00:00", "payee_source": "auto"}
+    conn.settings = {
+        SYNC_BACKOFF_KEY: {
+            "failures": 2,
+            "last_attempt_at": "2026-01-01T00:00:00+00:00",
+            "rate_limited": True,
+            RETRY_NOT_BEFORE_KEY: "2026-01-01T06:00:00+00:00",
+        },
+        "payee_source": "auto",
+    }
     await session.commit()
     before = conn.last_sync_at
     provider = _mock_provider_two_accounts()
@@ -225,9 +244,11 @@ async def test_transactions_429_keeps_other_accounts_and_backs_off(
         )
     ).scalar_one()
     assert ledger == throttled.balance
-    # Checkpoint kept for the skipped account, default cooldown set.
+    # Checkpoint kept for the skipped account. Without a Retry-After nothing
+    # is written: a manual sync does not hold back the scheduler, which
+    # counts its own throttled runs (see the scheduled task tests below).
     assert result_conn.last_sync_at == before
-    assert 5.9 * 3600 < _cooldown_seconds(result_conn) <= 6 * 3600
+    assert SYNC_BACKOFF_KEY not in (result_conn.settings or {})
 
 
 @pytest.mark.asyncio
@@ -262,11 +283,35 @@ async def test_accounts_429_leaves_throttled_row_and_honors_retry_after(
     await session.refresh(stored)
     assert stored.balance == Decimal("77")
     assert result_conn.last_sync_at == before
-    assert 1700 < _cooldown_seconds(result_conn) <= 1800
+    assert 1700 < _retry_floor_seconds(result_conn) <= 1800
 
 
 @pytest.mark.asyncio
-async def test_session_429_sets_cooldown_from_retry_after(
+async def test_partial_sync_keeps_existing_backoff(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A throttled run is not a success: the scheduler's count stays."""
+    conn = await _make_connection(session, test_user.id, test_workspace.id)
+    backoff = {
+        "failures": 2,
+        "last_attempt_at": datetime.now(timezone.utc).isoformat(),
+        "rate_limited": True,
+    }
+    conn.settings = {SYNC_BACKOFF_KEY: backoff}
+    await session.commit()
+    provider = _mock_provider_two_accounts(rate_limit_transactions_for="rl-acc-a")
+
+    with _sync_patches(provider):
+        result_conn, _, outcome = await sync_connection(
+            session, conn.id, test_workspace.id, test_user.id
+        )
+
+    assert outcome == "partial"
+    assert _backoff(result_conn) == backoff
+
+
+@pytest.mark.asyncio
+async def test_session_429_notes_retry_after_floor(
     session: AsyncSession, test_user, test_workspace
 ):
     conn = await _make_connection(session, test_user.id, test_workspace.id)
@@ -283,7 +328,7 @@ async def test_session_429_sets_cooldown_from_retry_after(
 
     assert (outcome, merged, result_conn.status) == ("rate_limited", 0, "active")
     assert result_conn.last_sync_at == before
-    assert 500 < _cooldown_seconds(result_conn) <= 600
+    assert 500 < _retry_floor_seconds(result_conn) <= 600
 
 
 @pytest.mark.asyncio
@@ -301,7 +346,7 @@ async def test_retry_after_is_bounded(
             session, conn.id, test_workspace.id, test_user.id
         )
 
-    assert _cooldown_seconds(result_conn) <= 24 * 3600
+    assert _retry_floor_seconds(result_conn) <= 24 * 3600
 
 
 async def _two_same_day_pix(session, conn, user_id, workspace_id, external_id):
@@ -395,7 +440,7 @@ async def test_huge_retry_after_does_not_overflow(
         )
 
     assert outcome == "rate_limited"
-    assert 23.9 * 3600 < _cooldown_seconds(result_conn) <= 24 * 3600
+    assert 23.9 * 3600 < _retry_floor_seconds(result_conn) <= 24 * 3600
 
 
 @pytest.mark.asyncio
@@ -525,7 +570,7 @@ async def _run_sync_all(session: AsyncSession, provider: AsyncMock) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_sync_all_counts_throttled_runs_and_skips_them_until_cooldown_ends(
+async def test_sync_all_counts_throttled_runs_and_skips_them_until_backoff_ends(
     session: AsyncSession, test_user, test_workspace
 ):
     stale = datetime.now(timezone.utc) - timedelta(hours=5)
@@ -546,23 +591,111 @@ async def test_sync_all_counts_throttled_runs_and_skips_them_until_cooldown_ends
 
     first = await _run_sync_all(session, provider)
     assert (first["synced"], first["rate_limited"], first["backing_off"]) == (1, 1, 0)
+    await session.refresh(throttled)
+    state = _backoff(throttled)
+    assert (state["failures"], state["rate_limited"]) == (1, True)
 
-    # An hour later the throttled connection is still stale, but in cooldown:
+    # Right after, the throttled connection is still stale, but backing off:
     # the scheduler must not call the provider for it again.
     provider.get_accounts.reset_mock()
     second = await _run_sync_all(session, provider)
     assert (second["rate_limited"], second["backing_off"]) == (0, 1)
     assert provider.get_accounts.await_count == 0
 
-    # Once the cooldown is over it is synced again.
-    await session.refresh(throttled)
-    throttled.settings = {
-        **(throttled.settings or {}),
-        "rate_limited_until": (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(),
-    }
+    # Once the 6h wait after a 429 is over it is synced again, and the next
+    # wait grows.
+    _age_last_attempt(throttled, hours=7)
     await session.commit()
     third = await _run_sync_all(session, provider)
     assert (third["rate_limited"], third["backing_off"]) == (1, 0)
+    await session.refresh(throttled)
+    assert _backoff(throttled)["failures"] == 2
+
+
+def _age_last_attempt(conn: BankConnection, *, hours: float) -> None:
+    state = dict(_backoff(conn))
+    state["last_attempt_at"] = (
+        datetime.now(timezone.utc) - timedelta(hours=hours)
+    ).isoformat()
+    conn.settings = {**(conn.settings or {}), SYNC_BACKOFF_KEY: state}
+
+
+@pytest.mark.asyncio
+async def test_sync_all_counts_partial_run_as_rate_limited_failure(
+    session: AsyncSession, test_user, test_workspace
+):
+    stale = datetime.now(timezone.utc) - timedelta(hours=5)
+    conn = await _make_connection(
+        session, test_user.id, test_workspace.id, last_sync_at=stale
+    )
+    provider = _mock_provider_two_accounts(rate_limit_transactions_for="rl-acc-a")
+
+    result = await _run_sync_all(session, provider)
+
+    assert (result["synced"], result["rate_limited"]) == (0, 1)
+    await session.refresh(conn)
+    state = _backoff(conn)
+    assert (state["failures"], state["rate_limited"]) == (1, True)
+    # The accounts that came through were imported all the same.
+    imported = set(
+        (
+            await session.execute(
+                select(Transaction.external_id).where(
+                    Transaction.external_id.like("rl-tx-%")
+                )
+            )
+        ).scalars()
+    )
+    assert imported == {"rl-tx-rl-acc-b"}
+
+
+@pytest.mark.asyncio
+async def test_sync_all_waits_for_retry_after_longer_than_backoff(
+    session: AsyncSession, test_user, test_workspace
+):
+    stale = datetime.now(timezone.utc) - timedelta(hours=5)
+    conn = await _make_connection(
+        session, test_user.id, test_workspace.id, last_sync_at=stale
+    )
+    provider = _mock_provider_two_accounts()
+    provider.get_accounts = AsyncMock(
+        side_effect=ProviderRateLimited("429", retry_after=12 * 3600.0)
+    )
+
+    await _run_sync_all(session, provider)
+    await session.refresh(conn)
+    # Past the 6h backoff, but the bank asked for 12h: still waiting.
+    _age_last_attempt(conn, hours=7)
+    await session.commit()
+    provider.get_accounts.reset_mock()
+
+    result = await _run_sync_all(session, provider)
+
+    assert result["backing_off"] == 1
+    assert provider.get_accounts.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_manual_429_with_retry_after_does_not_hold_back_scheduler(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Only scheduled failures start the backoff; the floor alone is no lock."""
+    stale = datetime.now(timezone.utc) - timedelta(hours=5)
+    conn = await _make_connection(
+        session, test_user.id, test_workspace.id, last_sync_at=stale
+    )
+    provider = _mock_provider_two_accounts()
+    provider.get_accounts = AsyncMock(
+        side_effect=ProviderRateLimited("429", retry_after=12 * 3600.0)
+    )
+    with _sync_patches(provider):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+    provider.get_accounts.reset_mock()
+
+    result = await _run_sync_all(session, provider)
+
+    assert (result["backing_off"], result["rate_limited"]) == (0, 1)
+    assert provider.get_accounts.await_count == 1
 
 
 class _SessionMakerProxy:

@@ -1,11 +1,11 @@
 import logging
 import uuid
 from datetime import date, datetime, timezone, timedelta
-from decimal import Decimal
-from typing import Any, Optional, cast
+from decimal import ROUND_DOWN, Decimal
+from typing import Any, Optional, Sequence, cast
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, desc, update as sa_update
+from sqlalchemy import select, func, desc, or_, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,12 +23,13 @@ from app.providers.market_price import (
 )
 from app.schemas.asset import AssetCreate, AssetUpdate, AssetValueCreate, AssetRead, AssetValueRead
 from app.services.asset_group_service import ensure_group_in_workspace
-from app.services.fx_rate_service import convert, has_rate, stamp_primary_amount
+from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
 
 logger = logging.getLogger(__name__)
 
 ValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, amount, price_per_share)
 TxRecord = tuple[date, str, Decimal, Optional[Decimal]]  # (date, kind, quantity, price_per_share)
+SplitRecord = tuple[date, int, int]  # (date, old_units, new_units)
 
 
 def _next_due_date(last_date: date, frequency: str) -> date:
@@ -46,7 +47,8 @@ def _next_due_date(last_date: date, frequency: str) -> date:
         day = min(last_date.day, 28)
         return date(year, month, day)
     elif frequency == "yearly":
-        return date(last_date.year + 1, last_date.month, last_date.day)
+        day = min(last_date.day, 28) if last_date.month == 2 else last_date.day
+        return date(last_date.year + 1, last_date.month, day)
     return last_date + timedelta(days=1)
 
 
@@ -203,9 +205,23 @@ async def _get_value_as_of(
     return result.scalar_one_or_none()
 
 
+_UNIT_STEP = Decimal("0.000001")  # asset_transactions.quantity keeps six decimals
+
+
+def split_units(quantity: Decimal, old_units: int, new_units: int) -> Decimal:
+    """Units held after an `old_units` → `new_units` split of `quantity`.
+
+    Rounded down to the six decimals a ledger quantity can hold, so a sell
+    can always close the whole position after a split whose ratio doesn't
+    divide evenly (10 units through a 3 → 1 reverse split are 3.333333).
+    """
+    return (quantity * new_units / old_units).quantize(_UNIT_STEP, rounding=ROUND_DOWN)
+
+
 def build_market_value_series(
     value_rows: list[ValueRecord],
     txs: list[TxRecord],
+    splits: Sequence[SplitRecord] = (),
 ) -> list[tuple[date, float]]:
     """Rebuild a market-priced holding's value series from the ledger.
 
@@ -216,6 +232,12 @@ def build_market_value_series(
     trade's own price on dates that predate any recorded market price (backdated
     trades entered before price tracking began), and to the baked amount when
     neither a price nor a later market price exists.
+
+    Splits are replayed with the trades: each one scales the quantity on its
+    date, before that day's trades, and gets a point of its own. Stored prices
+    are never adjusted for a split (see `AssetValue.price`), so a price carried
+    forward from before one is converted to the units after it; otherwise the
+    old per-unit price would be multiplied by the new quantity.
 
     A point is emitted at every stored-value date *and* every trade date, so a
     quantity change shows up on the chart at the date it happened. Without the
@@ -241,6 +263,10 @@ def build_market_value_series(
         if p is not None:
             tx_price[d] = p
 
+    split_by_date: dict[date, list[tuple[int, int]]] = {}
+    for d, old_units, new_units in splits:
+        split_by_date.setdefault(d, []).append((old_units, new_units))
+
     # Stored value points by date (last write wins on duplicate dates).
     value_by_date: dict[date, tuple[Decimal, Optional[Decimal]]] = {
         d: (amount, price) for d, amount, price in value_rows
@@ -250,7 +276,13 @@ def build_market_value_series(
     qty = Decimal("0")
     last_price: Optional[Decimal] = None  # most recent known per-share price
     seen_market = False  # has a stored market price been reached yet?
-    for d in sorted(set(value_by_date) | set(tx_delta)):
+    for d in sorted(set(value_by_date) | set(tx_delta) | set(split_by_date)):
+        for old_units, new_units in split_by_date.get(d, ()):
+            # A split lands before that day's trades, as in the ledger replay.
+            qty = split_units(qty, old_units, new_units)
+            if last_price is not None:
+                # A price carried from before the split is per pre-split unit.
+                last_price = last_price * old_units / new_units
         qty += tx_delta.get(d, Decimal("0"))
         held = qty if qty > 0 else Decimal("0")
 
@@ -306,14 +338,21 @@ async def _load_asset_native_values(
     # Bulk-load the ledger for market-priced holdings (one query).
     market_ids = [a.id for a in assets if a.valuation_method == "market_price"]
     txs_by_aid: dict[str, list[TxRecord]] = {}
+    splits_by_aid: dict[str, list[SplitRecord]] = {}
     if market_ids:
         tq = select(
             AssetTransaction.asset_id, AssetTransaction.date,
             AssetTransaction.kind, AssetTransaction.quantity, AssetTransaction.price,
+            AssetTransaction.old_units, AssetTransaction.new_units,
         ).where(AssetTransaction.asset_id.in_(market_ids))
         if up_to_date is not None:
             tq = tq.where(AssetTransaction.date <= up_to_date)
-        for aid, d, kind, qty, price in (await session.execute(tq)).all():
+        for aid, d, kind, qty, price, old_units, new_units in (await session.execute(tq)).all():
+            if kind == "split":
+                # A split has no quantity or price of its own; replaying it as a
+                # "sell of 0" would leave the units unchanged.
+                splits_by_aid.setdefault(str(aid), []).append((d, old_units, new_units))
+                continue
             txs_by_aid.setdefault(str(aid), []).append(
                 (d, kind, Decimal(str(qty)), Decimal(str(price)) if price is not None else None)
             )
@@ -322,7 +361,9 @@ async def _load_asset_native_values(
     for asset in assets:
         aid = str(asset.id)
         if asset.valuation_method == "market_price":
-            values_map[aid] = build_market_value_series(raw[aid], txs_by_aid.get(aid, []))
+            values_map[aid] = build_market_value_series(
+                raw[aid], txs_by_aid.get(aid, []), splits_by_aid.get(aid, [])
+            )
         else:
             values_map[aid] = [(d, float(amt)) for d, amt, _ in raw[aid]]
 
@@ -397,6 +438,53 @@ async def get_assets(
         count = await _get_value_count(session, asset.id)
         reads.append(_asset_to_read(asset, latest, count, tx_counts.get(asset.id, 0)))
     return reads
+
+
+async def stamp_primary_values(
+    session: AsyncSession,
+    asset: AssetRead,
+    primary_currency: str,
+    rates: Optional[dict[str, Optional[Decimal]]] = None,
+) -> None:
+    """Fill ``current_value_primary`` and ``gain_loss_primary`` in place.
+
+    When no FX rate can be resolved both stay NULL instead of a fake 1:1
+    value, so primary-currency totals never silently sum raw foreign
+    amounts (issue #574). An asset already in ``primary_currency`` gets its
+    native amounts copied across; callers that reserve NULL for "same
+    currency" skip those assets before calling.
+
+    List callers pass one ``rates`` dict for the whole request. It keeps
+    the rate resolved for each currency, a missing one included, so a
+    currency with no rate today costs one on-demand provider fetch per
+    request instead of one per asset.
+    """
+    if asset.current_value is None:
+        return
+    if asset.currency == primary_currency:
+        asset.current_value_primary = asset.current_value
+        asset.gain_loss_primary = asset.gain_loss
+        return
+    if rates is not None and asset.currency in rates:
+        rate = rates[asset.currency]
+    else:
+        # Resolving the rate for one unit keeps it unrounded, so both
+        # amounts below round exactly as convert_or_none would.
+        _, rate = await convert_or_none(
+            session, Decimal("1"), asset.currency, primary_currency
+        )
+        if rates is not None:
+            rates[asset.currency] = rate
+    if rate is None:
+        return
+    quantum = Decimal(1).scaleb(-ASSET_PRICE_DECIMALS)
+    asset.current_value_primary = float(
+        (Decimal(str(asset.current_value)) * rate).quantize(quantum)
+    )
+    if asset.gain_loss is not None:
+        asset.gain_loss_primary = float(
+            (Decimal(str(asset.gain_loss)) * rate).quantize(quantum)
+        )
 
 
 async def get_asset(
@@ -655,6 +743,10 @@ async def update_asset(
         await ensure_group_in_workspace(session, update_data["group_id"], workspace_id)
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
+    # Stored uppercase, as on create, so the ledger's ticker filter (which
+    # compares against the uppercased input) keeps matching after an edit.
+    if update_data.get("ticker"):
+        update_data["ticker"] = update_data["ticker"].upper()
 
     tx_count = await session.scalar(
         select(func.count()).select_from(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
@@ -732,7 +824,7 @@ async def update_asset(
         and asset.units is not None
         and asset.units > 0
     ):
-        await _apply_price_to_asset(session, asset, Decimal(str(asset.last_price)))
+        await upsert_today_value(session, asset, Decimal(str(asset.last_price)))
 
     await session.commit()
     await session.refresh(asset)
@@ -847,13 +939,19 @@ async def get_asset_value_trend(
                 select(
                     AssetTransaction.date, AssetTransaction.kind,
                     AssetTransaction.quantity, AssetTransaction.price,
+                    AssetTransaction.old_units, AssetTransaction.new_units,
                 )
                 .where(AssetTransaction.asset_id == asset_id)
             )
         ).all()
         series = build_market_value_series(
             [(d, a, p) for d, a, p in rows],
-            [(d, k, Decimal(str(q)), Decimal(str(pr)) if pr is not None else None) for d, k, q, pr in txs],
+            [
+                (d, k, Decimal(str(q)), Decimal(str(pr)) if pr is not None else None)
+                for d, k, q, pr, _, _ in txs
+                if k != "split"
+            ],
+            [(d, old, new) for d, k, _, _, old, new in txs if k == "split"],
         )
         return [{"date": d.isoformat(), "amount": v} for d, v in series]
 
@@ -1005,6 +1103,19 @@ async def get_portfolio_trend(
     return {"assets": asset_meta, "trend": trend, "total": round(total, 2)}
 
 
+def held_on(as_of_date: Optional[date] = None):
+    """Filter for assets held on `as_of_date`.
+
+    With no date (the live view) only assets with no sell_date count, as
+    before. With a date, an asset sold after that date was still held on it,
+    so a past snapshot includes it. From the sale day on it is left out:
+    by then the proceeds are usually recorded in an account.
+    """
+    if as_of_date is None:
+        return Asset.sell_date.is_(None)
+    return or_(Asset.sell_date.is_(None), Asset.sell_date > as_of_date)
+
+
 async def get_asset_values_at(
     session: AsyncSession,
     scope_id: uuid.UUID,
@@ -1018,12 +1129,14 @@ async def get_asset_values_at(
 
     `scope_id` is a workspace_id when `by_workspace=True` (preferred for
     multi-tenant code paths), otherwise treated as a legacy user_id
-    filter. Both branches honor the `is_archived=False` + `sell_date is None`
-    filters.
+    filter. Both branches honor the `is_archived=False` filter.
 
-    - as_of_date=None: uses live prices (current view).
+    - as_of_date=None: uses live prices (current view); sold assets are
+      left out.
     - as_of_date set: uses the latest AssetValue on or before that date,
       falling back to purchase_price only if the asset existed by that date.
+      An asset sold after that date was still held on it and counts, the
+      same way the portfolio trend keeps its pre-sale history (#120).
     - primary_currency=None: primary_total is 0.0.
     """
     scope_filter = (
@@ -1036,7 +1149,7 @@ async def get_asset_values_at(
     stmt = select(Asset).where(
         scope_filter,
         Asset.is_archived == False,
-        Asset.sell_date.is_(None),
+        held_on(as_of_date),
     )
     if group_ids:
         stmt = stmt.where(Asset.group_id.in_(group_ids))
@@ -1088,12 +1201,22 @@ async def _apply_price_to_asset(
     """
     asset.last_price = new_price
     asset.last_price_at = datetime.now(timezone.utc)
+    await upsert_today_value(session, asset, new_price, value_date=value_date)
 
+
+async def upsert_today_value(
+    session: AsyncSession, asset: Asset, price: Decimal, *, value_date: date | None = None
+) -> None:
+    """Rewrite today's AssetValue as units × price.
+
+    Leaves `last_price` and `last_price_at` alone, so a change of quantity
+    doesn't pass for a new quote.
+    """
     if not asset.units or asset.units <= 0:
         return
 
     today = value_date or app_today()
-    new_amount = new_price * Decimal(str(asset.units))
+    new_amount = price * Decimal(str(asset.units))
     existing = await session.execute(
         select(AssetValue)
         .where(AssetValue.asset_id == asset.id, AssetValue.date == today)
@@ -1103,14 +1226,14 @@ async def _apply_price_to_asset(
     today_value = existing.scalar_one_or_none()
     if today_value is not None:
         today_value.amount = new_amount
-        today_value.price = new_price
+        today_value.price = price
         today_value.source = "sync"
     else:
         session.add(
             AssetValue(
                 asset_id=asset.id,
                 amount=new_amount,
-                price=new_price,
+                price=price,
                 date=today,
                 source="sync",
             )

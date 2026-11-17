@@ -25,6 +25,18 @@ interface Props {
   // the agent can reason about "this row" / "the filters above".
   // Re-read on each send so we always pick up the latest state.
   getPageContext?: () => Record<string, unknown> | null
+  // Called when conversationId no longer exists (deleted elsewhere, e.g.
+  // from the Agents page), so the parent can drop it instead of sending
+  // every new message into a 404.
+  onConversationMissing?: (id: string) => void
+  // A message to send as soon as the panel is ready (typed in a dashboard
+  // widget). Sent once; the parent clears it through `onInitialMessageSent`.
+  initialMessage?: string | null
+  onInitialMessageSent?: () => void
+}
+
+function isNotFound(err: unknown): boolean {
+  return (err as { response?: { status?: number } } | null)?.response?.status === 404
 }
 
 interface DraftMessage {
@@ -36,7 +48,7 @@ interface DraftMessage {
   pending?: boolean
 }
 
-export function ChatPanel({ agent, conversationId, onConversationCreated, focusSignal, getPageContext }: Props) {
+export function ChatPanel({ agent, conversationId, onConversationCreated, focusSignal, getPageContext, onConversationMissing, initialMessage, onInitialMessageSent }: Props) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [input, setInput] = useState('')
@@ -53,12 +65,18 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
   // streaming deltas no longer yank them back down.
   const isAtBottomRef = useRef(true)
 
-  const { data: history } = useQuery({
+  const { data: history, error: historyError } = useQuery({
     queryKey: ['agent-conv-messages', conversationId],
     queryFn: () => (conversationId ? agents.conversations.messages(conversationId) : Promise.resolve([])),
     enabled: !!conversationId,
     staleTime: 1000 * 5,
+    // A deleted conversation stays deleted; retrying only delays the reset.
+    retry: (count, err) => !isNotFound(err) && count < 1,
   })
+
+  useEffect(() => {
+    if (conversationId && isNotFound(historyError)) onConversationMissing?.(conversationId)
+  }, [conversationId, historyError, onConversationMissing])
 
   // Snap to bottom when the conversation switches (it should look fresh)
   // and move keyboard focus to the input — covers both "+" (null) and
@@ -113,10 +131,10 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
     isAtBottomRef.current = distance < 80
   }
 
-  const send = async () => {
-    const trimmed = input.trim()
+  const send = async (text?: string) => {
+    const trimmed = (text ?? input).trim()
     if (!trimmed || streaming) return
-    setInput('')
+    if (text === undefined) setInput('')
     setLastError(null)
     setStreaming(true)
     // User just took an action — they want to see the response.
@@ -198,6 +216,22 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
       }
     }
   }
+
+  // A message typed elsewhere (the assistant widget) goes out once the panel is up.
+  const initialSent = useRef(false)
+  useEffect(() => {
+    // The parent clears it once taken; the next one is a new message.
+    if (!initialMessage) {
+      initialSent.current = false
+      return
+    }
+    if (initialSent.current) return
+    initialSent.current = true
+    onInitialMessageSent?.()
+    void send(initialMessage)
+    // send closes over this render's state, which is what the first message needs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMessage])
 
   return (
     // min-h-0 is required so the inner flex-1 messages area can scroll
@@ -323,7 +357,7 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
             }
           }}
         />
-        <Button onClick={send} disabled={streaming || !input.trim()} className="shrink-0">
+        <Button onClick={() => void send()} disabled={streaming || !input.trim()} className="shrink-0">
           {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </div>

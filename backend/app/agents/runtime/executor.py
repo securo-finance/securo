@@ -210,6 +210,13 @@ _RUNTIME_GUARDRAIL = (
     "`description_contains` to `aggregate` rather than listing and "
     "summing. The only acceptable place to do arithmetic yourself is a "
     "single combine step on tool outputs (e.g. `1847 * 12` = 22164).\n"
+    "\n"
+    "8. A transaction can be split across several categories: "
+    "`category_lines` is set and `category_id` is null on purpose. It is "
+    "categorized, never call it 'uncategorized'; name its parts instead. "
+    "It cannot be re-categorized as a whole (`propose_categorize` skips it); "
+    "if the user asks to, say so and suggest changing its parts in the app. "
+    "Totals by category already count each part in its own category.\n"
 )
 
 
@@ -420,8 +427,18 @@ class AgentExecutor:
         except Exception:
             logger.exception("MCP discovery failed; running without tools")
             handles = []
-        allowed = await agent_service.allowed_tool_pairs(session, agent.id)
+        discovered = self.mcp.complete_pairs(handles)
+        if discovered is not None:
+            await agent_service.initialize_tools(session, agent, discovered)
+        if agent.tools_initialized:
+            allowed = await agent_service.allowed_tool_pairs(session, agent.id)
+        else:
+            # Agent from before explicit tool lists, and a server is down:
+            # run with what was found, as before, without recording a
+            # partial list as the agent's whole list.
+            allowed = {(h.server, h.name) for h in handles}
         tool_defs = self.mcp.to_provider_tools(handles, allowed=allowed)
+        callable_names = {t.name for t in tool_defs}
 
         # Resolve provider+model once per request. Monkey-patched in tests
         # via _provider_for; production prefers _provider_and_model_for.
@@ -555,7 +572,11 @@ class AgentExecutor:
                 yield ev
 
             results = await asyncio.gather(*[
-                _safe_call_tool(self.mcp, c, user_id=user_id, workspace_id=workspace_id, conversation_id=conversation_id, agent_id=agent.id)
+                _safe_call_tool(
+                    self.mcp, c, callable_names,
+                    user_id=user_id, workspace_id=workspace_id,
+                    conversation_id=conversation_id, agent_id=agent.id,
+                )
                 for c in assembled_calls
             ])
             for c, res in zip(assembled_calls, results):
@@ -622,9 +643,23 @@ async def _process_chunk(chunk: ChatChunk, text_buf: list[str], open_calls: dict
         open_calls[chunk.tool_call_id]["thought_signature"] = chunk.thought_signature
 
 
+def _resolve_callable(name: str, callable_names: set[str]) -> Optional[str]:
+    """Map the model's tool name to one of the tools announced this turn.
+
+    Models sometimes drop the `<server>__` prefix; a bare name resolves
+    only when exactly one announced tool has it. Anything else (a tool
+    the agent may not use, or one that was never announced) is None.
+    """
+    if name in callable_names:
+        return name
+    matches = [n for n in callable_names if n.split("__", 1)[-1] == name]
+    return matches[0] if len(matches) == 1 else None
+
+
 async def _safe_call_tool(
     mcp: MCPRegistry,
     call: ToolCall,
+    callable_names: set[str],
     *,
     user_id: uuid.UUID,
     workspace_id: Optional[uuid.UUID] = None,
@@ -632,9 +667,18 @@ async def _safe_call_tool(
     agent_id: Optional[uuid.UUID] = None,
 ) -> dict[str, Any]:
     started = time.time()
+    wire_name = _resolve_callable(call.name, callable_names)
+    if wire_name is None:
+        logger.warning("agent %s asked for tool %r, which it may not use", agent_id, call.name)
+        return {
+            "ok": False,
+            "data": None,
+            "text": f"Tool {call.name!r} is not available to this agent.",
+            "elapsed_ms": 0,
+        }
     try:
         return await mcp.call(
-            wire_name=call.name,
+            wire_name=wire_name,
             arguments=call.arguments,
             user_id=user_id,
             workspace_id=workspace_id,

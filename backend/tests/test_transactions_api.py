@@ -474,6 +474,61 @@ async def test_update_transaction(
 
 
 @pytest.mark.asyncio
+async def test_update_synced_transaction_rejects_amount_and_date_atomically(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_workspace,
+    test_user: User,
+    test_transactions: list[Transaction],
+):
+    synced = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_transactions[0].account_id,
+        description="Provider description",
+        amount=Decimal("123.45"),
+        currency="BRL",
+        date=date(2025, 1, 15),
+        effective_date=date(2025, 2, 20),
+        type="debit",
+        source="sync",
+        amount_primary=Decimal("678.90"),
+        fx_rate_used=Decimal("5.5"),
+    )
+    session.add(synced)
+    await session.commit()
+
+    response = await client.patch(
+        f"/api/transactions/{synced.id}",
+        headers=auth_headers,
+        json={
+            "amount": "999.99",
+            "date": "2025-03-10",
+            "description": "Must not land",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Cannot change amount or date on a synchronized transaction"
+    )
+
+    response = await client.get(
+        f"/api/transactions/{synced.id}", headers=auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(str(body["amount"])) == Decimal("123.45")
+    assert body["date"] == "2025-01-15"
+    assert body["description"] == "Provider description"
+    assert Decimal(str(body["amount_primary"])) == Decimal("678.9")
+    assert Decimal(str(body["fx_rate_used"])) == Decimal("5.5")
+    await session.refresh(synced)
+    assert synced.effective_date == date(2025, 2, 20)
+
+
+@pytest.mark.asyncio
 async def test_update_transaction_remove_category(
     client: AsyncClient, auth_headers, test_transactions: list[Transaction],
     test_categories: list[Category],

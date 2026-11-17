@@ -66,6 +66,7 @@ async def test_search_exposes_source_preserves_raw_fields_and_workspace_scope(
         assert hit["date"] == "2026-09-12"
         assert hit["meta"] == {
             "account_id": str(test_account.id), "category_id": None,
+            "has_category_lines": False,
             "tx_type": "credit", "source": tx.source,
         }
     session.expire_all()

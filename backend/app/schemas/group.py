@@ -85,3 +85,25 @@ class GroupBalances(BaseModel):
     self_member_id: Optional[uuid.UUID] = None
     default_currency: str
     lines: list[GroupBalanceLine] = []
+
+
+class GroupSummaryMonth(BaseModel):
+    # "YYYY-MM"; the client formats it for display.
+    month: str
+    total: Decimal
+
+
+class GroupSummaryCategory(BaseModel):
+    # Null for transactions with no category.
+    category_id: Optional[uuid.UUID] = None
+    name: Optional[str] = None
+    color: Optional[str] = None
+    total: Decimal
+
+
+class GroupSummary(BaseModel):
+    group_id: uuid.UUID
+    default_currency: str
+    total_moved: Decimal
+    months: list[GroupSummaryMonth] = []
+    categories: list[GroupSummaryCategory] = []

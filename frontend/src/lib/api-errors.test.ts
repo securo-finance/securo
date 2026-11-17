@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import i18n from 'i18next'
+import { beforeAll, describe, expect, it } from 'vitest'
+
+import en from '@/locales/en.json'
+import ptBR from '@/locales/pt-BR.json'
 
 import { extractApiError } from './api-errors'
 
@@ -47,5 +51,38 @@ describe('extractApiError', () => {
     expect(extractApiError(new Error('network failure'), 'Localized fallback')).toBe(
       'Localized fallback',
     )
+  })
+})
+
+describe('localized API errors', () => {
+  beforeAll(async () => {
+    await i18n.init({
+      lng: 'en',
+      fallbackLng: false,
+      resources: {
+        en: { translation: en },
+        'pt-BR': { translation: ptBR },
+      },
+    })
+  })
+
+  it.each([
+    ['en', 'The amount or date of a synchronized transaction cannot be changed'],
+    ['pt-BR', 'Não é possível alterar o valor ou a data de uma transação sincronizada'],
+  ])('shows the synchronized amount/date error in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+    const message = 'Cannot change amount or date on a synchronized transaction'
+
+    expect(extractApiError(apiError(message))).toBe(expected)
+    expect(extractApiError(apiError({ message }))).toBe(expected)
+  })
+
+  it.each([
+    ['en', 'Enter a valid http or https endpoint URL'],
+    ['pt-BR', 'Informe uma URL de endpoint http ou https válida'],
+  ])('shows the invalid connection base URL error in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError('Enter a valid http or https endpoint URL'))).toBe(expected)
   })
 })

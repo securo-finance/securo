@@ -23,8 +23,10 @@ from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate
+import app.services.account_service as account_service
 from app.services.account_service import (
-    _simplefin_to_internal_balance,
+    _account_balance_at,
+    _provider_to_internal_balance,
     create_account,
     close_account,
     delete_account,
@@ -32,11 +34,15 @@ from app.services.account_service import (
     get_account_balance_history,
     get_account_summary,
     get_accounts,
+    get_period_opening_balance,
     reopen_account,
     serialize_account,
     sync_opening_balance_for_connected_account,
     update_account,
 )
+
+
+FROZEN_TODAY = date(2026, 9, 20)
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +77,7 @@ async def _add_txn(
     amount: float, txn_type: str, txn_date: date,
     source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
     status: str = "posted", category_id: uuid.UUID | None = None,
+    currency: str = "BRL",
 ) -> Transaction:
     from datetime import datetime, timezone
     txn = Transaction(
@@ -83,7 +90,7 @@ async def _add_txn(
         type=txn_type,
         source=source,
         status=status,
-        currency="BRL",
+        currency=currency,
         transfer_pair_id=transfer_pair_id,
         category_id=category_id,
         created_at=datetime.now(timezone.utc),
@@ -995,6 +1002,35 @@ async def test_get_account_summary_bill_payment_of_prior_debt_leaves_cycle_total
 
 
 @pytest.mark.asyncio
+async def test_get_account_summary_bill_ignores_unconverted_foreign_prior_debt(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A foreign purchase before the window must not read 1:1 as older debt.
+
+    Left at face value it swallows the cycle's payments, so the bill total
+    stays inflated while the card balance already ignores the same purchase
+    (#1263)."""
+    account = await _make_account(
+        session, test_user.id, "CC Foreign Prior", acc_type="credit_card"
+    )
+    today = date.today()
+    last_month = today.replace(day=1) - timedelta(days=1)
+
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "debit", last_month,
+        currency="CLP",
+    )
+    await _add_txn(session, test_user.id, account.id, 1000, "debit", today)
+    await _add_txn(session, test_user.id, account.id, 400, "credit", today,
+                   transfer_pair_id=uuid.uuid4())
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    # No older debt survives conversion, so the whole 400 nets this cycle.
+    assert summary["monthly_expenses"] == pytest.approx(600.0)
+
+
+@pytest.mark.asyncio
 async def test_get_account_summary_bill_linked_pre_window_payment_is_not_prior_debt(
     session: AsyncSession, test_user, test_workspace
 ):
@@ -1098,7 +1134,7 @@ async def test_get_account_summary_bill_excludes_ignored_category_charge(
 
 @pytest.mark.asyncio
 async def test_get_account_summary_opening_balance_connected_excludes_period_pending(
-    session, test_user, test_workspace, test_connection
+    session, test_user, test_workspace, test_connection, monkeypatch
 ):
     """Connected non-CC opening balance backs out period pending so the
     frontend walk (opening + displayed period rows) does not double count them.
@@ -1111,7 +1147,8 @@ async def test_get_account_summary_opening_balance_connected_excludes_period_pen
         session, test_user.id, "Conn Opening", balance="780.00",
         connection_id=test_connection.id,
     )
-    today = date.today()
+    monkeypatch.setattr(account_service, "app_today", lambda: FROZEN_TODAY)
+    today = FROZEN_TODAY
     month_start = today.replace(day=1)
     prev_month = (month_start - timedelta(days=1)).replace(day=1)
     await _add_txn(session, test_user.id, account.id, 500, "credit", prev_month + timedelta(days=5))
@@ -1136,7 +1173,7 @@ async def test_get_account_summary_opening_balance_connected_excludes_period_pen
 
 @pytest.mark.asyncio
 async def test_get_account_summary_connected_keeps_recurring_pending_in_the_walk(
-    session, test_user, test_workspace, test_connection
+    session, test_user, test_workspace, test_connection, monkeypatch
 ):
     """A recurring placeholder still moves the projected balance on a
     connected account.
@@ -1150,7 +1187,8 @@ async def test_get_account_summary_connected_keeps_recurring_pending_in_the_walk
         session, test_user.id, "Conn Recurring", balance="780.00",
         connection_id=test_connection.id,
     )
-    today = date.today()
+    monkeypatch.setattr(account_service, "app_today", lambda: FROZEN_TODAY)
+    today = FROZEN_TODAY
     month_start = today.replace(day=1)
     prev_month = (month_start - timedelta(days=1)).replace(day=1)
     await _add_txn(session, test_user.id, account.id, 500, "credit", prev_month + timedelta(days=5))
@@ -1183,14 +1221,15 @@ async def test_get_account_summary_connected_keeps_recurring_pending_in_the_walk
 
 @pytest.mark.asyncio
 async def test_get_account_summary_connected_excludes_future_rows_from_opening_balance(
-    session, test_user, test_workspace, test_connection
+    session, test_user, test_workspace, test_connection, monkeypatch
 ):
     """Future-dated rows remain projections and do not shift today's opening."""
     account = await _make_account(
         session, test_user.id, "Conn Future Rows", balance="780.00",
         connection_id=test_connection.id,
     )
-    today = date.today()
+    monkeypatch.setattr(account_service, "app_today", lambda: FROZEN_TODAY)
+    today = FROZEN_TODAY
     month_start = today.replace(day=1)
     prev_month = (month_start - timedelta(days=1)).replace(day=1)
     await _add_txn(session, test_user.id, account.id, 500, "credit", prev_month + timedelta(days=5))
@@ -1247,6 +1286,123 @@ async def test_sync_opening_balance_ignores_future_and_ignored_rows(
 
     assert opening.type == "credit"
     assert opening.amount == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_sync_opening_balance_ignores_unconverted_foreign_rows(
+    session, test_user, test_workspace, test_connection
+):
+    """A foreign row with no amount_primary must not be counted 1:1."""
+    account = await _make_account(
+        session, test_user.id, "Wise BRL", balance="1.02",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=1))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today,
+        currency="CLP",
+    )
+
+    await sync_opening_balance_for_connected_account(session, account)
+    from sqlalchemy import select
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )
+    opening = result.scalar_one()
+
+    assert opening.type == "debit"
+    assert opening.amount == Decimal("98.98")
+
+
+@pytest.mark.asyncio
+async def test_account_balance_ignores_unconverted_foreign_rows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Net worth history must not read 700,000 CLP as 700,000 BRL."""
+    account = await _make_account(session, test_user.id, "Wise BRL History", currency="BRL")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=1))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today,
+        currency="CLP",
+    )
+
+    balance = await _account_balance_at(session, account.id, today, "BRL")
+    assert balance == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_balance_counts_a_same_currency_row_stored_with_other_case(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A code that differs only by case still names the account's currency.
+
+    The account schema stores the code as sent, while the transaction schema
+    upper-cases it, so a ``brl`` account meets a ``BRL`` row. Comparing the
+    codes literally would drop the row as an unconverted foreign one and
+    report zero instead of the amount (#1263)."""
+    account = await _make_account(
+        session, test_user.id, "Lowercase BRL", currency="brl"
+    )
+    today = date.today()
+    await _add_txn(
+        session, test_user.id, account.id, 100, "credit", today, currency="BRL"
+    )
+
+    accounts = await get_accounts(session, test_workspace.id)
+    listed = next(a for a in accounts if a["id"] == account.id)
+    assert listed["current_balance"] == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_manual_account_reports_the_balance_its_history_ends_on(
+    session: AsyncSession, test_user, test_workspace
+):
+    """An unconverted foreign row stays out of the balance and the history (#1263)."""
+    account = await _make_account(session, test_user.id, "Manual BRL", currency="BRL")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=2))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today - timedelta(days=1),
+        currency="CLP",
+    )
+
+    accounts = await get_accounts(session, test_workspace.id)
+    listed = next(a for a in accounts if a["id"] == account.id)
+    assert listed["current_balance"] == pytest.approx(100.0)
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    assert summary["current_balance"] == pytest.approx(100.0)
+
+    history = await get_account_balance_history(
+        session, account.id, test_workspace.id,
+        date_from=today - timedelta(days=3), date_to=today,
+    )
+    assert history is not None
+    assert history[-1]["balance"] == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_period_opening_balance_ignores_unconverted_foreign_rows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The running-balance seed must agree with the rows the walk applies (#1263)."""
+    account = await _make_account(session, test_user.id, "Manual BRL Opening", currency="BRL")
+    today = date.today()
+    before_window = today - timedelta(days=3)
+    await _add_txn(session, test_user.id, account.id, 50, "credit", before_window)
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", before_window,
+        currency="CLP",
+    )
+
+    opening = await get_period_opening_balance(session, account, today)
+    assert opening == pytest.approx(50.0)
 
 
 # ---------------------------------------------------------------------------
@@ -1339,26 +1495,26 @@ async def _make_provider_connection(
     return conn.id
 
 
-def test_simplefin_to_internal_balance_flips_card():
+def test_provider_to_internal_balance_flips_card():
     """SimpleFIN reports card debt as a negative number; normalize to positive."""
-    assert _simplefin_to_internal_balance(
+    assert _provider_to_internal_balance(
         "simplefin", "credit_card", Decimal("-500.00")
     ) == Decimal("500.00")
 
 
-def test_simplefin_to_internal_balance_checking_unchanged():
+def test_provider_to_internal_balance_checking_unchanged():
     """A SimpleFIN non-card balance is already in the right convention."""
-    assert _simplefin_to_internal_balance(
+    assert _provider_to_internal_balance(
         "simplefin", "checking", Decimal("1500.00")
     ) == Decimal("1500.00")
 
 
-def test_simplefin_to_internal_balance_other_provider_unchanged():
+def test_provider_to_internal_balance_other_provider_unchanged():
     """Pluggy/Enable already use positive-for-debt — never flip their cards."""
-    assert _simplefin_to_internal_balance(
+    assert _provider_to_internal_balance(
         "pluggy", "credit_card", Decimal("500.00")
     ) == Decimal("500.00")
-    assert _simplefin_to_internal_balance(
+    assert _provider_to_internal_balance(
         "enable_banking", "credit_card", Decimal("500.00")
     ) == Decimal("500.00")
 
@@ -1452,6 +1608,81 @@ async def test_update_simplefin_type_change_not_crossing_card_keeps_balance(
     assert updated is not None
     assert updated.type == "savings"
     assert updated.balance == Decimal("1500.00")
+
+
+def test_provider_to_internal_balance_flips_loan():
+    assert _provider_to_internal_balance(
+        "simplefin", "loan", Decimal("-250000.00")
+    ) == Decimal("250000.00")
+
+
+def test_provider_to_internal_balance_stores_any_loan_as_positive_debt():
+    for provider in ("enable_banking", "pluggy", "simplefin"):
+        assert _provider_to_internal_balance(
+            provider, "loan", Decimal("-250000.00")
+        ) == Decimal("250000.00")
+        assert _provider_to_internal_balance(
+            provider, "loan", Decimal("250000.00")
+        ) == Decimal("250000.00")
+
+
+def test_provider_to_internal_balance_keeps_checking_raw():
+    """A loan synced before loans existed is stored as checking; its balance
+    must keep the bank's sign so it still shows as debt, not flip to an asset."""
+    assert _provider_to_internal_balance(
+        "enable_banking", "checking", Decimal("-250000.00")
+    ) == Decimal("-250000.00")
+
+
+
+
+
+
+@pytest.mark.asyncio
+async def test_update_simplefin_loan_to_credit_card_keeps_liability_sign(
+    session: AsyncSession, test_user, test_workspace,
+):
+    conn_id = await _make_provider_connection(session, test_user.id, "simplefin")
+    account = await _make_account(
+        session,
+        test_user.id,
+        "SimpleFIN Mortgage",
+        acc_type="loan",
+        balance="250000.00",
+        connection_id=conn_id,
+        external_id="sf-loan-card-1",
+    )
+
+    updated = await update_account(
+        session, account.id, test_workspace.id, AccountUpdate(type="credit_card")
+    )
+
+    assert updated is not None
+    assert updated.balance == Decimal("250000.00")
+    assert serialize_account(updated, None, None)["current_balance"] == pytest.approx(-250000.0)
+
+
+@pytest.mark.asyncio
+async def test_update_simplefin_loan_to_checking_flips_balance_to_asset_sign(
+    session: AsyncSession, test_user, test_workspace,
+):
+    conn_id = await _make_provider_connection(session, test_user.id, "simplefin")
+    account = await _make_account(
+        session,
+        test_user.id,
+        "SimpleFIN Mortgage",
+        acc_type="loan",
+        balance="250000.00",
+        connection_id=conn_id,
+        external_id="sf-loan-checking-1",
+    )
+
+    updated = await update_account(
+        session, account.id, test_workspace.id, AccountUpdate(type="checking")
+    )
+
+    assert updated is not None
+    assert updated.balance == Decimal("-250000.00")
 
 
 # ----- per-account institution resolution (issue #345) ------------------------

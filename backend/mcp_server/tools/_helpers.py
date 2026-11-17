@@ -40,6 +40,11 @@ def parse_uuid_list(v: Any) -> Optional[list[uuid.UUID]]:
     ] or None
 
 
+def like_literal(value: str) -> str:
+    """Escape LIKE wildcards so `value` matches only itself; pair with escape="\\"."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def num(x: Any) -> Optional[float]:
     if x is None:
         return None

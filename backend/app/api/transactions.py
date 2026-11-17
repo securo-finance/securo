@@ -2,7 +2,7 @@ import csv
 import io
 import uuid
 from datetime import date
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -22,10 +22,25 @@ from app.models.transaction import Transaction
 from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
+from app.services.category_line_service import csv_export_parts
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
+from app.services._query_filters import reporting_date_value
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+
+# A spreadsheet evaluates any cell that starts with one of these as a formula,
+# so a description like "=HYPERLINK(...)" runs as live content when the export
+# is opened in Excel or Sheets (CSV injection, CWE-1236). Text columns go
+# through _csv_safe(); the amounts, dates and codes below are written by this
+# endpoint and cannot carry a payload.
+_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: object) -> str:
+    """`value` as text that a spreadsheet reads literally, never as a formula."""
+    text = "" if value is None else str(value)
+    return f"'{text}" if text[:1] in _FORMULA_LEADERS else text
 
 
 async def _attach_invoice_links(session, ctx, items: list) -> None:
@@ -168,8 +183,10 @@ async def list_transactions(
     bill_id: Optional[uuid.UUID] = Query(None, description="Filter by credit-card bill (issue #92); takes precedence over from/to"),
     group_id: Optional[uuid.UUID] = Query(None, description="Filter to transactions split through this group; widens visibility for linked members"),
     unbilled_only: bool = Query(False, description="Cycle-math fallback only: exclude txs already linked to any bill (used for in-progress CC cycles)"),
+    statement_view: bool = Query(False, description="Filter credit-card statement-cycle transactions by purchase date, independent of accounting mode"),
     q: Optional[str] = Query(None),
     uncategorized: bool = Query(False),
+    shared_as_uncategorized: bool = Query(False, description="With `uncategorized`, also list the viewer's shares of expenses from other workspaces, as the reports count them"),
     type: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="Filter by transaction status (posted|pending)"),
     page: int = Query(1, ge=1),
@@ -194,6 +211,7 @@ async def list_transactions(
         category_ids=_merge_id_filters(category_id, category_ids),
         payee_id=payee_id, from_date=from_date, to_date=to_date, page=page, limit=limit,
         include_opening_balance=include_opening_balance, search=q, uncategorized=uncategorized,
+        shared_as_uncategorized=shared_as_uncategorized,
         txn_type=type, exclude_transfers=exclude_transfers,
         user_pnl_only=user_pnl_only,
         exclude_ignored=exclude_ignored,
@@ -203,6 +221,7 @@ async def list_transactions(
         bill_id=bill_id,
         group_id=group_id,
         unbilled_only=unbilled_only,
+        statement_view=statement_view,
         sort_by=sort_by,
         sort_dir=sort_dir,
         min_amount=min_amount,
@@ -228,6 +247,7 @@ async def transaction_calendar(
     month: Optional[date] = Query(None),
     account_id: Optional[uuid.UUID] = Query(None),
     account_ids: Optional[List[uuid.UUID]] = Query(None),
+    date_basis: Literal["reporting", "bank"] = Query("reporting"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -237,6 +257,7 @@ async def transaction_calendar(
         ctx.user_id,
         month,
         account_ids=_merge_id_filters(account_id, account_ids),
+        date_basis=date_basis,
     )
 
 
@@ -295,24 +316,33 @@ async def export_transactions(
     output = io.StringIO()
     output.write("﻿")  # UTF-8 BOM for Excel
     writer = csv.writer(output)
-    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used"])
+    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used", "split_group", "split_index", "reporting_date", "reporting_date_override"])
     for tx in transactions:
-        writer.writerow([
-            tx.date.isoformat(),
-            tx.description,
-            str(tx.amount),
-            tx.type,
-            tx.currency,
-            tx.category.name if tx.category else "",
-            tx.account.name if tx.account else "",
-            tx.payee or "",
-            getattr(tx, "payee_name", "") or "",
-            tx.notes or "",
-            tx.status,
-            tx.source,
-            str(tx.amount_primary) if tx.amount_primary is not None else "",
-            str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
-        ])
+        # A transaction split across categories leaves one row per part, so
+        # a spreadsheet summing `amount` by `category` gets the same figures
+        # as the reports. `split_group` (the transaction id) and
+        # `split_index` let an import put the parts back together.
+        for amount, amount_primary, category, split_group, split_index in csv_export_parts(tx):
+            writer.writerow([
+                tx.date.isoformat(),
+                _csv_safe(tx.description),
+                str(amount),
+                tx.type,
+                tx.currency,
+                _csv_safe(category.name if category else ""),
+                _csv_safe(tx.account.name if tx.account else ""),
+                _csv_safe(tx.payee),
+                _csv_safe(getattr(tx, "payee_name", "")),
+                _csv_safe(tx.notes),
+                tx.status,
+                tx.source,
+                str(amount_primary) if amount_primary is not None else "",
+                str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
+                split_group,
+                split_index,
+                reporting_date_value(tx, accounting_mode).isoformat(),
+                tx.reporting_date_override.isoformat() if tx.reporting_date_override else "",
+            ])
 
     output.seek(0)
     today = app_today().isoformat()
@@ -329,13 +359,18 @@ async def bulk_categorize(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    # Counted before the update: split rows are left alone, and the client
+    # says how many, whatever page it is showing by the time this returns.
+    skipped_split = await transaction_service.count_split_rows(
+        session, ctx.workspace.id, data.transaction_ids
+    )
     try:
         count = await transaction_service.bulk_update_category(
             session, ctx.workspace.id, data.transaction_ids, data.category_id
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    return {"updated": count}
+    return {"updated": count, "skipped_split": skipped_split}
 
 
 @router.patch("/bulk-add-tags")
@@ -583,9 +618,12 @@ async def toggle_ignore_transaction(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    transaction = await transaction_service.toggle_ignore_transaction(
-        session, transaction_id, ctx.workspace.id
-    )
+    try:
+        transaction = await transaction_service.toggle_ignore_transaction(
+            session, transaction_id, ctx.workspace.id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
@@ -600,12 +638,16 @@ async def post_transaction_today(
 ):
     """One-click "it cleared today" for a pending transaction.
 
-    Marks the transaction as posted and stamps today's calendar date, resolved
-    in the workspace's timezone, the same as saving the edit dialog by hand.
+    Marks a manual transaction as posted and stamps today's calendar date,
+    resolved in the workspace's timezone. Synchronized rows reject the action
+    because their date remains provider-owned.
     """
-    transaction = await transaction_service.post_transaction_today(
-        session, transaction_id, ctx.workspace.id
-    )
+    try:
+        transaction = await transaction_service.post_transaction_today(
+            session, transaction_id, ctx.workspace.id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
@@ -637,9 +679,12 @@ async def delete_transaction(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    deleted = await transaction_service.delete_transaction(
-        session, transaction_id, ctx.workspace.id, apply_to
-    )
+    try:
+        deleted = await transaction_service.delete_transaction(
+            session, transaction_id, ctx.workspace.id, apply_to
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
 
@@ -650,7 +695,10 @@ async def bulk_delete_transactions(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    deleted_count = await transaction_service.bulk_delete_transactions(
-        session, ctx.workspace.id, data.transaction_ids
-    )
+    try:
+        deleted_count = await transaction_service.bulk_delete_transactions(
+            session, ctx.workspace.id, data.transaction_ids
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return {"deleted": deleted_count}

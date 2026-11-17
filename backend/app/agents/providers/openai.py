@@ -153,8 +153,16 @@ class OpenAIProvider(LLMProvider):
         }
         if tools:
             payload["tools"] = _serialize_tools(tools)
+        supports_tools_without_reasoning = (
+            urlparse(self.base_url).hostname == "api.openai.com"
+            and model in {"gpt-6-luna", "gpt-6-sol"}
+        )
+        if supports_tools_without_reasoning:
+            # Chat Completions supports function calls for these models only with reasoning disabled.
+            payload["reasoning_effort"] = "none"
         if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
+            limit_key = "max_completion_tokens" if supports_tools_without_reasoning else "max_tokens"
+            payload[limit_key] = max_tokens
 
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:

@@ -6,11 +6,36 @@ import { OAuthConnectDialog } from './oauth-connect-dialog'
 import { BankConnectDialog } from './bank-connect-dialog'
 
 const api = vi.hoisted(() => ({ getProviders: vi.fn(), listInstitutions: vi.fn(), getReconnectToken: vi.fn(), getConnectToken: vi.fn(), toastError: vi.fn() }))
+const authState = vi.hoisted(() => ({ isAdmin: true }))
 vi.mock('@/lib/api', () => ({ connections: api, auth: api }))
+vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { is_superuser: authState.isAdmin } }) }))
 vi.mock('sonner', () => ({ toast: { error: api.toastError } }))
 vi.mock('react-pluggy-connect', () => ({ PluggyConnect: ({ connectToken }: { connectToken: string }) => <div>{connectToken}</div> }))
 
-beforeEach(() => { vi.resetAllMocks() })
+beforeEach(() => { vi.resetAllMocks(); authState.isAdmin = true })
+
+it('links each unconfigured connector to admin setup without selecting it', async () => {
+  api.getProviders.mockResolvedValue([
+    { name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: false },
+    { name: 'simplefin', display_name: 'SimpleFIN', description: 'Bank connection', configured: false },
+  ])
+  const onSelect = vi.fn()
+  renderWithProviders(<ConnectorSelectDialog open onClose={vi.fn()} onSelect={onSelect} />)
+
+  const links = await screen.findAllByRole('link', { name: /set up (Pluggy|SimpleFIN)/i })
+  expect(links).toHaveLength(2)
+  for (const link of links) expect(link).toHaveAttribute('href', '/admin#provider-connections')
+  expect(onSelect).not.toHaveBeenCalled()
+})
+
+it('asks non-admin users to contact an administrator for unconfigured connectors', async () => {
+  authState.isAdmin = false
+  api.getProviders.mockResolvedValue([{ name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: false }])
+  renderWithProviders(<ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} />)
+
+  expect(await screen.findByText(/Ask an administrator to configure it/)).toBeVisible()
+  expect(screen.queryByRole('link', { name: /Set up Pluggy/ })).not.toBeInTheDocument()
+})
 
 it('ignores provider responses from a closed session when reopened', async () => {
   let finish!: (data: unknown) => void
@@ -77,3 +102,24 @@ it('ignores token failures after the bank dialog closes', async () => {
   expect(onClose).not.toHaveBeenCalled()
   expect(api.toastError).not.toHaveBeenCalled()
 })
+
+it('offers the installed plugins that sync as a bank, after the providers', async () => {
+  api.getProviders.mockResolvedValue([{ name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: true }])
+  const integration = {
+    key: 'keys', name: { en: 'Ledger (API key)' }, description: { en: 'Your payouts' }, auth: 'credentials' as const,
+    fields: [], sync_minutes: 60, provides: ['accounts' as const],
+  }
+  const plugin = {
+    plugin_id: 'acme/ledger', name: { en: 'Ledger' }, version: '1.0.0', commit: '1'.repeat(40),
+    installed_at: '2026-11-12T00:00:00Z', integrations: [integration], network: [], api_scopes: [], redirect_uri: null,
+  }
+  const onSelectPlugin = vi.fn()
+  const { user } = renderWithProviders(
+    <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin, integration }]} onSelectPlugin={onSelectPlugin} />,
+  )
+  await screen.findByText('Pluggy')
+  expect(screen.getByText('From your plugins')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: /Ledger \(API key\)/ }))
+  expect(onSelectPlugin).toHaveBeenCalledWith({ plugin, integration })
+})
+

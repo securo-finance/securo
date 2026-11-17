@@ -136,6 +136,8 @@ async def search_all(
                 meta={
                     "account_id": str(tx.account_id),
                     "category_id": str(tx.category_id) if tx.category_id else None,
+                    # Split across categories: no category of its own.
+                    "has_category_lines": bool(tx.has_category_lines),
                     "tx_type": tx.type,
                     "source": tx.source,
                 },

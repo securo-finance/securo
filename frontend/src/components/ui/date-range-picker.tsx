@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 import { localDateString } from '@/lib/date-utils'
 import { formatDateRange } from '@/lib/date-range-format'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
-import { useDisplayLocale } from '@/hooks/use-display-locale'
+import { useDateLocale } from '@/hooks/use-display-locale'
 
 export interface DateRangePickerProps {
   /** Inclusive start date as YYYY-MM-DD, or empty string when unset. */
@@ -87,7 +87,9 @@ export function DateRangePicker({
   maxRangeYears,
 }: DateRangePickerProps) {
   const { t, i18n } = useTranslation()
-  const dateLocale = useDisplayLocale()
+  // The trigger label has to read in the same language as the calendar below
+  // it, so both follow the app language rather than the currency locale.
+  const dateLocale = useDateLocale()
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const [open, setOpen] = useState(false)
   const [draftFrom, setDraftFrom] = useState(from)

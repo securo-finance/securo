@@ -1,7 +1,9 @@
 """Extended API tests covering missing lines in transactions, rules, assets,
 accounts, and import endpoints."""
+import csv
 import uuid
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
@@ -28,9 +30,12 @@ async def test_export_transactions_csv(
     lines = content.strip().split("\n")
     assert len(lines) > 1
     header = lines[0].replace("\ufeff", "")  # Remove BOM
-    assert "date" in header
-    assert "description" in header
-    assert "amount" in header
+    columns = next(csv.reader([header]))
+    assert "date" in columns
+    assert "description" in columns
+    assert "amount" in columns
+    assert "reporting_date" in columns
+    assert "reporting_date_override" in columns
 
 
 @pytest.mark.asyncio
@@ -87,6 +92,49 @@ async def test_export_uncategorized(
         headers=auth_headers,
     )
     assert response.status_code == 200
+
+
+def test_csv_safe_neutralises_formula_leaders():
+    """Free text keeps its own characters but never becomes a live formula."""
+    from app.api.transactions import _csv_safe
+
+    for payload in ("=1+1", "+SUM(A1)", "-2+3", "@SUM(A1)", "\tcmd", "\rcmd"):
+        assert _csv_safe(payload) == "'" + payload
+    assert _csv_safe("Coffee") == "Coffee"
+    assert _csv_safe("") == ""
+    assert _csv_safe(None) == ""
+
+
+@pytest.mark.asyncio
+async def test_export_neutralises_a_formula_description(
+    client: AsyncClient, auth_headers, test_account,
+):
+    """A description a spreadsheet would run is exported as inert text (#1448)."""
+    created = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "description": "=HYPERLINK(\"evil.example\",\"click\")",
+            "notes": "@SUM(A1:A9)",
+            "amount": "32.50",
+            "date": "2026-02-20",
+            "type": "debit",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    response = await client.get("/api/transactions/export", headers=auth_headers)
+    assert response.status_code == 200
+
+    rows = list(csv.DictReader(response.text.lstrip("﻿").splitlines()))
+    (row,) = [r for r in rows if "evil" in r["description"]]
+    # The characters are all still there; only the leading quote makes the cell
+    # text instead of a formula.
+    assert row["description"].startswith("'=HYPERLINK")
+    assert row["notes"] == "'@SUM(A1:A9)"
+    # The amount column stays a number a spreadsheet can add up.
+    assert Decimal(row["amount"]) == Decimal("32.50")
 
 
 @pytest.mark.asyncio
@@ -504,7 +552,7 @@ async def test_dashboard_projected_transactions(
 
 @pytest.mark.asyncio
 async def test_dashboard_balance_history(client: AsyncClient, auth_headers):
-    """GET /api/dashboard/balance-history returns current/previous month data."""
+    """GET /api/dashboard/balance-history returns current month and baseline data."""
     # Create an account first
     await client.post(
         "/api/accounts",
@@ -518,9 +566,52 @@ async def test_dashboard_balance_history(client: AsyncClient, auth_headers):
     assert response.status_code == 200
     data = response.json()
     assert "current" in data
-    assert "previous" in data
+    assert "opening_balance" in data
+    assert "baseline" in data
     assert isinstance(data["current"], list)
-    assert isinstance(data["previous"], list)
+    assert len(data["baseline"]) == len(data["current"])
+
+
+@pytest.mark.asyncio
+async def test_dashboard_balance_history_accepts_comparison_months(
+    client: AsyncClient, auth_headers
+):
+    response = await client.get(
+        "/api/dashboard/balance-history",
+        params=[
+            ("month", "2026-04-01"),
+            ("comparison_months", "2026-01-01"),
+            ("comparison_months", "2026-03-01"),
+        ],
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["comparison"] is None
+    assert len(data["baseline"]) == len(data["current"])
+
+    months_response = await client.get(
+        "/api/dashboard/balance-history/months", headers=auth_headers
+    )
+    assert months_response.status_code == 200
+    assert isinstance(months_response.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_dashboard_balance_history_rejects_non_prior_comparison_month(
+    client: AsyncClient, auth_headers
+):
+    response = await client.get(
+        "/api/dashboard/balance-history",
+        params=[
+            ("month", "2026-04-01"),
+            ("comparison_months", "2026-04-01"),
+        ],
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------

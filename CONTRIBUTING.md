@@ -31,6 +31,10 @@ Good ways to align first:
 
 Once there's a shared understanding, go ahead and build. Large PRs that arrive without any prior discussion are harder to review and sometimes don't align with where the project is heading, so a quick conversation up front is the best way to make your contribution count.
 
+## Architecture Decisions
+
+The rules the code keeps, and where each feature lives, are in [`AGENTS.md`](AGENTS.md). The reasons behind them are in [`docs/adr/`](docs/adr/README.md): short records of each decision, the code that carries it and the tests that keep it true. Read the ones that touch the area you are changing; if your change makes or changes an architecture decision, add an ADR in the same pull request.
+
 ## Using AI
 
 Use it. We do. Parts of this codebase were written with AI. This isn't a policy against the tools.
@@ -58,6 +62,17 @@ The same applies to issues. An issue produced by pointing a model at the reposit
 4. Run frontend checks: `cd frontend && npm run lint && npm test`
 5. Commit with a clear message (see below)
 6. Push your branch and open a Pull Request
+
+If you have [mise](https://mise.jdx.dev/) installed, it can set up and drive both sides for you:
+
+```bash
+mise //...:install    # installs the pinned Python (.python-version) plus all backend and frontend deps
+mise backend:install  # backend tools and deps only
+mise backend:test     # backend tests
+mise frontend:install # frontend deps
+mise frontend:lint    # frontend lint
+mise frontend:build   # frontend type check + build
+```
 
 Optional but recommended, so you catch lint and type errors before CI does:
 
@@ -155,6 +170,11 @@ If another migration lands on `main` while your PR is open, your number is
 taken and you have to renumber. CI catches this: the Migration Chain job runs
 against your branch merged with `main`, so a clash fails there rather than on
 someone's `alembic upgrade head` after both are merged.
+
+In the Docker stack, migrations run in the one-shot `migrate` service, and
+the backend, workers and MCP server refuse to start until the database is at
+head. Restarting the backend does not apply a new migration; run
+`docker compose run --rm migrate`.
 
 ## Pull Request Guidelines
 

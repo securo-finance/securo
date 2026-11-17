@@ -83,6 +83,24 @@ def _same_name_as(name: str):
     """
     return func.lower(func.trim(Payee.name)) == func.lower(func.trim(literal(name)))
 
+
+async def find_payee_by_name(
+    session: AsyncSession, workspace_id: uuid.UUID, name: str
+) -> Optional[Payee]:
+    """Find the payee that the workspace unique index would consider the same.
+
+    Read-only counterpart of the duplicate check `create_payee` performs, for
+    callers that need to report a collision before writing anything.
+    """
+    result = await session.execute(
+        select(Payee).where(
+            Payee.workspace_id == workspace_id,
+            _same_name_as(name),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_or_create_payee(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -294,6 +312,26 @@ async def _invoice_count(session: AsyncSession, payee_ids: list[uuid.UUID]) -> i
     return int(result.scalar_one())
 
 
+async def _live_schedule_count(session: AsyncSession, payee_ids: list[uuid.UUID]) -> int:
+    """How many live recurring invoice agreements name these counterparties.
+
+    Same reasoning as `_invoice_count`: read the model here instead of
+    depending on the invoicing service. A live agreement is about the
+    future, so a merge must not silently rewrite who the client is billed
+    by. An ended one is history, like the invoices it issued, and moves
+    with them.
+    """
+    from app.models.invoice_schedule import InvoiceSchedule
+
+    result = await session.execute(
+        select(func.count())
+        .select_from(InvoiceSchedule)
+        .where(InvoiceSchedule.payee_id.in_(payee_ids))
+        .where(InvoiceSchedule.status != "ended")
+    )
+    return int(result.scalar_one())
+
+
 async def delete_payee(session: AsyncSession, payee_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
     payee = await get_payee(session, payee_id, workspace_id)
     if not payee:
@@ -382,6 +420,16 @@ async def merge_payees(
         if not source:
             raise ValueError(f"Source payee {source_id} not found")
 
+    # A live schedule is the agreement to bill this client every period,
+    # not a record of what was already billed. Moving it would silently
+    # change who the client signed with, so refuse, and say why. An ended
+    # agreement is history: the invoices it issued already move, so the row
+    # follows them below.
+    merging_ids = [source_id for source_id in source_ids if source_id != target_id]
+    scheduled = await _live_schedule_count(session, merging_ids) if merging_ids else 0
+    if scheduled:
+        raise ValueError(f"payee_has_schedules:{scheduled}")
+
     # Reassign transactions
     result = await session.execute(
         update(Transaction)
@@ -406,6 +454,18 @@ async def merge_payees(
         .values(payee_id=target_id)
     )
 
+    # Ended schedules are the agreements those invoices were issued under,
+    # so they follow the same route. Nothing live is left here: it was
+    # refused above. Without the move the RESTRICT foreign key would fail
+    # the delete below with a 500.
+    from app.models.invoice_schedule import InvoiceSchedule
+
+    await session.execute(
+        update(InvoiceSchedule)
+        .where(InvoiceSchedule.payee_id.in_(source_ids))
+        .values(payee_id=target_id)
+    )
+
     # Update mappings: point source mappings to target
     for source_id in source_ids:
         if source_id == target_id:
@@ -416,12 +476,19 @@ async def merge_payees(
             .values(target_id=target_id)
         )
 
-    # Delete source payees
+    # Delete source payees. Their fiscal documents would cascade with them,
+    # so each one moves to the target first, unless the target already holds
+    # that kind: uq_payee_tax_id_kind allows one document per kind.
+    held_kinds = {document.kind for document in target.tax_ids}
     for source_id in source_ids:
         if source_id == target_id:
             continue
         source = await get_payee(session, source_id, workspace_id)
         if source:
+            for document in list(source.tax_ids):
+                if document.kind not in held_kinds:
+                    held_kinds.add(document.kind)
+                    target.tax_ids.append(document)
             await session.delete(source)
 
     await session.commit()

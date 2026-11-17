@@ -94,16 +94,22 @@ async def compute_balances(
     # Splits: each member's share of a transaction someone else paid is
     # what they owe the payer.
     splits_result = await session.execute(
-        select(TransactionSplit, Transaction.currency, Transaction.user_id)
+        select(TransactionSplit, Transaction.currency, Transaction.user_id, Transaction.type)
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .join(GroupMember, TransactionSplit.group_member_id == GroupMember.id)
         .where(GroupMember.group_id == group_id)
     )
-    for split, currency, recorder_id in splits_result.all():
-        payer = member_by_user.get(recorder_id, default_payer)
-        if split.group_member_id == payer:
+    for split, currency, recorder_id, tx_type in splits_result.all():
+        recorder = member_by_user.get(recorder_id, default_payer)
+        if split.group_member_id == recorder:
             continue
-        owed[(split.group_member_id, payer)][currency] += Decimal(str(split.share_amount))
+        share = Decimal(str(split.share_amount))
+        if tx_type == "credit":
+            # Income: the recorder received the money, so they owe each
+            # other member that member's share.
+            owed[(recorder, split.group_member_id)][currency] += share
+        else:
+            owed[(split.group_member_id, recorder)][currency] += share
 
     # Settlements: `from` paid `to`, which reduces what `from` owes `to`.
     settlements_result = await session.execute(

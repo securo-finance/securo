@@ -20,8 +20,15 @@ from mcp_server.tools.proposals import _APPLY_FIELD, _PROPOSAL_PREFACE, _can_app
 _RULE_CAPABILITIES = (
     " Conditions combine with AND/OR and filter description, payee, notes, "
     "amount, type, account_id, payee_id, date, or status (pending/posted). "
-    "Actions can set category, payee, or description, append notes, or ignore "
-    "the transaction."
+    "A condition is an object with field, op, and value. The accepted ops are "
+    "contains, not_contains, equals, not_equals, starts_with, ends_with, "
+    "regex, gt, gte, lt, lte, and status accepts only equals and not_equals. "
+    "Write numeric comparisons as {\"field\": \"amount\", \"op\": \"gt\", "
+    "\"value\": 0}; symbolic forms such as `amount > 0` are not accepted. "
+    "Amount is signed in comparisons: credits are positive, debits negative, "
+    "so op gt with value 0 selects income and op lt with value 0 selects "
+    "expenses. Actions can set category, payee, or description, append notes, "
+    "or ignore the transaction."
 )
 
 

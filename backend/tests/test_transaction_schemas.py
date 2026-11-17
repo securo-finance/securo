@@ -301,3 +301,37 @@ class TestInstallmentSeriesCreate:
                 "base": {**self.BASE, "amount": "-5.00"},
                 "installments": 2,
             })
+
+
+class TestCurrencyNormalization:
+    """A lower-case code is upper-cased on the way in.
+
+    Every account-currency aggregation compares the row's currency to the
+    account's, case-sensitively, so a `brl` row in a BRL account would land in
+    the unconverted-foreign branch and count zero (#1263).
+    """
+
+    BASE = {
+        "description": "Coffee",
+        "amount": "10.00",
+        "date": "2026-02-25",
+        "type": "debit",
+        "account_id": str(uuid.uuid4()),
+    }
+
+    def test_create_uppercases_currency(self):
+        data = TransactionCreate.model_validate({**self.BASE, "currency": "brl"})
+        assert data.currency == "BRL"
+
+    def test_create_keeps_an_upper_case_currency(self):
+        data = TransactionCreate.model_validate({**self.BASE, "currency": "CLP"})
+        assert data.currency == "CLP"
+
+    def test_update_uppercases_currency(self):
+        data = TransactionUpdate.model_validate({"currency": "clp"})
+        assert data.currency == "CLP"
+
+    def test_absent_currency_stays_none(self):
+        data = TransactionUpdate.model_validate({"description": "test"})
+        assert data.currency is None
+

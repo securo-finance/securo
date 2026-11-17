@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -53,6 +53,8 @@ import {
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
+import { ExchangeRateSetupAction, ExchangeRateSetupIcon } from '@/components/exchange-rate-setup-notice'
+import { needsConversion, useExchangeRatesNeedSetup } from '@/hooks/use-exchange-rates-need-setup'
 import { PropertyEquitySummary } from '@/components/property-equity-summary'
 import { LOAN_COLLATERAL_TYPES } from '@/lib/property-equity'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -62,6 +64,7 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
 import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } from '@/lib/asset-portfolio-share'
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
+import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
 import { formatCurrency } from '@/lib/format'
 
 // Renders a logo image when one is available, falling back to the asset's
@@ -188,6 +191,21 @@ function assetErrorMessage(e: unknown, fallback: string): string {
   return resp?.status ? `${fallback} (${resp.status})` : fallback
 }
 
+// Badge label and color per ledger kind. A split takes the indigo the value
+// chart already uses for its mixed markers.
+const TX_KIND_CONFIG: Record<AssetTransaction['kind'], { labelKey: string; tone: string }> = {
+  buy: { labelKey: 'assets.txBuy', tone: 'text-emerald-600 border-emerald-200' },
+  sell: { labelKey: 'assets.txSell', tone: 'text-rose-600 border-rose-200' },
+  split: { labelKey: 'assets.txSplit', tone: 'text-indigo-600 border-indigo-200 dark:text-indigo-400' },
+}
+
+// "1 → 100" for a split entry; the ledger stores both numbers on every split.
+// Unlike a trade's size, the ratio says nothing about the position, so the
+// lists show it without the privacy mask.
+function splitRatio(tx: AssetTransaction, locale: string): string {
+  return formatSplitRatio(tx.old_units ?? 0, tx.new_units ?? 0, locale)
+}
+
 export default function AssetsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -273,6 +291,8 @@ export default function AssetsPage() {
     return (rawAssetsList ?? []).filter((a) => a.group_id && allowed.has(a.group_id))
   }, [rawAssetsList, activeWalletIds])
 
+  const exchangeRatesNeedSetup = useExchangeRatesNeedSetup(assetsList, userCurrency)
+
   const { data: rawPortfolioData } = useQuery({
     queryKey: ['portfolio-trend'],
     queryFn: () => assets.portfolioTrend(),
@@ -344,6 +364,7 @@ export default function AssetsPage() {
   function refetchAssetViews() {
     queryClient.refetchQueries({ queryKey: ['assets'] })
     queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
+    queryClient.refetchQueries({ queryKey: ['asset-trend'] })
     queryClient.refetchQueries({ queryKey: ['dashboard'] })
   }
 
@@ -480,11 +501,14 @@ export default function AssetsPage() {
 
     let iterations = 0
     while (iterations < 10000) {
-      const next = new Date(d)
-      if (formGrowthFrequency === 'daily') next.setDate(next.getDate() + 1)
-      else if (formGrowthFrequency === 'weekly') next.setDate(next.getDate() + 7)
-      else if (formGrowthFrequency === 'monthly') next.setMonth(next.getMonth() + 1)
-      else if (formGrowthFrequency === 'yearly') next.setFullYear(next.getFullYear() + 1)
+      // Same steps as the backend's _next_due_date: monthly clamps the day to
+      // 28 and yearly clamps Feb 29 to Feb 28, so the preview matches what
+      // gets saved.
+      let next: Date
+      if (formGrowthFrequency === 'daily') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+      else if (formGrowthFrequency === 'weekly') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)
+      else if (formGrowthFrequency === 'monthly') next = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), 28))
+      else if (formGrowthFrequency === 'yearly') next = new Date(d.getFullYear() + 1, d.getMonth(), d.getMonth() === 1 ? Math.min(d.getDate(), 28) : d.getDate())
       else break
       if (next > today) break
       if (formGrowthType === 'percentage') {
@@ -768,6 +792,7 @@ export default function AssetsPage() {
       asset.current_value_primary == null
     const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
+    const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
 
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
@@ -852,7 +877,10 @@ export default function AssetsPage() {
           <div className="text-right tabular-nums">
             {asset.current_value != null ? (
               <>
-                <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
+                <span className="inline-flex items-center justify-end gap-1">
+                  <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
+                  {needsExchangeRate && <ExchangeRateSetupIcon from={asset.currency} to={userCurrency} isAdmin={Boolean(user?.is_superuser)} />}
+                </span>
                 {asset.current_value_primary != null && asset.currency !== userCurrency && (
                   <span className="block text-[10px] text-muted-foreground">{mask(formatCurrency(asset.current_value_primary, userCurrency, locale))}</span>
                 )}
@@ -1163,11 +1191,20 @@ export default function AssetsPage() {
       ) : (
       <>
       {/* Assets that have no resolvable FX rate are left out of the totals
-          below; explain that so the numbers do not look wrong (issue #574). */}
-      {unconvertedCurrencies.length > 0 && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-          <span>{t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })}</span>
+          below; explain that so the numbers do not look wrong (issue #574).
+          One warning only: when no rate provider is configured, the same
+          box says so and offers the way to set it up. */}
+      {(unconvertedCurrencies.length > 0 || exchangeRatesNeedSetup) && (
+        <div role="status" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+            <span>
+              {unconvertedCurrencies.length > 0
+                ? t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })
+                : t('assets.exchangeRateSetupWarning')}
+            </span>
+            {exchangeRatesNeedSetup && <ExchangeRateSetupAction isAdmin={Boolean(user?.is_superuser)} />}
+          </div>
         </div>
       )}
 
@@ -1792,7 +1829,8 @@ export default function AssetsPage() {
   )
 }
 
-const PORTFOLIO_COLORS = ['#6366F1', '#F43F5E', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16']
+// The theme's series colors, as every chart uses them.
+const PORTFOLIO_COLORS = Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`)
 
 function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: dateLoc, mask }: {
   data: { assets: { id: string; name: string; type: string; group_id: string | null }[]; trend: Record<string, unknown>[]; total: number }
@@ -2048,7 +2086,8 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
 }
 
 // Marker drawn on the value chart where a buy (green) or sell (red) happened.
-// Recharts calls this per data point; non-trade points render an empty group.
+// A day with both, or with only a split, gets the mixed indigo. Recharts calls
+// this per data point; non-trade points render an empty group.
 function renderAssetTradeDot(props: {
   cx?: number; cy?: number; index?: number; payload?: { trades?: AssetTransaction[] }
 }) {
@@ -2233,7 +2272,11 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                           {new Date(String(label) + 'T00:00:00').toLocaleDateString(dateLoc, { day: 'numeric', month: 'long', year: 'numeric' })}
                         </p>
                         <div style={{ fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(pt.amount ?? 0, currency, loc))}</div>
-                        {pt.trades?.map((tx) => (
+                        {pt.trades?.map((tx) => tx.kind === 'split' ? (
+                          <div key={tx.id} style={{ marginTop: 3, fontSize: 11, fontWeight: 500, color: '#6366F1' }}>
+                            {t('assets.txSplit')} {splitRatio(tx, loc)}
+                          </div>
+                        ) : (
                           <div key={tx.id} style={{ marginTop: 3, fontSize: 11, fontWeight: 500, color: tx.kind === 'buy' ? '#10B981' : '#F43F5E' }}>
                             {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')} {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, currency, loc))}
                           </div>
@@ -2395,13 +2438,15 @@ function AssetTransactionsTab({
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Form state
-  const [formKind, setFormKind] = useState<'buy' | 'sell'>('buy')
+  const [formKind, setFormKind] = useState<'buy' | 'sell' | 'split'>('buy')
   const [formHolding, setFormHolding] = useState<string>('__new__')
   const [formTicker, setFormTicker] = useState('')
   const [formGroupId, setFormGroupId] = useState<string>('')
   const [formQuantity, setFormQuantity] = useState('')
   const [formPrice, setFormPrice] = useState('')
   const [formFee, setFormFee] = useState('')
+  const [formOldUnits, setFormOldUnits] = useState('')
+  const [formNewUnits, setFormNewUnits] = useState('')
   const [formDate, setFormDate] = useState<string>(localDateString)
 
   function afterChange() {
@@ -2411,6 +2456,14 @@ function AssetTransactionsTab({
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (formKind === 'split') {
+        // The save button stays disabled until the ratio parses.
+        const ratio = parseSplitUnits(formOldUnits, formNewUnits)!
+        const split = { old_units: ratio.oldUnits, new_units: ratio.newUnits, date: formDate }
+        return editingTx
+          ? assets.updateTransaction(editingTx.id, split)
+          : assets.addTransaction(formHolding, { kind: 'split', ...split })
+      }
       const quantity = parseFloat(formQuantity)
       const price = parseFloat(formPrice)
       const fee = formFee ? parseFloat(formFee) : 0
@@ -2463,6 +2516,8 @@ function AssetTransactionsTab({
     setFormQuantity('')
     setFormPrice('')
     setFormFee('')
+    setFormOldUnits('')
+    setFormNewUnits('')
     setFormDate(localDateString())
     setDialogOpen(true)
   }
@@ -2474,6 +2529,8 @@ function AssetTransactionsTab({
     setFormQuantity(`${tx.quantity}`)
     setFormPrice(`${tx.price}`)
     setFormFee(tx.fee ? `${tx.fee}` : '')
+    setFormOldUnits(`${tx.old_units ?? ''}`)
+    setFormNewUnits(`${tx.new_units ?? ''}`)
     setFormDate(tx.date)
     setDialogOpen(true)
   }
@@ -2487,6 +2544,8 @@ function AssetTransactionsTab({
     setFormQuantity('')
     setFormPrice('')
     setFormFee('')
+    setFormOldUnits('')
+    setFormNewUnits('')
     setFormDate(localDateString())
     setDialogOpen(true)
   }
@@ -2494,16 +2553,22 @@ function AssetTransactionsTab({
   const isNewTicker = !editingTx && formHolding === '__new__'
   // Warn before a sell that exceeds the held quantity (no shorting). Only on a
   // fresh sell into an existing holding; edits are validated server-side.
-  const selectedHeldUnits = marketHoldings.find((h) => h.id === formHolding)?.units ?? 0
+  const selectedHolding = marketHoldings.find((h) => h.id === formHolding)
+  const selectedHeldUnits = selectedHolding?.units ?? 0
   const oversell =
     !editingTx && !isNewTicker && formKind === 'sell' && !!formQuantity && parseFloat(formQuantity) > selectedHeldUnits
+  // A split can only be added to a holding that can take one. Editing keeps the
+  // kind the entry was saved with.
+  const splitAllowed = !editingTx && !isNewTicker && !!selectedHolding && canRecordSplit(selectedHolding)
   const canSave =
-    !!formQuantity &&
-    parseFloat(formQuantity) > 0 &&
-    !!formPrice &&
-    (isNewTicker ? !!formTicker.trim() : true) &&
-    !oversell &&
-    !saveMutation.isPending
+    formKind === 'split'
+      ? parseSplitUnits(formOldUnits, formNewUnits) !== null && !saveMutation.isPending
+      : !!formQuantity &&
+        parseFloat(formQuantity) > 0 &&
+        !!formPrice &&
+        (isNewTicker ? !!formTicker.trim() : true) &&
+        !oversell &&
+        !saveMutation.isPending
 
   return (
     <div className="space-y-4">
@@ -2570,9 +2635,9 @@ function AssetTransactionsTab({
               <div key={tx.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
                 <Badge
                   variant="outline"
-                  className={`text-[10px] px-1.5 py-0 shrink-0 ${tx.kind === 'buy' ? 'text-emerald-600 border-emerald-200' : 'text-rose-600 border-rose-200'}`}
+                  className={`text-[10px] px-1.5 py-0 shrink-0 ${TX_KIND_CONFIG[tx.kind].tone}`}
                 >
-                  {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
+                  {t(TX_KIND_CONFIG[tx.kind].labelKey)}
                 </Badge>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">
@@ -2580,19 +2645,23 @@ function AssetTransactionsTab({
                   </p>
                   <p className="text-[11px] text-muted-foreground tabular-nums">
                     {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} ·{' '}
-                    {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, cur, locale))}
+                    {tx.kind === 'split'
+                      ? splitRatio(tx, locale)
+                      : <>{mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, cur, locale))}</>}
                   </p>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold tabular-nums text-foreground">
-                    {mask(formatCurrency(total, cur, locale))}
-                  </p>
-                  {tx.fee > 0 && (
-                    <p className="text-[10px] text-muted-foreground tabular-nums">
-                      {t('assets.txFee')} {mask(formatCurrency(tx.fee, cur, locale))}
+                {tx.kind !== 'split' && (
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold tabular-nums text-foreground">
+                      {mask(formatCurrency(total, cur, locale))}
                     </p>
-                  )}
-                </div>
+                    {tx.fee > 0 && (
+                      <p className="text-[10px] text-muted-foreground tabular-nums">
+                        {t('assets.txFee')} {mask(formatCurrency(tx.fee, cur, locale))}
+                      </p>
+                    )}
+                  </div>
+                )}
                 {canWrite && (
                   <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -2633,7 +2702,11 @@ function AssetTransactionsTab({
                   value={formHolding}
                   onChange={(e) => {
                     setFormHolding(e.target.value)
-                    if (e.target.value === '__new__') setFormKind('buy')
+                    // A split only fits a holding that can take one.
+                    const next = marketHoldings.find((h) => h.id === e.target.value)
+                    if (e.target.value === '__new__' || (formKind === 'split' && !(next && canRecordSplit(next)))) {
+                      setFormKind('buy')
+                    }
                   }}
                 >
                   <option value="__new__">{t('assets.newTicker')}</option>
@@ -2672,64 +2745,83 @@ function AssetTransactionsTab({
               </div>
             )}
 
-            {/* Buy/Sell toggle — only for existing holdings (can't sell a new ticker) */}
-            {!isNewTicker && (
+            {/* Buy/Sell toggle — only for existing holdings (can't sell a new ticker).
+                Split joins it when the holding can take one; an existing split
+                keeps its type, since it can't become a trade. */}
+            {!isNewTicker && editingTx?.kind !== 'split' && (
               <div className="space-y-2">
                 <Label>{t('assets.txType')}</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['buy', 'sell'] as const).map((k) => (
+                <div className={`grid gap-2 ${splitAllowed ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                  {(['buy', 'sell', 'split'] as const).filter((k) => k !== 'split' || splitAllowed).map((k) => (
                     <button
                       key={k}
                       type="button"
                       className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${formKind === k ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
                       onClick={() => setFormKind(k)}
                     >
-                      {k === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
+                      {t(TX_KIND_CONFIG[k].labelKey)}
                     </button>
                   ))}
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t('assets.quantity')}</Label>
-                <Input type="number" step="any" min="0" value={formQuantity} onChange={(e) => setFormQuantity(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>{t('assets.unitPrice')}</Label>
-                <Input type="number" step="any" min="0" value={formPrice} onChange={(e) => setFormPrice(e.target.value)} />
-              </div>
-            </div>
+            {formKind === 'split' ? (
+              <>
+                <SplitFields
+                  oldUnits={formOldUnits}
+                  newUnits={formNewUnits}
+                  onOldUnitsChange={setFormOldUnits}
+                  onNewUnitsChange={setFormNewUnits}
+                />
+                <div className="space-y-2">
+                  <Label>{t('assets.date')}</Label>
+                  <DatePickerInput value={formDate} onChange={setFormDate} />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>{t('assets.quantity')}</Label>
+                    <Input type="number" step="any" min="0" value={formQuantity} onChange={(e) => setFormQuantity(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('assets.unitPrice')}</Label>
+                    <Input type="number" step="any" min="0" value={formPrice} onChange={(e) => setFormPrice(e.target.value)} />
+                  </div>
+                </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t('assets.fee')}</Label>
-                <Input type="number" step="any" min="0" value={formFee} onChange={(e) => setFormFee(e.target.value)} placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <Label>{t('assets.date')}</Label>
-                <DatePickerInput value={formDate} onChange={setFormDate} />
-              </div>
-            </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>{t('assets.fee')}</Label>
+                    <Input type="number" step="any" min="0" value={formFee} onChange={(e) => setFormFee(e.target.value)} placeholder="0" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('assets.date')}</Label>
+                    <DatePickerInput value={formDate} onChange={setFormDate} />
+                  </div>
+                </div>
 
-            {oversell && (
-              <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-                <AlertTriangle size={13} className="shrink-0" />
-                {t('assets.oversellWarning', { available: selectedHeldUnits })}
-              </p>
-            )}
-            {formQuantity && formPrice && parseFloat(formQuantity) > 0 && (
-              <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-                <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
-                <span className="text-sm font-bold tabular-nums text-foreground">
-                  {formatTransactionTotal(
-                    parseFloat(formQuantity) * parseFloat(formPrice) + (formFee ? parseFloat(formFee) : 0) * (formKind === 'buy' ? 1 : -1),
-                    getTransactionTotalCurrency(holdings, formHolding, editingTx),
-                    locale,
-                  )}
-                </span>
-              </div>
+                {oversell && (
+                  <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                    <AlertTriangle size={13} className="shrink-0" />
+                    {t('assets.oversellWarning', { available: selectedHeldUnits })}
+                  </p>
+                )}
+                {formQuantity && formPrice && parseFloat(formQuantity) > 0 && (
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                    <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
+                    <span className="text-sm font-bold tabular-nums text-foreground">
+                      {formatTransactionTotal(
+                        parseFloat(formQuantity) * parseFloat(formPrice) + (formFee ? parseFloat(formFee) : 0) * (formKind === 'buy' ? 1 : -1),
+                        getTransactionTotalCurrency(holdings, formHolding, editingTx),
+                        locale,
+                      )}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
           <DialogFooter>
@@ -2761,7 +2853,7 @@ function AssetTransactionsTab({
 // Inline buy/sell ledger shown when a holding row is expanded (the
 // "Lançamentos" of the reference). Lists the holding's transactions and
 // offers a one-tap add — the consolidated row above is recomputed server-side.
-function HoldingLedger({
+export function HoldingLedger({
   asset,
   locale,
   dateLocale,
@@ -2819,17 +2911,21 @@ function HoldingLedger({
             <div key={tx.id} className="flex items-center gap-3 px-3 py-2">
               <Badge
                 variant="outline"
-                className={`text-[9px] px-1 py-0 shrink-0 ${tx.kind === 'buy' ? 'text-emerald-600 border-emerald-200' : 'text-rose-600 border-rose-200'}`}
+                className={`text-[9px] px-1 py-0 shrink-0 ${TX_KIND_CONFIG[tx.kind].tone}`}
               >
-                {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
+                {t(TX_KIND_CONFIG[tx.kind].labelKey)}
               </Badge>
               <span className="text-[11px] text-muted-foreground tabular-nums flex-1">
                 {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} ·{' '}
-                {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, asset.currency, locale))}
+                {tx.kind === 'split'
+                  ? splitRatio(tx, locale)
+                  : <>{mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, asset.currency, locale))}</>}
               </span>
-              <span className="text-xs font-semibold tabular-nums text-foreground">
-                {mask(formatCurrency(tx.quantity * tx.price, asset.currency, locale))}
-              </span>
+              {tx.kind !== 'split' && (
+                <span className="text-xs font-semibold tabular-nums text-foreground">
+                  {mask(formatCurrency(tx.quantity * tx.price, asset.currency, locale))}
+                </span>
+              )}
               {canWrite && (
                 <button
                   onClick={() => deleteMutation.mutate(tx.id)}
@@ -2848,9 +2944,69 @@ function HoldingLedger({
   )
 }
 
-// Lightweight dialog to add a buy/sell to an already-existing holding. Used by
-// the holdings table ("+ add buys") and the inline ledger.
-function AddHoldingTransactionDialog({
+// Units-before → units-after inputs for a split, shared by both transaction
+// dialogs.
+function SplitFields({
+  oldUnits,
+  newUnits,
+  onOldUnitsChange,
+  onNewUnitsChange,
+}: {
+  oldUnits: string
+  newUnits: string
+  onOldUnitsChange: (value: string) => void
+  onNewUnitsChange: (value: string) => void
+}) {
+  const { t } = useTranslation()
+  const id = useId()
+  const ratio = parseSplitUnits(oldUnits, newUnits)
+
+  return (
+    <>
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor={`${id}-old`}>{t('assets.splitOldUnits')}</Label>
+            <Input
+              id={`${id}-old`}
+              type="number"
+              inputMode="numeric"
+              step="1"
+              min="1"
+              max={MAX_SPLIT_UNITS}
+              value={oldUnits}
+              onChange={(e) => onOldUnitsChange(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${id}-new`}>{t('assets.splitNewUnits')}</Label>
+            <Input
+              id={`${id}-new`}
+              type="number"
+              inputMode="numeric"
+              step="1"
+              min="1"
+              max={MAX_SPLIT_UNITS}
+              value={newUnits}
+              onChange={(e) => onNewUnitsChange(e.target.value)}
+            />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">{t('assets.splitHint')}</p>
+      </div>
+      {oldUnits && newUnits && !ratio && (
+        <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+          <AlertTriangle size={13} className="shrink-0" />
+          {t('assets.splitInvalid')}
+        </p>
+      )}
+    </>
+  )
+}
+
+// Lightweight dialog to add a buy/sell/split to an already-existing holding.
+// Used by the holdings table ("+ add buys") and the inline ledger.
+export function AddHoldingTransactionDialog({
   assetId,
   holding,
   locale,
@@ -2865,10 +3021,12 @@ function AddHoldingTransactionDialog({
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [kind, setKind] = useState<'buy' | 'sell'>('buy')
+  const [kind, setKind] = useState<'buy' | 'sell' | 'split'>('buy')
   const [quantity, setQuantity] = useState('')
   const [price, setPrice] = useState('')
   const [fee, setFee] = useState('')
+  const [oldUnits, setOldUnits] = useState('')
+  const [newUnits, setNewUnits] = useState('')
   const [date, setDate] = useState(localDateString)
 
   const [formSource, setFormSource] = useState<{ assetId: typeof assetId } | null>(null)
@@ -2879,19 +3037,32 @@ function AddHoldingTransactionDialog({
       setQuantity('')
       setPrice('')
       setFee('')
+      setOldUnits('')
+      setNewUnits('')
       setDate(localDateString())
     }
   }
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      assets.addTransaction(assetId!, {
+    mutationFn: () => {
+      if (kind === 'split') {
+        // The save button stays disabled until the ratio parses.
+        const ratio = parseSplitUnits(oldUnits, newUnits)!
+        return assets.addTransaction(assetId!, {
+          kind: 'split',
+          old_units: ratio.oldUnits,
+          new_units: ratio.newUnits,
+          date,
+        })
+      }
+      return assets.addTransaction(assetId!, {
         kind,
         quantity: parseFloat(quantity),
         price: parseFloat(price),
         fee: fee ? parseFloat(fee) : 0,
         date,
-      }),
+      })
+    },
     onSuccess: () => {
       queryClient.refetchQueries({ queryKey: ['asset-transactions'] })
       if (assetId) queryClient.refetchQueries({ queryKey: ['asset-transactions', assetId] })
@@ -2905,7 +3076,11 @@ function AddHoldingTransactionDialog({
   const cur = holding?.currency ?? 'USD'
   const heldUnits = holding?.units ?? 0
   const oversell = kind === 'sell' && !!quantity && parseFloat(quantity) > heldUnits
-  const canSave = !!quantity && parseFloat(quantity) > 0 && !!price && !oversell && !saveMutation.isPending
+  const splitAllowed = !!holding && canRecordSplit(holding)
+  const canSave =
+    kind === 'split'
+      ? parseSplitUnits(oldUnits, newUnits) !== null && !saveMutation.isPending
+      : !!quantity && parseFloat(quantity) > 0 && !!price && !oversell && !saveMutation.isPending
 
   return (
     <Dialog open={!!assetId} onOpenChange={(o) => { if (!o) onClose() }}>
@@ -2918,52 +3093,69 @@ function AddHoldingTransactionDialog({
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>{t('assets.txType')}</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['buy', 'sell'] as const).map((k) => (
+            <div className={`grid gap-2 ${splitAllowed ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              {(['buy', 'sell', 'split'] as const).filter((k) => k !== 'split' || splitAllowed).map((k) => (
                 <button
                   key={k}
                   type="button"
                   className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${kind === k ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
                   onClick={() => setKind(k)}
                 >
-                  {k === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
+                  {t(TX_KIND_CONFIG[k].labelKey)}
                 </button>
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{t('assets.quantity')}</Label>
-              <Input type="number" step="any" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('assets.unitPrice')}</Label>
-              <Input type="number" step="any" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{t('assets.fee')}</Label>
-              <Input type="number" step="any" min="0" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0" />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('assets.date')}</Label>
-              <DatePickerInput value={date} onChange={setDate} />
-            </div>
-          </div>
-          {oversell && (
-            <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-              <AlertTriangle size={13} className="shrink-0" />
-              {t('assets.oversellWarning', { available: heldUnits })}
-            </p>
-          )}
-          {quantity && price && parseFloat(quantity) > 0 && (
-            <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-              <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
-              <span className="text-sm font-bold tabular-nums text-foreground">
-                {formatCurrency(parseFloat(quantity) * parseFloat(price) + (fee ? parseFloat(fee) : 0) * (kind === 'buy' ? 1 : -1), cur, locale)}
-              </span>
-            </div>
+          {kind === 'split' ? (
+            <>
+              <SplitFields
+                oldUnits={oldUnits}
+                newUnits={newUnits}
+                onOldUnitsChange={setOldUnits}
+                onNewUnitsChange={setNewUnits}
+              />
+              <div className="space-y-2">
+                <Label>{t('assets.date')}</Label>
+                <DatePickerInput value={date} onChange={setDate} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('assets.quantity')}</Label>
+                  <Input type="number" step="any" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('assets.unitPrice')}</Label>
+                  <Input type="number" step="any" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('assets.fee')}</Label>
+                  <Input type="number" step="any" min="0" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('assets.date')}</Label>
+                  <DatePickerInput value={date} onChange={setDate} />
+                </div>
+              </div>
+              {oversell && (
+                <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                  <AlertTriangle size={13} className="shrink-0" />
+                  {t('assets.oversellWarning', { available: heldUnits })}
+                </p>
+              )}
+              {quantity && price && parseFloat(quantity) > 0 && (
+                <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                  <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">
+                    {formatCurrency(parseFloat(quantity) * parseFloat(price) + (fee ? parseFloat(fee) : 0) * (kind === 'buy' ? 1 : -1), cur, locale)}
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
         <DialogFooter>

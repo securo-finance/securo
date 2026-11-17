@@ -13,8 +13,13 @@ global:
 
 # If existingSecret is NOT set, this secret will be created with the values below
 secret:
-  # MUST change in production
-  secretKey: "dev-secret-change-in-production"
+  # S3 credentials; omit both to use the SDK credential chain (e.g. IAM roles).
+  storageS3AccessKey: ""
+  storageS3SecretKey: ""
+  storageS3SessionToken: ""
+  # Optional. Left empty, Securo generates a unique key on first start and keeps
+  # it in the database. Set one (openssl rand -hex 32) to manage it yourself.
+  secretKey: ""
   # If postgresql.enabled is true, the internal database will be deployed.
   # If postgresql.enabled is false, you must provide your external database URL here or in existingSecret.
   databaseUrl: 'postgresql+asyncpg://postgres:postgres@{{ include "securo.fullname" . }}-postgresql:5432/securo'
@@ -34,8 +39,11 @@ secret:
   # OpenExchangeRates
   openexchangeratesAppId: ""
 
-  # Agents (LLM)
-  agentsMcpJwtSecret: "dev-mcp-secret-change-in-production"
+  # Agents (LLM). Signs the MCP server's JWTs. Empty derives it from secretKey,
+  # so the install needs no extra value. There is no default on purpose: a
+  # public one would let anyone mint a token for any user (#1174). A known
+  # public value is ignored and the derived key used instead.
+  agentsMcpJwtSecret: ""
   agentsOpenaiApiKey: ""
   agentsAnthropicApiKey: ""
   agentsOpenaiCompatApiKey: ""
@@ -68,6 +76,11 @@ config:
   fxSyncMode: "on_demand"
   tesouroDiretoEnabled: "true"
 
+  # Data plugins (categories and rules) from the plugin catalog. Opt-in; the
+  # catalog is fetched only when someone opens it.
+  pluginsEnabled: "false"
+  pluginsIndexUrl: "https://plugins.usesecuro.com/v1/index.json"
+
   # Redis configuration
   # If redis.enabled is true, the internal redis will be deployed.
   # If redis.enabled is false, you must provide your external Redis URL here.
@@ -75,13 +88,22 @@ config:
   celeryBrokerUrl: 'redis://{{ include "securo.fullname" . }}-redis-master:6379/0'
   celeryResultBackend: 'redis://{{ include "securo.fullname" . }}-redis-master:6379/0'
 
+  storageProvider: "local"
   storageLocalPath: "/app/data/attachments"
+  storageS3Bucket: ""
+  storageS3Region: ""
+  storageS3EndpointUrl: ""
+  storageS3AllowInsecureHttp: "false" # development only; required for http:// endpoints
+  storageS3AddressingStyle: "auto" # use path for Garage/MinIO
   agentsKnowledgeStoragePath: "/app/data/agent_knowledge"
 
   # Agents feature
   agentsEnabled: "false"
   agentsBuiltinMcpUrl: 'http://{{ include "securo.fullname" . }}-mcp-server:8765/mcp'
-  agentsExternalMcpUrl: '{{ include "securo.frontendUrl" . }}/mcp'
+  # Public URL external MCP clients use, shown in the app. Empty lets the UI
+  # derive it from the browser (host:8765). Set it when you publish /mcp with
+  # mcpServer.publicRoute and reach it on the same domain.
+  agentsExternalMcpUrl: ""
   agentsExtraMcpServers: ""
   agentsMcpExternalTtlDays: "90"
   agentsDefaultProvider: "ollama"
@@ -158,6 +180,12 @@ celeryBeat:
 # Built-in MCP Server configuration
 mcpServer:
   enabled: false
+  # Add /mcp to the Ingress (or HTTPRoute) so external MCP clients can reach
+  # it through the cluster's public entry point. Off by default: the server
+  # is only reachable inside the cluster, and publishing it is a deliberate
+  # choice that should sit behind your own gateway or network policy. When
+  # you turn it on, also set config.agentsExternalMcpUrl to the public URL.
+  publicRoute: false
   replicaCount: 1
   image:
     pullPolicy: IfNotPresent
@@ -179,6 +207,7 @@ mcpServer:
 # `ReadWriteOnce` will only work if you restrict all pods to a single node.
 persistence:
   attachments:
+    # Set false when using S3; migrate existing files before disabling this PVC.
     enabled: true
     size: 5Gi
     storageClass: ""
@@ -232,6 +261,12 @@ redis:
     repository: docker.io/library/redis
     tag: 8-alpine
     pullPolicy: IfNotPresent
+  # The official Redis image runs as uid 999 / gid 1000. Longhorn-provisioned
+  # volumes are initially owned by root, so fsGroup must be applied before the
+  # container starts or Redis cannot persist its RDB snapshots.
+  podSecurityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
   resources: {}
 
 serviceAccount:
