@@ -1,16 +1,15 @@
 """store the masked card number on credit-card transactions
 
-Revision ID: 103
-Revises: 102
+Revision ID: 114
+Revises: 113
 Create Date: 2026-08-30
 
 Only the provider-normalized final four characters are persisted. A card
 account can represent several physical or virtual cards, so Account's own
 masked number cannot answer which card made a transaction.
 
-Numbering note: renumbered to chain off `102`
-(`backfill_enable_banking_external_id`), which landed on `main` while this
-branch was open.
+Numbering note: renumbered to `114` to chain off `113_provider_settings`,
+which landed on `main` while this branch was open.
 """
 
 from typing import Sequence, Union

@@ -1,7 +1,7 @@
 """register physical and virtual cards under a credit-card account
 
-Revision ID: 104
-Revises: 103
+Revision ID: 115
+Revises: 114
 Create Date: 2026-08-30
 
 An account statement can aggregate several physical or virtual cards. The
@@ -60,7 +60,7 @@ def upgrade() -> None:
         ["workspace_id", "account_id"],
     )
 
-    # Seed only normalized final fours already persisted in 078. Labels stay
+    # Seed only normalized final fours already persisted in 114. Labels stay
     # null until the user chooses one; no raw card number enters the table.
     op.execute(
         """

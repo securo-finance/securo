@@ -9,8 +9,8 @@ Usage:
     uv run python scripts/backfill_transaction_card_numbers.py
     uv run python scripts/backfill_transaction_card_numbers.py --apply
 
-`--apply` is intentionally separate and only works after migrations 078 and
-079 have created the transaction field and linked-card table.
+`--apply` is intentionally separate and only works after migrations 114 and
+115 have created the transaction field and linked-card table.
 """
 
 import argparse
@@ -67,17 +67,19 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
     has_target_column = await _has_target_column()
     has_linked_cards_table = await _has_linked_cards_table()
     if apply and (not has_target_column or not has_linked_cards_table):
-        print("Refusing --apply: migrations 078 and 079 have not been applied.")
+        print("Refusing --apply: migrations 114 and 115 have not been applied.")
         return 2
 
     async with async_session_maker() as session:
-        account_query = select(Account.id, Account.name)
+        account_query = select(Account.id, Account.name, Account.type)
         if workspace_id:
             account_query = account_query.where(Account.workspace_id == workspace_id)
         account_rows = await session.execute(account_query)
-        account_names: dict[UUID, str] = {
-            account_id: account_name for account_id, account_name in account_rows.all()
-        }
+        account_names: dict[UUID, str] = {}
+        account_types: dict[UUID, str] = {}
+        for account_id, account_name, account_type in account_rows.all():
+            account_names[account_id] = account_name
+            account_types[account_id] = account_type
 
         columns = [
             Transaction.id,
@@ -104,8 +106,10 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
                 continue
             totals["with_card_number"] += 1
             # Older partial runs may have populated the transaction field
-            # without registering its linked card. Always repair both sides.
-            linked_cards.add((transaction_workspace_id, account_id, tail))
+            # without registering its linked card. Always repair both sides,
+            # but only for credit cards, matching the sync path and 115.
+            if account_types.get(account_id) == "credit_card":
+                linked_cards.add((transaction_workspace_id, account_id, tail))
 
             current_tail = existing_value[0] if existing_value else None
             if current_tail is not None:
@@ -124,7 +128,7 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
         if has_target_column:
             print(f"already backfilled: {totals['already_backfilled']}")
         else:
-            print("migration 078: not applied (preview is still read-only and valid)")
+            print("migration 114: not applied (preview is still read-only and valid)")
         print(f"would backfill: {totals['would_backfill']}")
 
         if candidates_by_account:
@@ -180,7 +184,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="write masked tails after migrations 078 and 079; omit for a read-only preview",
+        help="write masked tails after migrations 114 and 115; omit for a read-only preview",
     )
     parser.add_argument(
         "--workspace-id",
