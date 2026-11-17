@@ -1371,8 +1371,16 @@
     "connectionStatus": {
       "active": "Activa",
       "error": "Error",
-      "expired": "Caducada"
-    }
+      "expired": "Caducada",
+      "disconnected": "Desconectada"
+    },
+    "pluginConnectors": "De tus plugins",
+    "pluginUnavailable": "El plugin de esta conexión ya no está instalado o disponible.",
+    "confirmDisconnectKeepDesc": "{{institution}} dejará de sincronizarse. Sus cuentas y el historial de transacciones se quedan en la app, y puedes volver a conectarlo más tarde.",
+    "disconnectAlsoDelete": "Eliminar también cuentas y transacciones",
+    "disconnectedKept": "Banco desconectado. Se conservaron las cuentas y el historial.",
+    "removeConnection": "Eliminar conexión",
+    "connectionDisconnected": "Desconectada. Vuelve a conectar para sincronizar"
   },
   "loans": {
     "title": "Contrato del préstamo",
@@ -2051,6 +2059,7 @@
     "noTransactions": "Aún no hay transacciones",
     "txBuy": "Compra",
     "txSell": "Venta",
+    "txSplit": "Split",
     "txFee": "Comisión",
     "txSaved": "Transacción guardada",
     "txDeleted": "Transacción eliminada",
@@ -2061,6 +2070,10 @@
     "unitPrice": "Precio unitario",
     "fee": "Comisión",
     "txTotal": "Total",
+    "splitOldUnits": "Unidades antes",
+    "splitNewUnits": "Unidades después",
+    "splitHint": "Indica las unidades que tenías antes del split y en cuántas se convirtieron: un split de 100 por 1 es 1 → 100, un split inverso de 1 por 10 es 10 → 1. Pon como fecha el primer día en que el activo cotiza al nuevo precio.",
+    "splitInvalid": "Introduce dos números enteros distintos entre 1 y 1.000.000.",
     "confirmDeleteTxTitle": "¿Eliminar transacción?",
     "confirmDeleteTx": "Esto elimina el registro y recalcula el precio medio del activo.",
     "editAsset": "Editar activo",
@@ -2805,6 +2818,8 @@
       "saveFailed": "No se pudo guardar la selección de herramientas",
       "empty": "No se detectaron herramientas. ¿Está en ejecución el servidor MCP? Con Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "proponer",
+      "enabledCount": "{{enabled}} de {{total}} activadas",
+      "enableAll": "Activar todas",
       "loading": "Cargando herramientas…"
     },
     "chat": {
@@ -2856,7 +2871,13 @@
         "deleteBudget": "{{category}}: {{amount}} para {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} cada mes desde {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Sin cambios"
       }
     },
     "conversation": {
@@ -2882,6 +2903,7 @@
       "baseUrl": "URL del endpoint",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "La URL del endpoint es obligatoria para este proveedor",
+      "baseUrlInvalid": "Introduce una URL de endpoint http o https válida",
       "ollamaHint": "Si Ollama se ejecuta en tu máquina anfitriona, usa http://host.docker.internal:11434 (Mac/Windows) o la IP de tu host (Linux).",
       "openaiCompatHint": "Pega solo host:puerto (p. ej. http://192.168.1.142:1234). La ruta /v1 se añade automáticamente. Desde Docker en Mac/Windows, reemplaza localhost por host.docker.internal.",
       "apiKey": "Clave API / token",
@@ -3459,6 +3481,7 @@
       "write": "Leer y cambiar {{what}}",
       "ownerOnly": "Solo el propietario del espacio de trabajo puede añadir, actualizar o quitar un plugin que ejecuta código.",
       "removeConnections": "Se eliminan sus conexiones en este espacio de trabajo ({{count}}), junto con sus claves guardadas y sus accesos.",
+      "unlinks": "Sus conexiones bancarias ({{count}}) dejan de sincronizar. Sus cuentas y transacciones se quedan, como cuentas manuales.",
       "removeNothing": "El código del plugin se borra de tu servidor cuando ningún espacio de trabajo lo usa.",
       "auth": {
         "credentials": "Clave o contraseña",
@@ -3483,6 +3506,15 @@
         "install": "Este plugin no trae datos. Revisa lo que puede hacer su código:",
         "update": "Revisa lo que puede hacer la nueva versión:",
         "remove": "Su código deja de ejecutarse en este espacio de trabajo."
+      },
+      "provides": "Se sincroniza como un banco conectado",
+      "providesHint": "Securo añade estos registros a este espacio de trabajo y los mantiene al día, como con un banco conectado. Cada conexión aparece en Conexiones bancarias.",
+      "kinds": {
+        "accounts": "Cuentas",
+        "transactions": "transacciones",
+        "bills": "facturas de tarjeta",
+        "holdings": "inversiones",
+        "trades": "compras y ventas"
       }
     },
     "connections": {
@@ -3520,8 +3552,13 @@
       "added": "{{name}} conectada",
       "removeTitle": "¿Quitar {{name}}?",
       "removeHint": "Se borran sus claves guardadas y su acceso a este espacio de trabajo. Lo que ya trajo se queda.",
+      "removeBankHint": "Se sincroniza como un banco conectado: quitarla desconecta ese banco y elimina las cuentas que sincronizó, con sus transacciones.",
       "removed": "{{name}} quitada",
-      "copyFailed": "No se pudo copiar. Selecciona la dirección y cópiala a mano."
+      "copyFailed": "No se pudo copiar. Selecciona la dirección y cópiala a mano.",
+      "editTitle": "Reconectar {{name}}",
+      "editHint": "Actualiza lo que cambió, como una nueva contraseña o token. Después, la conexión se vuelve a sincronizar.",
+      "keepBlank": "Deja un campo en blanco para mantener su valor actual.",
+      "updated": "{{name}} actualizada"
     },
     "oauth": {
       "title": "Terminando el inicio de sesión",

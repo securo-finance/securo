@@ -149,6 +149,10 @@ export interface BankConnection {
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
   institutions: ConnectionInstitution[]
+  /** Set when a plugin syncs this connection: it is managed through that plugin connection. */
+  plugin_connection_id?: string | null
+  plugin_id?: string | null
+  integration?: string | null
 }
 
 export interface ConnectionSettings {
@@ -670,7 +674,11 @@ export interface PluginIntegration {
   fields: PluginField[]
   /** How often Securo asks the plugin to sync; null for never. */
   sync_minutes: number | null
+  /** Records it syncs as a connected bank; null for an integration that writes through the API. */
+  provides?: PluginProvidedKind[] | null
 }
+
+export type PluginProvidedKind = 'accounts' | 'transactions' | 'bills' | 'holdings' | 'trades'
 
 /** A host a plugin with code may reach, and why. */
 export interface PluginHost {
@@ -732,7 +740,12 @@ export interface PluginConnection {
 export interface PluginCodeConsent {
   network: PluginHost[]
   api_scopes: PluginScope[]
-  integrations: { key: string; name: LocalizedText; auth: PluginIntegration['auth'] }[]
+  integrations: {
+    key: string
+    name: LocalizedText
+    auth: PluginIntegration['auth']
+    provides?: PluginProvidedKind[] | null
+  }[]
   /** On an update: hosts and scopes the installed version didn't have. */
   new_hosts: string[]
   new_scopes: string[]
@@ -740,6 +753,8 @@ export interface PluginCodeConsent {
   connections: number
   /** An update to a version without code: its connections go, as on removal. */
   drops_code?: boolean
+  /** Bank connections the change ends: their accounts stay, as manual ones. */
+  unlinks?: number
 }
 
 export interface PluginCatalogEntry {
@@ -1254,13 +1269,17 @@ export interface AssetImportResult {
 export interface AssetTransaction {
   id: string
   asset_id: string
-  kind: 'buy' | 'sell'
+  kind: 'buy' | 'sell' | 'split'
   quantity: number
   price: number
   fee: number
   date: string
   source: string
   notes: string | null
+  // Split only: the units held before the split became `new_units` after it
+  // (a 100-for-1 split is 1 → 100). Null on buys and sells.
+  old_units: number | null
+  new_units: number | null
   asset_name: string | null
   ticker: string | null
   currency: string | null

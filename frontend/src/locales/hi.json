@@ -1367,8 +1367,16 @@
     "connectionStatus": {
       "active": "सक्रिय",
       "error": "त्रुटि",
-      "expired": "समाप्त"
-    }
+      "expired": "समाप्त",
+      "disconnected": "डिस्कनेक्ट"
+    },
+    "pluginConnectors": "आपके प्लगइन से",
+    "pluginUnavailable": "इस कनेक्शन का प्लगइन अब इंस्टॉल या उपलब्ध नहीं है।",
+    "confirmDisconnectKeepDesc": "{{institution}} का सिंक बंद हो जाएगा। इसके खाते और लेन-देन का इतिहास ऐप में बना रहेगा, और आप इसे बाद में फिर से जोड़ सकते हैं।",
+    "disconnectAlsoDelete": "खाते और लेन-देन भी हटाएँ",
+    "disconnectedKept": "बैंक डिस्कनेक्ट हो गया। खाते और इतिहास रखे गए।",
+    "removeConnection": "कनेक्शन हटाएँ",
+    "connectionDisconnected": "डिस्कनेक्ट है। फिर से सिंक करने के लिए दोबारा जोड़ें"
   },
   "loans": {
     "title": "ऋण अनुबंध",
@@ -2047,6 +2055,7 @@
     "noTransactions": "अभी कोई लेन-देन नहीं",
     "txBuy": "खरीद",
     "txSell": "बिक्री",
+    "txSplit": "स्प्लिट",
     "txFee": "शुल्क",
     "txSaved": "लेन-देन सहेजा गया",
     "txDeleted": "लेन-देन हटाया गया",
@@ -2057,6 +2066,10 @@
     "unitPrice": "इकाई मूल्य",
     "fee": "शुल्क",
     "txTotal": "कुल",
+    "splitOldUnits": "पहले की इकाइयाँ",
+    "splitNewUnits": "बाद की इकाइयाँ",
+    "splitHint": "स्प्लिट से पहले की इकाइयाँ और स्प्लिट के बाद उनकी संख्या दर्ज करें: 1 इकाई के 100 बनने पर 1 → 100, और रिवर्स स्प्लिट में 10 इकाइयों के 1 बनने पर 10 → 1। तिथि के रूप में वह पहला दिन रखें जब होल्डिंग नए मूल्य पर ट्रेड होती है।",
+    "splitInvalid": "1 से 10,00,000 तक के दो अलग-अलग पूर्णांक दर्ज करें।",
     "confirmDeleteTxTitle": "लेन-देन हटाएँ?",
     "confirmDeleteTx": "इससे प्रविष्टि हट जाती है और होल्डिंग का औसत मूल्य दोबारा गणना होता है।",
     "editAsset": "संपत्ति संपादित करें",
@@ -2817,6 +2830,8 @@
       "saveFailed": "टूल चयन सहेजने में विफल",
       "empty": "कोई टूल नहीं मिला। क्या MCP सर्वर चल रहा है? Docker के साथ: `docker compose --profile agents up -d`।",
       "proposeBadge": "प्रस्ताव",
+      "enabledCount": "{{total}} में से {{enabled}} चालू",
+      "enableAll": "सभी चालू करें",
       "loading": "टूल लोड हो रहे हैं…"
     },
     "chat": {
@@ -2868,7 +2883,13 @@
         "deleteBudget": "{{category}}: {{month}} के लिए {{amount}}",
         "deleteRecurringBudget": "{{category}}: {{month}} से हर महीने {{amount}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "कोई बदलाव नहीं"
       }
     },
     "conversation": {
@@ -2916,6 +2937,7 @@
       "baseUrl": "एंडपॉइंट URL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "इस प्रदाता के लिए एंडपॉइंट URL ज़रूरी है",
+      "baseUrlInvalid": "मान्य http या https एंडपॉइंट URL दर्ज करें",
       "ollamaHint": "अगर Ollama आपकी होस्ट मशीन पर चलता है, तो http://host.docker.internal:11434 (Mac/Windows) या अपना होस्ट IP (Linux) उपयोग करें।",
       "openaiCompatHint": "बस host:port पेस्ट करें (जैसे http://192.168.1.142:1234)। /v1 पथ अपने आप जुड़ जाता है। Mac/Windows पर Docker के अंदर से, localhost को host.docker.internal से बदलें।",
       "apiKey": "API कुंजी / टोकन",
@@ -3455,6 +3477,7 @@
       "write": "{{what}} पढ़ना और बदलना",
       "ownerOnly": "कोड चलाने वाला प्लगइन केवल वर्कस्पेस का मालिक जोड़, अपडेट या हटा सकता है।",
       "removeConnections": "इस वर्कस्पेस में इसके कनेक्शन ({{count}}) सहेजी गई कुंजियों और एक्सेस के साथ हटा दिए जाते हैं।",
+      "unlinks": "इसके बैंक कनेक्शन ({{count}}) सिंक होना बंद कर देंगे। उनके खाते और लेन-देन मैनुअल खातों के रूप में बने रहेंगे।",
       "removeNothing": "जब कोई वर्कस्पेस इसका उपयोग नहीं करता, तो प्लगइन का कोड आपके सर्वर से हटा दिया जाता है।",
       "auth": {
         "credentials": "कुंजी या पासवर्ड",
@@ -3479,6 +3502,15 @@
         "install": "यह प्लगइन कोई डेटा नहीं लाता। देखें कि इसका कोड क्या कर सकता है:",
         "update": "देखें कि नया संस्करण क्या कर सकता है:",
         "remove": "इस वर्कस्पेस में इसका कोड चलना बंद हो जाता है।"
+      },
+      "provides": "जुड़े हुए बैंक की तरह सिंक होता है",
+      "providesHint": "Securo इन रिकॉर्ड को इस वर्कस्पेस में जोड़ता है और जुड़े हुए बैंक की तरह इन्हें अपडेट रखता है। हर कनेक्शन बैंक कनेक्शन में दिखता है।",
+      "kinds": {
+        "accounts": "खाते",
+        "transactions": "लेन-देन",
+        "bills": "कार्ड बिल",
+        "holdings": "निवेश",
+        "trades": "खरीद और बिक्री"
       }
     },
     "connections": {
@@ -3516,8 +3548,13 @@
       "added": "{{name}} जुड़ गया",
       "removeTitle": "{{name}} हटाएँ?",
       "removeHint": "सहेजी गई कुंजियाँ और इस वर्कस्पेस का एक्सेस मिटा दिया जाता है। जो पहले से आ चुका है, वह बना रहता है।",
+      "removeBankHint": "यह एक जुड़े हुए बैंक की तरह सिंक होता है: इसे हटाने से वह बैंक डिस्कनेक्ट हो जाता है और सिंक किए गए खाते उनके लेन-देन सहित हट जाते हैं।",
       "removed": "{{name}} हटाया गया",
-      "copyFailed": "कॉपी नहीं हो सका। पता चुनें और खुद कॉपी करें।"
+      "copyFailed": "कॉपी नहीं हो सका। पता चुनें और खुद कॉपी करें।",
+      "editTitle": "{{name}} फिर से कनेक्ट करें",
+      "editHint": "जो बदला है उसे अपडेट करें, जैसे नया पासवर्ड या टोकन। इसके बाद कनेक्शन फिर से सिंक होगा।",
+      "keepBlank": "मौजूदा मान रखने के लिए फ़ील्ड खाली छोड़ें।",
+      "updated": "{{name}} अपडेट हुआ"
     },
     "oauth": {
       "title": "साइन इन पूरा हो रहा है",

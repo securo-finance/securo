@@ -1371,8 +1371,16 @@
     "connectionStatus": {
       "active": "Ativa",
       "error": "Erro",
-      "expired": "Expirada"
-    }
+      "expired": "Expirada",
+      "disconnected": "Desligada"
+    },
+    "pluginConnectors": "Dos seus plugins",
+    "pluginUnavailable": "O plugin desta ligação já não está instalado ou disponível.",
+    "confirmDisconnectKeepDesc": "{{institution}} vai deixar de sincronizar. As contas e o histórico de transações continuam na app, e pode voltar a ligá-lo mais tarde.",
+    "disconnectAlsoDelete": "Apagar também as contas e transações",
+    "disconnectedKept": "Banco desligado. As contas e o histórico foram mantidos.",
+    "removeConnection": "Remover ligação",
+    "connectionDisconnected": "Desligada. Volte a ligar para sincronizar"
   },
   "loans": {
     "title": "Contrato do empréstimo",
@@ -2051,6 +2059,7 @@
     "noTransactions": "Nenhuma transação ainda",
     "txBuy": "Compra",
     "txSell": "Venda",
+    "txSplit": "Desdobramento",
     "txFee": "Taxa",
     "txSaved": "Transação guardada",
     "txDeleted": "Transação eliminada",
@@ -2061,6 +2070,10 @@
     "unitPrice": "Preço unitário",
     "fee": "Taxa",
     "txTotal": "Total",
+    "splitOldUnits": "Unidades antes",
+    "splitNewUnits": "Unidades depois",
+    "splitHint": "Indica as unidades que tinhas antes do desdobramento e em quantas se transformaram: um desdobramento de 1 para 100 é 1 → 100, um agrupamento (reverse split) de 10 para 1 é 10 → 1. Usa como data o primeiro dia em que o ativo é cotado ao novo preço.",
+    "splitInvalid": "Introduz dois números inteiros diferentes, de 1 a 1.000.000.",
     "confirmDeleteTxTitle": "Eliminar transação?",
     "confirmDeleteTx": "Isso remove o lançamento e recalcula o preço médio do ativo.",
     "editAsset": "Editar Ativo",
@@ -2805,6 +2818,8 @@
       "saveFailed": "Falha ao guardar a seleção de ferramentas",
       "empty": "Nenhuma ferramenta descoberta. O servidor MCP está a correr? Com Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "proposta",
+      "enabledCount": "{{enabled}} de {{total}} ativadas",
+      "enableAll": "Ativar todas",
       "loading": "A carregar ferramentas…"
     },
     "chat": {
@@ -2856,7 +2871,13 @@
         "deleteBudget": "{{category}}: {{amount}} para {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} todos os meses a partir de {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Nenhuma alteração"
       }
     },
     "conversation": {
@@ -2882,6 +2903,7 @@
       "baseUrl": "URL do endpoint",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "A URL do endpoint é obrigatória para este fornecedor",
+      "baseUrlInvalid": "Introduz uma URL de endpoint http ou https válida",
       "ollamaHint": "Se o Ollama estiver a correr na tua máquina, usa http://host.docker.internal:11434 (Mac/Windows) ou o IP do teu host (Linux).",
       "openaiCompatHint": "Cola apenas host:porta (ex.: http://192.168.1.142:1234). O caminho /v1 é adicionado automaticamente. De dentro do Docker no Mac/Windows, troque localhost por host.docker.internal.",
       "apiKey": "Chave de API / token",
@@ -3459,6 +3481,7 @@
       "write": "Ler e alterar {{what}}",
       "ownerOnly": "Só o proprietário do espaço de trabalho pode adicionar, atualizar ou remover um plugin que executa código.",
       "removeConnections": "As ligações dele neste espaço de trabalho ({{count}}) são removidas, juntamente com as chaves guardadas e os acessos.",
+      "unlinks": "As ligações bancárias dele ({{count}}) deixam de sincronizar. As contas e transações ficam, como contas manuais.",
       "removeNothing": "O código do plugin sai do seu servidor quando nenhum espaço de trabalho o usar.",
       "auth": {
         "credentials": "Chave ou palavra-passe",
@@ -3483,6 +3506,15 @@
         "install": "Este plugin não traz dados. Veja o que o código dele pode fazer:",
         "update": "Veja o que a nova versão pode fazer:",
         "remove": "O código dele deixa de ser executado neste espaço de trabalho."
+      },
+      "provides": "Sincroniza como um banco ligado",
+      "providesHint": "O Securo adiciona estes registos a este workspace e mantém-nos atualizados, como num banco ligado. Cada ligação aparece em Ligações Bancárias.",
+      "kinds": {
+        "accounts": "Contas",
+        "transactions": "transações",
+        "bills": "faturas de cartão",
+        "holdings": "investimentos",
+        "trades": "compras e vendas"
       }
     },
     "connections": {
@@ -3520,8 +3552,13 @@
       "added": "{{name}} ligada",
       "removeTitle": "Remover {{name}}?",
       "removeHint": "As chaves guardadas e o acesso a este espaço de trabalho são apagados. O que já trouxe mantém-se.",
+      "removeBankHint": "Sincroniza como um banco ligado: removê-la desliga esse banco e remove as contas que sincronizou, com as transações.",
       "removed": "{{name}} removida",
-      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie-o manualmente."
+      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie-o manualmente.",
+      "editTitle": "Voltar a ligar {{name}}",
+      "editHint": "Atualize o que mudou, como uma nova palavra-passe ou token. A ligação sincroniza de novo a seguir.",
+      "keepBlank": "Deixe um campo em branco para manter o valor atual.",
+      "updated": "{{name}} atualizada"
     },
     "oauth": {
       "title": "A concluir o início de sessão",

@@ -195,6 +195,28 @@ class HoldingData:
     # providers whose holdings aren't attributable to an account.
     account_external_id: Optional[str] = None
     account_name: Optional[str] = None
+    # Buys and sells of this holding, for providers that report them (plugin
+    # contract 1). None: not reported, the stored ledger is left alone.
+    trades: Optional[list["HoldingTradeData"]] = None
+    # What kind of investment it is ("stock", "etf", "fund", "crypto"), for
+    # providers that know. None: the generic "investment".
+    asset_type: Optional[str] = None
+
+
+@dataclass
+class HoldingTradeData:
+    """One buy or sell the provider reports for a holding.
+
+    `quantity` is always positive; `kind` gives the direction. `price` is per
+    unit in the asset's currency, and `fee` what executing the trade cost.
+    """
+
+    external_id: str
+    kind: Literal["buy", "sell"]
+    date: date
+    quantity: Decimal
+    price: Decimal
+    fee: Decimal = Decimal("0")
 
 
 @dataclass

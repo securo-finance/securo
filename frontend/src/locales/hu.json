@@ -1367,8 +1367,16 @@
     "connectionStatus": {
       "active": "Aktív",
       "error": "Hiba",
-      "expired": "Lejárt"
-    }
+      "expired": "Lejárt",
+      "disconnected": "Leválasztva"
+    },
+    "pluginConnectors": "A bővítményeidből",
+    "pluginUnavailable": "A kapcsolat bővítménye már nincs telepítve vagy nem érhető el.",
+    "confirmDisconnectKeepDesc": "A(z) {{institution}} szinkronizálása leáll. A számlák és a tranzakciós előzmények az alkalmazásban maradnak, és később újra csatlakoztathatod.",
+    "disconnectAlsoDelete": "A számlák és tranzakciók törlése is",
+    "disconnectedKept": "Bank leválasztva. A számlák és az előzmények megmaradtak.",
+    "removeConnection": "Kapcsolat eltávolítása",
+    "connectionDisconnected": "Leválasztva. Csatlakoztasd újra a szinkronizáláshoz"
   },
   "loans": {
     "title": "Hitelszerződés",
@@ -2049,6 +2057,7 @@
     "noTransactions": "Még nincs tranzakció",
     "txBuy": "Vétel",
     "txSell": "Eladás",
+    "txSplit": "Split",
     "txFee": "Díj",
     "txSaved": "Tranzakció mentve",
     "txDeleted": "Tranzakció törölve",
@@ -2059,6 +2068,10 @@
     "unitPrice": "Egységár",
     "fee": "Díj",
     "txTotal": "Összesen",
+    "splitOldUnits": "Egységek a split előtt",
+    "splitNewUnits": "Egységek a split után",
+    "splitHint": "Add meg, hány egységed volt a split előtt, és mennyi lett belőlük utána: a 100:1 arányú split 1 → 100, az 1:10 arányú fordított split pedig 10 → 1. Dátumnak azt az első napot add meg, amikor az eszközzel már az új áron kereskednek.",
+    "splitInvalid": "Adj meg két különböző egész számot 1 és 1 000 000 között.",
     "confirmDeleteTxTitle": "Törlöd a tranzakciót?",
     "confirmDeleteTx": "Ez eltávolítja a tételt, és újraszámolja a pozíció átlagárát.",
     "editAsset": "Eszköz szerkesztése",
@@ -2817,6 +2830,8 @@
       "saveFailed": "Nem sikerült menteni az eszközválasztást",
       "empty": "Nem található eszköz. Fut az MCP-szerver? Dockerrel: `docker compose --profile agents up -d`.",
       "proposeBadge": "javaslat",
+      "enabledCount": "{{enabled}} / {{total}} bekapcsolva",
+      "enableAll": "Összes bekapcsolása",
       "loading": "Eszközök betöltése…"
     },
     "chat": {
@@ -2868,7 +2883,13 @@
         "deleteBudget": "{{category}}: {{amount}} – {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} havonta, {{month}} kezdettel",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "„{{name}}”"
+        "createCategoryGroup": "„{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Nincs változás"
       }
     },
     "conversation": {
@@ -2916,6 +2937,7 @@
       "baseUrl": "Végpont URL-je",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Ennél a szolgáltatónál kötelező megadni a végpont URL-jét",
+      "baseUrlInvalid": "Adjon meg érvényes http vagy https végpont URL-t",
       "ollamaHint": "Ha az Ollama a gazdagépeden fut, használd a http://host.docker.internal:11434 címet (Mac/Windows) vagy a gazdagéped IP-címét (Linux).",
       "openaiCompatHint": "Csak illeszd be a host:port párost (pl. http://192.168.1.142:1234). A /v1 útvonal automatikusan hozzáadódik. Mac/Windows alatt Dockerből a localhost helyett a host.docker.internal címet használd.",
       "apiKey": "API-kulcs / token",
@@ -3455,6 +3477,7 @@
       "write": "Olvasás és módosítás: {{what}}",
       "ownerOnly": "Kódot futtató bővítményt csak a munkaterület tulajdonosa adhat hozzá, frissíthet vagy távolíthat el.",
       "removeConnections": "A kapcsolatai ebben a munkaterületben ({{count}}) törlődnek a mentett kulcsokkal és hozzáférésekkel együtt.",
+      "unlinks": "A bankkapcsolatai ({{count}}) nem szinkronizálnak tovább. A számlák és tranzakciók megmaradnak, kézi számlaként.",
       "removeNothing": "A bővítmény kódja lekerül a szerveredről, amint egyetlen munkaterület sem használja.",
       "auth": {
         "credentials": "Kulcs vagy jelszó",
@@ -3479,6 +3502,15 @@
         "install": "Ez a bővítmény nem hoz adatot. Nézd át, mit tehet a kódja:",
         "update": "Nézd át, mit tehet az új verzió:",
         "remove": "A kódja ebben a munkaterületben többé nem fut."
+      },
+      "provides": "Összekapcsolt bankként szinkronizál",
+      "providesHint": "A Securo hozzáadja ezeket az adatokat ehhez a munkaterülethez, és naprakészen tartja őket, mint egy összekapcsolt banknál. Minden kapcsolat a Bankkapcsolatok között jelenik meg.",
+      "kinds": {
+        "accounts": "Számlák",
+        "transactions": "tranzakciók",
+        "bills": "kártyaszámlák",
+        "holdings": "befektetések",
+        "trades": "vételek és eladások"
       }
     },
     "connections": {
@@ -3516,8 +3548,13 @@
       "added": "{{name}} csatlakoztatva",
       "removeTitle": "Eltávolítod: {{name}}?",
       "removeHint": "A mentett kulcsok és a munkaterülethez való hozzáférés törlődik. Amit már behozott, megmarad.",
+      "removeBankHint": "Csatlakoztatott bankként szinkronizál: eltávolítása leválasztja ezt a bankot, és törli a szinkronizált számlákat a tranzakcióikkal együtt.",
       "removed": "{{name}} eltávolítva",
-      "copyFailed": "Nem sikerült másolni. Jelöld ki a címet, és másold kézzel."
+      "copyFailed": "Nem sikerült másolni. Jelöld ki a címet, és másold kézzel.",
+      "editTitle": "{{name}} újracsatlakoztatása",
+      "editHint": "Frissítsd, ami megváltozott, például egy új jelszót vagy tokent. Utána a kapcsolat újra szinkronizál.",
+      "keepBlank": "Hagyd üresen a mezőt, hogy megmaradjon a jelenlegi értéke.",
+      "updated": "{{name}} frissítve"
     },
     "oauth": {
       "title": "Bejelentkezés befejezése",

@@ -9,6 +9,7 @@ import { formatDate } from '@/lib/date-range-format'
 import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import {
+  accounts,
   budgets,
   categories,
   categoryGroups,
@@ -162,7 +163,42 @@ function kindTitle(kind: ProposalKind, t: ReturnType<typeof useTranslation>['t']
   if (kind === 'create_rule') return t('rules.newRule')
   if (kind === 'update_rule') return t('rules.editRule')
   if (kind === 'delete_rule') return t('rules.confirmDeleteTitle')
+  if (kind === 'create_manual_account') return t('accounts.addManual')
+  if (kind === 'update_manual_account') return t('accounts.editAccount')
   return t(`agents.proposal.kind.${kind}`)
+}
+
+function accountTypeLabel(
+  accountType: unknown,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  const type = String(accountType ?? '')
+  return t(`accounts.type${type.charAt(0).toUpperCase()}${type.slice(1)}`)
+}
+
+function manualAccountFieldLabel(
+  field: string,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (field === 'name') return t('accounts.accountName')
+  if (field === 'type') return t('accounts.accountType')
+  if (field === 'opening_balance') return t('accounts.openingBalanceDescription')
+  if (field === 'opening_balance_date') return t('accounts.balanceDate')
+  return field
+}
+
+function manualAccountChangeValue(
+  field: string,
+  value: unknown,
+  currency: unknown,
+  dateLocale: string,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (value == null) return '∅'
+  if (field === 'opening_balance') return fmt(value, currency)
+  if (field === 'opening_balance_date') return formatDate(String(value), dateLocale)
+  if (field === 'type') return accountTypeLabel(value, t)
+  return String(value)
 }
 
 function renderSummary(
@@ -189,6 +225,28 @@ function renderSummary(
         amount: fmt(p.amount, p.currency),
         month: String(p.month ?? '?'),
       })
+    case 'create_manual_account': {
+      const balanceDate = p.opening_balance_date
+        ? ` · ${t('agents.proposal.summary.manualAccountDate', {
+            label: t('accounts.balanceDate'),
+            date: formatDate(String(p.opening_balance_date), dateLocale),
+          })}`
+        : ''
+      return t('agents.proposal.summary.createManualAccount', {
+        name: String(p.name ?? '?'),
+        type: accountTypeLabel(p.type, t),
+        currentBalance: t('agents.proposal.summary.manualAccountMoney', {
+          label: t('accounts.currentBalance'),
+          amount: fmt(p.current_balance ?? p.opening_balance, p.currency),
+        }),
+        openingBalance: t('agents.proposal.summary.manualAccountMoney', {
+          label: t('accounts.openingBalanceDescription'),
+          amount: fmt(p.opening_balance, p.currency),
+        }),
+        balanceDate,
+      })
+        + (d.name_collision ? `. ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+    }
     case 'create_payee_rule':
       return t('agents.proposal.summary.createPayeeRule', {
         pattern: String(p.match_pattern ?? '?'),
@@ -269,6 +327,25 @@ function renderSummary(
         before: fmt(tgt.amount, tgt.currency),
         after: fmt(changes.amount, tgt.currency),
       })
+    }
+    case 'update_manual_account': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      const changedFields = Object.entries(changes).map(([field, value]) => (
+        t('agents.proposal.summary.manualAccountChange', {
+          field: manualAccountFieldLabel(field, t),
+          before: manualAccountChangeValue(field, tgt[field], tgt.currency, dateLocale, t),
+          after: manualAccountChangeValue(field, value, tgt.currency, dateLocale, t),
+        })
+      ))
+      return t('agents.proposal.summary.updateManualAccount', {
+        name: String(tgt.name ?? '?'),
+        currentBalance: t('agents.proposal.summary.manualAccountMoney', {
+          label: t('accounts.currentBalance'),
+          amount: fmt(tgt.current_balance, tgt.currency),
+        }),
+        changes: changedFields.join('. ') || t('agents.proposal.summary.manualAccountNoChanges'),
+      })
+        + (d.name_collision ? `. ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
     }
     case 'delete_budget':
       return t(tgt.is_recurring ? 'agents.proposal.summary.deleteRecurringBudget' : 'agents.proposal.summary.deleteBudget', {
@@ -406,6 +483,16 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       })
       return b.id
     }
+    case 'create_manual_account': {
+      const account = await accounts.create({
+        name: String(p.name),
+        type: String(p.type),
+        currency: String(p.currency),
+        balance: Number(p.opening_balance),
+        balance_date: (p.opening_balance_date as string) || undefined,
+      })
+      return account.id
+    }
     case 'create_payee_rule': {
       const r = await rules.create({
         name: `Rule: ${String(p.match_pattern).slice(0, 60)}`,
@@ -527,6 +614,20 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       // Only the amount goes out, the same edit the budgets page makes.
       const id = String((data.target as Record<string, unknown>).id)
       await budgets.update(id, { amount: Number((data.changes as Record<string, unknown>).amount) })
+      return id
+    }
+    case 'update_manual_account': {
+      const id = String((data.target as Record<string, unknown>).id)
+      const c = (data.changes || {}) as Record<string, unknown>
+      const payload: Record<string, unknown> = {}
+      if (c.opening_balance !== undefined) payload.balance = Number(c.opening_balance)
+      if (c.opening_balance_date !== undefined) payload.balance_date = c.opening_balance_date as string
+      if (typeof c.name === 'string') payload.name = c.name
+      if (typeof c.type === 'string') payload.type = c.type
+      await accounts.update(
+        id,
+        payload as Parameters<typeof accounts.update>[1],
+      )
       return id
     }
     case 'delete_budget': {
