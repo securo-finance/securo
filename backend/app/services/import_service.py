@@ -279,6 +279,8 @@ _QIF_FALLBACK_DATE_FORMATS = [
     "%m/%d'%Y", "%m/%d'%y",
     '%m/%d/%y', '%d/%m/%y',
 ]
+# Quicken pads a one-digit year with a space: 3/ 1' 8 is 2008-03-01
+_QIF_SPACE_PADDED_YEAR = re.compile(r"'\s+(\d)$")
 
 
 def _slash_date_order(raw_dates) -> tuple[bool, bool]:
@@ -410,9 +412,10 @@ def parse_qif(content: bytes, date_format: str | None = None) -> tuple[list[Tran
             tag, value = line[0], line[1:]
             if tag == 'D':
                 date_raw = value.strip()
+                date_value = _QIF_SPACE_PADDED_YEAR.sub(r"'0\1", date_raw)
                 for fmt in date_formats:
                     try:
-                        txn_date = datetime.strptime(value.strip(), fmt).date()
+                        txn_date = datetime.strptime(date_value, fmt).date()
                         break
                     except ValueError:
                         continue
