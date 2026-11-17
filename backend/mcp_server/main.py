@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.agents.config import get_agent_settings
+from app.agents.mcp.keys import UnsafeMCPSecret, resolve_mcp_jwt_secret
 from app.core.database import async_session_maker
 from mcp_server import protocol as p
 from mcp_server import tools as _tools_pkg  # noqa: F401  triggers tool registration
@@ -30,7 +32,23 @@ from mcp_server.registry import REGISTRY, call_tool, list_tools
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Securo MCP Server", openapi_url=None, docs_url=None)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Refuse to serve with a signing key anyone can read from the repository
+    # (issue #1174). Every token would be forgeable, and the tool layer would
+    # treat the forged `sub` as the caller. Failing here is the last safe
+    # moment: uvicorn exits non-zero and the container reports the reason.
+    resolve_mcp_jwt_secret()
+    yield
+
+
+app = FastAPI(
+    title="Securo MCP Server",
+    openapi_url=None,
+    docs_url=None,
+    lifespan=lifespan,
+)
 
 
 SERVER_INFO = {
@@ -78,6 +96,15 @@ async def mcp(request: Request) -> Response:
     # Auth next — never accept unauthenticated calls.
     try:
         ctx = verify_request(request)
+    except UnsafeMCPSecret:
+        # Startup already refused this configuration; if the app was loaded
+        # without its lifespan, no token can be trusted either. Say it is a
+        # server problem, not the caller's token, and keep the detail in logs.
+        logger.exception("MCP signing key is unsafe; refusing the request")
+        return JSONResponse(
+            status_code=500,
+            content={"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": "server misconfigured"}},
+        )
     except Exception as exc:  # HTTPException from verify_request
         status_code = getattr(exc, "status_code", 401)
         detail = getattr(exc, "detail", str(exc))
