@@ -1452,7 +1452,9 @@
       "active": "Aktivní",
       "error": "Chyba",
       "expired": "Vypršelo"
-    }
+    },
+    "pluginConnectors": "Z vašich pluginů",
+    "pluginUnavailable": "Plugin tohoto připojení už není nainstalován ani dostupný."
   },
   "loans": {
     "title": "Úvěrová smlouva",
@@ -3641,6 +3643,7 @@
       "write": "Čtení a změny: {{what}}",
       "ownerOnly": "Plugin, který spouští kód, může přidat, aktualizovat nebo odebrat jen vlastník pracovního prostoru.",
       "removeConnections": "Jeho připojení v tomto pracovním prostoru ({{count}}) budou odebrána i s uloženými klíči a přístupy.",
+      "unlinks": "Jeho bankovní připojení ({{count}}) se přestanou synchronizovat. Účty a transakce zůstanou jako ruční účty.",
       "removeNothing": "Kód pluginu se z vašeho serveru odstraní, jakmile ho žádný pracovní prostor nepoužívá.",
       "auth": {
         "credentials": "Klíč nebo heslo",
@@ -3665,6 +3668,15 @@
         "install": "Tento plugin nepřináší data. Zkontrolujte, co smí dělat jeho kód:",
         "update": "Zkontrolujte, co smí dělat nová verze:",
         "remove": "Jeho kód v tomto pracovním prostoru přestane běžet."
+      },
+      "provides": "Synchronizuje se jako připojená banka",
+      "providesHint": "Securo přidá tyto záznamy do tohoto pracovního prostoru a udržuje je aktuální, jako u připojené banky. Každé připojení se zobrazí v sekci „Propojení bank“.",
+      "kinds": {
+        "accounts": "Účty",
+        "transactions": "transakce",
+        "bills": "vyúčtování karet",
+        "holdings": "investice",
+        "trades": "nákupy a prodeje"
       }
     },
     "connections": {
@@ -3702,8 +3714,13 @@
       "added": "{{name}}: připojeno",
       "removeTitle": "Odebrat {{name}}?",
       "removeHint": "Uložené klíče a přístup k tomuto pracovnímu prostoru budou smazány. Co už bylo načteno, zůstane.",
+      "removeBankHint": "Synchronizuje se jako připojená banka: odebráním se tato banka odpojí a odeberou se synchronizované účty i s transakcemi.",
       "removed": "{{name}}: odebráno",
-      "copyFailed": "Kopírování se nezdařilo. Označte adresu a zkopírujte ji ručně."
+      "copyFailed": "Kopírování se nezdařilo. Označte adresu a zkopírujte ji ručně.",
+      "editTitle": "Znovu připojit {{name}}",
+      "editHint": "Aktualizujte, co se změnilo, například nové heslo nebo token. Poté se připojení znovu synchronizuje.",
+      "keepBlank": "Ponechte pole prázdné, aby se zachovala jeho současná hodnota.",
+      "updated": "{{name}} aktualizováno"
     },
     "oauth": {
       "title": "Dokončování přihlášení",

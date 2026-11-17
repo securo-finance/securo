@@ -1372,7 +1372,9 @@
       "active": "Ativa",
       "error": "Erro",
       "expired": "Expirada"
-    }
+    },
+    "pluginConnectors": "Dos seus plugins",
+    "pluginUnavailable": "O plugin desta ligação já não está instalado ou disponível."
   },
   "loans": {
     "title": "Contrato do empréstimo",
@@ -3459,6 +3461,7 @@
       "write": "Ler e alterar {{what}}",
       "ownerOnly": "Só o proprietário do espaço de trabalho pode adicionar, atualizar ou remover um plugin que executa código.",
       "removeConnections": "As ligações dele neste espaço de trabalho ({{count}}) são removidas, juntamente com as chaves guardadas e os acessos.",
+      "unlinks": "As ligações bancárias dele ({{count}}) deixam de sincronizar. As contas e transações ficam, como contas manuais.",
       "removeNothing": "O código do plugin sai do seu servidor quando nenhum espaço de trabalho o usar.",
       "auth": {
         "credentials": "Chave ou palavra-passe",
@@ -3483,6 +3486,15 @@
         "install": "Este plugin não traz dados. Veja o que o código dele pode fazer:",
         "update": "Veja o que a nova versão pode fazer:",
         "remove": "O código dele deixa de ser executado neste espaço de trabalho."
+      },
+      "provides": "Sincroniza como um banco ligado",
+      "providesHint": "O Securo adiciona estes registos a este workspace e mantém-nos atualizados, como num banco ligado. Cada ligação aparece em Ligações Bancárias.",
+      "kinds": {
+        "accounts": "Contas",
+        "transactions": "transações",
+        "bills": "faturas de cartão",
+        "holdings": "investimentos",
+        "trades": "compras e vendas"
       }
     },
     "connections": {
@@ -3520,8 +3532,13 @@
       "added": "{{name}} ligada",
       "removeTitle": "Remover {{name}}?",
       "removeHint": "As chaves guardadas e o acesso a este espaço de trabalho são apagados. O que já trouxe mantém-se.",
+      "removeBankHint": "Sincroniza como um banco ligado: removê-la desliga esse banco e remove as contas que sincronizou, com as transações.",
       "removed": "{{name}} removida",
-      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie-o manualmente."
+      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie-o manualmente.",
+      "editTitle": "Voltar a ligar {{name}}",
+      "editHint": "Atualize o que mudou, como uma nova palavra-passe ou token. A ligação sincroniza de novo a seguir.",
+      "keepBlank": "Deixe um campo em branco para manter o valor atual.",
+      "updated": "{{name}} atualizada"
     },
     "oauth": {
       "title": "A concluir o início de sessão",

@@ -272,3 +272,31 @@ if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", 
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+# Serve the built SPA from this process. Inert unless FRONTEND_DIST_PATH
+# points at a real directory, so the published backend image, which contains
+# no frontend build, behaves exactly as before.
+#
+# `app.frontend()` rather than mounting StaticFiles at "/": a Mount at the
+# root matches every path, so an unknown /api/... would be answered with
+# index.html and HTTP 200 instead of a JSON 404, and the trailing-slash
+# redirect would never be reached. The frontend route is low-priority (it is
+# consulted after every real route, after 405 handling, and after the
+# redirect) and its index.html fallback only fires for requests that accept
+# text/html. A caveat worth knowing: that makes `curl /transactions` a 404,
+# because curl sends `Accept: */*`. Health checks should use /api/health.
+_frontend_dist = settings.frontend_dist_path.strip()
+if _frontend_dist and os.path.isdir(_frontend_dist):
+    from app.core.spa import FrontendCacheHeadersMiddleware
+
+    app.add_middleware(FrontendCacheHeadersMiddleware)
+    # The isdir() above is the check; check_dir would only re-run it and
+    # raise at import time on a race.
+    app.frontend("/", directory=_frontend_dist, check_dir=False)
+    logger.info("Serving the frontend in-process from %s", _frontend_dist)
+elif _frontend_dist:
+    logger.warning(
+        "FRONTEND_DIST_PATH=%s is not a directory; the frontend is not served",
+        _frontend_dist,
+    )

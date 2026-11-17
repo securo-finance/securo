@@ -1978,6 +1978,14 @@ export const plugins = {
     const { data } = await api.post('/plugins/connections', body)
     return data
   },
+  /** New form values; fields left blank keep what they had. Then it syncs afresh. */
+  updateValues: async (
+    connectionId: string,
+    body: { name?: string; values: Record<string, string> },
+  ): Promise<PluginConnection> => {
+    const { data } = await api.put(`/plugins/connections/${connectionId}/values`, body)
+    return data
+  },
   authorize: async (connectionId: string): Promise<{ authorize_url: string; redirect_uri: string }> => {
     const { data } = await api.post(`/plugins/connections/${connectionId}/authorize`)
     return data
