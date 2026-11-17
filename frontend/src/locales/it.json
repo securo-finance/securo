@@ -3461,6 +3461,7 @@
       "write": "Leggere e modificare {{what}}",
       "ownerOnly": "Solo il proprietario dello spazio di lavoro può aggiungere, aggiornare o rimuovere un plugin che esegue codice.",
       "removeConnections": "Le sue connessioni in questo spazio di lavoro ({{count}}) vengono rimosse, insieme alle chiavi salvate e agli accessi.",
+      "unlinks": "Le sue connessioni bancarie ({{count}}) smettono di sincronizzarsi. I conti e le transazioni restano, come conti manuali.",
       "removeNothing": "Il codice del plugin viene rimosso dal tuo server quando nessuno spazio di lavoro lo usa più.",
       "auth": {
         "credentials": "Chiave o password",
@@ -3531,6 +3532,7 @@
       "added": "{{name}} connessa",
       "removeTitle": "Rimuovere {{name}}?",
       "removeHint": "Le chiavi salvate e l'accesso a questo spazio di lavoro vengono eliminati. Ciò che ha già importato resta.",
+      "removeBankHint": "Si sincronizza come una banca collegata: rimuoverla scollega quella banca e rimuove i conti sincronizzati, con le loro transazioni.",
       "removed": "{{name}} rimossa",
       "copyFailed": "Impossibile copiare. Seleziona l'indirizzo e copialo a mano.",
       "editTitle": "Ricollega {{name}}",

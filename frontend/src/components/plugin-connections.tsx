@@ -167,7 +167,12 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
         <PluginConnectionDialog plugin={plugin} onClose={() => setAdding(false)} onDone={() => void refresh()} />
       )}
       {removing && (
-        <RemoveConnectionDialog connection={removing} onClose={() => setRemoving(null)} onDone={() => void refresh()} />
+        <RemoveConnectionDialog
+          connection={removing}
+          syncsAsBank={Boolean(plugin.integrations.find((i) => i.key === removing.integration)?.provides?.length)}
+          onClose={() => setRemoving(null)}
+          onDone={() => void refresh()}
+        />
       )}
     </section>
   )
@@ -357,10 +362,13 @@ export function PluginConnectionDialog({
 
 function RemoveConnectionDialog({
   connection,
+  syncsAsBank,
   onClose,
   onDone,
 }: {
   connection: PluginConnection
+  /** It syncs as a connected bank: removing it disconnects that bank, accounts included. */
+  syncsAsBank: boolean
   onClose: () => void
   onDone: () => void
 }) {
@@ -379,7 +387,9 @@ function RemoveConnectionDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t('plugins.connections.removeTitle', { name: connection.name })}</DialogTitle>
-          <DialogDescription>{t('plugins.connections.removeHint')}</DialogDescription>
+          <DialogDescription>
+            {t(syncsAsBank ? 'plugins.connections.removeBankHint' : 'plugins.connections.removeHint')}
+          </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>

@@ -20,10 +20,12 @@ from __future__ import annotations
 
 from datetime import date as _date
 from decimal import Decimal
+from collections.abc import Collection
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
 
+from app.plugins.manifest import KEY_PATTERN
 from app.providers.base import AccountData, BillData, HoldingData, HoldingTradeData, TransactionData
 
 CONTRACT_VERSION = 1
@@ -138,7 +140,8 @@ class Account(_Model):
     stable_external_id: ExternalId | None = None
     institution_external_id: ExternalId | None = None
     institution_name: str | None = Field(default=None, max_length=255)
-    institution_logo_url: str | None = Field(default=None, max_length=1000, pattern=r"^https://")
+    institution_logo: str | None = Field(default=None, pattern=KEY_PATTERN)
+    """A key of the manifest's `logos`: Securo serves the file from the plugin's package."""
     auto_invested_balance: PositiveMoney = Decimal(0)
     transactions: list[Transaction] | None = None
     bills: list[Bill] | None = None
@@ -149,8 +152,11 @@ class Account(_Model):
         _check_unique("bills", self.bills)
         return self
 
-    def to_data(self) -> AccountData:
-        return AccountData(**self.model_dump(exclude={"transactions", "bills"}))
+    def to_data(self, logos: dict[str, str] | None = None) -> AccountData:
+        """The provider dataclass; `logos` maps the manifest's logo keys to where Securo serves them."""
+        data = AccountData(**self.model_dump(exclude={"transactions", "bills", "institution_logo"}))
+        data.institution_logo_url = (logos or {}).get(self.institution_logo) if self.institution_logo else None
+        return data
 
 
 class Trade(_Model):
@@ -245,11 +251,12 @@ def _check_unique(kind: str, records: list | None) -> None:
         raise ValueError(f"{kind}: external_id must be unique")
 
 
-def parse_payload(data: Any, provides: list[str]) -> Payload | None:
+def parse_payload(data: Any, provides: list[str], logos: Collection[str] = ()) -> Payload | None:
     """The validated payload, or None when the plugin fetched nothing this run.
 
-    Raises `PayloadError` when the data is malformed, too large, or carries a
-    kind of record the integration doesn't declare in `provides`.
+    Raises `PayloadError` when the data is malformed, too large, carries a
+    kind of record the integration doesn't declare in `provides`, or names a
+    logo that isn't among `logos` (the keys of the manifest's).
     """
     if data is None:
         return None
@@ -262,6 +269,9 @@ def parse_payload(data: Any, provides: list[str]) -> Payload | None:
     undeclared = payload.kinds() - set(provides)
     if undeclared:
         raise PayloadError(f"data has {', '.join(sorted(undeclared))}, which the integration doesn't provide")
+    for index, account in enumerate(payload.accounts or []):
+        if account.institution_logo is not None and account.institution_logo not in logos:
+            raise PayloadError(f"accounts.{index}.institution_logo: the manifest's logos have no such key")
     return payload
 
 

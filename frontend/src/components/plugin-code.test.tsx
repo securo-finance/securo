@@ -228,6 +228,42 @@ describe('PluginConnections', () => {
     expect(screen.queryByText('api.ledger.example')).not.toBeInTheDocument()
   })
 
+  it('says the accounts of the banks a removal ends stay, as manual ones', async () => {
+    api.plugins.plan.mockResolvedValue({
+      ...PLAN, action: 'remove', commit: null, code: { ...PLAN.code!, connections: 1, unlinks: 1 },
+    })
+    renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginPlanDialog target={{ id: 'acme/ledger', name: 'Ledger', action: 'remove' }} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+    )
+    const unlinks = t('plugins.code.unlinks', { count: 1 })
+    expect(await screen.findByText((_, el) => el?.tagName === 'SPAN' && !!el.textContent?.includes(unlinks))).toBeInTheDocument()
+  })
+
+  it('warns when an update stops syncing a bank', async () => {
+    api.plugins.plan.mockResolvedValue({ ...PLAN, action: 'update', code: { ...PLAN.code!, unlinks: 2 } })
+    renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginPlanDialog target={{ id: 'acme/ledger', name: 'Ledger', action: 'update' }} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+    )
+    expect(await screen.findByText(t('plugins.code.unlinks', { count: 2 }))).toBeInTheDocument()
+  })
+
+  it('says removing a connection that syncs as a bank removes its accounts', async () => {
+    api.plugins.connections.mockResolvedValue([CONNECTION])
+    const bank = { ...PLUGIN, integrations: PLUGIN.integrations.map((i) => ({ ...i, provides: ['accounts' as const] })) }
+    const { user } = renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginConnections plugin={bank} />
+      </WorkspaceContext.Provider>,
+    )
+    await user.click(await screen.findByRole('button', { name: t('plugins.connections.removeAria', { name: 'Main' }) }))
+    expect(screen.getByText(t('plugins.connections.removeBankHint'))).toBeInTheDocument()
+    expect(screen.queryByText(t('plugins.connections.removeHint'))).not.toBeInTheDocument()
+  })
+
   it('hides the actions from viewers', async () => {
     api.plugins.connections.mockResolvedValue([CONNECTION])
     renderWithProviders(

@@ -37,7 +37,7 @@ from app.models.access_token import AccessToken
 from app.models.bank_connection import BankConnection
 from app.models.plugin_connection import PluginConnection
 from app.models.workspace_plugin import WorkspacePlugin
-from app.plugins import runner, vault
+from app.plugins import logos, runner, vault
 from app.plugins.contract import PayloadError, parse_payload
 from app.plugins.manifest import Integration, Manifest, localized, parse_manifest
 from app.plugins.provider import PluginPayloadProvider, provider_name
@@ -201,14 +201,24 @@ async def _add_bank(session: AsyncSession, connection: PluginConnection, institu
     connection.bank_connection_id = bank.id
 
 
-async def _drop_bank(session: AsyncSession, connection: PluginConnection) -> None:
-    """Disconnect the connection's bank connection exactly as a native one is (not committed)."""
+async def _drop_bank(session: AsyncSession, connection: PluginConnection, *, keep_records: bool) -> None:
+    """Take the connection's bank connection away (not committed).
+
+    Someone removing the connection disconnects it exactly as a native one is,
+    accounts and their transactions included. When the plugin goes instead
+    (removed, or an update that stops providing), the records stay: the
+    accounts carry on as manual ones, so no release of a plugin can take
+    anyone's history with it.
+    """
     if connection.bank_connection_id is None:
         return
     from app.services import connection_service
 
     bank_id, connection.bank_connection_id = connection.bank_connection_id, None
-    await connection_service.delete_connection(session, bank_id, connection.workspace_id, commit=False)
+    if keep_records:
+        await connection_service.unlink_connection(session, bank_id, connection.workspace_id)
+    else:
+        await connection_service.delete_connection(session, bank_id, connection.workspace_id, commit=False)
 
 
 async def for_bank_connection(
@@ -523,8 +533,10 @@ async def _write_payload(
     reply = result if isinstance(result, dict) else {}
     _keep(connection, {"secrets": reply.get("secrets")}, secrets)
     await session.commit()
+    record, _ = await _installed(session, connection.workspace_id, connection.plugin_id)
+    logo_urls = await logos.urls(session, connection.plugin_id, record.commit)
     try:
-        payload = parse_payload(reply.get("data"), provides)
+        payload = parse_payload(reply.get("data"), provides, logo_urls)
     except PayloadError as exc:
         _failed(connection, str(exc), needs_auth=False)
         return
@@ -536,7 +548,8 @@ async def _write_payload(
         connection_id, workspace_id, bank_id, user_id = connection.id, connection.workspace_id, bank.id, bank.user_id
         try:
             await connection_service.sync_connection(
-                session, bank_id, workspace_id, user_id, provider=PluginPayloadProvider(bank.provider, payload)
+                session, bank_id, workspace_id, user_id,
+                provider=PluginPayloadProvider(bank.provider, payload, logo_urls),
             )
         except Exception as exc:  # noqa: BLE001 - recorded on the connection, retried on the next sync
             logger.exception("Writing the records of plugin connection %s failed", connection_id)
@@ -616,7 +629,7 @@ def due(connection: PluginConnection, now: datetime | None = None) -> bool:
 
 
 async def delete(session: AsyncSession, connection: PluginConnection) -> None:
-    await _drop_bank(session, connection)
+    await _drop_bank(session, connection, keep_records=False)
     await _revoke_token(session, connection)
     await session.delete(connection)
     await session.commit()
@@ -631,7 +644,7 @@ async def delete_all(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: 
     )
     count = 0
     for connection in rows.all():
-        await _drop_bank(session, connection)
+        await _drop_bank(session, connection, keep_records=True)
         await _revoke_token(session, connection)
         await session.delete(connection)
         count += 1
@@ -659,7 +672,7 @@ async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manife
         if integration is None or (connection.bank_connection_id is not None and not integration.is_provider):
             # The new version dropped this integration, or no longer syncs it
             # as a bank: nothing can run it as it was set up anymore.
-            await _drop_bank(session, connection)
+            await _drop_bank(session, connection, keep_records=True)
             await _revoke_token(session, connection)
             await session.delete(connection)
             continue

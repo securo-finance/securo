@@ -52,7 +52,9 @@ from app.services import admin_service
 from app.services import category_line_service, reconciliation_service, recurring_match_service
 from app.services.text_similarity import token_overlap
 from app.services.account_service import (
+    LIABILITY_ACCOUNT_TYPES,
     _provider_to_internal_balance,
+    keep_balance_as_manual,
     sync_opening_balance_for_connected_account,
 )
 from app.services.asset_group_service import (
@@ -3653,6 +3655,45 @@ async def sync_connection(
             if conn:
                 conn.status = "error"
         raise
+
+
+async def unlink_connection(
+    session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID
+) -> bool:
+    """End a connection but keep what it synced (not committed).
+
+    Its accounts become manual ones with all their transactions: a synced
+    account keeps an opening-balance transaction that makes its transactions
+    add up to the provider's balance, so the balance carries over. Its assets
+    are archived, as on a disconnect, and the connection and its institutions
+    are deleted.
+    """
+    connection = await get_connection(session, connection_id, workspace_id)
+    if not connection:
+        return False
+    await session.execute(
+        update(Asset).where(Asset.connection_id == connection_id).values(is_archived=True)
+    )
+    accounts = (
+        await session.scalars(select(Account).where(Account.connection_id == connection_id))
+    ).all()
+    # What each account shows while synced: liabilities store debt as positive.
+    shown = {
+        account.id: -account.balance if account.type in LIABILITY_ACCOUNT_TYPES else account.balance
+        for account in accounts
+    }
+    await session.execute(
+        update(Account)
+        .where(Account.connection_id == connection_id)
+        .values(connection_id=None, institution_id=None)
+    )
+    for account in accounts:
+        await keep_balance_as_manual(session, account, Decimal(str(shown[account.id])))
+    # Bulk statements, so the relationship's delete-orphan cascade can't
+    # reach the accounts just unlinked.
+    await session.execute(delete(Institution).where(Institution.connection_id == connection_id))
+    await session.execute(delete(BankConnection).where(BankConnection.id == connection_id))
+    return True
 
 
 async def delete_connection(

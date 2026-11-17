@@ -842,6 +842,45 @@ async def sync_opening_balance_for_connected_account(
     await session.flush()
 
 
+async def keep_balance_as_manual(session: AsyncSession, account: Account, balance: Decimal) -> None:
+    """Make an account that just became manual show `balance`, the balance it showed while synced.
+
+    A synced account shows its provider's balance; a manual one adds up its
+    transactions, leaving out pending ones. The opening-balance transaction
+    takes up the difference, so the account reads the same after unlinking.
+    Does not commit.
+    """
+    summary = await get_account_summary(session, account.id, account.workspace_id)
+    if summary is None:
+        return
+    offset = balance - Decimal(str(summary["current_balance"]))
+    if abs(offset) < Decimal("0.01"):
+        return
+    opening = await session.scalar(
+        select(Transaction).where(Transaction.account_id == account.id, Transaction.source == "opening_balance")
+    )
+    if opening is None:
+        oldest = await session.scalar(select(func.min(Transaction.date)).where(Transaction.account_id == account.id))
+        opening = Transaction(
+            user_id=account.user_id,
+            workspace_id=account.workspace_id,
+            account_id=account.id,
+            description="Saldo inicial",
+            amount=Decimal("0"),
+            currency=account.currency,
+            date=(oldest - timedelta(days=1)) if oldest else app_today(),
+            type="credit",
+            source="opening_balance",
+        )
+        session.add(opening)
+    # Credit is +, debit is -, whatever the account type.
+    signed = (opening.amount if opening.type == "credit" else -opening.amount) + offset
+    opening.amount = abs(signed).quantize(Decimal("0.01"))
+    opening.type = "credit" if signed >= 0 else "debit"
+    apply_effective_date(opening, account)
+    await session.flush()
+
+
 async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
     account = await get_account(session, account_id, workspace_id)
     if not account:

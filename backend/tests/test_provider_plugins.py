@@ -83,7 +83,8 @@ from app.models.account import Account  # noqa: E402
 from app.models.asset import Asset  # noqa: E402
 from app.models.bank_connection import BankConnection  # noqa: E402
 from app.models.transaction import Transaction  # noqa: E402
-from app.plugins.contract import parse_payload  # noqa: E402
+from app.plugins.contract import PayloadError, parse_payload  # noqa: E402
+from app.services import account_service  # noqa: E402
 from app.plugins.provider import PluginPayloadProvider, provider_name  # noqa: E402
 from app.providers.base import ProviderNotConfiguredError  # noqa: E402
 from app.services import connection_service  # noqa: E402
@@ -431,23 +432,54 @@ async def test_removing_the_connection_disconnects_its_bank(session: AsyncSessio
     await _disconnected_like_a_bank(session, bank_id, asset_id)
 
 
+async def _unlinked_keeping_records(session, bank_id: uuid.UUID, asset_id: uuid.UUID) -> None:
+    """The bank connection is gone, but its accounts and transactions stay as manual ones."""
+    session.expire_all()
+    assert await session.get(BankConnection, bank_id) is None
+    (account,) = (await session.scalars(select(Account).where(Account.external_id == "A1:USD"))).all()
+    assert account.connection_id is None
+    synced = await _rows(session, Transaction, account_id=account.id)
+    assert sorted(t.external_id for t in synced) == ["t1", "t2"]
+    # Its balance carries over: the opening balance makes the transactions add up to it.
+    detail = await account_service.get_account_summary(session, account.id, account.workspace_id)
+    assert detail is not None and Decimal(str(detail["current_balance"])) == Decimal("500.00")
+    asset = await session.get(Asset, asset_id)
+    assert asset is not None and asset.is_archived
+
+
 @pytest.mark.asyncio
-async def test_removing_the_plugin_disconnects_its_banks(session: AsyncSession, ids, provider_catalog, plugin_runner):
+async def test_removing_the_plugin_keeps_what_its_banks_synced(
+    session: AsyncSession, ids, provider_catalog, plugin_runner
+):
     _, bank_id, asset_id = await _synced(session, ids)
+    plan = await service.plan(session, ids[0], PLUGIN, "remove", lang="en")
+    assert plan.code is not None and plan.code.unlinks == 1
     await _apply(session, ids[0], ids[1], "remove")
-    await _disconnected_like_a_bank(session, bank_id, asset_id)
+    await _unlinked_keeping_records(session, bank_id, asset_id)
     assert await session.scalar(select(PluginConnection.id)) is None
 
 
 @pytest.mark.asyncio
-async def test_an_update_that_stops_providing_removes_the_connection(
+async def test_an_update_that_stops_providing_removes_the_connection_but_keeps_the_records(
     session: AsyncSession, ids, provider_catalog, plugin_runner
 ):
     _, bank_id, asset_id = await _synced(session, ids)
     _publish(provider_catalog, V2, lambda m: m["contributes"]["integrations"][0].pop("provides"))
+    plan = await service.plan(session, ids[0], PLUGIN, "update", lang="en")
+    assert plan.code is not None and plan.code.unlinks == 1
     await _apply(session, ids[0], ids[1], "update")
-    await _disconnected_like_a_bank(session, bank_id, asset_id)
+    await _unlinked_keeping_records(session, bank_id, asset_id)
     assert await session.scalar(select(PluginConnection.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_an_update_that_keeps_providing_unlinks_nothing(
+    session: AsyncSession, ids, provider_catalog, plugin_runner
+):
+    await _synced(session, ids)
+    _publish(provider_catalog, V2, lambda m: m.update(version="1.1.0"))
+    plan = await service.plan(session, ids[0], PLUGIN, "update", lang="en")
+    assert plan.code is not None and plan.code.unlinks == 0
 
 
 @pytest.mark.asyncio
@@ -587,10 +619,27 @@ async def test_the_connection_shows_the_institution_logo_its_accounts_name(
     session: AsyncSession, bank_connection, test_user
 ):
     data = payload_data()
-    data["accounts"][0]["institution_logo_url"] = "https://www.google.com/s2/favicons?domain=example.com&sz=128"
-    await _pipeline(session, bank_connection, data, test_user)
+    data["accounts"][0]["institution_logo"] = "broker"
+    payload = parse_payload(data, ALL_KINDS, {"broker"})
+    assert payload is not None
+    logo = "/api/plugins/logos/" + "a" * 64
+    provider = PluginPayloadProvider(provider_name(PLUGIN), payload, {"broker": logo})
+    await connection_service.sync_connection(
+        session, bank_connection.id, bank_connection.workspace_id, test_user.id, provider=provider
+    )
     await session.refresh(bank_connection)
-    assert bank_connection.logo_url == "https://www.google.com/s2/favicons?domain=example.com&sz=128"
+    assert bank_connection.logo_url == logo
+
+
+def test_an_account_can_only_name_a_logo_the_manifest_ships():
+    data = payload_data()
+    data["accounts"][0]["institution_logo"] = "elsewhere"
+    with pytest.raises(PayloadError, match="logos have no such key"):
+        parse_payload(data, ALL_KINDS, {"broker"})
+    data["accounts"][0].pop("institution_logo")
+    data["accounts"][0]["institution_logo_url"] = "https://tracker.example/pixel.png"
+    with pytest.raises(PayloadError, match="institution_logo_url"):
+        parse_payload(data, ALL_KINDS, {"broker"})
 
 
 

@@ -3459,6 +3459,7 @@
       "write": "{{what}} lezen en wijzigen",
       "ownerOnly": "Alleen de eigenaar van de werkruimte kan een plugin die code uitvoert toevoegen, bijwerken of verwijderen.",
       "removeConnections": "De koppelingen in deze werkruimte ({{count}}) worden verwijderd, samen met de opgeslagen sleutels en toegang.",
+      "unlinks": "De bankkoppelingen ({{count}}) stoppen met synchroniseren. Hun rekeningen en transacties blijven, als handmatige rekeningen.",
       "removeNothing": "De code van de plugin wordt van je server verwijderd zodra geen werkruimte hem nog gebruikt.",
       "auth": {
         "credentials": "Sleutel of wachtwoord",
@@ -3529,6 +3530,7 @@
       "added": "{{name}} gekoppeld",
       "removeTitle": "{{name}} verwijderen?",
       "removeHint": "De opgeslagen sleutels en de toegang tot deze werkruimte worden gewist. Wat al is binnengehaald, blijft.",
+      "removeBankHint": "Deze synchroniseert als een gekoppelde bank: verwijderen koppelt die bank los en verwijdert de gesynchroniseerde rekeningen, met hun transacties.",
       "removed": "{{name}} verwijderd",
       "copyFailed": "Kopiëren lukte niet. Selecteer het adres en kopieer het zelf.",
       "editTitle": "{{name}} opnieuw koppelen",

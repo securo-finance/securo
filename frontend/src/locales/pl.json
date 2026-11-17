@@ -3593,6 +3593,7 @@
       "write": "Odczyt i zmiana: {{what}}",
       "ownerOnly": "Tylko właściciel obszaru roboczego może dodać, zaktualizować lub usunąć wtyczkę uruchamiającą kod.",
       "removeConnections": "Jej połączenia w tym obszarze roboczym ({{count}}) zostaną usunięte razem z zapisanymi kluczami i dostępem.",
+      "unlinks": "Jego połączenia bankowe ({{count}}) przestają się synchronizować. Konta i transakcje zostają jako konta ręczne.",
       "removeNothing": "Kod wtyczki zostanie usunięty z serwera, gdy żaden obszar roboczy nie będzie jej używał.",
       "auth": {
         "credentials": "Klucz lub hasło",
@@ -3663,6 +3664,7 @@
       "added": "Połączono: {{name}}",
       "removeTitle": "Usunąć {{name}}?",
       "removeHint": "Zapisane klucze i dostęp do tego obszaru roboczego zostaną usunięte. To, co już zostało pobrane, zostaje.",
+      "removeBankHint": "Synchronizuje się jak połączony bank: usunięcie odłącza ten bank i usuwa zsynchronizowane konta wraz z transakcjami.",
       "removed": "Usunięto: {{name}}",
       "copyFailed": "Nie udało się skopiować. Zaznacz adres i skopiuj go ręcznie.",
       "editTitle": "Połącz ponownie {{name}}",

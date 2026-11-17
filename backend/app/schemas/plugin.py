@@ -202,6 +202,7 @@ class PluginCodeConsentRead(BaseModel):
     new_scopes: list[str]
     connections: int = Field(description="Connections in this workspace; removed along with the plugin.")
     drops_code: bool = Field(default=False, description="An update to a version without code: connections go too.")
+    unlinks: int = Field(default=0, description="Bank connections the change ends; their accounts stay, as manual ones.")
 
 
 class PluginConnectionRead(BaseModel):

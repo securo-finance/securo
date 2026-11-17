@@ -216,6 +216,7 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
           {code.connections > 0
             ? t('plugins.code.removeConnections', { count: code.connections })
             : t('plugins.code.removeNothing')}
+          {(code.unlinks ?? 0) > 0 && <> {t('plugins.code.unlinks', { count: code.unlinks })}</>}
         </span>
       </div>
     )
@@ -235,6 +236,13 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
         <ShieldAlert size={14} className="mt-0.5 shrink-0" />
         <span>{t('plugins.code.runsCode')}</span>
       </div>
+
+      {(code.unlinks ?? 0) > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+          <Landmark size={14} className="mt-0.5 shrink-0" />
+          <span>{t('plugins.code.unlinks', { count: code.unlinks })}</span>
+        </div>
+      )}
 
       <section className="space-y-1.5">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

@@ -35,8 +35,10 @@ def is_plugin_provider(name: str | None) -> bool:
 class PluginPayloadProvider(BankProvider):
     """Serves one payload. Credentials stay sealed with the plugin connection."""
 
-    def __init__(self, name: str, payload: Payload) -> None:
+    def __init__(self, name: str, payload: Payload, logos: dict[str, str] | None = None) -> None:
         self._name = name
+        # The plugin's logos, by key, as the address Securo serves each at.
+        self._logos = logos or {}
         self._accounts = payload.accounts or []
         self._by_id = {account.external_id: account for account in self._accounts}
         self._holdings = payload.holdings
@@ -64,10 +66,12 @@ class PluginPayloadProvider(BankProvider):
 
     async def get_institution_logo(self, credentials: dict) -> Optional[str]:
         # The connection shows the institution its accounts name, as native ones do.
-        return next((a.institution_logo_url for a in self._accounts if a.institution_logo_url), None)
+        return next(
+            (self._logos[a.institution_logo] for a in self._accounts if a.institution_logo in self._logos), None
+        )
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
-        return [account.to_data() for account in self._accounts]
+        return [account.to_data(self._logos) for account in self._accounts]
 
     async def get_transactions(
         self,

@@ -753,6 +753,8 @@ export interface PluginCodeConsent {
   connections: number
   /** An update to a version without code: its connections go, as on removal. */
   drops_code?: boolean
+  /** Bank connections the change ends: their accounts stay, as manual ones. */
+  unlinks?: number
 }
 
 export interface PluginCatalogEntry {
