@@ -19,7 +19,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import type { Category, CategoryGroup, CategoryLineShareType, RecurringTransaction } from '@/types'
+import type { Category, CategoryGroup, CategoryLineShareType, RecurringPriceChange, RecurringTransaction } from '@/types'
 import { CategorySplitBadge } from '@/components/category-lines-display'
 import { TransactionCategoryLinesSection } from '@/components/transaction-category-lines-section'
 import {
@@ -34,7 +34,7 @@ import {
   type CategoryLineRow,
 } from '@/lib/category-lines'
 import { formatAmountInput } from '@/lib/format'
-import { Pencil, Trash2, Plus, RefreshCw, Info } from 'lucide-react'
+import { Pencil, Trash2, Plus, RefreshCw, Info, History, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { CategorySelect } from '@/components/category-select'
@@ -45,6 +45,72 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
 
 const TH = 'text-xs font-medium text-muted-foreground py-3'
+
+/** Compact list cap within the API's 1-50 bound. */
+const RECENT_CHANGES_LIMIT = 20
+
+/** The backend sends percentage units (15.04 means 15.04%, not 1504%). */
+function formatSignedPercent(value: string, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    style: 'percent',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: 'exceptZero',
+  }).format(Number(value) / 100)
+}
+
+/** One read-only price-change row, shared by the recent list and the dialog. */
+function PriceChangeRow({
+  event,
+  description,
+  seriesType,
+}: {
+  event: RecurringPriceChange
+  description?: string
+  seriesType?: RecurringTransaction['type']
+}) {
+  const { t } = useTranslation()
+  const locale = useDisplayLocale()
+  const { mask } = usePrivacyMode()
+  const increase = event.direction === 'increase'
+  const effectColor = seriesType === 'credit'
+    ? (increase ? 'text-emerald-600' : 'text-rose-500')
+    : seriesType === 'debit'
+      ? (increase ? 'text-rose-500' : 'text-emerald-600')
+      : 'text-muted-foreground'
+  const oldAmount = mask(formatCurrency(Number(event.previous_amount), event.currency, locale))
+  const newAmount = mask(formatCurrency(Number(event.current_amount), event.currency, locale))
+  const absolute = mask(formatCurrency(Number(event.absolute_delta), event.currency, locale))
+  return (
+    <li
+      className="px-4 sm:px-5 py-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm border-b border-border last:border-0"
+      data-testid="price-change-row"
+    >
+      {description && <span className="font-medium text-foreground">{description}</span>}
+      <span className="tabular-nums text-foreground">
+        {t('recurring.priceChangeAmount', { old: oldAmount, new: newAmount })}
+      </span>
+      <span className="tabular-nums text-muted-foreground">
+        {t('recurring.priceChangeDelta', { absolute, percent: mask(formatSignedPercent(event.percent_delta, locale)) })}
+      </span>
+      {/* Icon plus always-visible text: readable in grayscale and by screen readers. */}
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 text-xs font-semibold',
+          effectColor
+        )}
+      >
+        {increase ? <TrendingUp size={13} aria-hidden /> : <TrendingDown size={13} aria-hidden />}
+        {increase ? t('recurring.priceChangeIncrease') : t('recurring.priceChangeDecrease')}
+      </span>
+      {event.gap_days > 0 && (
+        <span className="text-xs text-muted-foreground">
+          {t('recurring.priceChangeGap', { days: event.gap_days })}
+        </span>
+      )}
+    </li>
+  )
+}
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
@@ -86,11 +152,29 @@ function RecurringTab() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<RecurringTransaction | null>(null)
   const [deletingRecurring, setDeletingRecurring] = useState<RecurringTransaction | null>(null)
+  const [historySeries, setHistorySeries] = useState<RecurringTransaction | null>(null)
 
-  const { data: recurringList } = useQuery({
+  const { data: recurringList, isError: recurringListFailed } = useQuery({
     queryKey: ['recurring'],
     queryFn: recurringApi.list,
   })
+
+  const { data: recentChanges, isPending: recentChangesPending, isError: recentChangesFailed } =
+    useQuery({
+      queryKey: ['recurring', 'recent-price-changes', RECENT_CHANGES_LIMIT],
+      queryFn: () => recurringApi.recentPriceChanges(RECENT_CHANGES_LIMIT),
+      // Read-only projection: short stale time plus the default refetch on
+      // focus; no polling.
+      staleTime: 30_000,
+    })
+
+  const { data: priceHistory, isPending: priceHistoryPending, isError: priceHistoryFailed } =
+    useQuery({
+      queryKey: ['recurring', 'price-history', historySeries?.id],
+      queryFn: () => recurringApi.priceHistory(historySeries?.id ?? ''),
+      // The detail query only runs while its dialog is open.
+      enabled: Boolean(historySeries),
+    })
 
   const { data: categoriesList } = useQuery({
     queryKey: ['categories'],
@@ -206,6 +290,9 @@ function RecurringTab() {
                 <th className={`${TH} text-left w-28 hidden md:table-cell`}>{t('recurring.frequency')}</th>
                 <th className={`${TH} text-left w-32 hidden md:table-cell`}>{t('recurring.nextOccurrence')}</th>
                 <th className={`${TH} text-left w-24 hidden sm:table-cell`}>{t('recurring.status')}</th>
+                <th className={`${TH} text-right w-12`}>
+                  <span className="sr-only">{t('recurring.viewPriceHistory')}</span>
+                </th>
                 {canWrite && <th className={`${TH} pr-4 sm:pr-5 text-right w-24`}>{t('recurring.actions')}</th>}
               </tr>
             </thead>
@@ -247,6 +334,19 @@ function RecurringTab() {
                       {rt.is_active ? t('recurring.active') : t('recurring.inactive')}
                     </span>
                   </td>
+                  {/* Price history is reachable for every row, including
+                      read-only workspaces. */}
+                  <td className="py-3 pr-2 text-right">
+                    <button
+                      type="button"
+                      className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                      onClick={() => setHistorySeries(rt)}
+                      aria-label={t('recurring.viewPriceHistory')}
+                      title={t('recurring.viewPriceHistory')}
+                    >
+                      <History size={13} />
+                    </button>
+                  </td>
                   {canWrite && (
                     <td className="py-3 pr-4 sm:pr-5">
                       <div className="flex items-center justify-end gap-1">
@@ -278,6 +378,84 @@ function RecurringTab() {
           <p className="text-sm text-muted-foreground text-center py-10">{t('recurring.empty')}</p>
         )}
       </SectionCard>
+
+      {/* A successful empty projection has no card; errors and loading stay visible. */}
+      {(recentChangesPending || recentChangesFailed || (recurringListFailed && !recurringList) || Boolean(recentChanges?.length)) && (
+      <SectionCard>
+        <div className="px-4 sm:px-5 py-4 border-b border-border">
+          <h2 className="text-sm font-semibold text-foreground">{t('recurring.priceChangesTitle')}</h2>
+        </div>
+        {recentChangesFailed || (recurringListFailed && !recurringList) ? (
+          <p className="text-sm text-muted-foreground text-center py-6">{t('common.error')}</p>
+        ) : recentChangesPending ? (
+          <p className="text-sm text-muted-foreground text-center py-6">{t('common.loading')}</p>
+        ) : recentChanges && recentChanges.length > 0 ? (
+          <ul>
+            {recentChanges.map((event) => (
+              <PriceChangeRow
+                key={event.current_transaction_id}
+                event={event}
+                description={recurringList?.find((rt) => rt.id === event.recurring_id)?.description}
+                seriesType={recurringList?.find((rt) => rt.id === event.recurring_id)?.type}
+              />
+            ))}
+          </ul>
+        ) : null}
+      </SectionCard>
+      )}
+
+      {/* Read-only price history for one series. No "update
+          amount" action: the signal is evidence, not a schedule edit. */}
+      <Dialog
+        open={Boolean(historySeries)}
+        onOpenChange={(open) => {
+          if (!open) setHistorySeries(null)
+        }}
+      >
+        <DialogContent className="max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>{t('recurring.priceHistory')}</DialogTitle>
+          </DialogHeader>
+          {historySeries && (
+            <div className="min-h-0 overflow-y-auto space-y-4">
+              <div className="text-sm space-y-1">
+                <p className="font-medium text-foreground">{historySeries.description}</p>
+                <p className="text-muted-foreground tabular-nums">
+                  {mask(
+                    `${historySeries.type === 'credit' ? '+' : '−'}${formatCurrency(historySeries.amount, historySeries.currency, locale)}`
+                  )}
+                  {' · '}
+                  {frequencyLabel(historySeries.frequency)}
+                </p>
+              </div>
+              {priceHistoryFailed ? (
+                <p className="text-sm text-muted-foreground">{t('common.error')}</p>
+              ) : priceHistoryPending ? (
+                <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+              ) : priceHistory ? (
+                <div className="space-y-3">
+                  {priceHistory.changes.length > 0 && (
+                    <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-muted text-muted-foreground border-border">
+                      {t('recurring.priceChangeBadge')}
+                    </span>
+                  )}
+                  {priceHistory.eligibility === 'insufficient_history' ? (
+                    <p className="text-sm text-muted-foreground">{t('recurring.priceChangeInsufficient')}</p>
+                  ) : priceHistory.changes.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{t('recurring.priceChangesEmpty')}</p>
+                  ) : (
+                    <ul className="border border-border rounded-lg overflow-hidden">
+                      {priceHistory.changes.map((event) => (
+                        <PriceChangeRow key={event.current_transaction_id} event={event} seriesType={historySeries.type} />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={() => { setDialogOpen(false); setEditing(null) }}>
         <DialogContent>

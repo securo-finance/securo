@@ -6,7 +6,7 @@ import type { QueryClient } from '@tanstack/react-query'
 // open drill-down overlay. Call this from every mutation that creates/
 // updates/deletes a transaction, transfer, or anything that shifts account
 // balances. Pages that also need to refresh entity-specific lists
-// (recurring, payees, connections, etc.) should invalidate those keys
+// (payees, connections, etc.) should invalidate those keys
 // on top of this call.
 export function invalidateCategoryQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['categories'] })
@@ -23,6 +23,13 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['budgets'] })
   queryClient.invalidateQueries({ queryKey: ['reports'] })
   queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+  // Recurring price history is derived from linked transaction rows, so a
+  // financial mutation must refresh both consumers. The series list itself is
+  // not derived from transaction evidence: invalidating ['recurring'] here
+  // refetched every schedule on every transaction change. Explicit recurring
+  // create/update/delete/generate callbacks still invalidate the whole family.
+  queryClient.invalidateQueries({ queryKey: ['recurring', 'recent-price-changes'] })
+  queryClient.invalidateQueries({ queryKey: ['recurring', 'price-history'] })
 }
 
 /** What a bank sync can change: its connections, the money views and the assets it holds. */
