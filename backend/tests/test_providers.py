@@ -120,6 +120,30 @@ def test_get_storage_provider_s3():
         providers_mod._storage_provider = original
 
 
+def test_local_storage_never_loads_the_s3_client():
+    """The S3 client ships in every image; with local storage it stays unloaded (ADR 0019)."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "from unittest.mock import patch\n"
+        "import app.main\n"
+        "import app.providers as p\n"
+        "with patch('app.core.config.get_settings') as s:\n"
+        "    s.return_value.storage_provider = 'local'\n"
+        "    p._storage_provider = None\n"
+        "    p.get_storage_provider()\n"
+        "loaded = sorted(m for m in sys.modules if m.split('.')[0] in {'aiobotocore', 'botocore'}"
+        " or m == 'app.providers.s3_storage')\n"
+        "assert not loaded, loaded\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=120
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_get_storage_provider_unsupported():
     import app.providers as providers_mod
     original = providers_mod._storage_provider

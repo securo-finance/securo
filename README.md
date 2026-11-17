@@ -108,12 +108,9 @@ STORAGE_S3_ACCESS_KEY=your-access-key
 STORAGE_S3_SECRET_KEY=your-secret-key
 ```
 
-Use the region configured on your Garage server. S3 support is an optional
-dependency and is not in the default backend image. With the prebuilt images, set
-`BACKEND_IMAGE=ghcr.io/securo-finance/securo-backend:latest-s3` (or a
-`<version>-s3` tag) in `.env`; when building from source, set `BACKEND_EXTRAS=s3`;
-then run `docker compose up -d --build` to rebuild and recreate the containers.
-For direct installs, use `pip install -e ".[s3]"`. For Amazon S3, omit
+Use the region configured on your Garage server. S3 support ships in the regular
+backend image, so no special image or tag is needed; the S3 client is only loaded
+when `STORAGE_PROVIDER=s3`. For Amazon S3, omit
 `STORAGE_S3_ENDPOINT_URL`, use the bucket's AWS region, and leave
 `STORAGE_S3_ADDRESSING_STYLE=auto` (the default). `virtual` is also supported.
 Temporary credentials can include `STORAGE_S3_SESSION_TOKEN`. Omit both access
@@ -161,7 +158,7 @@ SECURO_S3_TEST_REGION=garage \
 SECURO_S3_TEST_BUCKET=securo-storage-tests \
 SECURO_S3_TEST_ACCESS_KEY=test-key \
 SECURO_S3_TEST_SECRET_KEY=test-secret \
-uv run --directory backend --extra dev --extra s3 pytest tests/test_s3_storage_integration.py -v
+uv run --directory backend --extra dev pytest tests/test_s3_storage_integration.py -v
 ```
 
 ## AI-Assisted Development

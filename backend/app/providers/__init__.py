@@ -104,16 +104,7 @@ def get_storage_provider():
 
             _storage_provider = LocalStorageProvider()
         elif settings.storage_provider == "s3":
-            try:
-                from app.providers.s3_storage import S3StorageProvider
-            except ModuleNotFoundError as exc:
-                if (exc.name or "").split(".")[0] not in {"aiobotocore", "botocore"}:
-                    raise
-                raise RuntimeError(
-                    "STORAGE_PROVIDER=s3 requires the optional S3 dependencies. "
-                    'Install them with `pip install -e ".[s3]"`, or use an image built '
-                    "with BACKEND_EXTRAS=s3 (the `-s3` image tags)."
-                ) from exc
+            from app.providers.s3_storage import S3StorageProvider
 
             _storage_provider = S3StorageProvider()
         else:
