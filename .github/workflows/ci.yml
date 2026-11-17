@@ -123,7 +123,19 @@ jobs:
         run: |
           uv run --no-sync pytest -n auto --dist loadfile \
             --splits 4 --group ${{ matrix.group }} --splitting-algorithm duration_based_chunks \
-            --cov=app --cov-report= -ra -W error
+            --cov=app --cov-report= -ra -W error --store-durations
+
+      # This runner's timings for the tests the shard ran. When the shards
+      # drift apart, fold them into .test_durations with
+      # .github/ci/merge_test_durations.py (usage in its docstring).
+      - name: Upload test durations
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-durations-${{ matrix.group }}
+          path: backend/.test_durations
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload coverage data
         uses: actions/upload-artifact@v7
