@@ -66,6 +66,14 @@ async def download_attachment(
         attachment, data = await attachment_service.download_attachment(
             session, attachment_id, ctx.workspace.id
         )
+    except FileNotFoundError:
+        # The row is there and the bytes are not: storage was cleared or
+        # migrated without this file. Different from a missing row, and a
+        # 500 would say we broke when the truth is the file is gone.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment file is missing from storage",
+        )
     except LookupError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
     return Response(
