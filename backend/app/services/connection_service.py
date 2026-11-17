@@ -3677,6 +3677,11 @@ async def unlink_connection(
     accounts = (
         await session.scalars(select(Account).where(Account.connection_id == connection_id))
     ).all()
+    for account in accounts:
+        # The sync names an account after its institution; once manual, the
+        # institution is gone and the account's own name tells it apart.
+        if account.institution is not None and account.display_name == account.institution.name:
+            account.display_name = None
     # What each account shows while synced: liabilities store debt as positive.
     shown = {
         account.id: -account.balance if account.type in LIABILITY_ACCOUNT_TYPES else account.balance

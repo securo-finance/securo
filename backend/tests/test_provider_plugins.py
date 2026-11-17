@@ -105,7 +105,8 @@ def payload_data(*, transactions: Any = "default", holdings: Any = "default") ->
     return {
         "contract": 1,
         "accounts": [{"external_id": "A1:USD", "name": "Broker Cash (USD)", "type": "investment",
-                      "balance": "500.00", "currency": "USD", "transactions": transactions}],
+                      "balance": "500.00", "currency": "USD", "institution_name": "Example Broker",
+                      "transactions": transactions}],
         "holdings": holdings,
     }
 
@@ -413,6 +414,9 @@ async def _synced(session, ids) -> tuple[PluginConnection, uuid.UUID, uuid.UUID]
     bank_id = connection.bank_connection_id
     assert bank_id is not None
     (asset,) = await _rows(session, Asset, connection_id=bank_id)
+    (account,) = await _rows(session, Account, connection_id=bank_id)
+    # While synced, the account shows under its institution's name.
+    assert account.display_name == "Example Broker"
     return connection, bank_id, asset.id
 
 
@@ -438,6 +442,8 @@ async def _unlinked_keeping_records(session, bank_id: uuid.UUID, asset_id: uuid.
     assert await session.get(BankConnection, bank_id) is None
     (account,) = (await session.scalars(select(Account).where(Account.external_id == "A1:USD"))).all()
     assert account.connection_id is None
+    # Named after itself again, not after the institution the sync showed.
+    assert account.display_name is None and account.name == "Broker Cash (USD)"
     synced = await _rows(session, Transaction, account_id=account.id)
     assert sorted(t.external_id for t in synced) == ["t1", "t2"]
     # Its balance carries over: the opening balance makes the transactions add up to it.
