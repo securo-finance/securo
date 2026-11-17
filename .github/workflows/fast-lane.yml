@@ -54,6 +54,14 @@ on:
   # resolving one starts no run at all; this hourly sweep re-evaluates every
   # open pull request instead, which also covers any event GitHub did not
   # deliver. `workflow_dispatch` takes one PR number by hand, or none to sweep.
+  #
+  # The sweep has two clocks, because one of them turned out not to exist. The
+  # cron below has produced no run since it landed on main — not one of its
+  # hourly slots — while the workflow stayed `active`, so it is kept only as the
+  # thing to fall back on if GitHub ever starts delivering it. What opens the
+  # slot in practice is the first CI run after :00 on a push to main, below in
+  # step 0: every merge to main starts one, so it is the one event this
+  # repository is guaranteed to deliver.
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
@@ -62,18 +70,24 @@ on:
         description: pull request number to evaluate, empty to sweep every open one
         required: false
 
-# Is the sweep alive? A cron that does not fire leaves no failed run, only a run
-# that is not there, so silence is this trigger's failure mode. Ask for it:
-#   gh api "repos/{owner}/{repo}/actions/workflows/fast-lane.yml/runs?event=schedule&per_page=1"
-# No scheduled run after an hour in which '17 * * * *' has passed is a symptom,
-# not a diagnosis: the trigger may not be registered, or the workflow may not be
-# active, or GitHub may be delaying or dropping scheduled runs. Check its state
-# with `gh api repos/{owner}/{repo}/actions/workflows/fast-lane.yml` before
-# concluding anything. A schedule in another workflow of this repository firing
-# in the same window rules out a repository-wide outage, not this file. Until it
-# is settled, the one thing only the sweep covers — a resolved CodeRabbit
-# thread, which starts no event at all — goes on holding a merge with nothing in
-# the log saying so.
+# Is the sweep alive? A scheduled trigger that does not fire leaves no failed
+# run, only a run that is not there, so silence is its failure mode. What it says
+# is in the log, not in the trigger list: a sweep logs `sweep started by ...`,
+# and the answer has to change from one hour to the next. Look at the runs whose
+# log carries a sweep, newest first:
+#   gh api "repos/{owner}/{repo}/actions/workflows/fast-lane.yml/runs?per_page=20"
+# The run started by a push to main is a `workflow_run` one, the same event as
+# an ordinary pull request evaluation; only the log tells them apart. No sweep in
+# the last hour of pushes to main is the symptom. The `event=schedule` filter is
+# no longer the check: it answers a question nobody depends on any more, since
+# the cron is the fallback and not the clock.
+#
+# A sweep is not one run per push: only a CI run on main queued in the first ten
+# minutes of the hour opens the slot, so an hour with six merges sweeps once or
+# twice rather than six times. The cost of a sweep is every open pull request
+# through the gates (~250 calls today), and that guard is what keeps the
+# workflow token's hourly budget for the per-pull-request runs somebody is
+# actually waiting on.
 #
 # A manual run proves the other half, that the sweep itself works. Its log
 # carries `sweeping N open pull requests` and then one line per pull request: the
@@ -479,25 +493,39 @@ jobs:
             // ---- 0. which pull request is this event about? ----------------
             const ev = context.eventName;
             let number = null;
+            let sweep = false;
             if (ev === 'workflow_run') {
               const run = context.payload.workflow_run;
               if (run.conclusion !== 'success') return;
-              // A push to main has no pull request: nothing to merge.
-              if (run.event !== 'pull_request') return;
-              const prs = run.pull_requests || [];
-              // GitHub does not always fill `pull_requests` for fork heads, so
-              // fall back to looking the branch up. It must be unambiguous.
-              if (prs.length === 1) {
-                number = prs[0].number;
+              if (run.event === 'push' && run.head_branch === 'main') {
+                // A push to main has no pull request, but its CI run is the one
+                // event this repository delivers every time: each merge to main
+                // starts one. The first ten minutes of the hour are the slot the
+                // cron was meant to open, and a push there opens it. A busy hour
+                // sweeps once or twice instead of once per push; the sweep is
+                // every open pull request, so the guard is what keeps the token
+                // for the per-pull-request runs somebody is waiting on.
+                // `run_started_at` and not the clock: a CI run queued at :06 and
+                // finishing at :20 opens the slot it was queued in.
+                if (new Date(run.run_started_at).getUTCMinutes() >= 10) return;
+                sweep = true;
               } else {
-                const own = run.head_repository && run.head_repository.owner
-                  ? run.head_repository.owner.login : OWNER;
-                const { data: open } = await github.rest.pulls.list({
-                  owner: OWNER, repo: REPO, state: 'open',
-                  head: `${own}:${run.head_branch}`, per_page: 5,
-                });
-                if (open.length !== 1) return;
-                number = open[0].number;
+                if (run.event !== 'pull_request') return;
+                const prs = run.pull_requests || [];
+                // GitHub does not always fill `pull_requests` for fork heads, so
+                // fall back to looking the branch up. It must be unambiguous.
+                if (prs.length === 1) {
+                  number = prs[0].number;
+                } else {
+                  const own = run.head_repository && run.head_repository.owner
+                    ? run.head_repository.owner.login : OWNER;
+                  const { data: open } = await github.rest.pulls.list({
+                    owner: OWNER, repo: REPO, state: 'open',
+                    head: `${own}:${run.head_branch}`, per_page: 5,
+                  });
+                  if (open.length !== 1) return;
+                  number = open[0].number;
+                }
               }
             } else if (ev === 'issue_comment') {
               if (!context.payload.issue.pull_request) return;
@@ -511,15 +539,17 @@ jobs:
             if (number) {
               const refusal = await tryMerge(number);
               if (refusal && refusal.report) await reportRefusal(number, refusal.why);
-            } else if (ev === 'schedule' || ev === 'workflow_dispatch') {
+            } else if (sweep || ev === 'schedule' || ev === 'workflow_dispatch') {
               // The sweep: every open pull request goes through the same gates,
               // so a thread resolved with no other event still gets merged.
               const open = await github.paginate(github.rest.pulls.list,
                 { owner: OWNER, repo: REPO, state: 'open', per_page: 100 });
-              // Which trigger this is: a cron that never fires and a hand-run
-              // look the same in a list of runs, and the log is where the
-              // difference is read.
-              core.info(`sweep started by ${ev === 'schedule' ? 'the hourly schedule' : 'a manual run'}`);
+              // Which trigger this is: a run started by the hourly slot and one
+              // started by hand look the same in a list of runs, and the log is
+              // where the difference is read.
+              const by = sweep ? 'the hourly slot (a push to main)'
+                : (ev === 'schedule' ? 'the hourly schedule' : 'a manual run');
+              core.info(`sweep started by ${by}`);
               core.info(`sweeping ${open.length} open pull requests`);
               for (const p of open) {
                 try {
