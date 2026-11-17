@@ -25,7 +25,7 @@ export function AuthBrandPanel() {
       {/* Oversized translucent shell, bleeding off the lower-right edge */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -right-28 -bottom-24 text-white/[0.06]"
+        className="pointer-events-none absolute -end-28 -bottom-24 text-white/[0.06]"
         style={{ transform: 'rotate(-8deg)' }}
       >
         <ShellLogo size={640} />

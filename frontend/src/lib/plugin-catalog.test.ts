@@ -36,6 +36,7 @@ function entry(overrides: Partial<PluginCatalogEntry>): PluginCatalogEntry {
     supported: true,
     workspaces: ['personal', 'business'],
     fits_workspace: true,
+    icon_url: null,
     installed_version: null,
     update_available: false,
     ...overrides,

@@ -43,6 +43,7 @@ export function ToolsSection({ agentId }: { agentId: string }) {
   }, {})
 
   const dirty = draft.some((tool, i) => (data?.tools[i]?.enabled ?? true) !== tool.enabled)
+  const enabledCount = draft.filter((tool) => tool.enabled).length
 
   return (
     <div className="space-y-4">
@@ -50,11 +51,27 @@ export function ToolsSection({ agentId }: { agentId: string }) {
         <div>
           <h3 className="text-sm font-semibold">{t('agents.tools.title')}</h3>
           <p className="text-xs text-muted-foreground">{t('agents.tools.subtitle')}</p>
+          {draft.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1" data-testid="tools-enabled-count">
+              {t('agents.tools.enabledCount', { enabled: enabledCount, total: draft.length })}
+            </p>
+          )}
         </div>
         {canWrite && (
-          <Button size="sm" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
-            {save.isPending ? t('agents.tools.saving') : t('agents.tools.save')}
-          </Button>
+          <div className="flex items-center gap-2">
+            {enabledCount < draft.length && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setDraft((d) => d.map((x) => ({ ...x, enabled: true })))}
+              >
+                {t('agents.tools.enableAll')}
+              </Button>
+            )}
+            <Button size="sm" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+              {save.isPending ? t('agents.tools.saving') : t('agents.tools.save')}
+            </Button>
+          </div>
         )}
       </div>
 

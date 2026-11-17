@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { agents } from '@/lib/api'
 import type { LlmConnection, LlmConnectionKind } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 
 interface Props {
   open: boolean
@@ -138,8 +139,7 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
       toast.success(isEdit ? t('agents.connections.updated') : t('agents.connections.created'))
     },
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(detail || t('agents.connections.saveFailed'))
+      toast.error(extractApiError(err, t('agents.connections.saveFailed')))
     },
   })
 
@@ -189,7 +189,7 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
             <Label>
               {t('agents.connections.baseUrl')}
               {!meta.needsBaseUrl && (
-                <span className="text-xs text-muted-foreground ml-1">({t('agents.connections.optional')})</span>
+                <span className="text-xs text-muted-foreground ms-1">({t('agents.connections.optional')})</span>
               )}
             </Label>
             <Input
@@ -206,7 +206,7 @@ export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) 
             <Label>
               {t('agents.connections.apiKey')}
               {!meta.needsKey && (
-                <span className="text-xs text-muted-foreground ml-1">({t('agents.connections.optional')})</span>
+                <span className="text-xs text-muted-foreground ms-1">({t('agents.connections.optional')})</span>
               )}
             </Label>
             <Input

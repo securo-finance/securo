@@ -193,7 +193,7 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
                 <button
                   key={code}
                   onClick={() => handleCountrySelect(code)}
-                  className="w-full flex items-center gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:border-primary hover:bg-muted/50"
+                  className="w-full flex items-center gap-3 rounded-lg border border-border p-3 text-start transition-colors hover:border-primary hover:bg-muted/50"
                 >
                   <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center shrink-0">
                     <Globe size={14} className="text-muted-foreground" />
@@ -215,7 +215,7 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
                 <button
                   key={`${inst.country}-${inst.name}`}
                   onClick={() => handleBankSelect(inst)}
-                  className="w-full flex items-center gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:border-primary hover:bg-muted/50"
+                  className="w-full flex items-center gap-3 rounded-lg border border-border p-3 text-start transition-colors hover:border-primary hover:bg-muted/50"
                 >
                   <div className="w-8 h-8 rounded-md bg-muted overflow-hidden flex items-center justify-center shrink-0">
                     {inst.logo ? (
@@ -239,7 +239,7 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
             )}
             <div className="pt-2">
               <Button variant="ghost" size="sm" onClick={handleBack}>
-                <ChevronLeft size={14} className="mr-1" />
+                <ChevronLeft size={14} className="me-1" />
                 {t('accounts.back')}
               </Button>
             </div>

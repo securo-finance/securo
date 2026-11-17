@@ -36,7 +36,7 @@ export function ToolDebugChip({ name, args, result, pending, defaultOpen = false
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left"
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-start"
       >
         {status === 'pending' ? (
           <Loader2 className="h-3 w-3 animate-spin text-muted-foreground shrink-0" />

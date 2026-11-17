@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -19,20 +19,43 @@ function initials(label: string): string {
 }
 
 /**
- * Generated artwork from a seed: no image is fetched, so browsing the catalog
- * never tells a third party which plugins or authors someone looked at.
+ * The plugin's icon when the catalog has one, else generated artwork from a
+ * seed. The icon comes from Securo itself (`/api/plugins/icons/<sha256>`),
+ * never from GitHub or the plugin's site, so browsing the catalog never tells
+ * a third party which plugins or authors someone looked at. An icon that
+ * fails to load falls back to the artwork.
  */
 export function PluginAvatar({
   seed,
   label,
+  src,
   shape = 'square',
   className,
 }: {
   seed: string
   label: string
+  src?: string | null
   shape?: 'square' | 'round'
   className?: string
 }) {
+  const [failed, setFailed] = useState<string | null>(null)
+  const rounding = shape === 'round' ? 'rounded-full' : 'rounded-[28%]'
+
+  if (src && failed !== src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        aria-hidden
+        draggable={false}
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailed(src)}
+        className={cn('shrink-0 select-none object-contain', rounding, className)}
+      />
+    )
+  }
+
   return (
     <span
       aria-hidden
@@ -41,7 +64,7 @@ export function PluginAvatar({
         'flex shrink-0 select-none items-center justify-center font-semibold tracking-tight',
         'bg-[oklch(0.95_0.035_var(--h))] text-[oklch(0.42_0.1_var(--h))]',
         'dark:bg-[oklch(0.32_0.05_var(--h))] dark:text-[oklch(0.86_0.08_var(--h))]',
-        shape === 'round' ? 'rounded-full' : 'rounded-[28%]',
+        rounding,
         className,
       )}
     >

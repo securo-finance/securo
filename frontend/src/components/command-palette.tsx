@@ -1,3 +1,4 @@
+import { ltrAmount } from '@/lib/format'
 import { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from 'react'
 import { Command } from 'cmdk'
 import { Dialog as DialogPrimitive } from 'radix-ui'
@@ -311,11 +312,13 @@ function saveRecent(item: RecentItem) {
 function formatHitAmount(amount: number | null, currency: string | null, locale: string): string | null {
   if (amount === null || amount === undefined) return null
   try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: currency ?? 'USD',
-      maximumFractionDigits: 2,
-    }).format(amount)
+    return ltrAmount(
+      new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: currency ?? 'USD',
+        maximumFractionDigits: 2,
+      }).format(amount),
+    )
   } catch {
     return `${amount}`
   }

@@ -9,6 +9,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
@@ -24,6 +25,7 @@ from app.providers.base import (
     HoldingData,
     ProviderRateLimited,
     ProviderUserActionRequired,
+    ReservedBalanceData,
     TransactionData,
 )
 from app.providers.enable_banking import EnableBankingProvider
@@ -151,6 +153,198 @@ def test_merge_sync_metadata_rekey_preserves_old_raw_fields():
 
     assert tx.external_id == "new-id"
     assert tx.raw_data == {"posted": 2, "old_only": True, "new_only": True}
+
+
+def test_merge_sync_metadata_refreshes_an_enriched_provider_description():
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        account_id=uuid.uuid4(),
+        external_id="provider-id",
+        description="Compra a Vista sem Juros MasterCard",
+        original_description="Compra a Vista sem Juros MasterCard",
+        amount=Decimal("118.90"),
+        date=date(2026, 11, 6),
+        type="debit",
+        source="sync",
+        status="pending",
+        description_is_rule_managed=False,
+    )
+    txn_data = TransactionData(
+        external_id="provider-id",
+        description="IFD*LETICIA ALVES DE O",
+        amount=Decimal("118.90"),
+        date=date(2026, 11, 6),
+        type="debit",
+        status="pending",
+    )
+
+    _merge_sync_metadata(tx, txn_data)
+
+    assert tx.description == "IFD*LETICIA ALVES DE O"
+    assert tx.original_description == "IFD*LETICIA ALVES DE O"
+
+
+def test_merge_sync_metadata_preserves_a_manually_edited_description():
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        account_id=uuid.uuid4(),
+        external_id="provider-id",
+        description="Jantar da Letícia",
+        original_description="Compra a Vista sem Juros MasterCard",
+        amount=Decimal("118.90"),
+        date=date(2026, 11, 6),
+        type="debit",
+        source="sync",
+        status="pending",
+        description_is_rule_managed=False,
+    )
+    txn_data = TransactionData(
+        external_id="provider-id",
+        description="IFD*LETICIA ALVES DE O",
+        amount=Decimal("118.90"),
+        date=date(2026, 11, 6),
+        type="debit",
+        status="pending",
+    )
+
+    _merge_sync_metadata(tx, txn_data)
+
+    assert tx.description == "Jantar da Letícia"
+    assert tx.original_description == "IFD*LETICIA ALVES DE O"
+
+
+def test_merge_sync_metadata_preserves_a_rule_managed_description():
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        account_id=uuid.uuid4(),
+        external_id="provider-id",
+        description="iFood",
+        original_description="iFood",
+        amount=Decimal("118.90"),
+        date=date(2026, 11, 6),
+        type="debit",
+        source="sync",
+        status="pending",
+        description_is_rule_managed=True,
+    )
+    txn_data = TransactionData(
+        external_id="provider-id",
+        description="IFD*LETICIA ALVES DE O",
+        amount=Decimal("118.90"),
+        date=date(2026, 11, 6),
+        type="debit",
+        status="pending",
+    )
+
+    _merge_sync_metadata(tx, txn_data)
+
+    assert tx.description == "iFood"
+    assert tx.original_description == "IFD*LETICIA ALVES DE O"
+    assert tx.description_is_rule_managed is True
+
+
+def test_merge_sync_metadata_preserves_legacy_descriptions_without_provenance():
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        account_id=uuid.uuid4(),
+        external_id="provider-id",
+        description="Jantar da Letícia",
+        original_description=None,
+        amount=Decimal("118.90"),
+        date=date(2026, 11, 6),
+        type="debit",
+        source="sync",
+        status="pending",
+        description_is_rule_managed=False,
+    )
+    txn_data = TransactionData(
+        external_id="provider-id",
+        description="IFD*LETICIA ALVES DE O",
+        amount=Decimal("118.90"),
+        date=date(2026, 11, 6),
+        type="debit",
+        status="pending",
+    )
+
+    _merge_sync_metadata(tx, txn_data)
+
+    assert tx.description == "Jantar da Letícia"
+    assert tx.original_description == "IFD*LETICIA ALVES DE O"
+
+
+def test_merge_sync_metadata_does_not_store_an_empty_provider_description():
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        account_id=uuid.uuid4(),
+        external_id="provider-id",
+        description="Manual description",
+        original_description=None,
+        amount=Decimal("5"),
+        date=date(2026, 6, 27),
+        type="debit",
+        source="sync",
+        status="pending",
+    )
+
+    _merge_sync_metadata(
+        tx,
+        TransactionData(
+            external_id="provider-id",
+            description="   ",
+            amount=Decimal("5"),
+            date=date(2026, 6, 27),
+            type="debit",
+        ),
+    )
+
+    assert tx.description == "Manual description"
+    assert tx.original_description is None
+
+
+def test_merge_sync_metadata_ignores_empty_or_unchanged_descriptions():
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        account_id=uuid.uuid4(),
+        external_id="provider-id",
+        description="Coffee",
+        original_description="Coffee",
+        amount=Decimal("5"),
+        date=date(2026, 6, 27),
+        type="debit",
+        source="sync",
+        status="posted",
+        description_is_rule_managed=False,
+    )
+
+    _merge_sync_metadata(
+        tx,
+        TransactionData(
+            external_id="provider-id",
+            description="",
+            amount=Decimal("5"),
+            date=date(2026, 6, 27),
+            type="debit",
+        ),
+    )
+    _merge_sync_metadata(
+        tx,
+        TransactionData(
+            external_id="provider-id",
+            description="Coffee",
+            amount=Decimal("5"),
+            date=date(2026, 6, 27),
+            type="debit",
+        ),
+    )
+
+    assert tx.description == "Coffee"
+    assert tx.original_description == "Coffee"
 
 
 def test_description_similarity_none():
@@ -810,6 +1004,192 @@ async def test_delete_connection_unpairs_transfer_partner_on_manual_account(
     assert pairs == {
         partner.id: None, other_debit.id: other_pair_id, other_credit.id: other_pair_id,
     }
+
+
+async def _connection_with_history(session: AsyncSession, user_id):
+    """A connection whose account holds one synced transaction with a payee
+    and one recurring, plus a synced asset."""
+    from app.models.recurring_transaction import RecurringTransaction
+
+    conn, account, payee = await _connected_payee(session, user_id, "Kept Payee")
+    account.external_id = "keep-acc-1"
+    tx = (
+        await session.execute(select(Transaction).where(Transaction.account_id == account.id))
+    ).scalar_one()
+    tx.external_id = "keep-tx-1"
+    recurring = RecurringTransaction(
+        id=uuid.uuid4(), user_id=user_id, account_id=account.id,
+        description="Rent", amount=Decimal("100"), currency="BRL", type="debit",
+        frequency="monthly", start_date=date.today(), next_occurrence=date.today(),
+    )
+    asset = Asset(
+        id=uuid.uuid4(), user_id=user_id, name="Synced ETF", type="etf",
+        currency="BRL", source="test", external_id="keep-asset-1",
+        connection_id=conn.id, is_archived=False,
+    )
+    session.add_all([recurring, asset])
+    await session.commit()
+    return conn, account, tx, payee, recurring, asset
+
+
+@pytest.mark.asyncio
+async def test_disconnect_keeping_accounts_preserves_history(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """keep_accounts archives the connection and leaves its accounts,
+    transactions, payees, recurrings and assets in place (#1018)."""
+    from app.models.payee import Payee
+    from app.models.recurring_transaction import RecurringTransaction
+
+    conn, account, tx, payee, recurring, asset = await _connection_with_history(
+        session, test_user.id
+    )
+
+    workspace_id, conn_id, account_id = test_workspace.id, conn.id, account.id
+    tx_id, payee_id, recurring_id, asset_id = tx.id, payee.id, recurring.id, asset.id
+
+    assert await delete_connection(
+        session, conn_id, workspace_id, keep_accounts=True
+    ) is True
+
+    session.expire_all()
+    kept = await get_connection(session, conn_id, workspace_id)
+    assert kept is not None
+    assert kept.status == "disconnected"
+    assert kept.credentials is None
+    kept_account = await session.get(Account, account_id)
+    assert kept_account is not None
+    assert kept_account.connection_id == conn_id
+    assert kept_account.external_id == "keep-acc-1"
+    assert await session.get(Transaction, tx_id) is not None
+    assert await session.get(Payee, payee_id) is not None
+    assert await session.get(RecurringTransaction, recurring_id) is not None
+    kept_asset = await session.get(Asset, asset_id)
+    assert kept_asset is not None and kept_asset.is_archived is False
+
+
+@pytest.mark.asyncio
+async def test_disconnected_connection_does_not_sync(
+    session: AsyncSession, test_user, test_workspace,
+):
+    from app.services.connection_service import ConnectionDisconnectedError
+
+    conn = await _make_connection(session, test_user.id, "Archived Bank")
+    await delete_connection(session, conn.id, test_workspace.id, keep_accounts=True)
+
+    mock_provider = AsyncMock()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         pytest.raises(ConnectionDisconnectedError):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+    mock_provider.get_accounts.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        RuntimeError("provider down"),
+        ProviderUserActionRequired("reconnect", code="credentials_invalid"),
+        ProviderRateLimited("slow down"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_failed_sync_keeps_a_disconnect_made_meanwhile(
+    session: AsyncSession, test_user, test_workspace, failure,
+):
+    """A disconnect that commits while a sync is failing stays disconnected:
+    the failure handler must not stamp the archived row back to error or
+    active, or its reconnect token would have no item to reopen."""
+    from sqlalchemy import update
+
+    conn = await _make_connection(session, test_user.id, "Racing Bank")
+    conn_id = conn.id
+    workspace_id = test_workspace.id
+    user_id = test_user.id
+
+    async def disconnect_then_fail(_credentials):
+        await session.execute(
+            update(BankConnection)
+            .where(BankConnection.id == conn_id)
+            .values(status="disconnected", credentials=None)
+        )
+        await session.commit()
+        raise failure
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(side_effect=disconnect_then_fail)
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        try:
+            await sync_connection(session, conn_id, workspace_id, user_id)
+        except Exception:
+            pass
+
+    session.expire_all()
+    kept = await get_connection(session, conn_id, workspace_id)
+    assert kept is not None
+    assert kept.status == "disconnected"
+
+
+@pytest.mark.asyncio
+async def test_reconnect_after_disconnect_resyncs_without_duplicates(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Reconnecting a connection disconnected with keep_accounts and syncing
+    the same data again updates the kept rows instead of importing them a
+    second time."""
+    conn, account, tx, _payee, _recurring, _asset = await _connection_with_history(
+        session, test_user.id
+    )
+    await delete_connection(session, conn.id, test_workspace.id, keep_accounts=True)
+
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id=conn.external_id,
+        institution_name="Kept Payee Bank",
+        credentials={"token": "fresh"},
+        accounts=[],
+    ))
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "fresh"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="keep-acc-1", name="Connected Account",
+            type="checking", balance=Decimal("123.45"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="keep-tx-1", description="Synced tx",
+            amount=Decimal("10"), date=date.today(), type="debit", currency="BRL",
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        reconnected = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code",
+            reconnect_connection_id=conn.id,
+        )
+        assert reconnected.status == "active"
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    accounts = (
+        await session.execute(select(Account).where(Account.user_id == test_user.id))
+    ).scalars().all()
+    assert [a.id for a in accounts] == [account.id]
+    # The resumed sync really ran against the kept account: it took the
+    # balance the provider reports now.
+    await session.refresh(accounts[0])
+    assert accounts[0].balance == Decimal("123.45")
+    synced = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.account_id == account.id,
+                Transaction.external_id.isnot(None),
+            )
+        )
+    ).scalars().all()
+    assert [t.id for t in synced] == [tx.id]
 
 
 # ---------------------------------------------------------------------------
@@ -1733,6 +2113,222 @@ async def test_sync_connection_enable_banking_late_reference_yields_to_held_refe
     assert {row.external_id for row in rows} == {
         "fp-late", "fp-a", "fp-b", referenced.external_id,
     }
+
+
+_TRANSFER_FIRST_REMITTANCE = (
+    "TRANSFERENCIA A FAVOR DE Cuenta Ahorro CONCEPTO cuota comunidad 2026 portal 3"
+)
+_TRANSFER_REWORDED_REMITTANCE = "TRASPASO: cuota comunidad 2026 portal 3"
+
+
+def _eb_reworded_payload(
+    entry_ref: str | None, remittance: str, *, value_date: str = "2026-11-11",
+) -> dict:
+    """A booked transfer as a Spanish bank returns it through Enable Banking:
+    first without a reference, then with one and its remittance text
+    reworded."""
+    return {
+        "entry_reference": entry_ref,
+        "transaction_amount": {"currency": "EUR", "amount": "120.00"},
+        "credit_debit_indicator": "DBIT",
+        "status": "BOOK",
+        "booking_date": "2026-11-11",
+        "value_date": value_date,
+        "transaction_date": "2026-11-11",
+        "remittance_information": [remittance],
+    }
+
+
+async def _hold_reworded_entry(session, user_id, workspace_id, account, raw: dict):
+    txn = _eb_txn(raw)
+    held = _eb_row(
+        user_id, workspace_id, account, txn.external_id, txn.raw_data, "120.00",
+        description=txn.description, original_description=txn.description,
+        date=txn.date, currency=txn.currency,
+    )
+    session.add(held)
+    await session.commit()
+    return txn, held.id
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_late_reference_with_reworded_remittance(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The bank filled in the reference on a later fetch and reworded the
+    remittance text, so the descriptions share too few words to match. The
+    rest of the payload is the same, so the held row takes the new id."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    _, held_id = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(None, _TRANSFER_FIRST_REMITTANCE),
+    )
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", _TRANSFER_REWORDED_REMITTANCE))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [row.id for row in rows] == [held_id]
+    assert rows[0].external_id == refetched.external_id
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_reworded_remittance_through_sync(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The held row is stored by the sync itself, twice over, so the payload
+    the reworded match compares is the one the sync keeps."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    first = _eb_txn(_eb_reworded_payload(None, _TRANSFER_FIRST_REMITTANCE))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [first])
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [first])
+    [held] = await _account_rows(session, account_id)
+    held_id = held.id
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", _TRANSFER_REWORDED_REMITTANCE))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.external_id) for row in rows] == [(held_id, refetched.external_id)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("held_remittance", "booked_remittance", "held_value_date"),
+    [
+        (_TRANSFER_FIRST_REMITTANCE, _TRANSFER_REWORDED_REMITTANCE, "2026-11-10"),
+        (
+            "TRANSFERENCIA A FAVOR DE Cuenta Ahorro CONCEPTO alquiler noviembre",
+            _TRANSFER_REWORDED_REMITTANCE,
+            "2026-11-11",
+        ),
+        ("CARD PAYMENT AT SHOP ALPHA", "CARD PAYMENT AT SHOP BETA", "2026-11-11"),
+    ],
+    ids=["other-value-date", "other-concept", "other-merchant"],
+)
+async def test_sync_connection_enable_banking_reworded_remittance_needs_same_entry(
+    session: AsyncSession, test_user, test_workspace,
+    held_remittance, booked_remittance, held_value_date,
+):
+    """A held row whose payload differs in another field, or whose text names
+    another concept or merchant, is a different entry of the same amount, so
+    it keeps its id. The payloads carry no creditor, so only the text tells
+    the two card purchases apart."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    held, _ = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(None, held_remittance, value_date=held_value_date),
+    )
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", booked_remittance))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {held.external_id, refetched.external_id}
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_reworded_remittance_ambiguous_is_new_row(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Two identical transfers held without a reference are both candidates,
+    so a reworded copy re-keys neither."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    first = _eb_txn(_eb_reworded_payload(None, _TRANSFER_FIRST_REMITTANCE))
+    session.add_all([
+        _eb_row(
+            test_user.id, test_workspace.id, account, external_id, first.raw_data, "120.00",
+            description=first.description, original_description=first.description,
+            date=first.date,
+        )
+        for external_id in ("fp-a", "fp-b")
+    ])
+    await session.commit()
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", _TRANSFER_REWORDED_REMITTANCE))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {"fp-a", "fp-b", refetched.external_id}
+
+
+_ALPHA = "ALPHA COFFEE SHOP NEW YORK"
+_BETA = "BETA COFFEE SHOP NEW YORK"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("beta_first", [False, True], ids=["alpha_first", "beta_first"])
+async def test_sync_connection_enable_banking_reworded_remittance_yields_to_exact_twin(
+    session: AsyncSession, test_user, test_workspace, beta_first,
+):
+    """The fetch returns the held ALPHA purchase with its reference beside a
+    BETA purchase that agrees on every other field and ends in the same words.
+    ALPHA's description match wins in either order, so the held row never
+    takes BETA's identity."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    _, held_id = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(None, _ALPHA),
+    )
+
+    alpha = _eb_txn(_eb_reworded_payload("2026-11-11.1", _ALPHA))
+    beta = _eb_txn(_eb_reworded_payload("2026-11-11.2", _BETA))
+    fetched = [beta, alpha] if beta_first else [alpha, beta]
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, fetched)
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {alpha.external_id, beta.external_id}
+    assert next(row for row in rows if row.id == held_id).external_id == alpha.external_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cut_short", ["incomplete", "truncated"])
+async def test_sync_connection_enable_banking_reworded_remittance_needs_complete_fetch(
+    session: AsyncSession, test_user, test_workspace, cut_short,
+):
+    """A fetch cut short may have dropped the held row's own referenced copy,
+    so it matches no reworded remittance text."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    held, _ = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(None, _TRANSFER_FIRST_REMITTANCE),
+    )
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", _TRANSFER_REWORDED_REMITTANCE))
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, [refetched], **{cut_short: True},
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {held.external_id, refetched.external_id}
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_reworded_remittance_deleted_entry_gap(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Known gap: when the bank deletes the held ALPHA purchase and returns a
+    BETA purchase that agrees on every other field and ends in the same
+    words, nothing tells it from a reworded ALPHA, so the held row takes it."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    _, held_id = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(None, _ALPHA),
+    )
+
+    beta = _eb_txn(_eb_reworded_payload("2026-11-11.2", _BETA))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [beta])
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.external_id) for row in rows] == [(held_id, beta.external_id)]
 
 
 def _paypal_payload(
@@ -7983,3 +8579,230 @@ async def test_sync_simplefin_lowercase_account_currency_counts_portfolio_once(
     assert {a.currency for a in assets} == {"USD"}
     dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
     assert dp.value == pytest.approx(1057.20 + 889.92)
+
+
+# ---------------------------------------------------------------------------
+# reserved balances (Pluggy bankData.reservedBalances / Mercado Pago cofrinhos)
+# ---------------------------------------------------------------------------
+
+
+def _reserved(external_id, name, currency, amount):
+    return ReservedBalanceData(
+        external_id=external_id, name=name, currency=currency, amount=Decimal(amount)
+    )
+
+
+def _mp_account(reserved):
+    """A provider balance with reservations reported separately alongside it."""
+    return AccountData(
+        external_id="mp-acc-1",
+        name="Mercado Pago",
+        type="checking",
+        balance=Decimal("1000.00"),
+        currency="BRL",
+        auto_invested_balance=Decimal("1000.00"),
+        reserved_balances=reserved,
+    )
+
+
+MP_POCKETS = [
+    _reserved("emergency-fund", "Emergency fund", "BRL", "0"),
+    _reserved("round-up", "Round-up savings", "BRL", "2000"),
+    _reserved("marketplace", "Marketplace savings", "BRL", "2000"),
+]
+
+
+async def _import_mp(session, test_user, test_workspace, acc_data):
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id=f"ext-{uuid.uuid4().hex[:8]}",
+        institution_name="Mercado Pago",
+        credentials={"token": "abc"},
+        accounts=[acc_data],
+    ))
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        return await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code", "pluggy"
+        )
+
+
+async def _sync_mp_account(session, conn, test_user, test_workspace, acc_data):
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
+    mock_provider.get_accounts = AsyncMock(return_value=[acc_data])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        return await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+
+async def _reserved_rows(session, account_id):
+    return (
+        await session.execute(
+            select(AccountReservedBalance)
+            .where(AccountReservedBalance.account_id == account_id)
+            .order_by(AccountReservedBalance.external_id)
+        )
+    ).scalars().all()
+
+
+async def _mp_account_row(session, conn):
+    return (
+        await session.execute(select(Account).where(Account.connection_id == conn.id))
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_reserved_balances_stored_on_initial_import(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Reservations are stored under their account without changing its balance."""
+    conn = await _import_mp(session, test_user, test_workspace, _mp_account(MP_POCKETS))
+    account = await _mp_account_row(session, conn)
+
+    assert account.balance == Decimal("1000.00")
+    rows = await _reserved_rows(session, account.id)
+    # Ordered by the provider identification.
+    assert [(r.external_id, r.name, r.currency, r.amount) for r in rows] == [
+        ("emergency-fund", "Emergency fund", "BRL", Decimal("0")),
+        ("marketplace", "Marketplace savings", "BRL", Decimal("2000")),
+        ("round-up", "Round-up savings", "BRL", Decimal("2000")),
+    ]
+    assert {r.workspace_id for r in rows} == {test_workspace.id}
+
+
+@pytest.mark.asyncio
+async def test_reserved_balances_repeated_key_is_upserted_once(
+    session: AsyncSession, test_user, test_workspace
+):
+    pockets = [
+        *MP_POCKETS,
+        _reserved("round-up", "Latest name", "BRL", "2500"),
+    ]
+    conn = await _import_mp(session, test_user, test_workspace, _mp_account(pockets))
+    account_id = (await _mp_account_row(session, conn)).id
+    rows = await _reserved_rows(session, account_id)
+    first_ids = {row.external_id: row.id for row in rows}
+
+    assert len(rows) == 3
+    round_up = next(row for row in rows if row.external_id == "round-up")
+    assert round_up.name == "Latest name"
+    assert round_up.amount == Decimal("2500")
+
+    await _sync_mp_account(session, conn, test_user, test_workspace, _mp_account(pockets))
+    assert {row.external_id: row.id for row in await _reserved_rows(session, account_id)} == first_ids
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_entry", [
+    {"name": "Missing identity", "availableAmounts": [{"amount": 2000, "currencyCode": "BRL"}]},
+    {"identification": "round-up", "availableAmounts": 2000},
+    {"identification": "round-up", "availableAmounts": [
+        {"amount": 2000, "currencyCode": "BRL"},
+        {"amount": "invalid", "currencyCode": "BRL"},
+    ]},
+])
+async def test_reserved_balances_incomplete_payload_keeps_stored_money(
+    session: AsyncSession, test_user, test_workspace, bad_entry
+):
+    from app.providers.pluggy import PluggyProvider, _build_account_data
+
+    conn = await _import_mp(session, test_user, test_workspace, _mp_account(MP_POCKETS))
+    account_id = (await _mp_account_row(session, conn)).id
+    first = {
+        row.external_id: (row.id, row.name, row.amount)
+        for row in await _reserved_rows(session, account_id)
+    }
+    parsed = _build_account_data({
+        "id": "mp-acc-1", "name": "Mercado Pago", "type": "BANK",
+        "subtype": "CHECKING_ACCOUNT", "balance": 1000, "currencyCode": "BRL",
+        "bankData": {"reservedBalances": [
+            {"identification": "emergency-fund", "availableAmounts": [
+                {"amount": 10, "currencyCode": "BRL"},
+            ]},
+            bad_entry,
+        ]},
+    }, PluggyProvider._map_account_type)
+
+    await _sync_mp_account(session, conn, test_user, test_workspace, parsed)
+
+    assert {
+        row.external_id: (row.id, row.name, row.amount)
+        for row in await _reserved_rows(session, account_id)
+    } == first
+
+
+@pytest.mark.asyncio
+async def test_reserved_balances_upsert_rename_and_delete_on_resync(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Identity is (external_id, currency): a repeat sync changes nothing, a
+    rename updates the row in place, and a pocket the provider stops
+    reporting is deleted."""
+    conn = await _import_mp(session, test_user, test_workspace, _mp_account(MP_POCKETS))
+    account_id = (await _mp_account_row(session, conn)).id
+    first = await _reserved_rows(session, account_id)
+    ids = {r.external_id: r.id for r in first}
+
+    await _sync_mp_account(session, conn, test_user, test_workspace, _mp_account(MP_POCKETS))
+    assert len(await _reserved_rows(session, account_id)) == 3
+
+    renamed = [
+        _reserved("emergency-fund", "Emergency fund", "BRL", "0"),
+        _reserved("round-up", "Travel savings", "BRL", "4000"),
+        _reserved("marketplace", "Marketplace savings", "BRL", "2000"),
+    ]
+    await _sync_mp_account(session, conn, test_user, test_workspace, _mp_account(renamed))
+    rows = {r.external_id: r for r in await _reserved_rows(session, account_id)}
+    assert set(rows) == set(ids)
+    assert rows["round-up"].id == ids["round-up"]
+    assert rows["round-up"].name == "Travel savings"
+    assert rows["round-up"].amount == Decimal("4000")
+
+    await _sync_mp_account(session, conn, test_user, test_workspace, _mp_account([]))
+    assert await _reserved_rows(session, account_id) == []
+
+
+@pytest.mark.asyncio
+async def test_reserved_balances_kept_when_provider_is_silent(
+    session: AsyncSession, test_user, test_workspace
+):
+    """`None` means the provider did not report the collection — an
+    unsupported connector or an all-malformed payload — so the stored rows
+    survive; only a reported list is authoritative."""
+    conn = await _import_mp(session, test_user, test_workspace, _mp_account(MP_POCKETS))
+    account_id = (await _mp_account_row(session, conn)).id
+
+    await _sync_mp_account(session, conn, test_user, test_workspace, _mp_account(None))
+
+    assert len(await _reserved_rows(session, account_id)) == 3
+
+
+@pytest.mark.asyncio
+async def test_reserved_balance_in_another_currency_is_stored_but_not_summed(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A USD pocket on a BRL account is kept and shown, but contributes
+    nothing to the account's own-currency total."""
+    from app.services.account_service import serialize_account
+
+    conn = await _import_mp(
+        session,
+        test_user,
+        test_workspace,
+        _mp_account([_reserved("usd-pocket", "USD Pocket", "USD", "75")]),
+    )
+    account = await _mp_account_row(session, conn)
+
+    rows = await _reserved_rows(session, account.id)
+    assert [(r.external_id, r.currency) for r in rows] == [("usd-pocket", "USD")]
+
+    payload = serialize_account(account, None, None)
+    assert [r["currency"] for r in payload["reserved_balances"]] == ["USD"]
+    assert payload["reserved_total"] == 0.0

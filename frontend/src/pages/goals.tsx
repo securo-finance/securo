@@ -725,7 +725,7 @@ export default function GoalsPage() {
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    className="w-full flex items-center gap-3 border border-border rounded-lg px-3 py-2 text-sm bg-card hover:bg-muted/50 transition-colors text-left"
+                    className="w-full flex items-center gap-3 border border-border rounded-lg px-3 py-2 text-sm bg-card hover:bg-muted/50 transition-colors text-start"
                   >
                     <div
                       className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-white"

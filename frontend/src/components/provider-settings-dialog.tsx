@@ -119,11 +119,11 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
         if (save.isPending) event.preventDefault()
       }}
     >
-      <DialogHeader className="border-b border-border/60 px-5 py-5 text-left sm:px-6">
+      <DialogHeader className="border-b border-border/60 px-5 py-5 text-start sm:px-6">
         <div className="mb-2 flex size-10 items-center justify-center rounded-lg border border-border/60 bg-muted/40">
           {icon}
         </div>
-        <DialogTitle className="pr-6 text-lg leading-snug">{name}</DialogTitle>
+        <DialogTitle className="pe-6 text-lg leading-snug">{name}</DialogTitle>
         <DialogDescription className="leading-relaxed">
           {description ?? t('providerSettings.catalog.credentialsDescription')}
         </DialogDescription>

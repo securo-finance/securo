@@ -93,7 +93,7 @@ export function WidgetGrid({
           <p className="mt-1 text-xs text-muted-foreground">{t('library.emptyDashboardHint')}</p>
         </div>
         <Button size="sm" onClick={onAdd}>
-          <Plus size={14} className="mr-1" />
+          <Plus size={14} className="me-1" />
           {t('library.addWidget')}
         </Button>
       </div>
@@ -179,11 +179,13 @@ function SortableWidget({
     const handle = event.currentTarget
     handle.setPointerCapture(event.pointerId)
     const startX = event.clientX
+    // The handle sits on the end edge: the left one in right-to-left layouts.
+    const towardEnd = getComputedStyle(section).direction === 'rtl' ? -1 : 1
     const startWidth = section.getBoundingClientRect().width
     const column = (grid.getBoundingClientRect().width + GAP_PX) / 12
     let next = span
     const onMove = (move: PointerEvent) => {
-      const width = startWidth + (move.clientX - startX)
+      const width = startWidth + towardEnd * (move.clientX - startX)
       next = snapSpan((width + GAP_PX) / column, entry.minSpan)
       onPreview(next)
     }
@@ -308,7 +310,7 @@ function SortableWidget({
           tabIndex={-1}
           aria-hidden
           onPointerDown={startResize}
-          className="group absolute -right-3 top-1/2 z-10 hidden h-16 w-4 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center lg:flex"
+          className="group absolute -end-3 top-1/2 z-10 hidden h-16 w-4 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center lg:flex"
         >
           <span className="h-10 w-1.5 rounded-full bg-primary/40 transition-colors group-hover:bg-primary group-active:bg-primary" />
         </button>

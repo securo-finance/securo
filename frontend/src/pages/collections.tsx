@@ -93,7 +93,7 @@ export default function CollectionsPage() {
               setDialogOpen(true)
             }}
           >
-            <Plus size={16} className="mr-1.5" />
+            <Plus size={16} className="me-1.5" />
             {t('collections.add')}
           </Button>
         }

@@ -40,6 +40,7 @@ describe('resolveDisplayLocale', () => {
     expect(resolveDisplayLocale('auto', 'TWD')).toBe('zh-TW')
     expect(resolveDisplayLocale('auto', 'ZAR')).toBe('en-ZA')
     expect(resolveDisplayLocale('auto', 'GEL')).toBe('en-GE')
+    expect(resolveDisplayLocale('auto', 'ILS')).toBe('en-IL')
   })
 
   it('treats a missing number format like auto', () => {

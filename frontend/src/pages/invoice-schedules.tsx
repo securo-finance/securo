@@ -105,7 +105,7 @@ export default function InvoiceSchedulesPage() {
         action={
           canWrite ? (
             <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="schedule-new-button">
-              <Plus className="h-4 w-4 mr-1.5" />
+              <Plus className="h-4 w-4 me-1.5" />
               {t('invoices.schedules.new')}
             </Button>
           ) : undefined
@@ -196,7 +196,7 @@ export default function InvoiceSchedulesPage() {
             </p>
             {filter === 'all' && canWrite && (
               <Button size="sm" className="mt-4" onClick={() => setCreateOpen(true)}>
-                <Plus className="h-4 w-4 mr-1.5" />
+                <Plus className="h-4 w-4 me-1.5" />
                 {t('invoices.schedules.new')}
               </Button>
             )}
@@ -206,14 +206,16 @@ export default function InvoiceSchedulesPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
-                  <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('invoices.schedules.column.name')}</th>
-                  <th className={`${TH} text-left hidden md:table-cell`}>{t('invoices.schedules.column.cadence')}</th>
-                  <th className={`${TH} text-right w-32 pr-6`}>{t('invoices.schedules.column.monthly')}</th>
-                  <th className={`${TH} text-left w-36 hidden sm:table-cell`}>{t('invoices.schedules.column.next')}</th>
-                  <th className={`${TH} text-right w-20 hidden lg:table-cell`}>
+                  <th className={`${TH} ps-4 sm:ps-5 text-start`}>{t('invoices.schedules.column.name')}</th>
+                  <th className={`${TH} text-start hidden md:table-cell`}>{t('invoices.schedules.column.cadence')}</th>
+                  <th className={`${TH} text-end w-32 pe-6`}>{t('invoices.schedules.column.monthly')}</th>
+                  <th className={`${TH} text-start w-36 hidden sm:table-cell`}>
+                    {t('invoices.schedules.column.next')}
+                  </th>
+                  <th className={`${TH} text-end w-20 hidden lg:table-cell`}>
                     {t('invoices.schedules.column.invoices')}
                   </th>
-                  <th className={`${TH} pr-4 sm:pr-5 text-right w-28`}>{t('invoices.schedules.column.status')}</th>
+                  <th className={`${TH} pe-4 sm:pe-5 text-end w-28`}>{t('invoices.schedules.column.status')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -224,7 +226,7 @@ export default function InvoiceSchedulesPage() {
                     data-testid="schedule-row"
                     className="border-b border-border last:border-0 hover:bg-muted transition-colors cursor-pointer"
                   >
-                    <td className="py-3 pl-4 sm:pl-5">
+                    <td className="py-3 ps-4 sm:ps-5">
                       <div className="text-sm font-medium text-foreground truncate">{schedule.name}</div>
                       <div className="text-xs text-muted-foreground truncate">
                         {schedule.payee?.name ?? t('invoices.noClient')}
@@ -239,7 +241,7 @@ export default function InvoiceSchedulesPage() {
                         </span>
                       )}
                     </td>
-                    <td className="py-3 pr-6 text-right text-sm font-bold tabular-nums">
+                    <td className="py-3 pe-6 text-end text-sm font-bold tabular-nums">
                       {schedule.status === 'active' ? (
                         money(schedule.monthly_amount, schedule.currency)
                       ) : (
@@ -251,10 +253,10 @@ export default function InvoiceSchedulesPage() {
                         ? showDate(schedule.next_period_start)
                         : '—'}
                     </td>
-                    <td className="py-3 text-right hidden lg:table-cell text-xs text-muted-foreground tabular-nums">
+                    <td className="py-3 text-end hidden lg:table-cell text-xs text-muted-foreground tabular-nums">
                       {schedule.invoice_count}
                     </td>
-                    <td className="py-3 pr-4 sm:pr-5 text-right">
+                    <td className="py-3 pe-4 sm:pe-5 text-end">
                       <ScheduleBadge schedule={schedule} />
                     </td>
                   </tr>

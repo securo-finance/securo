@@ -530,7 +530,7 @@ function ChatEmptyState({ agent, onPick }: { agent: Agent; onPick: (text: string
                 key={p}
                 type="button"
                 onClick={() => onPick(p)}
-                className="text-left text-sm px-3 py-2 rounded-md border border-border bg-background/40 hover:bg-muted transition-colors"
+                className="text-start text-sm px-3 py-2 rounded-md border border-border bg-background/40 hover:bg-muted transition-colors"
               >
                 {p}
               </button>

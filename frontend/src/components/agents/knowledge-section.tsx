@@ -89,7 +89,7 @@ export function KnowledgeSection({ agentId }: { agentId: string }) {
         />
         {canWrite && (
           <Button size="sm" onClick={() => fileRef.current?.click()} disabled={upload.isPending}>
-            <UploadIcon className="h-4 w-4 mr-1.5" />
+            <UploadIcon className="h-4 w-4 me-1.5" />
             {upload.isPending ? t('agents.knowledge.uploading') : t('agents.knowledge.upload')}
           </Button>
         )}

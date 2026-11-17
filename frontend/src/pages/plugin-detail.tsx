@@ -97,7 +97,7 @@ export default function PluginDetailPage() {
             {notFound ? t('plugins.detail.notFound') : t('plugins.detail.loadFailed')}
             {!notFound && (
               <Button variant="outline" size="sm" onClick={() => void refetch()}>
-                <RefreshCw size={14} className="mr-1" />
+                <RefreshCw size={14} className="me-1" />
                 {t('common.retry')}
               </Button>
             )}
@@ -138,7 +138,12 @@ export default function PluginDetailPage() {
       {back}
 
       <header className="mb-8 flex gap-5">
-        <PluginAvatar seed={plugin.id} label={pluginName} className="size-14 text-lg sm:size-16 sm:text-xl" />
+        <PluginAvatar
+          seed={plugin.id}
+          label={pluginName}
+          src={plugin.icon_url}
+          className="size-14 text-lg sm:size-16 sm:text-xl"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">{pluginName}</h1>
@@ -262,7 +267,7 @@ function Actions({
           className="w-full text-destructive hover:text-destructive"
           onClick={() => onAction('remove')}
         >
-          <Trash2 size={14} className="mr-1.5" />
+          <Trash2 size={14} className="me-1.5" />
           {t('plugins.remove')}
         </Button>
       )}
@@ -271,7 +276,7 @@ function Actions({
       )}
       <Button asChild variant="outline" className="w-full">
         <a href={`${plugin.repository}/tree/${plugin.commit}`} target="_blank" rel="noopener noreferrer">
-          <ExternalLink size={14} className="mr-1.5" />
+          <ExternalLink size={14} className="me-1.5" />
           {t('plugins.viewSource')}
         </a>
       </Button>
@@ -319,7 +324,7 @@ function Facts({ plugin }: { plugin: PluginCatalogEntry }) {
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-baseline justify-between gap-4 py-2.5">
             <dt className="shrink-0 text-muted-foreground">{label}</dt>
-            <dd className="min-w-0 text-right font-medium">{value}</dd>
+            <dd className="min-w-0 text-end font-medium">{value}</dd>
           </div>
         ))}
       </dl>

@@ -152,7 +152,7 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
         <p className="text-sm font-semibold text-foreground">
           {t('reconciliation.queue.title')}
           {suggestions.length > 0 && (
-            <span className="ml-2 text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded-full">
+            <span className="ms-2 text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded-full">
               {suggestions.length}
             </span>
           )}

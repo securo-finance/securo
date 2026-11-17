@@ -1,3 +1,4 @@
+import { ltrAmount } from '@/lib/format'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { sankey as d3Sankey, sankeyLinkHorizontal, sankeyJustify } from 'd3-sankey'
@@ -48,12 +49,14 @@ interface SankeyLinkDatum {
 type Hover = { kind: 'node'; index: number } | { kind: 'expenses' } | { kind: 'investments' } | { kind: 'surplus' }
 
 function formatMoney(value: number, currency: string, locale: string, compact: boolean) {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    notation: compact ? 'compact' : 'standard',
-    maximumFractionDigits: compact ? 1 : 0,
-  }).format(value)
+  return ltrAmount(
+    new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      notation: compact ? 'compact' : 'standard',
+      maximumFractionDigits: compact ? 1 : 0,
+    }).format(value),
+  )
 }
 
 /** Sort largest-first, then fold everything past the cap into a single "Other". */

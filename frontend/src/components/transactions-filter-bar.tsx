@@ -355,7 +355,7 @@ export function TransactionsFilterBar({
               />
 
               {/* Right-side controls */}
-              <div className="ml-auto flex shrink-0 items-center gap-1 pl-1">
+              <div className="ms-auto flex shrink-0 items-center gap-1 ps-1">
                 {hasAnyFilter && (
                   <button
                     type="button"
@@ -472,7 +472,7 @@ export function TransactionsFilterBar({
                                       filterAccountIds.length === 0 && 'bg-primary/5',
                                     )}
                                   >
-                                    <span className="min-w-0 flex-1 truncate text-left">{t('transactions.all')}</span>
+                                    <span className="min-w-0 flex-1 truncate text-start">{t('transactions.all')}</span>
                                     {filterAccountIds.length === 0 && <Check size={13} className="text-primary" />}
                                   </DropdownMenuItem>
                                   <div className="my-1 h-px bg-border/60" />
@@ -496,7 +496,7 @@ export function TransactionsFilterBar({
                                         checked && 'bg-primary/5',
                                       )}
                                     >
-                                      <span className="min-w-0 flex-1 truncate text-left">{getAccountName(a)}</span>
+                                      <span className="min-w-0 flex-1 truncate text-start">{getAccountName(a)}</span>
                                       {a.currency && (
                                         <span className="text-[10.5px] uppercase tracking-wide text-muted-foreground/70">
                                           {a.currency}
@@ -518,7 +518,7 @@ export function TransactionsFilterBar({
                                     }}
                                     className="gap-2 rounded-sm py-1.5 text-[13px]"
                                   >
-                                    <span className="min-w-0 flex-1 truncate text-left">{getAccountName(a)}</span>
+                                    <span className="min-w-0 flex-1 truncate text-start">{getAccountName(a)}</span>
                                     {a.currency && (
                                       <span className="text-[10.5px] uppercase tracking-wide text-muted-foreground/70">
                                         {a.currency}
@@ -602,7 +602,7 @@ export function TransactionsFilterBar({
                                 )}
                               >
                                 <span className="size-2.5 shrink-0" />
-                                <span className="min-w-0 flex-1 truncate text-left">{t('transactions.all')}</span>
+                                <span className="min-w-0 flex-1 truncate text-start">{t('transactions.all')}</span>
                                 {!filterPayee && <Check size={13} className="text-primary" />}
                               </DropdownMenuItem>
                               <div className="my-1 h-px bg-border/60" />
@@ -621,7 +621,7 @@ export function TransactionsFilterBar({
                                     )}
                                   >
                                     <span className="size-2.5 shrink-0" />
-                                    <span className="min-w-0 flex-1 truncate text-left">{p.name}</span>
+                                    <span className="min-w-0 flex-1 truncate text-start">{p.name}</span>
                                     {filterPayee === p.id && <Check size={13} className="text-primary" />}
                                   </DropdownMenuItem>
                                 ))
@@ -654,7 +654,7 @@ export function TransactionsFilterBar({
                                 )}
                               >
                                 <span className="size-2.5 shrink-0" />
-                                <span className="min-w-0 flex-1 truncate text-left">{t('transactions.all')}</span>
+                                <span className="min-w-0 flex-1 truncate text-start">{t('transactions.all')}</span>
                                 {!filterGroupId && <Check size={13} className="text-primary" />}
                               </DropdownMenuItem>
                               <div className="my-1 h-px bg-border/60" />
@@ -673,7 +673,7 @@ export function TransactionsFilterBar({
                                     )}
                                   >
                                     <span className="size-2.5 shrink-0" />
-                                    <span className="min-w-0 flex-1 truncate text-left">{g.name}</span>
+                                    <span className="min-w-0 flex-1 truncate text-start">{g.name}</span>
                                     {filterGroupId === g.id && <Check size={13} className="text-primary" />}
                                   </DropdownMenuItem>
                                 ))
@@ -710,7 +710,7 @@ export function TransactionsFilterBar({
                                   )}
                                 >
                                   <span className="size-2.5 shrink-0" />
-                                  <span className="min-w-0 flex-1 truncate text-left">{opt.label}</span>
+                                  <span className="min-w-0 flex-1 truncate text-start">{opt.label}</span>
                                   {filterType === opt.value && <Check size={13} className="text-primary" />}
                                 </DropdownMenuItem>
                               ))}
@@ -745,7 +745,7 @@ export function TransactionsFilterBar({
                                   )}
                                 >
                                   <span className="size-2.5 shrink-0" />
-                                  <span className="min-w-0 flex-1 truncate text-left">{opt.label}</span>
+                                  <span className="min-w-0 flex-1 truncate text-start">{opt.label}</span>
                                   {filterStatus === opt.value && <Check size={13} className="text-primary" />}
                                 </DropdownMenuItem>
                               ))}
@@ -788,7 +788,7 @@ export function TransactionsFilterBar({
                                 )}
                               >
                                 <span className="size-2.5 shrink-0" />
-                                <span className="min-w-0 flex-1 truncate text-left">{t('transactions.all')}</span>
+                                <span className="min-w-0 flex-1 truncate text-start">{t('transactions.all')}</span>
                                 {!filterFrom && !filterTo && <Check size={13} className="text-primary" />}
                               </DropdownMenuItem>
                               <div className="my-1 h-px bg-border/60" />
@@ -801,7 +801,7 @@ export function TransactionsFilterBar({
                                     className={cn('gap-2 rounded-sm px-2 py-1.5 text-[13px]', active && 'bg-primary/5')}
                                   >
                                     <span className="size-2.5 shrink-0" />
-                                    <span className="min-w-0 flex-1 truncate text-left">{preset.label}</span>
+                                    <span className="min-w-0 flex-1 truncate text-start">{preset.label}</span>
                                     {active && <Check size={13} className="text-primary" />}
                                   </DropdownMenuItem>
                                 )
@@ -1037,7 +1037,7 @@ export function TransactionsFilterBar({
             </p>
           </div>
           <div className="flex flex-col gap-4 p-3 sm:flex-row sm:gap-0">
-            <div className="sm:border-r sm:border-border/60 sm:pr-2">
+            <div className="sm:border-e sm:border-border/60 sm:pe-2">
               <p className="px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
                 {t('transactions.filtersBar.fromLabel')}
               </p>
@@ -1048,7 +1048,7 @@ export function TransactionsFilterBar({
                 onSelect={(d) => setDraftFrom(d ? localDateString(d) : '')}
               />
             </div>
-            <div className="sm:pl-2">
+            <div className="sm:ps-2">
               <p className="px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
                 {t('transactions.filtersBar.toLabel')}
               </p>
@@ -1116,7 +1116,7 @@ function FilterChip({ icon, label, value, tint, onRemove }: FilterChipProps) {
     <button
       type="button"
       onClick={onRemove}
-      className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 pl-2 pr-1.5 text-[11.5px] text-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/5"
+      className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 ps-2 pe-1.5 text-[11.5px] text-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/5"
       style={tint ? { borderColor: `${tint}55`, backgroundColor: `${tint}12` } : undefined}
     >
       <span
@@ -1127,7 +1127,7 @@ function FilterChip({ icon, label, value, tint, onRemove }: FilterChipProps) {
       </span>
       <span className="text-muted-foreground">{label}:</span>
       <span className="max-w-[140px] truncate font-medium text-foreground">{value}</span>
-      <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 group-hover:text-destructive">
+      <span className="ms-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 group-hover:text-destructive">
         <X size={11} />
       </span>
     </button>

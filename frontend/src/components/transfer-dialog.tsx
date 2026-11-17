@@ -161,7 +161,7 @@ export function TransferDialog({
             <div className="space-y-2">
               <Label>
                 {t('transactions.transferAmount')}
-                {fromAccount && <span className="text-muted-foreground ml-1">({fromAccount.currency})</span>}
+                {fromAccount && <span className="text-muted-foreground ms-1">({fromAccount.currency})</span>}
               </Label>
               <Input
                 type="number"

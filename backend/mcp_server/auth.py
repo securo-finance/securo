@@ -13,7 +13,7 @@ from typing import Optional
 from fastapi import HTTPException, Request, status
 from jose import JWTError, jwt
 
-from app.agents.config import get_agent_settings
+from app.agents.mcp.keys import resolve_mcp_jwt_secret
 
 
 JWT_ISSUER = "securo-backend"
@@ -106,8 +106,19 @@ async def authorize_call(session, ctx: CallContext) -> uuid.UUID:
     return workspace_id
 
 
-def _settings():
-    return get_agent_settings()
+def _signed_with_a_retired_key(token: str) -> bool:
+    from app.agents.mcp.keys import retired_public_keys
+
+    for key in retired_public_keys():
+        try:
+            jwt.decode(
+                token, key, algorithms=[JWT_ALGO],
+                options={"verify_aud": False, "verify_iss": False, "verify_exp": False},
+            )
+        except JWTError:
+            continue
+        return True
+    return False
 
 
 def verify_request(request: Request) -> CallContext:
@@ -115,15 +126,30 @@ def verify_request(request: Request) -> CallContext:
     if not auth.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
     token = auth.split(" ", 1)[1].strip()
+    # An unsafe key (public default, or derived from one) means no token can
+    # be trusted. `UnsafeMCPSecret` propagates: startup already refused, so
+    # reaching here would be a wiring bug, and guessing at a key would be worse.
+    signing_key = resolve_mcp_jwt_secret()
     try:
         payload = jwt.decode(
             token,
-            _settings().mcp_jwt_secret,
+            signing_key,
             algorithms=[JWT_ALGO],
             audience=JWT_AUDIENCE,
             issuer=JWT_ISSUER,
         )
     except JWTError as exc:
+        if _signed_with_a_retired_key(token):
+            # Still refused: anyone can sign with that key. The message tells
+            # the person whose client stopped working what to do (#1173).
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=(
+                    "This token was signed with a public default key that Securo no longer "
+                    "accepts. Create a new one in Securo under Agents > Connections > "
+                    "External MCP access."
+                ),
+            ) from exc
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"invalid token: {exc}") from exc
 
     sub = payload.get("sub")

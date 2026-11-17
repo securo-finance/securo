@@ -314,7 +314,7 @@ export default function GroupsPage() {
                 }}
                 disabled={deleteMutation.isPending}
               >
-                <Trash2 size={14} className="mr-1" />
+                <Trash2 size={14} className="me-1" />
                 {t('common.delete')}
               </Button>
             )}

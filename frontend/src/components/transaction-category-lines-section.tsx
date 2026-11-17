@@ -178,7 +178,7 @@ export function TransactionCategoryLinesSection({
                   type="text"
                   inputMode="decimal"
                   aria-label={t('categoryLines.partAmount')}
-                  className="w-28 bg-card text-right tabular-nums"
+                  className="w-28 bg-card text-end tabular-nums"
                   value={hideAmounts ? '•••••' : row.amount}
                   readOnly={hideAmounts}
                   onChange={(e) => update(row.key, { amount: e.target.value })}
@@ -189,7 +189,7 @@ export function TransactionCategoryLinesSection({
                     type="text"
                     inputMode="decimal"
                     aria-label={t('categoryLines.partPercent')}
-                    className="w-20 bg-card text-right tabular-nums"
+                    className="w-20 bg-card text-end tabular-nums"
                     value={row.percent}
                     onChange={(e) => update(row.key, { percent: e.target.value })}
                   />
@@ -216,7 +216,7 @@ export function TransactionCategoryLinesSection({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={add} className="h-7 px-2 text-xs">
-          <Plus size={12} className="mr-1" />
+          <Plus size={12} className="me-1" />
           {t('categoryLines.addPart')}
         </Button>
         <div className="flex items-center gap-2 text-xs">

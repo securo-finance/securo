@@ -83,7 +83,7 @@ export function TaxIdKindPicker({
   // JSX rather than a string so the flag can be given room: the group's own
   // padding puts it flush against the edge otherwise.
   const groupHeading = (label: string, flag?: string) => (
-    <span className="flex items-center gap-2 pl-1.5">
+    <span className="flex items-center gap-2 ps-1.5">
       {flag ? <span aria-hidden>{flag}</span> : null}
       <span>{label}</span>
     </span>
@@ -132,7 +132,7 @@ export function TaxIdKindPicker({
             ) : null}
             <span className="truncate">{label(value)}</span>
           </span>
-          <ChevronsUpDown size={13} className="ml-1 shrink-0 opacity-50" />
+          <ChevronsUpDown size={13} className="ms-1 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-0" align="start">

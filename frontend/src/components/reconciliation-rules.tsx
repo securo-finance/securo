@@ -338,7 +338,7 @@ function Step({
     <section className="rounded-lg border border-border">
       <header className="px-3 py-2 bg-muted/40 border-b border-border rounded-t-lg">
         <p className="text-sm font-semibold text-foreground">
-          <span className="text-muted-foreground mr-1.5">{index}.</span>
+          <span className="text-muted-foreground me-1.5">{index}.</span>
           {title}
         </p>
         {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}

@@ -185,7 +185,7 @@ export function DateRangePicker({
           </p>
         </div>
         <div className="flex flex-col gap-4 p-3 sm:flex-row sm:gap-0">
-          <div className="sm:border-r sm:border-border/60 sm:pr-2">
+          <div className="sm:border-e sm:border-border/60 sm:pe-2">
             <p className="px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
               {t('transactions.filtersBar.fromLabel')}
             </p>
@@ -196,7 +196,7 @@ export function DateRangePicker({
               onSelect={(d) => setDraftFrom(d ? localDateString(d) : '')}
             />
           </div>
-          <div className="sm:pl-2">
+          <div className="sm:ps-2">
             <p className="px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
               {t('transactions.filtersBar.toLabel')}
             </p>

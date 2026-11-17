@@ -68,10 +68,10 @@ export function PayeeDetailDialog({ payee, canWrite, onOpenChange, onEdit, onDel
           global-chat-panel and rule-dialog. */}
       <DialogContent className="sm:max-w-lg flex flex-col max-h-[calc(100dvh-2rem)]" aria-describedby={undefined}>
         <DialogHeader>
-          {/* pr-8 clears the close button. Wrapping rather than truncating:
+          {/* pe-8 clears the close button. Wrapping rather than truncating:
               the list ellipsizes long names, so this is the one place the
               whole thing is meant to be readable. */}
-          <DialogTitle className="pr-8 break-words">{shown?.name}</DialogTitle>
+          <DialogTitle className="pe-8 break-words">{shown?.name}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3 overflow-y-auto flex-1 -mx-1 px-1">
@@ -128,7 +128,7 @@ export function PayeeDetailDialog({ payee, canWrite, onOpenChange, onEdit, onDel
                           </p>
                         </div>
                         <span
-                          className={`text-sm font-semibold tabular-nums ml-3 ${tx.type === 'debit' ? 'text-rose-500' : 'text-emerald-600'}`}
+                          className={`text-sm font-semibold tabular-nums ms-3 ${tx.type === 'debit' ? 'text-rose-500' : 'text-emerald-600'}`}
                         >
                           {mask(formatCurrency(tx.amount, tx.currency, locale))}
                         </span>
@@ -163,11 +163,11 @@ export function PayeeDetailDialog({ payee, canWrite, onOpenChange, onEdit, onDel
         {canWrite && shown && (
           <DialogFooter className="flex justify-between sm:justify-between">
             <Button variant="destructive" onClick={() => onDelete(shown)}>
-              <Trash2 size={14} className="mr-1" />
+              <Trash2 size={14} className="me-1" />
               {t('common.delete')}
             </Button>
             <Button variant="outline" onClick={() => onEdit(shown)}>
-              <Pencil size={14} className="mr-1" />
+              <Pencil size={14} className="me-1" />
               {t('common.edit')}
             </Button>
           </DialogFooter>

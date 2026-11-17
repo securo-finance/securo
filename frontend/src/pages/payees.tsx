@@ -505,7 +505,7 @@ export default function PayeesPage() {
             />
           </div>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1 pl-1">
+          <div className="ms-auto flex shrink-0 items-center gap-1 ps-1">
             {(search || filterType || filterFavorites) && (
               <button
                 type="button"
@@ -546,7 +546,7 @@ export default function PayeesPage() {
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 rounded-lg px-2 py-1.5 text-xs cursor-pointer hover:bg-muted transition-colors">
                     <ListFilter size={13} className="text-muted-foreground shrink-0" />
-                    <span className="flex-1 text-left">{t('payees.type')}</span>
+                    <span className="flex-1 text-start">{t('payees.type')}</span>
                     {filterType && (
                       <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">
                         {typeLabels[filterType]}
@@ -568,7 +568,7 @@ export default function PayeesPage() {
                             filterType === opt.value && 'bg-primary/5 text-primary hover:bg-primary/5',
                           )}
                         >
-                          <span className="min-w-0 flex-1 truncate text-left">{opt.label}</span>
+                          <span className="min-w-0 flex-1 truncate text-start">{opt.label}</span>
                           {filterType === opt.value && <Check size={13} className="text-primary" />}
                         </DropdownMenuItem>
                       ))}
@@ -584,11 +584,11 @@ export default function PayeesPage() {
                   <Star
                     size={13}
                     className={cn(
-                      'mr-1 shrink-0',
+                      'me-1 shrink-0',
                       filterFavorites ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground',
                     )}
                   />
-                  <span className="flex-1 text-left">{t('payees.favoritesOnly')}</span>
+                  <span className="flex-1 text-start">{t('payees.favoritesOnly')}</span>
                 </DropdownMenuCheckboxItem>
 
                 {(filterType || filterFavorites) && (
@@ -601,7 +601,7 @@ export default function PayeesPage() {
                       }}
                       className="gap-2 rounded-lg px-2 py-1.5 text-xs cursor-pointer hover:bg-muted text-destructive hover:text-destructive focus:text-destructive focus:bg-destructive/5 font-medium"
                     >
-                      <X size={13} className="mr-1 shrink-0" />
+                      <X size={13} className="me-1 shrink-0" />
                       <span>{t('transactions.clearFilters')}</span>
                     </DropdownMenuItem>
                   </>
@@ -618,14 +618,14 @@ export default function PayeesPage() {
               <button
                 type="button"
                 onClick={() => setFilterType('')}
-                className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 pl-2 pr-1.5 text-[11.5px] text-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/5"
+                className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 ps-2 pe-1.5 text-[11.5px] text-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/5"
               >
                 <span className="flex items-center text-muted-foreground group-hover:text-destructive">
                   <ListFilter size={12} />
                 </span>
                 <span className="text-muted-foreground">{t('payees.type')}:</span>
                 <span className="max-w-[140px] truncate font-medium text-foreground">{typeLabels[filterType]}</span>
-                <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 group-hover:text-destructive">
+                <span className="ms-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 group-hover:text-destructive">
                   <X size={11} />
                 </span>
               </button>
@@ -635,13 +635,13 @@ export default function PayeesPage() {
               <button
                 type="button"
                 onClick={() => setFilterFavorites(false)}
-                className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 pl-2 pr-1.5 text-[11.5px] text-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/5"
+                className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 ps-2 pe-1.5 text-[11.5px] text-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/5"
               >
                 <span className="flex items-center text-amber-400 group-hover:text-destructive">
                   <Star size={12} className="fill-amber-400" />
                 </span>
                 <span className="text-muted-foreground">{t('payees.favoritesOnly')}</span>
-                <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 group-hover:text-destructive">
+                <span className="ms-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 group-hover:text-destructive">
                   <X size={11} />
                 </span>
               </button>
@@ -664,7 +664,7 @@ export default function PayeesPage() {
               <TableHeader>
                 <TableRow className="border-b border-border hover:bg-transparent">
                   {canWrite && (
-                    <TableHead className="w-[40px] py-3 pl-4 pr-0">
+                    <TableHead className="w-[40px] py-3 ps-4 pe-0">
                       <input
                         type="checkbox"
                         checked={allSelected}
@@ -697,7 +697,7 @@ export default function PayeesPage() {
                   </TableHead>
                   <TableHead
                     aria-sort={sort.by === 'type' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
-                    className="hidden text-left text-xs font-medium text-muted-foreground py-3 md:table-cell w-[120px]"
+                    className="hidden text-start text-xs font-medium text-muted-foreground py-3 md:table-cell w-[120px]"
                   >
                     <button
                       type="button"
@@ -721,7 +721,7 @@ export default function PayeesPage() {
                           : 'descending'
                         : undefined
                     }
-                    className="text-left text-xs font-medium text-muted-foreground py-3 w-[120px]"
+                    className="text-start text-xs font-medium text-muted-foreground py-3 w-[120px]"
                   >
                     <button
                       type="button"
@@ -756,7 +756,7 @@ export default function PayeesPage() {
                     }}
                   >
                     {canWrite && (
-                      <TableCell className="py-2.5 pl-4 pr-0 w-[40px]">
+                      <TableCell className="py-2.5 ps-4 pe-0 w-[40px]">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(payee.id)}
@@ -803,18 +803,18 @@ export default function PayeesPage() {
                         </p>
                       )}
                     </TableCell>
-                    <TableCell className="hidden py-2.5 text-left md:table-cell">
+                    <TableCell className="hidden py-2.5 text-start md:table-cell">
                       {payee.type && (
                         <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full capitalize">
                           {typeLabels[payee.type]}
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="py-2.5 text-left">
+                    <TableCell className="py-2.5 text-start">
                       <span className="text-sm tabular-nums text-muted-foreground">{payee.transaction_count}</span>
                     </TableCell>
                     {canWrite && (
-                      <TableCell className="py-2.5 pr-4 sm:pr-5">
+                      <TableCell className="py-2.5 pe-4 sm:pe-5">
                         <div className="flex items-center justify-end gap-1">
                           <button
                             className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
@@ -1057,7 +1057,7 @@ export default function PayeesPage() {
                       if (next) setTaxIdRows((prev) => [...prev, { kind: next.kind, value: '' }])
                     }}
                   >
-                    <Plus size={14} className="mr-1" />
+                    <Plus size={14} className="me-1" />
                     {t('payees.addTaxId', 'Add')}
                   </Button>
                 )}
@@ -1071,7 +1071,7 @@ export default function PayeesPage() {
                 onClick={() => deleteMutation.mutate(editingPayee.id)}
                 disabled={deleteMutation.isPending}
               >
-                <Trash2 size={14} className="mr-1" />
+                <Trash2 size={14} className="me-1" />
                 {t('common.delete')}
               </Button>
             )}
@@ -1174,7 +1174,7 @@ export default function PayeesPage() {
                 }
               }}
             >
-              <Trash2 size={14} className="mr-1" />
+              <Trash2 size={14} className="me-1" />
               {t('common.delete')}
             </Button>
           </DialogFooter>

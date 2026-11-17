@@ -275,7 +275,7 @@ export function TransactionDialog({
             <div
               className={
                 isEditing
-                  ? 'flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden sm:pr-6'
+                  ? 'flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden sm:pe-6'
                   : 'flex flex-col min-h-0 flex-1'
               }
             >
@@ -309,8 +309,8 @@ export function TransactionDialog({
             {/* Desktop: side panel */}
             <div
               className={cn(
-                'hidden sm:flex shrink-0 border-l flex-col overflow-hidden transition-[width] duration-300 ease-in-out',
-                hasPreview ? 'w-[420px]' : 'w-0 border-l-0',
+                'hidden sm:flex shrink-0 border-s flex-col overflow-hidden transition-[width] duration-300 ease-in-out',
+                hasPreview ? 'w-[420px]' : 'w-0 border-s-0',
               )}
             >
               {preview && (
@@ -358,7 +358,7 @@ export function TransactionDialog({
 
           {/* Mobile: full-screen overlay */}
           {hasPreview && (
-            <div className="sm:hidden fixed inset-0 z-[100] bg-background flex flex-col animate-in slide-in-from-right duration-200">
+            <div className="sm:hidden fixed inset-0 z-[100] bg-background flex flex-col animate-in slide-in-from-right rtl:slide-in-from-left duration-200">
               <div className="flex-1 overflow-hidden">
                 {preview.contentType === 'application/pdf' ? (
                   <iframe
@@ -521,6 +521,10 @@ function TransactionForm({
   // toString() would read back through parseAmountInput with the dot taken
   // for a thousands separator.
   const [amount, setAmount] = useState(seed?.amount != null ? formatAmountInput(seed.amount, displayLocale, 8) : '')
+  // A typed amount that doesn't read under the workspace format was rejected
+  // with a bare "Error" toast (issue #1072). Point at the field instead.
+  const parsedAmount = parseAmountInput(amount, displayLocale)
+  const amountInvalid = !isSynced && amount !== '' && parsedAmount == null
   const [date, setDate] = useState(seed?.date ?? localDateString())
   const [type, setType] = useState<'debit' | 'credit'>(seed?.type ?? 'debit')
   const [status, setStatus] = useState<'posted' | 'pending'>(seed?.status ?? 'posted')
@@ -898,12 +902,9 @@ function TransactionForm({
         // Amounts are typed under the display locale's separators (comma
         // decimals on dot_comma), so they must be read back the same way —
         // parseFloat would stop at the first comma and silently save the
-        // wrong value.
-        const parsedAmount = parseAmountInput(amount, displayLocale)
-        if (!isSynced && parsedAmount == null) {
-          toast.error(t('common.error'))
-          return
-        }
+        // wrong value. An unreadable amount already shows under the field
+        // (`amountInvalid`), so it blocks the save without a toast.
+        if (!isSynced && parsedAmount == null) return
         const fxFields: Partial<Transaction> = {}
         const parsedConverted = parseAmountInput(convertedAmount, displayLocale)
         const parsedFxRate = parseAmountInput(fxRate, displayLocale)
@@ -1029,7 +1030,7 @@ function TransactionForm({
         hasPreview && 'mt-4',
       )}
     >
-      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 sm:pr-3">
+      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 sm:pe-3">
         {error && <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">{error}</div>}
         {isSynced && (
           <div className="flex items-center gap-2 p-3 text-sm bg-amber-50 border border-amber-200 rounded-md text-amber-700">
@@ -1067,12 +1068,14 @@ function TransactionForm({
                         {' · '}
                         {new Date(transferPair.date + 'T00:00:00').toLocaleDateString(dateLocale)}
                         {' · '}
-                        {sign}
-                        {formatCurrency(
-                          Math.abs(Number(transferPair.amount)),
-                          transferPair.currency ?? undefined,
-                          displayLocale,
-                        )}
+                        <span dir="ltr">
+                          {sign}
+                          {formatCurrency(
+                            Math.abs(Number(transferPair.amount)),
+                            transferPair.currency ?? undefined,
+                            displayLocale,
+                          )}
+                        </span>
                       </p>
                     )
                   })()}
@@ -1225,15 +1228,24 @@ function TransactionForm({
                 className="bg-muted/40 text-muted-foreground cursor-default select-none"
               />
             ) : (
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => handleAmountChange(e.target.value)}
-                required
-                disabled={isSynced}
-                className="bg-card"
-              />
+              <>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => handleAmountChange(e.target.value)}
+                  required
+                  disabled={isSynced}
+                  aria-invalid={amountInvalid}
+                  aria-describedby={amountInvalid ? 'transaction-amount-error' : undefined}
+                  className="bg-card"
+                />
+                {amountInvalid && (
+                  <p id="transaction-amount-error" role="alert" className="text-xs text-destructive">
+                    {t('common.invalidAmount', { example: formatAmountInput(1234.56, displayLocale) })}
+                  </p>
+                )}
+              </>
             )}
           </div>
           <div className="space-y-2">
@@ -1308,7 +1320,7 @@ function TransactionForm({
             )}
             <div>
               <span className="text-sm font-medium">{t('transactions.conversion')}</span>
-              <span className="text-xs text-muted-foreground ml-2">({t('transactions.conversionHint')})</span>
+              <span className="text-xs text-muted-foreground ms-2">({t('transactions.conversionHint')})</span>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
@@ -1691,7 +1703,7 @@ function TransactionForm({
                 type="button"
                 variant="outline"
                 onClick={() => onCreateRule(transaction)}
-                className="gap-1.5 rounded-r-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+                className="gap-1.5 rounded-e-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
                 title={t('transactions.createRule')}
               >
                 <SlidersHorizontal size={14} />
@@ -1703,7 +1715,7 @@ function TransactionForm({
                     type="button"
                     variant="outline"
                     aria-label={t('transactions.ruleActions')}
-                    className="rounded-l-none border-l-0 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
+                    className="rounded-s-none border-s-0 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
                     disabled={updateRuleMutation.isPending}
                   >
                     <ChevronDown size={14} />
@@ -1719,7 +1731,7 @@ function TransactionForm({
             </div>
           )}
         </div>
-        <div className="flex flex-wrap gap-2 justify-end sm:ml-auto">
+        <div className="flex flex-wrap gap-2 justify-end sm:ms-auto">
           <Button
             type="button"
             variant="outline"
@@ -1733,7 +1745,7 @@ function TransactionForm({
               <Button
                 type="submit"
                 disabled={loading || !splitsValid || !linesValid}
-                className="rounded-r-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+                className="rounded-e-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
               >
                 {loading ? t('common.loading') : t('common.save')}
               </Button>
@@ -1743,7 +1755,7 @@ function TransactionForm({
                     type="button"
                     disabled={loading || !splitsValid || !linesValid}
                     aria-label={t('transactions.moreSaveOptions')}
-                    className="rounded-l-none border-l border-l-primary-foreground/20 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
+                    className="rounded-s-none border-s border-s-primary-foreground/20 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
                   >
                     <ChevronDown size={14} />
                   </Button>
@@ -1901,7 +1913,7 @@ function MortgagePaymentEditor({
     <section className="rounded-lg border border-border p-3 space-y-3">
       <button
         type="button"
-        className="w-full text-left text-sm font-medium"
+        className="w-full text-start text-sm font-medium"
         onClick={() => setExpandedOverride(!isExpanded)}
       >
         {t('transactions.mortgageAllocation')}
@@ -1920,7 +1932,7 @@ function MortgagePaymentEditor({
                 <div className="text-sm font-medium">
                   {loan.display_name || loan.name}
                   {propertyName ? (
-                    <span className="ml-1 text-xs font-normal text-muted-foreground">· {propertyName}</span>
+                    <span className="ms-1 text-xs font-normal text-muted-foreground">· {propertyName}</span>
                   ) : null}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -2105,9 +2117,9 @@ function AddTransactionToRuleDialog({
                 <button
                   type="button"
                   disabled={loadingRules || rules.length === 0}
-                  className="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-left shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer"
+                  className="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-start shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer"
                 >
-                  <span className="flex-1 truncate text-left">
+                  <span className="flex-1 truncate text-start">
                     {loadingRules
                       ? t('common.loading')
                       : selectedRule
@@ -2249,7 +2261,7 @@ function PendingAttachmentsSection({
                   </div>
 
                   {/* Remove button */}
-                  <div className="absolute left-0 right-0 bottom-[44px] flex items-center justify-center gap-1 px-2 py-1.5 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
+                  <div className="absolute start-0 end-0 bottom-[44px] flex items-center justify-center gap-1 px-2 py-1.5 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
                     <div className="flex items-center gap-1 bg-background/90 dark:bg-card/90 backdrop-blur-sm rounded-lg ring-1 ring-border/50 shadow-lg shadow-black/10 px-1 py-0.5">
                       <button
                         type="button"

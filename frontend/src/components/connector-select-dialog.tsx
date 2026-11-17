@@ -5,6 +5,9 @@ import { useAuth } from '@/contexts/auth-context'
 import { connections } from '@/lib/api'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Building2, Settings2 } from 'lucide-react'
+import { PluginAvatar } from '@/components/plugin-avatar'
+import { localized } from '@/lib/localized-text'
+import type { PluginConnector } from '@/lib/plugin-connectors'
 
 export interface Provider {
   name: string
@@ -20,14 +23,18 @@ interface ConnectorSelectDialogProps {
   open: boolean
   onClose: () => void
   onSelect: (provider: Provider) => void
+  /** Installed plugins' integrations, offered next to the providers. */
+  plugins?: PluginConnector[]
+  onSelectPlugin?: (connector: PluginConnector) => void
 }
 
 export function ConnectorSelectDialog(props: ConnectorSelectDialogProps) {
   return props.open ? <ConnectorSelectSession {...props} /> : null
 }
 
-function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDialogProps) {
-  const { t } = useTranslation()
+function ConnectorSelectSession({ open, onClose, onSelect, plugins = [], onSelectPlugin }: ConnectorSelectDialogProps) {
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
   const { user } = useAuth()
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
@@ -58,12 +65,12 @@ function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDial
           <DialogTitle>{t('accounts.selectConnector')}</DialogTitle>
           <DialogDescription>{t('accounts.selectConnectorDesc')}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-2 pt-2">
+        <div className="-mx-1 max-h-[65vh] space-y-2 overflow-y-auto px-1 pt-2">
           {loading ? (
             <div className="flex justify-center py-8">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             </div>
-          ) : providers.length === 0 ? (
+          ) : providers.length === 0 && plugins.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">{t('accounts.noConnectorsAvailable')}</p>
           ) : (
             providers.map((p) => {
@@ -97,7 +104,7 @@ function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDial
                     onSelect(p)
                     onClose()
                   }}
-                  className="w-full flex items-start gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:border-primary hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="w-full flex items-start gap-3 rounded-lg border border-border p-4 text-start transition-colors hover:border-primary hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {content}
                 </button>
@@ -118,6 +125,40 @@ function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDial
                 </div>
               )
             })
+          )}
+          {!loading && plugins.length > 0 && (
+            <>
+              <p className="pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {t('accounts.pluginConnectors')}
+              </p>
+              {plugins.map((connector) => {
+                const name = localized(connector.integration.name, lang)
+                const description = connector.integration.description
+                return (
+                  <button
+                    key={`${connector.plugin.plugin_id}:${connector.integration.key}`}
+                    type="button"
+                    onClick={() => {
+                      onSelectPlugin?.(connector)
+                      onClose()
+                    }}
+                    className="w-full flex items-start gap-3 rounded-lg border border-border p-4 text-start transition-colors hover:border-primary hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <PluginAvatar
+                      seed={connector.plugin.plugin_id}
+                      label={localized(connector.plugin.name, lang)}
+                      className="w-9 h-9 rounded-lg text-xs mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">{name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {description ? localized(description, lang) : localized(connector.plugin.name, lang)}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })}
+            </>
           )}
         </div>
       </DialogContent>

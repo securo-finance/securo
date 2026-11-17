@@ -169,10 +169,11 @@ export function GlobalChatPanel({ open, onOpenChange, initialMessage, onInitialM
         <DialogPrimitive.Content
           aria-describedby={undefined}
           className={cn(
-            'fixed right-0 top-0 z-50 h-full w-full sm:w-[440px] md:w-[480px] bg-background border-l shadow-xl',
+            'fixed end-0 top-0 z-50 h-full w-full sm:w-[440px] md:w-[480px] bg-background border-s shadow-xl',
             'flex flex-col outline-none',
             'data-[state=open]:animate-in data-[state=closed]:animate-out',
             'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right',
+            'rtl:data-[state=closed]:slide-out-to-left rtl:data-[state=open]:slide-in-from-left',
             'duration-200',
           )}
         >
@@ -185,7 +186,7 @@ export function GlobalChatPanel({ open, onOpenChange, initialMessage, onInitialM
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="-ml-1 px-1.5"
+                    className="-ms-1 px-1.5"
                     onClick={() => setView('chat')}
                     aria-label={t('agents.globalChat.backToChat')}
                   >
@@ -204,7 +205,7 @@ export function GlobalChatPanel({ open, onOpenChange, initialMessage, onInitialM
                     aria-label={t('agents.globalChat.selectAgent', 'Select agent')}
                     className={cn(
                       'h-8 gap-1.5 border-0 bg-transparent shadow-none focus-visible:ring-0',
-                      'px-2 -ml-1 hover:bg-muted text-sm font-medium',
+                      'px-2 -ms-1 hover:bg-muted text-sm font-medium',
                       'data-[size=default]:h-8',
                     )}
                   >
@@ -235,7 +236,7 @@ export function GlobalChatPanel({ open, onOpenChange, initialMessage, onInitialM
                   </SelectContent>
                 </Select>
               ) : (
-                <div className="inline-flex items-center gap-2 px-2 -ml-1">
+                <div className="inline-flex items-center gap-2 px-2 -ms-1">
                   <span
                     className="inline-block h-2 w-2 rounded-full shrink-0"
                     style={{ backgroundColor: activeAgent?.color ?? 'transparent' }}
@@ -412,7 +413,7 @@ function ConversationRow({
       type="button"
       onClick={onClick}
       className={cn(
-        'w-full text-left px-3 py-2.5 hover:bg-muted transition-colors flex flex-col gap-0.5',
+        'w-full text-start px-3 py-2.5 hover:bg-muted transition-colors flex flex-col gap-0.5',
         isActive && 'bg-muted',
       )}
     >

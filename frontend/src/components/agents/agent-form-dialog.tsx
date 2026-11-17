@@ -219,7 +219,7 @@ export function AgentFormDialog({ open, onOpenChange, agent, preset }: Props) {
                   <SelectContent>
                     {(connections ?? []).map((c) => (
                       <SelectItem key={c.id} value={c.id}>
-                        {c.name} <span className="text-muted-foreground ml-1">({c.kind})</span>
+                        {c.name} <span className="text-muted-foreground ms-1">({c.kind})</span>
                       </SelectItem>
                     ))}
                   </SelectContent>

@@ -155,3 +155,43 @@ it('ignores token failures after the bank dialog closes', async () => {
   expect(onClose).not.toHaveBeenCalled()
   expect(api.toastError).not.toHaveBeenCalled()
 })
+
+it('offers the installed plugins that sync as a bank, after the providers', async () => {
+  api.getProviders.mockResolvedValue([
+    { name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: true },
+  ])
+  const integration = {
+    key: 'keys',
+    name: { en: 'Ledger (API key)' },
+    description: { en: 'Your payouts' },
+    auth: 'credentials' as const,
+    fields: [],
+    sync_minutes: 60,
+    provides: ['accounts' as const],
+  }
+  const plugin = {
+    plugin_id: 'acme/ledger',
+    name: { en: 'Ledger' },
+    version: '1.0.0',
+    commit: '1'.repeat(40),
+    installed_at: '2026-11-12T00:00:00Z',
+    integrations: [integration],
+    network: [],
+    api_scopes: [],
+    redirect_uri: null,
+  }
+  const onSelectPlugin = vi.fn()
+  const { user } = renderWithProviders(
+    <ConnectorSelectDialog
+      open
+      onClose={vi.fn()}
+      onSelect={vi.fn()}
+      plugins={[{ plugin, integration }]}
+      onSelectPlugin={onSelectPlugin}
+    />,
+  )
+  await screen.findByText('Pluggy')
+  expect(screen.getByText('From your plugins')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: /Ledger \(API key\)/ }))
+  expect(onSelectPlugin).toHaveBeenCalledWith({ plugin, integration })
+})

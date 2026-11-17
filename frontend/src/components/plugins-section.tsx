@@ -53,7 +53,7 @@ export function PluginsSection() {
         <div className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm">
           <span className="text-muted-foreground">{t('plugins.installedFailed')}</span>
           <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching}>
-            <RefreshCw size={14} className="mr-1" />
+            <RefreshCw size={14} className="me-1" />
             {t('common.retry')}
           </Button>
         </div>
@@ -77,7 +77,7 @@ export function PluginsSection() {
                     variant="outline"
                     onClick={() => navigate(`${pluginPath(plugin.plugin_id)}?tab=connections`)}
                   >
-                    <Plug size={14} className="mr-1" />
+                    <Plug size={14} className="me-1" />
                     {t('plugins.detail.connections')}
                   </Button>
                 )}

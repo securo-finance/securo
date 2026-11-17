@@ -40,7 +40,7 @@ export function UpdateAvailableDialog({ open, onClose }: UpdateAvailableDialogPr
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <div className="flex items-center justify-between gap-3 pr-6">
+          <div className="flex items-center justify-between gap-3 pe-6">
             <DialogTitle>{t('update.title')}</DialogTitle>
             <span className="inline-flex items-center gap-1.5 rounded-full border bg-muted/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
               <Server size={12} />
@@ -118,7 +118,7 @@ export function UpdateAvailableDialog({ open, onClose }: UpdateAvailableDialogPr
                   {t('update.commandLabel')}
                 </div>
                 <code className="block rounded-md border bg-muted/50 px-3 py-2.5 font-mono text-xs text-foreground break-all">
-                  <span className="select-none text-muted-foreground mr-2">$</span>
+                  <span className="select-none text-muted-foreground me-2">$</span>
                   {UPGRADE_COMMAND}
                 </code>
               </div>

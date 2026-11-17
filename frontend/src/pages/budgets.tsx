@@ -463,7 +463,7 @@ export default function BudgetsPage() {
                               category: category.name,
                               month: monthLabel(selectedMonth, uiLocale),
                             })}
-                            className="max-w-full break-words text-left text-sm font-medium text-foreground hover:text-primary rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                            className="max-w-full break-words text-start text-sm font-medium text-foreground hover:text-primary rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                           >
                             {category.name}
                           </button>
@@ -490,7 +490,7 @@ export default function BudgetsPage() {
                           labels={values.map((value, index) => `${historyLabels[index]}: ${fmt(value)}`)}
                         />
                       )}
-                      <div className="col-span-3 row-start-2 min-w-0 pl-11 md:col-span-1 md:col-start-3 md:row-start-1 md:pl-0">
+                      <div className="col-span-3 row-start-2 min-w-0 ps-11 md:col-span-1 md:col-start-3 md:row-start-1 md:ps-0">
                         <p className="mb-1 text-xs text-muted-foreground">
                           {t('budgets.spending')}{' '}
                           <span className="text-sm font-normal tabular-nums text-foreground break-words">
@@ -538,7 +538,7 @@ export default function BudgetsPage() {
                           onFocus={() => setFocusedCategoryId(category.id)}
                           onBlur={() => setFocusedCategoryId(null)}
                           onChange={(event) => setDraft(category.id, event.target.value)}
-                          className="h-8 w-full min-w-0 bg-transparent text-right text-sm font-semibold tabular-nums text-foreground outline-none placeholder:text-muted-foreground/50 disabled:opacity-60"
+                          className="h-8 w-full min-w-0 bg-transparent text-end text-sm font-semibold tabular-nums text-foreground outline-none placeholder:text-muted-foreground/50 disabled:opacity-60"
                         />
                       </div>
                     </div>
@@ -679,9 +679,9 @@ export default function BudgetsPage() {
         groupsList && (
           <div
             className={cn(
-              'fixed bottom-0 left-0 right-0 z-40',
+              'fixed bottom-0 start-0 end-0 z-40',
               'transition-[left] duration-300 ease-in-out motion-reduce:transition-none',
-              sidebarCollapsed ? 'lg:left-16' : 'lg:left-60',
+              sidebarCollapsed ? 'lg:start-16' : 'lg:start-60',
             )}
           >
             <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">

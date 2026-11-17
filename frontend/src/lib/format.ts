@@ -81,6 +81,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   TWD: 'zh-TW',
   ZAR: 'en-ZA',
   GEL: 'en-GE',
+  ILS: 'en-IL',
 }
 
 /**
@@ -195,6 +196,25 @@ function compactCurrencyFormatter(currency: string, locale: string): Intl.Number
  * Fraction digits are left to Intl so each currency keeps its own precision:
  * pinning two would render JPY as "￥1,000.00" and CLP as "$1.000,00".
  */
+/**
+ * Keep a signed amount reading left to right inside right-to-left text.
+ *
+ * In a Hebrew (RTL) paragraph the bidi algorithm treats a leading "-" or "+"
+ * as neutral and moves it to the far end, so "-₪110.00" renders as
+ * "₪110.00-". Wrapping the amount in a left-to-right isolate (LRI ... PDI)
+ * keeps the sign in front of the number. Left-to-right pages get the string
+ * untouched.
+ */
+export function ltrAmount(text: string): string {
+  if (typeof document === 'undefined' || document.documentElement.dir !== 'rtl') return text
+  return `\u2066${text}\u2069`
+}
+
+/** "→" for left-to-right pages, "←" for right-to-left ones: for arrows inside plain strings. */
+export function forwardArrow(): string {
+  return typeof document !== 'undefined' && document.documentElement.dir === 'rtl' ? '\u2190' : '\u2192'
+}
+
 export function formatCurrency(value: number | null | undefined, currency = 'USD', locale = 'en-US'): string {
   if (value == null) return '—'
   const formatter = currencyFormatter(currency, locale)
@@ -202,7 +222,7 @@ export function formatCurrency(value: number | null | undefined, currency = 'USD
   // with a stray minus ("-R$ 0,00"), which covers -0 as well as the sub-cent
   // residue that summed balances and FX conversions leave behind.
   const factor = 10 ** (formatter.resolvedOptions().maximumFractionDigits ?? 2)
-  return formatter.format(Math.round(value * factor) === 0 ? 0 : value)
+  return ltrAmount(formatter.format(Math.round(value * factor) === 0 ? 0 : value))
 }
 
 /**
@@ -216,7 +236,7 @@ export function formatCurrency(value: number | null | undefined, currency = 'USD
  */
 export function formatCompactCurrency(value: number | null | undefined, currency = 'USD', locale = 'en-US'): string {
   if (value == null) return '\u2014'
-  return compactCurrencyFormatter(currency, locale).format(value)
+  return ltrAmount(compactCurrencyFormatter(currency, locale).format(value))
 }
 
 /**
@@ -230,7 +250,7 @@ export function formatSignedAmount(amount: number, type: string, currency = 'USD
   const factor = 10 ** (currencyFormatter(currency, locale).resolvedOptions().maximumFractionDigits ?? 2)
   if (Math.round(magnitude * factor) === 0) return formatted
   // Same rule as the backend rule engine: only a debit is negative.
-  return `${type === 'debit' ? '-' : '+'}${formatted}`
+  return ltrAmount(`${type === 'debit' ? '-' : '+'}${formatted}`)
 }
 
 /**

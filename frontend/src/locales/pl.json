@@ -1329,6 +1329,7 @@
     "deleted": "Usunięto konto",
     "syncDone": "Synchronizacja zakończona",
     "syncRateLimited": "Osiągnięto dzienny limit banku, nie pobrano nowych danych. Spróbuj ponownie później.",
+    "syncPartial": "Część kont została zaktualizowana, ale dla pozostałych osiągnięto dzienny limit banku. Zostaną ponowione później.",
     "syncError": "Synchronizacja nie powiodła się",
     "connected": "Pomyślnie połączono bank",
     "connectError": "Nie udało się połączyć banku",
@@ -1337,6 +1338,10 @@
     "confirmDisconnectDesc": "Spowoduje to odłączenie {{institution}} oraz usunięcie z aplikacji zsynchronizowanych kont i transakcji. Ta operacja jest nieodwracalna.",
     "viewTransactions": "Zobacz transakcje",
     "currentBalance": "Bieżące saldo",
+    "reservedBalances": "Zarezerwowane salda",
+    "reservedBalanceFallback": "Zarezerwowane saldo",
+    "reservedTotal": "Zarezerwowane",
+    "reservedBalancesHint": "Zarezerwowane środki zgłoszone przez dostawcę dla tego konta.",
     "income": "Przychody",
     "expenses": "Wydatki",
     "projectedBalance": "Saldo prognozowane",
@@ -1420,8 +1425,16 @@
     "connectionStatus": {
       "active": "Aktywne",
       "error": "Błąd",
-      "expired": "Wygasłe"
+      "expired": "Wygasłe",
+      "disconnected": "Odłączone"
     },
+    "pluginConnectors": "Z twoich wtyczek",
+    "pluginUnavailable": "Wtyczka tego połączenia nie jest już zainstalowana ani dostępna.",
+    "confirmDisconnectKeepDesc": "{{institution}} przestanie się synchronizować. Konta i historia transakcji zostaną w aplikacji, a połączenie można później przywrócić.",
+    "disconnectAlsoDelete": "Usuń też konta i transakcje",
+    "disconnectedKept": "Bank odłączony. Konta i historia zostały zachowane.",
+    "removeConnection": "Usuń połączenie",
+    "connectionDisconnected": "Odłączone. Połącz ponownie, aby znów synchronizować",
     "connectorAskAdmin": "Ten łącznik nie jest skonfigurowany. Poproś administratora o jego ustawienie."
   },
   "loans": {
@@ -1656,7 +1669,18 @@
     "autoGenerate": "Automatycznie generuj transakcje",
     "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
     "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić.",
-    "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć."
+    "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć.",
+    "priceHistory": "Historia cen",
+    "viewPriceHistory": "Zobacz historię cen",
+    "priceChangesTitle": "Ostatnie zmiany cen (ostatnie 30 dni)",
+    "priceChangesEmpty": "Nie wykryto stabilnych zmian cen",
+    "priceChangeBadge": "Cena zmieniona",
+    "priceChangeIncrease": "Cena wzrosła",
+    "priceChangeDecrease": "Cena spadła",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Po przerwie wynoszącej {{days}} dni",
+    "priceChangeInsufficient": "Przed zgłoszeniem stabilnej zmiany ceny przez Securo potrzebne są co najmniej 3 powiązane zaksięgowane obciążenia."
   },
   "rules": {
     "searchPlaceholder": "Szukaj reguł...",
@@ -2151,6 +2175,7 @@
     "noTransactions": "Brak transakcji",
     "txBuy": "Kupno",
     "txSell": "Sprzedaż",
+    "txSplit": "Split",
     "txFee": "Opłata",
     "txSaved": "Transakcja zapisana",
     "txDeleted": "Transakcja usunięta",
@@ -2161,6 +2186,10 @@
     "unitPrice": "Cena jednostkowa",
     "fee": "Opłata",
     "txTotal": "Razem",
+    "splitOldUnits": "Jednostki przed splitem",
+    "splitNewUnits": "Jednostki po splicie",
+    "splitHint": "Wpisz liczbę jednostek przed splitem i po nim: split 100:1 to 1 → 100, a reverse split (scalenie) 1:10 to 10 → 1. Jako datę podaj pierwszy dzień notowania po nowej cenie.",
+    "splitInvalid": "Wpisz dwie różne liczby całkowite od 1 do 1 000 000.",
     "confirmDeleteTxTitle": "Usunąć transakcję?",
     "confirmDeleteTx": "Usuwa wpis i przelicza średnią cenę pozycji.",
     "editAsset": "Edytuj aktywo",
@@ -2532,7 +2561,8 @@
     "preview": "Podgląd",
     "download": "Pobierz",
     "closePreview": "Zamknij podgląd",
-    "remove": "Usuń"
+    "remove": "Usuń",
+    "invalidAmount": "Podaj prawidłową kwotę, na przykład {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Szukaj grup...",
@@ -2929,6 +2959,8 @@
       "saveFailed": "Nie udało się zapisać wyboru narzędzi",
       "empty": "Nie wykryto narzędzi. Czy serwer MCP działa? W Dockerze: `docker compose --profile agents up -d`.",
       "proposeBadge": "propozycja",
+      "enabledCount": "Włączone: {{enabled}} z {{total}}",
+      "enableAll": "Włącz wszystkie",
       "loading": "Wczytywanie narzędzi…"
     },
     "chat": {
@@ -2983,7 +3015,13 @@
         "deleteBudget": "{{category}}: {{amount}} na {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} co miesiąc od {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "„{{name}}”"
+        "createCategoryGroup": "„{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Brak zmian"
       }
     },
     "conversation": {
@@ -3009,6 +3047,7 @@
       "baseUrl": "Adres URL endpointu",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Adres URL endpointu jest wymagany dla tego dostawcy",
+      "baseUrlInvalid": "Podaj prawidłowy adres URL endpointu http lub https",
       "ollamaHint": "Jeśli Ollama działa na Twoim hoście, użyj http://host.docker.internal:11434 (Mac/Windows) lub adresu IP hosta (Linux).",
       "openaiCompatHint": "Wklej po prostu host:port (np. http://192.168.1.142:1234). Ścieżka /v1 jest dodawana automatycznie. Z wnętrza Dockera na Macu/Windowsie zamień localhost na host.docker.internal.",
       "apiKey": "Klucz API / token",
@@ -3699,6 +3738,7 @@
       "write": "Odczyt i zmiana: {{what}}",
       "ownerOnly": "Tylko właściciel obszaru roboczego może dodać, zaktualizować lub usunąć wtyczkę uruchamiającą kod.",
       "removeConnections": "Jej połączenia w tym obszarze roboczym ({{count}}) zostaną usunięte razem z zapisanymi kluczami i dostępem.",
+      "unlinks": "Jego połączenia bankowe ({{count}}) przestają się synchronizować. Konta i transakcje zostają jako konta ręczne.",
       "removeNothing": "Kod wtyczki zostanie usunięty z serwera, gdy żaden obszar roboczy nie będzie jej używał.",
       "auth": {
         "credentials": "Klucz lub hasło",
@@ -3723,6 +3763,15 @@
         "install": "Ta wtyczka nie dodaje danych. Sprawdź, co może robić jej kod:",
         "update": "Sprawdź, co może robić nowa wersja:",
         "remove": "Jej kod przestaje działać w tym obszarze roboczym."
+      },
+      "provides": "Synchronizuje jak połączony bank",
+      "providesHint": "Securo dodaje te dane do tego obszaru roboczego i aktualizuje je, jak w przypadku połączonego banku. Każde połączenie pojawia się w sekcji „Połączenia bankowe”.",
+      "kinds": {
+        "accounts": "Konta",
+        "transactions": "transakcje",
+        "bills": "rachunki kart",
+        "holdings": "inwestycje",
+        "trades": "kupno i sprzedaż"
       }
     },
     "connections": {
@@ -3760,8 +3809,13 @@
       "added": "Połączono: {{name}}",
       "removeTitle": "Usunąć {{name}}?",
       "removeHint": "Zapisane klucze i dostęp do tego obszaru roboczego zostaną usunięte. To, co już zostało pobrane, zostaje.",
+      "removeBankHint": "Synchronizuje się jak połączony bank: usunięcie odłącza ten bank i usuwa zsynchronizowane konta wraz z transakcjami.",
       "removed": "Usunięto: {{name}}",
-      "copyFailed": "Nie udało się skopiować. Zaznacz adres i skopiuj go ręcznie."
+      "copyFailed": "Nie udało się skopiować. Zaznacz adres i skopiuj go ręcznie.",
+      "editTitle": "Połącz ponownie {{name}}",
+      "editHint": "Zaktualizuj to, co się zmieniło, np. nowe hasło lub token. Potem połączenie zsynchronizuje się ponownie.",
+      "keepBlank": "Zostaw pole puste, aby zachować obecną wartość.",
+      "updated": "Zaktualizowano {{name}}"
     },
     "oauth": {
       "title": "Kończenie logowania",

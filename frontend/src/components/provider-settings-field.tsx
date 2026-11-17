@@ -109,7 +109,7 @@ export function ProviderSettingsField({ fieldKey, field, value, disabled, pendin
           <Button
             type="button"
             variant="link"
-            className="h-auto whitespace-normal p-0 text-left text-xs text-muted-foreground"
+            className="h-auto whitespace-normal p-0 text-start text-xs text-muted-foreground"
             disabled={pending}
             onClick={onReset}
           >

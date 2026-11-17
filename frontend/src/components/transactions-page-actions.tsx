@@ -68,18 +68,18 @@ function DesktopSecondaryActions(props: TransactionsPageActionsProps) {
         </Button>
       )}
       <Button variant="outline" disabled={props.exporting} onClick={props.onExport}>
-        <Download size={16} className="mr-1.5" />
+        <Download size={16} className="me-1.5" />
         {props.exportLabel}
       </Button>
       {props.onDuplicate && (
         <Button variant="outline" onClick={props.onDuplicate}>
-          <Copy size={16} className="mr-1.5" />
+          <Copy size={16} className="me-1.5" />
           {t('transactions.duplicate')}
         </Button>
       )}
       {props.onTransfer && (
         <Button variant="outline" onClick={props.onTransfer}>
-          <ArrowLeftRight size={16} className="mr-1.5" />
+          <ArrowLeftRight size={16} className="me-1.5" />
           {t('transactions.transfer')}
         </Button>
       )}
@@ -123,24 +123,24 @@ function MobileSecondaryMenu(props: TransactionsPageActionsProps) {
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled={props.exporting} onClick={props.onExport}>
-          <Download size={16} className="mr-2" />
+          <Download size={16} className="me-2" />
           {props.exportLabel}
         </DropdownMenuItem>
         {props.onRefresh && (
           <DropdownMenuItem onClick={props.onRefresh}>
-            <RefreshCw size={16} className="mr-2" />
+            <RefreshCw size={16} className="me-2" />
             {t('transactions.refresh')}
           </DropdownMenuItem>
         )}
         {props.onDuplicate && (
           <DropdownMenuItem onClick={props.onDuplicate}>
-            <Copy size={16} className="mr-2" />
+            <Copy size={16} className="me-2" />
             {t('transactions.duplicate')}
           </DropdownMenuItem>
         )}
         {props.onTransfer && (
           <DropdownMenuItem onClick={props.onTransfer}>
-            <ArrowLeftRight size={16} className="mr-2" />
+            <ArrowLeftRight size={16} className="me-2" />
             {t('transactions.transfer')}
           </DropdownMenuItem>
         )}

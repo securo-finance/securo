@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
-import { formatCurrency } from '@/lib/format'
+import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { transactionDescription } from '@/lib/transaction-description'
@@ -76,7 +76,7 @@ export function MobileTransactionRow({
   return (
     <div
       ref={highlighted ? highlightedRowRef : undefined}
-      className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 transition-colors ${
+      className={`flex items-center gap-3 ps-3 pe-3 py-3 border-b border-border last:border-0 transition-colors ${
         selected ? 'bg-primary/5' : 'bg-card'
       } ${highlighted ? 'securo-highlight-flash' : ''} ${virtual ? 'opacity-80' : ''} ${
         virtual || tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer active:bg-muted/60'
@@ -181,14 +181,16 @@ export function MobileTransactionRow({
       </div>
 
       {/* Amount */}
-      <div className="shrink-0 text-right">
+      <div className="shrink-0 text-end">
         <span className={`text-sm font-bold tabular-nums ${amountColor}`}>
           {mask(
-            `${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '\u2212'}${formatCurrency(
-              Math.abs(displayAmount),
-              tx.currency,
-              locale,
-            )}`,
+            ltrAmount(
+              `${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '\u2212'}${formatCurrency(
+                Math.abs(displayAmount),
+                tx.currency,
+                locale,
+              )}`,
+            ),
           )}
         </span>
         {tx.amount_primary != null && tx.currency !== userCurrency && (

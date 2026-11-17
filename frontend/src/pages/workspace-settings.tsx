@@ -356,7 +356,7 @@ export default function WorkspaceSettingsPage() {
               className="rounded-lg"
               size="sm"
             >
-              <Save className="mr-2 h-4 w-4" />
+              <Save className="me-2 h-4 w-4" />
               {updateMutation.isPending ? t('common.loading') : t('common.save')}
             </Button>
           )}
@@ -434,7 +434,7 @@ export default function WorkspaceSettingsPage() {
                     supportedCurrencies ?? [{ code: editCurrency, symbol: editCurrency, name: editCurrency, flag: '' }]
                   ).map((c) => (
                     <SelectItem key={c.code} value={c.code}>
-                      <span className="mr-2">{c.flag}</span>
+                      <span className="me-2">{c.flag}</span>
                       {c.name}
                     </SelectItem>
                   ))}
@@ -479,7 +479,7 @@ export default function WorkspaceSettingsPage() {
                   <SelectItem value="__none__">—</SelectItem>
                   {sortedJurisdictions.map((code) => (
                     <SelectItem key={code} value={code}>
-                      <span className="mr-2">{countryFlag(code)}</span>
+                      <span className="me-2">{countryFlag(code)}</span>
                       {countryName(code, i18n.language)}
                     </SelectItem>
                   ))}
@@ -523,7 +523,7 @@ export default function WorkspaceSettingsPage() {
           </div>
           {canManage && (
             <Button onClick={() => setInviteOpen(true)} size="sm" className="rounded-lg">
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="me-2 h-4 w-4" />
               {t('workspace.addMember')}
             </Button>
           )}
@@ -549,7 +549,7 @@ export default function WorkspaceSettingsPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">
                       {m.display_name || m.email}
-                      {isMe && <span className="ml-2 text-xs text-muted-foreground">({t('workspace.you')})</span>}
+                      {isMe && <span className="ms-2 text-xs text-muted-foreground">({t('workspace.you')})</span>}
                     </p>
                     {m.display_name && <p className="text-xs text-muted-foreground truncate">{m.email}</p>}
                   </div>
@@ -620,7 +620,7 @@ export default function WorkspaceSettingsPage() {
               className="rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={() => setArchiveOpen(true)}
             >
-              <Archive className="mr-2 h-4 w-4" />
+              <Archive className="me-2 h-4 w-4" />
               {t('workspace.archive', 'Arquivar')}
             </Button>
           </div>
@@ -748,7 +748,7 @@ export default function WorkspaceSettingsPage() {
               disabled={archiveMutation.isPending}
               className="rounded-lg"
             >
-              <Archive className="mr-2 h-4 w-4" />
+              <Archive className="me-2 h-4 w-4" />
               {archiveMutation.isPending ? t('common.loading') : t('workspace.archive', 'Arquivar')}
             </Button>
           </DialogFooter>

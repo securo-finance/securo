@@ -24,6 +24,7 @@ import type {
   CategoryGroup,
   CategoryLineShareType,
   RecurringPaymentInput,
+  RecurringPriceChange,
   RecurringTransaction,
 } from '@/types'
 import { CategorySplitBadge } from '@/components/category-lines-display'
@@ -39,8 +40,8 @@ import {
   rowsFromLines,
   type CategoryLineRow,
 } from '@/lib/category-lines'
-import { formatAmountInput } from '@/lib/format'
-import { Banknote, Pencil, Trash2, Plus, RefreshCw, Info } from 'lucide-react'
+import { formatAmountInput, ltrAmount, parseAmountInput } from '@/lib/format'
+import { Banknote, Pencil, Trash2, Plus, RefreshCw, Info, History, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { CategorySelect } from '@/components/category-select'
@@ -51,6 +52,70 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
 
 const TH = 'text-xs font-medium text-muted-foreground py-3'
+
+/** Compact list cap within the API's 1-50 bound. */
+const RECENT_CHANGES_LIMIT = 20
+
+/** The backend sends percentage units (15.04 means 15.04%, not 1504%). */
+function formatSignedPercent(value: string, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    style: 'percent',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: 'exceptZero',
+  }).format(Number(value) / 100)
+}
+
+/** One read-only price-change row, shared by the recent list and the dialog. */
+function PriceChangeRow({
+  event,
+  description,
+  seriesType,
+}: {
+  event: RecurringPriceChange
+  description?: string
+  seriesType?: RecurringTransaction['type']
+}) {
+  const { t } = useTranslation()
+  const locale = useDisplayLocale()
+  const { mask } = usePrivacyMode()
+  const increase = event.direction === 'increase'
+  const effectColor =
+    seriesType === 'credit'
+      ? increase
+        ? 'text-emerald-600'
+        : 'text-rose-500'
+      : seriesType === 'debit'
+        ? increase
+          ? 'text-rose-500'
+          : 'text-emerald-600'
+        : 'text-muted-foreground'
+  const oldAmount = mask(formatCurrency(Number(event.previous_amount), event.currency, locale))
+  const newAmount = mask(formatCurrency(Number(event.current_amount), event.currency, locale))
+  const absolute = mask(formatCurrency(Number(event.absolute_delta), event.currency, locale))
+  return (
+    <li
+      className="px-4 sm:px-5 py-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm border-b border-border last:border-0"
+      data-testid="price-change-row"
+    >
+      {description && <span className="font-medium text-foreground">{description}</span>}
+      <span className="tabular-nums text-foreground">
+        {t('recurring.priceChangeAmount', { old: oldAmount, new: newAmount })}
+      </span>
+      <span className="tabular-nums text-muted-foreground">
+        {t('recurring.priceChangeDelta', { absolute, percent: mask(formatSignedPercent(event.percent_delta, locale)) })}
+      </span>
+      {/* Icon plus always-visible text: readable in grayscale and by screen readers. */}
+      <span className={cn('inline-flex items-center gap-1 text-xs font-semibold', effectColor)}>
+        {increase ? <TrendingUp size={13} aria-hidden /> : <TrendingDown size={13} aria-hidden />}
+        {increase ? t('recurring.priceChangeIncrease') : t('recurring.priceChangeDecrease')}
+      </span>
+      {event.gap_days > 0 && (
+        <span className="text-xs text-muted-foreground">{t('recurring.priceChangeGap', { days: event.gap_days })}</span>
+      )}
+    </li>
+  )
+}
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">{children}</div>
@@ -89,10 +154,34 @@ function RecurringTab() {
   const [editing, setEditing] = useState<RecurringTransaction | null>(null)
   const [deletingRecurring, setDeletingRecurring] = useState<RecurringTransaction | null>(null)
   const [paying, setPaying] = useState<RecurringTransaction | null>(null)
+  const [historySeries, setHistorySeries] = useState<RecurringTransaction | null>(null)
 
-  const { data: recurringList } = useQuery({
+  const { data: recurringList, isError: recurringListFailed } = useQuery({
     queryKey: ['recurring'],
     queryFn: recurringApi.list,
+  })
+
+  const {
+    data: recentChanges,
+    isPending: recentChangesPending,
+    isError: recentChangesFailed,
+  } = useQuery({
+    queryKey: ['recurring', 'recent-price-changes', RECENT_CHANGES_LIMIT],
+    queryFn: () => recurringApi.recentPriceChanges(RECENT_CHANGES_LIMIT),
+    // Read-only projection: short stale time plus the default refetch on
+    // focus; no polling.
+    staleTime: 30_000,
+  })
+
+  const {
+    data: priceHistory,
+    isPending: priceHistoryPending,
+    isError: priceHistoryFailed,
+  } = useQuery({
+    queryKey: ['recurring', 'price-history', historySeries?.id],
+    queryFn: () => recurringApi.priceHistory(historySeries?.id ?? ''),
+    // The detail query only runs while its dialog is open.
+    enabled: Boolean(historySeries),
   })
 
   const { data: categoriesList } = useQuery({
@@ -224,18 +313,21 @@ function RecurringTab() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('recurring.description')}</th>
-                <th className={`${TH} text-left w-36`}>{t('recurring.amount')}</th>
-                <th className={`${TH} text-left w-28 hidden md:table-cell`}>{t('recurring.frequency')}</th>
-                <th className={`${TH} text-left w-32 hidden md:table-cell`}>{t('recurring.nextOccurrence')}</th>
-                <th className={`${TH} text-left w-24 hidden sm:table-cell`}>{t('recurring.status')}</th>
-                {canWrite && <th className={`${TH} pr-4 sm:pr-5 text-right w-28`}>{t('recurring.actions')}</th>}
+                <th className={`${TH} ps-4 sm:ps-5 text-start`}>{t('recurring.description')}</th>
+                <th className={`${TH} text-start w-36`}>{t('recurring.amount')}</th>
+                <th className={`${TH} text-start w-28 hidden md:table-cell`}>{t('recurring.frequency')}</th>
+                <th className={`${TH} text-start w-32 hidden md:table-cell`}>{t('recurring.nextOccurrence')}</th>
+                <th className={`${TH} text-start w-24 hidden sm:table-cell`}>{t('recurring.status')}</th>
+                <th className={`${TH} text-end w-12`}>
+                  <span className="sr-only">{t('recurring.viewPriceHistory')}</span>
+                </th>
+                {canWrite && <th className={`${TH} pe-4 sm:pe-5 text-end w-28`}>{t('recurring.actions')}</th>}
               </tr>
             </thead>
             <tbody>
               {recurringList.map((rt) => (
                 <tr key={rt.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors">
-                  <td className="py-3 pl-4 sm:pl-5 text-sm font-medium text-foreground">
+                  <td className="py-3 ps-4 sm:ps-5 text-sm font-medium text-foreground">
                     <span className="inline-flex flex-wrap items-center gap-2">
                       {rt.description}
                       {isSplitByCategory(rt) && <CategorySplitBadge tx={rt} />}
@@ -244,7 +336,9 @@ function RecurringTab() {
                   <td
                     className={`py-3 text-xs sm:text-sm font-bold tabular-nums ${rt.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}
                   >
-                    {mask(`${rt.type === 'credit' ? '+' : '−'}${formatCurrency(rt.amount, rt.currency, locale)}`)}
+                    {mask(
+                      ltrAmount(`${rt.type === 'credit' ? '+' : '−'}${formatCurrency(rt.amount, rt.currency, locale)}`),
+                    )}
                     {rt.currency !== userCurrency && rt.amount_primary != null && (
                       <div className="flex items-center gap-1 text-[11px] font-normal text-muted-foreground">
                         <span>{mask(formatCurrency(rt.amount_primary, userCurrency, locale))}</span>
@@ -274,8 +368,21 @@ function RecurringTab() {
                       {rt.is_active ? t('recurring.active') : t('recurring.inactive')}
                     </span>
                   </td>
+                  {/* Price history is reachable for every row, including
+                      read-only workspaces. */}
+                  <td className="py-3 pe-2 text-end">
+                    <button
+                      type="button"
+                      className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                      onClick={() => setHistorySeries(rt)}
+                      aria-label={t('recurring.viewPriceHistory')}
+                      title={t('recurring.viewPriceHistory')}
+                    >
+                      <History size={13} />
+                    </button>
+                  </td>
                   {canWrite && (
-                    <td className="py-3 pr-4 sm:pr-5">
+                    <td className="py-3 pe-4 sm:pe-5">
                       <div className="flex items-center justify-end gap-1">
                         {rt.is_active && (
                           <button
@@ -318,6 +425,91 @@ function RecurringTab() {
           <p className="text-sm text-muted-foreground text-center py-10">{t('recurring.empty')}</p>
         )}
       </SectionCard>
+
+      {/* A successful empty projection has no card; errors and loading stay visible. */}
+      {(recentChangesPending ||
+        recentChangesFailed ||
+        (recurringListFailed && !recurringList) ||
+        Boolean(recentChanges?.length)) && (
+        <SectionCard>
+          <div className="px-4 sm:px-5 py-4 border-b border-border">
+            <h2 className="text-sm font-semibold text-foreground">{t('recurring.priceChangesTitle')}</h2>
+          </div>
+          {recentChangesFailed || (recurringListFailed && !recurringList) ? (
+            <p className="text-sm text-muted-foreground text-center py-6">{t('common.error')}</p>
+          ) : recentChangesPending ? (
+            <p className="text-sm text-muted-foreground text-center py-6">{t('common.loading')}</p>
+          ) : recentChanges && recentChanges.length > 0 ? (
+            <ul>
+              {recentChanges.map((event) => (
+                <PriceChangeRow
+                  key={event.current_transaction_id}
+                  event={event}
+                  description={recurringList?.find((rt) => rt.id === event.recurring_id)?.description}
+                  seriesType={recurringList?.find((rt) => rt.id === event.recurring_id)?.type}
+                />
+              ))}
+            </ul>
+          ) : null}
+        </SectionCard>
+      )}
+
+      {/* Read-only price history for one series. No "update
+          amount" action: the signal is evidence, not a schedule edit. */}
+      <Dialog
+        open={Boolean(historySeries)}
+        onOpenChange={(open) => {
+          if (!open) setHistorySeries(null)
+        }}
+      >
+        <DialogContent className="max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>{t('recurring.priceHistory')}</DialogTitle>
+          </DialogHeader>
+          {historySeries && (
+            <div className="min-h-0 overflow-y-auto space-y-4">
+              <div className="text-sm space-y-1">
+                <p className="font-medium text-foreground">{historySeries.description}</p>
+                <p className="text-muted-foreground tabular-nums">
+                  {mask(
+                    `${historySeries.type === 'credit' ? '+' : '−'}${formatCurrency(historySeries.amount, historySeries.currency, locale)}`,
+                  )}
+                  {' · '}
+                  {frequencyLabel(historySeries.frequency)}
+                </p>
+              </div>
+              {priceHistoryFailed ? (
+                <p className="text-sm text-muted-foreground">{t('common.error')}</p>
+              ) : priceHistoryPending ? (
+                <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+              ) : priceHistory ? (
+                <div className="space-y-3">
+                  {priceHistory.changes.length > 0 && (
+                    <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-muted text-muted-foreground border-border">
+                      {t('recurring.priceChangeBadge')}
+                    </span>
+                  )}
+                  {priceHistory.eligibility === 'insufficient_history' ? (
+                    <p className="text-sm text-muted-foreground">{t('recurring.priceChangeInsufficient')}</p>
+                  ) : priceHistory.changes.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{t('recurring.priceChangesEmpty')}</p>
+                  ) : (
+                    <ul className="border border-border rounded-lg overflow-hidden">
+                      {priceHistory.changes.map((event) => (
+                        <PriceChangeRow
+                          key={event.current_transaction_id}
+                          event={event}
+                          seriesType={historySeries.type}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={dialogOpen}
@@ -388,7 +580,7 @@ function RecurringTab() {
   )
 }
 
-function RecurringForm({
+export function RecurringForm({
   recurring,
   categories,
   categoryGroups,
@@ -416,8 +608,17 @@ function RecurringForm({
     queryFn: currenciesApi.list,
     staleTime: Infinity,
   })
+  // Amounts are typed under the workspace number format (issue #1072): on
+  // "1 000,00" a comma is the decimal separator, which a native number input
+  // silently drops. The field is text and goes through parseAmountInput, the
+  // same path the transaction dialog uses.
+  const displayLocale = useDisplayLocale()
   const [description, setDescription] = useState(recurring?.description ?? '')
-  const [amount, setAmount] = useState(recurring?.amount?.toString() ?? '')
+  const [amount, setAmount] = useState(
+    recurring?.amount != null ? formatAmountInput(Number(recurring.amount), displayLocale) : '',
+  )
+  const parsedAmount = parseAmountInput(amount, displayLocale)
+  const amountInvalid = amount !== '' && parsedAmount == null
   const [currency, setCurrency] = useState(recurring?.currency ?? userCurrency)
   const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? 'debit')
   const [frequency, setFrequency] = useState(recurring?.frequency ?? 'monthly')
@@ -433,7 +634,6 @@ function RecurringForm({
   const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? true)
   // Split across categories, as in the transaction dialog: every occurrence
   // the schedule generates starts with these parts.
-  const displayLocale = useDisplayLocale()
   const [lineRows, setLineRows] = useState<CategoryLineRow[] | null>(() =>
     recurring && isSplitByCategory(recurring) && recurring.category_lines
       ? rowsFromLines(recurring.category_lines, (v) => formatAmountInput(v, displayLocale))
@@ -443,7 +643,7 @@ function RecurringForm({
     () => recurring?.category_lines?.[0]?.share_type ?? 'exact',
   )
   const hadInitialLines = !!recurring && isSplitByCategory(recurring)
-  const linesValid = !lineRows || checkLines(lineRows, lineShareType, parseFloat(amount) || 0, displayLocale).valid
+  const linesValid = !lineRows || checkLines(lineRows, lineShareType, parsedAmount ?? 0, displayLocale).valid
   const undoSplit = () => {
     const kept = largestLineCategoryId(
       (lineRows ?? []).map((row, position) => ({
@@ -468,9 +668,10 @@ function RecurringForm({
     <form
       onSubmit={(e) => {
         e.preventDefault()
+        if (parsedAmount == null) return
         onSave({
           description,
-          amount: parseFloat(amount),
+          amount: parsedAmount,
           currency,
           type,
           frequency,
@@ -492,13 +693,32 @@ function RecurringForm({
       className="space-y-4"
     >
       <div className="space-y-2">
-        <Label>{t('recurring.description')}</Label>
-        <Input value={description} onChange={(e) => setDescription(e.target.value)} required />
+        <Label htmlFor="recurring-description">{t('recurring.description')}</Label>
+        <Input
+          id="recurring-description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          required
+        />
       </div>
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label>{t('recurring.amount')}</Label>
-          <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+          <Label htmlFor="recurring-amount">{t('recurring.amount')}</Label>
+          <Input
+            id="recurring-amount"
+            type="text"
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            aria-invalid={amountInvalid}
+            aria-describedby={amountInvalid ? 'recurring-amount-error' : undefined}
+            required
+          />
+          {amountInvalid && (
+            <p id="recurring-amount-error" role="alert" className="text-xs text-destructive">
+              {t('common.invalidAmount', { example: formatAmountInput(1234.56, displayLocale) })}
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label>{t('recurring.currency')}</Label>
@@ -624,7 +844,7 @@ function RecurringForm({
       </div>
       {lineRows && (
         <TransactionCategoryLinesSection
-          amount={parseFloat(amount) || 0}
+          amount={parsedAmount ?? 0}
           currency={currency}
           rows={lineRows}
           shareType={lineShareType}

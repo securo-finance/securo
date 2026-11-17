@@ -30,8 +30,8 @@ function _Markdown({ children, className }: Props) {
         remarkPlugins={[remarkGfm]}
         components={{
           p: ({ children }: NodeProps) => <p className="my-2 whitespace-pre-wrap">{children}</p>,
-          ul: ({ children }: NodeProps) => <ul className="my-2 list-disc pl-5 space-y-0.5">{children}</ul>,
-          ol: ({ children }: NodeProps) => <ol className="my-2 list-decimal pl-5 space-y-0.5">{children}</ol>,
+          ul: ({ children }: NodeProps) => <ul className="my-2 list-disc ps-5 space-y-0.5">{children}</ul>,
+          ol: ({ children }: NodeProps) => <ol className="my-2 list-decimal ps-5 space-y-0.5">{children}</ol>,
           li: ({ children }: NodeProps) => <li className="marker:text-muted-foreground/70">{children}</li>,
           h1: ({ children }: NodeProps) => <h1 className="text-base font-bold mt-3 mb-1.5">{children}</h1>,
           h2: ({ children }: NodeProps) => <h2 className="text-[15px] font-semibold mt-3 mb-1.5">{children}</h2>,
@@ -41,7 +41,7 @@ function _Markdown({ children, className }: Props) {
           em: ({ children }: NodeProps) => <em className="italic">{children}</em>,
           del: ({ children }: NodeProps) => <del className="opacity-70">{children}</del>,
           blockquote: ({ children }: NodeProps) => (
-            <blockquote className="border-l-2 border-border pl-3 italic text-muted-foreground my-2">
+            <blockquote className="border-s-2 border-border ps-3 italic text-muted-foreground my-2">
               {children}
             </blockquote>
           ),
@@ -63,7 +63,7 @@ function _Markdown({ children, className }: Props) {
           ),
           thead: ({ children }: NodeProps) => <thead className="bg-muted/60">{children}</thead>,
           th: ({ children }: NodeProps) => (
-            <th className="border border-border px-2 py-1 text-left font-semibold">{children}</th>
+            <th className="border border-border px-2 py-1 text-start font-semibold">{children}</th>
           ),
           td: ({ children }: NodeProps) => <td className="border border-border px-2 py-1 align-top">{children}</td>,
           code: ({ className, children, ...props }: NodeProps & { className?: string }) => {
@@ -110,7 +110,7 @@ function _Markdown({ children, className }: Props) {
             // GFM task lists.
             if (type === 'checkbox') {
               return (
-                <input type="checkbox" checked={!!checked} readOnly className="mr-1.5 align-middle accent-primary" />
+                <input type="checkbox" checked={!!checked} readOnly className="me-1.5 align-middle accent-primary" />
               )
             }
             return null

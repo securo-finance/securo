@@ -76,7 +76,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
-import { formatCompactCurrency, formatCurrency } from '@/lib/format'
+import { formatCompactCurrency, formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { readCalendarDateBasis } from '@/lib/transaction-calendar'
 import { WidgetGrid } from '@/components/widget-grid'
@@ -855,7 +855,7 @@ export default function DashboardPage() {
                       <Link
                         key={acc.id}
                         to={`/accounts/${acc.id}`}
-                        className="group inline-flex items-center gap-1 text-[11px] pl-1 pr-2 py-0.5 rounded-full border border-border bg-background transition-transform duration-150 ease-out hover:scale-105 hover:border-foreground/25 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                        className="group inline-flex items-center gap-1 text-[11px] ps-1 pe-2 py-0.5 rounded-full border border-border bg-background transition-transform duration-150 ease-out hover:scale-105 hover:border-foreground/25 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                       >
                         {/* The bank mark is what the eye actually sorts on in a
                             row of chips; the name is the confirmation. Falls
@@ -909,7 +909,7 @@ export default function DashboardPage() {
           {/* Income */}
           <button
             type="button"
-            className="min-w-0 text-left cursor-pointer hover:opacity-70 transition-opacity"
+            className="min-w-0 text-start cursor-pointer hover:opacity-70 transition-opacity"
             onClick={() =>
               setDrillDown({
                 title: t('dashboard.drillDownIncome', { month: monthLabelStr }),
@@ -927,7 +927,7 @@ export default function DashboardPage() {
             ) : (
               <>
                 <p className="text-xl font-bold tabular-nums text-emerald-600">
-                  +{mask(formatCurrency(income, primaryCurrency, locale))}
+                  {mask(ltrAmount(`+${formatCurrency(income, primaryCurrency, locale)}`))}
                 </p>
                 {Math.abs(projectedIncome - income) >= 0.01 && (
                   <p className="text-xs text-muted-foreground tabular-nums mt-1">
@@ -941,7 +941,7 @@ export default function DashboardPage() {
           {/* Expenses */}
           <button
             type="button"
-            className="relative min-w-0 text-left cursor-pointer hover:opacity-70 transition-opacity before:content-[''] before:hidden @xl:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border"
+            className="relative min-w-0 text-start cursor-pointer hover:opacity-70 transition-opacity before:content-[''] before:hidden @xl:before:block before:absolute before:-start-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border"
             onClick={() =>
               setDrillDown({
                 title: t('dashboard.drillDownExpenses', { month: monthLabelStr }),
@@ -959,7 +959,7 @@ export default function DashboardPage() {
             ) : (
               <>
                 <p className="text-xl font-bold tabular-nums text-rose-500">
-                  -{mask(formatCurrency(expenses, primaryCurrency, locale))}
+                  {mask(ltrAmount(`-${formatCurrency(expenses, primaryCurrency, locale)}`))}
                 </p>
                 {Math.abs(projectedExpenses - expenses) >= 0.01 && (
                   <p className="text-xs text-muted-foreground tabular-nums mt-1">
@@ -972,7 +972,7 @@ export default function DashboardPage() {
           </button>
 
           {/* Net worth */}
-          <div className="relative min-w-0 before:content-[''] before:hidden @xl:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
+          <div className="relative min-w-0 before:content-[''] before:hidden @xl:before:block before:absolute before:-start-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center gap-1">
               {t('dashboard.netWorth')}
               <Tooltip>
@@ -1043,7 +1043,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Savings rate */}
-          <div className="relative min-w-0 before:content-[''] before:hidden @xl:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
+          <div className="relative min-w-0 before:content-[''] before:hidden @xl:before:block before:absolute before:-start-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">
               {t('dashboard.savingsRate')}
             </p>
@@ -1101,7 +1101,10 @@ export default function DashboardPage() {
             </span>
           </div>
           <span className="shrink-0 text-sm font-semibold text-amber-600 dark:text-amber-400 hover:underline">
-            {t('dashboard.categorizeNow')} &rarr;
+            {t('dashboard.categorizeNow')}{' '}
+            <span aria-hidden="true" className="rtl-mirror">
+              &rarr;
+            </span>
           </span>
         </button>
       ) : (
@@ -1266,14 +1269,18 @@ export default function DashboardPage() {
               </p>
             </div>
             {!balanceHistoryLoading && lastCurrentPoint && (
-              <div className="text-right">
+              <div className="text-end">
                 <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
                   {t('dashboard.balancePeriodVariation')}
                 </p>
                 <span
                   className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}
                 >
-                  {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
+                  {mask(
+                    ltrAmount(
+                      `${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`,
+                    ),
+                  )}
                 </span>
               </div>
             )}
@@ -1493,7 +1500,10 @@ export default function DashboardPage() {
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
           <p className="text-sm font-semibold text-foreground">{t('goals.dashboardTitle')}</p>
           <Link to="/goals" className="text-xs font-medium text-primary hover:underline">
-            {t('goals.viewAll')} &rarr;
+            {t('goals.viewAll')}{' '}
+            <span aria-hidden="true" className="rtl-mirror">
+              &rarr;
+            </span>
           </Link>
         </div>
         <div className="divide-y divide-border">
@@ -1617,7 +1627,7 @@ export default function DashboardPage() {
                     {pagedRows.map((row) => (
                       <div
                         key={row.key}
-                        className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 bg-card ${
+                        className={`flex items-center gap-3 ps-3 pe-3 py-3 border-b border-border last:border-0 bg-card ${
                           row.isProjected ? '' : 'cursor-pointer active:bg-muted/60'
                         }`}
                         onClick={() => {
@@ -1699,12 +1709,14 @@ export default function DashboardPage() {
                         </div>
 
                         {/* Amount */}
-                        <div className="shrink-0 text-right">
+                        <div className="shrink-0 text-end">
                           <span
                             className={`text-sm font-bold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}
                           >
                             {mask(
-                              `${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '\u2212'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`,
+                              ltrAmount(
+                                `${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '\u2212'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`,
+                              ),
                             )}
                           </span>
                           {row.isShared && row.parentTotal != null && (
@@ -1734,7 +1746,7 @@ export default function DashboardPage() {
                   <Table>
                     <TableHeader>
                       <TableRow className="border-b border-border hover:bg-transparent">
-                        <TableHead className="pl-5 text-xs font-medium text-muted-foreground hidden sm:table-cell">
+                        <TableHead className="ps-5 text-xs font-medium text-muted-foreground hidden sm:table-cell">
                           {t('transactions.date')}
                         </TableHead>
                         <TableHead className="text-xs font-medium text-muted-foreground">
@@ -1743,7 +1755,7 @@ export default function DashboardPage() {
                         <TableHead className="text-xs font-medium text-muted-foreground hidden sm:table-cell">
                           {t('transactions.account')}
                         </TableHead>
-                        <TableHead className="pr-5 text-right text-xs font-medium text-muted-foreground">
+                        <TableHead className="pe-5 text-end text-xs font-medium text-muted-foreground">
                           {t('transactions.amount')}
                         </TableHead>
                       </TableRow>
@@ -1774,10 +1786,10 @@ export default function DashboardPage() {
                             }
                           }}
                         >
-                          <TableCell className="py-2.5 pl-5 text-sm text-muted-foreground tabular-nums whitespace-nowrap hidden sm:table-cell">
+                          <TableCell className="py-2.5 ps-5 text-sm text-muted-foreground tabular-nums whitespace-nowrap hidden sm:table-cell">
                             {formatDate(row.date, dateLocale)}
                           </TableCell>
-                          <TableCell className="py-2.5 pl-5 sm:pl-0">
+                          <TableCell className="py-2.5 ps-5 sm:ps-0">
                             <div className="flex items-center gap-3">
                               {row.splitSource ? (
                                 <TransactionCategoryIcon tx={row.splitSource} size="lg" />
@@ -1815,7 +1827,7 @@ export default function DashboardPage() {
                                     </span>
                                   )}
                                   {row.isIgnored && (
-                                    <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                                    <span className="ms-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
                                       <EyeClosed className="h-3 w-3" />
                                       {t('transactions.ignored')}
                                       <span title={t('transactions.ignoreTransferHint')}>
@@ -1845,12 +1857,14 @@ export default function DashboardPage() {
                               )
                             })()}
                           </TableCell>
-                          <TableCell className="py-2.5 pr-5 text-right">
+                          <TableCell className="py-2.5 pe-5 text-end">
                             <span
                               className={`text-sm font-semibold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}
                             >
                               {mask(
-                                `${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`,
+                                ltrAmount(
+                                  `${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`,
+                                ),
                               )}
                             </span>
                             {row.isShared && row.parentTotal != null && (
@@ -2017,16 +2031,16 @@ export default function DashboardPage() {
           <div className="flex flex-wrap items-center gap-2">
             {dashboardLayout.isCustom && (
               <Button variant="ghost" size="sm" onClick={dashboardLayout.reset}>
-                <RotateCcw size={14} className="mr-1" />
+                <RotateCcw size={14} className="me-1" />
                 {t('library.restoreDefault')}
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => openLibrary('widgets')}>
-              <Plus size={14} className="mr-1" />
+              <Plus size={14} className="me-1" />
               {t('library.addWidget')}
             </Button>
             <Button size="sm" onClick={() => setEditing(false)}>
-              <Check size={14} className="mr-1" />
+              <Check size={14} className="me-1" />
               {t('library.done')}
             </Button>
           </div>

@@ -164,6 +164,7 @@ def catalog(monkeypatch) -> Catalog:
     fake = Catalog()
     monkeypatch.setattr(index, "http_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(fake.handle)))
     index._manifests.clear()
+    monkeypatch.setattr(index, "_last_archive", None)
     monkeypatch.setenv("PLUGINS_ENABLED", "true")
     return fake
 

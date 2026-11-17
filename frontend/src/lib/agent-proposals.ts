@@ -2,6 +2,7 @@ export type ProposalKind =
   | 'categorize'
   | 'create_category'
   | 'create_budget'
+  | 'create_manual_account'
   | 'create_payee_rule'
   | 'create_rule'
   | 'update_rule'
@@ -15,6 +16,7 @@ export type ProposalKind =
   | 'unlink_transfer'
   | 'update_goal'
   | 'update_budget'
+  | 'update_manual_account'
   | 'delete_budget'
   | 'update_transaction_notes'
   | 'create_category_group'
@@ -58,6 +60,7 @@ export function isProposalData(data: unknown): data is ProposalData {
       'create_category',
       'create_budget',
       'create_payee_rule',
+      'create_manual_account',
       'create_rule',
       'update_rule',
       'delete_rule',
@@ -71,6 +74,7 @@ export function isProposalData(data: unknown): data is ProposalData {
       'update_goal',
       'update_budget',
       'delete_budget',
+      'update_manual_account',
       'update_transaction_notes',
       'create_category_group',
     ].includes(k)

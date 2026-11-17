@@ -13,7 +13,7 @@ const LOCALES_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 
 function makeT(lng: string, resources: Resource, fallbackLng: string | false = false) {
   const instance = i18next.createInstance()
-  instance.init({ lng, resources, fallbackLng, initImmediate: false })
+  instance.init({ lng, resources, fallbackLng, initAsync: false })
   return instance.t
 }
 

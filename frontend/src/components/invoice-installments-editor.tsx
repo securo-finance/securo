@@ -82,7 +82,7 @@ export function InvoiceInstallmentsEditor({
             <Button
               size="sm"
               variant="ghost"
-              className="ml-auto"
+              className="ms-auto"
               onClick={() =>
                 onChange([
                   ...rows,
@@ -91,7 +91,7 @@ export function InvoiceInstallmentsEditor({
               }
               data-testid="installments-add"
             >
-              <Plus className="h-3.5 w-3.5 mr-1" />
+              <Plus className="h-3.5 w-3.5 me-1" />
               {t('invoices.installments.add')}
             </Button>
           </div>
@@ -99,7 +99,7 @@ export function InvoiceInstallmentsEditor({
           <div className="hidden sm:grid grid-cols-[1fr_8rem_8rem_2rem] gap-2 px-3 pt-2">
             <span className={TH}>{t('invoices.installments.label')}</span>
             <span className={TH}>{t('invoices.column.due')}</span>
-            <span className={`${TH} text-right`}>{t('invoices.column.amount')}</span>
+            <span className={`${TH} text-end`}>{t('invoices.column.amount')}</span>
             <span className={TH} />
           </div>
           <div className="divide-y divide-border">
@@ -127,7 +127,7 @@ export function InvoiceInstallmentsEditor({
                   aria-label={t('invoices.column.due')}
                 />
                 <Input
-                  className="h-9 text-right"
+                  className="h-9 text-end"
                   inputMode="decimal"
                   value={row.amount}
                   onChange={(e) => update(index, { amount: e.target.value })}

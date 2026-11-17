@@ -32,7 +32,7 @@ export function ImportSummaryBar({ transactions, userCurrency, locale }: ImportS
           {excluded} {t('import.excluded').toLowerCase()}
         </span>
       )}
-      <span className="ml-auto text-xs text-muted-foreground">
+      <span className="ms-auto text-xs text-muted-foreground">
         {t('import.balanceImpact')}:{' '}
         <span className={balanceImpact >= 0 ? 'text-emerald-600 font-medium' : 'text-rose-500 font-medium'}>
           {formatCurrency(balanceImpact, userCurrency, locale)}

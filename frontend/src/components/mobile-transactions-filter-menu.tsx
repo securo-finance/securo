@@ -168,7 +168,7 @@ function MobileDetailHeader({ title, onBack }: { title: string; onBack: () => vo
       <button
         type="button"
         onClick={onBack}
-        className="flex w-full items-center gap-1 rounded-sm px-2 py-1.5 text-left text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="flex w-full items-center gap-1 rounded-sm px-2 py-1.5 text-start text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
       >
         <ChevronLeft size={14} />
         {t('common.back')}
@@ -198,7 +198,7 @@ function MobileAccountOption({
       }}
       className="gap-2 py-2 text-[13px]"
     >
-      <span className="min-w-0 flex-1 truncate text-left">{getAccountName(account)}</span>
+      <span className="min-w-0 flex-1 truncate text-start">{getAccountName(account)}</span>
       {account.currency && (
         <span className="text-[10.5px] uppercase tracking-wide text-muted-foreground/70">{account.currency}</span>
       )}
