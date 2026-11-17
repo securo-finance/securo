@@ -14,6 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.content_disposition import content_disposition
 from app.core.database import get_async_session
 from app.models.invoice import Invoice
 from app.models.workspace import Workspace
@@ -682,7 +683,7 @@ async def download_pdf(
             content=data,
             media_type=served_content_type(primary.filename),
             headers={
-                "Content-Disposition": f'attachment; filename="{primary.filename}"'
+                "Content-Disposition": content_disposition("attachment", primary.filename)
             },
         )
 
@@ -710,11 +711,11 @@ async def download_pdf(
         else None
     )
     pdf = invoice_pdf.render_pdf(document, logo_bytes)
-    filename = f"{document.number or 'draft'}.pdf".replace("/", "-")
+    filename = f"{document.number or 'draft'}.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition("attachment", filename)},
     )
 
 
@@ -748,11 +749,11 @@ async def download_statement(
         else None
     )
     pdf = invoice_pdf.render_pdf(document, logo_bytes)
-    filename = f"{document.number or 'invoice'}-statement.pdf".replace("/", "-")
+    filename = f"{document.number or 'invoice'}-statement.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition("attachment", filename)},
     )
 
 
