@@ -134,6 +134,12 @@ jobs:
               // ---- 2. files that never take the fast lane -------------------
               const files = await github.paginate(github.rest.pulls.listFiles,
                 { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
+              // GitHub caps this list at 3,000 entries even with pagination. A
+              // gate that reads paths has to refuse a list it knows is short:
+              // the blocked file would be exactly the one it could not see.
+              if (files.length !== pr.changed_files) {
+                return skip(`the file list is incomplete (${files.length} of ${pr.changed_files})`);
+              }
               // A rename reports the new path in `filename` and the old one in
               // `previous_filename`: moving a migration, an auth file or this
               // workflow out of its directory would otherwise pass the list.
