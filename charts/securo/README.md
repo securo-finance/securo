@@ -76,7 +76,11 @@ The runner starts plugin processes as their own unprivileged users, with a read-
 
 Enabling the runner turns `PLUGINS_ENABLED` on and keeps it on, even if `config.pluginsEnabled` says otherwise. Its namespace needs the `baseline` Pod Security Standard or looser: the runner runs as root so it can give each plugin its own uid.
 
-Set `plugins.networkPolicy.enabled: true` on a cluster whose CNI enforces `NetworkPolicy` to also stop the runner from reaching other pods. The proxy still refuses private addresses while it is off, but the runner can then open connections to anything the cluster allows.
+The runner stays at one replica and rolls with `Recreate`: its registry and uid allocation are guarded by locks inside one process, so two pods writing the same volume can hand one uid to two plugins.
+
+Set `plugins.networkPolicy.enabled: true` on a cluster whose CNI enforces `NetworkPolicy` to also stop the runner from reaching other pods. The policy allows the backend (plugin calls that carry an API token talk to it), DNS and the egress proxy, nothing else. The proxy still refuses private addresses while it is off, but the runner can then open connections to anything the cluster allows.
+
+Disabling `plugins.egress` points you at your own proxy through `runner.extraEnv`. Add its destination to `plugins.networkPolicy.extraEgress` too, otherwise the policy the chart applies blocks it.
 
 ## Uninstalling the Chart
 

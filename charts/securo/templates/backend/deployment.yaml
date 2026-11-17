@@ -64,6 +64,8 @@ spec:
           env:
             - name: PLUGINS_ENABLED
               value: "true"
+            - name: PLUGINS_API_URL
+              value: {{ printf "http://%s-backend:%v/api" (include "securo.fullname" .) .Values.backend.service.port | quote }}
             - name: PLUGINS_RUNNER_URL
               value: {{ printf "http://%s-plugins-runner:%v" (include "securo.fullname" .) .Values.plugins.runner.service.port | quote }}
             - name: PLUGINS_RUNNER_TOKEN

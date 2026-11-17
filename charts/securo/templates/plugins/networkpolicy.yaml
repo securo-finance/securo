@@ -28,6 +28,15 @@ spec:
         - port: {{ .Values.plugins.runner.service.port }}
           protocol: TCP
   egress:
+    # Plugin calls that carry an api_url talk to the Securo API directly.
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "securo.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: backend
+      ports:
+        - port: {{ .Values.backend.service.port }}
+          protocol: TCP
     {{- if .Values.plugins.egress.enabled }}
     - to:
         - podSelector:
@@ -50,6 +59,9 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
+    {{- with .Values.plugins.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- if .Values.plugins.egress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

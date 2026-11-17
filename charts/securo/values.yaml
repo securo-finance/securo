@@ -189,8 +189,9 @@ mcpServer:
 plugins:
   runner:
     enabled: false
-    # One replica: every replica needs to see the same installed plugin code.
-    # Raising this requires a ReadWriteMany volume for `persistence` below.
+    # Must stay 1: the runner keeps its registry and uid allocation in
+    # process-local locks, so two pods sharing the volume can hand one uid to
+    # two plugins or write a stale registry. The template refuses more.
     replicaCount: 1
     # Defaults to the backend image: the runner ships in it as
     # `plugin_runner.main:create_app`.
@@ -248,6 +249,10 @@ plugins:
     # as root with the default capability set, so its namespace cannot be under
     # the `restricted` Pod Security Standard.
     enabled: false
+    # Extra egress rules for the runner, appended to its policy. Needed when
+    # plugin code has to reach something else, for example an external proxy
+    # set through `runner.extraEnv` while `egress.enabled` is false.
+    extraEgress: []
 
 # Persistence for application data
 # IMPORTANT: Since Backend, Celery Worker, and MCP Server all share the same attachment files,

@@ -1,4 +1,7 @@
 {{- if .Values.plugins.runner.enabled }}
+{{- if gt (int .Values.plugins.runner.replicaCount) 1 }}
+{{- fail "plugins.runner.replicaCount must stay at 1: the runner store keeps its registry and uid allocation in process-local locks" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,6 +11,9 @@ metadata:
     app.kubernetes.io/component: plugins-runner
 spec:
   replicas: {{ .Values.plugins.runner.replicaCount }}
+  # Never let an old and a new runner write the same volume at the same time.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "securo.selectorLabels" . | nindent 6 }}
