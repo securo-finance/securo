@@ -2962,16 +2962,92 @@ async def _sync_credit_card_bills(
 # so the UI can tell "data read" from "the provider throttled us and nothing
 # was pulled" (issue #736). "refreshed" covers the normal path (the data may
 # be the provider's cached copy; whether a fresh pull happened is the
-# provider's own semantics). "rate_limited" means the provider returned a
-# 429: nothing was pulled and last_sync_at was left untouched so the next
-# sync retries the same window. Errors (expired session, user action
-# required, generic failure) still propagate as exceptions.
-SyncOutcome = Literal["refreshed", "rate_limited"]
+# provider's own semantics). "partial" means the provider returned a 429 for
+# some accounts: those were skipped, the others were imported and kept.
+# "rate_limited" means nothing could be pulled. In both throttled cases
+# last_sync_at is left untouched so the next sync retries the same window,
+# and the scheduler counts the run as a rate-limited failure in its backoff
+# (app.tasks.sync_tasks). Errors (expired session, user action required,
+# generic failure) still propagate as exceptions.
+SyncOutcome = Literal["refreshed", "partial", "rate_limited"]
 
 # Key in BankConnection.settings where the scheduler keeps its backoff state
 # for connections whose scheduled syncs keep failing (app.tasks.sync_tasks).
-# Any successful sync clears it, so a manual sync that works ends the backoff.
+# Any fully successful sync clears it, so a manual sync that works ends the
+# backoff; a throttled one ("partial" or "rate_limited") leaves it in place.
 SYNC_BACKOFF_KEY = "sync_backoff"
+# Inside the backoff state: the earliest time the provider's Retry-After lets
+# the scheduler try again. A floor on the backoff, never a lock by itself: it
+# only counts once a scheduled sync has failed.
+RETRY_NOT_BEFORE_KEY = "retry_not_before"
+# A bogus Retry-After must not park a connection for days.
+RETRY_AFTER_MAX = timedelta(hours=24)
+# Enable Banking advises resuming no earlier than 6 hours after a 429.
+RATE_LIMITED_RETRY_DEFAULT = timedelta(hours=6)
+
+
+def _with_retry_after(settings: Optional[dict], retry_after: Optional[float]) -> dict:
+    """Settings with the provider's Retry-After noted in the backoff state."""
+    current = dict(settings or {})
+    if retry_after is None:
+        return current
+    # Clamp before building the timedelta: a huge finite Retry-After would
+    # overflow timedelta itself and escape the sync as an OverflowError.
+    seconds = min(max(retry_after, 0.0), RETRY_AFTER_MAX.total_seconds())
+    not_before = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+    previous = current.get(SYNC_BACKOFF_KEY)
+    state = dict(previous) if isinstance(previous, dict) else {}
+    # A shorter Retry-After (say, from a manual sync an hour later) must not
+    # pull an earlier, longer floor forward: the bank's first answer stands.
+    existing = _parse_aware_datetime(state.get(RETRY_NOT_BEFORE_KEY))
+    if existing is not None and existing > not_before:
+        not_before = existing
+    state[RETRY_NOT_BEFORE_KEY] = not_before.isoformat()
+    current[SYNC_BACKOFF_KEY] = state
+    return current
+
+
+def _parse_aware_datetime(value: object) -> Optional[datetime]:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _throttle_retry_after(
+    provider: object,
+    throttled_accounts: set[str],
+    retry_after: Optional[float],
+    throttled_without_retry_after: bool = False,
+) -> Optional[float]:
+    """Retry-After to note when a sync fails for another reason after a 429
+    on some account. The failure decides the status, but each 429 still sets
+    a floor on the next scheduled try: its own Retry-After, or the usual 6
+    hours when it gave none. A 429 can be noted by the provider (account
+    discovery) or by the sync itself (transaction fetch); the longest wins,
+    so a short Retry-After on one account never undercuts the 6 hours another
+    account's bare 429 implies."""
+    default = RATE_LIMITED_RETRY_DEFAULT.total_seconds()
+    floors: list[float] = []
+    if throttled_accounts:
+        if retry_after is not None:
+            floors.append(retry_after)
+        if retry_after is None or throttled_without_retry_after:
+            floors.append(default)
+    throttled = getattr(provider, "rate_limited_account_ids", None)
+    if isinstance(throttled, (set, frozenset, list, tuple)) and throttled:
+        provider_retry_after = getattr(provider, "rate_limit_retry_after", None)
+        has_header = isinstance(provider_retry_after, (int, float))
+        if has_header:
+            floors.append(float(provider_retry_after))
+        if not has_header or (
+            getattr(provider, "rate_limited_without_retry_after", False) is True
+        ):
+            floors.append(default)
+    return max(floors) if floors else None
 
 
 async def sync_connection(
@@ -3032,6 +3108,13 @@ async def sync_connection(
             "Ask an administrator to configure it in Settings or through the environment."
         ) from exc
 
+    # Throttled accounts and the longest Retry-After seen, set before the try
+    # so a later failure in the run still notes them as the retry floor.
+    rate_limited_accounts: set[str] = set()
+    retry_after: Optional[float] = None
+    # Whether some 429 in this run came without a Retry-After: that throttle
+    # still implies the 6-hour default, whatever the others asked for.
+    throttled_without_retry_after = False
     try:
         # Refresh credentials if needed
         credentials = await provider.refresh_credentials(connection.credentials or {})
@@ -3097,6 +3180,23 @@ async def sync_connection(
         # notice on its own.
         connection.credentials = credentials
         flag_modified(connection, "credentials")
+        # Accounts the provider skipped because it was throttled (429) on
+        # their details or balance. They are missing from accounts_data, so
+        # their rows are left as they are; the sync checkpoint must not
+        # advance past them, and the connection backs off before retrying.
+        provider_rate_limited = getattr(provider, "rate_limited_account_ids", None)
+        rate_limited_accounts = (
+            set(provider_rate_limited)
+            if isinstance(provider_rate_limited, (set, frozenset, list, tuple))
+            else set()
+        )
+        provider_retry_after = getattr(provider, "rate_limit_retry_after", None)
+        retry_after = (
+            float(provider_retry_after)
+            if isinstance(provider_retry_after, (int, float))
+            else None
+        )
+        transactions_fetched = 0
         incoming_external_ids = {acc.external_id for acc in accounts_data}
         incoming_institution_external_ids = frozenset(
             acc.institution_external_id
@@ -3275,9 +3375,32 @@ async def sync_connection(
                 if connection.last_sync_at
                 else None
             )
-            transactions_data = await provider.get_transactions(
-                credentials, acc_data.external_id, since, payee_source=payee_source
-            )
+            try:
+                transactions_data = await provider.get_transactions(
+                    credentials, acc_data.external_id, since, payee_source=payee_source
+                )
+            except ProviderRateLimited as exc:
+                # The provider throttled this account's transaction fetch
+                # (PSD2 caps are per resource). Skip its transactions for this
+                # run instead of rolling back the accounts already imported:
+                # its existing transactions are left intact and the checkpoint
+                # below does not advance, so the next sync retries the same
+                # window. The balance above did come through, so reconcile the
+                # opening balance against it as a normal run would.
+                rate_limited_accounts.add(acc_data.external_id)
+                if exc.retry_after is not None:
+                    retry_after = max(retry_after or 0.0, exc.retry_after)
+                else:
+                    throttled_without_retry_after = True
+                logger.warning(
+                    "Sync %s: provider rate-limited transactions for account %s; "
+                    "skipping it for this run",
+                    connection_id,
+                    acc_data.external_id,
+                )
+                await sync_opening_balance_for_connected_account(session, account)
+                continue
+            transactions_fetched += 1
 
             # Every id the provider returned, pending ones included, so the
             # phantom cleanup still sees a pending row the filter below skips.
@@ -3645,10 +3768,33 @@ async def sync_connection(
         # Clean up phantom duplicates: providers occasionally double-report the
         # same payment with different ids. Once transfer detection has paired
         # the real one, the orphan twin gets removed here.
+        # A throttled account has no live id set this run (its transactions
+        # were never read, or the account itself was skipped), so the cleanup
+        # would fall back to the heuristic that can delete a real unpaired row.
+        # Leave it alone until a run reads it, as for a cut-short fetch. An
+        # account skipped on its details or balance is matched by its stored
+        # row, whose external_id can still be the uid of an earlier session
+        # (a reauthorisation re-keys it only when the account comes through),
+        # so every stored row the provider did not return this run counts.
+        throttled_account_ids: set[uuid.UUID] = set()
+        if rate_limited_accounts:
+            throttled_account_ids = set(
+                (
+                    await session.execute(
+                        select(Account.id).where(
+                            Account.connection_id == connection.id,
+                            or_(
+                                Account.external_id.in_(rate_limited_accounts),
+                                Account.external_id.not_in(incoming_external_ids),
+                            ),
+                        )
+                    )
+                ).scalars()
+            )
         touched_account_ids = await _cleanup_phantom_duplicates(
             session, connection.id, live_txn_external_ids,
             promoted_external_ids=promoted_txn_external_ids,
-            skip_account_ids=incomplete_fetch_account_ids,
+            skip_account_ids=incomplete_fetch_account_ids | throttled_account_ids,
         )
 
         # The opening balances above were reconciled with the phantoms still
@@ -3696,22 +3842,45 @@ async def sync_connection(
         # moving it forward would leave that gap behind for good once the
         # user reauthorizes; keep it until every account fetched in full.
         # The healthy accounts just re-read a longer window, deduplicated.
-        if not incomplete_fetch_account_ids:
-            connection.last_sync_at = datetime.now(timezone.utc)
-        # A successful read ends any scheduler backoff (app.tasks.sync_tasks).
-        current_settings = connection.settings or {}
-        if SYNC_BACKOFF_KEY in current_settings:
-            connection.settings = {
-                key: value
-                for key, value in current_settings.items()
-                if key != SYNC_BACKOFF_KEY
-            }
-        # A failed re-read leaves the catch-up due, so the next sync retries it.
-        if pending_catch_up and not pending_catch_up_failed:
-            connection.settings = {
-                **(connection.settings or {}),
-                PENDING_CATCH_UP_KEY: datetime.now(timezone.utc).isoformat(),
-            }
+        # The same holds when the provider throttled an account: the next
+        # sync must re-read the same window for it (duplicates are dropped on
+        # external_id). What was imported for the other accounts is
+        # committed below either way.
+        sync_outcome: SyncOutcome
+        if not rate_limited_accounts:
+            sync_outcome = "refreshed"
+            if not incomplete_fetch_account_ids:
+                connection.last_sync_at = datetime.now(timezone.utc)
+            # A successful read ends any scheduler backoff (app.tasks.sync_tasks).
+            current_settings = connection.settings or {}
+            if SYNC_BACKOFF_KEY in current_settings:
+                connection.settings = {
+                    key: value
+                    for key, value in current_settings.items()
+                    if key != SYNC_BACKOFF_KEY
+                }
+            # A failed re-read leaves the catch-up due, so the next sync retries it.
+            if pending_catch_up and not pending_catch_up_failed:
+                connection.settings = {
+                    **(connection.settings or {}),
+                    PENDING_CATCH_UP_KEY: datetime.now(timezone.utc).isoformat(),
+                }
+        else:
+            # Throttled: the backoff stays (the scheduler counts this run as a
+            # rate-limited failure) and each 429 sets its floor: its own
+            # Retry-After, or 6 hours without one, the longest winning. The
+            # pending catch-up stays due as well, since the throttled accounts
+            # were not re-read.
+            sync_outcome = "partial" if transactions_fetched else "rate_limited"
+            connection.settings = _with_retry_after(
+                connection.settings,
+                _throttle_retry_after(
+                    provider,
+                    rate_limited_accounts,
+                    retry_after,
+                    throttled_without_retry_after,
+                ),
+            )
         action_required_warnings = getattr(provider, "action_required_warnings", None)
         if isinstance(action_required_warnings, list) and action_required_warnings:
             logger.warning(
@@ -3723,9 +3892,18 @@ async def sync_connection(
             connection.status = "error"
         else:
             connection.status = "active"
+        if rate_limited_accounts:
+            logger.warning(
+                "Sync %s finished %s: %d account(s) rate-limited by the provider "
+                "were skipped; checkpoint kept (Retry-After=%s)",
+                connection_id,
+                sync_outcome,
+                len(rate_limited_accounts),
+                retry_after,
+            )
         await session.commit()
         await session.refresh(connection)
-        return connection, merged_count, "refreshed"
+        return connection, merged_count, sync_outcome
 
     except SessionExpiredError:
         # Provider consent expired — distinct from a generic error so the UI
@@ -3741,13 +3919,24 @@ async def sync_connection(
         await session.rollback()
         await _mark_failed_sync(session, connection_id, "error")
         raise
-    except ProviderRateLimited:
+    except ProviderRateLimited as exc:
         # The bank/aggregator is throttling data requests (PSD2 caps unattended
         # access, commonly ~4/day). The connection is healthy, so don't error
-        # it or 500 the request — skip this run, keep it active, and leave
-        # last_sync_at untouched so the next sync retries the same window.
+        # it or 500 the request: skip this run, keep it active, leave
+        # last_sync_at untouched so the next sync retries the same window, and
+        # note the provider's Retry-After as a floor on the scheduler backoff.
+        logger.warning(
+            "Sync %s: provider rate-limited the whole sync; nothing fetched",
+            connection_id,
+        )
         await session.rollback()
-        await _mark_failed_sync(session, connection_id, "active", keep=("expired",))
+        await _mark_failed_sync(
+            session,
+            connection_id,
+            "active",
+            keep=("expired",),
+            retry_after=exc.retry_after,
+        )
         # The row can vanish if the connection was deleted mid-sync. Fall back
         # to the one we already hold rather than raising: re-raising here would
         # escape as a 500, which is exactly what this handler exists to avoid.
@@ -3756,9 +3945,21 @@ async def sync_connection(
         # no fresh data was pulled and can say so instead of a success toast.
         return refreshed or connection, 0, "rate_limited"
     except Exception:
-        # Mark connection as errored so UI shows reconnect banner
+        # Mark connection as errored so UI shows reconnect banner. If some
+        # account was also throttled in this run, its Retry-After is kept as
+        # the floor on the next scheduled try.
         await session.rollback()
-        await _mark_failed_sync(session, connection_id, "error")
+        await _mark_failed_sync(
+            session,
+            connection_id,
+            "error",
+            retry_after=_throttle_retry_after(
+                provider,
+                rate_limited_accounts,
+                retry_after,
+                throttled_without_retry_after,
+            ),
+        )
         raise
 
 
@@ -3771,15 +3972,23 @@ async def _mark_failed_sync(
     status: str,
     *,
     keep: tuple[str, ...] = (),
+    retry_after: Optional[float] = None,
 ) -> None:
     """Set the status a sync that ended early leaves. A disconnect can commit
     between the sync's rollback and this write; overwriting it would bring
     back a connection the user archived and break its reconnect. The row is
-    read under lock, so the check and the write see the same status."""
+    read under lock, so the check and the write see the same status.
+
+    `retry_after` is the provider's Retry-After on a throttled sync, noted as
+    a floor on the scheduler backoff."""
     async with session.begin():
         conn = await session.get(BankConnection, connection_id, with_for_update=True)
-        if conn and conn.status not in (DISCONNECTED_STATUS, *keep):
+        if conn is None or conn.status == DISCONNECTED_STATUS:
+            return
+        if conn.status not in keep:
             conn.status = status
+        if retry_after is not None:
+            conn.settings = _with_retry_after(conn.settings, retry_after)
 
 
 class ConnectionDisconnectedError(Exception):
