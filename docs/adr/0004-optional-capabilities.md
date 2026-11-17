@@ -12,7 +12,7 @@ Securo runs on people's own machines, often small ones. Every capability someone
 
 A capability beyond the core is switched on by one environment variable, is off by default when it has any cost, and costs nothing when off.
 
-- Settings live in `backend/app/core/config.py` (`Settings`). Process-level flags are read through `feature_flag(name)` in `backend/app/core/feature_flags.py` (`AGENTS_ENABLED`, `PLUGINS_ENABLED`, `TESOURO_DIRETO_ENABLED`).
+- Settings live in `backend/app/core/config.py` (`Settings`), with their defaults there. `feature_flag(name)` in `backend/app/core/feature_flags.py` reads a flag straight from the environment, default off; `PLUGINS_ENABLED` is read that way, and `backend/app/main.py` reads `AGENTS_ENABLED` directly before importing anything from the agents package.
 - Off means: routers not mounted and their modules not imported (`backend/app/main.py`), scheduled jobs not registered (`backend/app/worker.py`), extra services not started.
 - Extra services sit behind Compose profiles in `docker-compose.yml`: `agents` starts `mcp-server`, `plugins` starts `plugins-runner` and `plugins-egress`.
 - Integrations that need credentials are available only when the credentials are set (ADR 0006).
@@ -21,7 +21,7 @@ A capability beyond the core is switched on by one environment variable, is off 
 
 Current switches and defaults: `AGENTS_ENABLED` (off), `PLUGINS_ENABLED` (off), `SIMPLEFIN_ENABLED` (off), `OIDC_ENABLED` (off), `BRASILAPI_INSTITUTION_LOOKUP_ENABLED` (off), `OPENEXCHANGERATES_APP_ID` (blank), `FX_SYNC_MODE` (`on_demand`), `LOCAL_AUTH_ENABLED` (on), `REGISTRATION_ENABLED` (on), `TESOURO_DIRETO_ENABLED` (on).
 
-`TESOURO_DIRETO_ENABLED` is the one capability with an outbound call that is on by default: its data is fetched only when someone searches for a bond, and the startup cache warm runs only when a workspace uses BRL. The reason is written next to the setting in `config.py`.
+`TESOURO_DIRETO_ENABLED` is the one capability with an outbound call that is on by default: its data is fetched only when someone searches for a bond, and the startup cache warm runs only when a workspace uses BRL. The reason is written next to the setting in `config.py`. Two known gaps: `/api/info` reads it with `feature_flag`, whose default is off, so an instance that leaves it unset reports it off to the frontend while `Settings` treats it as on; and the daily price refresh still asks Tesouro for `TD:` holdings that already exist when the flag is off (ADR 0016).
 
 ## Consequences
 

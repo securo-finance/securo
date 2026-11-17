@@ -5,7 +5,7 @@ cites sends a reader, or a coding agent, to look for code that isn't there.
 This fails the build instead.
 
 A cited path is a backticked token that names a file or directory: it contains
-a slash, or ends in a source extension. Paths are resolved from the places the
+a slash, is a dotfile (`.env.example`), or ends in a source extension. Paths are resolved from the places the
 documents write them relative to (the repository root, backend/, backend/app/,
 frontend/, frontend/src/). A bare file name, like `format.ts`, must exist
 somewhere among the files git tracks. Globs (`tests/test_rule*.py`) must match at least one
@@ -35,7 +35,8 @@ NOT_IN_REPO = {
 def is_path(token: str) -> bool:
     if token.startswith(("http", "-", "/", "@")) or "(" in token or "=" in token:
         return False
-    return "/" in token or token.endswith(EXTENSIONS)
+    dotfile = token.startswith(".") and len(token) > 1 and token[1].isalpha()
+    return "/" in token or dotfile or token.endswith(EXTENSIONS)
 
 
 def tracked() -> tuple[set[str], set[str]]:

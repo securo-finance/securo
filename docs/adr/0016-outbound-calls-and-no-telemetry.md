@@ -16,10 +16,10 @@ Securo's promise is that a person's financial data stays on their own infrastruc
 |---|---|---|
 | Open Exchange Rates | `providers/openexchangerates.py` | an app id is set; on demand, or every 12 h with `FX_SYNC_MODE=scheduled` |
 | Pluggy, Enable Banking | `providers/pluggy.py`, `providers/enable_banking.py` | credentials are set and a connection exists |
-| SimpleFIN bridge | `providers/simplefin.py` | `SIMPLEFIN_ENABLED` and a user token |
+| SimpleFIN bridge | `providers/simplefin.py` | SimpleFIN is on (`SIMPLEFIN_ENABLED`, or the admin's saved setting, which replaces it) and a user token |
 | BrasilAPI bank lookup | `providers/pluggy.py` | `BRASILAPI_INSTITUTION_LOOKUP_ENABLED` |
-| Yahoo Finance | `providers/market_price.py` | an asset is valued at market price; daily |
-| Tesouro Transparente | `providers/tesouro_direto.py` | `TESOURO_DIRETO_ENABLED` and a bond search; startup warm only if a workspace uses BRL |
+| Yahoo Finance | `providers/market_price.py`, `api/assets.py` | someone searches a symbol or previews a quote in the asset form; daily for assets valued at market price |
+| Tesouro Transparente | `providers/tesouro_direto.py` | `TESOURO_DIRETO_ENABLED` and a bond search; startup warm only if a workspace uses BRL; daily for existing `TD:` holdings, **even with the flag off** (known gap, to fix) |
 | OIDC provider | `api/oidc_auth.py` | `OIDC_ENABLED` |
 | LLM providers, external MCP servers, embedding model download | `app/agents/` | `AGENTS_ENABLED` and a configured connection |
 | Plugin index and manifests | `app/plugins/index.py` | `PLUGINS_ENABLED` and the catalog is opened |

@@ -17,7 +17,7 @@ Bank aggregators differ by country, flow (OAuth redirect, connect widget, token 
 
 ## Consequences
 
-- A new aggregator is a new `BankProvider` plus an entry in `KNOWN_PROVIDERS` and `PROVIDER_FIELDS`; sync, scheduling and the UI pick it up.
+- A new aggregator is a new `BankProvider`, an entry in `KNOWN_PROVIDERS` and `PROVIDER_FIELDS`, and its module and class in `_CREDENTIALED_PROVIDERS` (or a `register_provider` call for one that needs no credentials); sync, scheduling and the UI pick it up.
 - Provider-specific behavior stays inside the provider. Services never branch on a provider's name to reshape its data.
 
 ## Enforced by

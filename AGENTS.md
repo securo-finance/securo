@@ -31,13 +31,13 @@ docker compose run --rm migrate           # apply a new migration to a running s
 docker compose restart celery-worker      # the worker does not hot reload
 
 cd backend && uv sync --all-extras        # first time
-pytest                                    # CI requires coverage >= 60%
-pytest tests/test_some_file.py            # one file while fixing
+uv run pytest                             # CI requires coverage >= 60%
+uv run pytest tests/test_some_file.py     # one file while fixing
 uv run pytest tests/api_contract -n auto  # route contract sweep
-ruff check . && ty check .
+uv run ruff check . && uv run ty check .
 ./scripts/lock.sh                         # after changing dependencies; commit uv.lock
 
-cd frontend && npm run lint && npm run build && npm test
+cd ../frontend && npm run lint && npm run build && npm test
 ```
 
 Run lint, type check and the tests you touched before calling work done; CI runs the rest.

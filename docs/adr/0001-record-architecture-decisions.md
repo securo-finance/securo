@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-17
+- Origin: #1470
 
 ## Context
 
