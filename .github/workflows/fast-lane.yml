@@ -34,11 +34,19 @@ on:
     types: [created, edited]
   pull_request_review:
     types: [submitted, dismissed]
-  # There is deliberately no trigger for "review thread resolved": GitHub
-  # exposes it as a webhook but not as a workflow event, and naming it here
-  # makes the whole file invalid. Resolving the last blocking thread therefore
-  # starts no run; whoever triages it re-posts the verdict comment, and the
-  # `issue_comment` trigger above picks the pull request up again.
+  # Resolving a review thread is a webhook event, not an Actions event:
+  # `pull_request_review_thread` is rejected by actionlint and makes this whole
+  # file invalid, so it cannot be used. Gate 3b below is a review thread, and
+  # resolving one starts no run at all; this hourly sweep re-evaluates every
+  # open pull request instead, which also covers any event GitHub did not
+  # deliver. `workflow_dispatch` takes one PR number by hand, or none to sweep.
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: pull request number to evaluate, empty to sweep every open one
+        required: false
 
 permissions:
   contents: write
@@ -48,7 +56,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: fast-lane-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.id }}
+  group: fast-lane-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.id || github.event.inputs.pr || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -100,7 +108,176 @@ jobs:
               [/plugin[-_]runner|runtime\.py$/i,                      'executes third-party code'],
             ];
 
-            // ---- 1. which pull request is this event about? -----------------
+            // Everything below runs for one pull request. It returns nothing:
+            // a gate that does not hold only logs why.
+            async function tryMerge(number) {
+              const skip = (why) => {
+                core.info(`#${number}: not merging — ${why}`);
+              };
+
+              let pr;
+              try {
+                ({ data: pr } = await github.rest.pulls.get(
+                  { owner: OWNER, repo: REPO, pull_number: number }));
+              } catch (e) { return skip('cannot read the pull request'); }
+
+              if (pr.state !== 'open')      return skip('it is not open');
+              if (pr.draft)                 return skip('it is a draft');
+              if (pr.base.ref !== 'main')   return skip(`it targets ${pr.base.ref}`);
+
+              const labels = pr.labels.map((l) => l.name);
+              const risk = labels.filter((l) => l.startsWith('risk: ')).map((l) => l.slice(6));
+              if (risk.length !== 1 || !['low', 'medium'].includes(risk[0])) {
+                return skip(`risk is ${risk.join('/') || 'unlabelled'}`);
+              }
+
+              // ---- 2. files that never take the fast lane -------------------
+              const files = await github.paginate(github.rest.pulls.listFiles,
+                { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
+              // A rename reports the new path in `filename` and the old one in
+              // `previous_filename`: moving a migration, an auth file or this
+              // workflow out of its directory would otherwise pass the list.
+              for (const f of files) {
+                for (const p of [f.filename, f.previous_filename].filter(Boolean)) {
+                  for (const [re, what] of BLOCKED) {
+                    if (re.test(p)) return skip(`${p} is ${what}`);
+                  }
+                }
+              }
+
+              // ---- 3. a standing request for changes blocks the merge -------
+              const reviews = await github.paginate(github.rest.pulls.listReviews,
+                { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
+              const latest = new Map();
+              // GitHub keeps a CHANGES_REQUESTED standing until it is dismissed,
+              // even if the same reviewer later leaves a plain comment. Storing
+              // every state would let a COMMENTED review clear the block.
+              for (const r of reviews) {
+                if (r.user && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)) {
+                  latest.set(r.user.login, r.state);
+                }
+              }
+              const blocked = [...latest].filter(([, s]) => s === 'CHANGES_REQUESTED');
+              if (blocked.length) {
+                return skip(`changes requested by ${blocked.map(([u]) => u).join(', ')}`);
+              }
+
+              // ---- 3b. an unresolved CodeRabbit major thread blocks the merge
+              // CodeRabbit only ever leaves a COMMENTED review, so the check
+              // above never sees its findings. A thread counts as triaged when
+              // someone resolves it; only `Major` and `Critical` hold the merge.
+              {
+                const query = `query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      reviewThreads(first: 100) {
+                        pageInfo { hasNextPage }
+                        nodes {
+                          isResolved
+                          isOutdated
+                          comments(first: 5) {
+                            pageInfo { hasNextPage }
+                            nodes { author { login } body }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }`;
+                let threads = null;
+                try {
+                  const data = await github.graphql(query,
+                    { owner: OWNER, repo: REPO, number });
+                  threads = (data.repository.pullRequest || {}).reviewThreads || null;
+                } catch (e) {
+                  return skip(`cannot read the review threads: ${e.message}`);
+                }
+                // A gate that needs every thread must fail closed when it can
+                // only read some of them: a blocker past the first 100 threads,
+                // or past the fifth comment of one, would otherwise be invisible.
+                if (!threads) return skip('the review threads came back empty');
+                if (threads.pageInfo && threads.pageInfo.hasNextPage) {
+                  return skip('more review threads than this gate can read');
+                }
+                const truncated = (threads.nodes || []).some((t) =>
+                  t.comments && t.comments.pageInfo && t.comments.pageInfo.hasNextPage);
+                if (truncated) {
+                  return skip('more comments on a thread than this gate can read');
+                }
+                const open = (threads.nodes || [])
+                  .filter((t) => !t.isResolved && !t.isOutdated)
+                  .filter((t) => (t.comments.nodes || []).some((c) =>
+                    c.author && c.author.login === 'coderabbitai'
+                    && /\b(major|critical)\b/i.test(c.body || '')));
+                if (open.length) {
+                  return skip(`${open.length} unresolved CodeRabbit major thread(s)`);
+                }
+              }
+
+              // ---- 4. the verdict names the head we are about to merge ------
+              const head = pr.head.sha;
+              const comments = await github.paginate(github.rest.issues.listComments,
+                { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
+              const verdict = comments.filter((c) =>
+                c.user && VERDICT_AUTHORS.includes(c.user.login)
+                && (c.body || '').includes(VERDICT)
+                && new RegExp(`sha:\\s*${head}\\b`).test(c.body || '')).pop();
+              if (!verdict) return skip(`no verdict for ${head.slice(0, 7)}`);
+
+              // ---- 5. green, on that exact head ----------------------------
+              const { data: checks } = await github.rest.checks.listForRef(
+                { owner: OWNER, repo: REPO, ref: head, per_page: 100 });
+              // A re-run leaves several entries per name: keep the newest one.
+              const byName = new Map();
+              for (const c of checks.check_runs) {
+                const seen = byName.get(c.name);
+                if (!seen || (c.started_at || '') > (seen.started_at || '')) {
+                  byName.set(c.name, c);
+                }
+              }
+              for (const name of REQUIRED) {
+                const c = byName.get(name);
+                if (!c)                    return skip(`no ${name} run on ${head.slice(0, 7)}`);
+                if (c.status !== 'completed')  return skip(`${name} is ${c.status}`);
+                if (c.conclusion !== 'success') return skip(`${name} is ${c.conclusion}`);
+              }
+
+              // ---- merge, pinned to the head the verdict was given for -----
+              // Passing `sha` makes GitHub refuse if the branch moved after the
+              // checks above, which is the race a plain merge would have.
+              try {
+                await github.rest.pulls.merge({
+                  owner: OWNER, repo: REPO, pull_number: number,
+                  sha: head, merge_method: 'squash',
+                });
+              } catch (e) {
+                return skip(`the merge call failed: ${e.message}`);
+              }
+
+              // A push made with GITHUB_TOKEN starts no workflow run, so the
+              // `push` run on main that ci.yml describes never fires here. The
+              // head was verified before the merge; this validates the squash
+              // commit itself, and a failure is visible in Actions.
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: OWNER, repo: REPO, workflow_id: 'ci.yml',
+                  ref: 'main',
+                });
+              } catch (e) {
+                core.warning(`could not dispatch CI on main: ${e.message}`);
+              }
+
+              await github.rest.issues.createComment({
+                owner: OWNER, repo: REPO, issue_number: number,
+                body: `Merged by the fast lane: \`risk: ${risk[0]}\`, ` +
+                      `verdict at ${head.slice(0, 7)} by ${verdict.user.login} ` +
+                      `(${verdict.html_url}), ${REQUIRED.join(', ')} green. ` +
+                      `Anything touching auth, secrets, migrations, bank sync, ` +
+                      `plugins or deployment still waits for a maintainer.`,
+              });
+            }
+
+            // ---- 0. which pull request is this event about? ----------------
             const ev = context.eventName;
             let number = null;
             if (ev === 'workflow_run') {
@@ -128,169 +305,23 @@ jobs:
               number = context.payload.issue.number;
             } else if (context.payload.pull_request) {
               number = context.payload.pull_request.number;
-            } else {
-              return;
+            } else if (ev === 'workflow_dispatch') {
+              number = Number(context.payload.inputs && context.payload.inputs.pr) || null;
             }
 
-            const skip = async (why) => {
-              core.info(`#${number}: not merging — ${why}`);
-            };
-
-            let pr;
-            try {
-              ({ data: pr } = await github.rest.pulls.get(
-                { owner: OWNER, repo: REPO, pull_number: number }));
-            } catch (e) { return skip('cannot read the pull request'); }
-
-            if (pr.state !== 'open')      return skip('it is not open');
-            if (pr.draft)                 return skip('it is a draft');
-            if (pr.base.ref !== 'main')   return skip(`it targets ${pr.base.ref}`);
-
-            const labels = pr.labels.map((l) => l.name);
-            const risk = labels.filter((l) => l.startsWith('risk: ')).map((l) => l.slice(6));
-            if (risk.length !== 1 || !['low', 'medium'].includes(risk[0])) {
-              return skip(`risk is ${risk.join('/') || 'unlabelled'}`);
-            }
-
-            // ---- 2. files that never take the fast lane ---------------------
-            const files = await github.paginate(github.rest.pulls.listFiles,
-              { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
-            // A rename reports the new path in `filename` and the old one in
-            // `previous_filename`: moving a migration, an auth file or this
-            // workflow out of its directory would otherwise pass the list.
-            for (const f of files) {
-              for (const p of [f.filename, f.previous_filename].filter(Boolean)) {
-                for (const [re, what] of BLOCKED) {
-                  if (re.test(p)) return skip(`${p} is ${what}`);
+            if (number) {
+              await tryMerge(number);
+            } else if (ev === 'schedule' || ev === 'workflow_dispatch') {
+              // The sweep: every open pull request goes through the same gates,
+              // so a thread resolved with no other event still gets merged.
+              const open = await github.paginate(github.rest.pulls.list,
+                { owner: OWNER, repo: REPO, state: 'open', per_page: 100 });
+              core.info(`sweeping ${open.length} open pull requests`);
+              for (const p of open) {
+                try {
+                  await tryMerge(p.number);
+                } catch (e) {
+                  core.info(`#${p.number}: ${e.message}`);
                 }
               }
             }
-
-            // ---- 3. a standing request for changes blocks the merge ---------
-            const reviews = await github.paginate(github.rest.pulls.listReviews,
-              { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
-            const latest = new Map();
-            // GitHub keeps a CHANGES_REQUESTED standing until it is dismissed,
-            // even if the same reviewer later leaves a plain comment. Storing
-            // every state would let a COMMENTED review clear the block.
-            for (const r of reviews) {
-              if (r.user && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)) {
-                latest.set(r.user.login, r.state);
-              }
-            }
-            const blocked = [...latest].filter(([, s]) => s === 'CHANGES_REQUESTED');
-            if (blocked.length) {
-              return skip(`changes requested by ${blocked.map(([u]) => u).join(', ')}`);
-            }
-
-            // ---- 3b. an unresolved CodeRabbit major thread blocks the merge -
-            // CodeRabbit only ever leaves a COMMENTED review, so the check
-            // above never sees its findings. A thread counts as triaged when
-            // someone resolves it; only `Major` and `Critical` hold the merge.
-            {
-              const query = `query($owner: String!, $repo: String!, $number: Int!) {
-                repository(owner: $owner, name: $repo) {
-                  pullRequest(number: $number) {
-                    reviewThreads(first: 100) {
-                      pageInfo { hasNextPage }
-                      nodes {
-                        isResolved
-                        isOutdated
-                        comments(first: 5) {
-                          pageInfo { hasNextPage }
-                          nodes { author { login } body }
-                        }
-                      }
-                    }
-                  }
-                }
-              }`;
-              let threads = [];
-              try {
-                const data = await github.graphql(query,
-                  { owner: OWNER, repo: REPO, number });
-                const conn = data.repository.pullRequest.reviewThreads;
-                // A gate that needs every thread has to stop when it has not
-                // read every thread, otherwise the part it could not see is
-                // the part that would have blocked the merge.
-                if (conn.pageInfo.hasNextPage) {
-                  return skip('more than 100 review threads to read');
-                }
-                threads = conn.nodes || [];
-                if (threads.some((t) => t.comments.pageInfo.hasNextPage)) {
-                  return skip('a review thread has more comments than this gate reads');
-                }
-              } catch (e) {
-                return skip(`cannot read the review threads: ${e.message}`);
-              }
-              const open = threads
-                .filter((t) => !t.isResolved && !t.isOutdated)
-                .filter((t) => t.comments.nodes.some((c) =>
-                  c.author && c.author.login === 'coderabbitai'
-                  && /\b(major|critical)\b/i.test(c.body || '')));
-              if (open.length) {
-                return skip(`${open.length} unresolved CodeRabbit major thread(s)`);
-              }
-            }
-
-            // ---- 4. the verdict names the head we are about to merge --------
-            const head = pr.head.sha;
-            const comments = await github.paginate(github.rest.issues.listComments,
-              { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
-            const verdict = comments.filter((c) =>
-              c.user && VERDICT_AUTHORS.includes(c.user.login)
-              && (c.body || '').includes(VERDICT)
-              && new RegExp(`sha:\\s*${head}\\b`).test(c.body || '')).pop();
-            if (!verdict) return skip(`no verdict for ${head.slice(0, 7)}`);
-
-            // ---- 5. green, on that exact head ------------------------------
-            const { data: checks } = await github.rest.checks.listForRef(
-              { owner: OWNER, repo: REPO, ref: head, per_page: 100 });
-            // A re-run leaves several entries per name: keep the newest one.
-            const byName = new Map();
-            for (const c of checks.check_runs) {
-              const seen = byName.get(c.name);
-              if (!seen || (c.started_at || '') > (seen.started_at || '')) {
-                byName.set(c.name, c);
-              }
-            }
-            for (const name of REQUIRED) {
-              const c = byName.get(name);
-              if (!c)                    return skip(`no ${name} run on ${head.slice(0, 7)}`);
-              if (c.status !== 'completed')  return skip(`${name} is ${c.status}`);
-              if (c.conclusion !== 'success') return skip(`${name} is ${c.conclusion}`);
-            }
-
-            // ---- merge, pinned to the head the verdict was given for -------
-            // Passing `sha` makes GitHub refuse if the branch moved after the
-            // checks above, which is the race a plain merge would have.
-            try {
-              await github.rest.pulls.merge({
-                owner: OWNER, repo: REPO, pull_number: number,
-                sha: head, merge_method: 'squash',
-              });
-            } catch (e) {
-              return skip(`the merge call failed: ${e.message}`);
-            }
-
-            // A push made with GITHUB_TOKEN starts no workflow run, so the
-            // `push` run on main that ci.yml describes never fires here. The
-            // head was verified before the merge; this validates the squash
-            // commit itself, and a failure is visible in Actions.
-            try {
-              await github.rest.actions.createWorkflowDispatch({
-                owner: OWNER, repo: REPO, workflow_id: 'ci.yml',
-                ref: 'main',
-              });
-            } catch (e) {
-              core.warning(`could not dispatch CI on main: ${e.message}`);
-            }
-
-            await github.rest.issues.createComment({
-              owner: OWNER, repo: REPO, issue_number: number,
-              body: `Merged by the fast lane: \`risk: ${risk[0]}\`, ` +
-                    `verdict at ${head.slice(0, 7)} by ${verdict.user.login} ` +
-                    `(${verdict.html_url}), ${REQUIRED.join(', ')} green. ` +
-                    `Anything touching auth, secrets, migrations, bank sync, ` +
-                    `plugins or deployment still waits for a maintainer.`,
-            });
