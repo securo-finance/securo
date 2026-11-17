@@ -131,8 +131,10 @@ jobs:
 
               // Only a warning newer than our last word counts: a pull request
               // that was warned, answered, asked again and then stalled gets a
-              // fresh warning instead of closing on an old one.
+              // fresh warning instead of closing on an old one. Only the
+              // workflow's own comment counts: anyone can type the marker.
               const warning = comments
+                .filter((c) => c.user && c.user.login === 'github-actions[bot]')
                 .filter((c) => (c.body || '').includes(WARNED))
                 .filter((c) => Date.parse(c.created_at) > Date.parse(askedAt))
                 .pop();
