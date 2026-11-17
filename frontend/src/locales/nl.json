@@ -2439,7 +2439,8 @@
     "preview": "Voorbeeld",
     "download": "Downloaden",
     "closePreview": "Voorbeeld sluiten",
-    "remove": "Verwijderen"
+    "remove": "Verwijderen",
+    "invalidAmount": "Voer een geldig bedrag in, bijvoorbeeld {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Groepen zoeken...",

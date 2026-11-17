@@ -2589,7 +2589,8 @@
     "preview": "Náhled",
     "download": "Stáhnout",
     "closePreview": "Zavřít náhled",
-    "remove": "Odebrat"
+    "remove": "Odebrat",
+    "invalidAmount": "Zadejte platnou částku, například {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Hledat skupiny...",

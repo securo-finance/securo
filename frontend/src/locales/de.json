@@ -2438,7 +2438,8 @@
     "preview": "Vorschau",
     "download": "Herunterladen",
     "closePreview": "Vorschau schließen",
-    "remove": "Entfernen"
+    "remove": "Entfernen",
+    "invalidAmount": "Geben Sie einen gültigen Betrag ein, zum Beispiel {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Gruppen suchen...",

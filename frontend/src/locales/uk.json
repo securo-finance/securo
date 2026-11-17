@@ -2462,7 +2462,8 @@
     "preview": "Перегляд",
     "download": "Завантажити",
     "closePreview": "Закрити перегляд",
-    "remove": "Видалити"
+    "remove": "Видалити",
+    "invalidAmount": "Введіть коректну суму, наприклад {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Пошук груп...",

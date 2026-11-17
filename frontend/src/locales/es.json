@@ -2441,7 +2441,8 @@
     "preview": "Vista previa",
     "download": "Descargar",
     "closePreview": "Cerrar vista previa",
-    "remove": "Quitar"
+    "remove": "Quitar",
+    "invalidAmount": "Introduce un importe válido, por ejemplo {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Buscar grupos...",

@@ -2543,7 +2543,8 @@
     "preview": "Podgląd",
     "download": "Pobierz",
     "closePreview": "Zamknij podgląd",
-    "remove": "Usuń"
+    "remove": "Usuń",
+    "invalidAmount": "Podaj prawidłową kwotę, na przykład {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Szukaj grup...",

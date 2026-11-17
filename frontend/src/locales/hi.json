@@ -2437,7 +2437,8 @@
     "preview": "पूर्वावलोकन",
     "download": "डाउनलोड करें",
     "closePreview": "पूर्वावलोकन बंद करें",
-    "remove": "हटाएँ"
+    "remove": "हटाएँ",
+    "invalidAmount": "मान्य राशि दर्ज करें, जैसे {{example}}।"
   },
   "splitGroups": {
     "searchPlaceholder": "समूह खोजें...",

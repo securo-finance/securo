@@ -2462,7 +2462,8 @@
     "preview": "Просмотр",
     "download": "Скачать",
     "closePreview": "Закрыть просмотр",
-    "remove": "Удалить"
+    "remove": "Удалить",
+    "invalidAmount": "Введите корректную сумму, например {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Поиск групп...",
