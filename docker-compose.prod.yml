@@ -9,7 +9,9 @@ x-podman:
 
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
-  SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+  # Optional. Left empty, Securo generates a unique key on first start and
+  # keeps it in the database. Set one (openssl rand -hex 32) to manage it yourself.
+  SECRET_KEY: ${SECRET_KEY:-}
   DEBUG: ${DEBUG:-false}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
   PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
@@ -56,7 +58,16 @@ x-backend-env: &backend-env
   TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
   REDIS_URL: redis://redis:6379/0
   BANK_SYNC_MIN_INTERVAL_HOURS: ${BANK_SYNC_MIN_INTERVAL_HOURS:-4}
+  STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
   STORAGE_LOCAL_PATH: /app/data/attachments
+  STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-}
+  STORAGE_S3_REGION: ${STORAGE_S3_REGION:-}
+  STORAGE_S3_ENDPOINT_URL: ${STORAGE_S3_ENDPOINT_URL:-}
+  STORAGE_S3_ALLOW_INSECURE_HTTP: ${STORAGE_S3_ALLOW_INSECURE_HTTP:-false}
+  STORAGE_S3_ADDRESSING_STYLE: ${STORAGE_S3_ADDRESSING_STYLE:-auto}
+  STORAGE_S3_ACCESS_KEY: ${STORAGE_S3_ACCESS_KEY:-}
+  STORAGE_S3_SECRET_KEY: ${STORAGE_S3_SECRET_KEY:-}
+  STORAGE_S3_SESSION_TOKEN: ${STORAGE_S3_SESSION_TOKEN:-}
   AGENTS_KNOWLEDGE_STORAGE_PATH: /app/data/agent_knowledge
   # Agents/LLM feature, opt-in. Off by default so existing users pay
   # zero cost. Run `docker compose -f docker-compose.prod.yml --profile
@@ -64,7 +75,11 @@ x-backend-env: &backend-env
   AGENTS_ENABLED: ${AGENTS_ENABLED:-false}
   AGENTS_BUILTIN_MCP_URL: ${AGENTS_BUILTIN_MCP_URL:-http://mcp-server:8765/mcp}
   AGENTS_EXTRA_MCP_SERVERS: ${AGENTS_EXTRA_MCP_SERVERS:-}
-  AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-dev-mcp-secret-change-in-production}
+  # Signs the MCP server's JWTs. Empty derives it from SECRET_KEY, so an
+  # install with a random SECRET_KEY needs no extra configuration. There is no
+  # default value on purpose: a public one would let anyone mint a token for
+  # any user (#1174). A known public value is refused at startup.
+  AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-}
   # TTL for tokens minted from /agents/connections → "External MCP access".
   # Used by Claude Desktop, n8n, custom clients plugging into Securo.
   AGENTS_MCP_EXTERNAL_TTL_DAYS: ${AGENTS_MCP_EXTERNAL_TTL_DAYS:-90}
@@ -282,6 +297,8 @@ services:
     restart: unless-stopped
 
 networks:
+  # Declared so podman-compose accepts services that name it alongside `plugins`.
+  default: {}
   plugins:
     internal: true
 

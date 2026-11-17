@@ -199,6 +199,12 @@ class HoldingData:
     # providers whose holdings aren't attributable to an account.
     account_external_id: Optional[str] = None
     account_name: Optional[str] = None
+    # Buys and sells of this holding, for providers that report them (plugin
+    # contract 1). None: not reported, the stored ledger is left alone.
+    trades: Optional[list["HoldingTradeData"]] = None
+    # What kind of investment it is ("stock", "etf", "fund", "crypto"), for
+    # providers that know. None: the generic "investment".
+    asset_type: Optional[str] = None
 
 
 @dataclass
@@ -207,9 +213,10 @@ class HoldingTradeData:
 
     Performance treats these as the exact money moved in or out of the
     position, so a valuation increase is never mistaken for a purchase.
-    `quantity` is always positive; `kind` carries the direction. `fee` is
-    the cost of executing the trade (brokerage, exchange fees), excluding
-    income tax withheld on a sale.
+    `quantity` is always positive; `kind` carries the direction. `price` is
+    per unit in the asset's currency. `fee` is the cost of executing the
+    trade (brokerage, exchange fees), excluding income tax withheld on a
+    sale.
     """
 
     external_id: str
@@ -266,7 +273,14 @@ class ProviderRateLimited(Exception):
     access (commonly ~4/day per resource), so a burst of syncs returns HTTP
     429. The connection is healthy; callers should skip this run and retry
     later rather than flag it as errored.
+
+    ``retry_after`` is the wait the provider asked for, in seconds, when it
+    sent one (``Retry-After``); None when it did not.
     """
+
+    def __init__(self, message: str = "", retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class ProviderNotConfiguredError(Exception):

@@ -158,6 +158,10 @@ export interface BankConnection {
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
   institutions: ConnectionInstitution[]
+  /** Set when a plugin syncs this connection: it is managed through that plugin connection. */
+  plugin_connection_id?: string | null
+  plugin_id?: string | null
+  integration?: string | null
 }
 
 export interface ConnectionSettings {
@@ -169,9 +173,11 @@ export interface ConnectionSettings {
 // Response of POST /connections/{id}/sync: the connection plus what the run
 // actually did. "rate_limited" means the provider throttled the request
 // (429): nothing was pulled and last_sync_at was left untouched (issue #736).
+// "partial" means some accounts were throttled and skipped while the others
+// were imported.
 export interface SyncResult extends BankConnection {
   merged_count: number
-  sync_outcome: 'refreshed' | 'rate_limited'
+  sync_outcome: 'refreshed' | 'partial' | 'rate_limited'
 }
 
 export type AccountType = 'checking' | 'savings' | 'credit_card' | 'loan' | 'investment' | 'wallet'
@@ -679,7 +685,11 @@ export interface PluginIntegration {
   fields: PluginField[]
   /** How often Securo asks the plugin to sync; null for never. */
   sync_minutes: number | null
+  /** Records it syncs as a connected bank; null for an integration that writes through the API. */
+  provides?: PluginProvidedKind[] | null
 }
+
+export type PluginProvidedKind = 'accounts' | 'transactions' | 'bills' | 'holdings' | 'trades'
 
 /** A host a plugin with code may reach, and why. */
 export interface PluginHost {
@@ -741,7 +751,12 @@ export interface PluginConnection {
 export interface PluginCodeConsent {
   network: PluginHost[]
   api_scopes: PluginScope[]
-  integrations: { key: string; name: LocalizedText; auth: PluginIntegration['auth'] }[]
+  integrations: {
+    key: string
+    name: LocalizedText
+    auth: PluginIntegration['auth']
+    provides?: PluginProvidedKind[] | null
+  }[]
   /** On an update: hosts and scopes the installed version didn't have. */
   new_hosts: string[]
   new_scopes: string[]
@@ -749,6 +764,8 @@ export interface PluginCodeConsent {
   connections: number
   /** An update to a version without code: its connections go, as on removal. */
   drops_code?: boolean
+  /** Bank connections the change ends: their accounts stay, as manual ones. */
+  unlinks?: number
 }
 
 export interface PluginCatalogEntry {
@@ -782,6 +799,8 @@ export interface PluginCatalogEntry {
   workspaces: string[]
   /** It's meant for this workspace's type. */
   fits_workspace: boolean
+  /** Where Securo serves the plugin's icon; null draws the generated badge. */
+  icon_url: string | null
   installed_version: string | null
   update_available: boolean
 }
@@ -970,6 +989,37 @@ export interface RecurringTransaction {
   /** Split across categories: every occurrence starts with these parts. */
   has_category_lines?: boolean
   category_lines?: TransactionCategoryLine[]
+}
+
+// Read-only price-change projections. Derived from linked transaction
+// history on the backend; never written back and never mutated client-side.
+export type RecurringPriceChangeEligibility =
+  | 'insufficient_history'
+  | 'no_qualifying_change'
+  | 'changes_detected'
+
+export interface RecurringPriceChange {
+  recurring_id: string
+  previous_transaction_id: string
+  current_transaction_id: string
+  previous_date: string
+  current_date: string
+  // Exact two-decimal JSON strings; coerce only for display formatting.
+  previous_amount: string
+  current_amount: string
+  currency: string
+  direction: 'increase' | 'decrease'
+  absolute_delta: string
+  percent_delta: string
+  gap_days: number
+  baseline_occurrence_count: number
+}
+
+export interface RecurringPriceChangeHistory {
+  recurring_id: string
+  eligible_occurrence_count: number
+  eligibility: RecurringPriceChangeEligibility
+  changes: RecurringPriceChange[]
 }
 
 export interface ProjectedTransaction {
@@ -1263,13 +1313,17 @@ export interface AssetImportResult {
 export interface AssetTransaction {
   id: string
   asset_id: string
-  kind: 'buy' | 'sell'
+  kind: 'buy' | 'sell' | 'split'
   quantity: number
   price: number
   fee: number
   date: string
   source: string
   notes: string | null
+  // Split only: the units held before the split became `new_units` after it
+  // (a 100-for-1 split is 1 → 100). Null on buys and sells.
+  old_units: number | null
+  new_units: number | null
   asset_name: string | null
   ticker: string | null
   currency: string | null

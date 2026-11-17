@@ -41,7 +41,7 @@ spec:
                 name: {{ include "securo.fullname" $ }}-frontend
                 port:
                   name: http
-          {{- if $.Values.mcpServer.enabled }}
+          {{- if and $.Values.mcpServer.enabled $.Values.mcpServer.publicRoute }}
           - path: /mcp
             pathType: Prefix
             backend:

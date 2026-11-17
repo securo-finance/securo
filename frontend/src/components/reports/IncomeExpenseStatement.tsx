@@ -186,7 +186,9 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
   const selectedMonth = data?.months[0]
   useLayoutEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollLeft = el.scrollWidth
+    // The selected month is the end column: rightmost in LTR, leftmost in RTL,
+    // where scrollLeft counts negative from the right edge.
+    if (el) el.scrollLeft = getComputedStyle(el).direction === 'rtl' ? -el.scrollWidth : el.scrollWidth
   }, [selectedMonth, settings.columns])
 
   const toggleGroup = (key: string) =>
@@ -232,7 +234,7 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
       const change = settings.showChange ? statementChange(value, values[i + 1], section) : null
       const isZero = Math.abs(value) < 0.005
       return (
-        <td key={ym} className="px-3 py-2.5 text-right whitespace-nowrap">
+        <td key={ym} className="px-3 py-2.5 text-end whitespace-nowrap">
           <div className="flex items-center justify-end gap-2.5">
             {opts.row && !isZero && (
               <button
@@ -269,18 +271,18 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
         <tr className="border-t border-border hover:bg-muted/30 transition-colors">
           <th
             scope="row"
-            className="sticky left-0 z-[1] bg-card px-3 sm:px-4 py-2 text-left font-normal max-w-[10.5rem] sm:max-w-xs"
+            className="sticky start-0 z-[1] bg-card px-3 sm:px-4 py-2 text-start font-normal max-w-[10.5rem] sm:max-w-xs"
           >
-            <div className={cn('flex items-center gap-2.5 min-w-0', depth > 0 && 'pl-9')}>
+            <div className={cn('flex items-center gap-2.5 min-w-0', depth > 0 && 'ps-9')}>
               {isGroup ? (
                 <button
                   type="button"
                   onClick={() => toggleGroup(`${section}:${row.key}`)}
                   aria-expanded={isOpen}
                   aria-label={t('reports.statementToggleGroup', { name: label })}
-                  className="-ml-1 text-muted-foreground hover:text-foreground transition-colors"
+                  className="-ms-1 text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ChevronRight size={16} className={cn('transition-transform', isOpen && 'rotate-90')} />
+                  <ChevronRight size={16} className={cn('transition-transform', isOpen && 'rotate-90 rtl:-rotate-90')} />
                 </button>
               ) : (
                 depth === 0 && <span className="w-[11px] shrink-0" aria-hidden="true" />
@@ -308,17 +310,17 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
     return (
       <tbody>
         <tr className="bg-muted">
-          <th scope="col" className="sticky left-0 z-[1] bg-muted px-3 sm:px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <th scope="col" className="sticky start-0 z-[1] bg-muted px-3 sm:px-4 py-2 text-start text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {title}
           </th>
           {columnIndexes.map((i) => (
-            <th key={data!.months[i]} scope="col" className="px-3 py-2 text-right text-xs font-semibold text-foreground whitespace-nowrap">
+            <th key={data!.months[i]} scope="col" className="px-3 py-2 text-end text-xs font-semibold text-foreground whitespace-nowrap">
               {capitalize(monthLabel(data!.months[i], dateLocale))}
             </th>
           ))}
         </tr>
         <tr className="border-t border-border">
-          <th scope="row" className="sticky left-0 z-[1] bg-card px-3 sm:px-4 py-3 text-left font-semibold text-foreground">
+          <th scope="row" className="sticky start-0 z-[1] bg-card px-3 sm:px-4 py-3 text-start font-semibold text-foreground">
             {totalLabel}
           </th>
           {renderValues(block.totals, section, { strong: true })}
@@ -364,7 +366,7 @@ export function IncomeExpenseStatement({ accountIds, month, settings }: IncomeEx
             {renderSection('expenses')}
             <tfoot>
               <tr className="border-t-2 border-border">
-                <th scope="row" className="sticky left-0 z-[1] bg-card px-3 sm:px-4 py-3 text-left font-semibold text-foreground">
+                <th scope="row" className="sticky start-0 z-[1] bg-card px-3 sm:px-4 py-3 text-start font-semibold text-foreground">
                   {t('reports.netIncome')}
                 </th>
                 {renderValues(netValues, 'net', { strong: true })}

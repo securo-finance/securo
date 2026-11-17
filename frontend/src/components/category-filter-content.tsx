@@ -70,7 +70,7 @@ export function CategoryFilterContent({
     <>
       <div className="px-2 py-1.5 border-b border-border/50 sticky top-0 bg-popover z-10">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/60" />
+          <Search className="pointer-events-none absolute start-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/60" />
           <input
             type="text"
             placeholder={t('transactions.searchCategory')}
@@ -78,7 +78,7 @@ export function CategoryFilterContent({
             onChange={(e) => setSearch(e.target.value)}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
-            className="w-full rounded-md border border-input bg-transparent pl-7 pr-2.5 py-1 text-xs outline-hidden placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-[2px] focus-visible:ring-ring/25"
+            className="w-full rounded-md border border-input bg-transparent ps-7 pe-2.5 py-1 text-xs outline-hidden placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-[2px] focus-visible:ring-ring/25"
           />
         </div>
       </div>
@@ -93,7 +93,7 @@ export function CategoryFilterContent({
             }}
             className="gap-2 rounded-sm py-1.5 text-[13px]"
           >
-            <span className="min-w-0 flex-1 truncate text-left italic text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate text-start italic text-muted-foreground">
               {t('transactions.uncategorized')}
             </span>
           </DropdownMenuCheckboxItem>
@@ -129,7 +129,7 @@ export function CategoryFilterContent({
                     style={{ backgroundColor: c.color }}
                   />
                 ) : null}
-                <span className="min-w-0 flex-1 truncate text-left">
+                <span className="min-w-0 flex-1 truncate text-start">
                   {c.name}
                 </span>
               </DropdownMenuCheckboxItem>

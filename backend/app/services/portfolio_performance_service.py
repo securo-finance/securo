@@ -656,7 +656,8 @@ async def _cash_flows(
     market_days: dict[tuple[uuid.UUID, date], list[Decimal]] = {}
     for tx in tx_rows:
         asset = asset_by_id.get(tx.asset_id)
-        if asset is None:
+        if asset is None or tx.kind == "split":
+            # A split changes the units held, not the money in the holding.
             continue
         quantity = Decimal(str(tx.quantity))
         gross = quantity * Decimal(str(tx.price))

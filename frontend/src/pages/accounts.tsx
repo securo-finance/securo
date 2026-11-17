@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatAccountMask, getAccountLabel, getAccountName } from '@/lib/account-utils'
 import { getConnectionName } from '@/lib/connection-utils'
 import { Link, useNavigate } from 'react-router-dom'
@@ -6,9 +6,9 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { accounts, assets, connections, currencies } from '@/lib/api'
+import { accounts, assets, connections, currencies, plugins as pluginsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
-import { invalidateConnectionSyncQueries, invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { invalidateFinancialQueries, invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,7 +23,7 @@ import {
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { Account, BankConnection, LoanAmortization, LoanRatePeriod } from '@/types'
+import type { Account, BankConnection, InstalledPlugin, LoanAmortization, LoanRatePeriod, PluginConnection } from '@/types'
 import { RefreshCw, TriangleAlert, Unlink, Settings } from 'lucide-react'
 import { AccountIcon, ConnectionLogo } from '@/components/account-icon'
 import { getAccountTypeConfig } from '@/lib/account-type-config'
@@ -33,6 +33,11 @@ import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
+import { pluginConnectors } from '@/lib/plugin-connectors'
+import { PluginAvatar } from '@/components/plugin-avatar'
+import { PluginConnectionDialog } from '@/components/plugin-connections'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { localized } from '@/lib/localized-text'
 import { OAuthConnectDialog } from '@/components/oauth-connect-dialog'
 import { TokenConnectDialog } from '@/components/token-connect-dialog'
 import { ConnectionSettingsDialog } from '@/components/connection-settings-dialog'
@@ -64,7 +69,7 @@ function daysUntil(dateStr: string | null): number | null {
 }
 
 export default function AccountsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
@@ -85,10 +90,18 @@ export default function AccountsPage() {
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null)
   const [settingsConnection, setSettingsConnection] = useState<BankConnection | null>(null)
   const [disconnectingConnection, setDisconnectingConnection] = useState<BankConnection | null>(null)
+  const [deleteOnDisconnect, setDeleteOnDisconnect] = useState(false)
   const [closingAccountId, setClosingAccountId] = useState<string | null>(null)
   const [reconnectConnId, setReconnectConnId] = useState<string | null>(null)
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
   const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
+  // A plugin's form: a new connection from Connect Bank, or new values to reconnect one.
+  const [pluginForm, setPluginForm] = useState<{
+    plugin: InstalledPlugin
+    integration?: string
+    connection?: PluginConnection
+  } | null>(null)
+  const { pluginsEnabled } = useFeatureFlags()
 
   const { data: accountsList, isLoading: accountsLoading, isFetching: accountsFetching } = useQuery({
     queryKey: ['accounts'],
@@ -106,6 +119,40 @@ export default function AccountsPage() {
     staleTime: 1000 * 60 * 10,
   })
 
+  const { data: installedPlugins } = useQuery({
+    queryKey: ['plugins', 'installed'],
+    queryFn: pluginsApi.installed,
+    enabled: pluginsEnabled,
+  })
+  const pluginsById = useMemo(
+    () => new Map((installedPlugins ?? []).map((plugin) => [plugin.plugin_id, plugin])),
+    [installedPlugins],
+  )
+  const hasPluginConnections = (connectionsList ?? []).some((c) => c.plugin_connection_id)
+  // A plugin's connection syncs in the background: follow it until it settles,
+  // then show what it brought in.
+  const { data: pluginConnectionsList, dataUpdatedAt: pluginConnectionsFetchedAt } = useQuery({
+    queryKey: ['plugin-connections'],
+    queryFn: pluginsApi.connections,
+    enabled: pluginsEnabled && hasPluginConnections,
+    refetchInterval: (query) => (query.state.data?.some((c) => c.status === 'pending') ? 3000 : false),
+  })
+  // Each connection that stops syncing refreshes the page, even while another still syncs.
+  const syncingKey = (pluginConnectionsList ?? [])
+    .filter((c) => c.status === 'pending')
+    .map((c) => c.id)
+    .sort()
+    .join(',')
+  const wasSyncing = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    // Runs on every successful fetch (even one returning the same data), so a
+    // connection added to `wasSyncing` by a form whose sync settled before any
+    // poll saw it pending still refreshes.
+    const syncing = new Set(syncingKey ? syncingKey.split(',') : [])
+    if ([...wasSyncing.current].some((id) => !syncing.has(id))) invalidateSyncedRecords(queryClient)
+    wasSyncing.current = syncing
+  }, [pluginConnectionsFetchedAt, syncingKey, queryClient])
+
   const providersByName = useMemo(() => {
     const map = new Map<string, Provider>()
     for (const p of providersList ?? []) map.set(p.name, p as Provider)
@@ -113,6 +160,28 @@ export default function AccountsPage() {
   }, [providersList])
 
   const handleReconnectClick = async (conn: BankConnection) => {
+    if (conn.plugin_connection_id) {
+      // Read what the form needs, waiting for it if the page hasn't loaded it yet.
+      let installedNow: InstalledPlugin[]
+      let connectionsNow: PluginConnection[]
+      try {
+        ;[installedNow, connectionsNow] = await Promise.all([
+          queryClient.fetchQuery({ queryKey: ['plugins', 'installed'], queryFn: pluginsApi.installed }),
+          queryClient.fetchQuery({ queryKey: ['plugin-connections'], queryFn: pluginsApi.connections }),
+        ])
+      } catch {
+        toast.error(t('common.error'))
+        return
+      }
+      const plugin = installedNow.find((p) => p.plugin_id === conn.plugin_id)
+      const pluginConnection = connectionsNow.find((c) => c.id === conn.plugin_connection_id)
+      if (!plugin || !pluginConnection) {
+        toast.error(t('accounts.pluginUnavailable'))
+        return
+      }
+      setPluginForm({ plugin, connection: pluginConnection })
+      return
+    }
     const providerInfo = providersByName.get(conn.provider)
     if (providerInfo?.flow_type === 'oauth') {
       try {
@@ -142,11 +211,13 @@ export default function AccountsPage() {
   const syncMutation = useMutation({
     mutationFn: (id: string) => connections.sync(id),
     onSuccess: (result) => {
-      invalidateConnectionSyncQueries(queryClient)
+      invalidateSyncedRecords(queryClient)
       // The provider can throttle the sync (429) and still return success
       // without pulling anything: say so instead of a false "Sync completed".
       if (result.sync_outcome === 'rate_limited') {
         toast.warning(t('accounts.syncRateLimited'))
+      } else if (result.sync_outcome === 'partial') {
+        toast.warning(t('accounts.syncPartial'))
       } else {
         toast.success(t('accounts.syncDone'))
       }
@@ -166,13 +237,23 @@ export default function AccountsPage() {
   })
 
   const disconnectMutation = useMutation({
-    mutationFn: (id: string) => connections.delete(id),
-    onSuccess: () => {
-      invalidateConnectionSyncQueries(queryClient)
+    mutationFn: ({ id, keepAccounts }: { id: string; keepAccounts: boolean }) =>
+      connections.delete(id, { keepAccounts }),
+    onSuccess: (_data, { keepAccounts }) => {
+      invalidateSyncedRecords(queryClient)
       setDisconnectingConnection(null)
-      toast.success(t('accounts.disconnected'))
+      toast.success(t(keepAccounts ? 'accounts.disconnectedKept' : 'accounts.disconnected'))
     },
   })
+
+  const openDisconnectDialog = (conn: BankConnection) => {
+    setDeleteOnDisconnect(false)
+    setDisconnectingConnection(conn)
+  }
+  // A connection that is already disconnected kept its accounts, so the only
+  // thing left to do with it is to delete them.
+  const alreadyDisconnected = disconnectingConnection?.status === 'disconnected'
+  const deletingOnDisconnect = alreadyDisconnected || deleteOnDisconnect
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; type: string; balance?: number; currency?: string }) =>
@@ -296,7 +377,7 @@ export default function AccountsPage() {
                           </p>
                         </div>
                       </Link>
-                      <div className="shrink-0 text-right">
+                      <div className="shrink-0 text-end">
                         <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                           {mask(formatCurrency(bal, acc.currency, locale))}
                         </p>
@@ -350,9 +431,17 @@ export default function AccountsPage() {
                       <div className="flex items-center gap-3">
                         {/* One bank's favicon would misrepresent a multi-
                             institution link — fall back to the generic icon. */}
-                        <ConnectionLogo
-                          logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
-                        />
+                        {conn.plugin_id && !conn.logo_url ? (
+                          <PluginAvatar
+                            seed={conn.plugin_id}
+                            label={localized(pluginsById.get(conn.plugin_id)?.name ?? { en: conn.institution_name }, i18n.language)}
+                            className="h-8 w-8 rounded-lg text-[11px]"
+                          />
+                        ) : (
+                          <ConnectionLogo
+                            logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
+                          />
+                        )}
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-foreground">{getConnectionName(conn, t)}</p>
@@ -409,7 +498,9 @@ export default function AccountsPage() {
                             title={needsReconnect
                               ? conn.status === 'expired'
                                 ? t('accounts.connectionExpired')
-                                : t('accounts.connectionError')
+                                : conn.status === 'disconnected'
+                                  ? t('accounts.connectionDisconnected')
+                                  : t('accounts.connectionError')
                               : t('accounts.sync')}
                             aria-label={needsReconnect ? t('accounts.reconnect') : t('accounts.sync')}
                           >
@@ -417,7 +508,7 @@ export default function AccountsPage() {
                             {needsReconnect && (
                               <TriangleAlert
                                 size={10}
-                                className="absolute -right-0.5 -top-0.5 rounded-full bg-card text-amber-500"
+                                className="absolute -end-0.5 -top-0.5 rounded-full bg-card text-amber-500"
                               />
                             )}
                           </Button>
@@ -425,9 +516,9 @@ export default function AccountsPage() {
                             variant="ghost"
                             size="sm"
                             className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500"
-                            onClick={() => setDisconnectingConnection(conn)}
+                            onClick={() => openDisconnectDialog(conn)}
                             disabled={disconnectMutation.isPending}
-                            title={t('accounts.disconnect')}
+                            title={conn.status === 'disconnected' ? t('accounts.removeConnection') : t('accounts.disconnect')}
                           >
                             <Unlink size={14} />
                           </Button>
@@ -463,7 +554,7 @@ export default function AccountsPage() {
                                   </p>
                                 </div>
                               </Link>
-                              <div className="shrink-0 text-right">
+                              <div className="shrink-0 text-end">
                                 <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                                   {mask(formatCurrency(bal, acc.currency, locale))}
                                 </p>
@@ -524,14 +615,14 @@ export default function AccountsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-xs text-muted-foreground hover:text-foreground h-7 px-2 mr-3"
+                          className="text-xs text-muted-foreground hover:text-foreground h-7 px-2 me-3"
                           onClick={() => reopenMutation.mutate(acc.id)}
                           disabled={reopenMutation.isPending}
                         >
                           {t('accounts.reopen')}
                         </Button>
                       )}
-                      <p className="text-sm font-semibold tabular-nums text-muted-foreground w-32 text-right">
+                      <p className="text-sm font-semibold tabular-nums text-muted-foreground w-32 text-end">
                         {mask(formatCurrency(Number(acc.current_balance), acc.currency, locale))}
                       </p>
                     </div>
@@ -573,19 +664,37 @@ export default function AccountsPage() {
           <DialogHeader>
             <DialogTitle>{t('accounts.confirmDisconnectTitle')}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t('accounts.confirmDisconnectDesc', { institution: disconnectingConnection ? getConnectionName(disconnectingConnection, t) : '' })}
+          <p className="text-sm text-muted-foreground" data-testid="disconnect-description">
+            {t(
+              deletingOnDisconnect ? 'accounts.confirmDisconnectDesc' : 'accounts.confirmDisconnectKeepDesc',
+              { institution: disconnectingConnection ? getConnectionName(disconnectingConnection, t) : '' },
+            )}
           </p>
+          {!alreadyDisconnected && (
+            <label className="text-sm inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={deleteOnDisconnect}
+                onChange={(e) => setDeleteOnDisconnect(e.target.checked)}
+              />
+              {t('accounts.disconnectAlsoDelete')}
+            </label>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDisconnectingConnection(null)}>
               {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
-              onClick={() => disconnectingConnection && disconnectMutation.mutate(disconnectingConnection.id)}
+              onClick={() => disconnectingConnection && disconnectMutation.mutate({
+                id: disconnectingConnection.id,
+                keepAccounts: !deletingOnDisconnect,
+              })}
               disabled={disconnectMutation.isPending}
             >
-              {disconnectMutation.isPending ? t('common.loading') : t('accounts.disconnect')}
+              {disconnectMutation.isPending
+                ? t('common.loading')
+                : alreadyDisconnected ? t('accounts.removeConnection') : t('accounts.disconnect')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -625,7 +734,25 @@ export default function AccountsPage() {
         open={connectorSelectOpen}
         onClose={() => setConnectorSelectOpen(false)}
         onSelect={(provider) => setSelectedProvider(provider)}
+        plugins={pluginConnectors(installedPlugins)}
+        onSelectPlugin={({ plugin, integration }) => setPluginForm({ plugin, integration: integration.key })}
       />
+
+      {/* A plugin's form — a new connection, or new values to reconnect one */}
+      {pluginForm && (
+        <PluginConnectionDialog
+          plugin={pluginForm.plugin}
+          integration={pluginForm.integration}
+          connection={pluginForm.connection}
+          onClose={() => setPluginForm(null)}
+          onDone={(saved) => {
+            // Follow its first sync until it settles, even if no poll sees it pending.
+            wasSyncing.current.add(saved.id)
+            queryClient.invalidateQueries({ queryKey: ['connections'] })
+            queryClient.invalidateQueries({ queryKey: ['plugin-connections'] })
+          }}
+        />
+      )}
 
       {/* Bank Connect Dialog — widget-based (Pluggy) */}
       <BankConnectDialog

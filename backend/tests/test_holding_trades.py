@@ -17,7 +17,7 @@ from app.models.bank_connection import BankConnection
 from app.models.user import User
 from app.providers.base import BankProvider, HoldingData, HoldingTradeData
 from app.providers.pluggy import _build_trade_data
-from app.services.connection_service import _reconciled_trades, _sync_holding_trades
+from app.services.connection_service import _import_holding_trades, _reconciled_trades
 
 
 def _holding(quantity: str, *, withdrawn: bool = False, external_id: str = "h1") -> HoldingData:
@@ -180,7 +180,7 @@ async def test_sync_mirrors_reconciled_trades_and_leaves_manual_rows(
         [_trade("b", "buy", 2, "228", "109.69"), _trade("c", "buy", 28, "81", "110.78")]
     )
 
-    await _sync_holding_trades(
+    await _import_holding_trades(
         session, connection, cast(BankProvider, provider), {}, [_holding("309")], {"h1": asset}
     )
     await session.flush()
@@ -191,7 +191,7 @@ async def test_sync_mirrors_reconciled_trades_and_leaves_manual_rows(
     ]
 
     # The ledger now adds up to the position: the next sync asks for nothing.
-    await _sync_holding_trades(
+    await _import_holding_trades(
         session, connection, cast(BankProvider, provider), {}, [_holding("309")], {"h1": asset}
     )
     assert provider.requests == 1
@@ -218,7 +218,7 @@ async def test_sync_keeps_stored_history_the_provider_no_longer_returns(
     connection = await _connection(session, test_user, test_workspace)
     provider = _Provider([_trade("t2", "buy", 28, "39.969", "19.08")])
 
-    await _sync_holding_trades(
+    await _import_holding_trades(
         session, connection, cast(BankProvider, provider), {}, [_holding("70.8202")], {"h1": asset}
     )
     await session.flush()

@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import axios from 'axios'
 import { connections } from '@/lib/api'
-import { invalidateConnectionSyncQueries } from '@/lib/invalidate-queries'
+import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { Button } from '@/components/ui/button'
 import { Building2, ExternalLink } from 'lucide-react'
 
@@ -56,7 +56,7 @@ export default function OAuthCallbackPage() {
       try {
         await connections.handleCallback(code, '', state)
         await queryClient.refetchQueries({ queryKey: ['connections'] })
-        invalidateConnectionSyncQueries(queryClient)
+        invalidateSyncedRecords(queryClient)
         toast.success(t('accounts.connected'))
         navigate('/accounts', { replace: true })
       } catch (err) {
@@ -102,7 +102,7 @@ export default function OAuthCallbackPage() {
               <Button asChild variant="outline">
                 <a href={restricted.help_url} target="_blank" rel="noreferrer">
                   {t('accounts.oauthCallback.openPortal')}
-                  <ExternalLink size={14} className="ml-2" />
+                  <ExternalLink size={14} className="ms-2" />
                 </a>
               </Button>
             )}

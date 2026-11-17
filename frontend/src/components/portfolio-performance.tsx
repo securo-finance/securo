@@ -31,7 +31,7 @@ import {
 import { assets, auth as authApi, connections } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
-import { invalidateConnectionSyncQueries } from '@/lib/invalidate-queries'
+import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import {
   MAX_PERFORMANCE_BENCHMARKS,
   type PerformanceView,
@@ -234,7 +234,7 @@ export function PortfolioPerformance({
       else if (rateLimited) toast.warning(t('accounts.syncRateLimited'))
       else toast.success(t('accounts.syncDone'))
     },
-    onSettled: () => invalidateConnectionSyncQueries(queryClient),
+    onSettled: () => invalidateSyncedRecords(queryClient),
   })
 
   const holdingsByGroup = useMemo(() => {
@@ -539,7 +539,7 @@ export function PortfolioPerformance({
                 )}
                 <ChevronDown
                   size={14}
-                  className="ml-auto text-muted-foreground"
+                  className="ms-auto text-muted-foreground"
                   aria-hidden="true"
                 />
               </Button>
@@ -605,7 +605,7 @@ export function PortfolioPerformance({
                         {walletHoldings.map((holding) => (
                           <label
                             key={holding.id}
-                            className={`ml-6 flex min-h-9 items-center gap-2 rounded-md px-2 text-sm ${
+                            className={`ms-6 flex min-h-9 items-center gap-2 rounded-md px-2 text-sm ${
                               walletSelected
                                 ? 'cursor-not-allowed text-muted-foreground/60'
                                 : 'cursor-pointer text-muted-foreground'
@@ -750,7 +750,7 @@ export function PortfolioPerformance({
                     <div className="relative">
                       <Search
                         size={16}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                         aria-hidden="true"
                       />
                       <Input
@@ -758,7 +758,7 @@ export function PortfolioPerformance({
                         onChange={(event) => setQuery(event.target.value)}
                         placeholder={t('assets.benchmarkSearchPlaceholder')}
                         aria-label={t('assets.benchmarkSearchPlaceholder')}
-                        className="h-10 pl-9 pr-10"
+                        className="h-10 ps-9 pe-10"
                       />
                       {query && (
                         <Button
@@ -766,7 +766,7 @@ export function PortfolioPerformance({
                           variant="ghost"
                           size="icon-sm"
                           onClick={() => setQuery('')}
-                          className="absolute right-1 top-1/2 -translate-y-1/2"
+                          className="absolute end-1 top-1/2 -translate-y-1/2"
                           aria-label={t('common.close')}
                         >
                           <X size={15} aria-hidden="true" />
@@ -787,7 +787,7 @@ export function PortfolioPerformance({
                     {selected.map((benchmark, index) => (
                       <div
                         key={benchmarkKey(benchmark)}
-                        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border py-0.5 pl-2.5 pr-0.5"
+                        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border py-0.5 ps-2.5 pe-0.5"
                       >
                         <span
                           className="size-2 shrink-0 rounded-full"
@@ -833,7 +833,7 @@ export function PortfolioPerformance({
                           key={benchmarkKey(match)}
                           type="button"
                           onClick={() => chooseBenchmark(match)}
-                          className="flex min-h-12 w-full items-center gap-3 rounded-md px-3 py-2.5 text-left outline-none hover:bg-muted/60 focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                          className="flex min-h-12 w-full items-center gap-3 rounded-md px-3 py-2.5 text-start outline-none hover:bg-muted/60 focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         >
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-medium">{match.name}</span>
@@ -866,7 +866,7 @@ export function PortfolioPerformance({
           !emptyCustomScope && (
             <Loader2
               size={16}
-              className="my-3 ml-auto animate-spin text-muted-foreground motion-reduce:animate-none"
+              className="my-3 ms-auto animate-spin text-muted-foreground motion-reduce:animate-none"
               aria-label={t('common.loading')}
             />
           )}
@@ -1125,7 +1125,7 @@ export function PortfolioPerformance({
 
               {selected.length > 0 && (
                 <aside
-                  className={`min-w-0 border-t border-border pt-5 ${showComparisonSidebar ? 'xl:border-t-0 xl:border-l xl:pt-0 xl:pl-5' : ''}`}
+                  className={`min-w-0 border-t border-border pt-5 ${showComparisonSidebar ? 'xl:border-t-0 xl:border-s xl:pt-0 xl:ps-5' : ''}`}
                   aria-label={t('assets.performanceBenchmarks')}
                 >
                   <h3 className="mb-3 text-sm font-semibold">
@@ -1168,7 +1168,7 @@ export function PortfolioPerformance({
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              className="-my-1 -mr-1 text-muted-foreground"
+                              className="-my-1 -me-1 text-muted-foreground"
                               onClick={() => removeBenchmark(benchmarkKey(benchmark))}
                               aria-label={t('assets.performanceRemoveBenchmark', {
                                 name: benchmark.name,
@@ -1289,7 +1289,7 @@ export function PortfolioPerformance({
           {t('assets.performanceMethodology')}
           <ChevronDown
             size={14}
-            className="ml-auto shrink-0 transition-transform group-open:rotate-180"
+            className="ms-auto shrink-0 transition-transform group-open:rotate-180"
             aria-hidden="true"
           />
         </summary>
