@@ -54,6 +54,7 @@ STATUSES = ("pending", "active", "error", "needs_auth")
 BANK_STATUS = {"pending": "active", "active": "active", "error": "error", "needs_auth": "expired"}
 #: How far back the plugin is asked to re-read, as the bank sync does.
 _SINCE_OVERLAP = timedelta(days=14)
+_BANK_GONE = "its bank connection is gone; remove it and connect again"
 
 
 class PluginConnectionError(Exception):
@@ -490,11 +491,15 @@ async def sync(session: AsyncSession, connection: PluginConnection) -> PluginCon
 
 async def _provides(session: AsyncSession, connection: PluginConnection) -> list[str] | None:
     """What the connection's integration provides, or None when it writes through the API."""
-    if connection.bank_connection_id is None:
-        return None
     _, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
     integration = _integration(manifest, connection.integration)
-    return list(integration.provides) if integration.provides else None
+    if not integration.provides:
+        return None
+    if connection.bank_connection_id is None:
+        # Nowhere to write its records: failing says so, where syncing on
+        # would drop them and move the cursor past them.
+        raise PluginConnectionError(_BANK_GONE)
+    return list(integration.provides)
 
 
 async def _since(session: AsyncSession, connection: PluginConnection) -> str | None:
@@ -526,7 +531,7 @@ async def _write_payload(
     if payload is not None:
         bank = await session.get(BankConnection, connection.bank_connection_id)
         if bank is None:
-            _failed(connection, "its bank connection is gone; remove it and connect again", needs_auth=False)
+            _failed(connection, _BANK_GONE, needs_auth=False)
             return
         connection_id, workspace_id, bank_id, user_id = connection.id, connection.workspace_id, bank.id, bank.user_id
         try:
@@ -558,6 +563,12 @@ def _rate_limited(connection: PluginConnection, message: str) -> None:
     connection.status = "active"
     connection.last_error = message.replace("\x00", "")[:500]
     connection.last_sync_at = _now()
+
+
+def rate_limited(connection: PluginConnection) -> bool:
+    """Whether its last sync was throttled by the service: healthy, but nothing was pulled."""
+    # A sync that succeeds clears the error, so only a throttled one is active with one.
+    return connection.status == "active" and bool(connection.last_error)
 
 
 async def _mirror_status(session: AsyncSession, connection: PluginConnection) -> None:

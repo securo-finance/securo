@@ -987,6 +987,19 @@ def _trade_from_row(tx: AssetTransaction) -> HoldingTradeData:
     )
 
 
+async def _sale_recorded_by_hand(session: AsyncSession, asset: Asset) -> bool:
+    """Whether the asset's sale date is the user's, not one its ledger set by selling out."""
+    from app.services.asset_transaction_service import _recompute
+
+    if asset.sell_date is None:
+        return False
+    rows = (
+        await session.execute(select(AssetTransaction).where(AssetTransaction.asset_id == asset.id))
+    ).scalars().all()
+    position = _recompute(list(rows))
+    return not (rows and position["units"] <= 0 and position["last_sell"] == asset.sell_date)
+
+
 async def _sync_holding_trades(
     session: AsyncSession,
     source: str,
@@ -1011,6 +1024,8 @@ async def _sync_holding_trades(
         for holding in holdings
         if holding.trades is not None
         and (asset := synced_assets.get(holding.external_id)) is not None
+        # A market-priced asset is valued from its own ledger (units x
+        # quote): the user took over tracking it, so its trades stay theirs.
         and asset.valuation_method != "market_price"
         and _trade_target(holding) is not None
     ]
@@ -1040,6 +1055,14 @@ async def _sync_holding_trades(
                     asset.id,
                 )
             continue
+        # A sale the user recorded on a position the provider still holds
+        # stays recorded. One the ledger itself set (the position was sold
+        # out) follows the ledger, so buying again reopens the position.
+        sold = (
+            (asset.sell_date, asset.sell_price)
+            if not holding.is_withdrawn and await _sale_recorded_by_hand(session, asset)
+            else None
+        )
         wanted = {trade.external_id for trade in reconciled}
         for tx in rows:
             if tx.external_id not in wanted:
@@ -1061,13 +1084,11 @@ async def _sync_holding_trades(
             tx.date = trade.date
         await session.flush()
         # Average price, realized gain and cost basis come from the ledger;
-        # the position stays what the provider reports, and a sale the user
-        # recorded on a position the provider still holds stays recorded.
-        sold = (asset.sell_date, asset.sell_price) if not holding.is_withdrawn else None
+        # the position stays what the provider reports.
         await recompute_and_cache(session, asset)
         if holding.quantity is not None and not holding.is_withdrawn:
             asset.units = holding.quantity
-        if sold is not None and sold[0] is not None:
+        if sold is not None:
             asset.sell_date, asset.sell_price = sold
 
 

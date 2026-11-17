@@ -161,3 +161,38 @@ async def test_a_sale_the_user_recorded_stays_when_trades_are_written(
     assert "b1" in await _ledger(session, asset)
     assert (asset.sell_date, asset.sell_price) == (date(2026, 11, 1), Decimal("1200"))
 
+
+
+@pytest.mark.asyncio
+async def test_a_position_sold_out_and_bought_again_is_held_again(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10")]), test_user)
+    # Sold out, with the position still listed at zero: the ledger marks it sold.
+    await _pipeline(session, bank_connection, holding("0", [_trade("s1", "sell", 9, "10", "120")]), test_user)
+    assert (await _asset(session, bank_connection)).sell_date == date(2026, 11, 9)
+    await _pipeline(session, bank_connection, holding("5", [_trade("b2", "buy", 12, "5", "110")]), test_user)
+    asset = await _asset(session, bank_connection)
+    assert set(await _ledger(session, asset)) == {"b1", "s1", "b2"}
+    assert (asset.units, asset.sell_date) == (Decimal("5"), None)
+
+
+@pytest.mark.asyncio
+async def test_reported_trades_that_add_up_alone_replace_a_ledger_they_do_not_join(
+    session: AsyncSession, bank_connection, test_user
+):
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10")]), test_user)
+    # The provider restated its history under new ids: with the stored buy it
+    # would be 15 units, on its own it is the 5 reported.
+    await _pipeline(session, bank_connection, holding("5", [_trade("r1", "buy", 3, "5", "90")]), test_user)
+    asset = await _asset(session, bank_connection)
+    assert await _ledger(session, asset) == {"r1": ("buy", Decimal("5"), Decimal("90"), SOURCE)}
+    assert asset.units == Decimal("5")
+
+
+@pytest.mark.asyncio
+async def test_a_market_priced_asset_keeps_its_own_trades(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("10", None), test_user)
+    asset = await _asset(session, bank_connection)
+    asset.valuation_method = "market_price"  # the user tracks it by its quote and their own buys
+    await session.commit()
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10")]), test_user)
+    assert await _ledger(session, await _asset(session, bank_connection)) == {}

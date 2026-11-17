@@ -361,6 +361,19 @@ async def test_a_rate_limited_service_is_no_failure(session: AsyncSession, ids, 
 
 
 @pytest.mark.asyncio
+async def test_a_provider_without_its_bank_connection_fails_and_keeps_the_cursor(
+    session: AsyncSession, ids, provider_catalog, plugin_runner
+):
+    connection = await _provider_connection(session, ids)
+    connection.bank_connection_id = None
+    await session.commit()
+    await connections.sync(session, connection)
+    assert (connection.status, connection.state) == ("error", {})
+    assert "bank connection is gone" in (connection.last_error or "")
+    assert await _rows(session, Account) == []
+
+
+@pytest.mark.asyncio
 async def test_a_failed_write_is_retried_from_the_same_cursor(
     session: AsyncSession, ids, provider_catalog, plugin_runner, monkeypatch
 ):
@@ -516,6 +529,18 @@ async def _api_connected(client: AsyncClient, auth_headers: dict, values: dict) 
     )
     assert created.status_code == 201, created.text
     return created.json()["connection"]
+
+
+@pytest.mark.asyncio
+async def test_bank_connections_api_says_when_the_service_throttled_the_sync(
+    client: AsyncClient, auth_headers: dict, provider_catalog, plugin_runner, monkeypatch
+):
+    monkeypatch.setattr("app.api.plugins._queue_sync", lambda connection_id: None)
+    await _api_connected(client, auth_headers, {"api_key": "k", "account": "limited"})
+    (bank,) = (await client.get("/api/connections", headers=auth_headers)).json()
+    synced = await client.post(f"/api/connections/{bank['id']}/sync", headers=auth_headers)
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["sync_outcome"] == "rate_limited" and synced.json()["status"] == "active"
 
 
 @pytest.mark.asyncio

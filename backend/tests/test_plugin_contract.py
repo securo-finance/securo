@@ -67,6 +67,16 @@ def test_a_payload_becomes_the_provider_dataclasses():
     assert payload.kinds() == {"accounts", "transactions", "holdings", "trades"}
 
 
+def test_a_bill_keeps_its_raw_data_but_not_what_only_a_native_provider_may_say():
+    bill = {"external_id": "b1", "due_date": "2026-12-10", "total_amount": "150", "currency": "USD",
+            "raw_data": {"cycle": "2026-11", "financeCharges": [{"id": "c1", "amount": 9e99}]}}
+    payload = parse_payload(_payload(lambda d: d["accounts"][0].update(bills=[bill])), ALL)
+    assert payload is not None and payload.accounts and payload.accounts[0].bills
+    # The pipeline writes transactions from a native bill's finance charges;
+    # a plugin's transactions come from `transactions` only.
+    assert payload.accounts[0].bills[0].to_data().raw_data == {"cycle": "2026-11"}
+
+
 def test_no_data_means_nothing_was_fetched():
     assert parse_payload(None, ALL) is None
 
@@ -98,11 +108,12 @@ def test_null_lists_are_not_fetched_and_empty_lists_are():
         (lambda d: d["holdings"][0].update(quantity="1000000000"), "quantity"),
         (lambda d: d["accounts"][0].update(balance="10000000000000"), "balance"),
         (lambda d: d["holdings"][0].update(ticker="X" * 33), "ticker"),
+        (lambda d: d["holdings"][0]["trades"][0].update(price="1000000000000"), "price"),
     ],
     ids=["contract", "unknown-field", "account-type", "float", "currency", "full-number", "negative-amount",
          "transaction-type", "duplicate-transaction", "duplicate-account", "zero-quantity", "trade-kind",
          "duplicate-trade", "insecure-logo", "holding-type", "units-too-large", "money-too-large",
-         "ticker-too-long"],
+         "ticker-too-long", "trade-price-too-large"],
 )
 def test_malformed_data_is_refused(change, message):
     with pytest.raises(PayloadError, match=message):

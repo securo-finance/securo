@@ -361,9 +361,8 @@ async def _sync_through_plugin(session: AsyncSession, plugin_connection, connect
         )
     bank = await connection_service.get_connection(session, connection_id, plugin_connection.workspace_id)
     result = BankConnectionRead.model_validate(bank)
-    limited = bool(plugin_connection.last_error) and plugin_connection.last_error.startswith("RateLimited")
     return {
         **result.model_dump(mode="json"),
         "merged_count": 0,
-        "sync_outcome": "rate_limited" if limited else "refreshed",
+        "sync_outcome": "rate_limited" if plugin_connections.rate_limited(plugin_connection) else "refreshed",
     }

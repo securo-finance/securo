@@ -47,27 +47,24 @@ def _no_float(value: Any) -> Any:
     return value
 
 
-def _number(whole_digits: int, **bounds: Any) -> Any:
-    """A decimal that fits the column it lands in: `whole_digits` before the point, 8 after at most.
-
-    The columns keep fewer decimals (2 for money, 6 for units and prices) and
-    round the rest; a number too large for its column is refused here, before
-    anything is written, instead of failing the write.
-    """
-    return Annotated[
-        Decimal,
-        BeforeValidator(_no_float),
-        Field(allow_inf_nan=False, max_digits=whole_digits + 8, decimal_places=8, **bounds),
-    ]
-
+# A decimal that fits the column it lands in: so many digits before the point,
+# 8 after at most. The columns keep fewer decimals (2 for money, 6 for units
+# and prices) and round the rest; a number too large for its column is
+# refused here, before anything is written, instead of failing the write.
 
 #: Money: Numeric(15, 2) columns (balances, transactions, bills, cost basis, fees).
-Money = _number(13)
-PositiveMoney = _number(13, ge=0)
+Money = Annotated[
+    Decimal, BeforeValidator(_no_float), Field(allow_inf_nan=False, max_digits=13 + 8, decimal_places=8)
+]
+PositiveMoney = Annotated[Money, Field(ge=0)]
 #: Units and holding values: Numeric(15, 6) columns (`assets.units`, `asset_values.amount`).
-Units = _number(9)
+Units = Annotated[
+    Decimal, BeforeValidator(_no_float), Field(allow_inf_nan=False, max_digits=9 + 8, decimal_places=8)
+]
 #: Trade quantities and prices: Numeric(18, 6) columns.
-TradeNumber = _number(12, ge=0)
+TradeNumber = Annotated[
+    Decimal, BeforeValidator(_no_float), Field(allow_inf_nan=False, max_digits=12 + 8, decimal_places=8, ge=0)
+]
 
 
 class PayloadError(ValueError):
@@ -102,6 +99,12 @@ class Transaction(_Model):
         return TransactionData(**fields, pluggy_category=self.provider_category)
 
 
+#: Keys of a bill's `raw_data` the pipeline reads for a native provider (it
+#: writes transactions from them). `raw_data` is kept for reference only, so
+#: a plugin's records come from the contract's own fields and nowhere else.
+_NATIVE_BILL_KEYS = frozenset({"financeCharges"})
+
+
 class Bill(_Model):
     external_id: ExternalId
     due_date: _date
@@ -111,7 +114,10 @@ class Bill(_Model):
     raw_data: dict[str, Any] | None = None
 
     def to_data(self) -> BillData:
-        return BillData(**self.model_dump())
+        data = BillData(**self.model_dump())
+        if data.raw_data and _NATIVE_BILL_KEYS & data.raw_data.keys():
+            data.raw_data = {k: v for k, v in data.raw_data.items() if k not in _NATIVE_BILL_KEYS}
+        return data
 
 
 class Account(_Model):
