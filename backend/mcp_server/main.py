@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Request, Response
+from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.agents.config import get_agent_settings
+from app.agents.mcp.keys import UnsafeMCPSecret, resolve_mcp_jwt_secret
 from app.core.database import async_session_maker
 from mcp_server import protocol as p
 from mcp_server import tools as _tools_pkg  # noqa: F401  triggers tool registration
@@ -30,7 +32,25 @@ from mcp_server.registry import REGISTRY, call_tool, list_tools
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Securo MCP Server", openapi_url=None, docs_url=None)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Refuse to serve with a signing key anyone can read from the repository
+    # (issue #1174). Every token would be forgeable, and the tool layer would
+    # treat the forged `sub` as the caller. Failing here is the last safe
+    # moment: uvicorn exits non-zero and the container reports the reason.
+    resolve_mcp_jwt_secret()
+    yield
+
+
+# The routes live on a router, not directly on an app, so another FastAPI
+# process can include them while the dedicated mcp-server container keeps
+# running `uvicorn mcp_server.main:app` unchanged. Paths stay absolute:
+# `POST /mcp` is the contract the Helm ingress and the agent runtime depend
+# on, and mounting this as a sub-app would have made it /mcp/mcp. A host that
+# includes the router does not get `lifespan` above, so it has to refuse an
+# unsafe signing key at its own startup (see `resolve_mcp_jwt_secret`).
+router = APIRouter()
 
 
 SERVER_INFO = {
@@ -53,19 +73,19 @@ def _ok(req_id: Any, result: Any) -> dict:
     return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
 
-@app.get("/health")
+@router.get("/health", include_in_schema=False)
 async def health():
     return {"status": "ok", "tools": len(REGISTRY)}
 
 
-@app.api_route("/mcp", methods=["GET", "DELETE"])
+@router.api_route("/mcp", methods=["GET", "DELETE"], include_in_schema=False)
 async def mcp_no_stream() -> Response:
     """2026-07-28 removed the standalone GET stream and session termination
     by DELETE. The spec asks a server that receives either to answer 405."""
     return Response(status_code=405, headers={"Allow": "POST"})
 
 
-@app.post("/mcp")
+@router.post("/mcp", include_in_schema=False)
 async def mcp(request: Request) -> Response:
     # DNS-rebinding guard before anything else, as the transport requires.
     allowed = p.parse_allowed_origins(get_agent_settings().mcp_allowed_origins)
@@ -78,6 +98,15 @@ async def mcp(request: Request) -> Response:
     # Auth next — never accept unauthenticated calls.
     try:
         ctx = verify_request(request)
+    except UnsafeMCPSecret:
+        # Startup already refused this configuration; if the app was loaded
+        # without its lifespan, no token can be trusted either. Say it is a
+        # server problem, not the caller's token, and keep the detail in logs.
+        logger.exception("MCP signing key is unsafe; refusing the request")
+        return JSONResponse(
+            status_code=500,
+            content={"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": "server misconfigured"}},
+        )
     except Exception as exc:  # HTTPException from verify_request
         status_code = getattr(exc, "status_code", 401)
         detail = getattr(exc, "detail", str(exc))
@@ -311,3 +340,14 @@ def _safe_json(obj: Any) -> str:
         return json.dumps(obj, default=str)
     except Exception:
         return str(obj)
+
+
+# Standalone app for the dedicated mcp-server container and the Railway
+# service. `uvicorn mcp_server.main:app` is unaffected by the router above.
+app = FastAPI(
+    title="Securo MCP Server",
+    openapi_url=None,
+    docs_url=None,
+    lifespan=lifespan,
+)
+app.include_router(router)
