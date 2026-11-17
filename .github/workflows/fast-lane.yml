@@ -47,7 +47,12 @@ concurrency:
 jobs:
   merge:
     # One variable turns the whole thing off without touching this file.
-    if: vars.FAST_LANE != 'off'
+    # A comment can only matter when it carries the verdict marker, so the
+    # ordinary conversation on a pull request does not start a run.
+    if: >-
+      vars.FAST_LANE != 'off' &&
+      (github.event_name != 'issue_comment' ||
+       contains(github.event.comment.body, '<!-- fast-lane: approve -->'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v9
@@ -69,6 +74,16 @@ jobs:
             const BLOCKED = [
               [/^backend\/app\/core\/(auth|auth_policy|webauthn|secrets?)/i, 'auth or secrets'],
               [/^backend\/app\/api\/[^/]*auth/i,                      'auth API'],
+              // The patterns above only catch a file named *auth* in two
+              // directories. Access tokens, passkeys, the MCP server's own
+              // auth and the OAuth state are credentials too, and none of
+              // them carry "auth" in the name at the right place.
+              [/(^|\/)[^/]*(auth|token|secret|credential|passkey|webauthn|oidc|password|login|permission)[^/]*\.(py|ts|tsx|js|jsx)$/i,
+                                                                      'auth or credentials'],
+              // CI and the repository configuration are not application code:
+              // a pull request that can edit them can edit this file and take
+              // the gates with it.
+              [/^\.github\//,                                         'CI or repository configuration'],
               [/^backend\/alembic\//,                                 'schema migration'],
               [/^backend\/app\/providers\//,                          'bank provider'],
               [/^backend\/app\/services\/.*(sync|plugin)/i,           'sync or plugin'],
