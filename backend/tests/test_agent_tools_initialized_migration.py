@@ -33,7 +33,12 @@ def test_upgrade_marks_only_agents_with_tool_rows_as_initialized():
             ))
             with Operations.context(MigrationContext.configure(conn)):
                 migration.upgrade()
-            rows = dict(conn.execute(sa.text("SELECT id, tools_initialized FROM agents")).all())
+            rows = {
+                agent_id: initialized
+                for agent_id, initialized in conn.execute(
+                    sa.text("SELECT id, tools_initialized FROM agents")
+                )
+            }
     finally:
         engine.dispose()
     assert rows == {"no-rows": 0, "scoped": 1}
