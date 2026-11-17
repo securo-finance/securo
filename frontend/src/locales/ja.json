@@ -2426,7 +2426,8 @@
     "preview": "プレビュー",
     "download": "ダウンロード",
     "closePreview": "プレビューを閉じる",
-    "remove": "削除"
+    "remove": "削除",
+    "invalidAmount": "有効な金額を入力してください（例: {{example}}）。"
   },
   "splitGroups": {
     "searchPlaceholder": "グループを検索...",

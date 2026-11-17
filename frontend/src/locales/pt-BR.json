@@ -2430,7 +2430,8 @@
     "preview": "Visualizar",
     "download": "Baixar",
     "closePreview": "Fechar visualização",
-    "remove": "Remover"
+    "remove": "Remover",
+    "invalidAmount": "Informe um valor válido, como {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Buscar grupos...",

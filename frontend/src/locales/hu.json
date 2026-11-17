@@ -2426,7 +2426,8 @@
     "preview": "Előnézet",
     "download": "Letöltés",
     "closePreview": "Előnézet bezárása",
-    "remove": "Eltávolítás"
+    "remove": "Eltávolítás",
+    "invalidAmount": "Adjon meg egy érvényes összeget, például {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Csoportok keresése...",

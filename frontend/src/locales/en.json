@@ -2426,7 +2426,8 @@
     "preview": "Preview",
     "download": "Download",
     "closePreview": "Close preview",
-    "remove": "Remove"
+    "remove": "Remove",
+    "invalidAmount": "Enter a valid amount, like {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Search groups...",

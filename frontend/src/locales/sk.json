@@ -2562,7 +2562,8 @@
     "preview": "Náhľad",
     "download": "Stiahnuť",
     "closePreview": "Zavrieť náhľad",
-    "remove": "Odstrániť"
+    "remove": "Odstrániť",
+    "invalidAmount": "Zadajte platnú sumu, napríklad {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Hľadať skupiny...",

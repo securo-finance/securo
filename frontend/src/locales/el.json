@@ -2426,7 +2426,8 @@
     "preview": "Προεπισκόπηση",
     "download": "Λήψη",
     "closePreview": "Κλείσιμο προεπισκόπησης",
-    "remove": "Αφαίρεση"
+    "remove": "Αφαίρεση",
+    "invalidAmount": "Εισαγάγετε ένα έγκυρο ποσό, για παράδειγμα {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Αναζήτηση ομάδων...",

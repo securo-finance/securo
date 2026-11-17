@@ -33,7 +33,7 @@ import {
   rowsFromLines,
   type CategoryLineRow,
 } from '@/lib/category-lines'
-import { formatAmountInput } from '@/lib/format'
+import { formatAmountInput, parseAmountInput } from '@/lib/format'
 import { Pencil, Trash2, Plus, RefreshCw, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
@@ -318,7 +318,7 @@ function RecurringTab() {
   )
 }
 
-function RecurringForm({
+export function RecurringForm({
   recurring,
   categories,
   categoryGroups,
@@ -346,8 +346,17 @@ function RecurringForm({
     queryFn: currenciesApi.list,
     staleTime: Infinity,
   })
+  // Amounts are typed under the workspace number format (issue #1072): on
+  // "1 000,00" a comma is the decimal separator, which a native number input
+  // silently drops. The field is text and goes through parseAmountInput, the
+  // same path the transaction dialog uses.
+  const displayLocale = useDisplayLocale()
   const [description, setDescription] = useState(recurring?.description ?? '')
-  const [amount, setAmount] = useState(recurring?.amount?.toString() ?? '')
+  const [amount, setAmount] = useState(
+    recurring?.amount != null ? formatAmountInput(Number(recurring.amount), displayLocale) : '',
+  )
+  const parsedAmount = parseAmountInput(amount, displayLocale)
+  const amountInvalid = amount !== '' && parsedAmount == null
   const [currency, setCurrency] = useState(recurring?.currency ?? userCurrency)
   const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? 'debit')
   const [frequency, setFrequency] = useState(recurring?.frequency ?? 'monthly')
@@ -363,7 +372,6 @@ function RecurringForm({
   const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? true)
   // Split across categories, as in the transaction dialog: every occurrence
   // the schedule generates starts with these parts.
-  const displayLocale = useDisplayLocale()
   const [lineRows, setLineRows] = useState<CategoryLineRow[] | null>(() =>
     recurring && isSplitByCategory(recurring) && recurring.category_lines
       ? rowsFromLines(recurring.category_lines, (v) => formatAmountInput(v, displayLocale))
@@ -373,7 +381,7 @@ function RecurringForm({
     () => recurring?.category_lines?.[0]?.share_type ?? 'exact',
   )
   const hadInitialLines = !!recurring && isSplitByCategory(recurring)
-  const linesValid = !lineRows || checkLines(lineRows, lineShareType, parseFloat(amount) || 0, displayLocale).valid
+  const linesValid = !lineRows || checkLines(lineRows, lineShareType, parsedAmount ?? 0, displayLocale).valid
   const undoSplit = () => {
     const kept = largestLineCategoryId(
       (lineRows ?? []).map((row, position) => ({
@@ -394,9 +402,10 @@ function RecurringForm({
     <form
       onSubmit={(e) => {
         e.preventDefault()
+        if (parsedAmount == null) return
         onSave({
           description,
-          amount: parseFloat(amount),
+          amount: parsedAmount,
           currency,
           type,
           frequency,
@@ -418,13 +427,27 @@ function RecurringForm({
       className="space-y-4"
     >
       <div className="space-y-2">
-        <Label>{t('recurring.description')}</Label>
-        <Input value={description} onChange={(e) => setDescription(e.target.value)} required />
+        <Label htmlFor="recurring-description">{t('recurring.description')}</Label>
+        <Input id="recurring-description" value={description} onChange={(e) => setDescription(e.target.value)} required />
       </div>
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label>{t('recurring.amount')}</Label>
-          <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+          <Label htmlFor="recurring-amount">{t('recurring.amount')}</Label>
+          <Input
+            id="recurring-amount"
+            type="text"
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            aria-invalid={amountInvalid}
+            aria-describedby={amountInvalid ? 'recurring-amount-error' : undefined}
+            required
+          />
+          {amountInvalid && (
+            <p id="recurring-amount-error" role="alert" className="text-xs text-destructive">
+              {t('common.invalidAmount', { example: formatAmountInput(1234.56, displayLocale) })}
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label>{t('recurring.currency')}</Label>
@@ -536,7 +559,7 @@ function RecurringForm({
       </div>
       {lineRows && (
         <TransactionCategoryLinesSection
-          amount={parseFloat(amount) || 0}
+          amount={parsedAmount ?? 0}
           currency={currency}
           rows={lineRows}
           shareType={lineShareType}
