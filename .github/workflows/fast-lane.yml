@@ -17,6 +17,11 @@ name: fast lane
 #   5. a trusted reviewer left a verdict comment naming that same head SHA
 #   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
 #
+# A refusal is also said on the pull request itself, in one comment this
+# workflow rewrites in place: a run log expires, and a pull request with no
+# trace of an evaluation reads as if nobody had looked at it. That is
+# visibility only, never a looser gate.
+#
 # Gate 5 is a comment and not a GitHub review on purpose: posting a review is
 # one of the calls that needs a human approval, posting a comment is not. Both
 # the marker and the SHA line are HTML comments, so neither renders:
@@ -118,11 +123,59 @@ jobs:
               [/plugin[-_]runner|runtime\.py$/i,                      'executes third-party code'],
             ];
 
-            // Everything below runs for one pull request. It returns nothing:
-            // a gate that does not hold only logs why.
+            // A refusal used to exist only in this run's log, and a log expires:
+            // the pull request looked exactly as if nobody had evaluated it, so
+            // whoever was watching the queue had to guess which gate held. It is
+            // said on the pull request instead, in one comment that is rewritten
+            // in place, so an hourly sweep never stacks the same line.
+            //
+            // Visibility only: nothing here makes a gate more permissive. A pull
+            // request that merges gets the merge comment and no refusal one, and
+            // every skip keeps its log line above.
+            const REFUSAL = '<!-- fast-lane: refused -->';
+
+            async function reportRefusal(number, head, why) {
+              const body =
+                `${REFUSAL}\n\n` +
+                `The fast lane evaluated this pull request at \`${head.slice(0, 7)}\` ` +
+                `and did not merge it: ${why}.\n\n` +
+                `Visibility only — no gate changed. This comment is rewritten in ` +
+                `place, so it always names the last commit evaluated.`;
+              try {
+                const comments = await github.paginate(github.rest.issues.listComments,
+                  { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
+                // Only the lane's own comment, and only this marker: the verdict
+                // comments and the merge comment are a different thing entirely.
+                const mine = comments.filter((c) => c.user
+                  && c.user.login === 'github-actions[bot]'
+                  && (c.body || '').trimStart().startsWith(REFUSAL)).pop();
+                if (!mine) {
+                  await github.rest.issues.createComment(
+                    { owner: OWNER, repo: REPO, issue_number: number, body });
+                } else if ((mine.body || '').trim() !== body.trim()) {
+                  await github.rest.issues.updateComment(
+                    { owner: OWNER, repo: REPO, comment_id: mine.id, body });
+                }
+              } catch (e) {
+                // A fork head the token cannot comment on still gets its log
+                // line: the refusal is not lost, only less visible.
+                core.info(`#${number}: could not report the refusal: ${e.message}`);
+              }
+            }
+
+            // Everything below runs for one pull request. It returns the refusal
+            // ({ why, head }) when a gate does not hold, so the caller can say it
+            // on the pull request, and null when it merged or when there was
+            // nothing worth saying there.
             async function tryMerge(number) {
+              let head = null;
+              // A closed, draft or wrong-base pull request is refused before the
+              // lane would consider it at all, and the pull request itself
+              // already shows that: a comment there would be noise, so these
+              // three return null. Every gate below them is reported.
               const skip = (why) => {
                 core.info(`#${number}: not merging — ${why}`);
+                return head ? { why, head } : null;
               };
 
               let pr;
@@ -134,6 +187,8 @@ jobs:
               if (pr.state !== 'open')      return skip('it is not open');
               if (pr.draft)                 return skip('it is a draft');
               if (pr.base.ref !== 'main')   return skip(`it targets ${pr.base.ref}`);
+
+              head = pr.head.sha;
 
               const labels = pr.labels.map((l) => l.name);
               const risk = labels.filter((l) => l.startsWith('risk: ')).map((l) => l.slice(6));
@@ -231,7 +286,6 @@ jobs:
               }
 
               // ---- 4. the verdict names the head we are about to merge ------
-              const head = pr.head.sha;
               if (SELF_APPROVAL_GUARD.includes(pr.user.login)) {
                 return skip(`opened by ${pr.user.login}: agent code is not merged by the lane`);
               }
@@ -298,6 +352,8 @@ jobs:
                       `Anything touching auth, secrets, migrations, bank sync, ` +
                       `plugins or deployment still waits for a maintainer.`,
               });
+
+              return null;
             }
 
             // ---- 0. which pull request is this event about? ----------------
@@ -333,7 +389,8 @@ jobs:
             }
 
             if (number) {
-              await tryMerge(number);
+              const refusal = await tryMerge(number);
+              if (refusal) await reportRefusal(number, refusal.head, refusal.why);
             } else if (ev === 'schedule' || ev === 'workflow_dispatch') {
               // The sweep: every open pull request goes through the same gates,
               // so a thread resolved with no other event still gets merged.
@@ -342,7 +399,8 @@ jobs:
               core.info(`sweeping ${open.length} open pull requests`);
               for (const p of open) {
                 try {
-                  await tryMerge(p.number);
+                  const refusal = await tryMerge(p.number);
+                  if (refusal) await reportRefusal(p.number, refusal.head, refusal.why);
                 } catch (e) {
                   core.info(`#${p.number}: ${e.message}`);
                 }
