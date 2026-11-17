@@ -124,15 +124,23 @@ jobs:
             // by a review of a fork's pull request reports this repository as
             // its head repository, while the pull request reports the fork, so
             // a key built from both never meets for exactly the runs that have
-            // no `pull_request_target` event behind them. A commit is the head
-            // of at most one open pull request, and mayApprove() reads the pull
-            // request again and refuses unless it is still open, still that
-            // head, against the default branch and in a fork.
+            // no `pull_request_target` event behind them. mayApprove() reads
+            // the pull request again and refuses unless it is still open, still
+            // that head, against the default branch and in a fork.
             const open = await github.paginate(github.rest.pulls.list, {
               owner: OWNER, repo: REPO, state: 'open', per_page: 100,
             });
+            // A commit can head more than one open pull request: a branch in a
+            // fork and one in this repository that carries the same commits
+            // share their ids. Keeping only the last would drop the fork's run
+            // whenever one of this repository's pull requests was listed after
+            // it, so every candidate is kept and tried in turn.
             const byHead = new Map();
-            for (const pr of open) byHead.set(pr.head.sha, pr.number);
+            for (const pr of open) {
+              const candidates = byHead.get(pr.head.sha) || [];
+              candidates.push(pr.number);
+              byHead.set(pr.head.sha, candidates);
+            }
 
             const runs = await github.paginate(
               github.rest.actions.listWorkflowRunsForRepo,
@@ -141,17 +149,29 @@ jobs:
 
             let approved = 0, held = 0;
             for (const run of runs) {
-              const number = byHead.get(run.head_sha);
-              if (number === undefined) {
+              const candidates = byHead.get(run.head_sha) || [];
+              if (candidates.length === 0) {
                 // Closed, force-pushed past, or a run with no pull request at
                 // all: not this workflow's decision to make.
                 held++;
                 continue;
               }
 
-              if (!(await mayApprove(number, run.head_sha))) {
+              // The first candidate that passes the checks above. The others
+              // are pull requests at the same commit that the run is not for,
+              // such as one of this repository's own.
+              let number;
+              for (const candidate of candidates) {
+                if (await mayApprove(candidate, run.head_sha)) {
+                  number = candidate;
+                  break;
+                }
+              }
+
+              if (number === undefined) {
                 held++;
-                core.info(`run ${run.id} (${run.name}) left for a maintainer: #${number}`);
+                const at = candidates.map((n) => `#${n}`).join(', ');
+                core.info(`run ${run.id} (${run.name}) left for a maintainer: ${at}`);
                 continue;
               }
 
