@@ -277,6 +277,84 @@ async def test_performance_compares_manual_asset_with_benchmark(
     assert result.points[0].portfolio == result.points[0].benchmark == 0.0
 
 
+@pytest.mark.asyncio
+async def test_a_split_is_not_a_loss_when_the_price_drops_with_it(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """10 shares at 100 become 100 shares at 10: the holding is worth the same."""
+    end = date.today()
+    start = end - timedelta(days=30)
+    split_on = start + timedelta(days=10)
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Split stock",
+        type="stock",
+        currency="BRL",
+        valuation_method="market_price",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all(
+        [
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind="buy",
+                quantity=Decimal("10"),
+                price=Decimal("100"),
+                date=start,
+            ),
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind="split",
+                quantity=Decimal("0"),
+                price=Decimal("0"),
+                old_units=1,
+                new_units=10,
+                date=split_on,
+            ),
+        ]
+    )
+    # Stored prices are never adjusted for a split: 100 before it, 10 after.
+    for when, price in (
+        (start, "100"),
+        (split_on - timedelta(days=1), "100"),
+        (split_on + timedelta(days=1), "10"),
+        (end, "10"),
+    ):
+        session.add(
+            AssetValue(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                amount=Decimal("1000"),
+                price=Decimal(price),
+                date=when,
+                source="market",
+            )
+        )
+    await session.commit()
+
+    provider = FakeHistoryProvider(
+        [BenchmarkHistoryPoint(start, 200.0), BenchmarkHistoryPoint(end, 200.0)]
+    )
+    result = await get_portfolio_performance(
+        session,
+        test_workspace.id,
+        test_user.id,
+        "BRL",
+        "yahoo",
+        "^TEST",
+        "3m",
+        end_date=end,
+        provider=provider,  # type: ignore[arg-type]
+    )
+    assert result.portfolio_return == pytest.approx(0.0, abs=1e-6)
+    assert all(point.portfolio == pytest.approx(0.0, abs=1e-6) for point in result.points)
+
+
 async def _flat_brl_fund(session: AsyncSession, user: User, workspace, start: date, end: date):
     asset = Asset(
         id=uuid.uuid4(),
