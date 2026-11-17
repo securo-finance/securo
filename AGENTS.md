@@ -83,7 +83,7 @@ Paths are under `backend/`.
 - **Admin and settings**: router `app/api/admin.py` (users, instance settings, provider settings, timezone); `app/services/admin_service.py`; widget layouts `app/api/ui_layouts.py`. Tests `tests/test_admin_*.py`.
 - **Export and backup**: router `app/api/export.py`, `app/services/backup_service.py`. Test `tests/test_export_api.py`.
 - **Storage** (ADR 0019): `app/providers/storage.py`, `local_storage.py`, `s3_storage.py`, `get_storage_provider` in `app/providers/__init__.py`.
-- **Plugins** (ADR 0015): router `app/api/plugins.py`; `app/plugins/` (`service.py`, `manifest.py`, `index.py`, `sync.py`, `runner.py`, `vault.py`, `provenance.py`); sandbox `plugin_runner/`; task `app/tasks/plugin_tasks.py`. Tests `tests/test_*_plugins.py`, `tests/test_plugin_runner.py`.
+- **Plugins** (ADR 0015): router `app/api/plugins.py`; `app/plugins/` (`service.py`, `manifest.py`, `index.py`, `sync.py`, `runner.py`, `vault.py`, `provenance.py`); sandbox `plugin_runner/`; task `app/tasks/plugin_tasks.py`; example bank sync plugin `examples/plugins/demo-bank/` (synced in `tests/test_example_provider_plugin.py`). Tests `tests/test_*_plugins.py`, `tests/test_plugin_runner.py`.
 - **AI agents** (ADR 0014): `app/agents/` (`app/agents/api/`, `app/agents/services/`, `app/agents/runtime/executor.py`, `app/agents/providers/`, `app/agents/mcp/client.py`, `app/agents/tasks/ingest.py`); MCP server `mcp_server/` (`mcp_server/registry.py`, `mcp_server/auth.py`, `mcp_server/tools/`). Tests `tests/test_agents_*.py`, `tests/test_mcp_*.py`.
 - **Migrations**: `alembic/versions/NNN_name.py`; chain check `scripts/check_migration_chain.py`.
 
