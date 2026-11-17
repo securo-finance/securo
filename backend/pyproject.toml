@@ -48,6 +48,9 @@ dependencies = [
     "fastembed>=0.4.0",
     # Resolve the host's IANA timezone when no app setting or TZ override exists.
     "tzlocal>=5.0.0",
+    # S3-compatible attachment storage. Only imported when STORAGE_PROVIDER=s3,
+    # so installs on local storage pay nothing at runtime (ADR 0019).
+    "aiobotocore>=2.21.0",
 ]
 
 [project.optional-dependencies]

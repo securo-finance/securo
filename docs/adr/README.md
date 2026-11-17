@@ -27,9 +27,10 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0010](0010-linear-numbered-migrations.md) | One linear chain of numbered migrations, applied before anything starts |
 | [0011](0011-logic-lives-in-services.md) | Logic lives in services, routers stay thin |
 | [0012](0012-authentication.md) | Authentication: sessions, OIDC, passkeys, TOTP and scoped access tokens |
-| [0013](0013-file-storage.md) | Files go through a storage provider |
+| [0013](0013-file-storage.md) | Files go through a storage provider (superseded by 0019) |
 | [0014](0014-ai-agents-module.md) | AI agents are an optional module |
 | [0015](0015-plugins.md) | Plugins: data, sandboxed code and themes |
 | [0016](0016-outbound-calls-and-no-telemetry.md) | Every outbound call is gated, and there is no telemetry |
 | [0017](0017-category-lines.md) | Category lines split a transaction's category, the row stays as the bank reports it |
 | [0018](0018-transfers-and-card-accounting.md) | Transfers are matched by a visible policy; card accounting mode moves reports, never balances |
+| [0019](0019-s3-storage.md) | Files can live in an S3-compatible bucket, from the regular image |
