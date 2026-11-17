@@ -30,7 +30,7 @@ Supabase will act as your cloud PostgreSQL server to store your transactions sec
 * Select the **Pooler** tab and set the Mode to **Session** (This prevents `Network is unreachable` errors on cloud environments like Render).
 * Copy the connection string provided.
 * ⚠️ **Important Formatting Notice:** This string will look like `postgresql://postgres.[your-project-id]:[YOUR-PASSWORD]@...`. Before pasting it into Render, you must:
-1. Replace `[YOUR-PASSWORD]` with the actual password you saved in **Step 2**. 
+1. Replace `[YOUR-PASSWORD]` with the actual password you saved in **Step 2**.
 If your password contains special characters (like `@`, `#`, `/`, `?`, or `%`), ensure it is percent-encoded (URL-encoded, e.g., `@` becomes `%40`) so SQLAlchemy parses the URL correctly.
 2. Add `+asyncpg` right after `postgresql` to match the application's required asynchronous driver format (transforming it into `postgresql+asyncpg://postgres...`).
 
@@ -79,9 +79,8 @@ Now we deploy the core engine of the application, connecting it to our cloud Dat
 
 | Key | Description / Example |
 | --- | --- |
-| `BACKEND_URL` | `https://your-backend-service.onrender.com` *(Public URL generated for this backend)* |
 | `FRONTEND_URL` | `https://your-frontend-service.onrender.com` *(Public URL generated for the frontend)* |
-| `DATABASE_URL` | `postgresql+asyncpg://postgres.[id]:[percent_encoded_pass]@host:5432/postgres` *(Configured in Step 1)* | 
+| `DATABASE_URL` | `postgresql+asyncpg://postgres.[id]:[percent_encoded_pass]@host:5432/postgres` *(Configured in Step 1)* |
 | `REDIS_URL` | `redis://...` *(Internal URL retrieved in Step 2)* |
 | `SECRET_KEY` | Generate via terminal: `openssl rand -hex 32` |
 | `OIDC_ENABLED` | `true` |
@@ -95,10 +94,10 @@ Now we deploy the core engine of the application, connecting it to our cloud Dat
 | `OIDC_SCOPES` | `openid email profile` |
 | `PLUGGY_CLIENT_ID` | `your-pluggy-client-id` |
 | `PLUGGY_CLIENT_SECRET` | `your-pluggy-client-secret` |
-| `TRUSTED_PROXY_HOPS` | `1` | (Optional: Number of reverse proxy hops sitting in front of the backend. Recommended: `1`) |
+| `TRUSTED_PROXY_HOPS` | `4` — Number of reverse-proxy hops in front of the backend (Cloudflare edge, Render edge, Render loopback peer and the frontend nginx). |
 
 > ℹ️ **Security & Network Notice – TRUSTED_PROXY_HOPS:**
-> Set `TRUSTED_PROXY_HOPS` to match the exact number of upstream reverse proxies handling traffic before the backend service (set to `1` when placed behind the Nginx frontend container). 
+> Set `TRUSTED_PROXY_HOPS` to the exact number of upstream reverse proxies before the backend. For the public Render topology in this guide that is `4` (Cloudflare edge, Render edge, Render loopback peer and the frontend nginx).
 > - **If set too low:** The application will fail to resolve the real client IP address, logging internal proxy IPs instead.
 > - **If set too high:** The application trusts spoofed `X-Forwarded-For` headers from untrusted upstream clients.
 
@@ -106,7 +105,7 @@ Now we deploy the core engine of the application, connecting it to our cloud Dat
 > For maximum security, deploy the backend as a **Private Service** behind the Nginx frontend reverse proxy so it remains isolated from the public internet. If deployed as a public Web Service (e.g., using Render's free plan), direct access to the backend API bypasses the frontend Nginx layer, meaning no `TRUSTED_PROXY_HOPS` value is fully safe against direct header spoofing.
 
 > **Security Notice – Registration:**
-> The `REGISTRATION_ENABLED` environment variable sets the initial registration state upon deployment until modified by an administrator in the UI settings.
+> Set `REGISTRATION_ENABLED=false` before the first deploy to close public sign-ups. The environment variable decides the initial state; once an administrator saves a value in **Admin -> Settings**, that saved value wins.
 
 > **Important – File Attachments Storage:**
 > Note that Render's free tier does not support persistent storage volumes or native S3 object storage. Uploaded file attachments stored on the local container filesystem are ephemeral and will be lost whenever the backend container restarts or redeploys.
@@ -134,15 +133,16 @@ Deploy the Frontend Web Service to serve the application user interface.
 | Key | Example Value | Description |
 | --- | --- | --- |
 | **`PROXY_HOST`** | **`your-backend-service.onrender.com`** | **Required:** Pure backend domain (without `https://` or trailing slashes) to prevent Nginx proxy looping. |
-| `BACKEND_URL` | `https://your-backend-service.onrender.com` | Full public URL of the backend. |
-| `PROXY_SSL_VERIFY` | 	on | (Enforces strict SSL certificate verification between Nginx and the backend; works out-of-the-box in cloud environments) | 
-| `PORT` | Container listening port injected by PaaS health check | `8080` (or leave default on Render) |
+| `BACKEND_URL` | `https://your-backend-service.onrender.com` | **Required:** Full public URL of the backend, used as the Nginx `proxy_pass` target. |
+| `PROXY_SSL_VERIFY` | `on` | Enforces strict SSL certificate verification between Nginx and the backend (works out-of-the-box in cloud environments). |
+
+> ℹ️ **Port:** Leave `PORT` unset on Render; the platform injects the port it routes to. The image defaults to `8080` for local/Docker installs.
 
 5. Click **Deploy Web Service**.
 
 ---
 
-> 🔒 **Security Notice:** Once you have completed initial setup and created your admin account, navigate to **Admin -> Settings** in the UI to turn off public registrations (the application seeds this setting in the database on first run, so modifying environment variables alone will not disable it).
+> **Security Notice - Registration:** Set `REGISTRATION_ENABLED=false` before the first deploy to close public registrations. This environment variable only decides the initial state (migration 100 removed the old seeded row); an administrator can still change it later in **Admin -> Settings**.
 
 ## ⚠️ Note on Background Workers (Celery)
 

@@ -14,10 +14,9 @@ RUN npm run build
 # Serve with nginx
 FROM nginxinc/nginx-unprivileged:alpine
 
-# Dynamic Nginx DNS resolver fallback.
-# This prevents Nginx from failing on boot in environments where NGINX_RESOLVER 
-# is unset, while allowing PaaS to dynamically resolve upstream backends
-# without hardcoding IPs or hitting 508 Loop Detected errors.
+# Default Host header for proxied /api/ requests. The escaped $host keeps the
+# current behaviour for local/Docker deploys; PaaS platforms can override
+# PROXY_HOST with the backend hostname to avoid 508 loops.
 ENV PROXY_HOST=\$host
 
 COPY --from=build /app/dist /usr/share/nginx/html

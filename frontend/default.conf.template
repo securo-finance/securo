@@ -26,6 +26,7 @@ server {
         # Resolves SSL/SNI handshake failures in cloud environments
         proxy_ssl_server_name on;
         proxy_ssl_verify ${PROXY_SSL_VERIFY};
+        proxy_ssl_verify_depth 2;
         proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
         proxy_ssl_name $proxy_host;
 
@@ -51,6 +52,7 @@ server {
         # Resolves SSL/SNI handshake failures in cloud environments
         proxy_ssl_server_name on;
         proxy_ssl_verify ${PROXY_SSL_VERIFY};
+        proxy_ssl_verify_depth 2;
         proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
         proxy_ssl_name $proxy_host;
 
