@@ -92,12 +92,16 @@ jobs:
             // the exact commit: the files above are read at the head of the
             // pull request, so a run of an older commit could otherwise be
             // approved by a later one that reverted a `.github/` change.
+            // A deleted fork leaves both sides without a repository name, and
+            // a key of `undefined@<sha>` would pair two unrelated things.
             const open = await github.paginate(github.rest.pulls.list, {
               owner: OWNER, repo: REPO, state: 'open', per_page: 100,
             });
-            const byHead = new Map(open.map((pr) => [
-              `${pr.head.repo?.full_name}@${pr.head.sha}`, pr.number,
-            ]));
+            const byHead = new Map();
+            for (const pr of open) {
+              const head = pr.head.repo && pr.head.repo.full_name;
+              if (head) byHead.set(`${head}@${pr.head.sha}`, pr.number);
+            }
 
             const runs = await github.paginate(
               github.rest.actions.listWorkflowRunsForRepo,
@@ -106,9 +110,9 @@ jobs:
 
             let approved = 0, held = 0;
             for (const run of runs) {
-              const number = byHead.get(
-                `${run.head_repository?.full_name}@${run.head_sha}`,
-              );
+              const number = run.head_repository
+                ? byHead.get(`${run.head_repository.full_name}@${run.head_sha}`)
+                : undefined;
               if (number === undefined) {
                 // Closed, force-pushed past, or a run with no pull request at
                 // all: not this workflow's decision to make.
