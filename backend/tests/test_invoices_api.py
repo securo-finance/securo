@@ -13,6 +13,7 @@ import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
+from urllib.parse import quote
 
 import pytest
 import pytest_asyncio
@@ -1721,6 +1722,11 @@ async def test_pdf_downloads_survive_any_number_prefix(
         "/api/invoices/settings", headers=biz_headers, json={"number_prefix": prefix}
     )
     invoice = await _create(client, biz_headers, payee_id=str(client_payee.id))
+    assert invoice["number"], "created invoices are issued, which files a copy"
+    attachments_url = f"/api/invoices/{invoice['id']}/attachments"
+    filed = (await client.get(attachments_url, headers=biz_headers)).json()
+    primary = [a for a in filed if a["is_primary"]]
+    assert len(primary) == 1, filed
     token = (
         await client.post(f"/api/invoices/{invoice['id']}/share", headers=biz_headers)
     ).json()["token"]
@@ -1732,6 +1738,7 @@ async def test_pdf_downloads_survive_any_number_prefix(
         disposition = resp.headers["content-disposition"]
         assert disposition.count('"') == 2, disposition
         assert "filename*=UTF-8''" in disposition
+        return disposition
 
     pdf_url = f"/api/invoices/{invoice['id']}/pdf"
     # The rendered routes go first: they are the ones that raised on
@@ -1739,13 +1746,16 @@ async def test_pdf_downloads_survive_any_number_prefix(
     for url, headers in [
         (f"/api/invoices/{invoice['id']}/statement", biz_headers),
         (f"/api/public/invoices/{token}/pdf", {}),
-        (pdf_url, biz_headers),
     ]:
         await assert_downloads(url, headers)
 
-    # Issuing filed a copy, so `/pdf` above served that file. Without it
-    # the page is rendered live under the raw number, prefix and all.
-    attachments_url = f"/api/invoices/{invoice['id']}/attachments"
-    for attachment in (await client.get(attachments_url, headers=biz_headers)).json():
+    # `/pdf` serves the filed copy under that attachment's name.
+    filed_disposition = await assert_downloads(pdf_url, biz_headers)
+    served_name = quote(primary[0]["filename"], safe="")
+    assert f"filename*=UTF-8''{served_name}" in filed_disposition
+
+    # Without the filed copy the page is rendered live under the raw
+    # number, prefix and all.
+    for attachment in filed:
         await client.delete(f"{attachments_url}/{attachment['id']}", headers=biz_headers)
     await assert_downloads(pdf_url, biz_headers)
