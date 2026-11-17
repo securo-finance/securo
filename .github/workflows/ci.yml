@@ -129,6 +129,18 @@ jobs:
       - name: Check the Alembic revision chain
         run: python3 backend/scripts/check_migration_chain.py
 
+  doc-paths:
+    name: Doc Paths
+    runs-on: ubuntu-latest
+
+    steps:
+      # Runs on every pull request, whatever it touches: a frontend-only rename
+      # can break the map in AGENTS.md just as well as a backend one.
+      - uses: actions/checkout@v7
+
+      - name: Check the paths AGENTS.md and the ADRs cite
+        run: python3 .github/ci/check_doc_paths.py
+
   frontend-checks:
     name: Frontend Checks
     runs-on: ubuntu-latest
