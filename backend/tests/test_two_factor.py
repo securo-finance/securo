@@ -157,15 +157,13 @@ def test_verify_totp_allows_adjacent_time_windows():
     totp = pyotp.TOTP(secret)
     previous_code = totp.at(fixed_time, counter_offset=-1)
     next_code = totp.at(fixed_time, counter_offset=1)
+    distant_code = totp.at(fixed_time, counter_offset=2)
 
-    class FrozenDateTime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return cls(2026, 7, 19, 12, 0, tzinfo=tz)
-
-    with patch("pyotp.totp.datetime.datetime", FrozenDateTime):
-        assert _verify_totp(secret, previous_code)
-        assert _verify_totp(secret, next_code)
+    # The time is handed to pyotp instead of freezing the clock it reads
+    # internally, which moved from datetime.now() to time.time() in 2.12.
+    assert _verify_totp(secret, previous_code, for_time=fixed_time)
+    assert _verify_totp(secret, next_code, for_time=fixed_time)
+    assert not _verify_totp(secret, distant_code, for_time=fixed_time)
 
 
 async def test_login_with_2fa(client: AsyncClient, test_user_with_2fa):
