@@ -18,9 +18,9 @@ name: fast lane
 #   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
 #
 # A refusal is also said on the pull request itself, in one comment this
-# workflow rewrites in place: a run log expires, and a pull request with no
-# trace of an evaluation reads as if nobody had looked at it. That is
-# visibility only, never a looser gate.
+# workflow rewrites in place and deletes once the pull request merges: a run
+# log expires, and a pull request with no trace of an evaluation reads as if
+# nobody had looked at it. That is visibility only, never a looser gate.
 #
 # Gate 5 is a comment and not a GitHub review on purpose: posting a review is
 # one of the calls that needs a human approval, posting a comment is not. Both
@@ -126,13 +126,31 @@ jobs:
             // A refusal used to exist only in this run's log, and a log expires:
             // the pull request looked exactly as if nobody had evaluated it, so
             // whoever was watching the queue had to guess which gate held. It is
-            // said on the pull request instead, in one comment that is rewritten
-            // in place, so an hourly sweep never stacks the same line.
+            // said on the pull request instead, in one comment per pull request
+            // that is rewritten in place, so an hourly sweep never stacks the
+            // same line.
+            //
+            // Creating it only when none exists is not enough to keep it one: a
+            // sweep and a hand-run of the same pull request sit in different
+            // concurrency groups, so both can list the comments before either
+            // writes, and two appear. Everything that reads or writes the refusal
+            // goes through every comment carrying the marker, so two converge
+            // back to one instead of one keeping a stale text forever.
             //
             // Visibility only: nothing here makes a gate more permissive. A pull
-            // request that merges gets the merge comment and no refusal one, and
-            // every skip keeps its log line above.
+            // request that merges loses the refusal comment and keeps the merge
+            // one, and every skip keeps its log line above.
             const REFUSAL = '<!-- fast-lane: refused -->';
+
+            async function refusalComments(number) {
+              const comments = await github.paginate(github.rest.issues.listComments,
+                { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
+              // Only the lane's own comments, and only this marker: the verdict
+              // comments and the merge comment are a different thing entirely.
+              return comments.filter((c) => c.user
+                && c.user.login === 'github-actions[bot]'
+                && (c.body || '').trimStart().startsWith(REFUSAL));
+            }
 
             async function reportRefusal(number, head, why) {
               const body =
@@ -142,24 +160,50 @@ jobs:
                 `Visibility only — no gate changed. This comment is rewritten in ` +
                 `place, so it always names the last commit evaluated.`;
               try {
-                const comments = await github.paginate(github.rest.issues.listComments,
-                  { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
-                // Only the lane's own comment, and only this marker: the verdict
-                // comments and the merge comment are a different thing entirely.
-                const mine = comments.filter((c) => c.user
-                  && c.user.login === 'github-actions[bot]'
-                  && (c.body || '').trimStart().startsWith(REFUSAL)).pop();
-                if (!mine) {
+                const mine = await refusalComments(number);
+                if (!mine.length) {
                   await github.rest.issues.createComment(
                     { owner: OWNER, repo: REPO, issue_number: number, body });
-                } else if ((mine.body || '').trim() !== body.trim()) {
+                  return;
+                }
+                // The list comes in creation order: the newest one stays and the
+                // rest go, so a racing pair ends as one comment.
+                const keep = mine[mine.length - 1];
+                if ((keep.body || '').trim() !== body.trim()) {
                   await github.rest.issues.updateComment(
-                    { owner: OWNER, repo: REPO, comment_id: mine.id, body });
+                    { owner: OWNER, repo: REPO, comment_id: keep.id, body });
+                }
+                for (const extra of mine.slice(0, -1)) {
+                  try {
+                    await github.rest.issues.deleteComment(
+                      { owner: OWNER, repo: REPO, comment_id: extra.id });
+                  } catch (e) {
+                    core.info(`#${number}: could not delete a repeated refusal: ${e.message}`);
+                  }
                 }
               } catch (e) {
                 // A fork head the token cannot comment on still gets its log
                 // line: the refusal is not lost, only less visible.
                 core.info(`#${number}: could not report the refusal: ${e.message}`);
+              }
+            }
+
+            // A pull request that merged must not also say why it did not: the
+            // sweep and a hand-run can disagree about the same head, and after
+            // the merge only the merge comment is the truth. Best effort on
+            // purpose: nothing here fails a merge that already happened.
+            async function clearRefusal(number) {
+              try {
+                for (const c of await refusalComments(number)) {
+                  try {
+                    await github.rest.issues.deleteComment(
+                      { owner: OWNER, repo: REPO, comment_id: c.id });
+                  } catch (e) {
+                    core.info(`#${number}: could not delete the refusal: ${e.message}`);
+                  }
+                }
+              } catch (e) {
+                core.info(`#${number}: could not read the refusal comment: ${e.message}`);
               }
             }
 
@@ -352,6 +396,10 @@ jobs:
                       `Anything touching auth, secrets, migrations, bank sync, ` +
                       `plugins or deployment still waits for a maintainer.`,
               });
+
+              // An earlier evaluation may have refused this pull request and be
+              // still on it; that comment is now false.
+              await clearRefusal(number);
 
               return null;
             }
