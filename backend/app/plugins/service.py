@@ -117,8 +117,8 @@ async def catalog(session: AsyncSession, workspace_id: uuid.UUID) -> list[Catalo
     return [CatalogItem(entry, installed.get(entry.id), kind) for entry in entries]
 
 
-async def icon(name: str) -> tuple[str, bytes] | None:
-    """A plugin's icon as (content type, bytes), by its file name in the catalog; None when there's no such icon."""
+async def icon(name: str) -> index.Icon | None:
+    """A plugin's icon, by its file name in the catalog; None when there's no such icon."""
     try:
         async with index.http_client() as client:
             return await index.fetch_icon(client, name)

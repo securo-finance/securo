@@ -19,6 +19,7 @@ import json
 import logging
 import re
 import tomllib
+from dataclasses import dataclass
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
@@ -228,8 +229,16 @@ async def fetch_readme(client: httpx.AsyncClient, entry: IndexEntry) -> str | No
     return readme
 
 
-async def fetch_icon(client: httpx.AsyncClient, name: str) -> tuple[str, bytes]:
-    """An icon as (content type, bytes), by its file name in the catalog: `<sha256>.png` or `.webp`.
+@dataclass(frozen=True)
+class Icon:
+    """A plugin's icon, as the catalog's copy holds it."""
+
+    content_type: str
+    data: bytes
+
+
+async def fetch_icon(client: httpx.AsyncClient, name: str) -> Icon:
+    """An icon by its file name in the catalog: `<sha256>.png` or `.webp`.
 
     The name is all it takes to find and check it: it's fetched from
     `icons/` beside the index, and refused unless it hashes to that name and
@@ -243,7 +252,7 @@ async def fetch_icon(client: httpx.AsyncClient, name: str) -> tuple[str, bytes]:
     kind = image_type(body)
     if kind is None:
         raise PluginIndexError(f"icon {name} isn't a PNG or WebP image")
-    return kind, body
+    return Icon(content_type=kind, data=body)
 
 
 #: The last archive fetched, by checksum: an install reads it for the runner

@@ -306,8 +306,7 @@ async def plugin_icon(name: str) -> Response:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Icon not found", headers={"Cache-Control": "no-store"}
         )
-    content_type, data = icon
-    return _image(data, content_type)
+    return _image(icon.data, icon.content_type)
 
 
 @router.get("/catalog", response_model=list[PluginCatalogRead])
