@@ -19,7 +19,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Request, Response
+from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.agents.config import get_agent_settings
@@ -43,12 +43,14 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(
-    title="Securo MCP Server",
-    openapi_url=None,
-    docs_url=None,
-    lifespan=lifespan,
-)
+# The routes live on a router, not directly on an app, so another FastAPI
+# process can include them while the dedicated mcp-server container keeps
+# running `uvicorn mcp_server.main:app` unchanged. Paths stay absolute:
+# `POST /mcp` is the contract the Helm ingress and the agent runtime depend
+# on, and mounting this as a sub-app would have made it /mcp/mcp. A host that
+# includes the router does not get `lifespan` above, so it has to refuse an
+# unsafe signing key at its own startup (see `resolve_mcp_jwt_secret`).
+router = APIRouter()
 
 
 SERVER_INFO = {
@@ -71,19 +73,19 @@ def _ok(req_id: Any, result: Any) -> dict:
     return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
 
-@app.get("/health")
+@router.get("/health", include_in_schema=False)
 async def health():
     return {"status": "ok", "tools": len(REGISTRY)}
 
 
-@app.api_route("/mcp", methods=["GET", "DELETE"])
+@router.api_route("/mcp", methods=["GET", "DELETE"], include_in_schema=False)
 async def mcp_no_stream() -> Response:
     """2026-07-28 removed the standalone GET stream and session termination
     by DELETE. The spec asks a server that receives either to answer 405."""
     return Response(status_code=405, headers={"Allow": "POST"})
 
 
-@app.post("/mcp")
+@router.post("/mcp", include_in_schema=False)
 async def mcp(request: Request) -> Response:
     # DNS-rebinding guard before anything else, as the transport requires.
     allowed = p.parse_allowed_origins(get_agent_settings().mcp_allowed_origins)
@@ -338,3 +340,14 @@ def _safe_json(obj: Any) -> str:
         return json.dumps(obj, default=str)
     except Exception:
         return str(obj)
+
+
+# Standalone app for the dedicated mcp-server container and the Railway
+# service. `uvicorn mcp_server.main:app` is unaffected by the router above.
+app = FastAPI(
+    title="Securo MCP Server",
+    openapi_url=None,
+    docs_url=None,
+    lifespan=lifespan,
+)
+app.include_router(router)
