@@ -205,7 +205,7 @@ class TransactionRead(TransactionBase):
     invoice_links: list[TransactionInvoiceLink] = []
     # A stored transaction always has a currency, so the read model narrows
     # the optional input field on purpose.
-    currency: str = "USD"  # ty: ignore[invalid-mutable-override]
+    currency: str = "USD"  # ty: ignore[incompatible-mutable-override]
     source: str
     status: str = "posted"
     payee: Optional[str] = None
