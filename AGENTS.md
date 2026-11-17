@@ -34,6 +34,7 @@ cd backend && uv sync --all-extras        # first time
 uv run pytest                             # CI requires coverage >= 60%
 uv run pytest tests/test_some_file.py     # one file while fixing
 uv run pytest tests/api_contract -n auto  # route contract sweep
+uv run pytest -n auto --store-durations  # refresh .test_durations when CI shards drift apart
 uv run ruff check . && uv run ty check .
 ./scripts/lock.sh                         # after changing dependencies; commit uv.lock
 
@@ -45,6 +46,7 @@ Run lint, type check and the tests you touched before calling work done; CI runs
 ## Tests
 
 - **Backend** (`backend/tests/conftest.py`): in-memory SQLite by default, schema from `Base.metadata.create_all` (not from migrations), pgvector shimmed to JSON, Redis and external FX sync mocked, `AGENTS_ENABLED` forced on. Fixtures: `session`, `client`, `test_user`, `test_workspace`, `auth_headers`, `viewer_auth_headers`, `admin_auth_headers`, `test_account`, `test_transactions`, `test_categories`, `test_rules`. Files matching `tests/*_postgres.py` use `postgres_sessions` and need `POSTGRES_TEST_URL` (skipped locally without it, required in CI).
+- **CI shards** (`.github/workflows/ci.yml`): the backend suite runs in four parallel jobs split by `pytest-split`, balanced by `backend/.test_durations`. New tests are given the average duration, so the balance drifts slowly; regenerate the file when one shard runs well past the others. The Backend Tests check combines the shards' coverage and enforces the 60% floor.
 - **Contract sweep** (`backend/tests/api_contract/`): every OpenAPI route and method against the expected status in `baseline.json`, as owner and as viewer.
 - **Frontend** (`frontend/vitest.config.ts`): a `node` project for `src/lib/*.test.ts` and a jsdom `dom` project for the rest, setup in `src/test/setup.ts`. Render with `renderWithProviders` from `src/test/utils.tsx` (real English strings). The API is stubbed with `vi.mock('@/lib/api', ...)`; there is no MSW. `src/pages/pages.contract.test.ts` and `src/components/components.contract.test.ts` import every page and component to catch modules that break on import.
 
