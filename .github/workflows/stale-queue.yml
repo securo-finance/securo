@@ -1,0 +1,111 @@
+name: stale queue
+
+# A pull request whose branch has not moved for thirty days is not waiting on
+# anyone: the author stopped. It stays in the queue, it shows up in every
+# triage pass, and it makes the open count say something that is not true.
+#
+# This gives the author a warning first and closes a week later if nothing
+# moves. The clock is the last commit on the branch, from whoever pushed it:
+# comments are not a signal here, because bots comment on everything and a
+# warning from us is not progress. That also means a rebase or a maintainer
+# push resets the timer, which is what should happen.
+#
+# Closing is reversible and the closing comment says how. `stale: keep`
+# exempts a pull request for good.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # 06:00 in Sao Paulo
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: stale-queue
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    if: vars.STALE_QUEUE != 'off'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const OWNER = context.repo.owner, REPO = context.repo.repo;
+
+            const WARN_AFTER = 30;   // days without a commit before the warning
+            const CLOSE_AFTER = 7;   // days the warning stands before closing
+            const KEEP = 'stale: keep';
+            const WARNED = '<!-- stale: warned -->';
+            const CLOSED = '<!-- stale: closed -->';
+            const DAY = 24 * 60 * 60 * 1000;
+
+            const days = (iso) => Math.floor((Date.now() - Date.parse(iso)) / DAY);
+
+            const pulls = await github.paginate(github.rest.pulls.list,
+              { owner: OWNER, repo: REPO, state: 'open', per_page: 100 });
+
+            let warned = 0, closed = 0;
+
+            for (const pr of pulls) {
+              if (pr.labels.some((l) => l.name === KEEP)) continue;
+
+              // The newest commit on the branch decides the clock.
+              let movedAt = pr.updated_at;
+              try {
+                const commits = await github.paginate(github.rest.pulls.listCommits,
+                  { owner: OWNER, repo: REPO, pull_number: pr.number, per_page: 100 });
+                const last = commits.map((c) => c.commit.committer.date).sort().pop();
+                if (last) movedAt = last;
+              } catch (e) {
+                core.info(`#${pr.number}: could not read commits, skipping`);
+                continue;
+              }
+
+              const idle = days(movedAt);
+              if (idle < WARN_AFTER) continue;
+
+              const comments = await github.paginate(github.rest.issues.listComments,
+                { owner: OWNER, repo: REPO, issue_number: pr.number, per_page: 100 });
+              const byBody = (marker) => comments.filter((c) => (c.body || '').includes(marker));
+
+              // Only a warning newer than the last commit counts: a pull request
+              // that was warned once, moved, and then stalled again gets a fresh
+              // warning instead of jumping straight to closing on an old one.
+              const warnings = byBody(WARNED)
+                .filter((c) => Date.parse(c.created_at) > Date.parse(movedAt));
+              const warning = warnings.pop();
+
+              if (!warning) {
+                // First pass: a warning, with the reason and the way out.
+                await github.rest.issues.createComment({
+                  owner: OWNER, repo: REPO, issue_number: pr.number,
+                  body: `${WARNED}\nThis pull request has had no commit for ${idle} ` +
+                        `days, since ${movedAt.slice(0, 10)}. It will be closed in ` +
+                        `${CLOSE_AFTER} days unless the branch moves. If you are still ` +
+                        `on it, a rebase or a push is enough to reset this. If it should ` +
+                        `stay open regardless, say so and it gets the \`${KEEP}\` label.`,
+                });
+                warned++;
+                continue;
+              }
+
+              if (days(warning.created_at) < CLOSE_AFTER) continue;
+
+              await github.rest.issues.createComment({
+                owner: OWNER, repo: REPO, issue_number: pr.number,
+                body: `${CLOSED}\nClosed: no commit for ${idle} days, and the warning ` +
+                      `above stood for a week without a push. Nothing is lost, the branch ` +
+                      `and the commits are still there and reopening the pull request ` +
+                      `brings it back. Reopen it whenever you want to pick it up again.`,
+              });
+              await github.rest.pulls.update(
+                { owner: OWNER, repo: REPO, pull_number: pr.number, state: 'closed' });
+              closed++;
+            }
+
+            core.info(`warned ${warned}, closed ${closed}, looked at ${pulls.length}`);
