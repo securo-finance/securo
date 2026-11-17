@@ -10,6 +10,7 @@ matches. A plugin's README is copied there too and fetched, on the same
 terms, only when someone opens that plugin. Its icon, when it has one, is
 copied there under its sha256 (`icons/<sha256>.png`) and fetched when a
 browser asks Securo for it by that name: the content must hash to the name.
+A few are kept in memory by that name, as READMEs are.
 Requests never follow redirects and are capped in size.
 """
 from __future__ import annotations
@@ -53,9 +54,10 @@ _MAX_README_BYTES = 256 << 10
 _MAX_ARCHIVE_BYTES = 20 << 20
 MAX_ICON_BYTES = 64 << 10
 _MANIFEST_CACHE_SIZE = 256
+#: Icons kept in memory: at 64 KB each, 4 MB at most.
+_ICON_CACHE_SIZE = 64
 #: An icon's file name in the catalog: its sha256 and what it is.
-_ICON_NAME = r"[0-9a-f]{64}\.(?:png|webp)"
-ICON_URL_PREFIX = "/api/plugins/icons/"
+ICON_NAME = re.compile(r"[0-9a-f]{64}\.(?:png|webp)")
 
 def supported_contributions() -> frozenset[str]:
     """What this instance can apply. Plugins with anything else are listed but
@@ -111,10 +113,10 @@ class IndexEntry(BaseModel):
         return self.repository.rstrip("/").split("/")[-2]
 
     @property
-    def icon_url(self) -> str | None:
-        """Where Securo serves the icon, when the index names its copy by its sha256."""
-        match = re.fullmatch(f"icons/({_ICON_NAME})", self.icon or "")
-        return f"{ICON_URL_PREFIX}{match.group(1)}" if match else None
+    def icon_name(self) -> str | None:
+        """The icon's file name in the catalog, when the index names its copy by its sha256."""
+        folder, _, name = (self.icon or "").partition("/")
+        return name if folder == "icons" and ICON_NAME.fullmatch(name) else None
 
     @property
     def supported(self) -> bool:
@@ -187,8 +189,8 @@ def manifest_url(entry: IndexEntry) -> str:
     return _on_index_host(entry, entry.manifest, "manifest")
 
 
-def _remember(cache: dict, key: str, value) -> None:
-    if len(cache) >= _MANIFEST_CACHE_SIZE:
+def _remember(cache: dict, key: str, value, size: int = _MANIFEST_CACHE_SIZE) -> None:
+    if len(cache) >= size:
         cache.pop(next(iter(cache)))
     cache[key] = value
 
@@ -237,6 +239,9 @@ class Icon:
     data: bytes
 
 
+_icons: dict[str, Icon] = {}
+
+
 async def fetch_icon(client: httpx.AsyncClient, name: str) -> Icon:
     """An icon by its file name in the catalog: `<sha256>.png` or `.webp`.
 
@@ -244,15 +249,19 @@ async def fetch_icon(client: httpx.AsyncClient, name: str) -> Icon:
     `icons/` beside the index, and refused unless it hashes to that name and
     is a small PNG or WebP.
     """
-    if not re.fullmatch(_ICON_NAME, name):
+    if not ICON_NAME.fullmatch(name):
         raise PluginIndexError("not an icon's name")
+    if name in _icons:  # addressed by content: a hit can't be stale
+        return _icons[name]
     body = await _get(client, urljoin(get_settings().plugins_index_url, f"icons/{name}"), MAX_ICON_BYTES)
     if hashlib.sha256(body).hexdigest() != name.partition(".")[0]:
         raise PluginIndexError(f"icon {name} doesn't match its checksum")
     kind = image_type(body)
     if kind is None:
         raise PluginIndexError(f"icon {name} isn't a PNG or WebP image")
-    return Icon(content_type=kind, data=body)
+    icon = Icon(content_type=kind, data=body)
+    _remember(_icons, name, icon, _ICON_CACHE_SIZE)
+    return icon
 
 
 #: The last archive fetched, by checksum: an install reads it for the runner

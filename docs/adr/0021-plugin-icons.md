@@ -3,18 +3,19 @@
 - Status: Accepted
 - Date: 2026-11-17
 - Origin: #1462 (plugin icons, served from the catalog)
+- Extends: [0015](0015-plugins.md), [0016](0016-outbound-calls-and-no-telemetry.md)
 
 ## Context
 
-The catalog drew a generated badge for every plugin, so that browsing it never told a third party which plugins someone looked at. Bank and broker plugins want the institution's mark instead. Loading an image from GitHub or the plugin's site would break that promise (ADR 0016), and ADR 0015 says the catalog is read only when someone opens it.
+The catalog drew a generated badge for every plugin, so that browsing it never told a third party which plugins someone looked at. Bank and broker plugins want the institution's mark instead. Loading an image from GitHub or the plugin's site would break that promise (ADR 0016). Serving it from Securo keeps the promise, but it means reading the catalog's host at one more moment than ADR 0015 allows, which says the catalog is read only when someone opens it.
 
 ## Decision
 
 - The catalog builder (the securo-finance/plugins repository) copies a plugin's icon, a PNG or WebP of at most 64 KB at the root of its repository, next to the index under its own checksum: `icons/<sha256>.png`, or the same with a webp extension. The plugin's index entry names that copy in `icon`. The manifest has no field for it.
 - A catalog row carries `icon_url` only when the index names the copy by its checksum (`IndexEntry.icon_url` in `backend/app/plugins/index.py`). Listing the catalog stays one request: no icon is fetched to list it.
-- `GET /api/plugins/icons/<sha256>.png` (`plugin_icon` in `backend/app/api/plugins.py`) serves it. Like the logos route it takes no sign-in, because it is an `<img>` source. `fetch_icon` reads the file from the icons folder beside the index, on the catalog's host only, without following redirects and capped at 64 KB, and refuses it unless it hashes to its name and is a PNG or WebP by its own signature. Securo keeps no copy: the answer is immutable for the browser, since a different icon has a different address.
+- `GET /api/plugins/icons/<sha256>.png` (`plugin_icon` in `backend/app/api/plugins.py`) serves it. Like the logos route it takes no sign-in, because it is an `<img>` source. `fetch_icon` reads the file from the icons folder beside the index, on the catalog's host only, without following redirects and capped at 64 KB, and refuses it unless it hashes to its name and is a PNG or WebP by its own signature. Nothing is stored: the answer is immutable for the browser, since a different icon has a different address, and Securo keeps a few icons in memory by name, as it does READMEs, so a repeat costs no request.
 - The frontend falls back to the generated badge when a plugin has no icon or it fails to load (`frontend/src/components/plugin-avatar.tsx`).
-- This is an outbound call, and it extends the list in ADR 0016:
+- This amends ADR 0015: the catalog's host is read when someone opens the catalog and, now, when a browser asks Securo for an icon. It is an outbound call, and it extends the list in ADR 0016:
 
 | Call | Where | Happens only when |
 |---|---|---|

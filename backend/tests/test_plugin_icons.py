@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 
 import httpx
 import pytest
@@ -33,7 +34,7 @@ class IconCatalog(Catalog):
         """Copy an icon into the catalog and name it in the plugin's entry; its file name."""
         name = _name(icon, extension)
         self.icons[name] = icon
-        self.extra = {"icon": f"icons/{name}", "icon_sha256": name.partition(".")[0]}
+        self.extra = {"icon": f"icons/{name}"}
         return name
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -50,12 +51,13 @@ def catalog(monkeypatch) -> IconCatalog:
     monkeypatch.setattr(index, "http_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(fake.handle)))
     index._manifests.clear()
     index._readmes.clear()
+    index._icons.clear()
     monkeypatch.setenv("PLUGINS_ENABLED", "true")
     return fake
 
 
 def _route(name: str) -> str:
-    return f"{index.ICON_URL_PREFIX}{name}"
+    return f"/api/plugins/icons/{name}"
 
 
 # --- The catalog -------------------------------------------------------------------
@@ -105,6 +107,9 @@ async def test_the_icon_is_fetched_from_the_catalog_and_served_by_its_name(
     assert "immutable" in resp.headers["cache-control"]
     assert catalog.requests == [f"{ICONS_URL}{name}"]  # the catalog's host, that one file, nothing else
 
+    assert (await client.get(_route(name))).content == image
+    assert len(catalog.requests) == 1  # kept in memory by its name, as READMEs are
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -118,9 +123,11 @@ async def test_the_icon_is_fetched_from_the_catalog_and_served_by_its_name(
         f"{'0' * 64}.png%3Fx=1",
     ],
 )
-async def test_only_a_checksum_name_reaches_the_catalog(client: AsyncClient, catalog, name):
+async def test_only_a_checksum_name_reaches_the_catalog(client: AsyncClient, catalog, name, caplog):
+    caplog.set_level(logging.INFO, logger="app.plugins")
     assert (await client.get(_route(name))).status_code == 404
     assert catalog.requests == []
+    assert not caplog.records  # anyone can ask for any name: it isn't worth a log line
 
 
 @pytest.mark.asyncio
@@ -141,6 +148,10 @@ async def test_an_icon_that_fails_a_check_is_not_served(client: AsyncClient, cat
     resp = await client.get(_route(name))
     assert resp.status_code == 404
     assert resp.headers["cache-control"] == "no-store"  # it may be there next time
+
+    fetched = len(catalog.requests)
+    await client.get(_route(name))
+    assert len(catalog.requests) == fetched + 1  # a refusal isn't remembered either
 
 
 @pytest.mark.asyncio

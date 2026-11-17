@@ -45,6 +45,7 @@ export function PluginAvatar({
         alt=""
         aria-hidden
         draggable={false}
+        loading="lazy"
         decoding="async"
         onError={() => setFailed(src)}
         className={cn('shrink-0 select-none object-contain', rounding, className)}

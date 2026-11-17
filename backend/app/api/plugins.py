@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.core.feature_flags import feature_flag
 from app.core.workspace_context import WorkspaceContext, current_workspace, current_writable_workspace
-from app.plugins import connections, logos, runner, service
+from app.plugins import connections, index, logos, runner, service
 from app.plugins.index import PluginIndexError
 from app.plugins.manifest import parse_manifest
 from app.services.access_token_service import AccessTokenError
@@ -48,6 +48,10 @@ def _lang(ctx: WorkspaceContext) -> str:
     return (ctx.user.preferences or {}).get("language") or ctx.workspace.locale or "en"
 
 
+#: Where a plugin's icon is served, by its file name in the catalog.
+_ICONS = "/api/plugins/icons/"
+
+
 def _catalog_read(item: service.CatalogItem) -> PluginCatalogRead:
     entry = item.entry
     return PluginCatalogRead(
@@ -58,7 +62,7 @@ def _catalog_read(item: service.CatalogItem) -> PluginCatalogRead:
             }
         ),
         owner=entry.owner,
-        icon_url=entry.icon_url,
+        icon_url=f"{_ICONS}{entry.icon_name}" if entry.icon_name else None,
         compatible=entry.compatible,
         supported=entry.supported,
         fits_workspace=item.fits_workspace,
@@ -298,9 +302,9 @@ async def plugin_icon(name: str) -> Response:
 
     No sign-in, like logos: it's an `<img>` source. Securo fetches it from
     the catalog's host and serves it only if it hashes to that name, so the
-    browser never reaches the catalog, and nothing is kept here.
+    browser never reaches the catalog.
     """
-    icon = await service.icon(name)
+    icon = await service.icon(name) if index.ICON_NAME.fullmatch(name) else None
     if icon is None:
         # Not cached: the catalog may only be out of reach for now.
         raise HTTPException(
